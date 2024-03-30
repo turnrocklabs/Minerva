@@ -13,6 +13,16 @@ var current_layout: LAYOUT
 @onready var BottomControl: Control = $"VBoxContainer/BottomControl"
 
 
+func _ready():
+	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab)
+
+
+func _on_close_tab(tab: int):
+	var control = self.Tabs.get_tab_control(tab)
+	self.Tabs.remove_child(control)
+
+
 func add(item:Control, _name:String):
 	#Add a scroll container to the tabs and put the item in there.
 
@@ -24,6 +34,7 @@ func add(item:Control, _name:String):
 	scrollable.add_child(item)
 
 	self.Tabs.add_child(scrollable)
+
 
 # Create a new viewer/editor depending on type 
 func new_tab(item:ChatHistoryItem):
