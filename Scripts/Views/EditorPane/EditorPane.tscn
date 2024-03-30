@@ -1,0 +1,47 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8fq2jqnwlncg"]
+
+[ext_resource type="Script" path="res://Scripts/Views/EditorPane/EditorPane.gd" id="1_sk6sf"]
+
+[node name="EditorPane" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+script = ExtResource("1_sk6sf")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LeftControl" type="Control" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TabContainer" type="TabContainer" parent="VBoxContainer/HBoxContainer/LeftControl"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="RightControl" type="Control" parent="VBoxContainer/HBoxContainer"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BottomControl" type="Control" parent="VBoxContainer"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
