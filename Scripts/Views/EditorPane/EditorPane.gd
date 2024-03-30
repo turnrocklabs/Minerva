@@ -15,12 +15,12 @@ var current_layout: LAYOUT
 
 func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
-	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab)
+	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
 
 
-func _on_close_tab(tab: int):
-	var control = self.Tabs.get_tab_control(tab)
-	self.Tabs.remove_child(control)
+func _on_close_tab(tab: int, container: TabContainer):
+	var control = container.get_tab_control(tab)
+	container.remove_child(control)
 
 
 func add(item:Control, _name:String):
@@ -54,11 +54,17 @@ func new_tab(item:ChatHistoryItem):
 
 func _copy_children_to(from: Node, to: Node):
 	for child in from.get_children(true):
-		to.add_child(child.duplicate(DUPLICATE_SCRIPTS))
+		var dup = child.duplicate(DUPLICATE_USE_INSTANTIATION)
+		if dup is TabContainer:
+			dup.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+			dup.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(dup))
+
+		to.add_child(dup)
 
 func toggle_horizontal_split() -> void:
 	BottomControl.visible = false
 
+	for c in RightControl.get_children(): RightControl.remove_child(c)
 	_copy_children_to(LeftControl, RightControl)
 
 	RightControl.visible = not RightControl.visible
@@ -66,6 +72,7 @@ func toggle_horizontal_split() -> void:
 func toggle_vertical_split() -> void:
 	RightControl.visible = false
 
+	for c in BottomControl.get_children(): BottomControl.remove_child(c)
 	_copy_children_to(LeftControl, BottomControl)
 
 	BottomControl.visible = not BottomControl.visible
