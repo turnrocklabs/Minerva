@@ -7,7 +7,7 @@ var ThreadList: Array[MemoryThread]
 var ActiveThreadIndex: int
 
 ## return a single large string of all active memories
-func To_Prompt() -> String:
+func To_Prompt(Provider) -> String:
 	var have_information: bool = false
 	var output: String = ""
 	for this_thread:MemoryThread in ThreadList:
@@ -18,7 +18,7 @@ func To_Prompt() -> String:
 				output += item.Content + '\n'
 				output += "###" + '\n'
 	if have_information:
-		output = "Information in Memory\n" + output
+		output = Provider.wrap_memory(output)
 	return output
 
 func Disable_All():
