@@ -178,6 +178,9 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.5
 
+[node name="VBoxContainer3" type="VBoxContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane"]
+layout_mode = 2
+
 [node name="VBoxContainer2" type="VBoxContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane"]
 layout_mode = 2
 size_flags_vertical = 0
@@ -194,50 +197,55 @@ layout_mode = 2
 size_flags_horizontal = 10
 text = "New"
 
-[node name="tcChats" type="TabContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane"]
+[node name="VSplitContainer" type="VSplitContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="tcChats" type="TabContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_vertical = 3
 script = ExtResource("1_vrewx")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer"]
 layout_mode = 2
-size_flags_vertical = 8
+size_flags_vertical = 3
 
-[node name="txtMemoryTitle" type="TextEdit" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer"]
+[node name="txtMemoryTitle" type="TextEdit" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 55)
 layout_mode = 2
 size_flags_vertical = 8
 placeholder_text = "Memory Title"
 
-[node name="txtMainUserInput" type="TextEdit" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer"]
+[node name="txtMainUserInput" type="TextEdit" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 255)
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
+size_flags_vertical = 3
 placeholder_text = "Hello there!"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer"]
 layout_mode = 2
-size_flags_vertical = 10
 
-[node name="Button" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer"]
+[node name="Button" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Attach"
 
-[node name="Button2" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer"]
+[node name="Button2" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Memorize"
 
-[node name="Button3" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer"]
+[node name="Button3" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Chat"
 
-[node name="Button4" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer"]
+[node name="Button4" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Settings"
 
-[node name="Button5" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer"]
+[node name="Button5" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Inspect"
 
@@ -302,9 +310,9 @@ script = ExtResource("1_gunt8")
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainContainer/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpen" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_index_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/tcChats" method="_on_new_chat"]
-[connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer/Button2" to="VBoxRoot/MainContainer/HSplitContainer/RightPane/tcThreads" method="_on_memorize_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer/Button3" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/tcChats" method="_on_chat_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/tcChats" method="_on_new_chat"]
+[connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer/HBoxContainer/Button2" to="VBoxRoot/MainContainer/HSplitContainer/RightPane/tcThreads" method="_on_memorize_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/VBoxContainer/HBoxContainer/Button3" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VSplitContainer/tcChats" method="_on_chat_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainContainer/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
