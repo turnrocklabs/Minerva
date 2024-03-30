@@ -25,8 +25,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 516.0
+offset_bottom = 167.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -129,6 +129,35 @@ layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 text = "Create"
+
+[node name="InspectorPopup" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+size = Vector2i(520, 520)
+visible = true
+
+[node name="VBoxContainer" type="VBoxContainer" parent="InspectorPopup"]
+custom_minimum_size = Vector2(512, 512)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = -4.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="cdePrompt" type="CodeEdit" parent="InspectorPopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+placeholder_text = "Prompt Here"
+line_folding = true
+
+[node name="btnCloseInspector" type="Button" parent="InspectorPopup/VBoxContainer"]
+layout_mode = 2
 
 [node name="VBoxRoot" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
@@ -237,7 +266,7 @@ text = "Chat"
 layout_mode = 2
 text = "Settings"
 
-[node name="Button5" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer"]
+[node name="btnInspect" type="Button" parent="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Inspect"
 
@@ -305,6 +334,7 @@ script = ExtResource("1_gunt8")
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/tcChats" method="_on_new_chat"]
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer/Button2" to="VBoxRoot/MainContainer/HSplitContainer/RightPane/tcThreads" method="_on_memorize_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer/Button3" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/tcChats" method="_on_chat_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer/HBoxContainer/btnInspect" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/LeftPane/tcChats" method="_on_btn_inspect_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainContainer/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainContainer/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainContainer/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
