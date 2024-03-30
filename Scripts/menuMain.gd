@@ -33,3 +33,7 @@ func _on_save_keys_pressed():
 	SingletonObject.API_KEY[SingletonObject.API_PROVIDER.OPENAI] = %leOpenAIKey.text
 	SingletonObject.save_api_keys()
 	pass
+
+
+func _on_button_5_pressed():
+	pass # Replace with function body.

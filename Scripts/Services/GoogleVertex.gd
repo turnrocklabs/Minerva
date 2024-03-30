@@ -177,4 +177,15 @@ func Format(chat:ChatHistoryItem) -> Variant:
 	## Serialize the message.
 	var message_object = {"role": role, "parts": parts}
 	return message_object
+	
+## Function:
+# wrap_memory takes the output of formatting and sets up the text so that the LLM understands this is background information
+func wrap_memory(list_memories:String) -> String:
+	var output:String = "Given this background information:\n\n"
+	output += "### Reference Information ###\n"
+	output += list_memories
+	output += "### End Reference Information ###\n\n"
+	output += "Respond to the user's message: \n\n"
+	return output
+		
 
