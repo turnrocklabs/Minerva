@@ -7,6 +7,8 @@ var active_chatindex: int
 var Provider
 var GoogleChat: GoogleVertex
 
+var ShouldAppend: bool = true ## A state variable indicating if we need to append
+
 func _on_new_chat():
 	active_chatindex = last_tab_index
 	var tab_name:String = "Chat" + str(last_tab_index)
@@ -37,8 +39,10 @@ func create_prompt() -> Array[Variant]:
 		prompt_for_turn = %txtMainUserInput.text
 	
 	## append the message to the history
-	new_history_item.Message = prompt_for_turn
-	self.ChatList[active_chatindex].HistoryItemList.append(new_history_item)
+	if self.ShouldAppend:
+		new_history_item.Message = prompt_for_turn
+		self.ChatList[active_chatindex].HistoryItemList.append(new_history_item)
+		self.ShouldAppend = false
 
 	## get the message for complettion
 	var history: ChatHistory = self.ChatList[active_chatindex]
@@ -64,6 +68,7 @@ func _on_chat_pressed():
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt()
 	GoogleChat.generate_content(history_list)
+	self.ShouldAppend = true
 	pass
 
 ## Render a full chat history response
