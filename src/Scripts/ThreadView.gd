@@ -14,7 +14,7 @@ func To_Prompt(Provider) -> String:
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
 				have_information = true
-				output += "### {%s}" % item.Title + '\n'
+				output += "### Title: %s" % item.Title + '\n'
 				output += item.Content + '\n'
 				output += "###" + '\n'
 	if have_information:
