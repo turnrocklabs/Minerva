@@ -1,7 +1,13 @@
-## Place any singletons you want the entire project to know about, including functions, objects, signals, here.
-## Not currently used -- placeholder to see how it works.
 extends Node
 
+## REGION Tabbed Objects
+var ThreadList: Array[MemoryThread]
+var NotesTab: MemoryTabs
+
+## ENDREGION Tabbed Objects
+
+
+## REGION API Consumer
 enum API_PROVIDER {GOOGLE, OPENAI, ANTHROPIC}
 
 var config_file: ConfigFile
@@ -33,6 +39,4 @@ func _ready():
 			config_file.set_value("API KEYS", "OPENAI", "")
 			load_api_keys()
 
-func hello_world():
-	print("hello world from singleton_object")
-	pass
+## ENDREGION API Consumer
