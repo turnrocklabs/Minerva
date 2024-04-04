@@ -1,16 +1,15 @@
 ## ThreadView.gd
 # This script manages a tab container that groups memory objects.
-
+class_name MemoryTabs
 extends TabContainer
 
-var ThreadList: Array[MemoryThread]
 var ActiveThreadIndex: int
 
 ## return a single large string of all active memories
 func To_Prompt(Provider) -> String:
 	var have_information: bool = false
 	var output: String = ""
-	for this_thread:MemoryThread in ThreadList:
+	for this_thread:MemoryThread in SingletonObject.ThreadList:
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
 				have_information = true
@@ -22,33 +21,11 @@ func To_Prompt(Provider) -> String:
 	return output
 
 func Disable_All():
-	for this_thread:MemoryThread in ThreadList:
+	for this_thread:MemoryThread in SingletonObject.ThreadList:
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
 				item.Enabled = false
 	self.render_threads()
-	pass
-
-## during development, we'll add a dummy thread and working memory list.
-func create_dummy_thread():
-	## da thread.
-	var thread = MemoryThread.new()
-	thread.ThreadName = "Hello"
-
-	# a single memory
-	var memory: MemoryItem = MemoryItem.new(thread.ThreadId)
-	memory.Title = "Hello world"
-	memory.Content = "I like cats"
-	memory.Enabled = true
-
-
-	# da dummy working memories
-	var thread_memories: Array[MemoryItem] = []
-	thread_memories.append(memory)
-	thread.MemoryItemList = thread_memories
-
-	self.ThreadList.append(thread)
-	self.ActiveThreadIndex = 0
 	pass
 
 func _on_new_pressed():
@@ -87,7 +64,7 @@ func render_threads():
 	self.clear_all_tabs()
 
 	# render each thread
-	for this_thread in ThreadList:
+	for this_thread in SingletonObject.ThreadList:
 		render_thread(this_thread)
 
 	# set the active thread in UI
@@ -135,8 +112,8 @@ func render_thread(thread_item: MemoryThread):
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	self.ThreadList = []
-	create_dummy_thread()
+	SingletonObject.ThreadList = []
+	SingletonObject.NotesTab = self
 	render_threads()
 	self.connect("tab_changed", self._on_tab_changed)
 	pass

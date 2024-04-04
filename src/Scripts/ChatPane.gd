@@ -30,7 +30,7 @@ func create_prompt() -> Array[Variant]:
 	## Get the working memory and append the user message to chat history
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	var prompt_for_turn: String = ""
-	var working_memory:String = %tcThreads.To_Prompt(GoogleChat)
+	var working_memory:String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
 	if len(working_memory) > 0:
 		%tcThreads.Disable_All()
 		prompt_for_turn += working_memory
