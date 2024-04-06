@@ -20,7 +20,7 @@ func _on_new_chat():
 
 ## Function:
 # create_prompt generates the full turn prompt
-func create_prompt(disable_notes: bool = false) -> Array[Variant]:
+func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = false) -> Array[Variant]:
 	# make sure we have an active chat
 	if len(self.ChatList) <= active_chatindex:
 		_on_new_chat()
@@ -28,15 +28,22 @@ func create_prompt(disable_notes: bool = false) -> Array[Variant]:
 	## Get the working memory and append the user message to chat history
 	var prompt_for_turn: String = ""
 	var working_memory:String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
-	if len(working_memory) > 0 and disable_notes:
-		SingletonObject.NotesTab.Disable_All()
+	if len(working_memory) > 0:
 		prompt_for_turn += working_memory
 		prompt_for_turn += %txtMainUserInput.text
 	else:
 		prompt_for_turn = %txtMainUserInput.text
+	
+	# disable the notes if we are asked
+	if disable_notes:
+		SingletonObject.NotesTab.Disable_All()
 
-	## get the message for complettion
+	## get the message for completion, appending a new items if given
 	var history: ChatHistory = self.ChatList[active_chatindex]
+	if append_item != null:
+		history.HistoryItemList.append(append_item)
+		self.ChatList[active_chatindex] = history
+	
 	var history_list: Array[Variant] = history.To_Prompt();
 	return history_list
 
@@ -64,8 +71,13 @@ func _on_btn_inspect_pressed():
 	pass # Replace with function body.
 
 func _on_chat_pressed():
+	## prepare an append item for the history
+	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
+	new_history_item.Message = %txtMainUserInput.text
+	new_history_item.Role = ChatHistoryItem.ChatRole.USER
+
 	# make a chat request
-	var history_list: Array[Variant] = self.create_prompt()
+	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
 	GoogleChat.generate_content(history_list)
 	pass
 
