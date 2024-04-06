@@ -41,7 +41,7 @@ func _on_btn_create_thread_pressed():
 	thread.ThreadName = tab_name
 	var thread_memories: Array[MemoryItem] = []
 	thread.MemoryItemList = thread_memories
-	self.ThreadList.append(thread)
+	SingletonObject.ThreadList.append(thread)
 	render_thread(thread)
 	%NewThreadPopup.hide()
 	pass # Replace with function body.
@@ -72,13 +72,12 @@ func render_threads():
 	self.ActiveThreadIndex = last_thread
 	pass
 
-func _on_memorize_pressed():
-	# get the title and content from the user
-	var user_title:String = %txtMemoryTitle.text
-	var user_content:String = %txtMainUserInput.text
-
+func add_note(user_title:String, user_content: String, source: String = ""):
 	# get the active thread.
-	var active_thread : MemoryThread = self.ThreadList[ActiveThreadIndex]
+	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  ActiveThreadIndex:
+		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
+		return
+	var active_thread : MemoryThread = SingletonObject.ThreadList[ActiveThreadIndex]
 
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)

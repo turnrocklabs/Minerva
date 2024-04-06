@@ -11,13 +11,13 @@ var Order: int
 var Type: PartType
 
 func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
-    self.Type = _type
-    self.Role = _role
-    self.Message = ""
-    self.Base64Data = ""
-    pass
+	self.Type = _type
+	self.Role = _role
+	self.Message = ""
+	self.Base64Data = ""
+	pass
 
 
 func format(callback: Callable) -> String:
-    var output: String = callback.call(self)
-    return output
+	var output: String = callback.call(self)
+	return output
