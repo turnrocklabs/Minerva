@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/ThreadView.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/menuMain.gd" id="1_oipdw"]
-[ext_resource type="Script" path="res://Scripts/ChatPane.gd" id="1_vrewx"]
+[ext_resource type="Script" path="res://Scripts/Views/Chat/ChatPane.gd" id="1_vrewx"]
 [ext_resource type="Script" path="res://Scripts/Views/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scripts/Views/EditorPane/EditorPane.tscn" id="4_826g6"]
 
@@ -25,8 +25,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 516.0
+offset_bottom = 167.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3

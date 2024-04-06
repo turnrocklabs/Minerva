@@ -1,5 +1,6 @@
 extends TabContainer
 
+@onready var chat = preload("res://Scripts/Views/Chat/Chat.tscn")
 
 var ChatList: Array[ChatHistory]
 var last_tab_index: int
@@ -33,7 +34,11 @@ func _on_chat_pressed():
 		prompt_for_turn += %txtMainUserInput.text
 	else:
 		prompt_for_turn = %txtMainUserInput.text
-	
+
+	var r = BotResponse.new()
+	r.FullText = %txtMainUserInput.text
+	self.ChatList[active_chatindex].VBox.add_user_message(r)
+
 	## append the message to the history
 	new_history_item.Message = prompt_for_turn
 	self.ChatList[active_chatindex].HistoryItemList.append(new_history_item)
@@ -62,11 +67,11 @@ func render_single_chat(response:BotResponse):
 func render_history(chat_history: ChatHistory):
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
-	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# create a derived VBoxContainer for chats and add to the scroll container
-	var vboxChat: VBoxChat = VBoxChat.new(self)
+	var vboxChat: VBoxChat = chat.instantiate()
 	vboxChat.chat_history = chat_history
 	chat_history.VBox = vboxChat
 
