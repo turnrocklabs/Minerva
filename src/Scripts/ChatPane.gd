@@ -7,8 +7,6 @@ var active_chatindex: int
 var Provider
 var GoogleChat: GoogleVertex
 
-var ShouldAppend: bool = true ## A state variable indicating if we need to append
-
 func _on_new_chat():
 	active_chatindex = last_tab_index
 	var tab_name:String = "Chat" + str(last_tab_index)
@@ -22,27 +20,20 @@ func _on_new_chat():
 
 ## Function:
 # create_prompt generates the full turn prompt
-func create_prompt() -> Array[Variant]:
+func create_prompt(disable_notes: bool = false) -> Array[Variant]:
 	# make sure we have an active chat
 	if len(self.ChatList) <= active_chatindex:
 		_on_new_chat()
 
 	## Get the working memory and append the user message to chat history
-	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	var prompt_for_turn: String = ""
 	var working_memory:String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
-	if len(working_memory) > 0:
-		%tcThreads.Disable_All()
+	if len(working_memory) > 0 and disable_notes:
+		SingletonObject.NotesTab.Disable_All()
 		prompt_for_turn += working_memory
 		prompt_for_turn += %txtMainUserInput.text
 	else:
 		prompt_for_turn = %txtMainUserInput.text
-	
-	## append the message to the history
-	if self.ShouldAppend:
-		new_history_item.Message = prompt_for_turn
-		self.ChatList[active_chatindex].HistoryItemList.append(new_history_item)
-		self.ShouldAppend = false
 
 	## get the message for complettion
 	var history: ChatHistory = self.ChatList[active_chatindex]
@@ -52,11 +43,19 @@ func create_prompt() -> Array[Variant]:
 func _on_btn_inspect_pressed():
 	## generate the JSON string we would send to the model.
 	var history_list: Array[Variant] = self.create_prompt()
+	
+	## append the message to the history
+	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
+	new_history_item.Message = %txtMainUserInput.text
+	new_history_item.Role = ChatHistoryItem.ChatRole.USER
+	var formatted = Provider.Format(new_history_item)
+	history_list.append(formatted)
+
 	var stringified_history:String = JSON.stringify(history_list)
 	%cdePrompt.text = stringified_history
 	
 	## show the inspector popup
-	var target_size = %VBoxRoot.size - Vector2(100, 100)
+	var target_size = %tcChats.size
 	%InspectorPopup.exclusive = true
 	%InspectorPopup.borderless = false
 	%InspectorPopup.size = target_size
@@ -68,7 +67,6 @@ func _on_chat_pressed():
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt()
 	GoogleChat.generate_content(history_list)
-	self.ShouldAppend = true
 	pass
 
 ## Render a full chat history response
@@ -109,6 +107,7 @@ func _ready():
 	active_chatindex = 0
 	ChatList = []
 	GoogleChat = GoogleVertex.new()
+	Provider = GoogleChat ## We can change this to other providers later.
 	add_child(GoogleChat)
 	GoogleChat.chat_completed.connect(self.render_single_chat)
 	pass # Replace with function body.
@@ -118,4 +117,8 @@ func _ready():
 # func _process(delta):
 # 	pass
 
-
+func _on_btn_memorize_pressed():
+	var user_title = %txtMemoryTitle.text
+	var user_body = %txtMainUserInput.text
+	SingletonObject.NotesTab.add_note(user_title, user_body)
+	pass # Replace with function body.

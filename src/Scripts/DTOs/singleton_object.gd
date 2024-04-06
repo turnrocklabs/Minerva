@@ -6,6 +6,21 @@ var NotesTab: MemoryTabs
 
 ## ENDREGION Tabbed Objects
 
+## REGION Common UI Tasks
+
+###
+# Create a common error display system that will popup an error and show
+# and show the message
+var errorPopup: PopupPanel
+var errorTitle: Label
+var errorText: Label
+func ErrorDisplay(error_title:String, error_message: String):
+	errorTitle.text = error_title
+	errorText.text = error_message
+	errorPopup.popup_centered()
+	pass
+
+## ENDREGION Common UI Tasks
 
 ## REGION API Consumer
 enum API_PROVIDER {GOOGLE, OPENAI, ANTHROPIC}
