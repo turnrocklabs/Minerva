@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://Scripts/Views/Chat/Message.gd" id="1_lytbq"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hjfue"]
+resource_local_to_scene = true
 content_margin_left = 15.0
 content_margin_top = 15.0
 content_margin_right = 15.0
@@ -21,6 +22,8 @@ script = ExtResource("1_lytbq")
 left_control = NodePath("LeftSplitter")
 right_control = NodePath("RightSplitter")
 label = NodePath("PanelContainer/RichTextLabel")
+user_message_color = Color(0, 0, 1, 1)
+bot_message_color = Color(0, 0.592157, 0.478431, 1)
 
 [node name="LeftSplitter" type="Control" parent="."]
 visible = false

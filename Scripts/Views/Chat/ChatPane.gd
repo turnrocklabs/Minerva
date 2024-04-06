@@ -39,6 +39,10 @@ func _on_chat_pressed():
 	r.FullText = %txtMainUserInput.text
 	self.ChatList[active_chatindex].VBox.add_user_message(r)
 
+	r = BotResponse.new()
+	r.FullText = %txtMainUserInput.text
+	self.ChatList[active_chatindex].VBox.add_bot_message(r)
+
 	## append the message to the history
 	new_history_item.Message = prompt_for_turn
 	self.ChatList[active_chatindex].HistoryItemList.append(new_history_item)
@@ -48,7 +52,7 @@ func _on_chat_pressed():
 	var history_list: Array[Variant] = history.To_Prompt();
 
 	# make a chat request
-	GoogleChat.generate_content(history_list)
+	# GoogleChat.generate_content(history_list)
 	pass
 
 ## Render a full chat history response
