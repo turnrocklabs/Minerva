@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3 uid="uid://c73em1ggrqls0"]
+
+[ext_resource type="Script" path="res://Scripts/Views/Chat/vboxChat.gd" id="1_e6wlh"]
+
+[node name="VBoxContainer" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 31.0
+size_flags_horizontal = 3
+script = ExtResource("1_e6wlh")
