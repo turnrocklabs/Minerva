@@ -1,0 +1,280 @@
+[gd_scene load_steps=8 format=3 uid="uid://cw1ig4ql83b6a"]
+
+[ext_resource type="Script" path="res://Scripts/ThreadView.gd" id="1_gunt8"]
+[ext_resource type="Script" path="res://Scripts/menuMain.gd" id="1_oipdw"]
+[ext_resource type="Script" path="res://Scripts/Controls/MainUI.gd" id="2_kohxl"]
+[ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat/Chat.tscn" id="2_nwqxj"]
+[ext_resource type="Script" path="res://Scripts/Views/vboxEditor.gd" id="3_welkk"]
+[ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scripts/Views/EditorPane/EditorPane.tscn" id="4_826g6"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
+font_size = 25
+font_color = Color(1, 0, 0, 1)
+
+[node name="RootControl" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ErrorDisplayPopup" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ErrorDisplayPopup"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 232.0
+offset_bottom = 96.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="lblErrorHeader" type="Label" parent="ErrorDisplayPopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 2
+text = "An Error Occurred."
+label_settings = SubResource("LabelSettings_c0x6k")
+
+[node name="lblErrorMessage" type="Label" parent="ErrorDisplayPopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 6
+
+[node name="PreferencesPopup" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+size = Vector2i(520, 171)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PreferencesPopup"]
+custom_minimum_size = Vector2(512, 0)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 516.0
+offset_bottom = 167.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer"]
+layout_mode = 2
+text = "API KEYS"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 2
+size_flags_stretch_ratio = 0.3
+text = "Google Vertex"
+
+[node name="leGoogleVertexKey" type="LineEdit" parent="PreferencesPopup/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Anthropic"
+
+[node name="leAnthropicKey" type="LineEdit" parent="PreferencesPopup/VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer/HBoxContainer3"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "OpenAI"
+
+[node name="leOpenAIKey" type="LineEdit" parent="PreferencesPopup/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer4" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
+layout_mode = 2
+
+[node name="btnSavePrefs" type="Button" parent="PreferencesPopup/VBoxContainer/HBoxContainer4"]
+layout_mode = 2
+text = "Save"
+
+[node name="btnCancel" type="Button" parent="PreferencesPopup/VBoxContainer/HBoxContainer4"]
+layout_mode = 2
+text = "Cancel"
+
+[node name="NewThreadPopup" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+
+[node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 96.0
+offset_bottom = 96.0
+size_flags_horizontal = 3
+
+[node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="Label" type="Label" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Name"
+
+[node name="txtNewTabName" type="TextEdit" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Tab Name"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="NewThreadPopup/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+
+[node name="btnCreateThread" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+text = "Create"
+
+[node name="VBoxRoot" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="menuMain" type="MenuBar" parent="VBoxRoot"]
+layout_mode = 2
+size_flags_vertical = 0
+script = ExtResource("1_oipdw")
+
+[node name="fdgOpen" type="FileDialog" parent="VBoxRoot/menuMain"]
+unique_name_in_owner = true
+title = "Open a File"
+size = Vector2i(392, 159)
+ok_button_text = "Open"
+file_mode = 0
+access = 2
+
+[node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
+title = "File"
+item_count = 2
+item_0/text = "Open"
+item_0/id = 0
+item_1/text = "Preferences"
+item_1/id = 1
+
+[node name="MainUI" type="HBoxContainer" parent="VBoxRoot"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 2.0
+script = ExtResource("2_kohxl")
+
+[node name="HSplitContainer" type="HSplitContainer" parent="VBoxRoot/MainUI"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HSplitContainer2" type="HSplitContainer" parent="VBoxRoot/MainUI/HSplitContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.5
+
+[node name="ChatPane" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
+layout_mode = 2
+size_flags_horizontal = 1
+
+[node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Editor"
+
+[node name="HButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "H"
+
+[node name="VButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "V"
+
+[node name="vboxEditorMain" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer" node_paths=PackedStringArray("editor_pane")]
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("3_welkk")
+editor_pane = NodePath("EditorPane")
+
+[node name="EditorPane" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" instance=ExtResource("4_826g6")]
+layout_mode = 2
+
+[node name="RightPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer"]
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.5
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+layout_mode = 2
+text = "Notes"
+
+[node name="btnNewTab" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 10
+text = "New"
+
+[node name="tcThreads" type="TabContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("1_gunt8")
+
+[connection signal="pressed" from="PreferencesPopup/VBoxContainer/HBoxContainer4/btnSavePrefs" to="VBoxRoot/menuMain" method="_on_save_keys_pressed"]
+[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
+[connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpen" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
+[connection signal="index_pressed" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_index_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
