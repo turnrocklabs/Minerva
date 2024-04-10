@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://gux15c8l66u7"]
 
-[ext_resource type="Script" path="res://Scripts/ChatPane.gd" id="1_2uf7u"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 
 [node name="ChatPane" type="Control"]
 layout_mode = 3

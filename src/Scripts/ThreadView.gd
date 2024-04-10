@@ -98,7 +98,7 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# Create a custom VBoxContainer derived class
-	var vboxMemoryList = preload("res://Scripts/Views/vboxMemoryList.gd").new(self, thread_item.ThreadId, thread_item.MemoryItemList)
+	var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread_item.ThreadId, thread_item.MemoryItemList)
 
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vboxMemoryList)
