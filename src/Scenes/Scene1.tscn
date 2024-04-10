@@ -2,10 +2,10 @@
 
 [ext_resource type="Script" path="res://Scripts/ThreadView.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/menuMain.gd" id="1_oipdw"]
-[ext_resource type="Script" path="res://Scripts/Controls/MainUI.gd" id="2_kohxl"]
-[ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat/Chat.tscn" id="2_nwqxj"]
-[ext_resource type="Script" path="res://Scripts/Views/vboxEditor.gd" id="3_welkk"]
-[ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scripts/Views/EditorPane/EditorPane.tscn" id="4_826g6"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
+[ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
+[ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -28,8 +28,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 232.0
-offset_bottom = 96.0
+offset_right = -280.0
+offset_bottom = -416.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -56,8 +56,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 516.0
-offset_bottom = 167.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
