@@ -134,3 +134,14 @@ func _on_btn_memorize_pressed():
 	var user_body = %txtMainUserInput.text
 	SingletonObject.NotesTab.add_note(user_title, user_body)
 	pass # Replace with function body.
+
+## Feature development -- create a button and add it to the upper chat vbox?
+func _on_btn_test_pressed():
+	if len(self.ChatList) <= active_chatindex:
+		_on_new_chat()
+
+	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
+	var test_response:BotResponse = BotResponse.new()
+	test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
+	self.render_single_chat(test_response)
+	pass # Replace with function body.
