@@ -21,11 +21,11 @@ func _init(_parent):
 func _ready():
 	self.size = self.Parent.size
 	pass
-	
+
 ## create some sort of textbox and put the content in there.
 func add_bot_message(message:BotResponse):
 	var box:ChatBox = ChatBox.new(self, ChatBox.CHATTYPE.BOT)
-	box.text = "Hello world"
+	#box.text = "Hello world"
 	#box.set_text(message.FullText)
 	# var chars_per_line = 54.0
 	# var vertical_ppi = 25.3
@@ -41,12 +41,18 @@ func add_bot_message(message:BotResponse):
 	# texty.scroll_horizontal = false
 	# texty.scroll_vertical = false
 	# texty.text = message.FullText
-	add_child(box)
+	#add_child(box)
+	add_child(Message.bot_message(message))
 	pass
 
 
 func add_message():
 	var user_turn:String = %txtMainUserInput.text
+	pass
+
+
+func add_user_message(message:BotResponse):
+	add_child(Message.user_message(message))
 	pass
 
 func render_items():
