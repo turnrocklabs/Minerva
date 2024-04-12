@@ -11,13 +11,13 @@ config_version=5
 [application]
 
 config/name="AgentInator"
-run/main_scene="res://Scenes/Scene1.tscn"
+run/main_scene="res://Scenes/MainScene.tscn"
 config/features=PackedStringArray("4.2", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]
 
-SingletonObject="*res://Scripts/DTOs/singleton_object.gd"
+SingletonObject="*res://Scripts/Models/singleton_object.gd"
 
 [display]
 
