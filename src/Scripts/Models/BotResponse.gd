@@ -2,16 +2,18 @@
 class_name BotResponse
 extends RefCounted
 
+
 var FullText: String
 var Picture: Texture
 var Snips: Array[String]
 
-var _regex: RegEx
+var _vertex_response_extractor: RegEx
+var _markdown_snip_extractor: RegEx
 
 func _init():
-	self._regex = RegEx.new()
+	self._vertex_response_extractor = RegEx.new()
 	var pattern = '^\\s*\\{.*\\}\\s*$' # Basic pattern to check for something starting with { and ending with }
-	self._regex.compile(pattern)
+	self._vertex_response_extractor.compile(pattern)
 	pass
 
 func FromVertex(input: Variant) -> BotResponse:
@@ -30,7 +32,7 @@ func FromVertex(input: Variant) -> BotResponse:
 	
 	## I might get back a JSON string because Google Vertex APIs have a bug
 	## Where the result is an "instruct" formatted JSON object (even though Google uses different role words)
-	var result = _regex.search(all_parts_concatenated)
+	var result = _vertex_response_extractor.search(all_parts_concatenated)
 
 	if result:
 		# turn the JSON into a dictionary, then grab the text property.
@@ -40,3 +42,7 @@ func FromVertex(input: Variant) -> BotResponse:
 		FullText = all_parts_concatenated
 
 	return self
+
+# Parse out the markdown snips into the Snips array
+func parse_snips():
+	pass
