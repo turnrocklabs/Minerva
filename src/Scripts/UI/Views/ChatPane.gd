@@ -76,9 +76,15 @@ func _on_chat_pressed():
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
 
+	
+	## Add the user speech bubble to the chat area control.
+	var temp_user_data: BotResponse = BotResponse.new()
+	temp_user_data.FullText = %txtMainUserInput.text
+
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
 	GoogleChat.generate_content(history_list)
+	self.ChatList[active_chatindex].VBox.add_user_message(temp_user_data)
 	pass
 
 ## Render a full chat history response
