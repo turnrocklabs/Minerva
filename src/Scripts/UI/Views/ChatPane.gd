@@ -28,11 +28,6 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	## Get the working memory and append the user message to chat history
 	var prompt_for_turn: String = ""
 	var working_memory:String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
-	if len(working_memory) > 0:
-		prompt_for_turn += working_memory
-		prompt_for_turn += %txtMainUserInput.text
-	else:
-		prompt_for_turn = %txtMainUserInput.text
 	
 	# disable the notes if we are asked
 	if disable_notes:
@@ -41,6 +36,9 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	## get the message for completion, appending a new items if given
 	var history: ChatHistory = self.ChatList[active_chatindex]
 	if append_item != null:
+		if len(working_memory) > 0:
+			append_item.Message = working_memory + "\n" + append_item.Message
+		 
 		history.HistoryItemList.append(append_item)
 		self.ChatList[active_chatindex] = history
 	
