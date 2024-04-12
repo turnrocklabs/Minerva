@@ -80,6 +80,8 @@ func settext(_text:String):
 	if self._editabletext_control != null:
 		line_count += (len(self.text) * _font_size) / line_length
 		self._size = self._parent.size
+		self.size = self._size
+		self._margin_container.size = self._size
 		var target_size = self._size
 		target_size.y = self._vertical_ppi * line_count
 		_editabletext_control.text = self.text
