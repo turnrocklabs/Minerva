@@ -1,28 +1,26 @@
+class_name ChatPane
 extends TabContainer
 
-
-var ChatList: Array[ChatHistory]
-var last_tab_index: int
-var active_chatindex: int
-var Provider
 var GoogleChat: GoogleVertex
 
 func _on_new_chat():
-	active_chatindex = last_tab_index
-	var tab_name:String = "Chat" + str(last_tab_index)
-	last_tab_index += 1
+	SingletonObject.active_chatindex = SingletonObject.last_tab_index
+	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
+	SingletonObject.last_tab_index += 1
 	var history: ChatHistory = ChatHistory.new(self.GoogleChat)
 	history.HistoryName = tab_name
 	history.HistoryItemList = []
-	self.ChatList.append(history)
+	SingletonObject.ChatList.append(history)
 	render_history(history)
 	pass
+
+
 
 ## Function:
 # create_prompt generates the full turn prompt
 func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = false) -> Array[Variant]:
 	# make sure we have an active chat
-	if len(self.ChatList) <= active_chatindex:
+	if len(SingletonObject.ChatList) <= SingletonObject.active_chatindex:
 		_on_new_chat()
 
 	## Get the working memory and append the user message to chat history
@@ -34,13 +32,13 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 		SingletonObject.NotesTab.Disable_All()
 
 	## get the message for completion, appending a new items if given
-	var history: ChatHistory = self.ChatList[active_chatindex]
+	var history: ChatHistory = SingletonObject.ChatList[SingletonObject.active_chatindex]
 	if append_item != null:
 		if len(working_memory) > 0:
 			append_item.Message = working_memory + "\n" + append_item.Message
 		 
 		history.HistoryItemList.append(append_item)
-		self.ChatList[active_chatindex] = history
+		SingletonObject.ChatList[SingletonObject.active_chatindex] = history
 	
 	var history_list: Array[Variant] = history.To_Prompt();
 	return history_list
@@ -53,7 +51,7 @@ func _on_btn_inspect_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
-	var formatted = Provider.Format(new_history_item)
+	var formatted = SingletonObject.Provider.Format(new_history_item)
 	history_list.append(formatted)
 
 	var stringified_history:String = JSON.stringify(history_list)
@@ -82,7 +80,7 @@ func _on_chat_pressed():
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
 	GoogleChat.generate_content(history_list)
-	self.ChatList[active_chatindex].VBox.add_user_message(temp_user_data)
+	SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_user_message(temp_user_data)
 	pass
 
 ## Render a full chat history response
@@ -91,10 +89,10 @@ func render_single_chat(response:BotResponse):
 	var item: ChatHistoryItem = ChatHistoryItem.new()
 	item.Role = ChatHistoryItem.ChatRole.ASSISTANT
 	item.Message = response.FullText
-	self.ChatList[active_chatindex].HistoryItemList.append(item)
+	SingletonObject.ChatList[SingletonObject.active_chatindex].HistoryItemList.append(item)
 
 	# Ask the Vbox to add the message
-	self.ChatList[active_chatindex].VBox.add_bot_message(response)
+	SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_bot_message(response)
 	pass
 
 
@@ -119,13 +117,11 @@ func render_history(chat_history: ChatHistory):
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	last_tab_index = 0
-	active_chatindex = 0
-	ChatList = []
-	GoogleChat = GoogleVertex.new()
-	Provider = GoogleChat ## We can change this to other providers later.
-	add_child(GoogleChat)
-	GoogleChat.chat_completed.connect(self.render_single_chat)
+	if GoogleChat == null:
+		GoogleChat = GoogleVertex.new()
+		add_child(GoogleChat)
+		GoogleChat.chat_completed.connect(self.render_single_chat)
+	SingletonObject.initialize_chats(GoogleChat, self)
 	pass # Replace with function body.
 
 
@@ -141,7 +137,7 @@ func _on_btn_memorize_pressed():
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
-	if len(self.ChatList) <= active_chatindex:
+	if len(SingletonObject.ChatList) <= SingletonObject.active_chatindex:
 		_on_new_chat()
 
 	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
@@ -149,3 +145,8 @@ func _on_btn_test_pressed():
 	test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
 	self.render_single_chat(test_response)
 	pass # Replace with function body.
+
+func clear_all_chats():
+	for child in get_children():
+		remove_child(child)
+	add_child(SingletonObject.Provider)

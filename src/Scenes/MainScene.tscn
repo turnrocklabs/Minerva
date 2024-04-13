@@ -1,7 +1,7 @@
 [gd_scene load_steps=8 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Script" path="res://Scripts/ThreadView.gd" id="1_gunt8"]
-[ext_resource type="Script" path="res://Scripts/menuMain.gd" id="1_oipdw"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
@@ -175,13 +175,28 @@ layout_mode = 2
 size_flags_vertical = 0
 script = ExtResource("1_oipdw")
 
-[node name="fdgOpen" type="FileDialog" parent="VBoxRoot/menuMain"]
+[node name="fdgOpenProject" type="FileDialog" parent="VBoxRoot/menuMain"]
+unique_name_in_owner = true
+
+[node name="fdgOpenFile" type="FileDialog" parent="VBoxRoot/menuMain"]
 unique_name_in_owner = true
 title = "Open a File"
 size = Vector2i(392, 159)
 ok_button_text = "Open"
 file_mode = 0
 access = 2
+
+[node name="Project" type="PopupMenu" parent="VBoxRoot/menuMain"]
+title = "Project"
+item_count = 4
+item_0/text = "New"
+item_0/id = 0
+item_1/text = "Open"
+item_1/id = 1
+item_2/text = "Save"
+item_2/id = 2
+item_3/text = "Save As..."
+item_3/id = 3
 
 [node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "File"
@@ -273,7 +288,8 @@ script = ExtResource("1_gunt8")
 
 [connection signal="pressed" from="PreferencesPopup/VBoxContainer/HBoxContainer4/btnSavePrefs" to="VBoxRoot/menuMain" method="_on_save_keys_pressed"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
-[connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpen" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
+[connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
+[connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_index_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
