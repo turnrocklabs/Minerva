@@ -4,7 +4,30 @@ extends Node
 var ThreadList: Array[MemoryThread]
 var NotesTab: MemoryTabs
 
+func initialize_notes():
+	ThreadList = []
+	NotesTab.render_threads()
+	pass
+
 ## ENDREGION Tabbed Objects
+
+## REGION Chats
+var ChatList: Array[ChatHistory]
+var last_tab_index: int
+var active_chatindex: int
+var Provider
+var Chats: ChatPane
+
+func initialize_chats(provider, _chats:ChatPane):
+	last_tab_index = 0
+	active_chatindex = 0
+	ChatList = []
+	Provider = provider
+	Chats = _chats
+	Chats.clear_all_chats()
+	pass
+
+## ENDREGION Chats
 
 ## REGION Common UI Tasks
 
@@ -55,3 +78,14 @@ func _ready():
 			load_api_keys()
 
 ## ENDREGION API Consumer
+
+## REGION Project Management
+
+## Function:
+# _new_project empties all the tabs and lists currently stored as notes or chats.
+func _new_project():
+	initialize_notes()
+	initialize_chats(Provider, Chats)
+	pass
+
+## ENDREGION Project Management
