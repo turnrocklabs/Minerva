@@ -110,6 +110,10 @@ func _validate_property(property: Dictionary):
 ## Reads the specified file and displays it as markdown.
 func display_file(file_path: String) -> void:
 	markdown_text = FileAccess.get_file_as_string(file_path)
+
+## Displays the specified text as markdown
+func display_text(display_text: String) -> void:
+	markdown_text = display_text
 #endregion
 
 #region Private methods:

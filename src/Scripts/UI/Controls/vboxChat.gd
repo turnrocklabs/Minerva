@@ -42,7 +42,8 @@ func add_bot_message(message:BotResponse):
 	# texty.scroll_vertical = false
 	# texty.text = message.FullText
 	#add_child(box)
-	add_child(Message.bot_message(message))
+	#add_child(Message.bot_message(message))
+	add_child(MessageMarkdown.bot_message(message))
 	pass
 
 
@@ -52,7 +53,8 @@ func add_message():
 
 
 func add_user_message(message:BotResponse):
-	add_child(Message.user_message(message))
+	#add_child(Message.user_message(message))
+	add_child(MessageMarkdown.user_message(message))
 	pass
 
 func render_items():
