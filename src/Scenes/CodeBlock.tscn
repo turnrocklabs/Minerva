@@ -1,0 +1,150 @@
+[gd_scene load_steps=15 format=3 uid="uid://bysg7vo25kf4b"]
+
+[ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="1_wweuu"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="2_qd6gt"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="3_ybjqf"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="4_5r7sf"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="5_lnvmy"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="6_588px"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="7_7unsc"]
+
+[sub_resource type="Resource" id="Resource_sau3o"]
+resource_local_to_scene = true
+script = ExtResource("2_qd6gt")
+font_size = 2.285
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_b7tor"]
+resource_local_to_scene = true
+script = ExtResource("3_ybjqf")
+font_size = 1.714
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_c1enp"]
+resource_local_to_scene = true
+script = ExtResource("4_5r7sf")
+font_size = 1.428
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_sjrtp"]
+resource_local_to_scene = true
+script = ExtResource("5_lnvmy")
+font_size = 1.142
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_0hsyd"]
+resource_local_to_scene = true
+script = ExtResource("6_588px")
+font_size = 1.0
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_8ql66"]
+resource_local_to_scene = true
+script = ExtResource("7_7unsc")
+font_size = 0.857
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_f2350"]
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="Mockup" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -1365.0
+offset_bottom = -499.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="v" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="MarkdownLabel" type="RichTextLabel" parent="v"]
+layout_mode = 2
+bbcode_enabled = true
+text = "[font_size=36]This is the first bit of text[/font_size]
+this is some text that probably explains the code"
+fit_content = true
+script = ExtResource("1_wweuu")
+markdown_text = "#This is the first bit of text
+this is some text that probably explains the code"
+h1 = SubResource("Resource_sau3o")
+h2 = SubResource("Resource_b7tor")
+h3 = SubResource("Resource_c1enp")
+h4 = SubResource("Resource_sjrtp")
+h5 = SubResource("Resource_0hsyd")
+h6 = SubResource("Resource_8ql66")
+
+[node name="CodeBlock" type="PanelContainer" parent="v"]
+layout_mode = 2
+
+[node name="V" type="VBoxContainer" parent="v/CodeBlock"]
+layout_mode = 2
+
+[node name="Header" type="PanelContainer" parent="v/CodeBlock/V"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_f2350")
+
+[node name="H" type="HBoxContainer" parent="v/CodeBlock/V/Header"]
+layout_mode = 2
+
+[node name="LanguageLabel" type="Label" parent="v/CodeBlock/V/Header/H"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "python"
+
+[node name="Button" type="Button" parent="v/CodeBlock/V/Header/H"]
+layout_mode = 2
+text = "copy"
+
+[node name="Button2" type="Button" parent="v/CodeBlock/V/Header/H"]
+layout_mode = 2
+tooltip_text = "Add to notebook"
+text = "Notetate"
+
+[node name="CodeText" type="RichTextLabel" parent="v/CodeBlock/V"]
+layout_mode = 2
+bbcode_enabled = true
+text = "[code]
+hello world this is a codeblock[/code]"
+fit_content = true
+script = ExtResource("1_wweuu")
+markdown_text = "```markdown
+hello world this is a codeblock
+```"
+h1 = SubResource("Resource_sau3o")
+h2 = SubResource("Resource_b7tor")
+h3 = SubResource("Resource_c1enp")
+h4 = SubResource("Resource_sjrtp")
+h5 = SubResource("Resource_0hsyd")
+h6 = SubResource("Resource_8ql66")
+
+[node name="MarkdownLabel4" type="RichTextLabel" parent="v"]
+layout_mode = 2
+bbcode_enabled = true
+text = "this is later text that probably is some LLM nonsense about doing other unrelated things"
+fit_content = true
+script = ExtResource("1_wweuu")
+markdown_text = "this is later text that probably is some LLM nonsense about doing other unrelated things"
+h1 = SubResource("Resource_sau3o")
+h2 = SubResource("Resource_b7tor")
+h3 = SubResource("Resource_c1enp")
+h4 = SubResource("Resource_sjrtp")
+h5 = SubResource("Resource_0hsyd")
+h6 = SubResource("Resource_8ql66")
