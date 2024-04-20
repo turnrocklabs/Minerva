@@ -15,7 +15,7 @@ func _ready():
 func _on_file_index_pressed(index):
 	match index:
 		0:
-			%fdgOpen.popup_centered(Vector2i(800, 600))
+			%fdgOpenFile.popup_centered(Vector2i(800, 600))
 			pass
 		1:
 			## Set a target size, have a border, and display the preferences popup.
@@ -35,5 +35,21 @@ func _on_save_keys_pressed():
 	pass
 
 
-func _on_button_5_pressed():
+## Handler:
+# _on_project_index_pressed handles the "Project" menu.
+func _on_project_index_pressed(index):
+	match index:
+		0:
+			## Create a new blank project
+			SingletonObject._new_project()
+			pass
+		1:
+			## Open a project
+			pass
+		2:
+			## Save a project
+			pass
+		3:
+			## Save as a project
+			pass
 	pass # Replace with function body.
