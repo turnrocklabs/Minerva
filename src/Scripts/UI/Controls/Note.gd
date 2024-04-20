@@ -1,9 +1,9 @@
 class_name Note
 extends PanelContainer
 
-@onready var label_node: LineEdit = $h/v/HBoxContainer/Title
-@onready var description_node: TextEdit = $h/v/Description
-@onready var checkbutton_node: CheckButton = $h/v/HBoxContainer/CheckButton
+@onready var label_node: LineEdit = $v/h/Title
+@onready var description_node: TextEdit = $v/Description
+@onready var checkbutton_node: CheckButton = $v/h/CheckButton
 
 @export var title: String
 @export var description: String
@@ -11,14 +11,15 @@ extends PanelContainer
 # this will react each time memory item is changed
 var memory_item: MemoryItem:
 	set(value):
-		if not value: return value
+		memory_item = value
+
+		if not value: return
+
 		label_node.text = value.Title
 		description_node.text = value.Content
 		checkbutton_node.button_pressed = value.Enabled
 
-		memory_item = value
 
-# when the drop is finished, show the dragged item again
 func _notification(notification_type):
 	match notification_type:
 		NOTIFICATION_DRAG_END:
@@ -28,11 +29,13 @@ func _notification(notification_type):
 func _replace_nodes(node1: Node, node2: Node) -> void:
 	var dragged_node_index = node1.get_index()
 
+	# var tween = get_tree().create_tween()
+	# tween.tween_property(node2, "position:y", node1.position.y, 0.1)
+
 	get_parent().move_child(node1, get_index())
 	get_parent().move_child(node2, dragged_node_index)
 
-# will create a preview of the node that we are draggind and hide the original node
-# the preview is just a duplicate of the original
+
 func _get_drag_data(at_position: Vector2) -> Note:
 
 	var preview = Container.new()
@@ -44,13 +47,10 @@ func _get_drag_data(at_position: Vector2) -> Note:
 
 	set_drag_preview(preview)
 
-	# hide the original, and show it again on drag end
 	modulate.a = 0
 
 	return self
 
-# this will check if we dragged the node above another Note node
-# if yes, swich places with the original(hidden) node
 func _can_drop_data(_at_position: Vector2, data):
 	if not data is Note: return false
 	
@@ -60,13 +60,22 @@ func _can_drop_data(_at_position: Vector2, data):
 
 	return true
 
-# if we dropped the node above another replace them with each other
 func _drop_data(at_position: Vector2, data):
 	data = data as Note
 
 	_replace_nodes(data, self)
 	
 
-# if the check button is clicked update the MemoryItem state to reflect that
+
 func _on_check_button_toggled(toggled_on: bool) -> void:
-	if memory_item: memory_item.Enabled = toggled_on
+	if memory_item:
+		memory_item.Enabled = toggled_on
+
+
+func _on_remove_button_pressed():
+	pivot_offset = size / 2
+
+	var tween = get_tree().create_tween()
+	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
+	tween.tween_callback(queue_free)
+
