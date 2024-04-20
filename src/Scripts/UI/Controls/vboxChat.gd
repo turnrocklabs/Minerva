@@ -24,8 +24,7 @@ func _ready():
 
 ## create some sort of textbox and put the content in there.
 func add_bot_message(message:BotResponse):
-	var box:ChatBox = ChatBox.new(self, ChatBox.CHATTYPE.BOT)
-	add_child(Message.bot_message(message))
+	add_child(MessageMarkdown.bot_message(message))
 	pass
 
 
@@ -35,7 +34,8 @@ func add_message():
 
 
 func add_user_message(message:BotResponse):
-	add_child(Message.user_message(message))
+	#add_child(Message.user_message(message))
+	add_child(MessageMarkdown.user_message(message))
 	pass
 
 func render_items():
