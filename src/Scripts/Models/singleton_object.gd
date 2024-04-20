@@ -80,12 +80,15 @@ func _ready():
 #endregion API Consumer
 
 #region Project Management
+signal NewProject
+signal OpenProject
+signal SaveProject
+signal SaveProjectAs
+signal CloseProject
 
-## Function:
-# _new_project empties all the tabs and lists currently stored as notes or chats.
-func _new_project():
-	initialize_notes()
-	initialize_chats(Provider, Chats)
-	pass
+func SerializeProject() -> String:
+	var Serializable: Dictionary = {}
+	Serializable['Notes'] = {'ThreadList' : ThreadList, 'NotesTab': NotesTab}
+	return (JSON.stringify(Serializable))
 
 #endregion Project Management
