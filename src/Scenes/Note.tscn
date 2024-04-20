@@ -29,8 +29,6 @@ grow_horizontal = 2
 mouse_default_cursor_shape = 13
 theme_override_styles/panel = SubResource("StyleBoxFlat_ks4wd")
 script = ExtResource("1_bjbgn")
-title = "test"
-description = "test"
 
 [node name="v" type="VBoxContainer" parent="."]
 layout_mode = 2
@@ -64,13 +62,14 @@ icon = ExtResource("4_05ydn")
 layout_mode = 2
 mouse_filter = 1
 
-[node name="Description" type="TextEdit" parent="v"]
+[node name="Description" type="RichTextLabel" parent="v"]
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
+focus_mode = 2
 theme_override_styles/normal = SubResource("StyleBoxFlat_33w73")
 text = "Lfforem ipsum dolor sit amet, consectetur adipiscing elit. Sed eget eleifend massa. Proin urna sapien, consectetur in nisi sit amet, pulvinar egestas neque. Etiam in hendrerit lectus, id sollicitudin lacus. Donec sed tempor ante. Praesent id sagittis erat. Fusce eleifend nisi tempus orci tincidunt congue. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus"
-wrap_mode = 1
 autowrap_mode = 2
+selection_enabled = true
 
 [connection signal="toggled" from="v/h/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="pressed" from="v/h/RemoveButton" to="." method="_on_remove_button_pressed"]
