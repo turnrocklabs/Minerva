@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://bhd81sauyxft2"]
+[gd_scene load_steps=2 format=3 uid="uid://cxyjul41lum6r"]
 
 [ext_resource type="PackedScene" uid="uid://biuab5o02veki" path="res://Scenes/Note.tscn" id="2_kbdwk"]
 
@@ -20,6 +20,7 @@ grow_vertical = 2
 
 [node name="Note" parent="VBoxContainer" instance=ExtResource("2_kbdwk")]
 layout_mode = 2
+size_flags_horizontal = 1
 title = "Note 1"
 
 [node name="Note2" parent="VBoxContainer" instance=ExtResource("2_kbdwk")]
