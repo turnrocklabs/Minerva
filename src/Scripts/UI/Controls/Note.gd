@@ -16,7 +16,7 @@ var memory_item: MemoryItem:
 		description_node.text = value.Content
 		checkbutton_node.button_pressed = value.Enabled
 
-		return value
+		memory_item = value
 
 # when the drop is finished, show the dragged item again
 func _notification(notification_type):
@@ -69,4 +69,4 @@ func _drop_data(at_position: Vector2, data):
 
 # if the check button is clicked update the MemoryItem state to reflect that
 func _on_check_button_toggled(toggled_on: bool) -> void:
-	memory_item.Enabled = toggled_on
+	if memory_item: memory_item.Enabled = toggled_on
