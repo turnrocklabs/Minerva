@@ -1,6 +1,6 @@
 extends Node
 
-## REGION Tabbed Objects
+#region Tabbed Objects
 var ThreadList: Array[MemoryThread]
 var NotesTab: MemoryTabs
 
@@ -9,9 +9,9 @@ func initialize_notes():
 	NotesTab.render_threads()
 	pass
 
-## ENDREGION Tabbed Objects
+#endregion Tabbed Objects
 
-## REGION Chats
+#region Chats
 var ChatList: Array[ChatHistory]
 var last_tab_index: int
 var active_chatindex: int
@@ -27,9 +27,9 @@ func initialize_chats(provider, _chats:ChatPane):
 	Chats.clear_all_chats()
 	pass
 
-## ENDREGION Chats
+#endregion Chats
 
-## REGION Common UI Tasks
+#region Common UI Tasks
 
 ###
 # Create a common error display system that will popup an error and show
@@ -43,9 +43,9 @@ func ErrorDisplay(error_title:String, error_message: String):
 	errorPopup.popup_centered()
 	pass
 
-## ENDREGION Common UI Tasks
+#endregion Common UI Tasks
 
-## REGION API Consumer
+#region API Consumer
 enum API_PROVIDER {GOOGLE, OPENAI, ANTHROPIC}
 
 var config_file: ConfigFile
@@ -77,9 +77,9 @@ func _ready():
 			config_file.set_value("API KEYS", "OPENAI", "")
 			load_api_keys()
 
-## ENDREGION API Consumer
+#endregion API Consumer
 
-## REGION Project Management
+#region Project Management
 
 ## Function:
 # _new_project empties all the tabs and lists currently stored as notes or chats.
@@ -88,4 +88,4 @@ func _new_project():
 	initialize_chats(Provider, Chats)
 	pass
 
-## ENDREGION Project Management
+#endregion Project Management
