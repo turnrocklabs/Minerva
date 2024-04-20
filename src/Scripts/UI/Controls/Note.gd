@@ -1,12 +1,10 @@
 class_name Note
 extends PanelContainer
 
-@onready var label_node: LineEdit = $v/h/Title
-@onready var description_node: TextEdit = $v/Description
 @onready var checkbutton_node: CheckButton = $v/h/CheckButton
+@onready var label_node: LineEdit = $v/h/Title
+@onready var description_node: RichTextLabel = $v/Description
 
-@export var title: String
-@export var description: String
 
 # this will react each time memory item is changed
 var memory_item: MemoryItem:
@@ -20,6 +18,11 @@ var memory_item: MemoryItem:
 		checkbutton_node.button_pressed = value.Enabled
 
 
+func _ready():
+	label_node.connect("text_changed", func(text): if memory_item: memory_item.Title = text)
+
+
+# show the dragged node when the drag ends
 func _notification(notification_type):
 	match notification_type:
 		NOTIFICATION_DRAG_END:
@@ -29,13 +32,11 @@ func _notification(notification_type):
 func _replace_nodes(node1: Node, node2: Node) -> void:
 	var dragged_node_index = node1.get_index()
 
-	# var tween = get_tree().create_tween()
-	# tween.tween_property(node2, "position:y", node1.position.y, 0.1)
-
 	get_parent().move_child(node1, get_index())
 	get_parent().move_child(node2, dragged_node_index)
 
-
+# create a preview which is just duplicated Note node
+# and make the original node transparent
 func _get_drag_data(at_position: Vector2) -> Note:
 
 	var preview = Container.new()
