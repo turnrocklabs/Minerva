@@ -1,0 +1,46 @@
+[gd_scene load_steps=4 format=3 uid="uid://biuab5o02veki"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ks4wd"]
+content_margin_left = 15.0
+content_margin_top = 15.0
+content_margin_right = 15.0
+content_margin_bottom = 15.0
+bg_color = Color(0.133333, 0.133333, 0.133333, 1)
+corner_radius_top_left = 25
+corner_radius_top_right = 25
+corner_radius_bottom_right = 25
+corner_radius_bottom_left = 25
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_33w73"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[node name="Note" type="PanelContainer"]
+offset_right = 1890.0
+offset_bottom = 173.0
+grow_horizontal = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_ks4wd")
+script = ExtResource("1_bjbgn")
+title = "test"
+description = "test"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Title" type="LineEdit" parent="VBoxContainer"]
+layout_mode = 2
+text = "Lfforem ipsum dolor sit amet"
+flat = true
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+layout_mode = 2
+mouse_filter = 1
+
+[node name="Description" type="TextEdit" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_33w73")
+text = "Lfforem ipsum dolor sit amet, consectetur adipiscing elit. Sed eget eleifend massa. Proin urna sapien, consectetur in nisi sit amet, pulvinar egestas neque. Etiam in hendrerit lectus, id sollicitudin lacus. Donec sed tempor ante. Praesent id sagittis erat. Fusce eleifend nisi tempus orci tincidunt congue. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus"
+wrap_mode = 1
+autowrap_mode = 2

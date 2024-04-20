@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=9 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Script" path="res://Scripts/ThreadView.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/menuMain.gd" id="1_oipdw"]
@@ -10,6 +10,13 @@
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
 font_color = Color(1, 0, 0, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_v4lmg"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(0.172549, 0.172549, 0.172549, 1)
 
 [node name="RootControl" type="Control"]
 layout_mode = 3
@@ -269,6 +276,7 @@ text = "New"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_v4lmg")
 script = ExtResource("1_gunt8")
 
 [connection signal="pressed" from="PreferencesPopup/VBoxContainer/HBoxContainer4/btnSavePrefs" to="VBoxRoot/menuMain" method="_on_save_keys_pressed"]
