@@ -19,7 +19,10 @@ var memory_item: MemoryItem:
 
 
 func _ready():
-	label_node.connect("text_changed", func(text): if memory_item: memory_item.Title = text)
+	label_node.text_changed.connect(
+		func(text):
+			if memory_item: memory_item.Title = text
+	)
 
 
 # show the dragged node when the drag ends
@@ -80,3 +83,28 @@ func _on_remove_button_pressed():
 	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
 	tween.tween_callback(queue_free)
 
+
+
+func _on_edit_button_pressed():
+	var ep: EditorPane = $"/root/RootControl/VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane"
+
+	for i in range(ep.Tabs.get_tab_count()):
+		var tab_control = ep.Tabs.get_tab_control(i)
+
+		if tab_control.get_meta("associated_object") == memory_item:
+			ep.Tabs.current_tab = i
+			return
+
+	var note_editor = NoteEditor.create(memory_item)
+
+	note_editor.on_memory_item_changed.connect(func(): memory_item = note_editor.memory_item)
+
+	var container = ep.add(note_editor, memory_item.Title)
+
+	container.set_meta("associated_object", memory_item)
+
+	# also change tab title if title has changed
+	label_node.text_changed.connect(
+		func(text):
+			container.name = text
+	)

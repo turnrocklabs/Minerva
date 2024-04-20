@@ -1,9 +1,10 @@
-[gd_scene load_steps=8 format=3 uid="uid://biuab5o02veki"]
+[gd_scene load_steps=9 format=3 uid="uid://biuab5o02veki"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
 [ext_resource type="Texture2D" uid="uid://bfichs8o3wt8b" path="res://assets/icons/drag.png" id="2_fkdjp"]
 [ext_resource type="Texture2D" uid="uid://ciq3i7lnhmr41" path="res://assets/icons/checkbutton_checked.png" id="2_jstr6"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
+[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="4_vm57c"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ks4wd"]
 content_margin_left = 15.0
@@ -54,6 +55,10 @@ size_flags_horizontal = 3
 text = "Lfforem ipsum dolor sit amet"
 flat = true
 
+[node name="EditButton" type="Button" parent="v/h"]
+layout_mode = 2
+icon = ExtResource("4_vm57c")
+
 [node name="RemoveButton" type="Button" parent="v/h"]
 layout_mode = 2
 icon = ExtResource("4_05ydn")
@@ -72,4 +77,5 @@ autowrap_mode = 2
 selection_enabled = true
 
 [connection signal="toggled" from="v/h/CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="pressed" from="v/h/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="v/h/RemoveButton" to="." method="_on_remove_button_pressed"]

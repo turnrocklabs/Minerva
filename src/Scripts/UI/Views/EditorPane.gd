@@ -23,7 +23,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 	container.remove_child(control)
 
 
-func add(item:Control, _name:String):
+func add(item:Control, _name:String) -> Node:
 	#Add a scroll container to the tabs and put the item in there.
 
 	var scrollable = ScrollContainer.new()
@@ -34,6 +34,9 @@ func add(item:Control, _name:String):
 	scrollable.add_child(item)
 
 	self.Tabs.add_child(scrollable)
+	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
+
+	return scrollable
 
 
 # Create a new viewer/editor depending on type 
