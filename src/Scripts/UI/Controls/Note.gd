@@ -14,7 +14,7 @@ var memory_item: MemoryItem = MemoryItem.new("TEST NOTE BREE"):
 		if not value: return value
 		label_node.text = value.Title
 		description_node.text = value.Content
-		checkbutton_node.toggle_mode = value.Enabled
+		checkbutton_node.button_pressed = value.Enabled
 
 		return value
 
