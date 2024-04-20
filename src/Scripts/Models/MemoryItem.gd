@@ -3,7 +3,7 @@ extends RefCounted ## so I get memory management and signals.
 
 ## MemoryItem is my stab at a single memory item that I can then use as I want.
 
-var Enabled: bool
+var Enabled: bool = true
 var Title: String
 var Content: String
 var Visible: bool
