@@ -25,23 +25,20 @@ func save_project():
 		return(save_project_as())
 	# ask the singleton to serialize all state vars.
 	
-	var serialized: Array[String] = serialize_project()
-	print(serialized)
-	# var save_file = FileAccess.open(save_path, FileAccess.WRITE)
-	# for line: String in serialized:
-	# 	save_file.store_line(line)
+	var serialized: String = serialize_project()
+	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
+	save_file.store_line(serialized)
 	pass
 
 ## Function:
 # serialize_project iterates through the notes and chats and creates an array
 # each line in the array is the contents of either the notes or the chats.
-func serialize_project() -> Array[String]:
-	var output: Array[String] = [] ## a set of lines, each serialized objects
+func serialize_project() -> String:
 	var notes: Array[String] = []  ## the serialized working memory (aka notes) 
 	var chats: Array[String] = []  ## the chats seriazlized
-	var chat_provider: String = "" ## Which chat provider is active
 	var active_notes_index: int = 0 ## which of the notes tabs is selected and active
 	var active_chat_index: int = 0 ## which chat tab is active
+	var last_tab_index: int = 0 ##
 
 	# Serialize the notes first.
 	for note_tab: MemoryThread in SingletonObject.ThreadList:
@@ -52,9 +49,15 @@ func serialize_project() -> Array[String]:
 	for chat_thread: ChatHistory in SingletonObject.ChatList:
 		var serialized_chat_tab: String = chat_thread.Serialize()
 		chats.append(serialized_chat_tab)
-	
 
-	return chats
+	var save_dict: Dictionary = {
+		"ThreadList" : notes,
+		"ChatList" : chats,
+		"last_tab_index": SingletonObject.last_tab_index,
+		"active_chatindex": SingletonObject.active_chatindex
+	}
+	var stringified_save: String = JSON.stringify(save_dict)
+	return stringified_save
 
 func close_project():
 	save_project()

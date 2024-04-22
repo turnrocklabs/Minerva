@@ -85,5 +85,7 @@ signal OpenProject
 signal SaveProject
 signal SaveProjectAs
 signal CloseProject
+signal RedrawAll
+
 
 #endregion Project Management
