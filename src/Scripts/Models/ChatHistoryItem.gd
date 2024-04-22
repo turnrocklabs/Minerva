@@ -21,3 +21,17 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 func format(callback: Callable) -> String:
 	var output: String = callback.call(self)
 	return output
+
+
+## Function:
+# Serialize the item to a string
+func Serialize() -> String:
+	var save_dict: Dictionary = {
+		"Role": Role,
+		"Message" : Message,
+		"Base64Data" : Base64Data,
+		"Order" : Order,
+		"Type" : Type
+	}
+	var stringified = JSON.stringify(save_dict)
+	return stringified
