@@ -86,9 +86,4 @@ signal SaveProject
 signal SaveProjectAs
 signal CloseProject
 
-func SerializeProject() -> String:
-	var Serializable: Dictionary = {}
-	Serializable['Notes'] = {'ThreadList' : ThreadList, 'NotesTab': NotesTab}
-	return (JSON.stringify(Serializable))
-
 #endregion Project Management

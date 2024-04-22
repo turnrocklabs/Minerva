@@ -5,9 +5,11 @@ var save_path: String
 
 ## Function:
 # _new_project empties all the tabs and lists currently stored as notes or chats.
+# it also blanks out the save file variable to force a save_as
 func _new_project():
 	SingletonObject.initialize_notes()
 	SingletonObject.initialize_chats(SingletonObject.Provider, SingletonObject.Chats)
+	save_path = ""
 	pass
 
 func save_project_as(file=""):
@@ -23,13 +25,31 @@ func save_project():
 		return(save_project_as())
 	# ask the singleton to serialize all state vars.
 	
-	var serialized: String = SingletonObject.SerializeProject()
-	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
-	save_file.store_line(serialized)
+	var serialized: Array[String] = serialize_project()
 	print(serialized)
+	# var save_file = FileAccess.open(save_path, FileAccess.WRITE)
+	# for line: String in serialized:
+	# 	save_file.store_line(line)
 	pass
+
+## Function:
+# serialize_project iterates through the notes and chats and creates an array
+# each line in the array is the contents of either the notes or the chats.
+func serialize_project() -> Array[String]:
+	var output: Array[String] = [] ## a set of lines, each serialized objects
+	var notes: Array[String] = []  ## the serialized working memory (aka notes) 
+	var chats: Array[String] = []  ## the chats seriazlized
+	var chat_provider: String = "" ## Which chat provider is active
+	var active_notes_index: int = 0 ## which of the notes tabs is selected and active
+	var active_chat_index: int = 0 ## which chat tab is active
+
+	# Serialize the notes first.
+	for note_tab: MemoryThread in SingletonObject.ThreadList:
+		var serialized_note_tab:String = note_tab.Serialize()
+		notes.append(serialized_note_tab)
 	
-	
+
+	return notes
 
 func close_project():
 	save_project()
