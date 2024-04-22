@@ -48,8 +48,13 @@ func serialize_project() -> Array[String]:
 		var serialized_note_tab:String = note_tab.Serialize()
 		notes.append(serialized_note_tab)
 	
+	# Now serialize the chats.
+	for chat_thread: ChatHistory in SingletonObject.ChatList:
+		var serialized_chat_tab: String = chat_thread.Serialize()
+		chats.append(serialized_chat_tab)
+	
 
-	return notes
+	return chats
 
 func close_project():
 	save_project()

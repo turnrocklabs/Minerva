@@ -33,3 +33,21 @@ func To_Prompt() -> Array[Variant]:
 		var item: Variant = Provider.Format(chat)
 		retVal.append(item)
 	return retVal
+
+## Function:
+# Serialize creates a JSON representation of this instance.
+func Serialize() -> String:
+	var serialized_items: Array[String] = []
+	for chat_history_item: ChatHistoryItem in HistoryItemList:
+		var searialized_item: String = chat_history_item.Serialize()
+		serialized_items.append(searialized_item)
+
+	var save_dict:Dictionary = {
+		"HistoryId" : HistoryId,
+		"HistoryName" : HistoryName,
+		"HistoryItemList" : serialized_items
+	}
+
+	var output: String = JSON.stringify(save_dict)
+	return output
+
