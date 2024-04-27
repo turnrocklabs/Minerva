@@ -90,6 +90,8 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	for key in additional_params:
 		request_body[key] = additional_params[key]
 	var body_stringified: String = JSON.stringify(request_body)
+	
+	print(body_stringified)
 	#body_stringified = '{"contents": [{"role":"user", "parts":[{"text":"what is a cat?"}]}]}'
 	var response = await make_request("%s/models/gemini-1.0-pro:generateContent" % BASE_URL, HTTPClient.METHOD_POST, body_stringified)
 	return response

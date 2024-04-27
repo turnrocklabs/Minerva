@@ -18,43 +18,53 @@ func _on_new_chat():
 
 ## Function:
 # create_prompt generates the full turn prompt
-func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = false) -> Array[Variant]:
+func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = false, inspect:= false) -> Array[Variant]:
 	# make sure we have an active chat
 	if len(SingletonObject.ChatList) <= SingletonObject.active_chatindex:
 		_on_new_chat()
 
 	## Get the working memory and append the user message to chat history
 	var prompt_for_turn: String = ""
-	var working_memory:String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
-	
+
+	var working_memory: String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
+
 	# disable the notes if we are asked
 	if disable_notes:
 		SingletonObject.NotesTab.Disable_All()
+	
+	print("Working memory")
+	print(working_memory)
+	print(%txtMainUserInput.text)
 
 	## get the message for completion, appending a new items if given
 	var history: ChatHistory = SingletonObject.ChatList[SingletonObject.active_chatindex]
+
 	if append_item != null:
 		if len(working_memory) > 0:
 			append_item.Message = working_memory + "\n" + append_item.Message
-		 
+		
 		history.HistoryItemList.append(append_item)
 		SingletonObject.ChatList[SingletonObject.active_chatindex] = history
 	
 	var history_list: Array[Variant] = history.To_Prompt();
+
+	if inspect: history.HistoryItemList.pop_back()
+
 	return history_list
 
 func _on_btn_inspect_pressed():
-	## generate the JSON string we would send to the model.
-	var history_list: Array[Variant] = self.create_prompt()
-	
-	## append the message to the history
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
-	var formatted = SingletonObject.Provider.Format(new_history_item)
-	history_list.append(formatted)
 
-	var stringified_history:String = JSON.stringify(history_list)
+	## generate the JSON string we would send to the model.
+	var history_list: Array[Variant] = self.create_prompt(new_history_item, false, true)
+
+	# var formatted = SingletonObject.Provider.Format(new_history_item)
+
+	# history_list.append(formatted)
+
+	var stringified_history:String = JSON.stringify(history_list, "\t")
 	%cdePrompt.text = stringified_history
 	
 	## show the inspector popup
@@ -133,7 +143,9 @@ func _on_btn_memorize_pressed():
 	var user_title = %txtMemoryTitle.text
 	var user_body = %txtMainUserInput.text
 	SingletonObject.NotesTab.add_note(user_title, user_body)
-	pass # Replace with function body.
+
+	%txtMemoryTitle.text = ""
+	%txtMainUserInput.text = ""
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
