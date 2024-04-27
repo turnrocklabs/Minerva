@@ -18,7 +18,7 @@ func _on_new_chat():
 
 ## Function:
 # create_prompt generates the full turn prompt
-func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = false) -> Array[Variant]:
+func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = false, inspect:= false) -> Array[Variant]:
 	# make sure we have an active chat
 	if len(SingletonObject.ChatList) <= SingletonObject.active_chatindex:
 		_on_new_chat()
@@ -34,17 +34,22 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	
 	print("Working memory")
 	print(working_memory)
+	print(%txtMainUserInput.text)
 
 	## get the message for completion, appending a new items if given
 	var history: ChatHistory = SingletonObject.ChatList[SingletonObject.active_chatindex]
+
 	if append_item != null:
 		if len(working_memory) > 0:
 			append_item.Message = working_memory + "\n" + append_item.Message
-		 
+		
 		history.HistoryItemList.append(append_item)
 		SingletonObject.ChatList[SingletonObject.active_chatindex] = history
 	
 	var history_list: Array[Variant] = history.To_Prompt();
+
+	if inspect: history.HistoryItemList.pop_back()
+
 	return history_list
 
 func _on_btn_inspect_pressed():
@@ -53,7 +58,7 @@ func _on_btn_inspect_pressed():
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
 
 	## generate the JSON string we would send to the model.
-	var history_list: Array[Variant] = self.create_prompt(new_history_item)
+	var history_list: Array[Variant] = self.create_prompt(new_history_item, false, true)
 
 	# var formatted = SingletonObject.Provider.Format(new_history_item)
 
