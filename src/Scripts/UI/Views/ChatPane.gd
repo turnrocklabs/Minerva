@@ -25,10 +25,15 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 
 	## Get the working memory and append the user message to chat history
 	var prompt_for_turn: String = ""
-	var working_memory:String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
+
+	var working_memory: String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
+
 	# disable the notes if we are asked
 	if disable_notes:
 		SingletonObject.NotesTab.Disable_All()
+	
+	print("Working memory")
+	print(working_memory)
 
 	## get the message for completion, appending a new items if given
 	var history: ChatHistory = SingletonObject.ChatList[SingletonObject.active_chatindex]
@@ -43,14 +48,16 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	return history_list
 
 func _on_btn_inspect_pressed():
-	## generate the JSON string we would send to the model.
-	var history_list: Array[Variant] = self.create_prompt()
-	## append the message to the history
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
-	var formatted = SingletonObject.Provider.Format(new_history_item)
-	history_list.append(formatted)
+
+	## generate the JSON string we would send to the model.
+	var history_list: Array[Variant] = self.create_prompt(new_history_item)
+
+	# var formatted = SingletonObject.Provider.Format(new_history_item)
+
+	# history_list.append(formatted)
 
 	var stringified_history:String = JSON.stringify(history_list, "\t")
 	%cdePrompt.text = stringified_history
