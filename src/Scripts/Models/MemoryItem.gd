@@ -19,3 +19,18 @@ func _init(_OwningThread:String):
 
 func _enable_toggle():
 	self.Enabled = !self.Enabled
+
+## Function:
+# Serialize takes this instance of a MemoryItem and serializes it so it can be represented as JSON
+func Serialize() -> String:
+	var save_dict:Dictionary = {
+		"Enabled": Enabled,
+		"Title": Title,
+		"Content": Content,
+		"Visible": Visible,
+		"Pinned": Pinned,
+		"Order": Order,
+		"OwningThread": OwningThread
+	}
+	var output:String = JSON.stringify(save_dict)
+	return output

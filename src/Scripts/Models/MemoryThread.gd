@@ -20,3 +20,20 @@ func _init(optional_threadId = null):
 		self.ThreadId = optional_threadId
 	pass
 
+## Function:
+# serialize the contents into a single structure
+func Serialize() -> String:
+	var serialized_memories: Array[String] = []
+
+	for memory_item: MemoryItem in MemoryItemList:
+		var serialized_memory: String = memory_item.Serialize()
+		serialized_memories.append(serialized_memory)
+
+	var save_dict: Dictionary = {
+		"ThreadId": ThreadId,
+		"ThreadName": ThreadName,
+		"MemoryItemList": serialized_memories
+	}
+
+	var output:String = JSON.stringify(save_dict)
+	return output
