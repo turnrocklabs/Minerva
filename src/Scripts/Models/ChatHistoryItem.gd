@@ -35,3 +35,15 @@ func Serialize() -> String:
 	}
 	var stringified = JSON.stringify(save_dict)
 	return stringified
+
+
+static func Deserialize(data: Dictionary) -> ChatHistoryItem:
+	
+	var chi = ChatHistoryItem.new()
+
+	var properties = ["Role", "Message", "Base64Data", "Order", "Type"]
+
+	for prop in properties:
+		chi.set(prop, data.get(prop))
+
+	return chi

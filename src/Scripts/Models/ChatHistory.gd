@@ -51,3 +51,17 @@ func Serialize() -> String:
 	var output: String = JSON.stringify(save_dict)
 	return output
 
+
+static func Deserialize(data: Dictionary) -> ChatHistory:
+	
+	# FIXME: What provider to pass?
+	var ch = ChatHistory.new(null)
+
+	ch.HistoryId = data.get("HistoryId")
+	ch.HistoryName = data.get("HistoryName")
+
+	for chi_data in data.get("HistoryItemList", []):
+		ch.HistoryItemList.append(ChatHistoryItem.Deserialize(chi_data))
+
+	return ch
+
