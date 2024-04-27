@@ -41,15 +41,18 @@ func _on_project_index_pressed(index):
 	match index:
 		0:
 			## Create a new blank project
-			SingletonObject._new_project()
+			SingletonObject.NewProject.emit()
 			pass
 		1:
 			## Open a project
+			SingletonObject.OpenProject.emit()
 			pass
 		2:
 			## Save a project
+			SingletonObject.SaveProject.emit()
 			pass
 		3:
 			## Save as a project
+			SingletonObject.SaveProjectAs.emit()
 			pass
 	pass # Replace with function body.
