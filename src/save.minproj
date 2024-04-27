@@ -1,0 +1,21 @@
+{
+	"ThreadList": [
+		{
+			"MemoryItemList": [
+				{
+					"Content": "52352tsdg",
+					"Enabled": true,
+					"Order": 0,
+					"OwningThread": "409ac5f6002a94f21762335d206642d27ab4324fb7893f6589a8b7a76f18c66c",
+					"Pinned": false,
+					"Title": "432532",
+					"Visible": true
+				}
+			],
+			"ThreadId": "409ac5f6002a94f21762335d206642d27ab4324fb7893f6589a8b7a76f18c66c",
+			"ThreadName": "sdgsg"
+		}
+	],
+	"active_chatindex": 0,
+	"last_tab_index": 0
+}

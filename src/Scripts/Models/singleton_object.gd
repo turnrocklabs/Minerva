@@ -4,8 +4,9 @@ extends Node
 var ThreadList: Array[MemoryThread]
 var NotesTab: MemoryTabs
 
-func initialize_notes():
-	ThreadList = []
+func initialize_notes(threads: Array[MemoryThread] = []):
+	ThreadList = threads
+	
 	NotesTab.render_threads()
 	pass
 
