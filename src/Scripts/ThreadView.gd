@@ -58,7 +58,8 @@ func _on_btn_create_thread_pressed():
 	var at = %NewThreadPopup.get_meta("associated_tab")
 
 	if at:
-		at.name = tab_name
+		at.get_meta("thread").ThreadName = tab_name
+		render_threads()
 	else:
 		var thread = MemoryThread.new()
 		thread.ThreadName = tab_name
@@ -138,13 +139,23 @@ func render_thread(thread_item: MemoryThread):
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
 	var foo: String = thread_item.ThreadName
 	scroll_container.name = foo  # Set the tab title
+	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
 	%tcThreads.add_child(scroll_container)
 	pass
 
 
 func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)
-	container.remove_child(control)
+	
+	# this is the thread index in the list, not it's id
+	var thread_idx = SingletonObject.ThreadList.find(control.get_meta("thread"))
+	if thread_idx != -1:
+		SingletonObject.ThreadList.remove_at(thread_idx)
+		render_threads()
+	
+	# container.remove_child(control)
+
+	
 
 
 # Called when the node enters the scene tree for the first time.
