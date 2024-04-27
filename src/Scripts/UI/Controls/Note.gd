@@ -1,6 +1,8 @@
 class_name Note
 extends PanelContainer
 
+signal note_deleted()
+
 @onready var checkbutton_node: CheckButton = $v/h/CheckButton
 @onready var label_node: LineEdit = $v/h/Title
 @onready var description_node: RichTextLabel = $v/Description
@@ -82,6 +84,8 @@ func _on_remove_button_pressed():
 	var tween = get_tree().create_tween()
 	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
 	tween.tween_callback(queue_free)
+
+	note_deleted.emit()
 
 
 

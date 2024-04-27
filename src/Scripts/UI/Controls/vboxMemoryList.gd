@@ -26,8 +26,6 @@ func _notification(notification_type):
 				note.memory_item.Order = note.get_index()
 
 func render_items():
-	var order = 0  # Initial order value
-
 	for item in Memories:
 		var note_control: Note = load("res://Scenes/Note.tscn").instantiate()
 		
@@ -35,6 +33,9 @@ func render_items():
 		await note_control.ready
 
 		note_control.memory_item = item
+
+		# when the note control is deleted, delete the memory item, so it doesnt get rerendered next time
+		note_control.note_deleted.connect(self.MainTabContainer.delete_note.bind(item))
 
 		# print("ALO")
 		# print(note_control.label_node)

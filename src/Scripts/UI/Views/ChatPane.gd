@@ -26,7 +26,6 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	## Get the working memory and append the user message to chat history
 	var prompt_for_turn: String = ""
 	var working_memory:String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
-	
 	# disable the notes if we are asked
 	if disable_notes:
 		SingletonObject.NotesTab.Disable_All()
@@ -46,7 +45,6 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 func _on_btn_inspect_pressed():
 	## generate the JSON string we would send to the model.
 	var history_list: Array[Variant] = self.create_prompt()
-	
 	## append the message to the history
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	new_history_item.Message = %txtMainUserInput.text
@@ -54,7 +52,7 @@ func _on_btn_inspect_pressed():
 	var formatted = SingletonObject.Provider.Format(new_history_item)
 	history_list.append(formatted)
 
-	var stringified_history:String = JSON.stringify(history_list)
+	var stringified_history:String = JSON.stringify(history_list, "\t")
 	%cdePrompt.text = stringified_history
 	
 	## show the inspector popup
@@ -133,7 +131,9 @@ func _on_btn_memorize_pressed():
 	var user_title = %txtMemoryTitle.text
 	var user_body = %txtMainUserInput.text
 	SingletonObject.NotesTab.add_note(user_title, user_body)
-	pass # Replace with function body.
+
+	%txtMemoryTitle.text = ""
+	%txtMainUserInput.text = ""
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
