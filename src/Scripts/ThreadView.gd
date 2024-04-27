@@ -118,8 +118,17 @@ func render_thread(thread_item: MemoryThread):
 	%tcThreads.add_child(scroll_container)
 	pass
 
+
+func _on_close_tab(tab: int, container: TabContainer):
+	var control = container.get_tab_control(tab)
+	container.remove_child(control)
+
+
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	%tcThreads.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+	%tcThreads.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreads))
+
 	SingletonObject.ThreadList = []
 	SingletonObject.NotesTab = self
 	render_threads()
