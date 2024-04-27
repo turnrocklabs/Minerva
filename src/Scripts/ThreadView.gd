@@ -28,23 +28,46 @@ func Disable_All():
 	self.render_threads()
 	pass
 
-func _on_new_pressed():
+
+func open_threads_popup(name: String = "", tab = null):
 	var target_size = %VBoxRoot.size - Vector2(100, 100)
 	%NewThreadPopup.borderless = false
 	%NewThreadPopup.size = target_size
-	%NewThreadPopup.popup_centered()
-	pass
+	
+	# %NewThreadPopup/VBoxContainer/HBoxTopRow/txtNewTabName
+	%txtNewTabName.text = name
 
+	var update = tab != null
+
+	# set metadata so we can determine should we create new or update existing and which tab, when we click the button in the popup
+	if update: %NewThreadPopup.set_meta("associated_tab", %tcThreads.get_child(tab))
+	else: %NewThreadPopup.remove_meta("associated_tab")
+	
+	var btn_text = "Update" if update else "Create"
+	%NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread.text = btn_text
+	
+	%NewThreadPopup.popup_centered()
+
+
+func _on_new_pressed():
+	open_threads_popup()
+	
 func _on_btn_create_thread_pressed():
 	var tab_name:String = %txtNewTabName.text
-	var thread = MemoryThread.new()
-	thread.ThreadName = tab_name
-	var thread_memories: Array[MemoryItem] = []
-	thread.MemoryItemList = thread_memories
-	SingletonObject.ThreadList.append(thread)
-	render_thread(thread)
+
+	var at = %NewThreadPopup.get_meta("associated_tab")
+
+	if at:
+		at.name = tab_name
+	else:
+		var thread = MemoryThread.new()
+		thread.ThreadName = tab_name
+		var thread_memories: Array[MemoryItem] = []
+		thread.MemoryItemList = thread_memories
+		SingletonObject.ThreadList.append(thread)
+		render_thread(thread)
+	
 	%NewThreadPopup.hide()
-	pass # Replace with function body.
 
 func _on_tab_changed(tab_index):
 	self.ActiveThreadIndex = tab_index
@@ -136,3 +159,12 @@ func _ready():
 	pass
 
 
+var clicked:= false
+func _on_tab_clicked(tab: int):
+	
+	if clicked:
+		var tab_title = get_tab_bar().get_tab_title(tab)
+		open_threads_popup(tab_title, tab)
+
+	clicked = true
+	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
