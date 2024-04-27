@@ -1,6 +1,6 @@
 extends Node
 
-#region Tabbed Objects
+#region Notes
 var ThreadList: Array[MemoryThread]
 var NotesTab: MemoryTabs
 
@@ -9,7 +9,7 @@ func initialize_notes():
 	NotesTab.render_threads()
 	pass
 
-#endregion Tabbed Objects
+#endregion Notes
 
 #region Chats
 var ChatList: Array[ChatHistory]
@@ -72,7 +72,7 @@ func _ready():
 			load_api_keys()
 		ERR_FILE_NOT_FOUND:
 			# populare config file with default settings
-			config_file.set_value("API KEYS", "GOOGLE_VERTEX", "CAT")
+			config_file.set_value("API KEYS", "GOOGLE_VERTEX", "")
 			config_file.set_value("API KEYS", "ANTHROPIC", "")
 			config_file.set_value("API KEYS", "OPENAI", "")
 			load_api_keys()
@@ -80,12 +80,12 @@ func _ready():
 #endregion API Consumer
 
 #region Project Management
+signal NewProject
+signal OpenProject
+signal SaveProject
+signal SaveProjectAs
+signal CloseProject
+signal RedrawAll
 
-## Function:
-# _new_project empties all the tabs and lists currently stored as notes or chats.
-func _new_project():
-	initialize_notes()
-	initialize_chats(Provider, Chats)
-	pass
 
 #endregion Project Management

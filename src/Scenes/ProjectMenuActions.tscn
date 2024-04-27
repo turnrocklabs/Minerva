@@ -1,11 +1,21 @@
-[gd_scene format=3 uid="uid://c2keqxkbywbk7"]
+[gd_scene load_steps=2 format=3 uid="uid://c2keqxkbywbk7"]
 
-[node name="Control" type="Control"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/ProjectMenuActions.gd" id="1_qee6b"]
+
+[node name="ProjectManagement" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("1_qee6b")
+
+[node name="fdgSaveAs" type="FileDialog" parent="."]
+unique_name_in_owner = true
+access = 2
+filters = PackedStringArray("*.minproj")
 
 [node name="PopupPanel" type="PopupPanel" parent="."]
+
+[connection signal="file_selected" from="fdgSaveAs" to="." method="_on_fdg_save_as_file_selected"]
