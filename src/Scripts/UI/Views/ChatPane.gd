@@ -31,10 +31,6 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	# disable the notes if we are asked
 	if disable_notes:
 		SingletonObject.NotesTab.Disable_All()
-	
-	print("Working memory")
-	print(working_memory)
-	print(%txtMainUserInput.text)
 
 	## get the message for completion, appending a new items if given
 	var history: ChatHistory = SingletonObject.ChatList[SingletonObject.active_chatindex]
@@ -123,7 +119,14 @@ func render_history(chat_history: ChatHistory):
 	var _name = chat_history.HistoryName
 	scroll_container.name = _name
 	%tcChats.add_child(scroll_container)
-	pass
+
+	for item in chat_history.HistoryItemList:
+		if item.Role == item.ChatRole.USER:
+			SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_user_message(item.to_bot_response())
+		elif item.Role in [item.ChatRole.MODEL, item.ChatRole.ASSISTANT]:
+			SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_bot_message(item.to_bot_response())
+
+
 
 # Called when the node enters the scene tree for the first time.
 func _ready():

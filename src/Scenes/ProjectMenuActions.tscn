@@ -4,11 +4,10 @@
 
 [node name="ProjectManagement" type="Control"]
 layout_mode = 3
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
 grow_horizontal = 2
-grow_vertical = 2
 script = ExtResource("1_qee6b")
 
 [node name="fdgOpenProject" type="FileDialog" parent="."]
@@ -27,5 +26,15 @@ filters = PackedStringArray("*.minproj")
 
 [node name="PopupPanel" type="PopupPanel" parent="."]
 
+[node name="ExitConfirmationDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Are you sure?"
+size = Vector2i(269, 100)
+ok_button_text = "Save"
+dialog_text = "Do you want to save the project?"
+
 [connection signal="file_selected" from="fdgOpenProject" to="." method="_on_fdg_open_project_file_selected"]
 [connection signal="file_selected" from="fdgSaveAs" to="." method="_on_fdg_save_as_file_selected"]
+[connection signal="canceled" from="ExitConfirmationDialog" to="." method="_on_exit_confirmation_dialog_canceled"]
+[connection signal="confirmed" from="ExitConfirmationDialog" to="." method="_on_exit_confirmation_dialog_confirmed"]
+[connection signal="custom_action" from="ExitConfirmationDialog" to="." method="_on_exit_confirmation_dialog_custom_action"]

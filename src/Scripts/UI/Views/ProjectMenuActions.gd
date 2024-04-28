@@ -1,6 +1,9 @@
 class_name ProjectMenu
 extends Control
 
+# Whether the user selected the file or closed the dialog this signal is emitted
+signal save_as_dialog_exited()
+
 var save_path: String
 
 ## Function:
@@ -16,24 +19,31 @@ func _new_project():
 func open_project():
 	%fdgOpenProject.popup_centered(Vector2i(800, 600))
 
-
+# This function can be awaited, which will resolve when the dialog is exited on 'file_selected' or 'canceled'
 func save_project_as(file=""):
 	if file == "":
 		%fdgSaveAs.popup_centered(Vector2i(800, 600))
+
+		(%fdgSaveAs as FileDialog).file_selected.connect(func(_p): save_as_dialog_exited.emit())
+		(%fdgSaveAs as FileDialog).canceled.connect(func(): save_as_dialog_exited.emit())
+		
+		await save_as_dialog_exited
 	else:
 		save_path=file
 		save_project()
-	pass
+
 
 func save_project():
 	if save_path == null or save_path == "":
-		return(save_project_as())
+		await save_project_as()
+		return
+	
 	# ask the singleton to serialize all state vars.
 	
 	var serialized: String = serialize_project()
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
 	save_file.store_line(serialized)
-	pass
+
 
 ## Function:
 # serialize_project iterates through the notes and chats and creates an array
@@ -51,13 +61,13 @@ func serialize_project() -> String:
 		notes.append(serialized_note_tab)
 	
 	# # Now serialize the chats.
-	# for chat_thread: ChatHistory in SingletonObject.ChatList:
-	# 	var serialized_chat_tab = chat_thread.Serialize()
-	# 	chats.append(serialized_chat_tab)
+	for chat_thread: ChatHistory in SingletonObject.ChatList:
+		var serialized_chat_tab = chat_thread.Serialize()
+		chats.append(serialized_chat_tab)
 
 	var save_dict: Dictionary = {
 		"ThreadList" : notes,
-		# "ChatList" : chats,
+		"ChatList" : chats,
 		"last_tab_index": SingletonObject.last_tab_index,
 		"active_chatindex": SingletonObject.active_chatindex,
 		"active_notes_index": SingletonObject.NotesTab.ActiveThreadIndex
@@ -76,8 +86,10 @@ func deserialize_project(data: Dictionary):
 		threads.append(MemoryThread.Deserialize(thread_data))
 	SingletonObject.initialize_notes(threads)
 
-	# for chat_data in data.get("ChatList", []):
-	# 	chats.append(ChatHistory.Deserialize(chat_data))
+	var chats: Array[ChatHistory] = []
+	for chat_data in data.get("ChatList", []):
+		chats.append(ChatHistory.Deserialize(chat_data))
+	SingletonObject.initialize_chats(SingletonObject.Provider, SingletonObject.Chats, chats)
 	
 	
 
@@ -89,6 +101,8 @@ func close_project():
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	get_tree().set_auto_accept_quit(false)
+
 	SingletonObject.NewProject.connect(self._new_project)
 	SingletonObject.SaveProject.connect(self.save_project)
 	SingletonObject.SaveProjectAs.connect(self.save_project_as)
@@ -116,3 +130,24 @@ func _on_fdg_open_project_file_selected(path):
 		return
 
 	deserialize_project(json)
+
+	self.save_path = path
+
+
+func _notification(what):
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		# user want to quit
+		(%ExitConfirmationDialog as ConfirmationDialog).add_button("Exit", true, "exit")
+		%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
+
+func _on_exit_confirmation_dialog_canceled():
+	%ExitConfirmationDialog.hide()
+
+func _on_exit_confirmation_dialog_confirmed():
+	await self.save_project()
+	get_tree().quit()
+
+
+func _on_exit_confirmation_dialog_custom_action(action: StringName):
+	if action == "exit":
+		get_tree().quit()
