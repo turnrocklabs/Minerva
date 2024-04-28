@@ -1,6 +1,6 @@
 [gd_scene load_steps=10 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Script" path="res://Scripts/ThreadView.gd" id="1_gunt8"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scenes/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
@@ -36,8 +36,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 232.0
-offset_bottom = 96.0
+offset_right = -280.0
+offset_bottom = -416.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -64,8 +64,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 516.0
-offset_bottom = 167.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
