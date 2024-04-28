@@ -25,6 +25,9 @@ func FromVertex(input: Variant) -> BotResponse:
 		pass
 
 	for candidate in input["candidates"]:
+		if "content" not in candidate:
+			FullText = "Model refused to answer. " +str(candidate)
+			return
 		var content = candidate["content"]
 		for part in content["parts"]:
 			for text in part["text"]:

@@ -1,7 +1,46 @@
 {
-	"ChatList": [],
-	"ThreadList": [],
+	"ThreadList": [
+		{
+			"MemoryItemList": [
+				{
+					"Content": "Is a brown fox terrier",
+					"Enabled": false,
+					"Order": 0,
+					"OwningThread": "70708eb63c78793e7e72f32b31eae2aba862465ffc2b7da1845ed3c87c49ea76",
+					"Pinned": false,
+					"Title": "Fido",
+					"Visible": true
+				},
+				{
+					"Content": "Is some sort of hound dog",
+					"Enabled": false,
+					"Order": 1,
+					"OwningThread": "70708eb63c78793e7e72f32b31eae2aba862465ffc2b7da1845ed3c87c49ea76",
+					"Pinned": false,
+					"Title": "Elvis",
+					"Visible": true
+				}
+			],
+			"ThreadId": "70708eb63c78793e7e72f32b31eae2aba862465ffc2b7da1845ed3c87c49ea76",
+			"ThreadName": "Dogs"
+		},
+		{
+			"MemoryItemList": [
+				{
+					"Content": "Is a brown tabby.",
+					"Enabled": false,
+					"Order": 0,
+					"OwningThread": "e5f7b315bff4790614b2f4312529bf2aca5a95d02e9baf071fb25a71e96320f7",
+					"Pinned": false,
+					"Title": "Katy",
+					"Visible": true
+				}
+			],
+			"ThreadId": "e5f7b315bff4790614b2f4312529bf2aca5a95d02e9baf071fb25a71e96320f7",
+			"ThreadName": "Cats"
+		}
+	],
 	"active_chatindex": 0,
 	"active_notes_index": 0,
-	"last_tab_index": 0
+	"last_tab_index": 1
 }
