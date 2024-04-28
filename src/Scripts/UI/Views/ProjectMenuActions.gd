@@ -102,6 +102,8 @@ func close_project():
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	get_tree().set_auto_accept_quit(false)
+	# We want additional exit button, so we have 'Save', 'Cancel' and 'Exit'
+	(%ExitConfirmationDialog as ConfirmationDialog).add_button("Exit", true, "exit")
 
 	SingletonObject.NewProject.connect(self._new_project)
 	SingletonObject.SaveProject.connect(self.save_project)
@@ -133,11 +135,9 @@ func _on_fdg_open_project_file_selected(path):
 
 	self.save_path = path
 
-
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		# user want to quit
-		(%ExitConfirmationDialog as ConfirmationDialog).add_button("Exit", true, "exit")
 		%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
 
 func _on_exit_confirmation_dialog_canceled():
