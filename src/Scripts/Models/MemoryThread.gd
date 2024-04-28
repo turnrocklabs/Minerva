@@ -27,7 +27,6 @@ func Serialize() -> Dictionary:
 
 	for memory_item: MemoryItem in MemoryItemList:
 		var serialized_memory = memory_item.Serialize()
-		prints(memory_item, serialized_memory)
 		serialized_memories.append(serialized_memory)
 
 	var save_dict: Dictionary = {

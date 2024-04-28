@@ -22,6 +22,11 @@ func format(callback: Callable) -> String:
 	var output: String = callback.call(self)
 	return output
 
+func to_bot_response() -> BotResponse:
+	var res = BotResponse.new()
+	res.FullText = Message
+
+	return res
 
 ## Function:
 # Serialize the item to a string

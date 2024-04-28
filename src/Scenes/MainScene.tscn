@@ -183,6 +183,9 @@ layout_mode = 2
 size_flags_vertical = 0
 script = ExtResource("1_oipdw")
 
+[node name="ProjectManagement" parent="VBoxRoot/menuMain" instance=ExtResource("2_amibn")]
+layout_mode = 1
+
 [node name="fdgOpenFile" type="FileDialog" parent="VBoxRoot/menuMain"]
 unique_name_in_owner = true
 title = "Open a File"
@@ -202,8 +205,6 @@ item_2/text = "Save"
 item_2/id = 2
 item_3/text = "Save As..."
 item_3/id = 3
-
-[node name="ProjectManagement" parent="VBoxRoot/menuMain/Project" instance=ExtResource("2_amibn")]
 
 [node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "File"

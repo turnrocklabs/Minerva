@@ -19,14 +19,18 @@ var active_chatindex: int
 var Provider
 var Chats: ChatPane
 
-func initialize_chats(provider, _chats:ChatPane):
-	last_tab_index = 0
-	active_chatindex = 0
-	ChatList = []
-	Provider = provider
+func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	Chats = _chats
 	Chats.clear_all_chats()
-	pass
+	
+	# last_tab_index = 0
+	# active_chatindex = 0
+	
+	ChatList = chat_histories
+	Provider = provider
+
+	for ch in chat_histories:
+		Chats.render_history(ch)
 
 #endregion Chats
 
@@ -87,6 +91,5 @@ signal SaveProject
 signal SaveProjectAs
 signal CloseProject
 signal RedrawAll
-
 
 #endregion Project Management
