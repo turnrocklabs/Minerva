@@ -1,24 +1,26 @@
 {
 	"ChatList": [
 		{
-			"HistoryId":"3058cb209e0e788e2f4f056dffeac9445d499cf32c8f95ea0ee7cd845a486507",
-			"HistoryItemList":[
+			"HistoryId": "61bde20cb0b143e3083de6c385f1c1b541196e8e6d0b301ac1783384f3455aa2",
+			"HistoryItemList": [
 				{
-					"Base64Data":"",
-					"Message":"Given this background information:\\\\n\\\\n### Reference Information ###\\\\n### Title: Book 1\\\\nThe title of book 1 is \"Introductions\".  In it we meet Hiroshi, the star of book 1, and his family.\\\\n###\\\\n### End Reference Information ###\\\\n\\\\nRespond to the user\\'s message: \\\\n\\\\n\\\\nHi!  Who is the hero?\\",
-					"Order":0,
-					"Role":0,
-					"Type":0
+					"Base64Data": "",
+					"InjectedNote": "",
+					"Message": "hiii",
+					"Order": 0,
+					"Role": 0,
+					"Type": 0
 				},
 				{
-					"Base64Data":"",
-					"Message":"Hiroshi is the hero of book 1.",
-					"Order":0,
-					"Role":1,
-					"Type":0
+					"Base64Data": "",
+					"InjectedNote": "Given this background information:\n\n### Reference Information ###\n### Title: 432532\n52352tsdg\n###\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+					"Message": "with note hee",
+					"Order": 0,
+					"Role": 0,
+					"Type": 0
 				}
 			],
-			"HistoryName":"Chat0"
+			"HistoryName": "Chat0"
 		}
 	],
 	"ThreadList": [
@@ -26,7 +28,7 @@
 			"MemoryItemList": [
 				{
 					"Content": "52352tsdg",
-					"Enabled": true,
+					"Enabled": false,
 					"Order": 0,
 					"OwningThread": "409ac5f6002a94f21762335d206642d27ab4324fb7893f6589a8b7a76f18c66c",
 					"Pinned": false,
@@ -40,5 +42,5 @@
 	],
 	"active_chatindex": 0,
 	"active_notes_index": 0,
-	"last_tab_index": 0
+	"last_tab_index": 1
 }

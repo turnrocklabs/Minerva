@@ -36,11 +36,13 @@ func To_Prompt() -> Array[Variant]:
 
 ## Function:
 # Serialize creates a JSON representation of this instance.
-func Serialize() -> String:
-	var serialized_items: Array[String] = []
+func Serialize() -> Dictionary:
+	var serialized_items: Array[Dictionary] = []
+
 	for chat_history_item: ChatHistoryItem in HistoryItemList:
-		var searialized_item: String = chat_history_item.Serialize()
+		var searialized_item = chat_history_item.Serialize()
 		serialized_items.append(searialized_item)
+
 
 	var save_dict:Dictionary = {
 		"HistoryId" : HistoryId,
@@ -48,14 +50,13 @@ func Serialize() -> String:
 		"HistoryItemList" : serialized_items
 	}
 
-	var output: String = JSON.stringify(save_dict)
-	return output
+	return save_dict
 
 
 static func Deserialize(data: Dictionary) -> ChatHistory:
 	
 	# FIXME: What provider to pass?
-	var ch = ChatHistory.new(null)
+	var ch = ChatHistory.new(GoogleVertex)
 
 	ch.HistoryId = data.get("HistoryId")
 	ch.HistoryName = data.get("HistoryName")

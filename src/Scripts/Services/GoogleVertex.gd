@@ -158,7 +158,9 @@ func _ready():
 func Format(chat:ChatHistoryItem) -> Variant:
 	var role: String
 	var parts: Array = []
-	var text: String = chat.Message
+	# If we have injected a note prepend it, otherwise jsut take the message
+	var text: String = chat.InjectedNote + chat.Message if chat.InjectedNote else chat.Message
+
 
 	if chat.Role == ChatHistoryItem.ChatRole.USER:
 		role = "user"
