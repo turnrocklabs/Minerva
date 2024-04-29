@@ -37,7 +37,8 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 
 	if append_item != null:
 		if len(working_memory) > 0:
-			append_item.Message = working_memory + "\n" + append_item.Message
+			append_item.InjectedNote = working_memory
+			append_item.Message = append_item.Message
 		
 		history.HistoryItemList.append(append_item)
 		SingletonObject.ChatList[SingletonObject.active_chatindex] = history
@@ -82,7 +83,7 @@ func _on_chat_pressed():
 	## Add the user speech bubble to the chat area control.
 	var temp_user_data: BotResponse = BotResponse.new()
 	temp_user_data.FullText = %txtMainUserInput.text
-
+	
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
 	GoogleChat.generate_content(history_list)
