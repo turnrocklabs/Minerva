@@ -20,14 +20,14 @@ var Provider
 var Chats: ChatPane
 
 func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
+	ChatList = chat_histories
+	Provider = provider
+	
 	Chats = _chats
 	Chats.clear_all_chats()
 	
 	# last_tab_index = 0
 	# active_chatindex = 0
-	
-	ChatList = chat_histories
-	Provider = provider
 
 	for ch in chat_histories:
 		Chats.render_history(ch)
