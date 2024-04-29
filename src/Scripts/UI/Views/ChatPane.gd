@@ -31,17 +31,14 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	# disable the notes if we are asked
 	if disable_notes:
 		SingletonObject.NotesTab.Disable_All()
-	
-	print("Working memory")
-	print(working_memory)
-	print(%txtMainUserInput.text)
 
 	## get the message for completion, appending a new items if given
 	var history: ChatHistory = SingletonObject.ChatList[SingletonObject.active_chatindex]
 
 	if append_item != null:
 		if len(working_memory) > 0:
-			append_item.Message = working_memory + "\n" + append_item.Message
+			append_item.InjectedNote = working_memory
+			append_item.Message = append_item.Message
 		
 		history.HistoryItemList.append(append_item)
 		SingletonObject.ChatList[SingletonObject.active_chatindex] = history
@@ -86,7 +83,7 @@ func _on_chat_pressed():
 	## Add the user speech bubble to the chat area control.
 	var temp_user_data: BotResponse = BotResponse.new()
 	temp_user_data.FullText = %txtMainUserInput.text
-
+	
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
 	GoogleChat.generate_content(history_list)
@@ -123,7 +120,14 @@ func render_history(chat_history: ChatHistory):
 	var _name = chat_history.HistoryName
 	scroll_container.name = _name
 	%tcChats.add_child(scroll_container)
-	pass
+
+	for item in chat_history.HistoryItemList:
+		if item.Role == item.ChatRole.USER:
+			SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_user_message(item.to_bot_response())
+		elif item.Role in [item.ChatRole.MODEL, item.ChatRole.ASSISTANT]:
+			SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_bot_message(item.to_bot_response())
+
+
 
 # Called when the node enters the scene tree for the first time.
 func _ready():

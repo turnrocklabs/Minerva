@@ -22,11 +22,11 @@ func _init(optional_threadId = null):
 
 ## Function:
 # serialize the contents into a single structure
-func Serialize() -> String:
-	var serialized_memories: Array[String] = []
+func Serialize() -> Dictionary:
+	var serialized_memories: Array[Dictionary] = []
 
 	for memory_item: MemoryItem in MemoryItemList:
-		var serialized_memory: String = memory_item.Serialize()
+		var serialized_memory = memory_item.Serialize()
 		serialized_memories.append(serialized_memory)
 
 	var save_dict: Dictionary = {
@@ -35,5 +35,17 @@ func Serialize() -> String:
 		"MemoryItemList": serialized_memories
 	}
 
-	var output:String = JSON.stringify(save_dict)
-	return output
+	return save_dict
+
+
+## Function:
+# deserialize the contents from dictionary
+static func Deserialize(data: Dictionary) -> MemoryThread:
+	var mt = MemoryThread.new(data.get("ThreadId"))
+
+	mt.ThreadName = data.get("ThreadName")
+
+	for mi_data: Dictionary in data.get("MemoryItemList", []):
+		mt.MemoryItemList.append(MemoryItem.Deserialize(mi_data))
+	
+	return mt

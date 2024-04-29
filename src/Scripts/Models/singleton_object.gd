@@ -4,8 +4,9 @@ extends Node
 var ThreadList: Array[MemoryThread]
 var NotesTab: MemoryTabs
 
-func initialize_notes():
-	ThreadList = []
+func initialize_notes(threads: Array[MemoryThread] = []):
+	ThreadList = threads
+	
 	NotesTab.render_threads()
 	pass
 
@@ -18,14 +19,18 @@ var active_chatindex: int
 var Provider
 var Chats: ChatPane
 
-func initialize_chats(provider, _chats:ChatPane):
-	last_tab_index = 0
-	active_chatindex = 0
-	ChatList = []
+func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
+	ChatList = chat_histories
 	Provider = provider
+	
 	Chats = _chats
 	Chats.clear_all_chats()
-	pass
+	
+	# last_tab_index = 0
+	# active_chatindex = 0
+
+	for ch in chat_histories:
+		Chats.render_history(ch)
 
 #endregion Chats
 
@@ -86,6 +91,5 @@ signal SaveProject
 signal SaveProjectAs
 signal CloseProject
 signal RedrawAll
-
 
 #endregion Project Management

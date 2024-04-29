@@ -22,7 +22,7 @@ func _enable_toggle():
 
 ## Function:
 # Serialize takes this instance of a MemoryItem and serializes it so it can be represented as JSON
-func Serialize() -> String:
+func Serialize() -> Dictionary:
 	var save_dict:Dictionary = {
 		"Enabled": Enabled,
 		"Title": Title,
@@ -32,5 +32,16 @@ func Serialize() -> String:
 		"Order": Order,
 		"OwningThread": OwningThread
 	}
-	var output:String = JSON.stringify(save_dict)
-	return output
+	return save_dict
+
+
+static func Deserialize(data: Dictionary) -> MemoryItem:
+
+	var mi = MemoryItem.new(data.get("OwningThread"))
+
+	var properties = ["Enabled", "Title", "Content", "Visible", "Pinned", "Order"]
+
+	for prop in properties:
+		mi.set(prop, data.get(prop))
+	
+	return mi
