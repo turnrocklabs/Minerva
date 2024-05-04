@@ -3,10 +3,12 @@ extends BaseProvider
 
 const MODEL = "gpt-3.5-turbo"
 
+
+
 func _ready():
 	super()
-	API_KEY = SingletonObject.API_KEY[SingletonObject.API_PROVIDER.OPENAI]
 	BASE_URL = "https://api.openai.com"
+	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
 
 
 
