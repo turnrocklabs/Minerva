@@ -55,8 +55,7 @@ func Serialize() -> Dictionary:
 
 static func Deserialize(data: Dictionary) -> ChatHistory:
 	
-	# FIXME: What provider to pass?
-	var ch = ChatHistory.new(GoogleVertex)
+	var ch = ChatHistory.new(SingletonObject.Provider)
 
 	ch.HistoryId = data.get("HistoryId")
 	ch.HistoryName = data.get("HistoryName")
