@@ -1,23 +1,8 @@
 {
-	"ChatList": [
-		{
-			"HistoryId": "29b7049d2c0beb45dc08eeaeae9a74a76c040aa6e0eaffe6f6a4806760a325aa",
-			"HistoryItemList": [],
-			"HistoryName": "Chat0"
-		},
-		{
-			"HistoryId": "b4efd73dce3cd118b3702bf4bb29c2669e229c122cb5daea05c604ff25caf2b6",
-			"HistoryItemList": [],
-			"HistoryName": "Chat2"
-		},
-		{
-			"HistoryId": "dc26a0e2f43355f0929b7d8377c8d64d46516b96db76cc2aef837af2e7b650db",
-			"HistoryItemList": [],
-			"HistoryName": "Chat3"
-		}
-	],
+	"ChatList": [],
+	"Editors": [],
 	"ThreadList": [],
-	"active_chatindex": 2,
+	"active_chatindex": 0,
 	"active_notes_index": 0,
-	"last_tab_index": 4
+	"last_tab_index": 0
 }
