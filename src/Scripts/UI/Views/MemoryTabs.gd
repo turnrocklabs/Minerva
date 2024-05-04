@@ -3,7 +3,8 @@
 class_name MemoryTabs
 extends TabContainer
 
-var ActiveThreadIndex: int
+# just use current_tab
+# var ActiveThreadIndex: int:
 
 ## return a single large string of all active memories
 func To_Prompt(Provider) -> String:
@@ -70,9 +71,6 @@ func _on_btn_create_thread_pressed():
 	
 	%NewThreadPopup.hide()
 
-func _on_tab_changed(tab_index):
-	self.ActiveThreadIndex = tab_index
-
 func clear_all_tabs():
 	var children = %tcThreads.get_children()
 	for child in children:
@@ -82,7 +80,7 @@ func clear_all_tabs():
 
 func render_threads():
 	# save the last active thread.
-	var last_thread = self.ActiveThreadIndex
+	var last_thread = self.current_tab
 
 	# Clear all children of tcThreads
 	self.clear_all_tabs()
@@ -93,15 +91,14 @@ func render_threads():
 
 	# set the active thread in UI
 	self.current_tab = last_thread
-	self.ActiveThreadIndex = last_thread
-	pass
+
 
 func add_note(user_title:String, user_content: String, source: String = ""):
 	# get the active thread.
-	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  ActiveThreadIndex:
+	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
 		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		return
-	var active_thread : MemoryThread = SingletonObject.ThreadList[ActiveThreadIndex]
+	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
 
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
@@ -117,7 +114,7 @@ func add_note(user_title:String, user_content: String, source: String = ""):
 
 ## Will delete the memory_item from the memory list
 func delete_note(memory_item: MemoryItem):
-	var active_thread : MemoryThread = SingletonObject.ThreadList[ActiveThreadIndex]
+	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
 
 	var idx = active_thread.MemoryItemList.find(memory_item)
 	if idx == -1: return
@@ -166,8 +163,6 @@ func _ready():
 	SingletonObject.ThreadList = []
 	SingletonObject.NotesTab = self
 	render_threads()
-	self.connect("tab_changed", self._on_tab_changed)
-	pass
 
 
 var clicked:= false
