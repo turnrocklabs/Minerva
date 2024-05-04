@@ -39,26 +39,12 @@ func add(item:Control, _name:String) -> Node:
 	return scrollable
 
 
-# Create a new viewer/editor depending on type 
-func new_tab(item:ChatHistoryItem):
-	## define what we create by item type
-	var new_item
-	if item.Type == ChatHistoryItem.PartType.TEXT:
-		new_item = CodeEdit.new()
-	
-	if item.Type == ChatHistoryItem.PartType.CODE:
-		new_item = CodeEdit.new()
-	
-	if item.Type == ChatHistoryItem.PartType.JPEG:
-		new_item = TextureRect.new()
-
-
-	pass
-
 func _copy_children_to(from: Node, to: Node):
 	for child in from.get_children(true):
 		var dup = child.duplicate(DUPLICATE_USE_INSTANTIATION)
+		
 		if dup is TabContainer:
+			if not dup.get_child_count(): dup.current_tab = -1
 			dup.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 			dup.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(dup))
 

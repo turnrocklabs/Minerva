@@ -28,9 +28,9 @@ func add_bot_message(message:BotResponse):
 	pass
 
 
-func add_message():
-	var user_turn:String = %txtMainUserInput.text
-	pass
+# func add_message():
+# 	var user_turn:String = %txtMainUserInput.text
+# 	pass
 
 
 func add_user_message(message:BotResponse):

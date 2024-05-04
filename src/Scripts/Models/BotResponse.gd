@@ -8,7 +8,7 @@ var Picture: Texture
 var Snips: Array[String]
 
 var _vertex_response_extractor: RegEx
-var _markdown_snip_extractor: RegEx
+# var _markdown_snip_extractor: RegEx
 
 func _init():
 	self._vertex_response_extractor = RegEx.new()

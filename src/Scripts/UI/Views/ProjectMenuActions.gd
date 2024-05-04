@@ -52,8 +52,8 @@ func save_project():
 func serialize_project() -> String:
 	var notes: Array[Dictionary] = []
 	var chats: Array[Dictionary] = []
-	var active_notes_index: int = 0 ## which of the notes tabs is selected and active
-	var active_chat_index: int = 0 ## which chat tab is active
+	# var active_notes_index: int = 0 ## which of the notes tabs is selected and active
+	# var active_chat_index: int = 0 ## which chat tab is active
 	var last_tab_index: int = 0 ##
 
 	# Serialize the notes first.
