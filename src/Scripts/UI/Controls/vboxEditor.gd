@@ -1,6 +1,20 @@
+class_name EditorContainer
 extends VBoxContainer
 
 @export var editor_pane: EditorPane
+
+var _opened_files: Array[String] = []
+
+
+
+func serialize() -> Array[String]:
+	return _opened_files
+
+func deserialize(files: Array[String]):
+	_opened_files = files
+
+	for file in files:
+		open_file(file)
 
 
 func _is_graphics_file(filename: String) -> bool:
@@ -14,6 +28,11 @@ func _is_graphics_file(filename: String) -> bool:
 	return false
 
 func _on_open_file(filename:String):
+	open_file(filename)
+	_opened_files.append(filename)
+
+
+func open_file(filename: String):
 	## Determine the file type, create a control for that type (CodeEdit/TextureRect)
 	## Then add the new control to the active_container
 
@@ -36,7 +55,6 @@ func _on_open_file(filename:String):
 	new_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	new_control.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	editor_pane.add(new_control, filename.get_file())
-
 
 func _on_h_button_pressed():
 	if not editor_pane: return

@@ -65,9 +65,12 @@ func serialize_project() -> String:
 		var serialized_chat_tab = chat_thread.Serialize()
 		chats.append(serialized_chat_tab)
 
+	var editors = SingletonObject.editor_control.serialize()
+
 	var save_dict: Dictionary = {
 		"ThreadList" : notes,
 		"ChatList" : chats,
+		"Editors": editors,
 		"last_tab_index": SingletonObject.last_tab_index,
 		"active_chatindex": SingletonObject.Chats.current_tab,
 		"active_notes_index": SingletonObject.NotesTab.current_tab
@@ -86,6 +89,11 @@ func deserialize_project(data: Dictionary):
 	for chat_data in data.get("ChatList", []):
 		chats.append(ChatHistory.Deserialize(chat_data))
 	SingletonObject.initialize_chats(SingletonObject.Provider, SingletonObject.Chats, chats)
+
+	# We need to cast Array to Array[String] because deserialize expects that type
+	var editor_files: Array[String] = []
+	editor_files.assign(data.get("Editors", []))
+	SingletonObject.editor_control.deserialize(editor_files)
 	
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
