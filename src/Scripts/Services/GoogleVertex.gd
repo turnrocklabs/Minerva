@@ -59,7 +59,7 @@ func make_request(url: String, method: int, body: String=""):
 	await http_request.request_completed
 	return
 
-func _on_request_completed(result, response_code, headers, body, http_request, url):
+func _on_request_completed(result, response_code, _headers, body, _http_request, url):
 	var response_variant: Variant
 	var response: BotResponse = BotResponse.new()
 	if result == 0:

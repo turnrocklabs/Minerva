@@ -56,9 +56,10 @@ func _on_new_pressed():
 func _on_btn_create_thread_pressed():
 	var tab_name:String = %txtNewTabName.text
 
-	var at = %NewThreadPopup.get_meta("associated_tab")
+	
 
-	if at:
+	if %NewThreadPopup.has_meta("associated_tab"):
+		var at = %NewThreadPopup.get_meta("associated_tab")
 		at.get_meta("thread").ThreadName = tab_name
 		render_threads()
 	else:
@@ -89,11 +90,12 @@ func render_threads():
 	for this_thread in SingletonObject.ThreadList:
 		render_thread(this_thread)
 
-	# set the active thread in UI
-	self.current_tab = last_thread
+	if self.get_child_count():
+		self.current_tab = clampi(last_thread, 0, self.get_child_count()-1)
+	
 
 
-func add_note(user_title:String, user_content: String, source: String = ""):
+func add_note(user_title:String, user_content: String, _source: String = ""):
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
 		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")

@@ -66,7 +66,7 @@ func _can_drop_data(_at_position: Vector2, data):
 
 	return true
 
-func _drop_data(at_position: Vector2, data):
+func _drop_data(_at_position: Vector2, data):
 	data = data as Note
 
 	_replace_nodes(data, self)

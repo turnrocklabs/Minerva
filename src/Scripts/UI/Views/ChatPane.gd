@@ -4,7 +4,6 @@ extends TabContainer
 var GoogleChat: GoogleVertex
 
 func _on_new_chat():
-	current_tab= SingletonObject.last_tab_index
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
 	SingletonObject.last_tab_index += 1
 	var history: ChatHistory = ChatHistory.new(self.GoogleChat)
@@ -23,7 +22,7 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 		_on_new_chat()
 
 	## Get the working memory and append the user message to chat history
-	var prompt_for_turn: String = ""
+	# var prompt_for_turn: String = ""
 
 	var working_memory: String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
 
