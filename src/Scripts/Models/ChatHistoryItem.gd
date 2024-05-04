@@ -4,12 +4,26 @@ extends RefCounted
 enum PartType {TEXT, CODE, JPEG}
 enum ChatRole {USER, ASSISTANT, MODEL}
 
-var Role: ChatRole
-var InjectedNote: String
-var Message: String
-var Base64Data: String
-var Order: int
-var Type: PartType
+static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type"]
+
+var Role: ChatRole:
+	set(value): SingletonObject.save_state(false); Role = value
+
+var InjectedNote: String:
+	set(value): SingletonObject.save_state(false); InjectedNote = value
+
+var Message: String:
+	set(value): SingletonObject.save_state(false); Message = value
+
+var Base64Data: String:
+	set(value): SingletonObject.save_state(false); Base64Data = value
+
+var Order: int:
+	set(value): SingletonObject.save_state(false); Order = value
+
+var Type: PartType:
+	set(value): SingletonObject.save_state(false); Type = value
+
 
 func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 	self.Type = _type
@@ -29,6 +43,11 @@ func to_bot_response() -> BotResponse:
 
 	return res
 
+func _set(property, _value):
+	if property in SERIALIZER_FIELDS:
+		print("PROPERTY CHANGED AAAAAA")
+	return true
+
 ## Function:
 # Serialize the item to a string
 func Serialize() -> Dictionary:
@@ -47,9 +66,7 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	
 	var chi = ChatHistoryItem.new()
 
-	var properties = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type"]
-
-	for prop in properties:
+	for prop in SERIALIZER_FIELDS:
 		chi.set(prop, data.get(prop))
 
 	return chi

@@ -43,6 +43,7 @@ func save_project():
 	var serialized: String = serialize_project()
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
 	save_file.store_line(serialized)
+	SingletonObject.save_state(true)
 
 
 ## Function:
@@ -98,7 +99,6 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 	SingletonObject.NotesTab.current_tab = data.get("active_notes_index", 0)
-	
 
 
 func close_project():
@@ -140,12 +140,23 @@ func _on_fdg_open_project_file_selected(path):
 
 	deserialize_project(json)
 
+	# Since we just opened the project, the save state is true
+	# Why deferred?
+	# If not some of the deserialized object alter the state after this function ends
+	# even tho we called deserialize above. Probably because the nodes are not added
+	# to the hierarchy untill the idle time, when they call set_state(false).
+	# So we just delay this call to that idle time also.
+	SingletonObject.call_deferred("save_state", true)
+
 	self.save_path = path
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		# user want to quit
-		%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
+		if not SingletonObject.saved_state:
+			# user want to quit
+			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
+		else:
+			get_tree().quit()
 
 func _on_exit_confirmation_dialog_canceled():
 	%ExitConfirmationDialog.hide()

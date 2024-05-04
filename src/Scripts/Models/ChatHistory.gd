@@ -5,11 +5,22 @@ extends RefCounted
 # Note: Modal, not model.  Modal refers to text, video, audio, etc.
 # This abstraction is an interface to create a standard that each provider can then use.
 
-var HistoryId: String
-var HistoryName: String
-var HistoryItemList: Array[ChatHistoryItem]
+var HistoryId: String:
+	set(value): SingletonObject.save_state(false); HistoryId = value
+
+var HistoryName: String:
+	set(value): SingletonObject.save_state(false); HistoryName = value
+
+var HistoryItemList: Array[ChatHistoryItem]:
+	set(value): SingletonObject.save_state(false); HistoryItemList = value
+
 var VBox: VBoxChat
 var Provider
+
+
+
+static var SERIALIZER_FIELDS = ["HistoryId", "HistoryName", "HistoryItemList"]
+
 
 ## initialize with a new HistoryId
 
@@ -33,6 +44,13 @@ func To_Prompt() -> Array[Variant]:
 		var item: Variant = Provider.Format(chat)
 		retVal.append(item)
 	return retVal
+
+
+
+func _set(property, _value):
+	if property in SERIALIZER_FIELDS:
+		print("PROPERTY CHANGED AAAAAA")
+	return true
 
 ## Function:
 # Serialize creates a JSON representation of this instance.

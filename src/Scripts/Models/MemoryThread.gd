@@ -1,9 +1,17 @@
 class_name MemoryThread
 extends RefCounted
 
-var ThreadId: String
-var ThreadName: String
-var MemoryItemList: Array[MemoryItem]
+static var SERIALIZER_FIELDS = ["ThreadId", "ThreadName", "MemoryItemList"]
+
+var ThreadId: String:
+	set(value): SingletonObject.save_state(false); ThreadId = value
+
+var ThreadName: String:
+	set(value): SingletonObject.save_state(false); ThreadName = value
+
+var MemoryItemList: Array[MemoryItem]:
+	set(value): SingletonObject.save_state(false); MemoryItemList = value
+
 
 
 # initialize with a new ThreadId
@@ -19,6 +27,12 @@ func _init(optional_threadId = null):
 		# threadId was provided, use it
 		self.ThreadId = optional_threadId
 	pass
+
+
+func _set(property, _value):
+	if property in SERIALIZER_FIELDS:
+		print("PROPERTY CHANGED AAAAAA")
+	return true
 
 ## Function:
 # serialize the contents into a single structure
