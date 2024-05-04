@@ -1,47 +1,23 @@
 {
-	"ChatList": [],
-	"ThreadList": [
+	"ChatList": [
 		{
-			"MemoryItemList": [
-				{
-					"Content": "rtertete",
-					"Enabled": true,
-					"Order": 0,
-					"OwningThread": "553377a00ad80007b80c94122a6f66de22ed23b0b7deff0e0effa2c72d06d5bb",
-					"Pinned": false,
-					"Title": "etetre",
-					"Visible": true
-				},
-				{
-					"Content": "gg",
-					"Enabled": true,
-					"Order": 1,
-					"OwningThread": "553377a00ad80007b80c94122a6f66de22ed23b0b7deff0e0effa2c72d06d5bb",
-					"Pinned": false,
-					"Title": "55",
-					"Visible": true
-				}
-			],
-			"ThreadId": "553377a00ad80007b80c94122a6f66de22ed23b0b7deff0e0effa2c72d06d5bb",
-			"ThreadName": "1"
+			"HistoryId": "29b7049d2c0beb45dc08eeaeae9a74a76c040aa6e0eaffe6f6a4806760a325aa",
+			"HistoryItemList": [],
+			"HistoryName": "Chat0"
 		},
 		{
-			"MemoryItemList": [
-				{
-					"Content": "dfghg",
-					"Enabled": true,
-					"Order": 0,
-					"OwningThread": "407202a185d339843b67ca40d9821609c74191f9a2712579d826aa669f2acc5e",
-					"Pinned": false,
-					"Title": "bgffhghjgg",
-					"Visible": true
-				}
-			],
-			"ThreadId": "407202a185d339843b67ca40d9821609c74191f9a2712579d826aa669f2acc5e",
-			"ThreadName": "twts"
+			"HistoryId": "b4efd73dce3cd118b3702bf4bb29c2669e229c122cb5daea05c604ff25caf2b6",
+			"HistoryItemList": [],
+			"HistoryName": "Chat2"
+		},
+		{
+			"HistoryId": "dc26a0e2f43355f0929b7d8377c8d64d46516b96db76cc2aef837af2e7b650db",
+			"HistoryItemList": [],
+			"HistoryName": "Chat3"
 		}
 	],
-	"active_chatindex": 0,
-	"active_notes_index": 1,
-	"last_tab_index": 0
+	"ThreadList": [],
+	"active_chatindex": 2,
+	"active_notes_index": 0,
+	"last_tab_index": 4
 }
