@@ -30,6 +30,7 @@ func _is_graphics_file(filename: String) -> bool:
 func _on_open_file(filename:String):
 	open_file(filename)
 	_opened_files.append(filename)
+	SingletonObject.save_state(false)
 
 
 func open_file(filename: String):
