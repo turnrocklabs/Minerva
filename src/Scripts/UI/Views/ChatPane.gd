@@ -1,12 +1,12 @@
 class_name ChatPane
 extends TabContainer
 
-var GoogleChat: GoogleVertex
+var Chat: BaseProvider
 
 func _on_new_chat():
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
 	SingletonObject.last_tab_index += 1
-	var history: ChatHistory = ChatHistory.new(self.GoogleChat)
+	var history: ChatHistory = ChatHistory.new(self.Chat)
 	history.HistoryName = tab_name
 	history.HistoryItemList = []
 	SingletonObject.ChatList.append(history)
@@ -24,7 +24,7 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	## Get the working memory and append the user message to chat history
 	# var prompt_for_turn: String = ""
 
-	var working_memory: String = SingletonObject.NotesTab.To_Prompt(GoogleChat)
+	var working_memory: String = SingletonObject.NotesTab.To_Prompt(Chat)
 
 	# disable the notes if we are asked
 	if disable_notes:
@@ -84,7 +84,7 @@ func _on_chat_pressed():
 	
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
-	GoogleChat.generate_content(history_list)
+	Chat.generate_content(history_list)
 	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
 	pass
 
@@ -132,11 +132,11 @@ func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 
-	if GoogleChat == null:
-		GoogleChat = GoogleVertex.new()
-		add_child(GoogleChat)
-		GoogleChat.chat_completed.connect(self.render_single_chat)
-	SingletonObject.initialize_chats(GoogleChat, self)
+	if Chat == null:
+		Chat = OpenAI.new()
+		add_child(Chat)
+		Chat.chat_completed.connect(self.render_single_chat)
+	SingletonObject.initialize_chats(Chat, self)
 
 	
 func _on_close_tab(tab: int, container: TabContainer):
