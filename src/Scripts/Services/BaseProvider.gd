@@ -1,7 +1,12 @@
 class_name BaseProvider
 extends Node
 
-var API_KEY: String
+
+var PROVIDER: SingletonObject.API_PROVIDER
+
+var API_KEY: String:
+	get: return SingletonObject.API_KEY.get(PROVIDER)
+
 var BASE_URL: String
 
 var active_request: HTTPRequest

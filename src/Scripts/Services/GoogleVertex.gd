@@ -29,7 +29,7 @@ signal count_tokens_response(response)
 
 
 func _ready():
-	API_KEY = SingletonObject.API_KEY[SingletonObject.API_PROVIDER.GOOGLE]
+	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
 	BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 func _on_request_completed(result, response_code, _headers, body, _http_request, url):
