@@ -40,6 +40,16 @@ line_folding = true
 [node name="btnCloseInspector" type="Button" parent="InspectorPopup/VBoxContainer"]
 layout_mode = 2
 
+[node name="EditTitleDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Change Chat Title"
+
+[node name="LineEdit" type="LineEdit" parent="EditTitleDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 192.0
+offset_bottom = 51.0
+
 [node name="VBoxContainer3" type="VBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -120,7 +130,9 @@ text = "Chat"
 layout_mode = 2
 text = "Test"
 
+[connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
+[connection signal="tab_clicked" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_tab_clicked"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMemorize" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_memorize_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_inspect_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]

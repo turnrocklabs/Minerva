@@ -173,3 +173,31 @@ func clear_all_chats():
 	for child in get_children():
 		remove_child(child)
 	add_child(SingletonObject.Provider)
+
+
+
+
+# region Edit Chat Title
+
+func show_title_edit_dialog(tab: int):
+	%EditTitleDialog.set_meta("tab", tab)
+	%EditTitleDialog/LineEdit.text = get_tab_title(tab)
+	%EditTitleDialog.popup_centered()
+
+
+func _on_edit_title_dialog_confirmed():
+	var tab = %EditTitleDialog.get_meta("tab")
+
+	set_tab_title(tab, %EditTitleDialog/LineEdit.text)
+
+
+# Detect the double click and open the title edit popup
+var clicked:= false
+func _on_tab_clicked(tab: int):
+
+	if clicked: show_title_edit_dialog(tab)
+
+	clicked = true
+	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
+
+# endregion
