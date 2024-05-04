@@ -35,6 +35,7 @@ const BASE_URL := "https://generativelanguage.googleapis.com/v1beta"
 
 # Helper function to make HTTP requests
 func make_request(url: String, method: int, body: String=""):
+	breakpoint
 	# setup request object for the delta endpoint and append API key
 	var http_request = active_request
 	var complete_uri: String = url + "?key=" + API_KEY
