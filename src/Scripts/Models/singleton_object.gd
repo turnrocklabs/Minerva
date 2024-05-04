@@ -15,7 +15,7 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 #region Chats
 var ChatList: Array[ChatHistory]
 var last_tab_index: int
-var active_chatindex: int
+# var active_chatindex: int just use Chats.current_tab
 var Provider
 var Chats: ChatPane
 
