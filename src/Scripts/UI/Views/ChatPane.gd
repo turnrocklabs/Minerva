@@ -4,7 +4,7 @@ extends TabContainer
 var GoogleChat: GoogleVertex
 
 func _on_new_chat():
-	SingletonObject.active_chatindex = SingletonObject.last_tab_index
+	current_tab= SingletonObject.last_tab_index
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
 	SingletonObject.last_tab_index += 1
 	var history: ChatHistory = ChatHistory.new(self.GoogleChat)
@@ -12,7 +12,6 @@ func _on_new_chat():
 	history.HistoryItemList = []
 	SingletonObject.ChatList.append(history)
 	render_history(history)
-	pass
 
 
 
@@ -20,7 +19,7 @@ func _on_new_chat():
 # create_prompt generates the full turn prompt
 func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = false, inspect:= false) -> Array[Variant]:
 	# make sure we have an active chat
-	if len(SingletonObject.ChatList) <= SingletonObject.active_chatindex:
+	if len(SingletonObject.ChatList) <= current_tab:
 		_on_new_chat()
 
 	## Get the working memory and append the user message to chat history
@@ -33,7 +32,7 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 		SingletonObject.NotesTab.Disable_All()
 
 	## get the message for completion, appending a new items if given
-	var history: ChatHistory = SingletonObject.ChatList[SingletonObject.active_chatindex]
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
 	if append_item != null:
 		if len(working_memory) > 0:
@@ -41,7 +40,7 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 			append_item.Message = append_item.Message
 		
 		history.HistoryItemList.append(append_item)
-		SingletonObject.ChatList[SingletonObject.active_chatindex] = history
+		SingletonObject.ChatList[current_tab] = history
 	
 	var history_list: Array[Variant] = history.To_Prompt();
 
@@ -87,7 +86,7 @@ func _on_chat_pressed():
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
 	GoogleChat.generate_content(history_list)
-	SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_user_message(temp_user_data)
+	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
 	pass
 
 ## Render a full chat history response
@@ -96,10 +95,10 @@ func render_single_chat(response:BotResponse):
 	var item: ChatHistoryItem = ChatHistoryItem.new()
 	item.Role = ChatHistoryItem.ChatRole.ASSISTANT
 	item.Message = response.FullText
-	SingletonObject.ChatList[SingletonObject.active_chatindex].HistoryItemList.append(item)
+	SingletonObject.ChatList[current_tab].HistoryItemList.append(item)
 
 	# Ask the Vbox to add the message
-	SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_bot_message(response)
+	SingletonObject.ChatList[current_tab].VBox.add_bot_message(response)
 	pass
 
 
@@ -123,20 +122,27 @@ func render_history(chat_history: ChatHistory):
 
 	for item in chat_history.HistoryItemList:
 		if item.Role == item.ChatRole.USER:
-			SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_user_message(item.to_bot_response())
+			SingletonObject.ChatList[current_tab].VBox.add_user_message(item.to_bot_response())
 		elif item.Role in [item.ChatRole.MODEL, item.ChatRole.ASSISTANT]:
-			SingletonObject.ChatList[SingletonObject.active_chatindex].VBox.add_bot_message(item.to_bot_response())
+			SingletonObject.ChatList[current_tab].VBox.add_bot_message(item.to_bot_response())
 
 
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
+
 	if GoogleChat == null:
 		GoogleChat = GoogleVertex.new()
 		add_child(GoogleChat)
 		GoogleChat.chat_completed.connect(self.render_single_chat)
 	SingletonObject.initialize_chats(GoogleChat, self)
-	pass # Replace with function body.
+
+	
+func _on_close_tab(tab: int, container: TabContainer):
+	var control = container.get_tab_control(tab)
+	container.remove_child(control)
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
@@ -153,7 +159,7 @@ func _on_btn_memorize_pressed():
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
-	if len(SingletonObject.ChatList) <= SingletonObject.active_chatindex:
+	if len(SingletonObject.ChatList) <= current_tab:
 		_on_new_chat()
 
 	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
@@ -167,3 +173,31 @@ func clear_all_chats():
 	for child in get_children():
 		remove_child(child)
 	add_child(SingletonObject.Provider)
+
+
+
+
+# region Edit Chat Title
+
+func show_title_edit_dialog(tab: int):
+	%EditTitleDialog.set_meta("tab", tab)
+	%EditTitleDialog/LineEdit.text = get_tab_title(tab)
+	%EditTitleDialog.popup_centered()
+
+
+func _on_edit_title_dialog_confirmed():
+	var tab = %EditTitleDialog.get_meta("tab")
+
+	set_tab_title(tab, %EditTitleDialog/LineEdit.text)
+
+
+# Detect the double click and open the title edit popup
+var clicked:= false
+func _on_tab_clicked(tab: int):
+
+	if clicked: show_title_edit_dialog(tab)
+
+	clicked = true
+	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
+
+# endregion

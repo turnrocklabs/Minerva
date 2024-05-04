@@ -69,18 +69,14 @@ func serialize_project() -> String:
 		"ThreadList" : notes,
 		"ChatList" : chats,
 		"last_tab_index": SingletonObject.last_tab_index,
-		"active_chatindex": SingletonObject.active_chatindex,
-		"active_notes_index": SingletonObject.NotesTab.ActiveThreadIndex
+		"active_chatindex": SingletonObject.Chats.current_tab,
+		"active_notes_index": SingletonObject.NotesTab.current_tab
 	}
 	var stringified_save: String = JSON.stringify(save_dict, "\t")
 	return stringified_save
 
 
 func deserialize_project(data: Dictionary):
-	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
-	SingletonObject.active_chatindex = data.get("active_chatindex", 0)
-	SingletonObject.NotesTab.ActiveThreadIndex = data.get("active_notes_index", 0)
-
 	var threads: Array[MemoryThread] = []
 	for thread_data in data.get("ThreadList", []):
 		threads.append(MemoryThread.Deserialize(thread_data))
@@ -91,6 +87,9 @@ func deserialize_project(data: Dictionary):
 		chats.append(ChatHistory.Deserialize(chat_data))
 	SingletonObject.initialize_chats(SingletonObject.Provider, SingletonObject.Chats, chats)
 	
+	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
+	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
+	SingletonObject.NotesTab.current_tab = data.get("active_notes_index", 0)
 	
 
 
