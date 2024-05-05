@@ -32,6 +32,34 @@ static func user_message(message: BotResponse) -> MessageMarkdown:
 	return msg
 
 
+func _ready():
+	var regex = RegEx.new()
+	var err = regex.compile(r"(\[code\])((.|\n)*)(\[\/code\])")
+
+	var matches = regex.search_all(label.text)
+	for m in matches:
+		var code_text = m.get_string()
+
+		var first_part_len = label.text.find(code_text)
+		
+		var second_part_start = first_part_len + code_text.length()
+		var second_part_len = label.text.length()
+
+		var first_label = label.duplicate()
+		first_label.text = label.text.substr(0, first_part_len).strip_edges()
+		$PanelContainer/v.add_child(first_label)
+		$PanelContainer/v.move_child(first_label, label.get_index())
+
+		var second_label = label.duplicate()
+		second_label.text = label.text.substr(second_part_start, second_part_len).strip_edges()
+		$PanelContainer/v.add_child(second_label)
+		$PanelContainer/v.move_child(second_label, label.get_index()+1)
+
+		label.text = label.text.substr(first_part_len, code_text.length()).strip_edges()
+		label.get_node("CopyButton").visible = true
+		label.get_node("CopyButton").pressed.connect(func(): DisplayServer.clipboard_set(code_text))
+
+
 func extract_code_block(source_text = "") -> String:
 
 	var code_block = ""
@@ -88,5 +116,5 @@ func extract_code_block(source_text = "") -> String:
 	
 	return code_block
 
-func _on_markdown_label_gui_input(event:InputEvent):
-	print(event)
+# func _on_markdown_label_gui_input(event:InputEvent):
+# 	print(event)

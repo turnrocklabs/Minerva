@@ -15,7 +15,6 @@ resource_local_to_scene = true
 content_margin_left = 15.0
 content_margin_top = 15.0
 content_margin_right = 15.0
-content_margin_bottom = 15.0
 bg_color = Color(0, 0.592157, 0.478431, 1)
 corner_radius_top_left = 20
 corner_radius_top_right = 20
@@ -77,7 +76,7 @@ grow_horizontal = 2
 script = ExtResource("1_5rvwm")
 left_control = NodePath("LeftSplitter")
 right_control = NodePath("RightSplitter")
-label = NodePath("PanelContainer/MarkdownLabel")
+label = NodePath("PanelContainer/v/MarkdownLabel")
 user_message_color = Color(0, 0, 1, 1)
 bot_message_color = Color(0, 0.592157, 0.470588, 1)
 
@@ -92,25 +91,32 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_hjfue")
 
-[node name="MarkdownLabel" type="RichTextLabel" parent="PanelContainer"]
+[node name="v" type="VBoxContainer" parent="PanelContainer"]
+layout_mode = 2
+
+[node name="MarkdownLabel" type="RichTextLabel" parent="PanelContainer/v"]
 layout_mode = 2
 focus_mode = 2
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
 bbcode_enabled = true
-text = "[code]
-print(\"Hello World\")
-dddddddgdg
-gd	fdgjjj[/code]
-smthhdfhfdhdfhhhhh"
+text = "Pre koda
+
+[code]
+print(\"Hello Worldgg\")
+dddddddgdghh
+gd	fdgjjg[/code]
+Posle koda"
 fit_content = true
 selection_enabled = true
 script = ExtResource("2_5cmtk")
-markdown_text = "```python
-print(\"Hello World\")
-dddddddgdg
-gd	fdgjjj
+markdown_text = "Pre koda
+
+```python
+print(\"Hello Worldgg\")
+dddddddgdghh
+gd	fdgjjg
 ```
-smthhdfhfdhdfhhhhh"
+Posle koda"
 h1 = SubResource("Resource_de4hw")
 h2 = SubResource("Resource_s8if8")
 h3 = SubResource("Resource_6ck5t")
@@ -118,10 +124,21 @@ h4 = SubResource("Resource_j3mc0")
 h5 = SubResource("Resource_whtla")
 h6 = SubResource("Resource_f738n")
 
+[node name="CopyButton" type="Button" parent="PanelContainer/v/MarkdownLabel"]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -8.0
+offset_bottom = 8.0
+grow_horizontal = 0
+text = "Copy"
+
 [node name="RightSplitter" type="Control" parent="."]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
 
-[connection signal="gui_input" from="PanelContainer/MarkdownLabel" to="." method="_on_markdown_label_gui_input"]
+[connection signal="gui_input" from="PanelContainer/v/MarkdownLabel" to="." method="_on_markdown_label_gui_input"]
