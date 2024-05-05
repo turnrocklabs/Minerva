@@ -1,7 +1,7 @@
 class_name OpenAI
 extends BaseProvider
 
-const MODEL = "gpt-3.5-turbo"
+const MODEL = "gpt-4-turbo"
 
 
 
