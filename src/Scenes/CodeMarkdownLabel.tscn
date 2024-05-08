@@ -1,0 +1,138 @@
+[gd_scene load_steps=19 format=3 uid="uid://bsn5f2nlc2ari"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/CodeMarkdownLabel.gd" id="1_6nlsm"]
+[ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="1_wraaf"]
+[ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_t10nn"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_15kna"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_8j4jt"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_0ndy7"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_2d88d"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_dtxmp"]
+[ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="8_aq15b"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_p6ce6"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ctlsf"]
+content_margin_left = 15.0
+content_margin_top = 5.0
+content_margin_right = 5.0
+content_margin_bottom = 5.0
+bg_color = Color(0.196078, 0.196078, 0.196078, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_m7865"]
+content_margin_left = 15.0
+content_margin_top = 15.0
+content_margin_right = 15.0
+content_margin_bottom = 15.0
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="Resource" id="Resource_de4hw"]
+resource_local_to_scene = true
+script = ExtResource("3_15kna")
+font_size = 2.285
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_s8if8"]
+resource_local_to_scene = true
+script = ExtResource("4_8j4jt")
+font_size = 1.714
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_6ck5t"]
+resource_local_to_scene = true
+script = ExtResource("5_0ndy7")
+font_size = 1.428
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_j3mc0"]
+resource_local_to_scene = true
+script = ExtResource("6_2d88d")
+font_size = 1.142
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_whtla"]
+resource_local_to_scene = true
+script = ExtResource("7_dtxmp")
+font_size = 1.0
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[sub_resource type="Resource" id="Resource_f738n"]
+resource_local_to_scene = true
+script = ExtResource("8_aq15b")
+font_size = 0.857
+is_bold = false
+is_italic = false
+is_underlined = false
+
+[node name="PanelContainer" type="PanelContainer"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 134.0
+grow_horizontal = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_p6ce6")
+script = ExtResource("1_6nlsm")
+
+[node name="v" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="p" type="PanelContainer" parent="v"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_ctlsf")
+
+[node name="h" type="HBoxContainer" parent="v/p"]
+layout_mode = 2
+
+[node name="SyntaxLabel" type="Label" parent="v/p/h"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Python"
+
+[node name="CopyButton" type="Button" parent="v/p/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Copy"
+
+[node name="p2" type="PanelContainer" parent="v"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_m7865")
+
+[node name="CodeLabel" type="RichTextLabel" parent="v/p2"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 2
+theme_override_fonts/mono_font = ExtResource("1_wraaf")
+bbcode_enabled = true
+text = "[code]
+print(\"Hello Worldgg\")
+dddddddgdghh
+gd	fdgjjg[/code]"
+fit_content = true
+selection_enabled = true
+script = ExtResource("2_t10nn")
+markdown_text = "```python
+print(\"Hello Worldgg\")
+dddddddgdghh
+gd	fdgjjg
+```"
+h1 = SubResource("Resource_de4hw")
+h2 = SubResource("Resource_s8if8")
+h3 = SubResource("Resource_6ck5t")
+h4 = SubResource("Resource_j3mc0")
+h5 = SubResource("Resource_whtla")
+h6 = SubResource("Resource_f738n")
