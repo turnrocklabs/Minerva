@@ -10,6 +10,15 @@ func _copy_code_label():
 
 	DisplayServer.clipboard_set(text_without_tags)
 
+func _extract_code_label():
+	var regex = RegEx.new()
+	regex.compile("\\[.*?\\]")
+	var text_without_tags = regex.sub(%CodeLabel.text, "", true)
+
+	SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags)
+
+
+
 static func create(code_text: String, syntax: String = "Plain Text") -> CodeMarkdownLabel:
 
 	# place the code label in panel container to change the background
@@ -21,7 +30,8 @@ static func create(code_text: String, syntax: String = "Plain Text") -> CodeMark
 	code_panel.get_node("%SyntaxLabel").text = syntax
 
 
-	code_panel.get_node("%CopyButton").visible = true
 	code_panel.get_node("%CopyButton").pressed.connect(code_panel._copy_code_label)
+
+	code_panel.get_node("%ExtractButton").pressed.connect(code_panel._extract_code_label)
 
 	return code_panel
