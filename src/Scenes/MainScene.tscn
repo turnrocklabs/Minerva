@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
-[ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scenes/ProjectMenuActions.tscn" id="2_amibn"]
+[ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
