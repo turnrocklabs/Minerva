@@ -72,8 +72,11 @@ var config_file: ConfigFile
 var API_KEY: Dictionary = {}
 
 
-func get_user_initials():
-	return "%s%s".to_upper() % [config_file.get_value("USER", "first_name", "")[0], config_file.get_value("USER", "last_name", "")[0]]
+func get_user_full_name() -> String:
+	return "%s %s" % [config_file.get_value("USER", "first_name", ""), config_file.get_value("USER", "last_name", "")]
+
+func get_user_initials() -> String:
+	return ("%s%s" % [config_file.get_value("USER", "first_name", "")[0], config_file.get_value("USER", "last_name", "")[0]]).to_upper()
 
 func load_preferences():
 	self.API_KEY[API_PROVIDER.GOOGLE] = config_file.get_value("API KEYS", "GOOGLE_VERTEX", "")
