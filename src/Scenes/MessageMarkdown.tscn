@@ -85,7 +85,7 @@ bot_message_color = Color(0, 0.592157, 0.470588, 1)
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
+size_flags_stretch_ratio = 0.05
 
 [node name="PanelContainer" type="PanelContainer" parent="."]
 layout_mode = 2
@@ -166,6 +166,6 @@ h6 = SubResource("Resource_f738n")
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
+size_flags_stretch_ratio = 0.05
 
 [connection signal="gui_input" from="PanelContainer/v/MarkdownLabel" to="." method="_on_markdown_label_gui_input"]
