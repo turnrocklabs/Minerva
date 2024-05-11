@@ -1,5 +1,8 @@
 extends MenuBar
 
+@onready var view = $View as PopupMenu
+
+
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	%leGoogleVertexKey.text = SingletonObject.API_KEY.get(SingletonObject.API_PROVIDER.GOOGLE, "")
@@ -59,3 +62,14 @@ func _on_project_index_pressed(index):
 			SingletonObject.SaveProjectAs.emit()
 			pass
 	pass # Replace with function body.
+
+
+func _on_view_index_pressed(index: int):
+	if view.is_item_checkable(index):
+		view.toggle_item_checked(index)
+	
+	%LeftPane.visible = view.is_item_checked(0)
+	%MiddlePane.visible = view.is_item_checked(1)
+	%RightPane.visible = view.is_item_checked(2)
+
+	%LeftPane.get_parent().visible = %LeftPane.visible or %MiddlePane.visible
