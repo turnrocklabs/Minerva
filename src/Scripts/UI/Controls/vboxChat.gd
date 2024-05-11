@@ -24,8 +24,11 @@ func _ready():
 
 ## create some sort of textbox and put the content in there.
 func add_bot_message(message:BotResponse):
-	add_child(MessageMarkdown.bot_message(message))
-	pass
+	var msg_node = MessageMarkdown.bot_message(message)
+	add_child(msg_node)
+
+	await get_tree().process_frame
+	get_parent().ensure_control_visible(msg_node)
 
 
 # func add_message():
@@ -34,9 +37,11 @@ func add_bot_message(message:BotResponse):
 
 
 func add_user_message(message:BotResponse):
-	#add_child(Message.user_message(message))
-	add_child(MessageMarkdown.user_message(message))
-	pass
+	var msg_node = MessageMarkdown.user_message(message)
+	add_child(msg_node)
+	
+	await get_tree().process_frame
+	get_parent().ensure_control_visible(msg_node)
 
 func render_items():
 	var order: int = 0 # the order of the items
