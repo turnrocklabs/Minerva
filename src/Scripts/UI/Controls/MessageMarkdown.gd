@@ -26,6 +26,7 @@ static func user_message(message: BotResponse) -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
 	msg.right_control.visible = true
 	msg.right_control.get_node("PanelContainer/Label").text = SingletonObject.get_user_initials()
+	msg.right_control.get_node("PanelContainer").tooltip_text = SingletonObject.get_user_full_name()
 	msg.label.markdown_text = message.FullText
 	msg.label.set("theme_override_colors/default_color", Color.WHITE)
 
