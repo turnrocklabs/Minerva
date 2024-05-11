@@ -71,13 +71,16 @@ var config_file: ConfigFile
 
 var API_KEY: Dictionary = {}
 
-func load_api_keys():
+
+func get_user_initials():
+	return "%s%s".to_upper() % [config_file.get_value("USER", "first_name", "")[0], config_file.get_value("USER", "last_name", "")[0]]
+
+func load_preferences():
 	self.API_KEY[API_PROVIDER.GOOGLE] = config_file.get_value("API KEYS", "GOOGLE_VERTEX", "")
 	self.API_KEY[API_PROVIDER.ANTHROPIC] = config_file.get_value("API KEYS", "ANTHROPIC", "")
 	self.API_KEY[API_PROVIDER.OPENAI] = config_file.get_value("API KEYS", "OPENAI", "")
-	pass
 
-func save_api_keys():
+func save_preferences():
 	config_file.set_value("API KEYS", "GOOGLE_VERTEX", self.API_KEY.get(API_PROVIDER.GOOGLE, ""))
 	config_file.set_value("API KEYS", "ANTHROPIC", self.API_KEY.get(API_PROVIDER.ANTHROPIC, ""))
 	config_file.set_value("API KEYS", "OPENAI", self.API_KEY.get(API_PROVIDER.OPENAI, ""))
@@ -88,13 +91,16 @@ func _ready():
 	var res_code = self.config_file.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 	match res_code:
 		OK:
-			load_api_keys()
+			load_preferences()
 		ERR_FILE_NOT_FOUND:
 			# populare config file with default settings
 			config_file.set_value("API KEYS", "GOOGLE_VERTEX", "")
 			config_file.set_value("API KEYS", "ANTHROPIC", "")
 			config_file.set_value("API KEYS", "OPENAI", "")
-			load_api_keys()
+
+			config_file.set_value("USER", "first_name", "")
+			config_file.set_value("USER", "last_name", "")
+			load_preferences()
 
 #endregion API Consumer
 
