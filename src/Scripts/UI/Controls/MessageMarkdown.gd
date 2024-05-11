@@ -10,11 +10,13 @@ extends HBoxContainer
 
 static func bot_message(message: BotResponse) -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
-	msg.right_control.visible = true
+	msg.left_control.visible = true
+	msg.left_control.get_node("PanelContainer/Label").text = "O4"
+	msg.left_control.get_node("PanelContainer").tooltip_text = "gpt-4"
 	msg.label.markdown_text = message.FullText
 	msg.label.set("theme_override_colors/default_color", Color.BLACK)
 	
-	var style: StyleBox = msg.get_node("PanelContainer").get("theme_override_styles/panel")
+	var style: StyleBox = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = msg.bot_message_color
 
 
@@ -22,11 +24,12 @@ static func bot_message(message: BotResponse) -> MessageMarkdown:
 
 static func user_message(message: BotResponse) -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
-	msg.left_control.visible = true
+	msg.right_control.visible = true
+	msg.right_control.get_node("PanelContainer/Label").text = SingletonObject.get_user_initials()
 	msg.label.markdown_text = message.FullText
 	msg.label.set("theme_override_colors/default_color", Color.WHITE)
 
-	var style: StyleBoxFlat = msg.get_node("PanelContainer").get("theme_override_styles/panel")
+	var style: StyleBoxFlat = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = msg.user_message_color
 
 	return msg
@@ -97,5 +100,5 @@ func _ready():
 			node.bbcode_enabled = true
 			node.text = ts.content
 		
-		$PanelContainer/v.add_child(node)
+		%PanelContainer/v.add_child(node)
 		
