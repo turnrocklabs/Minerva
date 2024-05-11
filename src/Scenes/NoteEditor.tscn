@@ -15,6 +15,7 @@ script = ExtResource("1_rmor8")
 [node name="CodeEdit" type="CodeEdit" parent="."]
 layout_mode = 2
 size_flags_vertical = 3
+wrap_mode = 1
 
 [node name="HBoxContainer" type="HBoxContainer" parent="."]
 layout_mode = 2
