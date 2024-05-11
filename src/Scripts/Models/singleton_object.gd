@@ -50,6 +50,8 @@ func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHist
 
 #region Common UI Tasks
 
+@onready var main_ui = $"/root/RootControl/VBoxRoot/MainUI"
+
 ###
 # Create a common error display system that will popup an error and show
 # and show the message
