@@ -165,7 +165,13 @@ func _on_btn_test_pressed():
 	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
 	var test_response:BotResponse = BotResponse.new()
 	#test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
-	test_response.FullText = "## Markdown\n Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
+	test_response.FullText = """
+		## Markdown
+		Here is how you write hello world in python:
+		```python
+		print (\"Hello World\")
+		```
+	"""
 	self.render_single_chat(test_response)
 	pass # Replace with function body.
 
