@@ -64,12 +64,18 @@ func _on_project_index_pressed(index):
 	pass # Replace with function body.
 
 
+
+
+
 func _on_view_index_pressed(index: int):
 	if view.is_item_checkable(index):
 		view.toggle_item_checked(index)
 	
-	%LeftPane.visible = view.is_item_checked(0)
-	%MiddlePane.visible = view.is_item_checked(1)
-	%RightPane.visible = view.is_item_checked(2)
+	SingletonObject.main_ui.set_chat_pane_visible(view.is_item_checked(0))
+	SingletonObject.main_ui.set_editor_pane_visible(view.is_item_checked(1))
+	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(2))
 
-	%LeftPane.get_parent().visible = %LeftPane.visible or %MiddlePane.visible
+func _on_view_about_to_popup():
+	view.set_item_checked(0, SingletonObject.main_ui.chat_pane.visible)
+	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)
+	view.set_item_checked(2, SingletonObject.main_ui.notes_pane.visible)

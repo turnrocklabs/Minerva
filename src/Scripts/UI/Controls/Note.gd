@@ -112,3 +112,6 @@ func _on_edit_button_pressed():
 		func(text):
 			container.name = text
 	)
+
+	# show the editor if it's hidden
+	SingletonObject.main_ui.set_editor_pane_visible(true)
