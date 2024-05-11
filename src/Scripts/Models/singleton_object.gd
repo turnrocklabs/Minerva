@@ -76,7 +76,15 @@ func get_user_full_name() -> String:
 	return "%s %s" % [config_file.get_value("USER", "first_name", ""), config_file.get_value("USER", "last_name", "")]
 
 func get_user_initials() -> String:
-	return ("%s%s" % [config_file.get_value("USER", "first_name", "")[0], config_file.get_value("USER", "last_name", "")[0]]).to_upper()
+	var n1 = config_file.get_value("USER", "first_name")
+	if n1: n1 = n1[0]
+	else: n1 = "N"
+
+	var n2 = config_file.get_value("USER", "last_name")
+	if n2: n2 = n2[0]
+	else: n2 = "A"
+
+	return ("%s%s" % [n1, n2]).to_upper()
 
 func load_preferences():
 	self.API_KEY[API_PROVIDER.GOOGLE] = config_file.get_value("API KEYS", "GOOGLE_VERTEX", "")
