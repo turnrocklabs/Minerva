@@ -85,13 +85,17 @@ func _on_chat_pressed():
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
 	Chat.generate_content(history_list)
+
 	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
+
+	SingletonObject.ChatList[current_tab].VBox.loading_response = true
 	
 	%txtMemoryTitle.text = ""
 	%txtMainUserInput.text = ""
 
 ## Render a full chat history response
 func render_single_chat(response:BotResponse):
+	SingletonObject.ChatList[current_tab].VBox.loading_response = false
 	# create a chat history item and append it to the list
 	var item: ChatHistoryItem = ChatHistoryItem.new()
 	item.Role = ChatHistoryItem.ChatRole.ASSISTANT
