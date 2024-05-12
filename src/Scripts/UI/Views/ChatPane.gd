@@ -213,3 +213,18 @@ func _on_tab_clicked(tab: int):
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
 
 # endregion
+
+
+func _on_btn_attach_file_pressed():
+	%AttachFileDialog.popup_centered(Vector2i(700, 500))
+
+
+func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
+	for fp in paths:
+		var title = fp.get_file()
+
+		var file = FileAccess.open(fp, FileAccess.READ)
+		var content = file.get_as_text()
+
+		SingletonObject.NotesTab.add_note(title, content)
+		await get_tree().process_frame
