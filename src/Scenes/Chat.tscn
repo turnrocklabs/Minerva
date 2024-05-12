@@ -1,8 +1,11 @@
-[gd_scene load_steps=6 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=9 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="2_4uml8"]
+[ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
+[ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
+[ext_resource type="Texture2D" uid="uid://0onnj1f41kmb" path="res://assets/generated/paperclip_icon_24.webp" id="3_h3pd2"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qx4pd"]
 bg_color = Color(0.0117647, 0.0117647, 0.0117647, 1)
@@ -118,7 +121,8 @@ layout_mode = 2
 
 [node name="btnChatSettings" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-text = "Settings"
+tooltip_text = "AI Settings"
+icon = ExtResource("2_ckjb8")
 
 [node name="btnMemorize" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -127,11 +131,13 @@ icon = ExtResource("2_4uml8")
 
 [node name="btnInspect" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-text = "Inspect"
+tooltip_text = "Inspect Turn"
+icon = ExtResource("3_7u8vt")
 
 [node name="btnAttachFile" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-text = "Attach"
+tooltip_text = "Attach File"
+icon = ExtResource("3_h3pd2")
 
 [node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
