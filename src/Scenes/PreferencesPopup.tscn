@@ -1,0 +1,116 @@
+[gd_scene load_steps=2 format=3 uid="uid://booxo77json0y"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
+
+[node name="PreferencesPopup" type="PopupPanel"]
+size = Vector2i(520, 298)
+visible = true
+script = ExtResource("1_snp1b")
+
+[node name="v" type="VBoxContainer" parent="."]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 516.0
+offset_bottom = 294.0
+
+[node name="SectionsContainer" type="VBoxContainer" parent="v"]
+custom_minimum_size = Vector2(512, 0)
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="v" type="VBoxContainer" parent="v/SectionsContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="v/SectionsContainer/v"]
+layout_mode = 2
+text = "API Keys"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="v/SectionsContainer/v"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="v/SectionsContainer/v/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Google Vertex"
+
+[node name="leGoogleVertex" type="LineEdit" parent="v/SectionsContainer/v/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="v/SectionsContainer/v"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="v/SectionsContainer/v/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Anthropic"
+
+[node name="leAnthropic" type="LineEdit" parent="v/SectionsContainer/v/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="v/SectionsContainer/v"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="v/SectionsContainer/v/HBoxContainer3"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "OpenAI"
+
+[node name="leOpenAI" type="LineEdit" parent="v/SectionsContainer/v/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HSeparator" type="HSeparator" parent="v/SectionsContainer"]
+layout_mode = 2
+
+[node name="v2" type="VBoxContainer" parent="v/SectionsContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="v/SectionsContainer/v2"]
+layout_mode = 2
+text = "User"
+
+[node name="HBoxContainer5" type="HBoxContainer" parent="v/SectionsContainer/v2"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="v/SectionsContainer/v2/HBoxContainer5"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "First Name"
+
+[node name="leFirstName" type="LineEdit" parent="v/SectionsContainer/v2/HBoxContainer5"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer6" type="HBoxContainer" parent="v/SectionsContainer/v2"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="v/SectionsContainer/v2/HBoxContainer6"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Last Name"
+
+[node name="leLastName" type="LineEdit" parent="v/SectionsContainer/v2/HBoxContainer6"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="h" type="HBoxContainer" parent="v"]
+layout_mode = 2
+
+[node name="btnSavePrefs" type="Button" parent="v/h"]
+layout_mode = 2
+text = "Save"
+
+[connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
+[connection signal="pressed" from="v/h/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]

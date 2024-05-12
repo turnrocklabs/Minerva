@@ -3,15 +3,6 @@ extends MenuBar
 @onready var view = $View as PopupMenu
 
 
-# Called when the node enters the scene tree for the first time.
-func _ready():
-	%leGoogleVertexKey.text = SingletonObject.API_KEY.get(SingletonObject.API_PROVIDER.GOOGLE, "")
-	%leAnthropicKey.text = SingletonObject.API_KEY.get(SingletonObject.API_PROVIDER.ANTHROPIC, "")
-	%leOpenAIKey.text = SingletonObject.API_KEY.get(SingletonObject.API_PROVIDER.OPENAI, "")
-
-	%leFirstName.text = SingletonObject.config_file.get_value("USER", "first_name", "")
-	%leLastName.text = SingletonObject.config_file.get_value("USER", "last_name", "")
-
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 #func _process(delta):
 #	pass
@@ -30,16 +21,6 @@ func _on_file_index_pressed(index):
 			%PreferencesPopup.popup_centered()
 	pass # Replace with function body.
 
-# handle saving the file
-func _on_save_keys_pressed():
-	SingletonObject.config_file.set_value("USER", "first_name", %leFirstName.text)
-	SingletonObject.config_file.set_value("USER", "last_name", %leLastName.text)
-
-	## set the value of the singleton's API_KEY dictionary
-	SingletonObject.API_KEY[SingletonObject.API_PROVIDER.GOOGLE] = %leGoogleVertexKey.text
-	SingletonObject.API_KEY[SingletonObject.API_PROVIDER.ANTHROPIC] = %leAnthropicKey.text
-	SingletonObject.API_KEY[SingletonObject.API_PROVIDER.OPENAI] = %leOpenAIKey.text
-	SingletonObject.save_preferences() # will save just API KEYS
 
 ## Handler:
 # _on_project_index_pressed handles the "Project" menu.

@@ -5,7 +5,7 @@ extends Node
 var PROVIDER: SingletonObject.API_PROVIDER
 
 var API_KEY: String:
-	get: return SingletonObject.API_KEY.get(PROVIDER)
+	get: return SingletonObject.preferences_popup.get_api_key(PROVIDER)
 
 var BASE_URL: String
 
