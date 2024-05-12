@@ -62,6 +62,14 @@ offset_top = 8.0
 offset_right = 192.0
 offset_bottom = 51.0
 
+[node name="AttachFileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Open File(s)"
+size = Vector2i(392, 159)
+ok_button_text = "Open"
+file_mode = 1
+access = 2
+
 [node name="VBoxContainer3" type="VBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -149,9 +157,11 @@ layout_mode = 2
 text = "Test"
 
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
+[connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
 [connection signal="tab_clicked" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_tab_clicked"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMemorize" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_memorize_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_inspect_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnAttachFile" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_attach_file_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_test_pressed"]
