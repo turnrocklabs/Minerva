@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=13 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://deimxwybcmyit" path="res://assets/themes/default.theme" id="1_4g1mt"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
+[ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/PreferencesPopup.tscn" id="3_3hcc1"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 
@@ -57,109 +58,9 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 6
 
-[node name="PreferencesPopup" type="PopupPanel" parent="."]
+[node name="PreferencesPopup" parent="." instance=ExtResource("3_3hcc1")]
 unique_name_in_owner = true
-size = Vector2i(520, 241)
-
-[node name="VBoxContainer" type="VBoxContainer" parent="PreferencesPopup"]
-custom_minimum_size = Vector2(512, 0)
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 516.0
-offset_bottom = 237.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer"]
-layout_mode = 2
-text = "API KEYS"
-
-[node name="HBoxContainer" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 2
-size_flags_stretch_ratio = 0.3
-text = "Google Vertex"
-
-[node name="leGoogleVertexKey" type="LineEdit" parent="PreferencesPopup/VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "Anthropic"
-
-[node name="leAnthropicKey" type="LineEdit" parent="PreferencesPopup/VBoxContainer/HBoxContainer2"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="HBoxContainer3" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer/HBoxContainer3"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "OpenAI"
-
-[node name="leOpenAIKey" type="LineEdit" parent="PreferencesPopup/VBoxContainer/HBoxContainer3"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="HBoxContainer5" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer/HBoxContainer5"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "First Name"
-
-[node name="leFirstName" type="LineEdit" parent="PreferencesPopup/VBoxContainer/HBoxContainer5"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="HBoxContainer6" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="PreferencesPopup/VBoxContainer/HBoxContainer6"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "Last Name"
-
-[node name="leLastName" type="LineEdit" parent="PreferencesPopup/VBoxContainer/HBoxContainer6"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="HBoxContainer4" type="HBoxContainer" parent="PreferencesPopup/VBoxContainer"]
-layout_mode = 2
-
-[node name="btnSavePrefs" type="Button" parent="PreferencesPopup/VBoxContainer/HBoxContainer4"]
-layout_mode = 2
-text = "Save"
-
-[node name="btnCancel" type="Button" parent="PreferencesPopup/VBoxContainer/HBoxContainer4"]
-layout_mode = 2
-text = "Cancel"
+visible = false
 
 [node name="NewThreadPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
@@ -349,7 +250,6 @@ size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_v4lmg")
 script = ExtResource("1_gunt8")
 
-[connection signal="pressed" from="PreferencesPopup/VBoxContainer/HBoxContainer4/btnSavePrefs" to="VBoxRoot/menuMain" method="_on_save_keys_pressed"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]

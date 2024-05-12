@@ -69,51 +69,7 @@ func ErrorDisplay(error_title:String, error_message: String):
 #region API Consumer
 enum API_PROVIDER {GOOGLE, OPENAI, ANTHROPIC}
 
-var config_file: ConfigFile
-
-var API_KEY: Dictionary = {}
-
-
-func get_user_full_name() -> String:
-	return "%s %s" % [config_file.get_value("USER", "first_name", ""), config_file.get_value("USER", "last_name", "")]
-
-func get_user_initials() -> String:
-	var n1 = config_file.get_value("USER", "first_name")
-	if n1: n1 = n1[0]
-	else: n1 = "N"
-
-	var n2 = config_file.get_value("USER", "last_name")
-	if n2: n2 = n2[0]
-	else: n2 = "A"
-
-	return ("%s%s" % [n1, n2]).to_upper()
-
-func load_preferences():
-	self.API_KEY[API_PROVIDER.GOOGLE] = config_file.get_value("API KEYS", "GOOGLE_VERTEX", "")
-	self.API_KEY[API_PROVIDER.ANTHROPIC] = config_file.get_value("API KEYS", "ANTHROPIC", "")
-	self.API_KEY[API_PROVIDER.OPENAI] = config_file.get_value("API KEYS", "OPENAI", "")
-
-func save_preferences():
-	config_file.set_value("API KEYS", "GOOGLE_VERTEX", self.API_KEY.get(API_PROVIDER.GOOGLE, ""))
-	config_file.set_value("API KEYS", "ANTHROPIC", self.API_KEY.get(API_PROVIDER.ANTHROPIC, ""))
-	config_file.set_value("API KEYS", "OPENAI", self.API_KEY.get(API_PROVIDER.OPENAI, ""))
-	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
-
-func _ready():
-	self.config_file = ConfigFile.new()
-	var res_code = self.config_file.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
-	match res_code:
-		OK:
-			load_preferences()
-		ERR_FILE_NOT_FOUND:
-			# populare config file with default settings
-			config_file.set_value("API KEYS", "GOOGLE_VERTEX", "")
-			config_file.set_value("API KEYS", "ANTHROPIC", "")
-			config_file.set_value("API KEYS", "OPENAI", "")
-
-			config_file.set_value("USER", "first_name", "")
-			config_file.set_value("USER", "last_name", "")
-			load_preferences()
+@onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 
 #endregion API Consumer
 
