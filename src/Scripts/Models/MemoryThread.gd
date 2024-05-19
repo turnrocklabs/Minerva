@@ -29,11 +29,6 @@ func _init(optional_threadId = null):
 	pass
 
 
-func _set(property, _value):
-	if property in SERIALIZER_FIELDS:
-		print("PROPERTY CHANGED AAAAAA")
-	return true
-
 ## Function:
 # serialize the contents into a single structure
 func Serialize() -> Dictionary:
