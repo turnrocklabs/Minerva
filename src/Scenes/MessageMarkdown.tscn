@@ -91,6 +91,7 @@ right_control = NodePath("MarginContainer/HBoxContainer/RightSplitter")
 label = NodePath("MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel")
 user_message_color = Color(0, 0, 1, 1)
 bot_message_color = Color(0, 0.592157, 0.470588, 1)
+error_message_color = Color(0.737255, 0, 0.109804, 1)
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2

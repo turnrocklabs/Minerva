@@ -7,17 +7,23 @@ extends HBoxContainer
 
 @export var user_message_color: Color
 @export var bot_message_color: Color
+@export var error_message_color: Color
 
 static func bot_message(message: BotResponse) -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
 	msg.left_control.visible = true
 	msg.left_control.get_node("PanelContainer/Label").text = "O4"
 	msg.left_control.get_node("PanelContainer").tooltip_text = "gpt-4"
-	msg.label.markdown_text = message.FullText
 	msg.label.set("theme_override_colors/default_color", Color.BLACK)
 	
 	var style: StyleBox = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
-	style.bg_color = msg.bot_message_color
+	
+	if message.Error:
+		msg.label.text = "An error occurred:\n%s" % message.Error
+		style.bg_color = msg.error_message_color
+	else:
+		msg.label.markdown_text = message.FullText
+		style.bg_color = msg.bot_message_color
 
 
 	return msg
