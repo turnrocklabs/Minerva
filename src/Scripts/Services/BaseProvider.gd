@@ -48,6 +48,7 @@ func make_request(url: String, method: int, body: String="", headers: Array[Stri
 		#add_child(http_request)
 		http_request.request_completed.connect(_on_request_completed.bind(http_request, url))
 	else:
+		SingletonObject.ErrorDisplay("No API Access", "API Key is missing or rejected")
 		push_error("Invalid API key")
 		return {}
 
