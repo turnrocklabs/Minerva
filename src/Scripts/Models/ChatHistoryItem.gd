@@ -43,11 +43,6 @@ func to_bot_response() -> BotResponse:
 
 	return res
 
-func _set(property, _value):
-	if property in SERIALIZER_FIELDS:
-		print("PROPERTY CHANGED AAAAAA")
-	return true
-
 ## Function:
 # Serialize the item to a string
 func Serialize() -> Dictionary:
