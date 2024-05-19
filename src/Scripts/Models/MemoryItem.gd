@@ -35,13 +35,6 @@ func _init(_OwningThread:String):
 func _enable_toggle():
 	self.Enabled = !self.Enabled
 
-func _set(property, _value):
-	print(property)
-	if property in SERIALIZER_FIELDS:
-		print("PROPERTY CHANGED AAAAAA")
-		
-	return true
-
 
 ## Function:
 # Serialize takes this instance of a MemoryItem and serializes it so it can be represented as JSON
