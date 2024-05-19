@@ -6,6 +6,8 @@ extends TabContainer
 # just use current_tab
 # var ActiveThreadIndex: int:
 
+var _drag_active := false
+
 ## return a single large string of all active memories
 func To_Prompt(Provider) -> String:
 	var have_information: bool = false
@@ -167,6 +169,12 @@ func _ready():
 	render_threads()
 
 
+func _notification(what):
+	match what:
+		NOTIFICATION_DRAG_BEGIN: _drag_active = true
+		NOTIFICATION_DRAG_END: _drag_active = false
+
+
 var clicked:= false
 func _on_tab_clicked(tab: int):
 	
@@ -176,3 +184,8 @@ func _on_tab_clicked(tab: int):
 
 	clicked = true
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
+
+
+func _on_tab_hovered(tab: int):
+	if _drag_active:
+		current_tab = tab

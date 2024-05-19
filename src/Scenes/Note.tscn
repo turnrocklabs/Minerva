@@ -1,10 +1,14 @@
-[gd_scene load_steps=9 format=3 uid="uid://fr1vfchpwjq2"]
+[gd_scene load_steps=11 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
 [ext_resource type="Texture2D" uid="uid://bfichs8o3wt8b" path="res://assets/icons/drag.png" id="2_fkdjp"]
 [ext_resource type="Texture2D" uid="uid://ciq3i7lnhmr41" path="res://assets/icons/checkbutton_checked.png" id="2_jstr6"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="4_vm57c"]
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_fc11w"]
+color = Color(0.156863, 0, 1, 1)
+thickness = 10
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ks4wd"]
 content_margin_left = 15.0
@@ -23,51 +27,73 @@ CheckButton/icons/checked = ExtResource("2_jstr6")
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_33w73"]
 bg_color = Color(0.6, 0.6, 0.6, 0)
 
-[node name="Note" type="PanelContainer"]
-offset_right = 1890.0
-offset_bottom = 198.0
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_4vmi0"]
+color = Color(0.156863, 0, 1, 1)
+thickness = 10
+
+[node name="Note" type="VBoxContainer"]
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 0.183
+offset_right = 0.76001
+offset_bottom = 1.08
 grow_horizontal = 2
-mouse_default_cursor_shape = 13
-theme_override_styles/panel = SubResource("StyleBoxFlat_ks4wd")
+grow_vertical = 2
 script = ExtResource("1_bjbgn")
 
-[node name="v" type="VBoxContainer" parent="."]
+[node name="UpperSeparator" type="HSeparator" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_fc11w")
+
+[node name="PanelContainer" type="PanelContainer" parent="."]
+layout_mode = 2
+mouse_filter = 1
+theme_override_styles/panel = SubResource("StyleBoxFlat_ks4wd")
+
+[node name="v" type="VBoxContainer" parent="PanelContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="DragTextureRect" type="TextureRect" parent="v"]
+[node name="DragTextureRect" type="TextureRect" parent="PanelContainer/v"]
 custom_minimum_size = Vector2(0, 20)
 layout_mode = 2
+mouse_default_cursor_shape = 6
 texture = ExtResource("2_fkdjp")
 expand_mode = 2
 stretch_mode = 5
 
-[node name="h" type="HBoxContainer" parent="v"]
+[node name="h" type="HBoxContainer" parent="PanelContainer/v"]
 layout_mode = 2
 
-[node name="CheckButton" type="CheckButton" parent="v/h"]
+[node name="CheckButton" type="CheckButton" parent="PanelContainer/v/h"]
+unique_name_in_owner = true
 layout_mode = 2
 theme = SubResource("Theme_xwy3l")
 
-[node name="Title" type="LineEdit" parent="v/h"]
+[node name="Title" type="LineEdit" parent="PanelContainer/v/h"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 1
 text = "Lfforem ipsum dolor sit amet"
 flat = true
 
-[node name="EditButton" type="Button" parent="v/h"]
+[node name="EditButton" type="Button" parent="PanelContainer/v/h"]
 layout_mode = 2
 icon = ExtResource("4_vm57c")
 
-[node name="RemoveButton" type="Button" parent="v/h"]
+[node name="RemoveButton" type="Button" parent="PanelContainer/v/h"]
 layout_mode = 2
 icon = ExtResource("4_05ydn")
 
-[node name="HSeparator" type="HSeparator" parent="v"]
+[node name="HSeparator" type="HSeparator" parent="PanelContainer/v"]
 layout_mode = 2
 mouse_filter = 1
 
-[node name="Description" type="RichTextLabel" parent="v"]
+[node name="Description" type="RichTextLabel" parent="PanelContainer/v"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 focus_mode = 2
@@ -76,6 +102,12 @@ text = "Lfforem ipsum dolor sit amet, consectetur adipiscing elit. Sed eget elei
 autowrap_mode = 2
 selection_enabled = true
 
-[connection signal="toggled" from="v/h/CheckButton" to="." method="_on_check_button_toggled"]
-[connection signal="pressed" from="v/h/EditButton" to="." method="_on_edit_button_pressed"]
-[connection signal="pressed" from="v/h/RemoveButton" to="." method="_on_remove_button_pressed"]
+[node name="LowerSeparator" type="HSeparator" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
+
+[connection signal="toggled" from="PanelContainer/v/h/CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="pressed" from="PanelContainer/v/h/EditButton" to="." method="_on_edit_button_pressed"]
+[connection signal="pressed" from="PanelContainer/v/h/RemoveButton" to="." method="_on_remove_button_pressed"]
