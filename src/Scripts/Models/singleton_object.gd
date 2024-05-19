@@ -44,7 +44,7 @@ func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHist
 
 #region Editor
 
-@onready var editor_control: EditorContainer = $"/root/RootControl/VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
+@onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
 
 #endregion
 

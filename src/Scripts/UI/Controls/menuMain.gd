@@ -11,15 +11,15 @@ extends MenuBar
 func _on_file_index_pressed(index):
 	match index:
 		0:
-			%fdgOpenFile.popup_centered(Vector2i(800, 600))
-			pass
+			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Text)
 		1:
+			%fdgOpenFile.popup_centered(Vector2i(800, 600))
+		2:
 			## Set a target size, have a border, and display the preferences popup.
 			var target_size = %VBoxRoot.size / 2
 			%PreferencesPopup.borderless = false
 			%PreferencesPopup.size = target_size
 			%PreferencesPopup.popup_centered()
-	pass # Replace with function body.
 
 
 ## Handler:

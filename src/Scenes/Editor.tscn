@@ -1,0 +1,46 @@
+[gd_scene load_steps=3 format=3 uid="uid://ve8kcrp3w1bi"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/EditorCodeEdit.gd" id="2_g3oqj"]
+
+[node name="Editor" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_8t5ew")
+
+[node name="CodeEdit" type="CodeEdit" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+wrap_mode = 1
+script = ExtResource("2_g3oqj")
+
+[node name="TextureRect" type="TextureRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CloseDialog" type="ConfirmationDialog" parent="."]
+title = "You have unsaved open editor "
+ok_button_text = "Save"
+
+[node name="FileDialog" type="FileDialog" parent="."]
+access = 2
+
+[connection signal="text_changed" from="CodeEdit" to="CodeEdit" method="_on_text_changed"]
+[connection signal="canceled" from="CloseDialog" to="." method="_on_save_dialog_canceled"]
+[connection signal="confirmed" from="CloseDialog" to="." method="_on_save_dialog_confirmed"]
+[connection signal="custom_action" from="CloseDialog" to="." method="_on_close_dialog_custom_action"]
+[connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]

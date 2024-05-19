@@ -103,7 +103,7 @@ func _on_edit_button_pressed():
 
 	note_editor.on_memory_item_changed.connect(func(): memory_item = note_editor.memory_item)
 
-	var container = ep.add(note_editor, memory_item.Title)
+	var container = ep.add_control(note_editor, memory_item.Title)
 
 	container.set_meta("associated_object", memory_item)
 
