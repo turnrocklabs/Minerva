@@ -224,10 +224,4 @@ func _on_btn_attach_file_pressed():
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	for fp in paths:
 		SingletonObject.AttachNoteFile.emit(fp)
-		#var title = fp.get_file()
-
-		#var file = FileAccess.open(fp, FileAccess.READ)
-		#var content = file.get_as_text()
-
-		#SingletonObject.NotesTab.add_note(title, content)
 		await get_tree().process_frame

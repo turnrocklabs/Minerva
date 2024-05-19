@@ -165,27 +165,33 @@ func attach_file(the_file: String):
 
 	# Determine the file type
 	var file_ext = the_file.get_extension().to_lower()
-	var file_type:String = ""
+	var file_type = ""
 	var content = ""
+	var content_type = ""
 	var title = the_file.get_file().get_basename()
 
 	if file_ext in ["txt", "md", "json", "xml", "csv", "log"]:
 		file_type = "text"
 		content = file.get_as_text()
-	else:
+		content_type = "text/plain"
+	elif file_ext in ["png", "jpg", "jpeg", "gif", "bmp", "tiff"]:
+		file_type = "image"
 		var file_data = file.get_buffer(file.get_length())
-		if file_ext in ["png", "jpg", "jpeg", "gif", "bmp", "tiff"]:
-			file_type = "image"
-			content = "data:image/%s;base64,%s" % [file_ext, Marshalls.raw_to_base64(file_data)]
-		elif file_ext in ["mp4", "mov", "avi", "mkv", "webm"]:
-			file_type = "video"
-			content = "data:video/%s;base64,%s" % [file_ext, Marshalls.raw_to_base64(file_data)]
-		elif file_ext in ["mp3", "wav", "ogg", "flac"]:
-			file_type = "audio"
-			content = "data:audio/%s;base64,%s" % [file_ext, Marshalls.raw_to_base64(file_data)]
-		else:
-			SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
-			return
+		content = Marshalls.raw_to_base64(file_data)
+		content_type = "image/%s" % file_ext
+	elif file_ext in ["mp4", "mov", "avi", "mkv", "webm"]:
+		file_type = "video"
+		var file_data = file.get_buffer(file.get_length())
+		content = Marshalls.raw_to_base64(file_data)
+		content_type = "video/%s" % file_ext
+	elif file_ext in ["mp3", "wav", "ogg", "flac"]:
+		file_type = "audio"
+		var file_data = file.get_buffer(file.get_length())
+		content = Marshalls.raw_to_base64(file_data)
+		content_type = "audio/%s" % file_ext
+	else:
+		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
+		return
 
 	# Get the active thread
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) < self.current_tab:
@@ -198,11 +204,13 @@ func attach_file(the_file: String):
 	new_memory.Enabled = true
 	new_memory.Title = title
 	new_memory.Content = content
+	new_memory.ContentType = content_type
 	new_memory.Visible = true
 
 	# Append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
+
 	file.close()
 	pass
 
