@@ -14,6 +14,8 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 	NotesTab.render_threads()
 	pass
 
+signal AttachNoteFile(file_path:String)
+
 #endregion Notes
 
 #region Chats

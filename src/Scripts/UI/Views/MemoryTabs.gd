@@ -154,7 +154,58 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	# container.remove_child(control)
 
-	
+## Function:
+# attach_file creates a memoryitem/note from a file.  It can detect file type
+func attach_file(the_file: String):
+	# Check if the file exists
+	var file = FileAccess.open(the_file, FileAccess.READ)
+	if file == null:
+		SingletonObject.ErrorDisplay("File Error", "The file could not be opened.")
+		return
+
+	# Determine the file type
+	var file_ext = the_file.get_extension().to_lower()
+	var file_type:String = ""
+	var content = ""
+	var title = the_file.get_file().get_basename()
+
+	if file_ext in ["txt", "md", "json", "xml", "csv", "log"]:
+		file_type = "text"
+		content = file.get_as_text()
+	else:
+		var file_data = file.get_buffer(file.get_length())
+		if file_ext in ["png", "jpg", "jpeg", "gif", "bmp", "tiff"]:
+			file_type = "image"
+			content = "data:image/%s;base64,%s" % [file_ext, Marshalls.raw_to_base64(file_data)]
+		elif file_ext in ["mp4", "mov", "avi", "mkv", "webm"]:
+			file_type = "video"
+			content = "data:video/%s;base64,%s" % [file_ext, Marshalls.raw_to_base64(file_data)]
+		elif file_ext in ["mp3", "wav", "ogg", "flac"]:
+			file_type = "audio"
+			content = "data:audio/%s;base64,%s" % [file_ext, Marshalls.raw_to_base64(file_data)]
+		else:
+			SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
+			return
+
+	# Get the active thread
+	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) < self.current_tab:
+		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
+		return
+	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
+
+	# Create a new memory item
+	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.Enabled = true
+	new_memory.Title = title
+	new_memory.Content = content
+	new_memory.Visible = true
+
+	# Append the new memory item to the active thread memory list
+	active_thread.MemoryItemList.append(new_memory)
+	render_threads()
+	file.close()
+	pass
+
 
 
 # Called when the node enters the scene tree for the first time.
@@ -164,6 +215,7 @@ func _ready():
 
 	SingletonObject.ThreadList = []
 	SingletonObject.NotesTab = self
+	SingletonObject.AttachNoteFile.connect(self.attach_file)
 	render_threads()
 
 
