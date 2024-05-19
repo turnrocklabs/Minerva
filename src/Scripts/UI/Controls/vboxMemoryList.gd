@@ -17,13 +17,21 @@ func _init(_parent, _threadId, _mem = null):
 	pass
 
 
+## goes trough note nodes and updates the memory item order accordingly
+func _update_memory_item_order():
+	var i = 0
+	for note in get_children():
+		if not note is Note: continue
+		note.memory_item.Order = i
+		i += 1
+
 func _notification(notification_type):
 	match notification_type:
 		# Change MemoryItem Order when notes order changes
 		NOTIFICATION_CHILD_ORDER_CHANGED:
-			for note in get_children():
-				note = note as Note
-				note.memory_item.Order = note.get_index()
+			if is_inside_tree(): _update_memory_item_order()
+		NOTIFICATION_ENTER_TREE:
+			_update_memory_item_order()
 
 func render_items():
 	for item in Memories:
@@ -37,68 +45,28 @@ func render_items():
 		# when the note control is deleted, delete the memory item, so it doesnt get rerendered next time
 		note_control.note_deleted.connect(self.MainTabContainer.delete_note.bind(item))
 
-		# print("ALO")
-		# print(note_control.label_node)
+
+func _memory_thread_find(thread_id: String) -> MemoryThread:
+	return SingletonObject.ThreadList.filter(
+		func(t: MemoryThread):
+			return t.ThreadId == thread_id
+	).pop_front()
+
+# we can also drop the Note in a empty vBoxMemoryList
+func _can_drop_data(_at_position: Vector2, data):
+	var target_thread = _memory_thread_find(MainThreadId)
+	return data is Note and target_thread.MemoryItemList.size() == 0
 
 
-	# for item in Memories:
-	# 	item.Order = order
-	# 	var hbox = HBoxContainer.new()  # Create a new HBoxContainer
-	# 	var checkbox = CheckBox.new()  # Create a CheckBox
-	# 	checkbox.pressed.connect(item._enable_toggle)
-	# 	#checkbox.pressed.connect(self.emitter.bind(1)) ## syntax example of how to pass params.
+func _drop_data(_at_position: Vector2, data):
+	if not data is Note: return
 
-	# 	# check the box if the memory is enabled.
-	# 	if item.Enabled:
-	# 		checkbox.button_pressed = true
+	var target_thread = _memory_thread_find(MainThreadId)
 
-	# 	# Create a Button to look like a Label
-	# 	var label_button = Button.new()
-	# 	label_button.text = item.Title
-	# 	label_button.flat = true  # Makes the button have no raised look, more label-like
+	var dragged_note_thread = _memory_thread_find(data.memory_item.OwningThread)
 
-	# 	# You can set more properties to ensure the button looks exactly like a label, such as removing the hover and click effects
-	# 	label_button.set("custom_styles/normal", StyleBoxEmpty.new())
-	# 	label_button.set("custom_styles/hover", StyleBoxEmpty.new())
-	# 	label_button.set("custom_styles/pressed", StyleBoxEmpty.new())
-	# 	label_button.set("custom_styles/focus", StyleBoxEmpty.new())
-	# 	# Connect the button's pressed signal if needed
-	# 	# label_button.connect("pressed", self, "_on_label_button_pressed", [item])
+	dragged_note_thread.MemoryItemList.erase(data.memory_item)
 
-	# 	# Create rest of buttons (Delete, Up, Down, Open, Edit) as previously
+	target_thread.MemoryItemList.append(data.memory_item)
 
-	# 	var delete_button = Button.new()
-	# 	delete_button.text = "Delete"
-	# 	# Connect delete button's signal here if needed
-
-	# 	var up_button = Button.new()
-	# 	up_button.text = "Up"
-	# 	# Connect up button's signal here if needed
-
-	# 	var down_button = Button.new()
-	# 	down_button.text = "Down"
-	# 	# Connect down button's signal here if needed
-
-	# 	var open_button = Button.new()
-	# 	open_button.text = "Open"
-	# 	# Connect open button's signal here if needed
-
-	# 	var edit_button = Button.new()
-	# 	edit_button.text = "Edit"
-	# 	# Connect edit button's signal here if needed
-
-	# 	# Add the Button (which looks like a Label) and other Buttons to the HBoxContainer
-	# 	hbox.add_child(checkbox)
-	# 	hbox.add_child(label_button)
-	# 	hbox.add_child(delete_button)
-	# 	hbox.add_child(up_button)
-	# 	hbox.add_child(down_button)
-	# 	hbox.add_child(open_button)
-	# 	hbox.add_child(edit_button)
-
-	# 	# Add the HBoxContainer to the VBoxContainer
-	# 	self.add_child(hbox)
-
-	# 	# Increment the order value
-	# 	order += 1
-	# pass
+	data.memory_item.OwningThread = target_thread.ThreadId
