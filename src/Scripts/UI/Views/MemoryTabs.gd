@@ -170,7 +170,7 @@ func attach_file(the_file: String):
 	var content_type = ""
 	var title = the_file.get_file().get_basename()
 
-	if file_ext in ["txt", "md", "json", "xml", "csv", "log"]:
+	if file_ext in ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd"]:
 		file_type = "text"
 		content = file.get_as_text()
 		content_type = "text/plain"
