@@ -156,13 +156,41 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	# container.remove_child(control)
 
+
+func _memory_thread_find(thread_id: String) -> MemoryThread:
+	return SingletonObject.ThreadList.filter(
+		func(t: MemoryThread):
+			return t.ThreadId == thread_id
+	).pop_front()
+
+# if we are dragging a note above a tab, we can drop it there
+func _can_drop_data(at_position: Vector2, data):
+	var tab_idx = get_tab_idx_at_point(at_position)
+
+	return tab_idx != -1 and data is Note
+
+# find out which tab we are above
+# and get it's vboxMemoryList control (which is the only child of the scroll container)
+# then call it's _drop_data so it handles the Note by just appendg it and removing it from the old thread
+func _drop_data(at_position: Vector2, data):
+	if not data is Note: return
+
+	var tab_idx = get_tab_idx_at_point(at_position)
 	
+	var control = get_tab_control(tab_idx)
+
+	var vbox_memory_list = control.get_child(0)
+
+	vbox_memory_list._drop_data(at_position, data)
 
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	%tcThreads.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	%tcThreads.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreads))
+
+	# tab bar need mouse_filter set to pass to allow the tabcontainer to catch drag event and call _can_drop_data
+	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 
 	SingletonObject.ThreadList = []
 	SingletonObject.NotesTab = self
