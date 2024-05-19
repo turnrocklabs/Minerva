@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://bftl8mfcxdyci"]
+[gd_scene load_steps=2 format=3 uid="uid://dn7imn3bi38wd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/NoteEditor.gd" id="1_rmor8"]
 
@@ -15,6 +15,7 @@ script = ExtResource("1_rmor8")
 [node name="CodeEdit" type="CodeEdit" parent="."]
 layout_mode = 2
 size_flags_vertical = 3
+wrap_mode = 1
 
 [node name="HBoxContainer" type="HBoxContainer" parent="."]
 layout_mode = 2

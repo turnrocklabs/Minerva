@@ -46,12 +46,6 @@ func To_Prompt() -> Array[Variant]:
 	return retVal
 
 
-
-func _set(property, _value):
-	if property in SERIALIZER_FIELDS:
-		print("PROPERTY CHANGED AAAAAA")
-	return true
-
 ## Function:
 # Serialize creates a JSON representation of this instance.
 func Serialize() -> Dictionary:

@@ -5,7 +5,7 @@ extends Node
 var PROVIDER: SingletonObject.API_PROVIDER
 
 var API_KEY: String:
-	get: return SingletonObject.API_KEY.get(PROVIDER)
+	get: return SingletonObject.preferences_popup.get_api_key(PROVIDER)
 
 var BASE_URL: String
 
@@ -48,6 +48,7 @@ func make_request(url: String, method: int, body: String="", headers: Array[Stri
 		#add_child(http_request)
 		http_request.request_completed.connect(_on_request_completed.bind(http_request, url))
 	else:
+		SingletonObject.ErrorDisplay("No API Access", "API Key is missing or rejected")
 		push_error("Invalid API key")
 		return {}
 

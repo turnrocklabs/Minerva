@@ -14,6 +14,8 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 	NotesTab.render_threads()
 	pass
 
+signal AttachNoteFile(file_path:String)
+
 #endregion Notes
 
 #region Chats
@@ -44,11 +46,13 @@ func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHist
 
 #region Editor
 
-@onready var editor_control: EditorContainer = $"/root/RootControl/VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
+@onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
 
 #endregion
 
 #region Common UI Tasks
+
+@onready var main_ui = $"/root/RootControl/VBoxRoot/MainUI"
 
 ###
 # Create a common error display system that will popup an error and show
@@ -67,34 +71,7 @@ func ErrorDisplay(error_title:String, error_message: String):
 #region API Consumer
 enum API_PROVIDER {GOOGLE, OPENAI, ANTHROPIC}
 
-var config_file: ConfigFile
-
-var API_KEY: Dictionary = {}
-
-func load_api_keys():
-	self.API_KEY[API_PROVIDER.GOOGLE] = config_file.get_value("API KEYS", "GOOGLE_VERTEX", "")
-	self.API_KEY[API_PROVIDER.ANTHROPIC] = config_file.get_value("API KEYS", "ANTHROPIC", "")
-	self.API_KEY[API_PROVIDER.OPENAI] = config_file.get_value("API KEYS", "OPENAI", "")
-	pass
-
-func save_api_keys():
-	config_file.set_value("API KEYS", "GOOGLE_VERTEX", self.API_KEY.get(API_PROVIDER.GOOGLE, ""))
-	config_file.set_value("API KEYS", "ANTHROPIC", self.API_KEY.get(API_PROVIDER.ANTHROPIC, ""))
-	config_file.set_value("API KEYS", "OPENAI", self.API_KEY.get(API_PROVIDER.OPENAI, ""))
-	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
-
-func _ready():
-	self.config_file = ConfigFile.new()
-	var res_code = self.config_file.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
-	match res_code:
-		OK:
-			load_api_keys()
-		ERR_FILE_NOT_FOUND:
-			# populare config file with default settings
-			config_file.set_value("API KEYS", "GOOGLE_VERTEX", "")
-			config_file.set_value("API KEYS", "ANTHROPIC", "")
-			config_file.set_value("API KEYS", "OPENAI", "")
-			load_api_keys()
+@onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 
 #endregion API Consumer
 

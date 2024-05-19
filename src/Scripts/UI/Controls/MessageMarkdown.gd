@@ -7,26 +7,36 @@ extends HBoxContainer
 
 @export var user_message_color: Color
 @export var bot_message_color: Color
+@export var error_message_color: Color
 
 static func bot_message(message: BotResponse) -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
-	msg.right_control.visible = true
-	msg.label.markdown_text = message.FullText
+	msg.left_control.visible = true
+	msg.left_control.get_node("PanelContainer/Label").text = "O4"
+	msg.left_control.get_node("PanelContainer").tooltip_text = "gpt-4"
 	msg.label.set("theme_override_colors/default_color", Color.BLACK)
 	
-	var style: StyleBox = msg.get_node("PanelContainer").get("theme_override_styles/panel")
-	style.bg_color = msg.bot_message_color
+	var style: StyleBox = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
+	
+	if message.Error:
+		msg.label.text = "An error occurred:\n%s" % message.Error
+		style.bg_color = msg.error_message_color
+	else:
+		msg.label.markdown_text = message.FullText
+		style.bg_color = msg.bot_message_color
 
 
 	return msg
 
 static func user_message(message: BotResponse) -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
-	msg.left_control.visible = true
+	msg.right_control.visible = true
+	msg.right_control.get_node("PanelContainer/Label").text = SingletonObject.preferences_popup.get_user_initials()
+	msg.right_control.get_node("PanelContainer").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
 	msg.label.markdown_text = message.FullText
 	msg.label.set("theme_override_colors/default_color", Color.WHITE)
 
-	var style: StyleBoxFlat = msg.get_node("PanelContainer").get("theme_override_styles/panel")
+	var style: StyleBoxFlat = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = msg.user_message_color
 
 	return msg
@@ -97,5 +107,5 @@ func _ready():
 			node.bbcode_enabled = true
 			node.text = ts.content
 		
-		$PanelContainer/v.add_child(node)
+		%PanelContainer/v.add_child(node)
 		

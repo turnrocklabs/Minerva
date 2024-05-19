@@ -1,10 +1,13 @@
-[gd_scene load_steps=10 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=13 format=3 uid="uid://cw1ig4ql83b6a"]
 
+[ext_resource type="Theme" uid="uid://deimxwybcmyit" path="res://assets/themes/default.theme" id="1_4g1mt"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
+[ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/PreferencesPopup.tscn" id="3_3hcc1"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 
@@ -26,6 +29,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("1_4g1mt")
+script = ExtResource("2_65hnk")
 
 [node name="ErrorDisplayPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
@@ -36,8 +41,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -280.0
-offset_bottom = -416.0
+offset_right = 232.0
+offset_bottom = 96.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -53,7 +58,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 6
 
-[node name="PreferencesPopup" type="PopupPanel" parent="."]
+[node name="PreferencesPopup" parent="." instance=ExtResource("3_3hcc1")]
 unique_name_in_owner = true
 size = Vector2i(520, 171)
 
@@ -64,8 +69,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 516.0
+offset_bottom = 167.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -209,11 +214,31 @@ item_3/id = 3
 [node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "File"
 size = Vector2i(121, 100)
-item_count = 2
-item_0/text = "Open"
+item_count = 3
+item_0/text = "New"
+item_0/id = 2
+item_1/text = "Open"
+item_1/id = 0
+item_2/text = "Preferences"
+item_2/id = 1
+
+[node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
+title = "View"
+size = Vector2i(121, 100)
+hide_on_checkable_item_selection = false
+item_count = 3
+item_0/text = "Chats"
+item_0/checkable = 1
+item_0/checked = true
 item_0/id = 0
-item_1/text = "Preferences"
+item_1/text = "Editor"
+item_1/checkable = 1
+item_1/checked = true
 item_1/id = 1
+item_2/text = "Notes"
+item_2/checkable = 1
+item_2/checked = true
+item_2/id = 2
 
 [node name="MainUI" type="HBoxContainer" parent="VBoxRoot"]
 layout_mode = 2
@@ -230,6 +255,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.5
@@ -239,6 +265,7 @@ layout_mode = 2
 size_flags_horizontal = 1
 
 [node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -272,6 +299,7 @@ editor_pane = NodePath("EditorPane")
 layout_mode = 2
 
 [node name="RightPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -296,11 +324,12 @@ size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_v4lmg")
 script = ExtResource("1_gunt8")
 
-[connection signal="pressed" from="PreferencesPopup/VBoxContainer/HBoxContainer4/btnSavePrefs" to="VBoxRoot/menuMain" method="_on_save_keys_pressed"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_index_pressed"]
+[connection signal="about_to_popup" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_about_to_popup"]
+[connection signal="index_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_index_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
