@@ -32,13 +32,18 @@ func _on_close_tab(tab: int, container: TabContainer):
 		container.remove_child(control)
 
 
-func add_control(item: Node, name_: String):
+func add_control(item: Node, name_: String) -> Node:
 	var scrollable = ScrollContainer.new()
 	scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scrollable.name = name_
 	
 	scrollable.add_child(item)
+
+	self.Tabs.add_child(scrollable)
+	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
+
+	return scrollable
 
 
 
