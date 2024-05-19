@@ -34,6 +34,12 @@ func save_project_as(file=""):
 
 
 func save_project():
+	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
+	for item_idx in item_list.get_selected_items():
+		var editor = item_list.get_item_metadata(item_idx)
+		await editor.prompt_close(true) # FIXME: somehow not prompt the first prompt from here
+		editor.queue_free()
+
 	if save_path == null or save_path == "":
 		await save_project_as()
 		return
@@ -66,7 +72,7 @@ func serialize_project() -> String:
 		var serialized_chat_tab = chat_thread.Serialize()
 		chats.append(serialized_chat_tab)
 
-	var editors = SingletonObject.editor_control.serialize()
+	var editors = SingletonObject.editor_container.serialize()
 
 	var save_dict: Dictionary = {
 		"ThreadList" : notes,
@@ -94,7 +100,7 @@ func deserialize_project(data: Dictionary):
 	# We need to cast Array to Array[String] because deserialize expects that type
 	var editor_files: Array[String] = []
 	editor_files.assign(data.get("Editors", []))
-	SingletonObject.editor_control.deserialize(editor_files)
+	SingletonObject.editor_container.deserialize(editor_files)
 	
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
@@ -152,8 +158,21 @@ func _on_fdg_open_project_file_selected(path):
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		if not SingletonObject.saved_state:
+		
+		var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
+
+		# if the state is unsaved or we have unsaved editors open
+		if not SingletonObject.saved_state or unsaved_editors:
 			# user want to quit
+			# ask the user which unsaved editors he wants saved
+			var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
+			item_list.clear()
+			for editor in unsaved_editors:
+				var item_idx = item_list.add_item(editor.name)
+				item_list.set_item_metadata(item_idx, editor)
+			
+			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+
 			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
 		else:
 			get_tree().quit()

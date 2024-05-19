@@ -19,11 +19,11 @@ func _on_request_completed(result, response_code, _headers, body, _http_request,
 		data = JSON.parse_string(body.get_string_from_utf8())
 		bot_response = to_bot_response(data)
 	else:
-		push_error("Invalid result.  Response: %s", response_code)
+		push_error("Invalid result. Response: %s", response_code)
 		return
 	
-	if data.get("object") == "chat.completion":
-		chat_completed.emit(bot_response)
+	# if data.get("object") == "chat.completion":
+	chat_completed.emit(bot_response)
 
 
 
@@ -100,7 +100,12 @@ func wrap_memory(list_memories: String) -> String:
 # }
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
-	response.FullText = data["choices"][0]["message"]["content"]
+	
+	if "error" in data:
+		SingletonObject.ErrorDisplay("Error", data["error"]["message"])
+		response.Error = data["error"]["message"]
+		return response
 
+	response.FullText = data["choices"][0]["message"]["content"]
 	return response
 

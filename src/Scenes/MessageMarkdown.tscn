@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=19 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
@@ -9,6 +9,16 @@
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="8_ywchm"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_4tpql"]
+bg_color = Color(0.643137, 0.117647, 0.388235, 1)
+corner_radius_top_left = 50
+corner_radius_top_right = 50
+corner_radius_bottom_right = 50
+corner_radius_bottom_left = 50
+
+[sub_resource type="LabelSettings" id="LabelSettings_l0yj0"]
+font_size = 15
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hjfue"]
 resource_local_to_scene = true
@@ -71,31 +81,56 @@ is_italic = false
 is_underlined = false
 
 [node name="MessageMarkdown" type="HBoxContainer" node_paths=PackedStringArray("left_control", "right_control", "label")]
-anchors_preset = 10
-anchor_right = 1.0
+offset_left = 5.0
+offset_right = 1915.0
+offset_bottom = 613.0
 grow_horizontal = 2
 script = ExtResource("1_5rvwm")
-left_control = NodePath("LeftSplitter")
-right_control = NodePath("RightSplitter")
-label = NodePath("PanelContainer/v/MarkdownLabel")
+left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
+right_control = NodePath("MarginContainer/HBoxContainer/RightSplitter")
+label = NodePath("MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel")
 user_message_color = Color(0, 0, 1, 1)
 bot_message_color = Color(0, 0.592157, 0.470588, 1)
+error_message_color = Color(0.737255, 0, 0.109804, 1)
 
-[node name="LeftSplitter" type="Control" parent="."]
-visible = false
+[node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
+theme_override_constants/margin_left = 7
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 7
+theme_override_constants/margin_bottom = 5
 
-[node name="PanelContainer" type="PanelContainer" parent="."]
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="LeftSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 8
+
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/HBoxContainer/LeftSplitter"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/panel = SubResource("StyleBoxFlat_4tpql")
+
+[node name="Label" type="Label" parent="MarginContainer/HBoxContainer/LeftSplitter/PanelContainer"]
+layout_mode = 2
+text = "O4"
+label_settings = SubResource("LabelSettings_l0yj0")
+horizontal_alignment = 1
+
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_hjfue")
 
-[node name="v" type="VBoxContainer" parent="PanelContainer"]
+[node name="v" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer"]
 layout_mode = 2
 
-[node name="MarkdownLabel" type="RichTextLabel" parent="PanelContainer/v"]
+[node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
 focus_mode = 2
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
@@ -162,10 +197,21 @@ h4 = SubResource("Resource_j3mc0")
 h5 = SubResource("Resource_whtla")
 h6 = SubResource("Resource_f738n")
 
-[node name="RightSplitter" type="Control" parent="."]
+[node name="RightSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
 visible = false
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
+size_flags_vertical = 8
 
-[connection signal="gui_input" from="PanelContainer/v/MarkdownLabel" to="." method="_on_markdown_label_gui_input"]
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/HBoxContainer/RightSplitter"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/panel = SubResource("StyleBoxFlat_4tpql")
+
+[node name="Label" type="Label" parent="MarginContainer/HBoxContainer/RightSplitter/PanelContainer"]
+layout_mode = 2
+text = "O4"
+label_settings = SubResource("LabelSettings_l0yj0")
+horizontal_alignment = 1
+
+[connection signal="gui_input" from="MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel" to="." method="_on_markdown_label_gui_input"]

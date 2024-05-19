@@ -6,6 +6,7 @@ extends RefCounted
 var FullText: String
 var Picture: Texture
 var Snips: Array[String]
+var Error: String
 
 var _vertex_response_extractor: RegEx
 # var _markdown_snip_extractor: RegEx

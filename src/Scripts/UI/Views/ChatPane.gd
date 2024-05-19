@@ -85,11 +85,17 @@ func _on_chat_pressed():
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
 	Chat.generate_content(history_list)
+
 	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
-	pass
+
+	SingletonObject.ChatList[current_tab].VBox.loading_response = true
+	
+	%txtMemoryTitle.text = ""
+	%txtMainUserInput.text = ""
 
 ## Render a full chat history response
 func render_single_chat(response:BotResponse):
+	SingletonObject.ChatList[current_tab].VBox.loading_response = false
 	# create a chat history item and append it to the list
 	var item: ChatHistoryItem = ChatHistoryItem.new()
 	item.Role = ChatHistoryItem.ChatRole.ASSISTANT
@@ -106,6 +112,7 @@ func render_history(chat_history: ChatHistory):
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll_container.follow_focus = true
 
 	# create a derived VBoxContainer for chats and add to the scroll container
 	var vboxChat: VBoxChat = VBoxChat.new(self)
@@ -164,7 +171,13 @@ func _on_btn_test_pressed():
 	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
 	var test_response:BotResponse = BotResponse.new()
 	#test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
-	test_response.FullText = "## Markdown\n Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
+	test_response.FullText = """
+		## Markdown
+		Here is how you write hello world in python:
+		```python
+		print (\"Hello World\")
+		```
+	"""
 	self.render_single_chat(test_response)
 	pass # Replace with function body.
 
@@ -200,3 +213,15 @@ func _on_tab_clicked(tab: int):
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
 
 # endregion
+
+## Function:
+# Loads a file and raises a signal to the singleton for the memory tabs
+# to attach a file.
+func _on_btn_attach_file_pressed():
+	%AttachFileDialog.popup_centered(Vector2i(700, 500))
+
+
+func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
+	for fp in paths:
+		SingletonObject.AttachNoteFile.emit(fp)
+		await get_tree().process_frame

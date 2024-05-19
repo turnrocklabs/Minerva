@@ -3,7 +3,7 @@ extends RefCounted ## so I get memory management and signals.
 
 ## MemoryItem is my stab at a single memory item that I can then use as I want.
 
-static var SERIALIZER_FIELDS = ["Enabled", "Title", "Content", "Visible", "Pinned", "Order"]
+static var SERIALIZER_FIELDS = ["Enabled", "Title", "Content", "DataType", "Visible", "Pinned", "Order"]
 
 var Enabled: bool = true:
 	set(value): SingletonObject.save_state(false); Enabled = value
@@ -13,6 +13,9 @@ var Title: String:
 
 var Content: String:
 	set(value): SingletonObject.save_state(false); Content = value
+
+var ContentType: String:
+	set(value): SingletonObject.save_state(false); ContentType = value
 
 var Visible: bool:
 	set(value): SingletonObject.save_state(false); Visible = value
@@ -35,13 +38,6 @@ func _init(_OwningThread:String):
 func _enable_toggle():
 	self.Enabled = !self.Enabled
 
-func _set(property, _value):
-	print(property)
-	if property in SERIALIZER_FIELDS:
-		print("PROPERTY CHANGED AAAAAA")
-		
-	return true
-
 
 ## Function:
 # Serialize takes this instance of a MemoryItem and serializes it so it can be represented as JSON
@@ -50,6 +46,7 @@ func Serialize() -> Dictionary:
 		"Enabled": Enabled,
 		"Title": Title,
 		"Content": Content,
+		"ContentType": ContentType,
 		"Visible": Visible,
 		"Pinned": Pinned,
 		"Order": Order,
