@@ -66,6 +66,17 @@ func ErrorDisplay(error_title:String, error_message: String):
 	errorPopup.popup_centered()
 	pass
 
+@onready var _default_zoom = $"/root/RootControl".theme.default_font_size
+func zoom_ui(factor: int):
+	var theme = $"/root/RootControl".theme
+	if theme.has_default_font_size():
+		theme.default_font_size += factor
+	else:
+		theme.default_font_size = ThemeDB.fallback_font_size + factor
+
+func reset_zoom():
+	$"/root/RootControl".theme.default_font_size = _default_zoom
+
 #endregion Common UI Tasks
 
 #region API Consumer

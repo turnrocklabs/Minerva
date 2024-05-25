@@ -1,7 +1,7 @@
 [gd_scene load_steps=19 format=3 uid="uid://bsn5f2nlc2ari"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/CodeMarkdownLabel.gd" id="1_6nlsm"]
-[ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="1_wraaf"]
+[ext_resource type="FontFile" uid="uid://q8ltkdm8vd5n" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="1_wraaf"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_t10nn"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_15kna"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_8j4jt"]
