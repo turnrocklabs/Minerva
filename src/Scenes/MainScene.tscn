@@ -34,6 +34,7 @@ script = ExtResource("2_65hnk")
 
 [node name="ErrorDisplayPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
+size = Vector2i(236, 100)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ErrorDisplayPopup"]
 anchors_preset = 15
@@ -41,8 +42,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -280.0
-offset_bottom = -416.0
+offset_right = 232.0
+offset_bottom = 96.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -69,8 +70,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 516.0
+offset_bottom = 294.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -202,6 +203,7 @@ access = 2
 
 [node name="Project" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "Project"
+size = Vector2i(100, 116)
 item_count = 4
 item_0/text = "New"
 item_0/id = 0
@@ -213,19 +215,23 @@ item_3/text = "Save As..."
 item_3/id = 3
 
 [node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
+unique_name_in_owner = true
 title = "File"
-size = Vector2i(121, 100)
-item_count = 3
+size = Vector2i(121, 116)
+item_count = 4
 item_0/text = "New"
 item_0/id = 2
 item_1/text = "Open"
 item_1/id = 0
-item_2/text = "Preferences"
-item_2/id = 1
+item_2/text = "Save"
+item_2/id = 3
+item_2/disabled = true
+item_3/text = "Preferences"
+item_3/id = 1
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "View"
-size = Vector2i(121, 100)
+size = Vector2i(139, 174)
 hide_on_checkable_item_selection = false
 item_count = 7
 item_0/text = "Chats"
@@ -306,6 +312,7 @@ script = ExtResource("3_welkk")
 editor_pane = NodePath("EditorPane")
 
 [node name="EditorPane" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" instance=ExtResource("4_826g6")]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="RightPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer"]
@@ -337,6 +344,7 @@ script = ExtResource("1_gunt8")
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
+[connection signal="about_to_popup" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_about_to_popup"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_index_pressed"]
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_about_to_popup"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_index_pressed"]
