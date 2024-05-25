@@ -186,6 +186,7 @@ grow_vertical = 2
 [node name="menuMain" type="MenuBar" parent="VBoxRoot"]
 layout_mode = 2
 size_flags_vertical = 0
+prefer_global_menu = false
 script = ExtResource("1_oipdw")
 
 [node name="ProjectManagement" parent="VBoxRoot/menuMain" instance=ExtResource("2_amibn")]
@@ -332,6 +333,10 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_v4lmg")
 script = ExtResource("1_gunt8")
+
+[node name="PreferencesPopup" parent="." instance=ExtResource("3_3hcc1")]
+unique_name_in_owner = true
+visible = false
 
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
