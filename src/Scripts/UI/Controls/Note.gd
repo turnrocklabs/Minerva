@@ -1,11 +1,14 @@
 class_name Note
-extends PanelContainer
+extends VBoxContainer
 
 signal note_deleted()
 
-@onready var checkbutton_node: CheckButton = $v/h/CheckButton
-@onready var label_node: LineEdit = $v/h/Title
-@onready var description_node: RichTextLabel = $v/Description
+@onready var checkbutton_node: CheckButton = %CheckButton
+@onready var label_node: LineEdit = %Title
+@onready var description_node: RichTextLabel = %Description
+
+@onready var _upper_separator: HSeparator = %UpperSeparator
+@onready var _lower_separator: HSeparator = %LowerSeparator
 
 
 # this will react each time memory item is changed
@@ -27,50 +30,103 @@ func _ready():
 	)
 
 
-# show the dragged node when the drag ends
+func _to_string():
+	return "Note %s" % memory_item.Title
+
+
 func _notification(notification_type):
 	match notification_type:
 		NOTIFICATION_DRAG_END:
-			modulate.a = 1
+			description_node.mouse_filter = Control.MOUSE_FILTER_STOP
 
-## Replaces the children nodes of same parent by changing their index
-func _replace_nodes(node1: Node, node2: Node) -> void:
-	var dragged_node_index = node1.get_index()
+			_lower_separator.visible = false
+			_upper_separator.visible = false
 
-	get_parent().move_child(node1, get_index())
-	get_parent().move_child(node2, dragged_node_index)
+			SingletonObject.NotesTab.render_threads()
+		
+		NOTIFICATION_DRAG_BEGIN:
+			description_node.mouse_filter = Control.MOUSE_FILTER_PASS
 
 # create a preview which is just duplicated Note node
 # and make the original node transparent
 func _get_drag_data(at_position: Vector2) -> Note:
-
-	var preview = Container.new()
-	var preview_note: Note = self.duplicate()
+	var preview = Control.new()
+	var preview_note: Note = duplicate()
 
 	preview.add_child(preview_note)
+
+	preview_note.size = size
 	preview.size = size
-	preview_note.global_position = -at_position
+
+	preview_note.position = -at_position
+
+	preview.modulate.a = 0.5
 
 	set_drag_preview(preview)
 
-	modulate.a = 0
+	get_parent().remove_child(self)
 
 	return self
 
-func _can_drop_data(_at_position: Vector2, data):
+func _can_drop_data(at_position: Vector2, data):
 	if not data is Note: return false
-	
-	for node in get_parent().get_children():
-		if node is Note and node.get_rect().has_point(_at_position):
-			_replace_nodes(data, self)
+
+	if data == self: return false
+
+	if at_position.y < size.y / 2:
+		_upper_separator.visible = true
+		_lower_separator.visible = false
+	else:
+		_lower_separator.visible = true
+		_upper_separator.visible = false
 
 	return true
+
+func _memory_thread_find(thread_id: String) -> MemoryThread:
+	return SingletonObject.ThreadList.filter(
+		func(t: MemoryThread):
+			return t.ThreadId == thread_id
+	).pop_front()
+
 
 func _drop_data(_at_position: Vector2, data):
 	data = data as Note
 
-	_replace_nodes(data, self)
+	# dragged note should be moved to thread where 'self' is 
+	# at 'insert_index'
+	var insert_index: int
+
+	if data == self: return
+
+	# thread where dragged note is currently
+	var dragged_note_thread := _memory_thread_find(data.memory_item.OwningThread)
 	
+	# if dragged note and the note we're dropping on to are not in same tabs
+	# it meands we have to deal with two different MemoryThreads
+	if memory_item.OwningThread != data.memory_item.OwningThread:
+		
+		var target_note_thread := _memory_thread_find(memory_item.OwningThread)
+
+		if _upper_separator.visible:
+			insert_index = target_note_thread.MemoryItemList.find(memory_item)
+		elif _lower_separator.visible:
+			insert_index = target_note_thread.MemoryItemList.find(memory_item)+1
+		
+		dragged_note_thread.MemoryItemList.erase(data.memory_item)
+		target_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
+
+		data.memory_item.OwningThread = target_note_thread.ThreadId
+	
+	else:
+		dragged_note_thread.MemoryItemList.erase(data.memory_item)
+
+		if _upper_separator.visible:
+			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)
+		elif _lower_separator.visible:
+			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)+1
+
+		dragged_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
+
 
 
 func _on_check_button_toggled(toggled_on: bool) -> void:
