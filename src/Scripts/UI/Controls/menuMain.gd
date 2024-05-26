@@ -2,7 +2,6 @@ extends MenuBar
 
 @onready var view = $View as PopupMenu
 
-
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 #func _process(delta):
 #	pass
@@ -15,6 +14,11 @@ func _on_file_index_pressed(index):
 		1:
 			%fdgOpenFile.popup_centered(Vector2i(800, 600))
 		2:
+			var tabs = SingletonObject.editor_container.editor_pane.Tabs
+			var control = tabs.get_current_tab_control()
+			if control:
+				control.prompt_close(true)
+		3:
 			## Set a target size, have a border, and display the preferences popup.
 			var target_size = %VBoxRoot.size / 2
 			%PreferencesPopup.borderless = false
@@ -45,9 +49,6 @@ func _on_project_index_pressed(index):
 	pass # Replace with function body.
 
 
-
-
-
 func _on_view_index_pressed(index: int):
 	# if zoom items are selected
 	match index:
@@ -62,7 +63,17 @@ func _on_view_index_pressed(index: int):
 	SingletonObject.main_ui.set_editor_pane_visible(view.is_item_checked(1))
 	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(2))
 
+
 func _on_view_about_to_popup():
 	view.set_item_checked(0, SingletonObject.main_ui.chat_pane.visible)
 	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)
 	view.set_item_checked(2, SingletonObject.main_ui.notes_pane.visible)
+
+
+func _on_file_about_to_popup():
+	var tabs = SingletonObject.editor_container.editor_pane.Tabs
+	var control = tabs.get_current_tab_control()
+	if control:
+		%File.set_item_disabled(2, false)
+	else: 
+		%File.set_item_disabled(2, true)
