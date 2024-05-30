@@ -13,12 +13,24 @@ func _on_file_index_pressed(index):
 			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Text)
 		1:
 			%fdgOpenFile.popup_centered(Vector2i(800, 600))
-		2:
+		2: # this match is for the save button
+				# get current editor tab
 			var tabs = SingletonObject.editor_container.editor_pane.Tabs
-			var control = tabs.get_current_tab_control()
-			if control:
-				control.prompt_close(true)
-		3:
+			var current_editor_tab = tabs.get_current_tab_control()
+			
+			#check is tab exists and a file for the tab doesnot exist (the file is being saved for the first time)
+			if current_editor_tab and !current_editor_tab.file_saved_in_disc :
+				current_editor_tab.prompt_close(true)# shows file save pop up
+				
+			else: # this runs if the file has been saved already so the pop up for saving does not apear
+				current_editor_tab.save_file_to_disc(current_editor_tab.file) #calls save to disc fun
+				
+		3: #this match if for the save as... button
+			var tabs = SingletonObject.editor_container.editor_pane.Tabs
+			var current_editor_tab = tabs.get_current_tab_control()
+			if current_editor_tab:
+				current_editor_tab.prompt_close(true)
+		4:
 			## Set a target size, have a border, and display the preferences popup.
 			var target_size = %VBoxRoot.size / 2
 			%PreferencesPopup.borderless = false
@@ -73,7 +85,10 @@ func _on_view_about_to_popup():
 func _on_file_about_to_popup():
 	var tabs = SingletonObject.editor_container.editor_pane.Tabs
 	var control = tabs.get_current_tab_control()
+	#checks if current tabs exists and enables saving features if so
 	if control:
 		%File.set_item_disabled(2, false)
+		%File.set_item_disabled(3, false)
 	else: 
 		%File.set_item_disabled(2, true)
+		%File.set_item_disabled(3, true)

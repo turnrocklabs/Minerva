@@ -37,6 +37,7 @@ title = "You have unsaved open editor "
 ok_button_text = "Save"
 
 [node name="FileDialog" type="FileDialog" parent="."]
+size = Vector2i(454, 159)
 access = 2
 
 [connection signal="text_changed" from="CodeEdit" to="CodeEdit" method="_on_text_changed"]
