@@ -67,7 +67,7 @@ func unsaved_editors() -> Array[Editor]:
 		
 		if not child.is_content_saved():
 			editors.append(child)
-
+	
 	return editors
 
 
@@ -79,7 +79,7 @@ func _copy_children_to(from: Node, to: Node):
 			if not dup.get_child_count(): dup.current_tab = -1
 			dup.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 			dup.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(dup))
-
+		
 		to.add_child(dup)
 
 func toggle_horizontal_split() -> void:

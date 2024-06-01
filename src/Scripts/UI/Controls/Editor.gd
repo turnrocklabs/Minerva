@@ -24,6 +24,9 @@ var file: String
 var type: TYPE
 var _file_saved := false
 
+ # checks if the editor has been saved at least once
+var file_saved_in_disc := false # this is used when you press the save button on the file menu
+
 static func create(type_: TYPE, file_ = null) -> Editor:
 	var editor = scene.instantiate()
 	editor.type = type_
@@ -94,10 +97,12 @@ func prompt_close(show_save_file_dialog := false) -> bool:
 func is_content_saved() -> bool:
 	match type:
 		TYPE.Text:
-			return code_edit.starting_version == code_edit.get_saved_version()
+			# cuauh changed this line go back if necesary
+			#return code_edit.starting_version == code_edit.get_saved_version()
+			return code_edit.get_version() == code_edit.get_saved_version()
 		TYPE.Graphics:
 			return true
-
+	
 	return false
 
 
@@ -117,14 +122,21 @@ func _on_close_dialog_custom_action(action: StringName):
 
 
 func _on_file_dialog_file_selected(path: String):
-	var save_file = FileAccess.open(path, FileAccess.WRITE)
+	save_file_to_disc(path)
 
+
+func save_file_to_disc(path: String):
+	var save_file = FileAccess.open(path, FileAccess.WRITE)
+	file = path
 	match type:
 		TYPE.Text:
 			save_file.store_string(code_edit.text)
+			
 		TYPE.Graphics:
 			pass
 	
 	_file_saved = true
+	file_saved_in_disc = true
+	
 
 
