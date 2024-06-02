@@ -63,15 +63,16 @@ func _ready():
 
 	var text = label.text
 
-	var mathces = regex.search_all(label.text)
+	var matches = regex.search_all(label.text)
 
 	var text_segments: Array[TextSegment] = []
 
-	for m in mathces:
+	for m in matches:
 		var code_text = m.get_string()
 		var one_line = code_text.count("\n") == 0
 
-		if one_line: continue
+		if one_line:
+			continue
 
 		var first_part_len = text.find(code_text)
 		
@@ -92,20 +93,30 @@ func _ready():
 		text_segments.append(ts2)
 		text_segments.append(ts3)
 	
-	if not mathces: return
+	if not matches:
+		return
 
 	# clear all children
-	for ch in label.get_parent().get_children(): label.get_parent().remove_child(ch)
-	for ts in text_segments:
-		var node: Node
-
-		if ts.syntax:
-			node = CodeMarkdownLabel.create(ts.content, ts.syntax)
-		else:
+	for ch in label.get_parent().get_children():
+		label.get_parent().remove_child(ch)
+		
+	if len(text_segments) == 0:
+			var node: Node
 			node = RichTextLabel.new()
 			node.fit_content = true
 			node.bbcode_enabled = true
-			node.text = ts.content
-		
-		%PanelContainer/v.add_child(node)
-		
+			node.text = label.markdown_text
+			get_node("%PanelContainer/v").add_child(node)
+	else:
+		for ts in text_segments:
+			var node: Node
+
+			if ts.syntax:
+				node = CodeMarkdownLabel.create(ts.content, ts.syntax)
+			else:
+				node = RichTextLabel.new()
+				node.fit_content = true
+				node.bbcode_enabled = true
+				node.text = ts.content
+			
+			get_node("%PanelContainer/v").add_child(node)
