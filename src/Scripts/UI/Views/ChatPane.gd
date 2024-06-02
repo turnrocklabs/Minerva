@@ -172,18 +172,12 @@ func _on_btn_test_pressed():
 	var test_response:BotResponse = BotResponse.new()
 	#test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
 	test_response.FullText = """
-Here is the markdown for a simple counting script:
+Sure, I'm happy to help you find bugs in your Godot 4 addon! Please provide the code for your markdown to BBCode converter, and I'll take a look. Make sure to highlight any specific areas where you're experiencing issues. Additionally, please ensure that your code adheres to the guidelines mentioned:
 
-# Script
-A simple Python script to count from 1 to 100 and display each number on a new line:
+1. Use `%` instead of `$` to access scene items.
+2. Do not use named signal connections; always use object signal connections.
 
-```python
-for i in range(1, 101):
-	print(i)
-```
-
-## usage
-You can run this script in any Python environment, such as a Python interactive shell, a script file, or a Jupyter notebook. It uses a `for` loop to iterate through the numbers 1 to 100 and the `print` function to display each number on a new line.
+Feel free to paste the code here, and we can get started!
 	"""
 	self.render_single_chat(test_response)
 	pass # Replace with function body.
