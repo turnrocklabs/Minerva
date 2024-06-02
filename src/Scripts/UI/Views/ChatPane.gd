@@ -147,9 +147,26 @@ func _ready():
 
 	
 func _on_close_tab(tab: int, container: TabContainer):
+	# Remove the tab control
 	var control = container.get_tab_control(tab)
 	container.remove_child(control)
 
+	# Adjust the current_tab index if necessary
+	if tab <= current_tab:
+		if current_tab > 0:
+			current_tab -= 1
+		else:
+			current_tab = 0
+
+	# Remove the corresponding ChatHistory entry from ChatList
+	if tab < SingletonObject.ChatList.size():
+		SingletonObject.ChatList.remove_at(tab)
+
+	# Render the new active tab or create a new chat if none are left
+	if SingletonObject.ChatList.size() > 0:
+		render_history(SingletonObject.ChatList[current_tab])
+	else:
+		_on_new_chat()
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 # func _process(delta):
