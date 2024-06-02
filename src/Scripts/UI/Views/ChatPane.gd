@@ -172,11 +172,18 @@ func _on_btn_test_pressed():
 	var test_response:BotResponse = BotResponse.new()
 	#test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
 	test_response.FullText = """
-		## Markdown
-		Here is how you write hello world in python:
-		```python
-		print (\"Hello World\")
-		```
+Here is the markdown for a simple counting script:
+
+# Script
+A simple Python script to count from 1 to 100 and display each number on a new line:
+
+```python
+for i in range(1, 101):
+	print(i)
+```
+
+## usage
+You can run this script in any Python environment, such as a Python interactive shell, a script file, or a Jupyter notebook. It uses a `for` loop to iterate through the numbers 1 to 100 and the `print` function to display each number on a new line.
 	"""
 	self.render_single_chat(test_response)
 	pass # Replace with function body.
@@ -186,16 +193,12 @@ func clear_all_chats():
 		remove_child(child)
 	add_child(SingletonObject.Provider)
 
-
-
-
 # region Edit Chat Title
 
 func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
 	%EditTitleDialog/LineEdit.text = get_tab_title(tab)
 	%EditTitleDialog.popup_centered()
-
 
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
@@ -219,7 +222,6 @@ func _on_tab_clicked(tab: int):
 # to attach a file.
 func _on_btn_attach_file_pressed():
 	%AttachFileDialog.popup_centered(Vector2i(700, 500))
-
 
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	for fp in paths:
