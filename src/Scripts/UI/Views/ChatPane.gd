@@ -72,12 +72,16 @@ func _on_btn_inspect_pressed():
 	pass # Replace with function body.
 
 func _on_chat_pressed():
+	## Check if there is an active tab first
+	if current_tab == -1:
+		print("No active tab to send the chat.")
+		return
+	
 	## prepare an append item for the history
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
 
-	
 	## Add the user speech bubble to the chat area control.
 	var temp_user_data: BotResponse = BotResponse.new()
 	temp_user_data.FullText = %txtMainUserInput.text
@@ -151,22 +155,25 @@ func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)
 	container.remove_child(control)
 
-	# Adjust the current_tab index if necessary
-	if tab <= current_tab:
-		if current_tab > 0:
-			current_tab -= 1
-		else:
-			current_tab = 0
+	# If there are still tabs left, set the correct current_tab index
+	if container.get_tab_count() > 0:
+		if tab <= current_tab:
+			# Adjust the current_tab index if necessary
+			if current_tab > 0:
+				current_tab -= 1
+			else:
+				current_tab = 0
+	else:
+		# If no tabs are left, reset current_tab and do not create a new chat
+		current_tab = -1
 
 	# Remove the corresponding ChatHistory entry from ChatList
 	if tab < SingletonObject.ChatList.size():
 		SingletonObject.ChatList.remove_at(tab)
 
-	# Render the new active tab or create a new chat if none are left
+	# Render the new active tab or do nothing if no tabs are left
 	if SingletonObject.ChatList.size() > 0:
 		render_history(SingletonObject.ChatList[current_tab])
-	else:
-		_on_new_chat()
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 # func _process(delta):
