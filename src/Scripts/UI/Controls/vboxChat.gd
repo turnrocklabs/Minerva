@@ -8,7 +8,8 @@ var _dummy_msg_node: Node
 var loading_response := false:
 	set(value):
 		if value: _create_dummy_response()
-		else: _dummy_msg_node.free()
+		elif _dummy_msg_node != null:
+			_dummy_msg_node.free()
 		loading_response = value
 
 var chat_history: ChatHistory
