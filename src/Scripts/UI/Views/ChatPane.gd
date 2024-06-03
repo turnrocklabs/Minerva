@@ -3,6 +3,10 @@ extends TabContainer
 
 var Chat: BaseProvider
 
+#func _process(delta):
+	#print("st",SingletonObject.ChatList)
+
+## add new chat 
 func _on_new_chat():
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
 	SingletonObject.last_tab_index += 1
@@ -11,8 +15,6 @@ func _on_new_chat():
 	history.HistoryItemList = []
 	SingletonObject.ChatList.append(history)
 	render_history(history)
-
-
 
 ## Function:
 # create_prompt generates the full turn prompt
@@ -145,10 +147,11 @@ func _ready():
 		Chat.chat_completed.connect(self.render_single_chat)
 	SingletonObject.initialize_chats(Chat, self)
 
-	
+##        remove chat  
 func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)
 	container.remove_child(control)
+	SingletonObject.ChatList.remove_at(tab)
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
