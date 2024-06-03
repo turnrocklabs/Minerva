@@ -25,7 +25,6 @@ static func bot_message(message: BotResponse) -> MessageMarkdown:
 		msg.label.markdown_text = message.FullText
 		style.bg_color = msg.bot_message_color
 
-
 	return msg
 
 static func user_message(message: BotResponse) -> MessageMarkdown:
@@ -41,7 +40,6 @@ static func user_message(message: BotResponse) -> MessageMarkdown:
 
 	return msg
 
-
 class TextSegment:
 	var syntax: String
 	var content: String
@@ -55,7 +53,6 @@ class TextSegment:
 			return "%s: %s" % [syntax, content]
 		else:
 			return content
-
 
 func _ready():
 	var regex = RegEx.new()
@@ -101,12 +98,12 @@ func _ready():
 		label.get_parent().remove_child(ch)
 		
 	if len(text_segments) == 0:
-			var node: Node
-			node = RichTextLabel.new()
-			node.fit_content = true
-			node.bbcode_enabled = true
-			node.text = label.markdown_text
-			get_node("%PanelContainer/v").add_child(node)
+		var node: Node
+		node = RichTextLabel.new()
+		node.fit_content = true
+		node.bbcode_enabled = true
+		node.text = label.markdown_text
+		get_node("%PanelContainer/v").add_child(node)
 	else:
 		for ts in text_segments:
 			var node: Node
