@@ -56,7 +56,7 @@ class TextSegment:
 
 func _ready():
 	var regex = RegEx.new()
-	regex.compile(r"(\[code\])((.|\n)*?)(\[\/code\])")
+	regex.compile(r"(\[code\])((.|\n)*?)(\[\/code\])")  # Correct pattern to capture [code]...[/code]
 
 	var text = label.text
 
@@ -80,10 +80,11 @@ func _ready():
 
 		var ts3 = TextSegment.new(text.substr(second_part_start, second_part_len).strip_edges())
 
-		# first line of the markdown text eg. ```python
+		# Extract syntax from the first line of the markdown text
 		var syntax = label.markdown_text.substr(first_part_len, code_text.length()).strip_edges().split("\n")[0]
 		syntax = syntax.replace("`", "")
 
+		# Include the [code] and [/code] tags in the content
 		var ts2 = TextSegment.new(code_text, syntax)
 
 		text_segments.append(ts1)
@@ -93,7 +94,7 @@ func _ready():
 	if not matches:
 		return
 
-	# clear all children
+	# Clear all children
 	for ch in label.get_parent().get_children():
 		label.get_parent().remove_child(ch)
 		
