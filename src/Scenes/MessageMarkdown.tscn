@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://ccki2gldarral" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
