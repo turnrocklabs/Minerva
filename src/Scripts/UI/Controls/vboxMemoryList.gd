@@ -52,11 +52,10 @@ func _memory_thread_find(thread_id: String) -> MemoryThread:
 			return t.ThreadId == thread_id
 	).pop_front()
 
-# we can also drop the Note in a empty vBoxMemoryList
+# we can also drop the Note in a vBoxMemoryList
 func _can_drop_data(_at_position: Vector2, data):
-
-	var target_thread = _memory_thread_find(MainThreadId)
-	return data is Note and target_thread.MemoryItemList.size() == 0
+	if not data is Note: return
+	return true
 
 
 func _drop_data(_at_position: Vector2, data):
