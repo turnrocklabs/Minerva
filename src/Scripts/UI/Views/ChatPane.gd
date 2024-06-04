@@ -161,10 +161,14 @@ func _on_close_tab(tab: int, container: TabContainer):
 func _on_btn_memorize_pressed():
 	var user_title = %txtMemoryTitle.text
 	var user_body = %txtMainUserInput.text
-	SingletonObject.NotesTab.add_note(user_title, user_body)
-
-	%txtMemoryTitle.text = ""
-	%txtMainUserInput.text = ""
+	
+	if user_title == "" or user_body == "":
+		SingletonObject.ErrorDisplay("Error","Please enter an Title and description for note") 
+		
+	else:
+		SingletonObject.NotesTab.add_note(user_title, user_body)
+		%txtMemoryTitle.text = ""
+		%txtMainUserInput.text = ""
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
