@@ -157,7 +157,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 func _on_btn_memorize_pressed():
 	var user_title = %txtMemoryTitle.text
 	var user_body = %txtMainUserInput.text
-	if !user_title && !user_body:
+	if user_title and user_body:
 		
 		SingletonObject.NotesTab.add_note(user_title, user_body)
 	else:
