@@ -73,18 +73,34 @@ func ErrorDisplay(error_title:String, error_message: String):
 #region API Consumer
 enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC }
 
+# changing the order here will probably result in having wrong provider selected
+# in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
 	CHAT_GPT_4O,
 	CHAT_GPT_35_TURBO,
 	GOOGLE_VERTEX,
 }
 
-# Dictionary of all model providers and scripts that implement their functionality
-static var API_MODEL_PROVIDER_SCRIPTS = {
+## Dictionary of all model providers and scripts that implement their functionality
+var API_MODEL_PROVIDER_SCRIPTS = {
 	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX: GoogleVertex,
 }
+
+## This function will return the `API_MODEL_PROVIDERS` enum value
+## for the provider currently in use by the `SingletonObject.Chats`
+func get_active_provider() -> API_MODEL_PROVIDERS:
+	
+	# get currently used provider script
+	var provider_script = Chats.provider.get_script()
+
+	for key: API_MODEL_PROVIDERS in API_MODEL_PROVIDER_SCRIPTS:
+		if API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
+			return key
+
+	# fallback value
+	return API_MODEL_PROVIDERS.CHAT_GPT_4O
 
 @onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 
