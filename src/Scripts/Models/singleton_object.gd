@@ -23,7 +23,6 @@ var ChatList: Array[ChatHistory]:
 	set(value):
 		# save_state(false)
 		ChatList = value
-		print(value)
 
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
