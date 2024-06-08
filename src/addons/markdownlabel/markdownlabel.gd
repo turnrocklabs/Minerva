@@ -559,18 +559,19 @@ func _debug(string: String):
 	print(string)
 
 func _denotes_fenced_code_block(line: String, character: String) -> bool:
-	print("checking for a fenced code block. Line: ", line, " , character: ", character)
+	# print("checking for a fenced code block. Line: ", line, " , character: ", character)
 	var stripped_line := line.strip_edges()
 	var count := stripped_line.count(character)
 	if stripped_line.begins_with(character):
-		print("line begins with: ", character)
+		# print("line begins with: ", character)
+		pass
 	#if count >= 3 and count==stripped_line.length():
 		#print("fenced code block found")
 		#return true
 	#else:
 		#return false
 	if count >= 3 and count==stripped_line.length():
-		print("fenced code block found")
+		# print("fenced code block found")
 		return true
 	elif count >= 3 and stripped_line.begins_with(character):
 		## Case for potential codeblock with language tag
