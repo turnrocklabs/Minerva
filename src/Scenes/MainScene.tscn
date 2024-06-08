@@ -268,7 +268,7 @@ text = "Create note"
 [node name="btnAddAttachement" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 10
-text = "Create note"
+text = "Attach file"
 
 [node name="btnNewTab" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
@@ -333,6 +333,7 @@ text = "Add note"
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
 [connection signal="tab_clicked" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
 [connection signal="tab_hovered" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
