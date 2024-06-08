@@ -80,7 +80,8 @@ func serialize_project() -> String:
 		"Editors": editors,
 		"last_tab_index": SingletonObject.last_tab_index,
 		"active_chatindex": SingletonObject.Chats.current_tab,
-		"active_notes_index": SingletonObject.NotesTab.current_tab
+		"active_notes_index": SingletonObject.NotesTab.current_tab,
+		"active_provider": SingletonObject.get_active_provider(),
 	}
 	var stringified_save: String = JSON.stringify(save_dict, "\t")
 	return stringified_save
@@ -105,6 +106,10 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 	SingletonObject.NotesTab.current_tab = data.get("active_notes_index", 0)
+
+	# will be float if loaded from json, cast it to int
+	var provider_enum_index = int(data.get("active_provider", 0))
+	SingletonObject.Chats.provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
 
 
 func close_project():
