@@ -54,25 +54,31 @@ func open_threads_popup(name: String = "", tab = null):
 
 func _on_new_pressed():
 	open_threads_popup()
-	
+
+
 func _on_btn_create_thread_pressed():
 	var tab_name:String = %txtNewTabName.text
-
+	#added a check for the tab name, if no name gives a default name
+	if !tab_name:
+		tab_name = "notes " + str(len(SingletonObject.ThreadList) + 1)
 	
-
 	if %NewThreadPopup.has_meta("associated_tab"):
 		var at = %NewThreadPopup.get_meta("associated_tab")
 		at.get_meta("thread").ThreadName = tab_name
 		render_threads()
 	else:
-		var thread = MemoryThread.new()
-		thread.ThreadName = tab_name
-		var thread_memories: Array[MemoryItem] = []
-		thread.MemoryItemList = thread_memories
-		SingletonObject.ThreadList.append(thread)
-		render_thread(thread)
+		create_new_notes_tab(tab_name)
 	
 	%NewThreadPopup.hide()
+
+func create_new_notes_tab(tab_name: String = "notes 1"):
+	var thread = MemoryThread.new()
+	thread.ThreadName = tab_name
+	var thread_memories: Array[MemoryItem] = []
+	thread.MemoryItemList = thread_memories
+	SingletonObject.ThreadList.append(thread)
+	render_thread(thread)
+
 
 func clear_all_tabs():
 	var children = %tcThreads.get_children()
@@ -80,6 +86,7 @@ func clear_all_tabs():
 		%tcThreads.remove_child(child)
 	pass
 	
+
 
 func render_threads():
 	# save the last active thread.
@@ -100,21 +107,23 @@ func render_threads():
 func add_note(user_title:String, user_content: String, _source: String = ""):
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
-		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
-		return
+		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
+		#return
+		await create_new_notes_tab()
+	
 	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
-
+	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = true
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
-
+	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
-	pass
+
 
 ## Will delete the memory_item from the memory list
 func delete_note(memory_item: MemoryItem):

@@ -33,6 +33,15 @@ func _ready():
 func _to_string():
 	return "Note %s" % memory_item.Title
 
+# check if we are showing the separator.
+# if yes that means we were dragging the note above this note
+# but if the mouse is not above this note anymore, hide the separators
+func _process(_delta):
+	if not _upper_separator.visible and not _lower_separator.visible: return
+
+	if not get_global_rect().has_point(get_global_mouse_position()):
+		_upper_separator.visible = false
+		_lower_separator.visible = false
 
 func _notification(notification_type):
 	match notification_type:
