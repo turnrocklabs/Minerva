@@ -2,7 +2,7 @@ class_name ChatHistoryItem
 extends RefCounted
 
 enum PartType {TEXT, CODE, JPEG}
-enum ChatRole {USER, ASSISTANT, MODEL}
+enum ChatRole {SYSTEM,USER, ASSISTANT, MODEL}
 
 static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type"]
 
