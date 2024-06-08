@@ -1,19 +1,18 @@
-class_name OpenAI
+class_name ChatGPTBase
 extends BaseProvider
 
-const MODEL = "gpt-4o"
 
+# Change the `model_name` and `short_name` in _ready function
 
-
-func _ready():
-	super()
+func _init():
+	provider_name = "OpenAI"
 	BASE_URL = "https://api.openai.com"
 	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
 
 
-
 func _on_request_completed(result, response_code, _headers, body, _http_request, _url):
 	var bot_response: BotResponse
+
 	var data: Variant
 	if result == 0:
 		data = JSON.parse_string(body.get_string_from_utf8())
@@ -31,7 +30,7 @@ func _on_request_completed(result, response_code, _headers, body, _http_request,
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 
 	var request_body = {
-		"model": MODEL,
+		"model": model_name,
 		"messages": prompt
 	}
 
@@ -99,7 +98,7 @@ func wrap_memory(list_memories: String) -> String:
 #   "system_fingerprint": "fp_3b956da36b"
 # }
 func to_bot_response(data: Variant) -> BotResponse:
-	var response = BotResponse.new()
+	var response = BotResponse.new(self)
 	
 	if "error" in data:
 		SingletonObject.ErrorDisplay("Error", data["error"]["message"])

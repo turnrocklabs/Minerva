@@ -4,7 +4,7 @@ extends RefCounted
 enum PartType {TEXT, CODE, JPEG}
 enum ChatRole {USER, ASSISTANT, MODEL}
 
-static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type"]
+static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type", "ModelName", "ModelShortName"]
 
 var Role: ChatRole:
 	set(value): SingletonObject.save_state(false); Role = value
@@ -24,13 +24,21 @@ var Order: int:
 var Type: PartType:
 	set(value): SingletonObject.save_state(false); Type = value
 
+var ModelName: String:
+	set(value): SingletonObject.save_state(false); ModelName = value
+
+var ModelShortName: String:
+	set(value): SingletonObject.save_state(false); ModelShortName = value
+
+
 
 func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 	self.Type = _type
 	self.Role = _role
 	self.Message = ""
 	self.Base64Data = ""
-	pass
+	self.ModelName = SingletonObject.Chats.provider.model_name
+	self.ModelShortName = SingletonObject.Chats.provider.short_name
 
 
 func format(callback: Callable) -> String:
@@ -40,6 +48,8 @@ func format(callback: Callable) -> String:
 func to_bot_response() -> BotResponse:
 	var res = BotResponse.new()
 	res.FullText = Message
+	res.ModelName = ModelName
+	res.ModelShortName = ModelShortName
 
 	return res
 
@@ -52,13 +62,22 @@ func Serialize() -> Dictionary:
 		"Message" : Message,
 		"Base64Data" : Base64Data,
 		"Order" : Order,
-		"Type" : Type
+		"Type" : Type,
+		"ModelName": ModelName,
+		"ModelShortName": ModelShortName,
 	}
 	return save_dict
 
 
 static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	
+	# Backwards compatibility
+	# In case we don't have model specified just use this as a fallback
+	data.merge({
+		"ModelName": "Unknown",
+		"ModelShortName": "Unknown",
+	})
+
 	var chi = ChatHistoryItem.new()
 
 	for prop in SERIALIZER_FIELDS:

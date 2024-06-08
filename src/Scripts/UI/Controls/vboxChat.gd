@@ -56,6 +56,17 @@ func add_user_message(message:BotResponse) -> MessageMarkdown:
 
 	return msg_node
 
+## Adds a program notification to the chat box
+## This message is not saved on project save
+func add_program_message(message: String) -> Label:
+	var label = Label.new()
+	label.text = message
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	
+	add_child(label)
+	return label
+
+
 func render_items():
 	var order: int = 0 # the order of the items
 
