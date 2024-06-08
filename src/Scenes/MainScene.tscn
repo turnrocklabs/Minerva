@@ -260,6 +260,16 @@ layout_mode = 2
 layout_mode = 2
 text = "Notes"
 
+[node name="btnCreateNote" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Create note"
+
+[node name="btnAddAttachement" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Attach file"
+
 [node name="btnNewTab" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 10
@@ -272,6 +282,47 @@ size_flags_vertical = 3
 theme_override_styles/panel = SubResource("StyleBoxFlat_v4lmg")
 script = ExtResource("1_gunt8")
 
+[node name="CreatNewNote" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+size = Vector2i(127, 100)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CreatNewNote"]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 123.0
+offset_bottom = 96.0
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="CreatNewNote/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Creat new note"
+
+[node name="NoteHead" type="TextEdit" parent="CreatNewNote/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+size_flags_stretch_ratio = 1.5
+placeholder_text = "Note head
+"
+
+[node name="NoteDescription" type="TextEdit" parent="CreatNewNote/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+size_flags_stretch_ratio = 8.11
+placeholder_text = "Note Description"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="CreatNewNote/VBoxContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="AddNote" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Add note"
+
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
@@ -281,6 +332,9 @@ script = ExtResource("1_gunt8")
 [connection signal="index_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_index_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
 [connection signal="tab_clicked" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
 [connection signal="tab_hovered" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
+[connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/AddNote" to="." method="_on_add_note_pressed"]
