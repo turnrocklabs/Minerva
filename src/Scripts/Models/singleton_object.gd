@@ -66,21 +66,23 @@ func ErrorDisplay(error_title:String, error_message: String):
 	errorPopup.popup_centered()
 	pass
 
-@onready var _default_zoom = $"/root/RootControl".theme.default_font_size
-func zoom_ui(factor: int):
-	var theme = $"/root/RootControl".theme
-	if theme.has_default_font_size():
-		theme.default_font_size += factor
-	else:
-		theme.default_font_size = ThemeDB.fallback_font_size + factor
-
-func reset_zoom():
-	$"/root/RootControl".theme.default_font_size = _default_zoom
+@onready var main_scene = $"/root/RootControl"
 
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER {GOOGLE, OPENAI, ANTHROPIC}
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC }
+
+enum API_MODEL_PROVIDERS {
+	CHAT_GPT_4O,
+	CHAT_GPT_35_TURBO,
+}
+
+# Dictionary of all model providers and scripts that implement their functionality
+static var API_MODEL_PROVIDER_SCRIPTS = {
+	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
+	API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
+}
 
 @onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 

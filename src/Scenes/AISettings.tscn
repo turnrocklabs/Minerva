@@ -1,0 +1,47 @@
+[gd_scene load_steps=2 format=3 uid="uid://bdgef0ru6o5ux"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Views/AISettings.gd" id="1_2377q"]
+
+[node name="AISettings" type="PopupPanel"]
+position = Vector2i(0, 36)
+size = Vector2i(648, 480)
+visible = true
+unresizable = false
+borderless = false
+script = ExtResource("1_2377q")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 644.0
+offset_bottom = 476.0
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 15
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 15
+
+[node name="v" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/v"]
+layout_mode = 2
+text = "AI Settings"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/v"]
+layout_mode = 2
+
+[node name="h" type="HBoxContainer" parent="MarginContainer/v"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/v/h"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Provider:"
+
+[node name="ProviderOptionButton" type="OptionButton" parent="MarginContainer/v/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[connection signal="item_selected" from="MarginContainer/v/h/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]

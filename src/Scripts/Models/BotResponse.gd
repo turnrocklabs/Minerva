@@ -7,15 +7,22 @@ var FullText: String
 var Picture: Texture
 var Snips: Array[String]
 var Error: String
+var ModelName: String
+var ModelShortName: String
 
 var _vertex_response_extractor: RegEx
 # var _markdown_snip_extractor: RegEx
 
-func _init():
+func _init(provider: BaseProvider = null):
+	if provider:
+		ModelName = provider.model_name
+		ModelShortName = provider.short_name
+
 	self._vertex_response_extractor = RegEx.new()
 	var pattern = '^\\s*\\{.*\\}\\s*$' # Basic pattern to check for something starting with { and ending with }
 	self._vertex_response_extractor.compile(pattern)
-	pass
+
+	
 
 func FromVertex(input: Variant) -> BotResponse:
 	## dictionary["candidates"]["content"]["parts"]
