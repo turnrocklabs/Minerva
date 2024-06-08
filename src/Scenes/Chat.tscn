@@ -1,6 +1,7 @@
-[gd_scene load_steps=9 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=10 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
+[ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="2_4uml8"]
 [ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
@@ -13,7 +14,7 @@ bg_color = Color(0.0117647, 0.0117647, 0.0117647, 1)
 [sub_resource type="Theme" id="Theme_0jcdg"]
 Panel/styles/panel = SubResource("StyleBoxFlat_qx4pd")
 
-[node name="ChatPane" type="Control"]
+[node name="Chats" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -51,6 +52,10 @@ line_folding = true
 
 [node name="btnCloseInspector" type="Button" parent="InspectorPopup/VBoxContainer"]
 layout_mode = 2
+
+[node name="AISettings" parent="." instance=ExtResource("1_qlmlm")]
+unique_name_in_owner = true
+visible = false
 
 [node name="EditTitleDialog" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
@@ -160,6 +165,7 @@ text = "Test"
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
 [connection signal="tab_clicked" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_tab_clicked"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChatSettings" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_chat_settings_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMemorize" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_memorize_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_inspect_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnAttachFile" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_attach_file_pressed"]

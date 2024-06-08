@@ -23,7 +23,6 @@ var ChatList: Array[ChatHistory]:
 	set(value):
 		# save_state(false)
 		ChatList = value
-		print(value)
 
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
@@ -67,21 +66,41 @@ func ErrorDisplay(error_title:String, error_message: String):
 	errorPopup.popup_centered()
 	pass
 
-@onready var _default_zoom = $"/root/RootControl".theme.default_font_size
-func zoom_ui(factor: int):
-	var theme = $"/root/RootControl".theme
-	if theme.has_default_font_size():
-		theme.default_font_size += factor
-	else:
-		theme.default_font_size = ThemeDB.fallback_font_size + factor
-
-func reset_zoom():
-	$"/root/RootControl".theme.default_font_size = _default_zoom
+@onready var main_scene = $"/root/RootControl"
 
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER {GOOGLE, OPENAI, ANTHROPIC}
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC }
+
+# changing the order here will probably result in having wrong provider selected
+# in AISettings, as it relies on this enum to load the provider script, but not a big deal
+enum API_MODEL_PROVIDERS {
+	CHAT_GPT_4O,
+	CHAT_GPT_35_TURBO,
+	GOOGLE_VERTEX,
+}
+
+## Dictionary of all model providers and scripts that implement their functionality
+var API_MODEL_PROVIDER_SCRIPTS = {
+	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
+	API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
+	API_MODEL_PROVIDERS.GOOGLE_VERTEX: GoogleVertex,
+}
+
+## This function will return the `API_MODEL_PROVIDERS` enum value
+## for the provider currently in use by the `SingletonObject.Chats`
+func get_active_provider() -> API_MODEL_PROVIDERS:
+	
+	# get currently used provider script
+	var provider_script = Chats.provider.get_script()
+
+	for key: API_MODEL_PROVIDERS in API_MODEL_PROVIDER_SCRIPTS:
+		if API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
+			return key
+
+	# fallback value
+	return API_MODEL_PROVIDERS.CHAT_GPT_4O
 
 @onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 
