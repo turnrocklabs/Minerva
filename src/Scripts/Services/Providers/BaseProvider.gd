@@ -38,7 +38,7 @@ func Format(_chat: ChatHistoryItem) -> Variant:
 	push_error("Format method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
-func _on_request_completed(_result, _response_code, _headers, _body, _http_request, _url):
+func _on_request_completed(result, response_code, _headers, body, _http_request, _url):
 	pass
 
 # endregion
