@@ -22,7 +22,7 @@ func _on_request_completed(result, response_code, _headers, body, _http_request,
 		push_error("Invalid result. Response: %s", response_code)
 		return
 	
-	# if data.get("object") == "chat.completion":
+	#if data.get("object") == "chat.completion":
 	chat_completed.emit(bot_response)
 
 
