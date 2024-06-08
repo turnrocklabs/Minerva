@@ -68,7 +68,6 @@ func _on_btn_inspect_pressed():
 	%InspectorPopup.size = target_size
 	%InspectorPopup.popup_centered()
 
-	pass # Replace with function body.
 
 func _on_chat_pressed():
 	## prepare an append item for the history
@@ -158,8 +157,12 @@ func _on_close_tab(tab: int, container: TabContainer):
 func _on_btn_memorize_pressed():
 	var user_title = %txtMemoryTitle.text
 	var user_body = %txtMainUserInput.text
-	SingletonObject.NotesTab.add_note(user_title, user_body)
-
+	if user_title and user_body:
+		
+		SingletonObject.NotesTab.add_note(user_title, user_body)
+	else:
+		SingletonObject.NotesTab.add_note("", "")
+	
 	%txtMemoryTitle.text = ""
 	%txtMainUserInput.text = ""
 
