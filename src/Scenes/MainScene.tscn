@@ -207,7 +207,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.5
 
-[node name="ChatPane" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
+[node name="Chats" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
 layout_mode = 2
 size_flags_horizontal = 1
 
