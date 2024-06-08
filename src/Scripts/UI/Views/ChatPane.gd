@@ -3,9 +3,6 @@ extends TabContainer
 
 var Chat: BaseProvider
 
-#func _process(delta):
-	#print("st",SingletonObject.ChatList)
-
 ## add new chat 
 func _on_new_chat():
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
