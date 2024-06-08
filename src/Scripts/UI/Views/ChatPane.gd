@@ -1,18 +1,17 @@
 class_name ChatPane
 extends TabContainer
 
-var Chat: BaseProvider
+var provider: BaseProvider
 
+## add new chat 
 func _on_new_chat():
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
 	SingletonObject.last_tab_index += 1
-	var history: ChatHistory = ChatHistory.new(self.Chat)
+	var history: ChatHistory = ChatHistory.new(self.provider)
 	history.HistoryName = tab_name
 	history.HistoryItemList = []
 	SingletonObject.ChatList.append(history)
 	render_history(history)
-
-
 
 ## Function:
 # create_prompt generates the full turn prompt
@@ -24,7 +23,7 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	## Get the working memory and append the user message to chat history
 	# var prompt_for_turn: String = ""
 
-	var working_memory: String = SingletonObject.NotesTab.To_Prompt(Chat)
+	var working_memory: String = SingletonObject.NotesTab.To_Prompt(provider)
 
 	# disable the notes if we are asked
 	if disable_notes:
@@ -69,7 +68,6 @@ func _on_btn_inspect_pressed():
 	%InspectorPopup.size = target_size
 	%InspectorPopup.popup_centered()
 
-	pass # Replace with function body.
 
 func _on_chat_pressed():
 	## Check if there is an active tab first
@@ -88,13 +86,12 @@ func _on_chat_pressed():
 	
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
-	Chat.generate_content(history_list)
+	provider.generate_content(history_list)
 
 	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
 
 	SingletonObject.ChatList[current_tab].VBox.loading_response = true
-	
-	%txtMemoryTitle.text = ""
+
 	%txtMainUserInput.text = ""
 
 ## Render a full chat history response
@@ -143,37 +140,28 @@ func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 
-	if Chat == null:
-		Chat = OpenAI.new()
-		add_child(Chat)
-		Chat.chat_completed.connect(self.render_single_chat)
-	SingletonObject.initialize_chats(Chat, self)
-
+	if provider == null:
+		provider = %AISettings.get_selected_provider().new()
+		set_provider(provider)
 	
+	SingletonObject.initialize_chats(provider, self)
+
+## Changes the provider that this chat panes uses to generate responses
+func set_provider(new_provider: BaseProvider):
+	if provider.is_inside_tree(): remove_child(provider)
+
+	add_child(new_provider)
+	new_provider.chat_completed.connect(self.render_single_chat)
+
+	provider = new_provider
+
+
 func _on_close_tab(tab: int, container: TabContainer):
 	# Remove the tab control
 	var control = container.get_tab_control(tab)
 	container.remove_child(control)
+	SingletonObject.ChatList.remove_at(tab)
 
-	# If there are still tabs left, set the correct current_tab index
-	if container.get_tab_count() > 0:
-		if tab <= current_tab:
-			# Adjust the current_tab index if necessary
-			if current_tab > 0:
-				current_tab -= 1
-			else:
-				current_tab = 0
-	else:
-		# If no tabs are left, reset current_tab and do not create a new chat
-		current_tab = -1
-
-	# Remove the corresponding ChatHistory entry from ChatList
-	if tab < SingletonObject.ChatList.size():
-		SingletonObject.ChatList.remove_at(tab)
-
-	# Render the new active tab or do nothing if no tabs are left
-	if SingletonObject.ChatList.size() > 0:
-		render_history(SingletonObject.ChatList[current_tab])
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 # func _process(delta):
@@ -182,10 +170,14 @@ func _on_close_tab(tab: int, container: TabContainer):
 func _on_btn_memorize_pressed():
 	var user_title = %txtMemoryTitle.text
 	var user_body = %txtMainUserInput.text
-	SingletonObject.NotesTab.add_note(user_title, user_body)
-
-	%txtMemoryTitle.text = ""
-	%txtMainUserInput.text = ""
+	
+	if user_title == "" or user_body == "":
+		SingletonObject.ErrorDisplay("Error","Please enter an Title and description for note") 
+		
+	else:
+		SingletonObject.NotesTab.add_note(user_title, user_body)
+		%txtMemoryTitle.text = ""
+		%txtMainUserInput.text = ""
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
@@ -213,7 +205,10 @@ func clear_all_chats():
 		remove_child(child)
 	add_child(SingletonObject.Provider)
 
-# region Edit Chat Title
+
+
+
+# region Edit provider Title
 
 func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
@@ -247,3 +242,7 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	for fp in paths:
 		SingletonObject.AttachNoteFile.emit(fp)
 		await get_tree().process_frame
+
+
+func _on_btn_chat_settings_pressed():
+	%AISettings.popup_centered()
