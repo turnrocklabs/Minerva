@@ -2,7 +2,7 @@ class_name ChatHistoryItem
 extends RefCounted
 
 enum PartType {TEXT, CODE, JPEG}
-enum ChatRole {SYSTEM,USER, ASSISTANT, MODEL}
+enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
 
 static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type", "ModelName", "ModelShortName"]
 
@@ -70,12 +70,11 @@ func Serialize() -> Dictionary:
 
 
 static func Deserialize(data: Dictionary) -> ChatHistoryItem:
-	
 	# Backwards compatibility
 	# In case we don't have model specified just use this as a fallback
 	data.merge({
-		"ModelName": "Unknown",
-		"ModelShortName": "Unknown",
+		"ModelName": "NA",
+		"ModelShortName": "NA",
 	})
 
 	var chi = ChatHistoryItem.new()
