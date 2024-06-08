@@ -17,6 +17,7 @@ func _ready():
 		var instance = script.new()
 		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.model_name], key)
 
+	# _provider_option_button.select(SingletonObject.)
 
 func _on_provider_option_button_item_selected(index: int):
 	var item_id = _provider_option_button.get_item_id(index)
@@ -28,3 +29,12 @@ func _on_provider_option_button_item_selected(index: int):
 	for chat_history in SingletonObject.ChatList:
 		chat_history.VBox.add_program_message("Changed provider to %s %s" % [provider_object.provider_name, provider_object.model_name])
 
+
+
+func _on_about_to_popup():
+	var active_provider = SingletonObject.get_active_provider()
+	var item_index = _provider_option_button.get_item_index(active_provider)
+	
+	_provider_option_button.select(item_index)
+
+	
