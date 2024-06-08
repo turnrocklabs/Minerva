@@ -1,0 +1,35 @@
+{
+	"ChatList": [],
+	"Editors": [],
+	"ThreadList": [
+		{
+			"MemoryItemList": [
+				{
+					"Content": "The $ symobl to access scene items  is no longer valid.\nuse % to access scene items.\n\n# an example\nthis is wrong:\n$button.pressed.connect(test_function)\n\nthis is correct:\n%button.pressed.connect(test_function)\n\nDO NOT USE $",
+					"ContentType": "",
+					"Enabled": true,
+					"Order": 0,
+					"OwningThread": "8d16ac645ecf7a7c1f87d7a3bb163afe9ed2eba6c842eacbba5969a342313116",
+					"Pinned": false,
+					"Title": "$ replaced with %",
+					"Visible": true
+				},
+				{
+					"Content": "we do not use named signal connections.  Always use object signal connections.\n\n# Example\n\nthis is wrong:\n%button.connect(\"pressed\", self, \"btnTest_click\")\n\nthis is correct:\n%button.pressed.connect(btnTest_click)\n\nDO NOT CONNECT VIA SIGNAL NAME",
+					"ContentType": "",
+					"Enabled": true,
+					"Order": 1,
+					"OwningThread": "8d16ac645ecf7a7c1f87d7a3bb163afe9ed2eba6c842eacbba5969a342313116",
+					"Pinned": false,
+					"Title": "connect",
+					"Visible": true
+				}
+			],
+			"ThreadId": "8d16ac645ecf7a7c1f87d7a3bb163afe9ed2eba6c842eacbba5969a342313116",
+			"ThreadName": "Godot 4"
+		}
+	],
+	"active_chatindex": 0,
+	"active_notes_index": 0,
+	"last_tab_index": 0
+}
