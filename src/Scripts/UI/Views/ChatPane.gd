@@ -3,6 +3,7 @@ extends TabContainer
 
 var provider: BaseProvider
 
+## add new chat 
 func _on_new_chat():
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
 	SingletonObject.last_tab_index += 1
@@ -11,8 +12,6 @@ func _on_new_chat():
 	history.HistoryItemList = []
 	SingletonObject.ChatList.append(history)
 	render_history(history)
-
-
 
 ## Function:
 # create_prompt generates the full turn prompt
@@ -69,7 +68,6 @@ func _on_btn_inspect_pressed():
 	%InspectorPopup.size = target_size
 	%InspectorPopup.popup_centered()
 
-	pass # Replace with function body.
 
 func _on_chat_pressed():
 	## prepare an append item for the history
@@ -158,6 +156,7 @@ func set_provider(new_provider: BaseProvider):
 func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)
 	container.remove_child(control)
+	SingletonObject.ChatList.remove_at(tab)
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
@@ -167,8 +166,12 @@ func _on_close_tab(tab: int, container: TabContainer):
 func _on_btn_memorize_pressed():
 	var user_title = %txtMemoryTitle.text
 	var user_body = %txtMainUserInput.text
-	SingletonObject.NotesTab.add_note(user_title, user_body)
-
+	if user_title and user_body:
+		
+		SingletonObject.NotesTab.add_note(user_title, user_body)
+	else:
+		SingletonObject.NotesTab.add_note("", "")
+	
 	%txtMemoryTitle.text = ""
 	%txtMainUserInput.text = ""
 
