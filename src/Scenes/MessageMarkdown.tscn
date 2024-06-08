@@ -1,14 +1,20 @@
-[gd_scene load_steps=19 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=21 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+
+[ext_resource type="FontFile" uid="uid://ccki2gldarral" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="8_ywchm"]
+
+[sub_resource type="Theme" id="Theme_ca11y"]
+RichTextLabel/colors/font_selected_color = Color(0, 0, 0, 0)
+RichTextLabel/colors/selection_color = Color(0.42, 0.884, 1, 0.8)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_4tpql"]
 bg_color = Color(0.643137, 0.117647, 0.388235, 1)
@@ -31,6 +37,8 @@ corner_radius_top_left = 20
 corner_radius_top_right = 20
 corner_radius_bottom_right = 20
 corner_radius_bottom_left = 20
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_2nrlj"]
 
 [sub_resource type="Resource" id="Resource_de4hw"]
 resource_local_to_scene = true
@@ -85,6 +93,7 @@ offset_left = 5.0
 offset_right = 1915.0
 offset_bottom = 613.0
 grow_horizontal = 2
+theme = SubResource("Theme_ca11y")
 script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
 right_control = NodePath("MarginContainer/HBoxContainer/RightSplitter")
@@ -134,6 +143,7 @@ layout_mode = 2
 layout_mode = 2
 focus_mode = 2
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_2nrlj")
 bbcode_enabled = true
 text = "Certainly! Here's a simple Python program that calculates the factorial of a number provided by the user:
 
