@@ -49,4 +49,4 @@ func _on_add_note_pressed():
 
 
 func _on_btn_add_attachement_pressed():
-	%VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane/ChatPane/AttachFileDialog.popup_centered(Vector2i(700, 500))
+	SingletonObject.Chats._on_btn_attach_file_pressed()
