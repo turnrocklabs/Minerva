@@ -87,8 +87,7 @@ func _on_chat_pressed():
 	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
 
 	SingletonObject.ChatList[current_tab].VBox.loading_response = true
-	
-	%txtMemoryTitle.text = ""
+
 	%txtMainUserInput.text = ""
 
 ## Render a full chat history response
