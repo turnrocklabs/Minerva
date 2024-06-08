@@ -12,8 +12,11 @@ extends HBoxContainer
 static func bot_message(message: BotResponse) -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
 	msg.left_control.visible = true
-	msg.left_control.get_node("PanelContainer/Label").text = "O4"
-	msg.left_control.get_node("PanelContainer").tooltip_text = "gpt-4"
+	# msg.left_control.get_node("PanelContainer/Label").text = SingletonObject.Chats.provider.short_name
+	# msg.left_control.get_node("PanelContainer").tooltip_text = SingletonObject.Chats.provider.model_name
+	msg.left_control.get_node("PanelContainer/Label").text = message.ModelShortName
+	msg.left_control.get_node("PanelContainer").tooltip_text = message.ModelName
+	
 	msg.label.set("theme_override_colors/default_color", Color.BLACK)
 	
 	var style: StyleBox = msg.get_node("%PanelContainer").get("theme_override_styles/panel")

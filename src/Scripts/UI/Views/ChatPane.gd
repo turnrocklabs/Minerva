@@ -1,13 +1,13 @@
 class_name ChatPane
 extends TabContainer
 
-var Chat: BaseProvider
+var provider: BaseProvider
 
 ## add new chat 
 func _on_new_chat():
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
 	SingletonObject.last_tab_index += 1
-	var history: ChatHistory = ChatHistory.new(self.Chat)
+	var history: ChatHistory = ChatHistory.new(self.provider)
 	history.HistoryName = tab_name
 	history.HistoryItemList = []
 	SingletonObject.ChatList.append(history)
@@ -23,7 +23,7 @@ func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = fal
 	## Get the working memory and append the user message to chat history
 	# var prompt_for_turn: String = ""
 
-	var working_memory: String = SingletonObject.NotesTab.To_Prompt(Chat)
+	var working_memory: String = SingletonObject.NotesTab.To_Prompt(provider)
 
 	# disable the notes if we are asked
 	if disable_notes:
@@ -82,7 +82,7 @@ func _on_chat_pressed():
 	
 	# make a chat request
 	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
-	Chat.generate_content(history_list)
+	provider.generate_content(history_list)
 
 	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
 
@@ -137,13 +137,22 @@ func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 
-	if Chat == null:
-		Chat = OpenAI.new()
-		add_child(Chat)
-		Chat.chat_completed.connect(self.render_single_chat)
-	SingletonObject.initialize_chats(Chat, self)
+	if provider == null:
+		provider = %AISettings.get_selected_provider().new()
+		set_provider(provider)
+	
+	SingletonObject.initialize_chats(provider, self)
 
-##        remove chat  
+## Changes the provider that this chat panes uses to generate responses
+func set_provider(new_provider: BaseProvider):
+	if provider.is_inside_tree(): remove_child(provider)
+
+	add_child(new_provider)
+	new_provider.chat_completed.connect(self.render_single_chat)
+
+	provider = new_provider
+
+
 func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)
 	container.remove_child(control)
@@ -192,7 +201,7 @@ func clear_all_chats():
 
 
 
-# region Edit Chat Title
+# region Edit provider Title
 
 func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
@@ -228,3 +237,7 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	for fp in paths:
 		SingletonObject.AttachNoteFile.emit(fp)
 		await get_tree().process_frame
+
+
+func _on_btn_chat_settings_pressed():
+	%AISettings.popup_centered()

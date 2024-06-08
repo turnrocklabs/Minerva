@@ -64,9 +64,9 @@ func _on_project_index_pressed(index):
 func _on_view_index_pressed(index: int):
 	# if zoom items are selected
 	match index:
-		4: SingletonObject.zoom_ui(5); return
-		5: SingletonObject.zoom_ui(-5); return
-		6: SingletonObject.reset_zoom(); return
+		4: SingletonObject.main_scene.zoom_ui(5); return
+		5: SingletonObject.main_scene.zoom_ui(-5); return
+		6: SingletonObject.main_scene.reset_zoom(); return
 
 	if view.is_item_checkable(index):
 		view.toggle_item_checked(index)

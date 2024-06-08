@@ -1,6 +1,10 @@
 class_name BaseProvider
 extends Node
 
+# Thing that provider needs to define are:
+# model name
+# short name
+# api endpoint
 
 var PROVIDER: SingletonObject.API_PROVIDER
 
@@ -8,6 +12,12 @@ var API_KEY: String:
 	get: return SingletonObject.preferences_popup.get_api_key(PROVIDER)
 
 var BASE_URL: String
+
+var provider_name:= "Unknown"
+var model_name:= "Unknown"
+
+## Model short name to be displayed in the chat message bubble
+var short_name = "NA"
 
 var active_request: HTTPRequest
 var active_bot: BotResponse
@@ -28,7 +38,7 @@ func Format(_chat: ChatHistoryItem) -> Variant:
 	push_error("Format method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
-func _on_request_completed(_result, _response_code, _headers, _body, _http_request, _url):
+func _on_request_completed(result, response_code, _headers, body, _http_request, _url):
 	pass
 
 # endregion
@@ -46,7 +56,8 @@ func make_request(url: String, method: int, body: String="", headers: Array[Stri
 
 	if len(API_KEY) != 0:
 		#add_child(http_request)
-		http_request.request_completed.connect(_on_request_completed.bind(http_request, url))
+		if not http_request.request_completed.is_connected(_on_request_completed.bind(http_request, url)):
+			http_request.request_completed.connect(_on_request_completed.bind(http_request, url))
 	else:
 		SingletonObject.ErrorDisplay("No API Access", "API Key is missing or rejected")
 		push_error("Invalid API key")
