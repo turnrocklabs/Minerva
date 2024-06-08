@@ -67,14 +67,7 @@ func _on_btn_create_thread_pressed():
 		at.get_meta("thread").ThreadName = tab_name
 		render_threads()
 	else:
-		#refactored this code into the function below
 		create_new_notes_tab(tab_name)
-		#var thread = MemoryThread.new()
-		#thread.ThreadName = tab_name
-		#var thread_memories: Array[MemoryItem] = []
-		#thread.MemoryItemList = thread_memories
-		#SingletonObject.ThreadList.append(thread)
-		#render_thread(thread)
 	
 	%NewThreadPopup.hide()
 
