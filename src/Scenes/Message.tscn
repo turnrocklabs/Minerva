@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://c88a0wrl8ovo4"]
+[gd_scene load_steps=3 format=3 uid="uid://c88a0wrl8ovo4"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hjfue"]
 resource_local_to_scene = true
@@ -16,6 +16,11 @@ corner_radius_bottom_left = 20
 anchors_preset = 10
 anchor_right = 1.0
 grow_horizontal = 2
+left_control = NodePath("LeftSplitter")
+right_control = NodePath("RightSplitter")
+label = NodePath("PanelContainer/RichTextLabel")
+user_message_color = Color(0, 0, 1, 1)
+bot_message_color = Color(0, 0.592157, 0.478431, 1)
 
 [node name="LeftSplitter" type="Control" parent="."]
 visible = false

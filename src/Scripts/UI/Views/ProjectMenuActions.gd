@@ -109,7 +109,7 @@ func deserialize_project(data: Dictionary):
 
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("active_provider", 0))
-	SingletonObject.Chats.provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
+	SingletonObject.Chats.set_provider(SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new())
 
 
 func close_project():

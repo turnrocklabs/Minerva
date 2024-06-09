@@ -114,11 +114,7 @@ signal SaveProjectAs
 signal CloseProject
 signal RedrawAll
 
-var saved_state = true:
-	set(value):
-		print("Saved state changed (%s)" % value)
-		saved_state = value
-
+var saved_state = true
 
 func save_state(state: bool): saved_state = state
 
