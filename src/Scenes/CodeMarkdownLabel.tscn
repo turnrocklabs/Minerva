@@ -129,9 +129,18 @@ layout_mode = 2
 focus_mode = 2
 theme_override_fonts/mono_font = ExtResource("1_wraaf")
 bbcode_enabled = true
+text = "[code]
+print(\"Hello Worldgg\")
+dddddddgdghh
+gd	fdgjjg[/code]"
 fit_content = true
 selection_enabled = true
 script = ExtResource("2_t10nn")
+markdown_text = "```python
+print(\"Hello Worldgg\")
+dddddddgdghh
+gd	fdgjjg
+```"
 h1 = SubResource("Resource_de4hw")
 h2 = SubResource("Resource_s8if8")
 h3 = SubResource("Resource_6ck5t")
