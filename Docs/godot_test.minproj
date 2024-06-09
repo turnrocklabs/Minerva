@@ -1,5 +1,32 @@
 {
-	"ChatList": [],
+	"ChatList": [
+		{
+			"HistoryId": "026277a5f2312c88d3dcccb53628ef6c1af7cf5de3d55ba38698d0f6aafa701f",
+			"HistoryItemList": [
+				{
+					"Base64Data": "",
+					"InjectedNote": "Given this background information:\n\n### Reference Information ###\n### Title: $ replaced with %\nThe $ symobl to access scene items  is no longer valid.\nuse % to access scene items.\n\n# an example\nthis is wrong:\n$button.pressed.connect(test_function)\n\nthis is correct:\n%button.pressed.connect(test_function)\n\nDO NOT USE $\n###\n### Title: connect\nWe do not use named signal connections.  Always use object signal connections.\n\n# Example\nthis is wrong:\n%button.connect(\\\"pressed\\\", self, \\\"btnTest_click\\\")\n\nthis is correct:\n%button.pressed.connect(btnTest_click)\n\nDO NOT CONNECT VIA SIGNAL NAME\n###\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+					"Message": "I'm writing an app to play around with Godot 4.  I've got a button named \"btnTest\" and I have a gdscript called \"test.gd\".  Can you write the _ready function to connect the button to function btnTest_click?",
+					"ModelName": "gpt-4o",
+					"ModelShortName": "O4",
+					"Order": 0,
+					"Role": 0,
+					"Type": 0
+				},
+				{
+					"Base64Data": "",
+					"InjectedNote": "",
+					"Message": "Sure! Based on the information you provided and the guidelines to use `%` instead of `$` for accessing scene items and directly connecting to signals without using signal names, here is how you can write the `_ready` function in your `test.gd` script:\n\n```gdscript\nextends Node\n\nfunc _ready():\n    var btnTest = %btnTest\n    btnTest.pressed.connect(btnTest_click)\n\nfunc btnTest_click():\n    # Add your button click handling code here\n    print(\"Button was pressed!\")\n```\n\nIn this script:\n\n1. The `%` symbol is used to reference the `btnTest` button instead of `$`.\n2. The `pressed` signal of `btnTest` is directly connected to the `btnTest_click` function.\n3. The `btnTest_click` function contains the code that should execute when the button is pressed.",
+					"ModelName": "gpt-4o",
+					"ModelShortName": "O4",
+					"Order": 0,
+					"Role": 1,
+					"Type": 0
+				}
+			],
+			"HistoryName": "Chat0"
+		}
+	],
 	"Editors": [],
 	"ThreadList": [
 		{
@@ -7,29 +34,30 @@
 				{
 					"Content": "The $ symobl to access scene items  is no longer valid.\nuse % to access scene items.\n\n# an example\nthis is wrong:\n$button.pressed.connect(test_function)\n\nthis is correct:\n%button.pressed.connect(test_function)\n\nDO NOT USE $",
 					"ContentType": "",
-					"Enabled": true,
+					"Enabled": false,
 					"Order": 0,
-					"OwningThread": "8d16ac645ecf7a7c1f87d7a3bb163afe9ed2eba6c842eacbba5969a342313116",
+					"OwningThread": "27752580086e8a5abc6eab6381e68ea8d3a653b882e353dd187593f215d3c1bc",
 					"Pinned": false,
 					"Title": "$ replaced with %",
 					"Visible": true
 				},
 				{
-					"Content": "we do not use named signal connections.  Always use object signal connections.\n\n# Example\n\nthis is wrong:\n%button.connect(\"pressed\", self, \"btnTest_click\")\n\nthis is correct:\n%button.pressed.connect(btnTest_click)\n\nDO NOT CONNECT VIA SIGNAL NAME",
+					"Content": "We do not use named signal connections.  Always use object signal connections.\n\n# Example\nthis is wrong:\n%button.connect(\\\"pressed\\\", self, \\\"btnTest_click\\\")\n\nthis is correct:\n%button.pressed.connect(btnTest_click)\n\nDO NOT CONNECT VIA SIGNAL NAME",
 					"ContentType": "",
-					"Enabled": true,
+					"Enabled": false,
 					"Order": 1,
-					"OwningThread": "8d16ac645ecf7a7c1f87d7a3bb163afe9ed2eba6c842eacbba5969a342313116",
+					"OwningThread": "27752580086e8a5abc6eab6381e68ea8d3a653b882e353dd187593f215d3c1bc",
 					"Pinned": false,
 					"Title": "connect",
 					"Visible": true
 				}
 			],
-			"ThreadId": "8d16ac645ecf7a7c1f87d7a3bb163afe9ed2eba6c842eacbba5969a342313116",
-			"ThreadName": "Godot 4"
+			"ThreadId": "27752580086e8a5abc6eab6381e68ea8d3a653b882e353dd187593f215d3c1bc",
+			"ThreadName": "Godot"
 		}
 	],
 	"active_chatindex": 0,
 	"active_notes_index": 0,
-	"last_tab_index": 0
+	"active_provider": 0,
+	"last_tab_index": 1
 }
