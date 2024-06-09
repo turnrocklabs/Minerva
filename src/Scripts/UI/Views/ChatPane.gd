@@ -187,17 +187,13 @@ func _on_btn_test_pressed():
 	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
 	var test_response:BotResponse = BotResponse.new()
 	#test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
-	test_response.FullText = """
-	# Test
-	this is a test of extraction / copy of embedded code.
-	```gdscript
-	func foo():
-		var bar = [1, 2, 3]
-		pass
-	```
-	This was only a test.
-	"""
-	self.render_single_chat(test_response)
+	# Open a test file with text that will repeat.
+	var file_path: String  = "res://Tests/Repeats.txt"
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	var bad_text: String = file.get_as_text()
+	test_response.FullText = bad_text
+	SingletonObject.Provider.chat_completed.emit(test_response)
+	#self.render_single_chat(test_response)
 	pass # Replace with function body.
 
 func clear_all_chats():
