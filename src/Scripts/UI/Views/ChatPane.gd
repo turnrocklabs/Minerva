@@ -135,7 +135,7 @@ func render_history(chat_history: ChatHistory):
 func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
-
+	
 	if provider == null:
 		provider = %AISettings.get_selected_provider().new()
 		set_provider(provider)
@@ -240,3 +240,8 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 
 func _on_btn_chat_settings_pressed():
 	%AISettings.popup_centered()
+	
+
+func _on_btn_microphone_pressed():
+	AAAs.FileldForFilling = %txtMainUserInput
+	AAAs._StartConverting()
