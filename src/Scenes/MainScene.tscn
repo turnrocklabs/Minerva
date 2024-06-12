@@ -1,7 +1,7 @@
 [gd_scene load_steps=15 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Theme" uid="uid://deimxwybcmyit" path="res://assets/themes/default.theme" id="1_4g1mt"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
+[ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_nhtwn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
@@ -12,31 +12,34 @@
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="10_elw3q"]
 [ext_resource type="Texture2D" uid="uid://0onnj1f41kmb" path="res://assets/generated/paperclip_icon_24.webp" id="11_ydk0s"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="12_altkx"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
 font_color = Color(1, 0, 0, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_v4lmg"]
-content_margin_left = 10.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-bg_color = Color(0.172549, 0.172549, 0.172549, 1)
-
 [node name="RootControl" type="Control"]
+texture_filter = 1
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("1_4g1mt")
+theme = ExtResource("1_nhtwn")
 script = ExtResource("2_65hnk")
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="ErrorDisplayPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
-size = Vector2i(236, 100)
+size = Vector2i(238, 100)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ErrorDisplayPopup"]
 anchors_preset = 15
@@ -44,8 +47,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 232.0
-offset_bottom = 96.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -63,6 +66,7 @@ size_flags_vertical = 6
 
 [node name="PreferencesPopup" parent="." instance=ExtResource("3_3hcc1")]
 unique_name_in_owner = true
+size = Vector2i(522, 320)
 visible = false
 
 [node name="NewThreadPopup" type="PopupPanel" parent="."]
@@ -111,12 +115,16 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 10.0
+offset_right = -13.0
+offset_bottom = -12.0
 grow_horizontal = 2
 grow_vertical = 2
 
 [node name="menuMain" type="MenuBar" parent="VBoxRoot"]
 layout_mode = 2
 size_flags_vertical = 0
+theme_override_constants/h_separation = 5
 prefer_global_menu = false
 script = ExtResource("1_oipdw")
 
@@ -126,7 +134,9 @@ layout_mode = 1
 [node name="fdgOpenFile" type="FileDialog" parent="VBoxRoot/menuMain"]
 unique_name_in_owner = true
 title = "Open a File"
-size = Vector2i(392, 159)
+initial_position = 4
+size = Vector2i(392, 163)
+popup_window = true
 ok_button_text = "Open"
 file_mode = 0
 access = 2
@@ -147,7 +157,7 @@ item_3/id = 3
 [node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
 unique_name_in_owner = true
 title = "File"
-size = Vector2i(121, 143)
+size = Vector2i(123, 143)
 item_count = 5
 item_0/text = "New"
 item_0/id = 2
@@ -193,15 +203,18 @@ item_6/id = 6
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 2.0
+theme_override_constants/separation = 5
 script = ExtResource("2_kohxl")
 
 [node name="HSplitContainer" type="HSplitContainer" parent="VBoxRoot/MainUI"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 16
 
 [node name="HSplitContainer2" type="HSplitContainer" parent="VBoxRoot/MainUI/HSplitContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 16
 
 [node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
@@ -221,13 +234,16 @@ size_flags_horizontal = 3
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane"]
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer"]
 layout_mode = 2
+theme_override_constants/separation = 16
 
 [node name="Label" type="Label" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 24
 text = "Editor"
 
 [node name="HButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
@@ -254,47 +270,52 @@ custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.5
+theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
 layout_mode = 2
+theme_override_constants/separation = 16
 
 [node name="Label" type="Label" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 2
+theme_override_font_sizes/font_size = 24
 text = "Notes"
 
 [node name="btnCreateNote" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 10
-text = "Create note"
+text = "Create Note"
 icon = ExtResource("10_elw3q")
 
 [node name="btnAddAttachement" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
-text = "Attach file"
+text = "Attach File"
 icon = ExtResource("11_ydk0s")
 
 [node name="btnNewTab" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
-text = "New"
+text = "New Tab"
+icon = ExtResource("12_altkx")
 
 [node name="tcThreads" type="TabContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_styles/panel = SubResource("StyleBoxFlat_v4lmg")
+theme_override_constants/icon_separation = 16
 script = ExtResource("1_gunt8")
 
 [node name="CreatNewNote" type="PopupPanel" parent="."]
 unique_name_in_owner = true
-size = Vector2i(127, 100)
+size = Vector2i(129, 100)
+max_size = Vector2i(300, 300)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CreatNewNote"]
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 123.0
+offset_right = 125.0
 offset_bottom = 96.0
 size_flags_horizontal = 3
 
