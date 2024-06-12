@@ -31,6 +31,12 @@ var ModelShortName: String:
 	set(value): SingletonObject.save_state(false); ModelShortName = value
 
 
+## Bot response from which this chat history item was constructed, if defined
+var bot_response: BotResponse
+
+## The node that is currently rendering this item
+var rendered_node: Node
+
 
 func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 	self.Type = _type
