@@ -47,6 +47,11 @@ func _on_add_note_pressed():
 		Description.clear()
 		%CreatNewNote.hide()
 
-
+#btn attachment for notes
 func _on_btn_add_attachement_pressed():
 	SingletonObject.Chats._on_btn_attach_file_pressed()
+
+
+func _on_btn_voice_pressed():
+	AAAs.FileldForFilling = %NoteDescription
+	AAAs._StartConverting()

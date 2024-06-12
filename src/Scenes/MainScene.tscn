@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=17 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://deimxwybcmyit" path="res://assets/themes/default.theme" id="1_4g1mt"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -12,6 +12,7 @@
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="10_elw3q"]
 [ext_resource type="Texture2D" uid="uid://0onnj1f41kmb" path="res://assets/generated/paperclip_icon_24.webp" id="11_ydk0s"]
+[ext_resource type="Texture2D" uid="uid://d0trvye6gvmku" path="res://assets/icons/_e5aa70df-2d58-44c7-a6af-89d86762723f.jpg" id="13_2lo4v"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -23,6 +24,8 @@ content_margin_top = 10.0
 content_margin_right = 10.0
 content_margin_bottom = 10.0
 bg_color = Color(0.172549, 0.172549, 0.172549, 1)
+
+[sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_i6lnv"]
 
 [node name="RootControl" type="Control"]
 layout_mode = 3
@@ -289,19 +292,19 @@ script = ExtResource("1_gunt8")
 
 [node name="CreatNewNote" type="PopupPanel" parent="."]
 unique_name_in_owner = true
-size = Vector2i(127, 100)
+size = Vector2i(136, 100)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CreatNewNote"]
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 123.0
+offset_right = 132.0
 offset_bottom = 96.0
 size_flags_horizontal = 3
 
 [node name="Label" type="Label" parent="CreatNewNote/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Creat new note"
+text = "Create new note"
 
 [node name="NoteHead" type="TextEdit" parent="CreatNewNote/VBoxContainer"]
 unique_name_in_owner = true
@@ -328,6 +331,17 @@ alignment = 2
 layout_mode = 2
 text = "Add note"
 
+[node name="btnVoice" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+icon = ExtResource("13_2lo4v")
+
+[node name="AudioToText" type="Node" parent="."]
+
+[node name="AudioStreamRecord" type="AudioStreamPlayer" parent="AudioToText"]
+stream = SubResource("AudioStreamMicrophone_i6lnv")
+autoplay = true
+bus = &"Rec"
+
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
@@ -343,3 +357,4 @@ text = "Add note"
 [connection signal="tab_clicked" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
 [connection signal="tab_hovered" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
 [connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/AddNote" to="." method="_on_add_note_pressed"]
+[connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]

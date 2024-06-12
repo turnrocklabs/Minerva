@@ -32,7 +32,6 @@ var Chats: ChatPane
 func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories
 	Provider = provider
-	
 	Chats = _chats
 	Chats.clear_all_chats()
 	
