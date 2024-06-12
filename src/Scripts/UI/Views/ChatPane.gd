@@ -6,10 +6,6 @@ var provider: BaseProvider
 #var to detect where we send message to bot
 var TabWhereRequestWas
 
-func _process(delta):
-	print("aaa",current_tab)
-
-
 ## add new chat 
 func _on_new_chat():
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
@@ -101,16 +97,17 @@ func _on_chat_pressed():
 
 ## Render a full chat history response
 func render_single_chat(response:BotResponse):
-	SingletonObject.ChatList[TabWhereRequestWas].VBox.loading_response = false
-	# create a chat history item and append it to the list
-	var item: ChatHistoryItem = ChatHistoryItem.new()
-	item.Role = ChatHistoryItem.ChatRole.ASSISTANT
-	item.Message = response.FullText
-	SingletonObject.ChatList[TabWhereRequestWas].HistoryItemList.append(item)
+	if TabWhereRequestWas >= 0 and TabWhereRequestWas < len(SingletonObject.ChatList):
+		SingletonObject.ChatList[TabWhereRequestWas].VBox.loading_response = false
+		# create a chat history item and append it to the list
+		var item: ChatHistoryItem = ChatHistoryItem.new()
+		item.Role = ChatHistoryItem.ChatRole.ASSISTANT
+		item.Message = response.FullText
+		SingletonObject.ChatList[TabWhereRequestWas].HistoryItemList.append(item)
 
-	# Ask the Vbox to add the message
-	SingletonObject.ChatList[TabWhereRequestWas].VBox.add_bot_message(response)
-	pass
+		# Ask the Vbox to add the message
+		SingletonObject.ChatList[TabWhereRequestWas].VBox.add_bot_message(response)
+		pass
 
 
 func render_history(chat_history: ChatHistory):
