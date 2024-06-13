@@ -78,10 +78,6 @@ func _on_chat_pressed():
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
 
-	
-	## Add the user speech bubble to the chat area control.
-	var temp_user_data: BotResponse = BotResponse.new()
-	temp_user_data.FullText = %txtMainUserInput.text
 
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
@@ -94,74 +90,72 @@ func _on_chat_pressed():
 	# make a chat request
 	var history_list: Array[Variant] = create_prompt(new_history_item)
 
-	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
+	await SingletonObject.ChatList[current_tab].VBox.add_history_item(new_history_item)
 
 	%txtMainUserInput.text = ""
 
-	SingletonObject.ChatList[current_tab].VBox.loading_response = true
+	# Add empty history item, to show the loading state
+	var dummy_item = ChatHistoryItem.new()
+	dummy_item.Role = ChatHistoryItem.ChatRole.MODEL
+	
+	var model_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(dummy_item)
+	model_msg_node.loading = true
 
 	# This function can be awaited for the request to finish
-	var bot_response = await provider.generate_content(history_list)
+	var chi = await provider.generate_content(history_list)
+	
+	# Change the history item and the mesasge node will update itself
+	model_msg_node.history_item = chi
+	history.HistoryItemList.append(chi)
 
-	render_single_chat(bot_response)
+	## Inform the user history item that the response has arrived
+	new_history_item.response_arrived.emit(chi)
 
-	SingletonObject.ChatList[current_tab].VBox.loading_response = false
+	model_msg_node.loading = false
+
+
 
 # TODO: check if changing the active tab during the request causes any trouble
 
-## This function takes `partial_response` and prompts model to finish the response
-## merging the new and the initial response into one.
-func continue_response(partial_response: BotResponse):
-	# make a chat request
-	var chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
-	chi.Message = "continue"
+## This function takes `partial_chi` and prompts model to finish the response
+## merging the new and the initial response into one and returning it.
+func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
+	# make a chat request with temporary chat history item
+	var temp_chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
+	temp_chi.Message = "continue"
 
-	var history_list: Array[Variant] = SingletonObject.Chats.create_prompt(chi)
-	
-	var partial_chi: ChatHistoryItem
-
-	# find the history item that holds `partial_response`, so we can remove it
-	# merge it with new response and render the new one
-	for item: ChatHistoryItem in SingletonObject.ChatList[current_tab].HistoryItemList:
-		if item.bot_response != partial_response: continue
-		partial_chi = item
-		SingletonObject.ChatList[current_tab].HistoryItemList.erase(item)
-		break
+	var history_list: Array[Variant] = SingletonObject.Chats.create_prompt(temp_chi)
 	
 	remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
 
-	SingletonObject.ChatList[current_tab].VBox.loading_response = true
+	var chi = await SingletonObject.Chats.provider.generate_content(history_list)
 
-	var bot_response = await SingletonObject.Chats.provider.generate_content(history_list)
+	# merge the two responses
+	chi.Message = "%s %s" % [partial_chi.Message, chi.Message]
 
-	SingletonObject.ChatList[current_tab].VBox.loading_response = false
+	## Inform the user history item that the response has arrived
+	partial_chi.response_arrived.emit(chi)
 
-	bot_response.FullText = "%s%s" % [partial_response.FullText, bot_response.FullText]
-
-	SingletonObject.Chats.render_single_chat(bot_response)
+	return chi
 
 ## Render a full chat history response
-func render_single_chat(response: BotResponse):
-	
-	# create a chat history item and append it to the list
-	var item: ChatHistoryItem = ChatHistoryItem.new()
-	item.Role = ChatHistoryItem.ChatRole.ASSISTANT
-	item.Message = response.FullText
-	# define from which bot response this chat history item was constructed
-	item.bot_response = response
-
+func render_single_chat(item: ChatHistoryItem):
 	SingletonObject.ChatList[current_tab].HistoryItemList.append(item)
 
 	# Ask the Vbox to add the message
 	# and save the rendered node to the chat history item, si we can delete it if needed
-	item.rendered_node = await SingletonObject.ChatList[current_tab].VBox.add_bot_message(response)
+	item.rendered_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(item)
 	
 
 
 ## Will remove the chat histoy item from the history and remove the rendered node.
 ## TODO: If the item is user message, it will also delete the model response.
 func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory):
-	item.rendered_node.queue_free()
+	if item.rendered_node:
+		item.rendered_node.queue_free()
+	else:
+		push_warning("Trying to delete chat history item %s with no rendered node attached to it" % item)
+		
 	history.HistoryItemList.erase(item)
 
 
@@ -186,10 +180,7 @@ func render_history(chat_history: ChatHistory):
 	%tcChats.add_child(scroll_container)
 
 	for item in chat_history.HistoryItemList:
-		if item.Role == item.ChatRole.USER:
-			SingletonObject.ChatList[current_tab].VBox.add_user_message(item.to_bot_response())
-		elif item.Role in [item.ChatRole.MODEL, item.ChatRole.ASSISTANT]:
-			SingletonObject.ChatList[current_tab].VBox.add_bot_message(item.to_bot_response())
+		SingletonObject.ChatList[current_tab].VBox.add_history_item(item)
 
 
 
@@ -242,16 +233,16 @@ func _on_btn_test_pressed():
 		_on_new_chat()
 
 	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
-	var test_response:BotResponse = BotResponse.new()
+	var item:= ChatHistoryItem.new()
 	#test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
-	test_response.FullText = """
+	item.Message = """
 		## Markdown
 		Here is how you write hello world in python:
 		```python
 		print (\"Hello World\")
 		```
 	"""
-	self.render_single_chat(test_response)
+	self.render_single_chat(item)
 	pass # Replace with function body.
 
 func clear_all_chats():

@@ -10,8 +10,8 @@ func _init():
 	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
 
 
-func _parse_request_results(response: RequestResults) -> BotResponse:
-	var bot_response:= BotResponse.new()
+func _parse_request_results(response: RequestResults) -> ChatHistoryItem:
+	var item:= ChatHistoryItem.new()
 
 	var data: Variant
 	if response.http_request_result == HTTPRequest.RESULT_SUCCESS:
@@ -20,21 +20,21 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 		# if the request was successful, parse it to bot response
 		if (response.response_code >= 200 and response.response_code <= 299):
-			bot_response = to_bot_response(data)
+			item = to_history_item(data)
 		# otherwise extract the error
 		else:
 			
 			if "error" in data:
-				bot_response.Error = data["error"]["message"]
+				item.Error = data["error"]["message"]
 			else:
-				bot_response.Error = "Unexpected error occured while generating the response"
+				item.Error = "Unexpected error occured while generating the response"
 
 	else:
 		push_error("Invalid result. Response: %s", response.response_code)
-		bot_response.Error = "Unexpected error occured with HTTP Client. Code %s" % response.http_request_result
+		item.Error = "Unexpected error occured with HTTP Client. Code %s" % response.http_request_result
 		return
 	
-	return bot_response
+	return item
 
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api
@@ -57,11 +57,11 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 		["Authorization: Bearer %s" % API_KEY]
 	)
 
-	var bot_response = _parse_request_results(response)
+	var item = _parse_request_results(response)
 	
-	chat_completed.emit(bot_response)
+	chat_completed.emit(item)
 
-	return bot_response
+	return item
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
@@ -114,18 +114,21 @@ func wrap_memory(list_memories: String) -> String:
 #   },
 #   "system_fingerprint": "fp_3b956da36b"
 # }
-func to_bot_response(data: Variant) -> BotResponse:
-	var response = BotResponse.new(self)
+func to_history_item(data: Variant) -> ChatHistoryItem:
+	var item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.MODEL)
+	
+	# set the used provider so update model name
+	item.provider = SingletonObject.Chats.provider
 
 	# the id will be useful if we need to complete the response with second request
-	response.Id = data["id"]
+	item.Id = data["id"]
 
 	var finish_reason = data["choices"][0]["finish_reason"]
 
 	if finish_reason == "length":
-		response.Complete = false
+		item.Complete = false
 
-	response.FullText = data["choices"][0]["message"]["content"]
+	item.Message = data["choices"][0]["message"]["content"]
 	
-	return response
+	return item
 

@@ -231,3 +231,4 @@ label_settings = SubResource("LabelSettings_l0yj0")
 horizontal_alignment = 1
 
 [connection signal="gui_input" from="MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel" to="." method="_on_markdown_label_gui_input"]
+[connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/ContinueButton" to="." method="_on_continue_button_pressed"]

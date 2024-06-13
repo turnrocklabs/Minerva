@@ -31,26 +31,19 @@ func _ready():
 
 
 func _create_dummy_response():
-	var br = BotResponse.new()
-	br.FullText = "●︎●︎●︎"
-	_dummy_msg_node = await add_bot_message(br)
+	pass
+	# var br = BotResponse.new()
+	# br.FullText = "●︎●︎●︎"
+	# _dummy_msg_node = await add_bot_message(br)
 
+## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
+func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
+	var msg_node = MessageMarkdown.new_message()
+	msg_node.history_item = item
+	item.rendered_node = msg_node
 
-## create some sort of textbox and put the content in there.
-func add_bot_message(message:BotResponse) -> MessageMarkdown:
-	var msg_node = MessageMarkdown.bot_message(message)
 	add_child(msg_node)
 
-	await get_tree().process_frame
-	get_parent().ensure_control_visible(msg_node)
-
-	return msg_node
-
-
-func add_user_message(message:BotResponse) -> MessageMarkdown:
-	var msg_node = MessageMarkdown.user_message(message)
-	add_child(msg_node)
-	
 	await get_tree().process_frame
 	get_parent().ensure_control_visible(msg_node)
 
