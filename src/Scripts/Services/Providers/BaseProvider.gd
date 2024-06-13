@@ -20,15 +20,16 @@ var model_name:= "Unknown"
 var short_name = "NA"
 
 var active_request: HTTPRequest
-var active_bot: BotResponse
+# var active_bot: BotResponse
 
 # region METHODS TO REIMPLEMENT
 
-signal chat_completed(response: BotResponse)
+signal chat_completed(response: ChatHistoryItem)
 
 ## This function will generate the model response for given `prompt`
 ## `additional_params` will be added to the request payload
-func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}) -> BotResponse:
+func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}) -> ChatHistoryItem:
+	await get_tree().process_frame # This line is just to supress the 'not a coroutine` warning
 	push_error("generate_content method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
@@ -40,7 +41,7 @@ func Format(_chat: ChatHistoryItem) -> Variant:
 	push_error("Format method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
-func _on_request_completed(result, response_code, _headers, body, _http_request, _url):
+func _on_request_completed(_result, _response_code, _headers, _body, _http_request, _url):
 	pass
 
 # endregion

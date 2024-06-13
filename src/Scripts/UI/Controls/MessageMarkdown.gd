@@ -9,45 +9,85 @@ extends HBoxContainer
 @export var bot_message_color: Color
 @export var error_message_color: Color
 
-static func bot_message(message: BotResponse) -> MessageMarkdown:
-	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
-	msg.left_control.visible = true
-	# msg.left_control.get_node("PanelContainer/Label").text = SingletonObject.Chats.provider.short_name
-	# msg.left_control.get_node("PanelContainer").tooltip_text = SingletonObject.Chats.provider.model_name
-	msg.left_control.get_node("PanelContainer/Label").text = message.ModelShortName
-	msg.left_control.get_node("PanelContainer").tooltip_text = message.ModelName
-	
-	msg.label.set("theme_override_colors/default_color", Color.BLACK)
-	
-	var style: StyleBox = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
+## Chat history item that this message node is rendering
+var history_item: ChatHistoryItem:
+	set(value):
+		history_item = value
+		if history_item: _render_history_item()
 
-	var continue_btn = msg.get_node("%ContinueButton") as Button	
-	continue_btn.visible = not message.Complete
-	continue_btn.pressed.connect(msg._on_continue_button_pressed.bind(message), CONNECT_ONE_SHOT)
 
-	if message.Error:
-		msg.label.text = "An error occurred:\n%s" % message.Error
-		style.bg_color = msg.error_message_color
+var loading:= false:
+	set(value):
+		set_message_loading(value)
+		loading = value
+
+
+func _ready():
+	if history_item: _render_history_item()
+
+
+
+func set_message_loading(loading_: bool):
+	if loading_:
+		label.markdown_text = "●︎●︎●︎"
+	
+	_toggle_controls(not loading_)
+
+
+# This function will take the history item and render it as user or model message
+func _render_history_item():
+	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
+	else: _setup_model_message()
+
+func _toggle_controls(enabled:= true):
+	var controls = [%ContinueButton]
+
+	for c in controls:
+		c.disabled = not enabled
+
+func _setup_user_message():
+	right_control.visible = true
+	right_control.get_node("PanelContainer/Label").text = SingletonObject.preferences_popup.get_user_initials()
+	right_control.get_node("PanelContainer").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
+	label.markdown_text = history_item.Message
+	label.set("theme_override_colors/default_color", Color.WHITE)
+
+	var style: StyleBoxFlat = get_node("%PanelContainer").get("theme_override_styles/panel")
+	style.bg_color = user_message_color
+
+
+func _setup_model_message():
+	left_control.visible = true
+
+	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
+	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
+	
+	label.set("theme_override_colors/default_color", Color.BLACK)
+	
+	var style: StyleBox = get_node("%PanelContainer").get("theme_override_styles/panel")
+
+	var continue_btn = get_node("%ContinueButton") as Button	
+	continue_btn.visible = not history_item.Complete
+
+	if history_item.Error:
+		label.text = "An error occurred:\n%s" % history_item.Error
+		style.bg_color = error_message_color
 	else:
-		msg.label.markdown_text = message.FullText
-		style.bg_color = msg.bot_message_color
+		label.markdown_text = history_item.Message
+		style.bg_color = bot_message_color
 
 
-	return msg
-
-static func user_message(message: BotResponse) -> MessageMarkdown:
+## Instantiates new message node
+static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
-	msg.right_control.visible = true
-	msg.right_control.get_node("PanelContainer/Label").text = SingletonObject.preferences_popup.get_user_initials()
-	msg.right_control.get_node("PanelContainer").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
-	msg.label.markdown_text = message.FullText
-	msg.label.set("theme_override_colors/default_color", Color.WHITE)
-
-	var style: StyleBoxFlat = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
-	style.bg_color = msg.user_message_color
-
 	return msg
 
+# Continues the generation of the response
+func _on_continue_button_pressed():
+	if history_item:
+		loading = true
+		history_item = await SingletonObject.Chats.continue_response(history_item)
+		loading = false
 
 class TextSegment:
 	var syntax: String
@@ -64,7 +104,7 @@ class TextSegment:
 			return content
 
 
-func _ready(): pass
+# func _ready(): pass
 	# var regex = RegEx.new()
 	# regex.compile(r"(\[code\])((.|\n)*?)(\[\/code\])")
 
@@ -116,7 +156,4 @@ func _ready(): pass
 		
 	# 	%PanelContainer/v.add_child(node)
 
-# Continues the generation of the response
-func _on_continue_button_pressed(response: BotResponse):
-	prints("Continue the response", response)
-	SingletonObject.Chats.continue_response(response)
+
