@@ -114,7 +114,7 @@ func _on_chat_pressed():
 func continue_response(partial_response: BotResponse):
 	# make a chat request
 	var chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
-	chi.Message = "[Truncated, please continue]"
+	chi.Message = "continue"
 
 	var history_list: Array[Variant] = SingletonObject.Chats.create_prompt(chi)
 	
