@@ -5,14 +5,15 @@ var effect
 var recording
 var file_path = "res://VioceAudio.wav"
 
+
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
-const API_KEY = ""
-var FileldForFilling:TextEdit
+
+var FieldForFilling:TextEdit
 
 func _ready():
 	var idx = AudioServer.get_bus_index("Rec")
 	effect = AudioServer.get_bus_effect(idx, 0)
-
+	
 func _StartConverting():
 	if effect.is_recording_active():
 		recording = effect.get_recording()
@@ -53,7 +54,8 @@ func _StartConverting():
 				form_data.append_array(audio_data)
 				form_data.append_array("\r\n".to_ascii_buffer() + "--".to_ascii_buffer() + boundary.to_ascii_buffer() + "--\r\n".to_ascii_buffer())
 
-				var headers = ["Authorization: Bearer " + API_KEY,
+				var headers = ["Authorization: Bearer " #+ API key here
+				,
 				"Content-Type: multipart/form-data; boundary=" + boundary]
 				# Send the request with the concatenated PoolByteArray
 				http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
@@ -71,7 +73,7 @@ func _on_request_completed(result, response_code, headers, body):
 		if response_json.has("text"):
 			var transcription = response_json["text"]
 			print("Transcription:", transcription)
-			FileldForFilling.text = transcription
+			FieldForFilling.text = transcription
 		else:
 			print("Unexpected response format:", response_json)
 	else:

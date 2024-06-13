@@ -29,6 +29,11 @@ var last_tab_index: int
 var Provider
 var Chats: ChatPane
 
+#Add AtT to use it throught the singleton
+var AtT: AudioToTexts = AudioToTexts.new()
+func _ready():
+	add_child(AtT)
+	
 func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories
 	Provider = provider
