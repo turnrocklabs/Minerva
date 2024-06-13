@@ -53,5 +53,5 @@ func _on_btn_add_attachement_pressed():
 
 
 func _on_btn_voice_pressed():
-	AAAs.FileldForFilling = %NoteDescription
-	AAAs._StartConverting()
+	SingletonObject.AtT.FieldForFilling = %NoteDescription
+	SingletonObject.AtT._StartConverting()
