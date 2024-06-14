@@ -149,13 +149,35 @@ func render_single_chat(item: ChatHistoryItem):
 
 
 ## Will remove the chat histoy item from the history and remove the rendered node.
-## TODO: If the item is user message, it will also delete the model response.
-func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory):
+## if `auto_merge` is false, this function will only delete the given history item and it's rendered node,
+## otherwise, it will automatically merge next message with previous so perserve the user/model turn
+func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, auto_merge:= true):
 	if item.rendered_node:
 		item.rendered_node.queue_free()
 	else:
 		push_warning("Trying to delete chat history item %s with no rendered node attached to it" % item)
-		
+		return
+
+	if not auto_merge: return
+
+	if not history:
+		for h in SingletonObject.ChatList:
+			if h.HistoryItemList.has(item):
+				history = h
+				break
+
+	if not history:
+		push_error("Trying to remove history item %s not present in any history item list" % item)
+		return
+
+	var item_index = history.HistoryItemList.find(item)
+
+	for citem: ChatHistoryItem in history.HistoryItemList.slice(item_index+1):
+		if citem.rendered_node:
+			citem.rendered_node.queue_free()
+			history.HistoryItemList.erase(citem)
+			break
+
 	history.HistoryItemList.erase(item)
 
 

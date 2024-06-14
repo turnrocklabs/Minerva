@@ -13,7 +13,9 @@ extends HBoxContainer
 var history_item: ChatHistoryItem:
 	set(value):
 		history_item = value
-		if history_item: _render_history_item()
+		if history_item:
+			history_item.rendered_node = self
+			_render_history_item()
 
 
 var loading:= false:
@@ -40,10 +42,7 @@ func _render_history_item():
 	else: _setup_model_message()
 
 func _toggle_controls(enabled:= true):
-	var controls = [%ContinueButton]
-
-	for c in controls:
-		c.disabled = not enabled
+	get_tree().call_group("controls", "set_disabled", not enabled)
 
 func _setup_user_message():
 	right_control.visible = true
@@ -88,6 +87,21 @@ func _on_continue_button_pressed():
 		loading = true
 		history_item = await SingletonObject.Chats.continue_response(history_item)
 		loading = false
+
+
+
+func _on_clip_button_pressed():
+	DisplayServer.clipboard_set(label.text)
+
+
+func _on_note_button_pressed():
+	SingletonObject.NotesTab.add_note("Chat Note", label.text)
+	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+
+func _on_delete_button_pressed():
+	SingletonObject.Chats.remove_chat_history_item(history_item)
+
 
 class TextSegment:
 	var syntax: String
