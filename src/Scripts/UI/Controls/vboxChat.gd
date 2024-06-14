@@ -30,6 +30,27 @@ func _ready():
 	pass
 
 
+func _notification(what):
+	match what:
+		NOTIFICATION_CHILD_ORDER_CHANGED:
+			_messages_list_changed()
+
+
+func _messages_list_changed():
+	var last_message: MessageMarkdown
+
+	# disalbe edit for all user messages
+	for child in get_children():
+		if child is MessageMarkdown:
+			child.editable = false
+			last_message = child
+	
+	if not last_message: return
+	
+	# if last_message is user message, enable edit for it
+	if last_message.history_item.Role == ChatHistoryItem.ChatRole.USER:
+		last_message.editable = true
+
 func _create_dummy_response():
 	pass
 	# var br = BotResponse.new()

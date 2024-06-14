@@ -38,6 +38,9 @@ func add_control(item: Node, name_: String) -> Node:
 	scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scrollable.name = name_
 	
+	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	item.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
 	scrollable.add_child(item)
 
 	self.Tabs.add_child(scrollable)
@@ -47,7 +50,7 @@ func add_control(item: Node, name_: String) -> Node:
 
 
 
-func add(type: Editor.TYPE, file = null, name_ = null) -> Node:
+func add(type: Editor.TYPE, file = null, name_ = null) -> Editor:
 	#Add a scroll container to the tabs and put the item in there.
 
 	var editor_node = Editor.create(type, file)
