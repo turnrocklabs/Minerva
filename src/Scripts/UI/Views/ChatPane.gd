@@ -77,30 +77,50 @@ func _on_btn_inspect_pressed():
 
 
 func _on_chat_pressed():
-	## prepare an append item for the history
-	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
-	new_history_item.Message = %txtMainUserInput.text
-	new_history_item.Role = ChatHistoryItem.ChatRole.USER
-
-
+	
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 	SingletonObject.NotesTab.Disable_All()
 
-	# add the message to the history list before we construct the prompt, so it gets included
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	history.HistoryItemList.append(new_history_item)
+
+	var existing_message = false
+
+	# if last message is user message, that means we have no reply for it.
+	# FIXME: if user spams the chat button, this will run multiple times
+	var lst_chi = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
+	if lst_chi and lst_chi.Role == ChatHistoryItem.ChatRole.USER:
+		existing_message = true
+
+	var history_list: Array[Variant]
+	var user_msg_node: MessageMarkdown
+	var user_history_item: ChatHistoryItem
+
+	if not existing_message:
+		## prepare an append item for the history
+		user_history_item = ChatHistoryItem.new()
+		user_history_item.Message = %txtMainUserInput.text
+		user_history_item.Role = ChatHistoryItem.ChatRole.USER
+
+		%txtMainUserInput.text = ""
+
+		# add the message to the history list before we construct the prompt, so it gets included
+		history.HistoryItemList.append(user_history_item)
+		
+		# make a chat request
+		history_list = create_prompt(user_history_item)
+
+		user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(user_history_item)
+
+		# Set the tokens estimation label. Correct token will be 0 until we get a response
+		user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), 0)
 	
-	# make a chat request
-	var history_list: Array[Variant] = create_prompt(new_history_item)
+	else:
+		# since we already have the message in user history create the prompt with no additional items
+		history_list = create_prompt()
 
-	var user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(new_history_item)
-
-	# Set the tokens estimation label. Correct token will be 0 until we get a response
-	var tokens_estimation = SingletonObject.Chats.provider.estimate_tokens(new_history_item.Message)
-	user_msg_node.update_tokens_cost(tokens_estimation, 0)
-
-	%txtMainUserInput.text = ""
+		user_msg_node = lst_chi.rendered_node
+		user_history_item = lst_chi
 
 	# Add empty history item, to show the loading state
 	var dummy_item = ChatHistoryItem.new()
@@ -121,14 +141,14 @@ func _on_chat_pressed():
 	chi.provider = SingletonObject.Chats.provider
 
 	# Update user message node
-	user_msg_node.update_tokens_cost(tokens_estimation, bot_response.prompt_tokens)
+	user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
 
 	# Change the history item and the mesasge node will update itself
 	model_msg_node.history_item = chi
 	history.HistoryItemList.append(chi)
 
 	## Inform the user history item that the response has arrived
-	new_history_item.response_arrived.emit(chi)
+	user_history_item.response_arrived.emit(chi)
 
 	model_msg_node.loading = false
 

@@ -25,6 +25,11 @@ var loading:= false:
 		set_message_loading(value)
 		loading = value
 
+var editable:= false:
+	set(value):
+		editable = value
+		%EditButton.visible = editable
+
 
 func _ready():
 	if history_item: _render_history_item()
@@ -70,6 +75,9 @@ func _setup_model_message():
 	var continue_btn = get_node("%ContinueButton") as Button	
 	continue_btn.visible = not history_item.Complete
 
+	# we can't edit model messages
+	%EditButton.visible = false
+
 	if history_item.Error:
 		label.text = "An error occurred:\n%s" % history_item.Error
 		style.bg_color = error_message_color
@@ -110,6 +118,35 @@ func _on_note_button_pressed():
 
 func _on_delete_button_pressed():
 	SingletonObject.Chats.remove_chat_history_item(history_item)
+
+
+
+
+func _on_edit_button_pressed():
+	var ep = SingletonObject.editor_container.editor_pane
+
+	# if theres already open editor for this message, just switch to it
+	for i in range(ep.Tabs.get_tab_count()):
+		var tab_control = ep.Tabs.get_tab_control(i)
+
+		if tab_control.get_meta("associated_object") == self:
+			ep.Tabs.current_tab = i
+			return
+
+	var container: Editor = ep.add(Editor.TYPE.Text, null, "Chat Message")
+	container.prompt_save = false
+
+	container.set_meta("associated_object", self)
+
+	container.code_edit.text = history_item.Message
+	
+	container.code_edit.text_changed.connect(
+		func():
+			history_item.Message = container.code_edit.text
+			history_item = history_item
+	)
+
+	SingletonObject.main_ui.set_editor_pane_visible()
 
 
 class TextSegment:
