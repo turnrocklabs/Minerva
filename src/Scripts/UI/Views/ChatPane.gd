@@ -1,7 +1,11 @@
 class_name ChatPane
 extends TabContainer
 
-var provider: BaseProvider
+var provider: BaseProvider:
+	set(value):
+		provider = value
+		if provider:
+			update_token_estimation() # Update token estimation if provider changes
 
 ## add new chat 
 func _on_new_chat():
@@ -287,7 +291,8 @@ func clear_all_chats():
 		remove_child(child)
 	add_child(SingletonObject.Provider)
 
-
+func update_token_estimation():
+	%EstimatedTokensLabel.text = str(provider.estimate_tokens(%txtMainUserInput.text))
 
 
 # region Edit provider Title
@@ -330,3 +335,10 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 
 func _on_btn_chat_settings_pressed():
 	%AISettings.popup_centered()
+
+
+## When user types in the chat box, estimate tokens count based on selected provider
+func _on_txt_main_user_input_text_changed():
+	update_token_estimation()
+
+
