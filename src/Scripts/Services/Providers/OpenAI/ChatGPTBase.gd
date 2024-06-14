@@ -9,9 +9,9 @@ func _init():
 	BASE_URL = "https://api.openai.com"
 	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
 
-
-func _parse_request_results(response: RequestResults) -> ChatHistoryItem:
-	var item:= ChatHistoryItem.new()
+## VRACAJ BOT RESPONSE
+func _parse_request_results(response: RequestResults) -> BotResponse:
+	var bot_response:= BotResponse.new()
 
 	var data: Variant
 	if response.http_request_result == HTTPRequest.RESULT_SUCCESS:
@@ -20,21 +20,21 @@ func _parse_request_results(response: RequestResults) -> ChatHistoryItem:
 
 		# if the request was successful, parse it to bot response
 		if (response.response_code >= 200 and response.response_code <= 299):
-			item = to_history_item(data)
+			bot_response = to_bot_response(data)
 		# otherwise extract the error
 		else:
 			
 			if "error" in data:
-				item.Error = data["error"]["message"]
+				bot_response.error = data["error"]["message"]
 			else:
-				item.Error = "Unexpected error occured while generating the response"
+				bot_response.error = "Unexpected error occured while generating the response"
 
 	else:
 		push_error("Invalid result. Response: %s", response.response_code)
-		item.Error = "Unexpected error occured with HTTP Client. Code %s" % response.http_request_result
+		bot_response.error = "Unexpected error occured with HTTP Client. Code %s" % response.http_request_result
 		return
 	
-	return item
+	return bot_response
 
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api
@@ -114,21 +114,27 @@ func wrap_memory(list_memories: String) -> String:
 #   },
 #   "system_fingerprint": "fp_3b956da36b"
 # }
-func to_history_item(data: Variant) -> ChatHistoryItem:
-	var item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.MODEL)
+func to_bot_response(data: Variant) -> BotResponse:
+	var response = BotResponse.new()
 	
 	# set the used provider so update model name
-	item.provider = SingletonObject.Chats.provider
+	response.provider = SingletonObject.Chats.provider
 
 	# the id will be useful if we need to complete the response with second request
-	item.Id = data["id"]
+	response.id = data["id"]
 
 	var finish_reason = data["choices"][0]["finish_reason"]
 
 	if finish_reason == "length":
-		item.Complete = false
-
-	item.Message = data["choices"][0]["message"]["content"]
+		response.complete = false
 	
-	return item
+	response.prompt_tokens = data["usage"]["prompt_tokens"]
+	response.completion_tokens = data["usage"]["completion_tokens"]
 
+	response.text = data["choices"][0]["message"]["content"]
+	
+	return response
+
+
+func estimate_tokens(input: String) -> int:
+	return roundi(input.length() / 4.0)

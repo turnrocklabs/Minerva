@@ -9,6 +9,8 @@ extends HBoxContainer
 @export var bot_message_color: Color
 @export var error_message_color: Color
 
+@onready var tokens_cost: Label = %TokensCostLabel
+
 ## Chat history item that this message node is rendering
 var history_item: ChatHistoryItem:
 	set(value):
@@ -80,6 +82,13 @@ func _setup_model_message():
 static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
 	return msg
+
+
+func update_tokens_cost(estimated: int, correct: int) -> void:
+	tokens_cost.visible = true
+	tokens_cost.text = "%s/%s" % [estimated, correct]
+	tokens_cost.tooltip_text = "Used %s tokens (estimated %s)" % [correct, estimated]
+
 
 # Continues the generation of the response
 func _on_continue_button_pressed():

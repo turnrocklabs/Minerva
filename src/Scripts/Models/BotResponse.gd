@@ -3,23 +3,28 @@ class_name BotResponse
 extends RefCounted
 
 
-var Id: StringName
-var FullText: String
-var Picture: Texture
-var Snips: Array[String]
+var id: StringName
+var text: String
+var picture: Texture
 
 ## Setting the error property marks this response as invalid
-var Error: String
+var error: String
 
-var ModelName: String
-var ModelShortName: String
+var provider: BaseProvider
 
 # if the message is not completed due to token limit or any other reason, but can be continued
-var Complete:= true
+var complete:= true
 
-## Providing the `BotResponse` with provider set the model name and it's short name automatically
-func _init(provider: BaseProvider = null):
-	if provider:
-		ModelName = provider.model_name
-		ModelShortName = provider.short_name
 
+var prompt_tokens: int
+var completion_tokens: int
+
+var total_tokens: int:
+	get: return prompt_tokens + completion_tokens
+
+
+func _to_string():
+	if not error:
+		return "Bot Response %s: %s..." % [id, text.substr(0, 10)]
+	else:
+		return "Bot Response %s (Invalid): %s..." % [id, error.substr(0, 10)]
