@@ -90,7 +90,11 @@ func _on_chat_pressed():
 	# make a chat request
 	var history_list: Array[Variant] = create_prompt(new_history_item)
 
-	await SingletonObject.ChatList[current_tab].VBox.add_history_item(new_history_item)
+	var user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(new_history_item)
+
+	# Set the tokens estimation label. Correct token will be 0 until we get a response
+	var tokens_estimation = SingletonObject.Chats.provider.estimate_tokens(new_history_item.Message)
+	user_msg_node.update_tokens_cost(tokens_estimation, 0)
 
 	%txtMainUserInput.text = ""
 
@@ -102,8 +106,19 @@ func _on_chat_pressed():
 	model_msg_node.loading = true
 
 	# This function can be awaited for the request to finish
-	var chi = await provider.generate_content(history_list)
-	
+	var bot_response = await provider.generate_content(history_list)
+
+	# Create history item from bot response
+	var chi = ChatHistoryItem.new()
+	chi.Id = bot_response.id
+	chi.Role = ChatHistoryItem.ChatRole.MODEL
+	chi.Message = bot_response.text
+	chi.Error = bot_response.error
+	chi.provider = SingletonObject.Chats.provider
+
+	# Update user message node
+	user_msg_node.update_tokens_cost(tokens_estimation, bot_response.prompt_tokens)
+
 	# Change the history item and the mesasge node will update itself
 	model_msg_node.history_item = chi
 	history.HistoryItemList.append(chi)
