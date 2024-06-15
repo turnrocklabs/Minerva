@@ -24,7 +24,7 @@ var active_request: HTTPRequest
 
 # region METHODS TO REIMPLEMENT
 
-signal chat_completed(response: BotResponse)
+# moved chat_response signal to SignletonObject
 
 ## This function will generate the model response for given `prompt`
 ## `additional_params` will be added to the request payload

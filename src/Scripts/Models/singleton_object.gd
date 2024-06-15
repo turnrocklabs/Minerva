@@ -19,6 +19,9 @@ signal AttachNoteFile(file_path:String)
 #endregion Notes
 
 #region Chats
+
+signal chat_completed(response: BotResponse)
+
 var ChatList: Array[ChatHistory]:
 	set(value):
 		# save_state(false)
