@@ -20,29 +20,53 @@ theme_override_constants/margin_top = 15
 theme_override_constants/margin_right = 15
 theme_override_constants/margin_bottom = 15
 
-[node name="v" type="VBoxContainer" parent="MarginContainer"]
+[node name="MainVBox" type="VBoxContainer" parent="MarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 10
 
-[node name="Label" type="Label" parent="MarginContainer/v"]
+[node name="SettingTitleLabel" type="Label" parent="MarginContainer/MainVBox"]
 layout_mode = 2
-text = "AI Settings"
+theme_override_font_sizes/font_size = 20
+text = "Settings"
 horizontal_alignment = 1
 
-[node name="HSeparator" type="HSeparator" parent="MarginContainer/v"]
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/MainVBox"]
 layout_mode = 2
 
-[node name="h" type="HBoxContainer" parent="MarginContainer/v"]
+[node name="ProviderHBox" type="HBoxContainer" parent="MarginContainer/MainVBox"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/v/h"]
+[node name="Label" type="Label" parent="MarginContainer/MainVBox/ProviderHBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Provider:"
+vertical_alignment = 1
 
-[node name="ProviderOptionButton" type="OptionButton" parent="MarginContainer/v/h"]
+[node name="ProviderOptionButton" type="OptionButton" parent="MarginContainer/MainVBox/ProviderHBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="ThemeHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+
+[node name="ThemeLabel" type="Label" parent="MarginContainer/MainVBox/ThemeHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Theme:"
+vertical_alignment = 1
+
+[node name="ThemeOptionButton" type="OptionButton" parent="MarginContainer/MainVBox/ThemeHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+item_count = 2
+selected = 0
+popup/item_0/text = "Light Mode"
+popup/item_0/id = 0
+popup/item_1/text = "Dark Mode"
+popup/item_1/id = 1
+
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
-[connection signal="item_selected" from="MarginContainer/v/h/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
+[connection signal="item_selected" from="MarginContainer/MainVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
+[connection signal="item_selected" from="MarginContainer/MainVBox/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]

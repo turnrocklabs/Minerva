@@ -34,7 +34,7 @@ func _on_request_completed(result, response_code, _headers, body, _http_request,
 		bot_response.Error = "Unexpected error occured with HTTP Client. Code %s" % result
 		return
 	
-	chat_completed.emit(bot_response)
+	SingletonObject.Provider.chat_completed.emit(bot_response)
 
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api

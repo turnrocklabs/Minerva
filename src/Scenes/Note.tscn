@@ -1,44 +1,27 @@
-[gd_scene load_steps=11 format=3 uid="uid://fr1vfchpwjq2"]
+[gd_scene load_steps=7 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
 [ext_resource type="Texture2D" uid="uid://bfichs8o3wt8b" path="res://assets/icons/drag.png" id="2_fkdjp"]
-[ext_resource type="Texture2D" uid="uid://ciq3i7lnhmr41" path="res://assets/icons/checkbutton_checked.png" id="2_jstr6"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="4_vm57c"]
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_fc11w"]
-color = Color(0.156863, 0, 1, 1)
+color = Color(0.164706, 0.345098, 0.831373, 1)
 thickness = 10
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ks4wd"]
-content_margin_left = 15.0
-content_margin_top = 15.0
-content_margin_right = 15.0
-content_margin_bottom = 15.0
-bg_color = Color(0.133333, 0.133333, 0.133333, 1)
-corner_radius_top_left = 25
-corner_radius_top_right = 25
-corner_radius_bottom_right = 25
-corner_radius_bottom_left = 25
-
-[sub_resource type="Theme" id="Theme_xwy3l"]
-CheckButton/icons/checked = ExtResource("2_jstr6")
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_33w73"]
-bg_color = Color(0.6, 0.6, 0.6, 0)
-
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_4vmi0"]
-color = Color(0.156863, 0, 1, 1)
+color = Color(0.164706, 0.345098, 0.831373, 1)
 thickness = 10
 
 [node name="Note" type="VBoxContainer"]
 anchors_preset = -1
 anchor_right = 1.0
 anchor_bottom = 0.183
-offset_right = 0.76001
-offset_bottom = 1.08
+offset_top = -16.0
+offset_bottom = 22.36
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/separation = 16
 script = ExtResource("1_bjbgn")
 
 [node name="UpperSeparator" type="HSeparator" parent="."]
@@ -50,13 +33,14 @@ theme_override_styles/separator = SubResource("StyleBoxLine_fc11w")
 [node name="PanelContainer" type="PanelContainer" parent="."]
 layout_mode = 2
 mouse_filter = 1
-theme_override_styles/panel = SubResource("StyleBoxFlat_ks4wd")
 
 [node name="v" type="VBoxContainer" parent="PanelContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 16
 
 [node name="DragTextureRect" type="TextureRect" parent="PanelContainer/v"]
+modulate = Color(0.00392157, 1, 1, 1)
 custom_minimum_size = Vector2(0, 20)
 layout_mode = 2
 mouse_default_cursor_shape = 6
@@ -66,11 +50,12 @@ stretch_mode = 5
 
 [node name="h" type="HBoxContainer" parent="PanelContainer/v"]
 layout_mode = 2
+theme_override_constants/separation = 16
 
 [node name="CheckButton" type="CheckButton" parent="PanelContainer/v/h"]
 unique_name_in_owner = true
 layout_mode = 2
-theme = SubResource("Theme_xwy3l")
+focus_mode = 0
 
 [node name="Title" type="LineEdit" parent="PanelContainer/v/h"]
 unique_name_in_owner = true
@@ -97,7 +82,6 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 focus_mode = 2
-theme_override_styles/normal = SubResource("StyleBoxFlat_33w73")
 text = "Lfforem ipsum dolor sit amet, consectetur adipiscing elit. Sed eget eleifend massa. Proin urna sapien, consectetur in nisi sit amet, pulvinar egestas neque. Etiam in hendrerit lectus, id sollicitudin lacus. Donec sed tempor ante. Praesent id sagittis erat. Fusce eleifend nisi tempus orci tincidunt congue. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus"
 autowrap_mode = 2
 selection_enabled = true
