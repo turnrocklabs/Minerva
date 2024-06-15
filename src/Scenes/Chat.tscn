@@ -1,10 +1,11 @@
-[gd_scene load_steps=8 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=9 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
 [ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
 [ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
+[ext_resource type="Texture2D" uid="uid://d0trvye6gvmku" path="res://assets/icons/_e5aa70df-2d58-44c7-a6af-89d86762723f.jpg" id="6_me3lw"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qx4pd"]
 bg_color = Color(0.0117647, 0.0117647, 0.0117647, 1)
@@ -146,6 +147,11 @@ layout_mode = 2
 tooltip_text = "Send Message"
 icon = ExtResource("2_pt51a")
 
+[node name="btnMicrophone" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Send Message"
+icon = ExtResource("6_me3lw")
+
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Test"
@@ -157,4 +163,5 @@ text = "Test"
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChatSettings" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_chat_settings_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_inspect_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_microphone_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_test_pressed"]
