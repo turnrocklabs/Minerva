@@ -26,7 +26,7 @@ var ChatList: Array[ChatHistory]:
 
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
-var Provider
+var Provider: BaseProvider
 var Chats: ChatPane
 
 func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
