@@ -8,8 +8,7 @@ var _dummy_msg_node: Node
 var loading_response := false:
 	set(value):
 		if value: _create_dummy_response()
-		elif _dummy_msg_node != null:
-			_dummy_msg_node.free()
+		elif is_instance_valid(_dummy_msg_node): _dummy_msg_node.free()
 		loading_response = value
 
 var chat_history: ChatHistory
@@ -31,27 +30,41 @@ func _ready():
 	pass
 
 
-func _create_dummy_response():
-	var br = BotResponse.new()
-	br.FullText = "●︎●︎●︎"
-	_dummy_msg_node = await add_bot_message(br)
+func _notification(what):
+	match what:
+		NOTIFICATION_CHILD_ORDER_CHANGED:
+			_messages_list_changed()
 
 
-## create some sort of textbox and put the content in there.
-func add_bot_message(message:BotResponse) -> MessageMarkdown:
-	var msg_node = MessageMarkdown.bot_message(message)
-	add_child(msg_node)
+func _messages_list_changed():
+	var last_message: MessageMarkdown
 
-	await get_tree().process_frame
-	get_parent().ensure_control_visible(msg_node)
-
-	return msg_node
-
-
-func add_user_message(message:BotResponse) -> MessageMarkdown:
-	var msg_node = MessageMarkdown.user_message(message)
-	add_child(msg_node)
+	# disalbe edit for all user messages
+	for child in get_children():
+		if child is MessageMarkdown:
+			child.editable = false
+			last_message = child
 	
+	if not last_message: return
+	
+	# if last_message is user message, enable edit for it
+	if last_message.history_item.Role == ChatHistoryItem.ChatRole.USER:
+		last_message.editable = true
+
+func _create_dummy_response():
+	pass
+	# var br = BotResponse.new()
+	# br.FullText = "●︎●︎●︎"
+	# _dummy_msg_node = await add_bot_message(br)
+
+## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
+func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
+	var msg_node = MessageMarkdown.new_message()
+	msg_node.history_item = item
+	item.rendered_node = msg_node
+
+	add_child(msg_node)
+
 	await get_tree().process_frame
 	get_parent().ensure_control_visible(msg_node)
 

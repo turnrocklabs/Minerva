@@ -5,6 +5,8 @@ var effect
 var recording
 var file_path = "res://VioceAudio.wav"
 
+var State = "Active"
+
 
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
 
@@ -16,6 +18,7 @@ func _ready():
 	
 func _StartConverting():
 	if effect.is_recording_active():
+		State = "Static"
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
 		recording.save_to_wav(file_path)
@@ -65,6 +68,7 @@ func _StartConverting():
 			print("Failed to open audio file: ", file_path)
 	else:
 		effect.set_recording_active(true)
+		State = "Active"
 
 func _on_request_completed(result, response_code, headers, body):
 	if response_code == 200:
