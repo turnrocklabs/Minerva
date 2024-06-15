@@ -34,6 +34,8 @@ func create_prompt(append_item: ChatHistoryItem = null) -> Array[Variant]:
 	
 	var working_memory: String = SingletonObject.NotesTab.To_Prompt(provider)
 
+	print(working_memory)
+
 	# history will turn it into a prompts using the selected provider
 	var history_list: Array[Variant] = history.To_Prompt()
 
@@ -80,7 +82,6 @@ func _on_chat_pressed():
 	
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
-	SingletonObject.NotesTab.Disable_All()
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
@@ -121,6 +122,9 @@ func _on_chat_pressed():
 
 		user_msg_node = lst_chi.rendered_node
 		user_history_item = lst_chi
+	
+	# we made the prompt, disable the notes now
+	SingletonObject.NotesTab.Disable_All()
 
 	# Add empty history item, to show the loading state
 	var dummy_item = ChatHistoryItem.new()
