@@ -16,6 +16,7 @@
 [ext_resource type="Texture2D" uid="uid://0onnj1f41kmb" path="res://assets/generated/paperclip_icon_24.webp" id="11_ydk0s"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="12_6jk4t"]
 [ext_resource type="Texture2D" uid="uid://d0trvye6gvmku" path="res://assets/icons/_e5aa70df-2d58-44c7-a6af-89d86762723f.jpg" id="13_2lo4v"]
+[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
@@ -210,7 +211,6 @@ item_6/id = 6
 [node name="MainUI" type="HBoxContainer" parent="VBoxRoot"]
 layout_mode = 2
 size_flags_vertical = 3
-size_flags_stretch_ratio = 2.0
 theme_override_constants/separation = 5
 script = ExtResource("2_kohxl")
 
@@ -228,7 +228,6 @@ theme_override_constants/separation = 16
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.5
 
 [node name="Chats" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
 layout_mode = 2
@@ -322,9 +321,9 @@ unique_name_in_owner = true
 size = Vector2i(136, 100)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CreatNewNote"]
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 132.0
+offset_left = 5.0
+offset_top = 5.0
+offset_right = 133.0
 offset_bottom = 96.0
 size_flags_horizontal = 3
 
@@ -359,8 +358,9 @@ layout_mode = 2
 text = "Add note"
 
 [node name="btnVoice" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-icon = ExtResource("13_2lo4v")
+icon = ExtResource("13_bg3bn")
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
