@@ -139,7 +139,7 @@ func render_history(chat_history: ChatHistory):
 func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
-
+	
 	if provider == null:
 		provider = %AISettings.get_selected_provider().new()
 		set_provider(provider)
@@ -166,18 +166,6 @@ func _on_close_tab(tab: int, container: TabContainer):
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 # func _process(delta):
 # 	pass
-
-func _on_btn_memorize_pressed():
-	var user_title = %txtMemoryTitle.text
-	var user_body = %txtMainUserInput.text
-	
-	if user_title == "" or user_body == "":
-		SingletonObject.ErrorDisplay("Error","Please enter an Title and description for note") 
-		
-	else:
-		SingletonObject.NotesTab.add_note(user_title, user_body)
-		%txtMemoryTitle.text = ""
-		%txtMainUserInput.text = ""
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
@@ -242,3 +230,9 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 
 func _on_btn_chat_settings_pressed():
 	%AISettings.popup_centered()
+	
+
+func _on_btn_microphone_pressed():
+	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
+	SingletonObject.AtT._StartConverting()
+
