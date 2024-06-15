@@ -33,8 +33,8 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 		push_error("Invalid result. Response: %s", response.response_code)
 		bot_response.error = "Unexpected error occured with HTTP Client. Code %s" % response.http_request_result
 		return
-	
-	SingletonObject.chat_completed.emit(bot_response)
+
+	return bot_response
 
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api
@@ -59,7 +59,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 
 	var item = _parse_request_results(response)
 	
-	chat_completed.emit(item)
+	SingletonObject.chat_completed.emit(item)
 
 	return item
 

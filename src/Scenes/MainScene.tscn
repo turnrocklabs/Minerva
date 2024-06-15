@@ -308,7 +308,6 @@ icon = ExtResource("11_ydk0s")
 layout_mode = 2
 size_flags_horizontal = 8
 text = "New Tab"
-icon = ExtResource("12_altkx")
 
 [node name="tcThreads" type="TabContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
 unique_name_in_owner = true
