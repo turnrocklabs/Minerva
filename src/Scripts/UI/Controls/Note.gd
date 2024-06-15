@@ -24,6 +24,8 @@ var memory_item: MemoryItem:
 
 
 func _ready():
+	var new_size: Vector2 = size * 0.15
+	set_size(new_size)
 	label_node.text_changed.connect(
 		func(text):
 			if memory_item: memory_item.Title = text
@@ -50,8 +52,6 @@ func _notification(notification_type):
 
 			_lower_separator.visible = false
 			_upper_separator.visible = false
-
-			SingletonObject.NotesTab.render_threads()
 		
 		NOTIFICATION_DRAG_BEGIN:
 			description_node.mouse_filter = Control.MOUSE_FILTER_PASS

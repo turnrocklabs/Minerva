@@ -259,7 +259,7 @@ func render_history(chat_history: ChatHistory):
 func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
-
+	
 	if provider == null:
 		provider = %AISettings.get_selected_provider().new()
 		set_provider(provider)
@@ -277,6 +277,7 @@ func set_provider(new_provider: BaseProvider):
 
 
 func _on_close_tab(tab: int, container: TabContainer):
+	# Remove the tab control
 	var control = container.get_tab_control(tab)
 	container.remove_child(control)
 	SingletonObject.ChatList.remove_at(tab)
@@ -285,18 +286,6 @@ func _on_close_tab(tab: int, container: TabContainer):
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 # func _process(delta):
 # 	pass
-
-func _on_btn_memorize_pressed():
-	var user_title = %txtMemoryTitle.text
-	var user_body = %txtMainUserInput.text
-	
-	if user_title == "" or user_body == "":
-		SingletonObject.ErrorDisplay("Error","Please enter an Title and description for note") 
-		
-	else:
-		SingletonObject.NotesTab.add_note(user_title, user_body)
-		%txtMemoryTitle.text = ""
-		%txtMainUserInput.text = ""
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
@@ -332,7 +321,6 @@ func show_title_edit_dialog(tab: int):
 	%EditTitleDialog/LineEdit.text = get_tab_title(tab)
 	%EditTitleDialog.popup_centered()
 
-
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
 
@@ -355,7 +343,6 @@ func _on_tab_clicked(tab: int):
 # to attach a file.
 func _on_btn_attach_file_pressed():
 	%AttachFileDialog.popup_centered(Vector2i(700, 500))
-
 
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	for fp in paths:
