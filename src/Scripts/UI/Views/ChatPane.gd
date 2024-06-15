@@ -139,6 +139,7 @@ func _on_chat_pressed():
 	chi.Message = bot_response.text
 	chi.Error = bot_response.error
 	chi.provider = SingletonObject.Chats.provider
+	chi.Complete = bot_response.complete
 
 	# Update user message node
 	user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
@@ -165,17 +166,26 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 
 	var history_list: Array[Variant] = SingletonObject.Chats.create_prompt(temp_chi)
 	
-	remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
+	# remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
 
-	var chi = await SingletonObject.Chats.provider.generate_content(history_list)
+	var bot_response = await SingletonObject.Chats.provider.generate_content(history_list)
 
-	# merge the two responses
-	chi.Message = "%s %s" % [partial_chi.Message, chi.Message]
+	partial_chi.Message += bot_response.text
+	partial_chi.Complete = bot_response.complete
 
-	## Inform the user history item that the response has arrived
-	partial_chi.response_arrived.emit(chi)
+	# set the history item for the rendered node so it gets rerendered
+	partial_chi.rendered_node.history_item = partial_chi
 
-	return chi
+	# var chi = ChatHistoryItem.new()
+	# chi.Role = ChatHistoryItem.ChatRole.MODEL
+
+	# # merge the two responses
+	# chi.Message = "%s %s" % [partial_chi.Message, bot_response.text]
+
+	# ## Inform the user history item that the response has arrived
+	# partial_chi.response_arrived.emit(partial_chi)
+
+	return partial_chi
 
 ## Render a full chat history response
 func render_single_chat(item: ChatHistoryItem):
