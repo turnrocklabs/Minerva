@@ -6,6 +6,8 @@ var provider: BaseProvider:
 		provider = value
 		if provider:
 			update_token_estimation() # Update token estimation if provider changes
+var icActive = preload("res://assets/icons/Microphone_active.png")
+var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 
 ## add new chat 
 func _on_new_chat():
@@ -361,5 +363,14 @@ func _on_btn_chat_settings_pressed():
 ## When user types in the chat box, estimate tokens count based on selected provider
 func _on_txt_main_user_input_text_changed():
 	update_token_estimation()
+func _on_btn_microphone_pressed():
+	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
+	SingletonObject.AtT._StartConverting()
+	
+	if SingletonObject.AtT.State == "Active":
+		%btnMicrophone.icon = icActive
+	else:
+		%btnMicrophone.icon = icStatic
+		
 
 
