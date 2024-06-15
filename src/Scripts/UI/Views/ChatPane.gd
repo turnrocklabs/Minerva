@@ -1,10 +1,11 @@
 class_name ChatPane
 extends TabContainer
 
-var provider: BaseProvider
-
-#var to detect where we send message to bot
-var TabWhereRequestWas
+var provider: BaseProvider:
+	set(value):
+		provider = value
+		if provider:
+			update_token_estimation() # Update token estimation if provider changes
 var icActive = preload("res://assets/icons/Microphone_active.png")
 var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 
@@ -18,50 +19,55 @@ func _on_new_chat():
 	SingletonObject.ChatList.append(history)
 	render_history(history)
 
-## Function:
-# create_prompt generates the full turn prompt
-func create_prompt(append_item:ChatHistoryItem = null, disable_notes: bool = false, inspect:= false) -> Array[Variant]:
-	# make sure we have an active chat
+
+## Opens a chat tab if one isn't open yet
+func ensure_chat_open() -> void:
 	if len(SingletonObject.ChatList) <= current_tab:
 		_on_new_chat()
 
-	## Get the working memory and append the user message to chat history
-	# var prompt_for_turn: String = ""
-
+## Generates the full turn prompt using the history of the active chat and the selected provider.
+## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.
+func create_prompt(append_item: ChatHistoryItem = null) -> Array[Variant]:
+	# get history of the active chat tab if there is one
+	if len(SingletonObject.ChatList) <= current_tab:
+		return []
+	
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	
 	var working_memory: String = SingletonObject.NotesTab.To_Prompt(provider)
 
-	# disable the notes if we are asked
-	if disable_notes:
-		SingletonObject.NotesTab.Disable_All()
+	print(working_memory)
 
-	## get the message for completion, appending a new items if given
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	# history will turn it into a prompts using the selected provider
+	var history_list: Array[Variant] = history.To_Prompt()
 
-	if append_item != null:
-		if len(working_memory) > 0:
-			append_item.InjectedNote = working_memory
-			append_item.Message = append_item.Message
-		
-		history.HistoryItemList.append(append_item)
-		SingletonObject.ChatList[current_tab] = history
+	# If we don't have a new item but we have active notes, we still need new item to add the noted in there
+	if not append_item and working_memory:
+		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
 	
-	var history_list: Array[Variant] = history.To_Prompt();
+	# append the working memory
+	if append_item:
+		append_item.InjectedNote = working_memory
 
-	if inspect: history.HistoryItemList.pop_back()
+		# also append the new item since it's not in the history yet
+		history_list.append(history.Provider.Format(append_item))
 
 	return history_list
+
+
+
 
 func _on_btn_inspect_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
 
-	## generate the JSON string we would send to the model.
-	var history_list: Array[Variant] = self.create_prompt(new_history_item, false, true)
+	## generate the dictionary we would send to the model.
+	var history_list: Array[Variant] = create_prompt(new_history_item)
 
-	# var formatted = SingletonObject.Provider.Format(new_history_item)
+	# we wont add the message to the history
 
-	# history_list.append(formatted)
+	ensure_chat_open()
 
 	var stringified_history:String = JSON.stringify(history_list, "\t")
 	%cdePrompt.text = stringified_history
@@ -75,45 +81,160 @@ func _on_btn_inspect_pressed():
 
 
 func _on_chat_pressed():
-	## Check if there is an active tab first
-	if current_tab == -1:
-		print("No active tab to send the chat.")
-		return
 	
-	## prepare an append item for the history
-	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
-	new_history_item.Message = %txtMainUserInput.text
-	new_history_item.Role = ChatHistoryItem.ChatRole.USER
-	#when we sent messag we remembering where we sent message to bot(in which tab)
-	TabWhereRequestWas = current_tab
+	# Ensure we have open chat so we can get its history and disable the notes
+	ensure_chat_open()
 
-	## Add the user speech bubble to the chat area control.
-	var temp_user_data: BotResponse = BotResponse.new()
-	temp_user_data.FullText = %txtMainUserInput.text
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+
+	var existing_message = false
+
+	# if last message is user message, that means we have no reply for it.
+	# FIXME: if user spams the chat button, this will run multiple times
+	var lst_chi = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
+	if lst_chi and lst_chi.Role == ChatHistoryItem.ChatRole.USER:
+		existing_message = true
+
+	var history_list: Array[Variant]
+	var user_msg_node: MessageMarkdown
+	var user_history_item: ChatHistoryItem
+
+	if not existing_message:
+		## prepare an append item for the history
+		user_history_item = ChatHistoryItem.new()
+		user_history_item.Message = %txtMainUserInput.text
+		user_history_item.Role = ChatHistoryItem.ChatRole.USER
+
+		%txtMainUserInput.text = ""
+
+		# add the message to the history list before we construct the prompt, so it gets included
+		history.HistoryItemList.append(user_history_item)
+		
+		# make a chat request
+		history_list = create_prompt(user_history_item)
+
+		user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(user_history_item)
+
+		# Set the tokens estimation label. Correct token will be 0 until we get a response
+		user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), 0)
 	
-	# make a chat request
-	var history_list: Array[Variant] = self.create_prompt(new_history_item, true)
-	provider.generate_content(history_list)
+	else:
+		# since we already have the message in user history create the prompt with no additional items
+		history_list = create_prompt()
 
-	SingletonObject.ChatList[current_tab].VBox.add_user_message(temp_user_data)
+		user_msg_node = lst_chi.rendered_node
+		user_history_item = lst_chi
+	
+	# we made the prompt, disable the notes now
+	SingletonObject.NotesTab.Disable_All()
 
-	SingletonObject.ChatList[current_tab].VBox.loading_response = true
+	# Add empty history item, to show the loading state
+	var dummy_item = ChatHistoryItem.new()
+	dummy_item.Role = ChatHistoryItem.ChatRole.MODEL
+	
+	var model_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(dummy_item)
+	model_msg_node.loading = true
 
-	%txtMainUserInput.text = ""
+	# This function can be awaited for the request to finish
+	var bot_response = await provider.generate_content(history_list)
+
+	# Create history item from bot response
+	var chi = ChatHistoryItem.new()
+	chi.Id = bot_response.id
+	chi.Role = ChatHistoryItem.ChatRole.MODEL
+	chi.Message = bot_response.text
+	chi.Error = bot_response.error
+	chi.provider = SingletonObject.Chats.provider
+	chi.Complete = bot_response.complete
+
+	# Update user message node
+	user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
+
+	# Change the history item and the mesasge node will update itself
+	model_msg_node.history_item = chi
+	history.HistoryItemList.append(chi)
+
+	## Inform the user history item that the response has arrived
+	user_history_item.response_arrived.emit(chi)
+
+	model_msg_node.loading = false
+
+
+
+# TODO: check if changing the active tab during the request causes any trouble
+
+## This function takes `partial_chi` and prompts model to finish the response
+## merging the new and the initial response into one and returning it.
+func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
+	# make a chat request with temporary chat history item
+	var temp_chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
+	temp_chi.Message = "continue"
+
+	var history_list: Array[Variant] = SingletonObject.Chats.create_prompt(temp_chi)
+	
+	# remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
+
+	var bot_response = await SingletonObject.Chats.provider.generate_content(history_list)
+
+	partial_chi.Message += bot_response.text
+	partial_chi.Complete = bot_response.complete
+
+	# set the history item for the rendered node so it gets rerendered
+	partial_chi.rendered_node.history_item = partial_chi
+
+	# var chi = ChatHistoryItem.new()
+	# chi.Role = ChatHistoryItem.ChatRole.MODEL
+
+	# # merge the two responses
+	# chi.Message = "%s %s" % [partial_chi.Message, bot_response.text]
+
+	# ## Inform the user history item that the response has arrived
+	# partial_chi.response_arrived.emit(partial_chi)
+
+	return partial_chi
 
 ## Render a full chat history response
-func render_single_chat(response:BotResponse):
-	if TabWhereRequestWas >= 0 and TabWhereRequestWas < len(SingletonObject.ChatList):
-		SingletonObject.ChatList[TabWhereRequestWas].VBox.loading_response = false
-		# create a chat history item and append it to the list
-		var item: ChatHistoryItem = ChatHistoryItem.new()
-		item.Role = ChatHistoryItem.ChatRole.ASSISTANT
-		item.Message = response.FullText
-		SingletonObject.ChatList[TabWhereRequestWas].HistoryItemList.append(item)
+func render_single_chat(item: ChatHistoryItem):
+	SingletonObject.ChatList[current_tab].HistoryItemList.append(item)
 
-		# Ask the Vbox to add the message
-		SingletonObject.ChatList[TabWhereRequestWas].VBox.add_bot_message(response)
-		pass
+	# Ask the Vbox to add the message
+	# and save the rendered node to the chat history item, si we can delete it if needed
+	item.rendered_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(item)
+	
+
+
+## Will remove the chat histoy item from the history and remove the rendered node.
+## if `auto_merge` is false, this function will only delete the given history item and it's rendered node,
+## otherwise, it will automatically merge next message with previous so perserve the user/model turn
+func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, auto_merge:= true):
+	if item.rendered_node:
+		item.rendered_node.queue_free()
+	else:
+		push_warning("Trying to delete chat history item %s with no rendered node attached to it" % item)
+		return
+
+	if not auto_merge: return
+
+	if not history:
+		for h in SingletonObject.ChatList:
+			if h.HistoryItemList.has(item):
+				history = h
+				break
+
+	if not history:
+		push_error("Trying to remove history item %s not present in any history item list" % item)
+		return
+
+	var item_index = history.HistoryItemList.find(item)
+
+	for citem: ChatHistoryItem in history.HistoryItemList.slice(item_index+1):
+		if citem.rendered_node:
+			citem.rendered_node.queue_free()
+			history.HistoryItemList.erase(citem)
+			break
+
+	history.HistoryItemList.erase(item)
+
 
 
 func render_history(chat_history: ChatHistory):
@@ -136,10 +257,7 @@ func render_history(chat_history: ChatHistory):
 	%tcChats.add_child(scroll_container)
 
 	for item in chat_history.HistoryItemList:
-		if item.Role == item.ChatRole.USER:
-			SingletonObject.ChatList[current_tab].VBox.add_user_message(item.to_bot_response())
-		elif item.Role in [item.ChatRole.MODEL, item.ChatRole.ASSISTANT]:
-			SingletonObject.ChatList[current_tab].VBox.add_bot_message(item.to_bot_response())
+		SingletonObject.ChatList[current_tab].VBox.add_history_item(item)
 
 
 
@@ -159,7 +277,7 @@ func set_provider(new_provider: BaseProvider):
 	if provider.is_inside_tree(): remove_child(provider)
 
 	add_child(new_provider)
-	new_provider.chat_completed.connect(self.render_single_chat)
+	# new_provider.chat_completed.connect(self.render_single_chat)
 
 	provider = new_provider
 
@@ -181,15 +299,16 @@ func _on_btn_test_pressed():
 		_on_new_chat()
 
 	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
-	var test_response:BotResponse = BotResponse.new()
+	var item:= ChatHistoryItem.new()
 	#test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
-	# Open a test file with text that will repeat.
-	var file_path: String  = "res://Tests/Repeats.txt"
-	var file = FileAccess.open(file_path, FileAccess.READ)
-	var bad_text: String = file.get_as_text()
-	test_response.FullText = bad_text
-	SingletonObject.Provider.chat_completed.emit(test_response)
-	#self.render_single_chat(test_response)
+	item.Message = """
+		## Markdown
+		Here is how you write hello world in python:
+		```python
+		print (\"Hello World\")
+		```
+	"""
+	self.render_single_chat(item)
 	pass # Replace with function body.
 
 func clear_all_chats():
@@ -197,7 +316,8 @@ func clear_all_chats():
 		remove_child(child)
 	add_child(SingletonObject.Provider)
 
-
+func update_token_estimation():
+	%EstimatedTokensLabel.text = str(provider.estimate_tokens(%txtMainUserInput.text))
 
 
 # region Edit provider Title
@@ -238,8 +358,11 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 
 func _on_btn_chat_settings_pressed():
 	%AISettings.popup_centered()
-	
 
+
+## When user types in the chat box, estimate tokens count based on selected provider
+func _on_txt_main_user_input_text_changed():
+	update_token_estimation()
 func _on_btn_microphone_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
 	SingletonObject.AtT._StartConverting()

@@ -6,6 +6,12 @@ enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
 
 static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type", "ModelName", "ModelShortName"]
 
+# This signal is to be emited when new message in the history list is added
+signal response_arrived(item: ChatHistoryItem)
+
+var Id: String:
+	set(value): SingletonObject.save_state(false); Id = value
+
 var Role: ChatRole:
 	set(value): SingletonObject.save_state(false); Role = value
 
@@ -30,6 +36,20 @@ var ModelName: String:
 var ModelShortName: String:
 	set(value): SingletonObject.save_state(false); ModelShortName = value
 
+var Complete: bool:
+	set(value): SingletonObject.save_state(false); Complete = value
+
+var Error: String:
+	set(value): SingletonObject.save_state(false); Error = value
+
+
+var provider: BaseProvider:
+	set(value):
+		_provider_updated()
+		provider = value
+
+## The node that is currently rendering this item
+var rendered_node: MessageMarkdown
 
 
 func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
@@ -37,8 +57,24 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 	self.Role = _role
 	self.Message = ""
 	self.Base64Data = ""
+	self.Complete = true
 	self.ModelName = SingletonObject.Chats.provider.model_name
 	self.ModelShortName = SingletonObject.Chats.provider.short_name
+
+	response_arrived.connect(_on_response_arrived)
+
+
+## When the provider is updated update the used model names
+func _provider_updated():
+	if provider:
+		self.ModelName = provider.model_name
+		self.ModelShortName = provider.short_name
+
+func _on_response_arrived(item: ChatHistoryItem):
+	print("Response arrived for %s (%s)" % [self, item])
+	if rendered_node:
+		# Set the history_item again to trigger the setter
+		rendered_node.history_item = self
 
 
 func format(callback: Callable) -> String:
