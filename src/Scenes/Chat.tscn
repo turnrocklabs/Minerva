@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
 [ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
-[ext_resource type="Texture2D" uid="uid://d0trvye6gvmku" path="res://assets/icons/_e5aa70df-2d58-44c7-a6af-89d86762723f.jpg" id="6_me3lw"]
+[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qx4pd"]
 bg_color = Color(0.0117647, 0.0117647, 0.0117647, 1)
@@ -148,9 +148,10 @@ tooltip_text = "Send Message"
 icon = ExtResource("2_pt51a")
 
 [node name="btnMicrophone" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Send Message"
-icon = ExtResource("6_me3lw")
+icon = ExtResource("6_iop5c")
 
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
