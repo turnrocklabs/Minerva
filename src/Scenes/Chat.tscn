@@ -6,10 +6,10 @@
 [ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
 [ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
-[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
+[ext_resource type="Texture2D" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
 
 [node name="Chats" type="Control"]
-custom_minimum_size = Vector2(300, 0)
+custom_minimum_size = Vector2(480, 0)
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -102,7 +102,7 @@ icon = ExtResource("2_bjp7m")
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer3"]
 layout_mode = 2
 size_flags_vertical = 3
-split_offset = 175
+split_offset = 280
 
 [node name="tcChats" type="TabContainer" parent="VBoxContainer3/VSplitContainer"]
 unique_name_in_owner = true
@@ -155,6 +155,7 @@ text = "Test"
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 16
 
 [node name="Label" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -165,6 +166,8 @@ text = "Estimated Prompt Count:"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
+size_flags_horizontal = 8
+text = "- -"
 
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
