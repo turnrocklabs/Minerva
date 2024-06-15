@@ -43,7 +43,6 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	var request_body = {
 		"model": model_name,
 		"messages": prompt,
-		"max_tokens": 5,
 	}
 
 	request_body.merge(additional_params)
