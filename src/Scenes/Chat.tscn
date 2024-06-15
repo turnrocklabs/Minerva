@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=8 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
@@ -7,12 +7,6 @@
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
 [ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
 [ext_resource type="Texture2D" uid="uid://d0trvye6gvmku" path="res://assets/icons/_e5aa70df-2d58-44c7-a6af-89d86762723f.jpg" id="6_me3lw"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qx4pd"]
-bg_color = Color(0.0117647, 0.0117647, 0.0117647, 1)
-
-[sub_resource type="Theme" id="Theme_0jcdg"]
-Panel/styles/panel = SubResource("StyleBoxFlat_qx4pd")
 
 [node name="Chats" type="Control"]
 custom_minimum_size = Vector2(300, 0)
@@ -24,7 +18,6 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme = SubResource("Theme_0jcdg")
 
 [node name="InspectorPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
@@ -37,8 +30,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 516.0
-offset_bottom = 516.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
