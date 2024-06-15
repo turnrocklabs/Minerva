@@ -1,7 +1,8 @@
-[gd_scene load_steps=9 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=10 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="2_bjp7m"]
 [ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
 [ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
@@ -103,6 +104,7 @@ layout_mode = 2
 size_flags_horizontal = 10
 focus_mode = 0
 text = "New Chat"
+icon = ExtResource("2_bjp7m")
 
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer3"]
 layout_mode = 2
