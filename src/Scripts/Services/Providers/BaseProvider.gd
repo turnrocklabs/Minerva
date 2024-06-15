@@ -20,13 +20,16 @@ var model_name:= "Unknown"
 var short_name = "NA"
 
 var active_request: HTTPRequest
-var active_bot: BotResponse
+# var active_bot: BotResponse
 
 # region METHODS TO REIMPLEMENT
 
-signal chat_completed(response: BotResponse)
+# moved chat_response signal to SignletonObject
 
-func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}):
+## This function will generate the model response for given `prompt`
+## `additional_params` will be added to the request payload
+func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}) -> BotResponse:
+	await get_tree().process_frame # This line is just to supress the 'not a coroutine' warning
 	push_error("generate_content method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
@@ -38,8 +41,12 @@ func Format(_chat: ChatHistoryItem) -> Variant:
 	push_error("Format method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
-func _on_request_completed(result, response_code, _headers, body, _http_request, _url):
+func _on_request_completed(_result, _response_code, _headers, _body, _http_request, _url):
 	pass
+
+func estimate_tokens(_input: String) -> int:
+	push_error("estimate_tokens method of %s not implemented" % get_script().resource_path.get_file())
+	return 0
 
 # endregion
 
@@ -47,8 +54,39 @@ func _ready():
 	active_request = HTTPRequest.new()
 	add_child(active_request)
 
+
+## This class represents results of the HTTP request
+class RequestResults extends RefCounted:
+	
+	var http_request_result: int
+	var response_code: int
+	var headers: PackedStringArray
+	var body: PackedByteArray
+	var http_request: HTTPRequest
+	var url: String
+	var metadata: Dictionary
+
+	## This function will take results of the `HTTPRequest.request_completed` signal and additional data to construct
+	## RequestResults object
+	static func from_request_response(request_data_: Array, http_request_: HTTPRequest, url_: String, metadata_: Dictionary = {}):
+		var obj = RequestResults.new()
+		obj.http_request_result = request_data_[0]
+		obj.response_code = request_data_[1]
+		obj.headers = request_data_[2]
+		obj.body = request_data_[3]
+
+		obj.url = url_
+		obj.metadata = metadata_
+		obj.http_request = http_request_
+
+		return obj
+	
+	func _to_string():
+		return "%s (%s) - (%s)" % [url, response_code, metadata]
+
 # Helper function to make HTTP requests
-func make_request(url: String, method: int, body: String="", headers: Array[String]= []):
+## This function will return array of 
+func make_request(url: String, method: int, body: String="", headers: Array[String]= []) -> RequestResults:
 	# setup request object for the delta endpoint and append API key
 	var http_request = active_request
 	http_request.use_threads = true
@@ -56,12 +94,13 @@ func make_request(url: String, method: int, body: String="", headers: Array[Stri
 
 	if len(API_KEY) != 0:
 		#add_child(http_request)
-		if not http_request.request_completed.is_connected(_on_request_completed.bind(http_request, url)):
-			http_request.request_completed.connect(_on_request_completed.bind(http_request, url))
+		# if not http_request.request_completed.is_connected(_on_request_completed.bind(http_request, url)):
+		# 	http_request.request_completed.connect(_on_request_completed.bind(http_request, url))
+		pass
 	else:
 		SingletonObject.ErrorDisplay("No API Access", "API Key is missing or rejected")
 		push_error("Invalid API key")
-		return {}
+		return null
 
 	if http_request.is_inside_tree():
 		print("HTTPRequest is part of the scene tree.")
@@ -71,9 +110,15 @@ func make_request(url: String, method: int, body: String="", headers: Array[Stri
 	var error = http_request.request(url, headers, method, body)
 	if error != OK:
 		push_error("An error occurred during the HTTP request: %s" % error)
-		return {}
+		return null
+	
 
-	await http_request.request_completed
-	return
+	# data returned from awaited signal is array of arguments that would
+	# be received by callback for that same signal
+	var request_results: Array = await http_request.request_completed
+
+	var results = RequestResults.from_request_response(request_results, http_request, url)
+
+	return results
 
 

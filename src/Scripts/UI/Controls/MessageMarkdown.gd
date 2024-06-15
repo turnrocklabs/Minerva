@@ -10,52 +10,148 @@ extends HBoxContainer
 @export var bot_message_color: Color
 @export var error_message_color: Color
 
-# Creates a MessageMarkdown instance for bot messages
-static func bot_message(message: BotResponse) -> MessageMarkdown:
-	# Instantiate a new MessageMarkdown scene
-	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
+@onready var tokens_cost: Label = %TokensCostLabel
+
+## Chat history item that this message node is rendering
+var history_item: ChatHistoryItem:
+	set(value):
+		history_item = value
+		if history_item:
+			history_item.rendered_node = self
+			_render_history_item()
+
+
+var loading:= false:
+	set(value):
+		set_message_loading(value)
+		loading = value
+
+var editable:= false:
+	set(value):
+		editable = value
+		%EditButton.visible = editable
+
+
+func _ready():
+	if history_item: _render_history_item()
+
+
+func set_message_loading(loading_: bool):
+	if loading_:
+		label.markdown_text = "●︎●︎●︎"
 	
-	# Set visibility and text for the left control
-	msg.left_control.visible = true
-	# msg.left_control.get_node("PanelContainer/Label").text = SingletonObject.Chats.provider.short_name
-	# msg.left_control.get_node("PanelContainer").tooltip_text = SingletonObject.Chats.provider.model_name
-	msg.left_control.get_node("PanelContainer/Label").text = message.ModelShortName
-	msg.left_control.get_node("PanelContainer").tooltip_text = message.ModelName
+	_toggle_controls(not loading_)
+
+
+# This function will take the history item and render it as user or model message
+func _render_history_item():
+	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
+	else: _setup_model_message()
+
+	# create_code_labels()
+
+func _toggle_controls(enabled:= true):
+	if is_inside_tree():
+		get_tree().call_group("controls", "set_disabled", not enabled)
+
+func _setup_user_message():
+	right_control.visible = true
+	right_control.get_node("PanelContainer/Label").text = SingletonObject.preferences_popup.get_user_initials()
+	right_control.get_node("PanelContainer").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
+	label.markdown_text = history_item.Message
+	label.set("theme_override_colors/default_color", Color.WHITE)
+
+	var style: StyleBoxFlat = get_node("%PanelContainer").get("theme_override_styles/panel")
+	style.bg_color = user_message_color
+
+
+func _setup_model_message():
+	left_control.visible = true
+
+	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
+	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
 	
-	msg.label.set("theme_override_colors/default_color", Color.BLACK)
+	label.set("theme_override_colors/default_color", Color.BLACK)
 	
-	# Get the style box for the panel container
-	var style: StyleBox = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
-	
-	# Check if there's an error in the message
-	if message.Error:
-		msg.label.text = "An error occurred:\n%s" % message.Error
-		style.bg_color = msg.error_message_color
+	var style: StyleBox = get_node("%PanelContainer").get("theme_override_styles/panel")
+
+	var continue_btn = get_node("%ContinueButton") as Button	
+	continue_btn.visible = not history_item.Complete
+
+	# we can't edit model messages
+	%EditButton.visible = false
+
+	if history_item.Error:
+		label.text = "An error occurred:\n%s" % history_item.Error
+		style.bg_color = error_message_color
 	else:
-		msg.label.markdown_text = message.FullText
-		style.bg_color = msg.bot_message_color
+		label.markdown_text = history_item.Message
+		style.bg_color = bot_message_color
 
-	return msg
 
-# Creates a MessageMarkdown instance for user messages
-static func user_message(message: BotResponse) -> MessageMarkdown:
-	# Instantiate a new MessageMarkdown scene
+## Instantiates new message node
+static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
-	
-	# Set visibility and text for the right control
-	msg.right_control.visible = true
-	msg.right_control.get_node("PanelContainer/Label").text = SingletonObject.preferences_popup.get_user_initials()
-	msg.right_control.get_node("PanelContainer").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
-	msg.label.markdown_text = message.FullText
-	msg.label.set("theme_override_colors/default_color", Color.WHITE)
-
-	# Get the style box for the panel container
-	var style: StyleBoxFlat = msg.get_node("%PanelContainer").get("theme_override_styles/panel")
-	style.bg_color = msg.user_message_color
-
 	return msg
 
-# A class representing a segment of text with optional syntax highlighting
+
+func update_tokens_cost(estimated: int, correct: int) -> void:
+	tokens_cost.visible = true
+	tokens_cost.text = "%s/%s" % [estimated, correct]
+	tokens_cost.tooltip_text = "Used %s tokens (estimated %s)" % [correct, estimated]
+
+
+# Continues the generation of the response
+func _on_continue_button_pressed():
+	if history_item:
+		loading = true
+		history_item = await SingletonObject.Chats.continue_response(history_item)
+		loading = false
+
+
+
+func _on_clip_button_pressed():
+	DisplayServer.clipboard_set(label.text)
+
+
+func _on_note_button_pressed():
+	SingletonObject.NotesTab.add_note("Chat Note", label.text)
+	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+
+func _on_delete_button_pressed():
+	SingletonObject.Chats.remove_chat_history_item(history_item)
+
+
+
+
+func _on_edit_button_pressed():
+	var ep = SingletonObject.editor_container.editor_pane
+
+	# if theres already open editor for this message, just switch to it
+	for i in range(ep.Tabs.get_tab_count()):
+		var tab_control = ep.Tabs.get_tab_control(i)
+
+		if tab_control.get_meta("associated_object") == self:
+			ep.Tabs.current_tab = i
+			return
+
+	var container: Editor = ep.add(Editor.TYPE.Text, null, "Chat Message")
+	container.prompt_save = false
+
+	container.set_meta("associated_object", self)
+
+	container.code_edit.text = history_item.Message
+	
+	container.code_edit.text_changed.connect(
+		func():
+			history_item.Message = container.code_edit.text
+			history_item = history_item
+	)
+
+	SingletonObject.main_ui.set_editor_pane_visible()
+
+
 class TextSegment:
 	var syntax: String
 	var content: String
@@ -70,76 +166,58 @@ class TextSegment:
 		else:
 			return content
 
-# Called when the node is added to the scene
-func _ready():
-	# Compile a regex pattern to match [code]...[/code] blocks
+
+func create_code_labels():
 	var regex = RegEx.new()
 	regex.compile(r"(\[code\])((.|\n)*?)(\[\/code\])")
 
-	# Get the text from the label
 	var text = label.text
 
-	# Find all matches of the regex in the text
-	var matches = regex.search_all(text)
+	var mathces = regex.search_all(label.text)
 
-	# Array to hold segments of text
 	var text_segments: Array[TextSegment] = []
 
-	# Iterate over all matches
-	for m in matches:
+	for m in mathces:
 		var code_text = m.get_string()
 		var one_line = code_text.count("\n") == 0
 
-		# Skip single-line code segments
-		if one_line:
-			continue
+		if one_line: continue
 
 		var first_part_len = text.find(code_text)
+		
 		var second_part_start = first_part_len + code_text.length()
 		var second_part_len = text.length()
 
-		# Create text segments before, during, and after the code block
 		var ts1 = TextSegment.new(text.substr(0, first_part_len).strip_edges())
+
 		var ts3 = TextSegment.new(text.substr(second_part_start, second_part_len).strip_edges())
 
-		# Extract syntax from the first line of the markdown text
+		# first line of the markdown text eg. ```python
 		var syntax = label.markdown_text.substr(first_part_len, code_text.length()).strip_edges().split("\n")[0]
 		syntax = syntax.replace("`", "")
 
-		# Include the [code] and [/code] tags in the content
 		var ts2 = TextSegment.new(code_text, syntax)
 
-		# Add the text segments to the array
 		text_segments.append(ts1)
 		text_segments.append(ts2)
 		text_segments.append(ts3)
+	
+	if not mathces: return
 
-	# If there are no matches, return early
-	if not matches:
-		return
+	# clear all children
+	for ch in label.get_parent().get_children(): if label.get_parent(): label.get_parent().remove_child(ch)
 
-	# Clear all children of the label's parent
-	for ch in label.get_parent().get_children():
-		label.get_parent().remove_child(ch)
+	for ts in text_segments:
+		var node: Node
 
-	# If there are no text segments, create a new RichTextLabel
-	if len(text_segments) == 0:
-		var node: Node = RichTextLabel.new()
-		node.fit_content = true
-		node.bbcode_enabled = true
-		node.text = label.markdown_text
-		get_node("%PanelContainer/v").add_child(node)
-	else:
-		# Otherwise, create nodes for each text segment
-		for ts in text_segments:
-			var node: Node
-			if ts.syntax:
-				node = CodeMarkdownLabel.create(ts.content, ts.syntax)
-			else:
-				node = RichTextLabel.new()
-				node.fit_content = true
-				node.bbcode_enabled = true
-				node.text = ts.content
+		if ts.syntax:
+			node = CodeMarkdownLabel.create(ts.content, ts.syntax)
+		else:
+			node = RichTextLabel.new()
+			node.fit_content = true
+			node.bbcode_enabled = true
+			node.text = ts.content
+		
+		%PanelContainer/v.add_child(node)
 
-			# Add the node to the panel container
-			get_node("%PanelContainer/v").add_child(node)
+

@@ -12,8 +12,8 @@ static var scene = preload("res://Scenes/Editor.tscn")
 signal save_dialog(dialog_result: DIALOG_RESULT)
 enum DIALOG_RESULT { Save, Cancel, Close }
 
-@onready var code_edit: EditorCodeEdit = $CodeEdit
-@onready var texture_rect: TextureRect = $TextureRect
+@onready var code_edit: EditorCodeEdit = %CodeEdit
+@onready var texture_rect: TextureRect = %TextureRect
 
 enum TYPE {
 	Text,
@@ -23,6 +23,9 @@ enum TYPE {
 var file: String
 var type: TYPE
 var _file_saved := false
+
+## Wether the editor can prompt user to save the content.
+var prompt_save:= true
 
  # checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
@@ -34,9 +37,9 @@ static func create(type_: TYPE, file_ = null) -> Editor:
 
 	match type_:
 		Editor.TYPE.Text:
-			editor.get_node("CodeEdit").visible = true
+			editor.get_node("%CodeEdit").visible = true
 		Editor.TYPE.Graphics:
-			editor.get_node("TextureRect").visible = true
+			editor.get_node("%TextureRect").visible = true
 
 	return editor
 
@@ -65,6 +68,7 @@ func _load_graphics_file(filename: String):
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straing away
 func prompt_close(show_save_file_dialog := false) -> bool:
+	if not prompt_save: return true
 	if not show_save_file_dialog:
 		$CloseDialog.popup_centered(Vector2i(300, 100))
 
@@ -98,8 +102,8 @@ func is_content_saved() -> bool:
 	match type:
 		TYPE.Text:
 			# cuauh changed this line go back if necesary
-			#return code_edit.starting_version == code_edit.get_saved_version()
-			return code_edit.get_version() == code_edit.get_saved_version()
+			return code_edit.starting_version == code_edit.get_saved_version()
+			# return code_edit.get_version() == code_edit.get_saved_version()
 		TYPE.Graphics:
 			return true
 	
@@ -107,7 +111,7 @@ func is_content_saved() -> bool:
 
 
 func _on_save_dialog_canceled():
-	save_dialog.emit(DIALOG_RESULT.Close)
+	save_dialog.emit(DIALOG_RESULT.Cancel)
 
 
 func _on_save_dialog_confirmed():
@@ -140,3 +144,7 @@ func save_file_to_disc(path: String):
 	
 
 
+
+
+func _on_save_button_pressed():
+	pass # Replace with function body.
