@@ -50,8 +50,6 @@ func _notification(notification_type):
 
 			_lower_separator.visible = false
 			_upper_separator.visible = false
-
-			SingletonObject.NotesTab.render_threads()
 		
 		NOTIFICATION_DRAG_BEGIN:
 			description_node.mouse_filter = Control.MOUSE_FILTER_PASS
