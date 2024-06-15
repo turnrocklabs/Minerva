@@ -24,6 +24,8 @@ var memory_item: MemoryItem:
 
 
 func _ready():
+	var new_size: Vector2 = size * 0.15
+	set_size(new_size)
 	label_node.text_changed.connect(
 		func(text):
 			if memory_item: memory_item.Title = text
