@@ -26,7 +26,7 @@ var ChatList: Array[ChatHistory]:
 
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
-var Provider
+var Provider: BaseProvider
 var Chats: ChatPane
 
 #Add AtT to use it throught the singleton
@@ -123,3 +123,34 @@ var saved_state = true
 func save_state(state: bool): saved_state = state
 
 #endregion Project Management
+
+#region Theme change
+
+# get the root control node and apply the theme to it, all its children inherit the theme
+@onready var root_control: Control = $"/root/RootControl"
+
+#more themes can be added in the future with ease using the enums
+enum theme {LIGHT_MODE, DARK_MODE}
+var theme_thread
+func change_theme(themeID: int) -> void:
+	theme_thread = Thread.new()
+	theme_thread.start(actual_theme_change.bind(themeID))
+
+
+func actual_theme_change(themeID: int) -> void:
+	match themeID:
+		theme.LIGHT_MODE:
+			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
+			root_control.theme = light_theme
+		theme.DARK_MODE:
+			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
+			root_control.theme = dark_theme
+
+	
+func _exit_tree() -> void:
+	if theme_thread:
+		theme_thread.wait_to_finish()
+
+#endregion Theme change
+
+

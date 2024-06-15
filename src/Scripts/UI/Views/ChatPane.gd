@@ -70,12 +70,16 @@ func _on_btn_inspect_pressed():
 
 
 func _on_chat_pressed():
+	## Check if there is an active tab first
+	if current_tab == -1:
+		print("No active tab to send the chat.")
+		return
+	
 	## prepare an append item for the history
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
 
-	
 	## Add the user speech bubble to the chat area control.
 	var temp_user_data: BotResponse = BotResponse.new()
 	temp_user_data.FullText = %txtMainUserInput.text
@@ -153,6 +157,7 @@ func set_provider(new_provider: BaseProvider):
 
 
 func _on_close_tab(tab: int, container: TabContainer):
+	# Remove the tab control
 	var control = container.get_tab_control(tab)
 	container.remove_child(control)
 	SingletonObject.ChatList.remove_at(tab)
@@ -170,14 +175,13 @@ func _on_btn_test_pressed():
 	# Pretend we did a chat like "Write hello world in python" and got a BotResponse that made sense.
 	var test_response:BotResponse = BotResponse.new()
 	#test_response.FullText = "Here is how you write hello world in python:\n```python\nprint (\"Hello World\")\n```"
-	test_response.FullText = """
-		## Markdown
-		Here is how you write hello world in python:
-		```python
-		print (\"Hello World\")
-		```
-	"""
-	self.render_single_chat(test_response)
+	# Open a test file with text that will repeat.
+	var file_path: String  = "res://Tests/Repeats.txt"
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	var bad_text: String = file.get_as_text()
+	test_response.FullText = bad_text
+	SingletonObject.Provider.chat_completed.emit(test_response)
+	#self.render_single_chat(test_response)
 	pass # Replace with function body.
 
 func clear_all_chats():
@@ -194,7 +198,6 @@ func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
 	%EditTitleDialog/LineEdit.text = get_tab_title(tab)
 	%EditTitleDialog.popup_centered()
-
 
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
@@ -218,7 +221,6 @@ func _on_tab_clicked(tab: int):
 # to attach a file.
 func _on_btn_attach_file_pressed():
 	%AttachFileDialog.popup_centered(Vector2i(700, 500))
-
 
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	for fp in paths:
