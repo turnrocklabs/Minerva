@@ -7,8 +7,8 @@
 					"Base64Data": "",
 					"InjectedNote": "",
 					"Message": "hiii",
-					"ModelName": "Unknown",
-					"ModelShortName": "Unknown",
+					"model_name": "Unknown",
+					"model_short_name": "Unknown",
 					"Order": 0,
 					"Role": 0,
 					"Type": 0
@@ -17,8 +17,8 @@
 					"Base64Data": "",
 					"InjectedNote": "Given this background information:\n\n### Reference Information ###\n### Title: 432532\n52352tsdg\n###\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
 					"Message": "with note hee",
-					"ModelName": "Unknown",
-					"ModelShortName": "Unknown",
+					"model_name": "Unknown",
+					"model_short_name": "Unknown",
 					"Order": 0,
 					"Role": 0,
 					"Type": 0
