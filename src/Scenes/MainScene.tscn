@@ -12,7 +12,7 @@
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="10_elw3q"]
 [ext_resource type="Texture2D" uid="uid://0onnj1f41kmb" path="res://assets/generated/paperclip_icon_24.webp" id="11_ydk0s"]
-[ext_resource type="Texture2D" uid="uid://d0trvye6gvmku" path="res://assets/icons/_e5aa70df-2d58-44c7-a6af-89d86762723f.jpg" id="13_2lo4v"]
+[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
@@ -50,8 +50,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 234.0
-offset_bottom = 96.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -351,8 +351,9 @@ layout_mode = 2
 text = "Add note"
 
 [node name="btnVoice" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-icon = ExtResource("13_2lo4v")
+icon = ExtResource("13_bg3bn")
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
