@@ -3,6 +3,9 @@ extends TabContainer
 
 var provider: BaseProvider
 
+#var to detect where we send message to bot
+var TabWhereRequestWas
+
 ## add new chat 
 func _on_new_chat():
 	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
@@ -79,6 +82,8 @@ func _on_chat_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
 	new_history_item.Message = %txtMainUserInput.text
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
+	#when we sent messag we remembering where we sent message to bot(in which tab)
+	TabWhereRequestWas = current_tab
 
 	## Add the user speech bubble to the chat area control.
 	var temp_user_data: BotResponse = BotResponse.new()
@@ -96,16 +101,17 @@ func _on_chat_pressed():
 
 ## Render a full chat history response
 func render_single_chat(response:BotResponse):
-	SingletonObject.ChatList[current_tab].VBox.loading_response = false
-	# create a chat history item and append it to the list
-	var item: ChatHistoryItem = ChatHistoryItem.new()
-	item.Role = ChatHistoryItem.ChatRole.ASSISTANT
-	item.Message = response.FullText
-	SingletonObject.ChatList[current_tab].HistoryItemList.append(item)
+	if TabWhereRequestWas >= 0 and TabWhereRequestWas < len(SingletonObject.ChatList):
+		SingletonObject.ChatList[TabWhereRequestWas].VBox.loading_response = false
+		# create a chat history item and append it to the list
+		var item: ChatHistoryItem = ChatHistoryItem.new()
+		item.Role = ChatHistoryItem.ChatRole.ASSISTANT
+		item.Message = response.FullText
+		SingletonObject.ChatList[TabWhereRequestWas].HistoryItemList.append(item)
 
-	# Ask the Vbox to add the message
-	SingletonObject.ChatList[current_tab].VBox.add_bot_message(response)
-	pass
+		# Ask the Vbox to add the message
+		SingletonObject.ChatList[TabWhereRequestWas].VBox.add_bot_message(response)
+		pass
 
 
 func render_history(chat_history: ChatHistory):
