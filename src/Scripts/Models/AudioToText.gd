@@ -54,7 +54,7 @@ func _StartConverting():
 				form_data.append_array(audio_data)
 				form_data.append_array("\r\n".to_ascii_buffer() + "--".to_ascii_buffer() + boundary.to_ascii_buffer() + "--\r\n".to_ascii_buffer())
 
-				var headers = ["Authorization: Bearer " #+ API key here
+				var headers = ["Authorization: Bearer " + SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENAI)
 				,
 				"Content-Type: multipart/form-data; boundary=" + boundary]
 				# Send the request with the concatenated PoolByteArray
