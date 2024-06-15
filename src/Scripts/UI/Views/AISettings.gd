@@ -2,6 +2,7 @@ extends PopupPanel
 
 
 @onready var _provider_option_button = %ProviderOptionButton as OptionButton
+@onready var theme_option_button: OptionButton = %ThemeOptionButton as OptionButton
 
 
 ## Returns the script of the provider thats selected.
@@ -37,4 +38,6 @@ func _on_about_to_popup():
 	
 	_provider_option_button.select(item_index)
 
-	
+
+func _on_theme_option_button_item_selected(index: int) -> void:
+	SingletonObject.change_theme(index)

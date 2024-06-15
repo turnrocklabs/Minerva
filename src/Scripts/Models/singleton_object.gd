@@ -119,3 +119,25 @@ var saved_state = true
 func save_state(state: bool): saved_state = state
 
 #endregion Project Management
+
+#region Theme change
+
+# get the root control node and apply the theme to it, all its children inherit the theme
+@onready var root_control: Control = $"/root/RootControl"
+
+#more themes can be added in the future with ease using the enums
+enum theme {LIGHT_MODE, DARK_MODE}
+
+func change_theme(themeID: int) -> void:
+	match themeID:
+		theme.LIGHT_MODE:
+			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
+			root_control.theme = light_theme
+		theme.DARK_MODE:
+			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
+			root_control.theme = dark_theme
+	
+
+#endregion Theme change
+
+
