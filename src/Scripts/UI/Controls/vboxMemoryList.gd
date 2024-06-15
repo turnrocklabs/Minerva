@@ -32,6 +32,10 @@ func _notification(notification_type):
 			if is_inside_tree(): _update_memory_item_order()
 		NOTIFICATION_ENTER_TREE:
 			_update_memory_item_order()
+		
+		# When the drag is over, maybe the order of notes changed, so rerender them
+		NOTIFICATION_DRAG_END:
+			SingletonObject.NotesTab.render_threads()
 
 func render_items():
 	for item in Memories:
@@ -67,6 +71,6 @@ func _drop_data(_at_position: Vector2, data):
 
 	dragged_note_thread.MemoryItemList.erase(data.memory_item)
 
-	target_thread.MemoryItemList.append(data.memory_item)
+	target_thread.MemoryItemList.insert(0, data.memory_item)
 
 	data.memory_item.OwningThread = target_thread.ThreadId
