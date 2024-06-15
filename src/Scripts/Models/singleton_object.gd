@@ -127,8 +127,13 @@ func save_state(state: bool): saved_state = state
 
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
-
+var theme_thread
 func change_theme(themeID: int) -> void:
+	theme_thread = Thread.new()
+	theme_thread.start(actual_theme_change.bind(themeID))
+
+
+func actual_theme_change(themeID: int) -> void:
 	match themeID:
 		theme.LIGHT_MODE:
 			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
@@ -136,7 +141,11 @@ func change_theme(themeID: int) -> void:
 		theme.DARK_MODE:
 			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
 			root_control.theme = dark_theme
+
 	
+func _exit_tree() -> void:
+	if theme_thread:
+		theme_thread.wait_to_finish()
 
 #endregion Theme change
 
