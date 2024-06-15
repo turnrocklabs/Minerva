@@ -33,7 +33,7 @@ func Disable_All():
 
 
 func open_threads_popup(name: String = "", tab = null):
-	var target_size = %VBoxRoot.size - Vector2(100, 100)
+	var target_size = %VBoxRoot.size / 5 #- Vector2(100, 100)
 	%NewThreadPopup.borderless = false
 	%NewThreadPopup.size = target_size
 	

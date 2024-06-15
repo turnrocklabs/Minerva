@@ -1,6 +1,7 @@
 class_name MessageMarkdown
 extends HBoxContainer
 
+# Exported variables for UI components and colors
 @export var left_control: Control
 @export var right_control: Control
 @export var label: MarkdownLabel
@@ -156,8 +157,8 @@ class TextSegment:
 	func _init(content_: String, syntax_: String = ""):
 		content = content_
 		syntax = syntax_
-	
-	func _to_string():
+
+	func _to_string() -> String:
 		if syntax:
 			return "%s: %s" % [syntax, content]
 		else:

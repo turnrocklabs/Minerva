@@ -89,7 +89,7 @@ class RequestResults extends RefCounted:
 func make_request(url: String, method: int, body: String="", headers: Array[String]= []) -> RequestResults:
 	# setup request object for the delta endpoint and append API key
 	var http_request = active_request
-	
+	http_request.use_threads = true
 	headers.append("Content-Type: application/json")
 
 	if len(API_KEY) != 0:
