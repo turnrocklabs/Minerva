@@ -51,7 +51,8 @@ func _render_history_item():
 	# create_code_labels()
 
 func _toggle_controls(enabled:= true):
-	get_tree().call_group("controls", "set_disabled", not enabled)
+	if is_inside_tree():
+		get_tree().call_group("controls", "set_disabled", not enabled)
 
 func _setup_user_message():
 	right_control.visible = true
