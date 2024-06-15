@@ -1,8 +1,8 @@
 [gd_scene load_steps=15 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
-[ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_nhtwn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
+[ext_resource type="Theme" uid="uid://dmrfpy4igt0j4" path="res://assets/themes/light_mode.theme" id="1_x56o8"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
@@ -26,7 +26,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("1_nhtwn")
+theme = ExtResource("1_x56o8")
 script = ExtResource("2_65hnk")
 
 [node name="Panel" type="Panel" parent="."]
@@ -45,10 +45,10 @@ size = Vector2i(238, 100)
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_left = 5.0
+offset_top = 5.0
+offset_right = -5.0
+offset_bottom = -5.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -73,10 +73,10 @@ visible = false
 unique_name_in_owner = true
 
 [node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 96.0
-offset_bottom = 96.0
+offset_left = 5.0
+offset_top = 5.0
+offset_right = 95.0
+offset_bottom = 95.0
 size_flags_horizontal = 3
 
 [node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
@@ -143,7 +143,7 @@ access = 2
 
 [node name="Project" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "Project"
-size = Vector2i(100, 116)
+size = Vector2i(102, 116)
 item_count = 4
 item_0/text = "New"
 item_0/id = 0
@@ -174,7 +174,7 @@ item_4/id = 1
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "View"
-size = Vector2i(139, 174)
+size = Vector2i(141, 174)
 hide_on_checkable_item_selection = false
 item_count = 7
 item_0/text = "Chats"
@@ -313,10 +313,10 @@ size = Vector2i(129, 100)
 max_size = Vector2i(300, 300)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CreatNewNote"]
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 125.0
-offset_bottom = 96.0
+offset_left = 5.0
+offset_top = 5.0
+offset_right = 124.0
+offset_bottom = 95.0
 size_flags_horizontal = 3
 
 [node name="Label" type="Label" parent="CreatNewNote/VBoxContainer"]
