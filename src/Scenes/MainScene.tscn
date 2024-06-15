@@ -1,8 +1,8 @@
-[gd_scene load_steps=18 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=17 format=3 uid="uid://cw1ig4ql83b6a"]
 
+[ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
-[ext_resource type="Theme" uid="uid://dmrfpy4igt0j4" path="res://assets/themes/light_mode.theme" id="1_x56o8"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
@@ -19,13 +19,6 @@
 font_size = 25
 font_color = Color(1, 0, 0, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_v4lmg"]
-content_margin_left = 10.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-bg_color = Color(0.172549, 0.172549, 0.172549, 1)
-
 [sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_i6lnv"]
 
 [node name="RootControl" type="Control"]
@@ -36,7 +29,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("1_x56o8")
+theme = ExtResource("1_cx4qy")
 script = ExtResource("2_65hnk")
 
 [node name="Panel" type="Panel" parent="."]
@@ -57,8 +50,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 234.0
+offset_bottom = 96.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -83,10 +76,10 @@ visible = false
 unique_name_in_owner = true
 
 [node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
-offset_left = 5.0
-offset_top = 5.0
-offset_right = 95.0
-offset_bottom = 95.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 96.0
+offset_bottom = 96.0
 size_flags_horizontal = 3
 
 [node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
@@ -308,7 +301,6 @@ icon = ExtResource("11_ydk0s")
 layout_mode = 2
 size_flags_horizontal = 8
 text = "New Tab"
-icon = ExtResource("12_altkx")
 
 [node name="tcThreads" type="TabContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
 unique_name_in_owner = true
@@ -326,8 +318,6 @@ offset_left = 4.0
 offset_top = 4.0
 offset_right = 132.0
 offset_bottom = 96.0
-size = Vector2i(129, 100)
-max_size = Vector2i(300, 300)
 size_flags_horizontal = 3
 
 [node name="Label" type="Label" parent="CreatNewNote/VBoxContainer"]
