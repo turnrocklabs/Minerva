@@ -40,4 +40,4 @@ func _on_about_to_popup():
 
 
 func _on_theme_option_button_item_selected(index: int) -> void:
-	SingletonObject.change_theme(index)
+	SingletonObject.set_theme(index)
