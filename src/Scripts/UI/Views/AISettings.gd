@@ -4,14 +4,12 @@ extends PopupPanel
 @onready var _provider_option_button = %ProviderOptionButton as OptionButton
 @onready var theme_option_button: OptionButton = %ThemeOptionButton as OptionButton
 
-
 ## Returns the script of the provider thats selected.
 ## `get_selected_provider().new()` to instantiate it
 func get_selected_provider() -> GDScript:
 	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[_provider_option_button.get_selected_id()]
 
 func _ready():
-
 	# populate the options button with avaivable model providers
 	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
@@ -41,3 +39,4 @@ func _on_about_to_popup():
 
 func _on_theme_option_button_item_selected(index: int) -> void:
 	SingletonObject.set_theme(index)
+
