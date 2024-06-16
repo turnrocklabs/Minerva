@@ -15,7 +15,7 @@
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="10_elw3q"]
 [ext_resource type="Texture2D" uid="uid://0onnj1f41kmb" path="res://assets/generated/paperclip_icon_24.webp" id="11_ydk0s"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="12_6jk4t"]
-[ext_resource type="Texture2D" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
+[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
@@ -131,7 +131,7 @@ theme_override_constants/separation = 16
 [node name="menuMain" type="MenuBar" parent="VBoxRoot"]
 layout_mode = 2
 size_flags_vertical = 0
-theme_override_constants/h_separation = 5
+theme_override_constants/h_separation = 6
 theme_override_font_sizes/font_size = 18
 prefer_global_menu = false
 script = ExtResource("1_oipdw")
@@ -222,6 +222,7 @@ theme_override_constants/separation = 16
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 16
+split_offset = -100
 
 [node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
