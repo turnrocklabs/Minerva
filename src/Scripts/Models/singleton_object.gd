@@ -55,7 +55,6 @@ func _ready():
 	set_theme(theme_enum)
 
 
-
 func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories
 	Provider = provider
