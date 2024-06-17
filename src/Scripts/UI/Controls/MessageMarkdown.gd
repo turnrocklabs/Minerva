@@ -12,6 +12,12 @@ extends HBoxContainer
 
 @onready var tokens_cost: Label = %TokensCostLabel
 
+## Since message label can consist of multiple nodes
+## This proprty will return combined text of those nodes
+var content: String:
+	get: return label.text
+
+
 ## Chat history item that this message node is rendering
 var history_item: ChatHistoryItem:
 	set(value):
@@ -48,7 +54,7 @@ func _render_history_item():
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
 	else: _setup_model_message()
 
-	# create_code_labels()
+	_create_code_labels()
 
 func _toggle_controls(enabled:= true):
 	if is_inside_tree():
@@ -167,47 +173,92 @@ class TextSegment:
 			return content
 
 
-func create_code_labels():
-	var regex = RegEx.new()
-	regex.compile(r"(\[code\])((.|\n)*?)(\[\/code\])")
-
-	var text = label.text
-
-	var mathces = regex.search_all(label.text)
-
-	var text_segments: Array[TextSegment] = []
-
-	for m in mathces:
-		var code_text = m.get_string()
-		var one_line = code_text.count("\n") == 0
-
-		if one_line: continue
-
-		var first_part_len = text.find(code_text)
-		
-		var second_part_start = first_part_len + code_text.length()
-		var second_part_len = text.length()
-
-		var ts1 = TextSegment.new(text.substr(0, first_part_len).strip_edges())
-
-		var ts3 = TextSegment.new(text.substr(second_part_start, second_part_len).strip_edges())
-
-		# first line of the markdown text eg. ```python
-		var syntax = label.markdown_text.substr(first_part_len, code_text.length()).strip_edges().split("\n")[0]
-		syntax = syntax.replace("`", "")
-
-		var ts2 = TextSegment.new(code_text, syntax)
-
-		text_segments.append(ts1)
-		text_segments.append(ts2)
-		text_segments.append(ts3)
+func _extract_code_block_syntax(code_text: String) -> String:
 	
-	if not mathces: return
+	label.markdown_text.rfind("```")
 
-	# clear all children
-	for ch in label.get_parent().get_children(): if label.get_parent(): label.get_parent().remove_child(ch)
+	# Try to find where in markdown text is our parsed bbcode
+	# so we can get the syntax
+	var replace = {
+		"[code]":  "",
+		"[/code]":  "",
+		"[lb]":  "[",
+		"[rb]":  "]",
+	}
 
-	for ts in text_segments:
+	var to_find = code_text
+	for key in replace:
+		to_find = to_find.replace(key, replace[key])
+
+	var idx = label.markdown_text.find(to_find)
+	
+	var syntax_idx = label.markdown_text.substr(0, idx).rfind("```")
+
+	var syntax = label.markdown_text.substr(syntax_idx).split("\n")[0]
+	syntax = syntax.replace("`", "")
+
+	# if theres no syntax return space char, not empty string
+	# empty string would meand it's a normal text segment
+	return syntax if syntax else " "
+
+
+var _regex = RegEx.new()
+func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
+	_regex.compile(r"(\[code\])((.|\n)*?)(\[\/code\])")
+
+	var found: Array[TextSegment] = []
+
+	var keep_searching = true
+	var offset = 0
+
+	var code_text: String
+
+	while keep_searching:
+		var match_: RegExMatch = _regex.search(text.content, offset)
+
+		if not match_: return [text]
+
+		# content between [code][/code]
+		code_text = match_.get_string()
+
+		# if it's one line code we'll just skip it by setting the offset and searching again
+		if code_text.count("\n") == 0:
+			offset = match_.get_end()
+			continue
+		else:
+			keep_searching = false
+
+
+	# index where code text starts, includes [code]
+	var code_text_start = text.content.find(code_text)
+
+	# replace this text segment with extracted text segments from it
+	# if theres no code blocks in it, it will just return array with this same element
+	var new_ts1 = _extract_text_segments(TextSegment.new(text.content.substr(0, code_text_start)))
+	found.append_array(new_ts1)
+
+	# place code block between them
+	found.append(TextSegment.new(text.content.substr(code_text_start, code_text.length()), _extract_code_block_syntax(code_text)))
+
+	# same thing
+	var new_ts2 = _extract_text_segments(TextSegment.new(text.content.substr(code_text_start + code_text.length())))
+	found.append_array(new_ts2)
+		
+
+	return found
+
+
+
+func _create_code_labels():
+	var segments: Array[TextSegment] = _extract_text_segments(TextSegment.new(label.text))
+
+	# Hide the label since we're showing the message content in nodes below
+	# but keep it so we can access the message content easily
+	label.visible = false
+	
+	for child in %MessageLabelsContainer.get_children(): child.queue_free()
+
+	for ts in segments:
 		var node: Node
 
 		if ts.syntax:
@@ -218,6 +269,6 @@ func create_code_labels():
 			node.bbcode_enabled = true
 			node.text = ts.content
 		
-		%PanelContainer/v.add_child(node)
+		%MessageLabelsContainer.add_child(node)
 
 
