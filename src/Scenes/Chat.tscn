@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
 [ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
-[ext_resource type="Texture2D" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
+[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
 
 [node name="Chats" type="Control"]
 custom_minimum_size = Vector2(480, 0)

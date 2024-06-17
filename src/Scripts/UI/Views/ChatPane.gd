@@ -1,6 +1,10 @@
 class_name ChatPane
 extends TabContainer
 
+var closed_chat_data: ChatHistory  # Store the data of the closed chat
+var control: Control  # Store the tab control
+var container: TabContainer  # Store the TabContainer
+
 var provider: BaseProvider:
 	set(value):
 		provider = value
@@ -283,15 +287,27 @@ func set_provider(new_provider: BaseProvider):
 
 
 func _on_close_tab(tab: int, container: TabContainer):
-	# Remove the tab control
-	var control = container.get_tab_control(tab)
+	self.control = container.get_tab_control(tab)
+	self.container = container 
+	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	container.remove_child(control)
-	SingletonObject.ChatList.remove_at(tab)
 
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-# func _process(delta):
-# 	pass
+# Function to restore a deleted tab
+func restore_deleted_tab(tab_name: String):
+	if tab_name in SingletonObject.undo.deleted_tabs:
+		var data = SingletonObject.undo.deleted_tabs[tab_name]
+		var tab = data["tab"]
+		var control = data["control"]
+		var history = data["history"]
+		data["timer"].stop()
+		#Add the control back to the TabContainer
+		%tcChats.add_child(control)
+		
+		# Set the tab index and restore the history
+		set_current_tab(tab)
+		SingletonObject.ChatList[tab] = history
+		# Clear the deleted tab from the dictionary
+		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():

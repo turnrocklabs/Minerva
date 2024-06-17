@@ -31,11 +31,14 @@ var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
 var Provider: BaseProvider
 var Chats: ChatPane
-
+#Add undo to use it throught the singleton
+var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
+
 func _ready():
 	add_child(AtT)
+	add_child(undo)
 	
 func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories

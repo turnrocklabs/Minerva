@@ -2,10 +2,6 @@ extends MenuBar
 
 @onready var view = $View as PopupMenu
 
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-#func _process(delta):
-#	pass
-
 # handle file options
 func _on_file_index_pressed(index):
 	match index:

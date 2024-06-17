@@ -15,7 +15,7 @@
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="10_elw3q"]
 [ext_resource type="Texture2D" uid="uid://0onnj1f41kmb" path="res://assets/generated/paperclip_icon_24.webp" id="11_ydk0s"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="12_6jk4t"]
-[ext_resource type="Texture2D" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
+[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
@@ -53,8 +53,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 234.0
-offset_bottom = 96.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 
