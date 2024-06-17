@@ -36,6 +36,7 @@ var editable:= false:
 	set(value):
 		editable = value
 		%EditButton.visible = editable
+		%RegenerateButton.visible = editable
 
 
 func _ready():
@@ -128,7 +129,8 @@ func _on_note_button_pressed():
 func _on_delete_button_pressed():
 	SingletonObject.Chats.remove_chat_history_item(history_item)
 
-
+func _on_regenerate_button_pressed():
+	SingletonObject.Chats.regenerate_response()
 
 
 func _on_edit_button_pressed():

@@ -80,6 +80,12 @@ func _on_btn_inspect_pressed():
 	%InspectorPopup.popup_centered()
 
 
+# this will just call `_on_chat_pressed` since it will regenerate response for last user message
+# if there's no model response
+func regenerate_response():
+	_on_chat_pressed()
+
+
 func _on_chat_pressed():
 	
 	# Ensure we have open chat so we can get its history and disable the notes
