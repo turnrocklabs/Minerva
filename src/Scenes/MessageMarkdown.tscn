@@ -175,6 +175,13 @@ text = "Note"
 layout_mode = 2
 icon = ExtResource("10_6uibh")
 
+[node name="LoadingLabel" type="Label" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+text = "●︎●︎●︎"
+
 [node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
 focus_mode = 2
@@ -266,6 +273,9 @@ layout_mode = 2
 tooltip_text = "Regenerate response for this prompt"
 text = "Regenerate"
 icon = ExtResource("13_rtrrm")
+
+[node name="RichTextLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+layout_mode = 2
 
 [node name="RightSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
 visible = false
