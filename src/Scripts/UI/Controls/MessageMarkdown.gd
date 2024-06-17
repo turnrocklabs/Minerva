@@ -22,9 +22,7 @@ var content: String:
 var history_item: ChatHistoryItem:
 	set(value):
 		history_item = value
-		if history_item:
-			history_item.rendered_node = self
-			_render_history_item()
+		_render_history_item()
 
 
 var loading:= false:
@@ -40,20 +38,23 @@ var editable:= false:
 
 
 func _ready():
-	if history_item: _render_history_item()
+	_render_history_item()
 
 
 func set_message_loading(loading_: bool):
-	if loading_:
-		label.markdown_text = "●︎●︎●︎"
+	%LoadingLabel.visible = loading_
 	
 	_toggle_controls(not loading_)
 
 
 # This function will take the history item and render it as user or model message
 func _render_history_item():
+	if not history_item: return
+
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
 	else: _setup_model_message()
+
+	history_item.rendered_node = self
 
 	_create_code_labels()
 
@@ -266,10 +267,15 @@ func _create_code_labels():
 		if ts.syntax:
 			node = CodeMarkdownLabel.create(ts.content, ts.syntax)
 		else:
+			# Maybe have this node as scene
 			node = RichTextLabel.new()
 			node.fit_content = true
 			node.bbcode_enabled = true
+			node.selection_enabled = true
 			node.text = ts.content
+
+			# set the color for model message
+			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
 		
 		%MessageLabelsContainer.add_child(node)
 
