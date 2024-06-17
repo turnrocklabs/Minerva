@@ -122,16 +122,17 @@ func add_note(user_title:String, user_content: String, _source: String = ""):
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
+
 	render_threads()
-
-
+	
+	
 ## Will delete the memory_item from the memory list
 func delete_note(memory_item: MemoryItem):
 	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
 
 	var idx = active_thread.MemoryItemList.find(memory_item)
 	if idx == -1: return
-
+	
 	active_thread.MemoryItemList.remove_at(idx)
 
 func render_thread(thread_item: MemoryThread):
@@ -162,10 +163,28 @@ func _on_close_tab(tab: int, container: TabContainer):
 	if thread_idx != -1:
 		SingletonObject.ThreadList.remove_at(thread_idx)
 		render_threads()
-	
+		SingletonObject.undo.store_deleted_tab_right(tab,control,"right")
 	# container.remove_child(control)
+	
+func restore_deleted_tab(tab_name: String):
+	if tab_name in SingletonObject.undo.deleted_tabs:
+		var data = SingletonObject.undo.deleted_tabs[tab_name]
+		var tab = data["tab"]
+		var control = data["control"]
+		data["timer"].stop()
+		# Get the MemoryThread associated with the tab.
+		var thread: MemoryThread = control.get_meta("thread")
 
+		# Re-add the MemoryThread to the ThreadList if it's not already present.
+		if SingletonObject.ThreadList.find(thread) == -1:
+			SingletonObject.ThreadList.append(thread)
 
+		# Call render_thread to re-create the tab UI.
+		render_thread(thread)
+
+		# Remove the data from the deleted_tabs dictionary.
+		SingletonObject.undo.deleted_tabs.erase(tab_name)
+	
 func _memory_thread_find(thread_id: String) -> MemoryThread:
 	return SingletonObject.ThreadList.filter(
 		func(t: MemoryThread):
