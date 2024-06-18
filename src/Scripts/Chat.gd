@@ -10,9 +10,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	# this is for changing the minimum size of the panel and 
 	# changing the text when is being resized
-	if size.x == 480:
+	if size.x == 500:
 		prompt_count_label.text = "Estimated tokens:"
-		custom_minimum_size.x = 430
-	if size.x > 480:
+		custom_minimum_size.x = 450
+	if size.x > 500:
 		prompt_count_label.text = initial_label_text
-		custom_minimum_size.x = 480
+		custom_minimum_size.x = 500

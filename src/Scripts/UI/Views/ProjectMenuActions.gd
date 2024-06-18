@@ -49,6 +49,10 @@ func save_project():
 	var serialized: String = serialize_project()
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
 	save_file.store_line(serialized)
+	
+	# get the file path and add it to config file
+	SingletonObject.save_recent_project(save_path)
+	
 	SingletonObject.save_state(true)
 
 

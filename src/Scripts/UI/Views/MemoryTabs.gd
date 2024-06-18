@@ -5,7 +5,6 @@ extends TabContainer
 
 # just use current_tab
 # var ActiveThreadIndex: int:
-
 var _drag_active := false
 
 ## return a single large string of all active memories
@@ -30,6 +29,18 @@ func Disable_All():
 				item.Enabled = false
 	self.render_threads()
 	pass
+
+func enable_all():
+	
+	#var currentNotesTab = SingletonObject.ThreadList[current_tab]
+	#for item:MemoryItem in currentNotesTab:
+		#if !item.Enabled:
+			#item.Enabled = true
+	for this_thread:MemoryThread in SingletonObject.ThreadList:
+		for item:MemoryItem in this_thread.MemoryItemList:
+			if !item.Enabled:
+				item.Enabled = true
+	self.render_threads()
 
 
 func open_threads_popup(name: String = "", tab = null):

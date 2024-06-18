@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://lhjvpl7xmphm" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://botx2rpgbwnlj" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
@@ -102,7 +102,7 @@ script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
 right_control = NodePath("MarginContainer/HBoxContainer/RightSplitter")
 label = NodePath("MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel")
-user_message_color = Color(0, 0, 1, 1)
+user_message_color = Color(0.164706, 0.345098, 0.831373, 1)
 bot_message_color = Color(0, 0.592157, 0.470588, 1)
 error_message_color = Color(0.737255, 0, 0.109804, 1)
 
@@ -142,6 +142,7 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_hjfue")
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer"]
 layout_mode = 2
+theme_override_constants/separation = 10
 
 [node name="TokensCostLabel" type="Label" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
@@ -220,6 +221,7 @@ h6 = SubResource("Resource_f738n")
 
 [node name="h" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
+theme_override_constants/separation = 16
 
 [node name="ContinueButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h" groups=["controls"]]
 unique_name_in_owner = true
@@ -232,6 +234,7 @@ text = "Continue"
 [node name="h" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/h"]
 layout_mode = 2
 size_flags_horizontal = 10
+theme_override_constants/separation = 12
 
 [node name="EditButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 unique_name_in_owner = true
@@ -255,13 +258,15 @@ visible = false
 layout_mode = 2
 size_flags_vertical = 8
 
-[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/HBoxContainer/RightSplitter"]
+[node name="MsgSenderAvatar" type="PanelContainer" parent="MarginContainer/HBoxContainer/RightSplitter"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_styles/panel = SubResource("StyleBoxFlat_4tpql")
 
-[node name="Label" type="Label" parent="MarginContainer/HBoxContainer/RightSplitter/PanelContainer"]
+[node name="AvatarName" type="Label" parent="MarginContainer/HBoxContainer/RightSplitter/MsgSenderAvatar"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "O4"
 label_settings = SubResource("LabelSettings_l0yj0")

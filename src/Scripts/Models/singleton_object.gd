@@ -5,8 +5,50 @@ var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
 func save_to_config_file(section: String, field: String, value):
+	
+	config_file.get_sections()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
+
+
+func has_recent_projects() -> bool:
+	return config_file.has_section("OpenRecent")
+
+
+func save_recent_project(path: String):
+	var path_split = path.split("/")
+	print(path_split)
+	var project_name_index: int = path_split.size() - 1
+	var project_name = path_split[project_name_index]
+	
+	var recent_projects_array = get_recent_projects()
+	print("==========================")
+	print(recent_projects_array)
+	print("==========================")
+	if recent_projects_array:
+		if recent_projects_array.size() > 5:
+			recent_projects_array.remove_at(4)
+			config_file.erase_section("OpenRecent")
+			for project in recent_projects_array:
+				save_to_config_file("OpenRecent", project[1], project[0])
+	save_to_config_file("OpenRecent",project_name, path)
+	
+
+# this function returns an array with the files 
+# names of the recent project saved in config file
+func get_recent_projects() -> Array:
+	if has_recent_projects():
+		return config_file.get_section_keys("OpenRecent")
+		#var open_recent_keys = config_file.get_section_keys("OpenRecent")
+		#var open_recent_file_names = Array()
+		#for key in open_recent_keys:
+			#open_recent_file_names.append(config_file.get_value("OpenRecent",key))
+		#return open_recent_file_names
+	return ["no recent projects"]
+
+
+
+
 
 #endregion Config File
 
@@ -25,6 +67,17 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 	pass
 
 signal AttachNoteFile(file_path:String)
+
+var notes_enabled = false
+func disable_notes_in_tab():
+	if notes_enabled:
+		NotesTab.Disable_All()
+	if !notes_enabled:
+		NotesTab.enable_all()
+	
+	notes_enabled = !notes_enabled
+	
+	
 
 #endregion Notes
 
@@ -47,9 +100,11 @@ var AtT: AudioToTexts = AudioToTexts.new()
 func _ready():
 	add_child(AtT)
 	
+	
 	var err = config_file.load(config_file_name)
 	if err != OK:
 		return
+	
 	
 	var theme_enum = config_file.get_value("theme", "theme_enum")
 	set_theme(theme_enum)
@@ -152,14 +207,8 @@ func save_state(state: bool): saved_state = state
 
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
-var theme_thread
 
 func set_theme(themeID: int) -> void:
-	theme_thread = Thread.new()
-	theme_thread.start(actual_theme_change.bind(themeID))
-
-
-func actual_theme_change(themeID: int) -> void:
 	match themeID:
 		theme.LIGHT_MODE:
 			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
@@ -170,11 +219,6 @@ func actual_theme_change(themeID: int) -> void:
 			root_control.theme = dark_theme
 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 
-
-# function to destroy thread as is exiting scene tree
-func _exit_tree() -> void:
-	if theme_thread:
-		theme_thread.wait_to_finish()
 
 #endregion Theme change
 
