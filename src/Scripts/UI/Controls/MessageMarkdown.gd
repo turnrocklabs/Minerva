@@ -11,10 +11,13 @@ extends HBoxContainer
 @export var error_message_color: Color
 
 @onready var tokens_cost: Label = %TokensCostLabel
+@onready var edit_popup: MessageEditPopup = %MessageEditPopup
 
-## Since message label can consist of multiple nodes
-## This proprty will return combined text of those nodes
 var content: String:
+	set(value):
+		content = value
+		history_item.Message = value
+		history_item = history_item # so the setter is triggered
 	get: return label.text
 
 
@@ -40,6 +43,8 @@ var editable:= false:
 func _ready():
 	_render_history_item()
 
+	# set the message for the edit popup
+	edit_popup.message = self
 
 func set_message_loading(loading_: bool):
 	%LoadingLabel.visible = loading_
@@ -135,31 +140,7 @@ func _on_regenerate_button_pressed():
 
 
 func _on_edit_button_pressed():
-	var ep = SingletonObject.editor_container.editor_pane
-
-	# if theres already open editor for this message, just switch to it
-	for i in range(ep.Tabs.get_tab_count()):
-		var tab_control = ep.Tabs.get_tab_control(i)
-
-		if tab_control.get_meta("associated_object") == self:
-			ep.Tabs.current_tab = i
-			return
-
-	var container: Editor = ep.add(Editor.TYPE.Text, null, "Chat Message")
-	container.prompt_save = false
-
-	container.set_meta("associated_object", self)
-
-	container.code_edit.text = history_item.Message
-	
-	container.code_edit.text_changed.connect(
-		func():
-			history_item.Message = container.code_edit.text
-			history_item = history_item
-	)
-
-	SingletonObject.main_ui.set_editor_pane_visible()
-
+	edit_popup.popup_centered()
 
 class TextSegment:
 	var syntax: String
