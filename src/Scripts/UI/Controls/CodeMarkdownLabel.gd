@@ -18,7 +18,7 @@ func _copy_code_label():
 
 func _extract_code_label():
 	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
-	SingletonObject.NotesTab.add_note(%CodeLabel.text, text_without_tags)
+	SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags)
 
 static func create(code_text: String, syntax: String = "Plain Text") -> CodeMarkdownLabel:
 	# place the code label in panel container to change the background
