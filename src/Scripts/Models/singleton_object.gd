@@ -29,7 +29,7 @@ var ChatList: Array[ChatHistory]:
 
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
-var Provider: BaseProvider
+# var Provider: BaseProvider
 var Chats: ChatPane
 
 #Add AtT to use it throught the singleton
@@ -37,9 +37,8 @@ var AtT: AudioToTexts = AudioToTexts.new()
 func _ready():
 	add_child(AtT)
 	
-func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
+func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories
-	Provider = provider
 	Chats = _chats
 	Chats.clear_all_chats()
 	

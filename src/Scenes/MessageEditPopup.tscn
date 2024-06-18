@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageEditPopup.gd" id="1_6d1qi"]
 
 [node name="MessageEditPopup" type="PopupPanel"]
+position = Vector2i(0, 36)
 size = Vector2i(500, 250)
 visible = true
 unresizable = false

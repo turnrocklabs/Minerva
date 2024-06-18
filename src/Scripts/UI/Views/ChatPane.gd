@@ -276,7 +276,7 @@ func _ready():
 		provider = %AISettings.get_selected_provider().new()
 		set_provider(provider)
 	
-	SingletonObject.initialize_chats(provider, self)
+	SingletonObject.initialize_chats(self)
 
 ## Changes the provider that this chat panes uses to generate responses
 func set_provider(new_provider: BaseProvider):
@@ -320,7 +320,7 @@ func _on_btn_test_pressed():
 func clear_all_chats():
 	for child in get_children():
 		remove_child(child)
-	add_child(SingletonObject.Provider)
+	add_child(SingletonObject.Chats.provider)
 
 func update_token_estimation():
 	%EstimatedTokensLabel.text = str(provider.estimate_tokens(%txtMainUserInput.text))
