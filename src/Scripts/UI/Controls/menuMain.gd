@@ -1,10 +1,38 @@
 extends MenuBar
 
 @onready var view = $View as PopupMenu
+@onready var project: PopupMenu = $Project
 
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-#func _process(delta):
-#	pass
+
+func _ready() -> void:
+	load_recent_projects() # loads recent projects when instantiated
+	
+#TODO open recent sub menu items do nothing right now
+
+#load recent projects if they exist on the config file
+#this function gets called on ready and when you hover over menuMain
+func load_recent_projects():
+	if SingletonObject.has_recent_projects():# check if user has recent projects
+		
+		# this if statement removes the open recent time if there was one already
+		if project.get_tree().has_group("open_recent"):
+			project.remove_item(project.item_count - 1)
+		
+		# create submenu item, fill it with recent projectd and add to menu
+		var submenu = PopupMenu.new()
+		submenu.name = "OpenRecentSubmenu"
+		submenu.add_to_group("open_recent")
+		var recent_projects = SingletonObject.get_recent_projects()
+		if recent_projects:
+			for item in recent_projects:
+				print(item)
+				submenu.add_item(item)
+		
+		project.add_child(submenu)# adds submenu to scene tree
+		#add submenu as a submenu of indicated item
+		project.add_submenu_item("Open Recent", "OpenRecentSubmenu")
+	
+
 
 # handle file options
 func _on_file_index_pressed(index):
@@ -58,7 +86,8 @@ func _on_project_index_pressed(index):
 			## Save as a project
 			SingletonObject.SaveProjectAs.emit()
 			pass
-	pass # Replace with function body.
+		4:
+			print("opening recent project c: ...")
 
 
 func _on_view_index_pressed(index: int):
@@ -92,3 +121,24 @@ func _on_file_about_to_popup():
 	else: 
 		%File.set_item_disabled(2, true)
 		%File.set_item_disabled(3, true)
+
+
+#this function gets call when the mouse ehovers over the MenuBar
+#it has a timer so it doesn't execute all the time
+var timer
+var active: bool =true
+func _on_mouse_entered() -> void:
+	if active:
+		active = false
+		load_recent_projects()
+		timer = Timer.new()
+		timer.wait_time = 5.0
+		timer.timeout.connect(set_active)
+		add_child(timer)
+		timer.start()
+
+
+func set_active():
+	active = true
+	timer.queue_free()
+	

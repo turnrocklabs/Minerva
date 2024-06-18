@@ -54,7 +54,7 @@ stretch_mode = 5
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="CheckButton" type="CheckButton" parent="PanelContainer/v/h"]
+[node name="CheckButton" type="CheckButton" parent="PanelContainer/v/h" groups=["NoteCheckButton"]]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
