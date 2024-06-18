@@ -58,8 +58,7 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 	self.Message = ""
 	self.Base64Data = ""
 	self.Complete = true
-	self.ModelName = SingletonObject.Chats.provider.model_name
-	self.ModelShortName = SingletonObject.Chats.provider.short_name
+	self.provider = SingletonObject.Chats.provider
 
 	response_arrived.connect(_on_response_arrived)
 

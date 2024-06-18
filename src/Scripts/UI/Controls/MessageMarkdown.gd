@@ -109,9 +109,11 @@ static func new_message() -> MessageMarkdown:
 
 
 func update_tokens_cost(estimated: int, correct: int) -> void:
+	var price = history_item.provider.token_cost * estimated
+
 	tokens_cost.visible = true
 	tokens_cost.text = "%s/%s" % [estimated, correct]
-	tokens_cost.tooltip_text = "Used %s tokens (estimated %s)" % [correct, estimated]
+	tokens_cost.tooltip_text = "Estimated %s tokens (%s), used %s" % [estimated, price, correct]
 
 
 # Continues the generation of the response
@@ -128,8 +130,8 @@ func _on_clip_button_pressed():
 
 
 func _on_note_button_pressed():
-	SingletonObject.NotesTab.add_note("Chat Note", label.text)
-	SingletonObject.main_ui.set_editor_pane_visible(true)
+	SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text)
+	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 
 func _on_delete_button_pressed():
