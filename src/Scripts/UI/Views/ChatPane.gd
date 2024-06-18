@@ -162,6 +162,8 @@ func _on_chat_pressed():
 
 	## Inform the user history item that the response has arrived
 	user_history_item.response_arrived.emit(chi)
+	
+	SingletonObject.ChatList[current_tab].VBox.scroll_to_bottom()
 
 	model_msg_node.loading = false
 
