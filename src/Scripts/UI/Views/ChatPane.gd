@@ -323,7 +323,8 @@ func clear_all_chats():
 	add_child(SingletonObject.Chats.provider)
 
 func update_token_estimation():
-	%EstimatedTokensLabel.text = str(provider.estimate_tokens(%txtMainUserInput.text))
+	var token_count = provider.estimate_tokens(%txtMainUserInput.text)
+	%EstimatedTokensLabel.text = "%s (%s$)" % [token_count, provider.token_cost * token_count]
 
 
 # region Edit provider Title
@@ -369,6 +370,10 @@ func _on_btn_chat_settings_pressed():
 ## When user types in the chat box, estimate tokens count based on selected provider
 func _on_txt_main_user_input_text_changed():
 	update_token_estimation()
+
+func _on_txt_main_user_input_text_set():
+	update_token_estimation()
+
 func _on_btn_microphone_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
 	SingletonObject.AtT._StartConverting()
