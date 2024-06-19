@@ -15,7 +15,7 @@
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="12_6jk4t"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="12_w08x7"]
 [ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
-[ext_resource type="Texture2D" uid="uid://rdf2xw3f4sb0" path="res://assets/generated/paperclip_icon_24_no_bg.png" id="13_bynck"]
+[ext_resource type="Texture2D" uid="uid://b53y87xjob8ri" path="res://assets/generated/paperclip_icon_24-removebg-preview.png" id="13_sb4aw"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
@@ -56,8 +56,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 234.0
-offset_bottom = 96.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -153,17 +153,23 @@ file_mode = 0
 access = 2
 
 [node name="Project" type="PopupMenu" parent="VBoxRoot/menuMain"]
+unique_name_in_owner = true
 title = "Project"
-size = Vector2i(150, 139)
-item_count = 4
+size = Vector2i(150, 166)
+item_count = 5
 item_0/text = "New"
 item_0/id = 0
 item_1/text = "Open"
 item_1/id = 1
 item_2/text = "Save"
 item_2/id = 2
+item_2/disabled = true
 item_3/text = "Save As..."
 item_3/id = 3
+item_3/disabled = true
+item_4/text = "Close project"
+item_4/id = 4
+item_4/disabled = true
 
 [node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
 unique_name_in_owner = true
@@ -301,7 +307,7 @@ text = "Notes"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
-text = "Enable all"
+text = "Toggle Enable"
 
 [node name="btnCreateNote" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
@@ -313,7 +319,7 @@ icon = ExtResource("12_w08x7")
 layout_mode = 2
 size_flags_horizontal = 8
 text = "Attach File"
-icon = ExtResource("13_bynck")
+icon = ExtResource("13_sb4aw")
 
 [node name="btnNewTab" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
@@ -387,6 +393,7 @@ bus = &"Rec"
 [connection signal="focus_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_mouse_entered"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
+[connection signal="about_to_popup" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_about_to_popup"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_about_to_popup"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_index_pressed"]
