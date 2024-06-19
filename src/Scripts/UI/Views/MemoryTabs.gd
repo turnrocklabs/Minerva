@@ -1,4 +1,3 @@
-## ThreadView.gd
 # This script manages a tab container that groups memory objects.
 class_name MemoryTabs
 extends TabContainer
@@ -6,7 +5,12 @@ extends TabContainer
 # just use current_tab
 # var ActiveThreadIndex: int:
 
-var _drag_active := false
+var _drag_active := true
+var _hovered_tab := -1
+var _hover_timer
+
+# This flag will be set to true when we need to update the UI
+var _needs_update := false
 
 ## return a single large string of all active memories
 func To_Prompt(Provider) -> String:
@@ -191,25 +195,7 @@ func _memory_thread_find(thread_id: String) -> MemoryThread:
 			return t.ThreadId == thread_id
 	).pop_front()
 
-# if we are dragging a note above a tab, we can drop it there
-func _can_drop_data(at_position: Vector2, data):
-	var tab_idx = get_tab_idx_at_point(at_position)
 
-	return tab_idx != -1 and data is Note
-
-# find out which tab we are above
-# and get it's vboxMemoryList control (which is the only child of the scroll container)
-# then call it's _drop_data so it handles the Note by just appendg it and removing it from the old thread
-func _drop_data(at_position: Vector2, data):
-	if not data is Note: return
-
-	var tab_idx = get_tab_idx_at_point(at_position)
-	
-	var control = get_tab_control(tab_idx)
-
-	var vbox_memory_list = control.get_child(0)
-
-	vbox_memory_list._drop_data(at_position, data)
 
 ## Function:
 # attach_file creates a memoryitem/note from a file.  It can detect file type
@@ -281,11 +267,13 @@ func _ready():
 	# tab bar need mouse_filter set to pass to allow the tabcontainer to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 
+	# Connect signals for changes in your data
+	SingletonObject.connect("ThreadListChanged", self._on_thread_list_changed) 
+
 	SingletonObject.ThreadList = []
 	SingletonObject.NotesTab = self
 	SingletonObject.AttachNoteFile.connect(self.attach_file)
 	render_threads()
-
 
 func _notification(what):
 	match what:
@@ -303,7 +291,12 @@ func _on_tab_clicked(tab: int):
 	clicked = true
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
 
+# This function is called when the ThreadList is modified
+func _on_thread_list_changed():
+	_needs_update = true
 
-func _on_tab_hovered(tab: int):
-	if _drag_active:
-		current_tab = tab
+# This function is called every frame
+func _process(delta):
+	if _needs_update:
+		render_threads()
+		_needs_update = false
