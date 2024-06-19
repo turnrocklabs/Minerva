@@ -65,13 +65,9 @@ func _on_btn_voice_pressed():
 		%btnVoice.icon = icStatic
 	
 
-var notes_enabled = false
+
 func _on_disable_notes_button_pressed() -> void:
 	SingletonObject.disable_notes_in_tab()
-	if notes_enabled:
-		%DisableNotesButton.text = "Enable all"
-	else:
-		%DisableNotesButton.text = "Disable all"
-	notes_enabled = !notes_enabled
+
 
 

@@ -5,33 +5,7 @@ extends MenuBar
 
 
 func _ready() -> void:
-	load_recent_projects() # loads recent projects when instantiated
-	
-#TODO open recent sub menu items do nothing right now
-
-#load recent projects if they exist on the config file
-#this function gets called on ready and when you hover over menuMain
-func load_recent_projects():
-	if SingletonObject.has_recent_projects():# check if user has recent projects
-		
-		# this if statement removes the open recent time if there was one already
-		if project.get_tree().has_group("open_recent"):
-			project.remove_item(project.item_count - 1)
-		
-		# create submenu item, fill it with recent projectd and add to menu
-		var submenu = PopupMenu.new()
-		submenu.name = "OpenRecentSubmenu"
-		submenu.add_to_group("open_recent")
-		var recent_projects = SingletonObject.get_recent_projects()
-		if recent_projects:
-			for item in recent_projects:
-				print(item)
-				submenu.add_item(item)
-		
-		project.add_child(submenu)# adds submenu to scene tree
-		#add submenu as a submenu of indicated item
-		project.add_submenu_item("Open Recent", "OpenRecentSubmenu")
-	
+	pass
 
 
 # handle file options
@@ -86,8 +60,6 @@ func _on_project_index_pressed(index):
 			## Save as a project
 			SingletonObject.SaveProjectAs.emit()
 			pass
-		4:
-			print("opening recent project c: ...")
 
 
 func _on_view_index_pressed(index: int):
@@ -112,10 +84,8 @@ func _on_view_about_to_popup():
 
 
 func _on_file_about_to_popup():
-	var tabs = SingletonObject.editor_container.editor_pane.Tabs
-	var control = tabs.get_current_tab_control()
 	#checks if current tabs exists and enables saving features if so
-	if control:
+	if SingletonObject.is_editor_file_open():
 		%File.set_item_disabled(2, false)
 		%File.set_item_disabled(3, false)
 	else: 
@@ -123,14 +93,25 @@ func _on_file_about_to_popup():
 		%File.set_item_disabled(3, true)
 
 
+func _on_project_about_to_popup() -> void:
+	#checks if current editor tabs, chat tabs or notes exists 
+	#and enables saving features for ther project if so
+	if SingletonObject.any_project_features_open():
+		%Project.set_item_disabled(2, false)
+		%Project.set_item_disabled(3, false)
+	else:
+		%Project.set_item_disabled(2, true)
+		%Project.set_item_disabled(3, true)
+
 #this function gets call when the mouse ehovers over the MenuBar
 #it has a timer so it doesn't execute all the time
 var timer
 var active: bool =true
 func _on_mouse_entered() -> void:
 	if active:
-		active = false
 		load_recent_projects()
+		active = false
+		
 		timer = Timer.new()
 		timer.wait_time = 5.0
 		timer.timeout.connect(set_active)
@@ -140,5 +121,40 @@ func _on_mouse_entered() -> void:
 
 func set_active():
 	active = true
-	timer.queue_free()
-	
+	timer.queue_free() 
+
+
+#load recent projects if they exist on the config file
+#this function gets called on ready and when you hover over menuMain
+var submenu
+func load_recent_projects():
+	if SingletonObject.has_recent_projects():# check if user has recent projects
+		
+		# this if statement removes the open recent time if there was one already
+		if project.get_tree().has_group("open_recent"):
+			project.remove_item(project.item_count - 1)
+		
+		# create submenu item, fill it with recent projectd and add to menu
+		submenu = PopupMenu.new()
+		submenu.name = "OpenRecentSubmenu"
+		submenu.add_to_group("open_recent")
+		var index:int = submenu.index_pressed.connect(_on_open_recent_project)
+		var recent_projects = SingletonObject.get_recent_projects()
+		if recent_projects:
+			for item in recent_projects:
+				#print(item)
+				submenu.add_item(item)
+		
+		project.add_child(submenu)# adds submenu to scene tree
+		#add submenu as a submenu of indicated item
+		project.add_submenu_item("Open Recent", "OpenRecentSubmenu")
+
+
+func _on_open_recent_project(index: int):
+	var selected_project_name = submenu.get_item_text(index)
+	SingletonObject.OpenRecentProject.emit(selected_project_name)
+
+
+
+
+

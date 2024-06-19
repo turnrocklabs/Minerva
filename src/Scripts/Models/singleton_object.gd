@@ -22,9 +22,7 @@ func save_recent_project(path: String):
 	var project_name = path_split[project_name_index]
 	
 	var recent_projects_array = get_recent_projects()
-	print("==========================")
-	print(recent_projects_array)
-	print("==========================")
+	
 	if recent_projects_array:
 		if recent_projects_array.size() > 5:
 			recent_projects_array.remove_at(4)
@@ -39,17 +37,10 @@ func save_recent_project(path: String):
 func get_recent_projects() -> Array:
 	if has_recent_projects():
 		return config_file.get_section_keys("OpenRecent")
-		#var open_recent_keys = config_file.get_section_keys("OpenRecent")
-		#var open_recent_file_names = Array()
-		#for key in open_recent_keys:
-			#open_recent_file_names.append(config_file.get_value("OpenRecent",key))
-		#return open_recent_file_names
 	return ["no recent projects"]
 
-
-
-
-
+func get_project_path(project_name: String) -> String:
+	return config_file.get_value("OpenRecent", project_name)
 #endregion Config File
 
 #region Notes
@@ -189,6 +180,7 @@ func get_active_provider() -> API_MODEL_PROVIDERS:
 #region Project Management
 signal NewProject
 signal OpenProject
+signal OpenRecentProject(recent_project_name: String)
 signal SaveProject
 signal SaveProjectAs
 signal CloseProject
@@ -199,6 +191,40 @@ var saved_state = true
 func save_state(state: bool): saved_state = state
 
 #endregion Project Management
+
+#region Check if features are open
+
+#checks if the editor pane has a current tab
+func is_editor_file_open() -> bool:
+	if editor_container.editor_pane.Tabs.get_current_tab_control():
+		return true
+	return false
+
+
+func is_notes_open() -> bool:# checks if a notes list exists
+	if ThreadList:
+		return true
+	return false
+
+
+func is_chat_open() -> bool: #checks if a chat lists exists
+	if ChatList:
+		return true
+	return false
+
+#checks if ANY project features are open
+func any_project_features_open() -> bool:
+	if is_chat_open() or is_notes_open() or is_editor_file_open():
+		return true
+	return false
+
+#checks if ALL project features are open
+func all_project_features_open() -> bool:
+	if is_chat_open() and is_notes_open() and is_editor_file_open():
+		return true
+	return false
+
+#endregion Check if features are open
 
 #region Theme change
 
