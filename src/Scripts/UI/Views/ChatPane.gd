@@ -10,6 +10,7 @@ var provider: BaseProvider:
 		provider = value
 		if provider:
 			update_token_estimation() # Update token estimation if provider changes
+			
 var icActive = preload("res://assets/icons/Microphone_active.png")
 var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 
@@ -85,7 +86,6 @@ func _on_btn_inspect_pressed():
 
 
 func _on_chat_pressed():
-	
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 
@@ -242,6 +242,8 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 
 
 func render_history(chat_history: ChatHistory):
+	
+	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -387,6 +389,3 @@ func _on_btn_microphone_pressed():
 		%btnMicrophone.icon = icActive
 	else:
 		%btnMicrophone.icon = icStatic
-		
-
-
