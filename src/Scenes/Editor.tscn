@@ -22,6 +22,7 @@ grow_vertical = 2
 
 [node name="CodeEdit" type="CodeEdit" parent="VBoxContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 wrap_mode = 1
