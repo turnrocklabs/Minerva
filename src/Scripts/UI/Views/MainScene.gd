@@ -3,9 +3,7 @@ extends Control
 #varibles where weadding out notes Head and descriptionn
 
 @onready var _default_zoom = theme.default_font_size
-
 var icActive = preload("res://assets/icons/Microphone_active.png")
-var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 
 func zoom_ui(factor: int):
 	if theme.has_default_font_size():
@@ -58,8 +56,5 @@ func _on_btn_add_attachement_pressed():
 func _on_btn_voice_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteDescription
 	SingletonObject.AtT._StartConverting()
-	
-	if SingletonObject.AtT.State == "Active":
-		%btnVoice.icon = icActive
-	else:
-		%btnVoice.icon = icStatic
+	SingletonObject.AtT.btn = %btnVoice
+	%btnVoice.icon = icActive
