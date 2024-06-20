@@ -13,6 +13,8 @@ extends HBoxContainer
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var edit_popup: MessageEditPopup = %MessageEditPopup
 
+## Content of this message in markdown, returns `label.text`
+## Setting this property will update the history item and rerender the note
 var content: String:
 	set(value):
 		content = value
@@ -27,12 +29,15 @@ var history_item: ChatHistoryItem:
 		history_item = value
 		_render_history_item()
 
-
+## Setting this property to true will set the loading state for the message
+## and hide any other content except the loading label
 var loading:= false:
 	set(value):
 		set_message_loading(value)
 		loading = value
 
+## Enables the edit and regenerate button for this node if it's displaying a user message.
+## Changing this property for non user messages has no effect.
 var editable:= false:
 	set(value):
 		editable = value
@@ -46,6 +51,7 @@ func _ready():
 	# set the message for the edit popup
 	edit_popup.message = self
 
+## sets loading label visibility to `loading_` and toggles_controls
 func set_message_loading(loading_: bool):
 	%LoadingLabel.visible = loading_
 	
@@ -63,6 +69,7 @@ func _render_history_item():
 
 	_create_code_labels()
 
+## Will disable/enable nodes in the `controls` group which contains all message buttons
 func _toggle_controls(enabled:= true):
 	if is_inside_tree():
 		get_tree().call_group("controls", "set_disabled", not enabled)
@@ -107,7 +114,7 @@ static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
 	return msg
 
-
+## Updates tokens cost label in the top left corner
 func update_tokens_cost(estimated: int, correct: int) -> void:
 	var price = history_item.provider.token_cost * estimated
 
@@ -144,6 +151,9 @@ func _on_regenerate_button_pressed():
 func _on_edit_button_pressed():
 	edit_popup.popup_centered()
 
+
+## Class that represents a message text segment
+## If it has set syntax, it's treated like a code label
 class TextSegment:
 	var syntax: String
 	var content: String
@@ -158,7 +168,8 @@ class TextSegment:
 		else:
 			return content
 
-
+## Based on the code block content, this function will
+## try to find the syntax name near the '```' in the markdown text
 func _extract_code_block_syntax(code_text: String) -> String:
 	
 	label.markdown_text.rfind("```")
