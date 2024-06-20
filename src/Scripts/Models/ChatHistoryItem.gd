@@ -118,3 +118,10 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 		chi.set(prop, data.get(prop))
 
 	return chi
+
+
+## Merges two history items together
+func merge(item: ChatHistoryItem) -> void:
+	Message = "%s\n%s" % [Message, item.Message]
+	InjectedNote = "%s\n%s" % [InjectedNote, item.InjectedNote]
+	Complete = Complete and item.Complete
