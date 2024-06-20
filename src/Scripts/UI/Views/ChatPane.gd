@@ -162,7 +162,7 @@ func _on_chat_pressed():
 
 	## Inform the user history item that the response has arrived
 	user_history_item.response_arrived.emit(chi)
-	
+
 	SingletonObject.ChatList[current_tab].VBox.scroll_to_bottom()
 
 	model_msg_node.loading = false
@@ -220,8 +220,12 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 	else:
 		push_warning("Trying to delete chat history item %s with no rendered node attached to it" % item)
 		return
-
-	if not auto_merge: return
+	
+	# if `auto_merge` is true, keep the item until we find previous and next history items
+	# and delete it at the end
+	if not auto_merge:
+		history.HistoryItemList.erase(item)
+		return
 
 	if not history:
 		for h in SingletonObject.ChatList:
@@ -235,14 +239,21 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 
 	var item_index = history.HistoryItemList.find(item)
 
-	for citem: ChatHistoryItem in history.HistoryItemList.slice(item_index+1):
-		if citem.rendered_node:
-			citem.rendered_node.queue_free()
-			history.HistoryItemList.erase(citem)
-			break
+	var previous: ChatHistoryItem
+	var next: ChatHistoryItem
+
+	if item_index > 0:
+		previous = history.HistoryItemList[item_index-1]
+
+	if item_index < history.HistoryItemList.size()-1:
+		next = history.HistoryItemList[item_index+1]
+
+	if previous and next and previous.Role == next.Role:
+		previous.merge(next)
+		remove_chat_history_item(next, history, false)
+		previous.rendered_node.history_item = previous # force rerender
 
 	history.HistoryItemList.erase(item)
-
 
 
 func render_history(chat_history: ChatHistory):
