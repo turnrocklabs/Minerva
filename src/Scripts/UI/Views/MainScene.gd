@@ -3,9 +3,7 @@ extends Control
 #varibles where weadding out notes Head and descriptionn
 
 @onready var _default_zoom = theme.default_font_size
-
 var icActive = preload("res://assets/icons/Microphone_active.png")
-var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 
 func zoom_ui(factor: int):
 	if theme.has_default_font_size():
@@ -58,28 +56,25 @@ func _on_btn_add_attachement_pressed():
 func _on_btn_voice_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteDescription
 	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %btnVoice
+	%btnVoice.icon = icActive
 	
-	if SingletonObject.AtT.State == "Active":
-		%btnVoice.icon = icActive
-	else:
-		%btnVoice.icon = icStatic
 
-
-func _on_btn_voice_for_header_pressed():
-	SingletonObject.AtT.FieldForFilling = %NoteHead
-	SingletonObject.AtT._StartConverting()
+var notes_enabled = true
+func _on_disable_notes_button_pressed() -> void:
+	if !notes_enabled:
+		%DisableNotesButton.text = "Disable All"
+		SingletonObject.toggle_all_notes(notes_enabled)
+	if notes_enabled:
+		%DisableNotesButton.text = "Enable All"
+		SingletonObject.toggle_all_notes(notes_enabled)
 	
-	if SingletonObject.AtT.State == "Active":
-		%btnVoiceForHeader.icon = icActive
-	else:
-		%btnVoiceForHeader.icon = icStatic
+	notes_enabled = !notes_enabled
 
 
-func _on_btn_voice_for_note_tab_pressed():
-	SingletonObject.AtT.FieldForFilling = %txtNewTabName
-	SingletonObject.AtT._StartConverting()
-	
-	if SingletonObject.AtT.State == "Active":
-		%btnVoiceForNoteTab.icon = icActive
-	else:
-		%btnVoiceForNoteTab.icon = icStatic
+
+
+
+
+func _on_disable_notes_button_toggled(toggled_on: bool) -> void:
+	pass # Replace with function body.

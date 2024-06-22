@@ -85,3 +85,12 @@ func _on_v_button_pressed():
 	if not editor_pane: return
 
 	editor_pane.toggle_vertical_split()
+
+
+func _on_new_line_button_pressed() -> void:
+	pass # Replace with function body.
+
+
+
+
+
