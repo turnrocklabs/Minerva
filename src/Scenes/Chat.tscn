@@ -10,7 +10,7 @@
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
 
 [node name="Chats" type="Control"]
-custom_minimum_size = Vector2(480, 0)
+custom_minimum_size = Vector2(540, 0)
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
