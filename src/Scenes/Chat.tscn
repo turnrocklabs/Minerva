@@ -1,8 +1,7 @@
-[gd_scene load_steps=9 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=8 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
-[ext_resource type="Script" path="res://scripts/Chat.gd" id="1_v60s0"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="2_bjp7m"]
 [ext_resource type="Texture2D" uid="uid://8qaewgqcvy18" path="res://assets/generated/gears_icon_24-removebg-preview.png" id="5_igkcl"]
 [ext_resource type="Texture2D" uid="uid://dfai1lvbg10ka" path="res://assets/generated/search_icon_24_no_bg.png" id="6_5wjht"]
@@ -19,7 +18,6 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-script = ExtResource("1_v60s0")
 
 [node name="InspectorPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
@@ -156,8 +154,9 @@ layout_mode = 2
 text = "Test"
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
+clip_contents = true
 layout_mode = 2
-size_flags_horizontal = 3
+size_flags_horizontal = 10
 theme_override_constants/separation = 16
 
 [node name="PromptCountLabel" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
@@ -168,9 +167,9 @@ text = "Estimated Prompt Count: "
 
 [node name="EstimatedTokensLabel" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(70, 0)
 layout_mode = 2
 size_flags_horizontal = 8
+text = "dhdh"
 
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
