@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
 [ext_resource type="PackedScene" uid="uid://clmnhuxss1a02" path="res://Scenes/MessageEditPopup.tscn" id="2_g2tku"]
-[ext_resource type="FontFile" uid="uid://botx2rpgbwnlj" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
@@ -155,6 +155,36 @@ theme_override_constants/separation = 10
 layout_mode = 2
 theme_override_constants/separation = 10
 
+[node name="ContinueButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h" groups=["controls"]]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "Click to continue response generation"
+text = "Continue"
+
+[node name="h" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/h"]
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_constants/separation = 12
+
+[node name="EditButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("10_h3jau")
+
+[node name="ClipButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
+layout_mode = 2
+text = "Clip"
+
+[node name="NoteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
+layout_mode = 2
+text = "Note"
+
+[node name="DeleteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
+layout_mode = 2
+icon = ExtResource("10_6uibh")
+
 [node name="TokensCostLabel" type="Label" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -169,7 +199,7 @@ theme_override_styles/focus = SubResource("StyleBoxEmpty_2nrlj")
 bbcode_enabled = true
 text = "Certainly! Here's a simple Python program that calculates the factorial of a number provided by the user:
 
-[code]
+[code syntax=python]
 def factorial(n):
     if n == 0:
         return 1
@@ -229,61 +259,12 @@ h4 = SubResource("Resource_j3mc0")
 h5 = SubResource("Resource_whtla")
 h6 = SubResource("Resource_f738n")
 
-[node name="h" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
-layout_mode = 2
-
-[node name="ContinueButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h" groups=["controls"]]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-size_flags_horizontal = 0
-tooltip_text = "Click to continue response generation"
-text = "Continue"
-
-[node name="h" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/h"]
-layout_mode = 2
-size_flags_horizontal = 10
-theme_override_constants/separation = 12
-
-[node name="EditButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
-unique_name_in_owner = true
-layout_mode = 2
-icon = ExtResource("10_h3jau")
-
-[node name="ClipButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
-layout_mode = 2
-text = "Clip"
-
-[node name="NoteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
-layout_mode = 2
-text = "Note"
-
-[node name="DeleteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
-layout_mode = 2
-icon = ExtResource("10_6uibh")
-
 [node name="LoadingLabel" type="Label" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0, 0, 0, 1)
 text = "●︎●︎●︎"
-
-[node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
-layout_mode = 2
-focus_mode = 2
-theme_override_fonts/mono_font = ExtResource("2_uss7y")
-theme_override_styles/focus = SubResource("StyleBoxEmpty_2nrlj")
-bbcode_enabled = true
-fit_content = true
-selection_enabled = true
-script = ExtResource("2_5cmtk")
-h1 = SubResource("Resource_de4hw")
-h2 = SubResource("Resource_s8if8")
-h3 = SubResource("Resource_6ck5t")
-h4 = SubResource("Resource_j3mc0")
-h5 = SubResource("Resource_whtla")
-h6 = SubResource("Resource_f738n")
 
 [node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
@@ -293,7 +274,6 @@ layout_mode = 2
 layout_mode = 2
 
 [node name="ContinueButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h2" groups=["controls"]]
-unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_horizontal = 0

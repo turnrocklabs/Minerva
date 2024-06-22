@@ -103,7 +103,7 @@ func _ready():
 	set_theme(theme_enum)
 
 
-func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
+func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories
 	Chats = _chats
 	Chats.clear_all_chats()
@@ -237,7 +237,7 @@ enum theme {LIGHT_MODE, DARK_MODE}
 signal theme_changed(theme_enum)
 
 func get_theme() -> int:
-	return config_file.get_value("theme", "theme_enum")
+	return config_file.get_value("theme", "theme_enum",0)
 
 
 func set_theme(themeID: int) -> void:
