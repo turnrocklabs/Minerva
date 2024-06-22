@@ -128,9 +128,10 @@ func set_active():
 #this function gets called on ready and when you hover over menuMain
 var submenu
 func load_recent_projects():
+	
 	if SingletonObject.has_recent_projects():# check if user has recent projects
 		
-		# this if statement removes the open recent time if there was one already
+		# this if statement removes the open recent item if there was one already
 		if project.get_tree().has_group("open_recent"):
 			project.remove_item(project.item_count - 1)
 		
@@ -138,12 +139,13 @@ func load_recent_projects():
 		submenu = PopupMenu.new()
 		submenu.name = "OpenRecentSubmenu"
 		submenu.add_to_group("open_recent")
-		var index:int = submenu.index_pressed.connect(_on_open_recent_project)
+		submenu.index_pressed.connect(_on_open_recent_project)
 		var recent_projects = SingletonObject.get_recent_projects()
 		if recent_projects:
 			for item in recent_projects:
-				#print(item)
+				print(item)
 				submenu.add_item(item)
+		
 		
 		project.add_child(submenu)# adds submenu to scene tree
 		#add submenu as a submenu of indicated item

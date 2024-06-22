@@ -7,7 +7,7 @@ func _ready() -> void:
 	initial_label_text = prompt_count_label.text
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	# this is for changing the minimum size of the panel and 
 	# changing the text when is being resized
 	if size.x == 500:

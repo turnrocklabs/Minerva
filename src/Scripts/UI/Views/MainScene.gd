@@ -65,9 +65,21 @@ func _on_btn_voice_pressed():
 		%btnVoice.icon = icStatic
 	
 
-
+var notes_enabled = true
 func _on_disable_notes_button_pressed() -> void:
-	SingletonObject.disable_notes_in_tab()
+	if !notes_enabled:
+		%DisableNotesButton.text = "Disable All"
+		SingletonObject.toggle_all_notes(notes_enabled)
+	if notes_enabled:
+		%DisableNotesButton.text = "Enable All"
+		SingletonObject.toggle_all_notes(notes_enabled)
+	
+	notes_enabled = !notes_enabled
 
 
 
+
+
+
+func _on_disable_notes_button_toggled(toggled_on: bool) -> void:
+	pass # Replace with function body.

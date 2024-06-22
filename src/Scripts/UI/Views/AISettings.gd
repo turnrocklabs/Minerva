@@ -10,6 +10,8 @@ func get_selected_provider() -> GDScript:
 	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[_provider_option_button.get_selected_id()]
 
 func _ready():
+	SingletonObject.theme_changed.connect(set_theme_option_menu)
+	theme_option_button.selected = SingletonObject.get_theme()
 	# populate the options button with avaivable model providers
 	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
@@ -40,3 +42,6 @@ func _on_about_to_popup():
 func _on_theme_option_button_item_selected(index: int) -> void:
 	SingletonObject.set_theme(index)
 
+
+func set_theme_option_menu(theme_enum: int):
+	theme_option_button.selected = theme_enum
