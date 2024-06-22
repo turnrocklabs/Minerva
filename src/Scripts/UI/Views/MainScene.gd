@@ -58,7 +58,19 @@ func _on_btn_voice_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoice
 	%btnVoice.icon = icActive
-	
+
+func _on_btn_voice_for_header_pressed():
+	SingletonObject.AtT.FieldForFilling = %NoteHead
+	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %btnVoiceForHeader
+	%btnVoiceForHeader.icon = icActive
+
+
+func _on_btn_voice_for_note_tab_pressed():
+	SingletonObject.AtT.FieldForFilling = %txtNewTabName
+	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %btnVoiceForNoteTab
+	%btnVoiceForNoteTab.icon = icActive
 
 var notes_enabled = true
 func _on_disable_notes_button_pressed() -> void:
