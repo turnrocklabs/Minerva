@@ -1,5 +1,15 @@
 extends Node
 
+#region Config File
+var config_file_name: String = "user://config_file.cfg"
+var config_file = ConfigFile.new()
+
+func save_to_config_file(section: String, field: String, value):
+	config_file.set_value(section, field, value)
+	config_file.save(config_file_name)
+
+#endregion Config File
+
 #region Notes
 var ThreadList: Array[MemoryThread]:
 	set(value):
@@ -37,7 +47,15 @@ var AtT: AudioToTexts = AudioToTexts.new()
 func _ready():
 	add_child(AtT)
 	
-func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = []):
+	var err = config_file.load(config_file_name)
+	if err != OK:
+		return
+	
+	var theme_enum = config_file.get_value("theme", "theme_enum")
+	set_theme(theme_enum)
+
+
+func initialize_chats(provider, _chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories
 	Chats = _chats
 	Chats.clear_all_chats()
@@ -134,7 +152,8 @@ func save_state(state: bool): saved_state = state
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
 var theme_thread
-func change_theme(themeID: int) -> void:
+
+func set_theme(themeID: int) -> void:
 	theme_thread = Thread.new()
 	theme_thread.start(actual_theme_change.bind(themeID))
 
@@ -144,11 +163,14 @@ func actual_theme_change(themeID: int) -> void:
 		theme.LIGHT_MODE:
 			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
 			root_control.theme = light_theme
+			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
 		theme.DARK_MODE:
 			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
 			root_control.theme = dark_theme
+			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 
-	
+
+# function to destroy thread as is exiting scene tree
 func _exit_tree() -> void:
 	if theme_thread:
 		theme_thread.wait_to_finish()
