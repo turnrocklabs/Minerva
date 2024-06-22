@@ -71,8 +71,9 @@ func _StartConverting():
 			print("Failed to open audio file: ", file_path)
 	else:
 		effect.set_recording_active(true)
-		
-func _on_request_completed(result, response_code, headers, body):
+		State = "Active"
+
+func _on_request_completed(_result, response_code, _headers, body):
 	if response_code == 200:
 		var response_json = JSON.parse_string(body.get_string_from_utf8())
 		# Check if the 'text' key exists in the response

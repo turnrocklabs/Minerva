@@ -56,8 +56,8 @@ func _toggle_controls(enabled:= true):
 
 func _setup_user_message():
 	right_control.visible = true
-	right_control.get_node("PanelContainer/Label").text = SingletonObject.preferences_popup.get_user_initials()
-	right_control.get_node("PanelContainer").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
+	right_control.get_node("%AvatarName").text = SingletonObject.preferences_popup.get_user_initials()
+	right_control.get_node("%MsgSenderAvatar").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
 	label.markdown_text = history_item.Message
 	label.set("theme_override_colors/default_color", Color.WHITE)
 
@@ -111,7 +111,7 @@ func _on_continue_button_pressed():
 
 
 func _on_clip_button_pressed():
-	DisplayServer.clipboard_set(label.text)
+	DisplayServer.clipboard_set(label.text + "\n")
 
 
 func _on_note_button_pressed():
@@ -121,8 +121,6 @@ func _on_note_button_pressed():
 
 func _on_delete_button_pressed():
 	SingletonObject.Chats.remove_chat_history_item(history_item)
-
-
 
 
 func _on_edit_button_pressed():

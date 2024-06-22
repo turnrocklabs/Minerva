@@ -5,9 +5,44 @@ var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
 func save_to_config_file(section: String, field: String, value):
+	
+	config_file.get_sections()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
 
+
+func has_recent_projects() -> bool:
+	return config_file.has_section("OpenRecent")
+
+
+func save_recent_project(path: String):
+	var path_split = path.split("/")
+	print(path_split)
+	var project_name_index: int = path_split.size() - 1
+	var project_name = path_split[project_name_index]
+	
+	var recent_projects_array = get_recent_projects()
+	
+	if recent_projects_array:
+		if recent_projects_array.size() > 5:
+			recent_projects_array.remove_at(0)
+			config_file.erase_section("OpenRecent")
+			for project_name_saved in recent_projects_array:
+				var saved_path = get_project_path(project_name_saved)
+				save_to_config_file("OpenRecent", project_name_saved, saved_path)
+	save_to_config_file("OpenRecent",project_name, path)
+	
+
+# this function returns an array with the files 
+# names of the recent project saved in config file
+func get_recent_projects() -> Array:
+	if has_recent_projects():
+		#print(config_file.get_section_keys("OpenRecent"))
+		return config_file.get_section_keys("OpenRecent")
+	return ["no recent projects"]
+
+func get_project_path(project_name: String) -> String:
+	return config_file.get_value("OpenRecent", project_name)
 #endregion Config File
 
 #region Notes
@@ -25,6 +60,17 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 	pass
 
 signal AttachNoteFile(file_path:String)
+
+
+func toggle_all_notes(notes_enabled: bool):
+	if notes_enabled:
+		NotesTab.Disable_All()
+	if !notes_enabled:
+		NotesTab.enable_all()
+
+#TODO implement function for disabling all notes in single tab
+func toggle_single_tab(_enable: bool):
+	pass
 
 #endregion Notes
 
@@ -47,9 +93,11 @@ var AtT: AudioToTexts = AudioToTexts.new()
 func _ready():
 	add_child(AtT)
 	
+	
 	var err = config_file.load(config_file_name)
 	if err != OK:
 		return
+	
 	
 	var theme_enum = config_file.get_value("theme", "theme_enum")
 	set_theme(theme_enum)
@@ -134,6 +182,7 @@ func get_active_provider() -> API_MODEL_PROVIDERS:
 #region Project Management
 signal NewProject
 signal OpenProject
+signal OpenRecentProject(recent_project_name: String)
 signal SaveProject
 signal SaveProjectAs
 signal CloseProject
@@ -145,6 +194,40 @@ func save_state(state: bool): saved_state = state
 
 #endregion Project Management
 
+#region Check if features are open
+
+#checks if the editor pane has a current tab
+func is_editor_file_open() -> bool:
+	if editor_container.editor_pane.Tabs.get_current_tab_control():
+		return true
+	return false
+
+
+func is_notes_open() -> bool:# checks if a notes list exists
+	if ThreadList:
+		return true
+	return false
+
+
+func is_chat_open() -> bool: #checks if a chat lists exists
+	if ChatList:
+		return true
+	return false
+
+#checks if ANY project features are open
+func any_project_features_open() -> bool:
+	if is_chat_open() or is_notes_open() or is_editor_file_open():
+		return true
+	return false
+
+#checks if ALL project features are open
+func all_project_features_open() -> bool:
+	if is_chat_open() and is_notes_open() and is_editor_file_open():
+		return true
+	return false
+
+#endregion Check if features are open
+
 #region Theme change
 
 # get the root control node and apply the theme to it, all its children inherit the theme
@@ -152,14 +235,13 @@ func save_state(state: bool): saved_state = state
 
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
-var theme_thread
+signal theme_changed(theme_enum)
+
+func get_theme() -> int:
+	return config_file.get_value("theme", "theme_enum")
+
 
 func set_theme(themeID: int) -> void:
-	theme_thread = Thread.new()
-	theme_thread.start(actual_theme_change.bind(themeID))
-
-
-func actual_theme_change(themeID: int) -> void:
 	match themeID:
 		theme.LIGHT_MODE:
 			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
@@ -169,12 +251,8 @@ func actual_theme_change(themeID: int) -> void:
 			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
 			root_control.theme = dark_theme
 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
+	theme_changed.emit(themeID)
 
-
-# function to destroy thread as is exiting scene tree
-func _exit_tree() -> void:
-	if theme_thread:
-		theme_thread.wait_to_finish()
 
 #endregion Theme change
 
