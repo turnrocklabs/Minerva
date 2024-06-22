@@ -11,7 +11,7 @@ var save_path: String
 # it also blanks out the save file variable to force a save_as
 func _new_project():
 	SingletonObject.initialize_notes()
-	SingletonObject.initialize_chats(SingletonObject.Provider, SingletonObject.Chats)
+	SingletonObject.initialize_chats(SingletonObject.Chats)
 	save_path = ""
 	pass
 
@@ -49,6 +49,10 @@ func save_project():
 	var serialized: String = serialize_project()
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
 	save_file.store_line(serialized)
+	
+	# get the file path and add it to config file
+	SingletonObject.save_recent_project(save_path)
+	
 	SingletonObject.save_state(true)
 
 
@@ -93,10 +97,14 @@ func deserialize_project(data: Dictionary):
 		threads.append(MemoryThread.Deserialize(thread_data))
 	SingletonObject.initialize_notes(threads)
 
+	# will be float if loaded from json, cast it to int
+	var provider_enum_index = int(data.get("active_provider", 0))
+	SingletonObject.Chats.set_provider(SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new())
+
 	var chats: Array[ChatHistory] = []
 	for chat_data in data.get("ChatList", []):
 		chats.append(ChatHistory.Deserialize(chat_data))
-	SingletonObject.initialize_chats(SingletonObject.Provider, SingletonObject.Chats, chats)
+	SingletonObject.initialize_chats(SingletonObject.Chats, chats)
 
 	# We need to cast Array to Array[String] because deserialize expects that type
 	var editor_files: Array[String] = []
@@ -106,10 +114,6 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 	SingletonObject.NotesTab.current_tab = data.get("active_notes_index", 0)
-
-	# will be float if loaded from json, cast it to int
-	var provider_enum_index = int(data.get("active_provider", 0))
-	SingletonObject.Chats.set_provider(SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new())
 
 
 func close_project():
@@ -128,6 +132,7 @@ func _ready():
 	SingletonObject.SaveProjectAs.connect(self.save_project_as)
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
+	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)
 
 
 func _on_fdg_save_as_file_selected(path):
@@ -137,20 +142,29 @@ func _on_fdg_save_as_file_selected(path):
 
 
 func _on_fdg_open_project_file_selected(path):
-	var proj_file = FileAccess.open(path, FileAccess.READ)
+	open_project_given_path(path)
 
+
+func _on_open_recent_project_selected(project_name: String):
+	var project_path = SingletonObject.get_project_path(project_name)
+	open_project_given_path(project_path)
+
+
+func open_project_given_path(project_path: String):
+	var proj_file = FileAccess.open(project_path, FileAccess.READ)
+	
 	if proj_file == null:
-		push_error("Couldn't parse the project file at %s. Error code: %s" % [path, FileAccess.get_open_error()])
+		push_error("Couldn't parse the project file at %s. Error code: %s" % [project_path, FileAccess.get_open_error()])
 		return
-
+	
 	var json = JSON.parse_string(proj_file.get_as_text())
-
+	
 	if json == null:
-		push_error("Couldn't parse the project file at %s" % path)
+		push_error("Couldn't parse the project file at %s" % project_path)
 		return
-
+	
 	deserialize_project(json)
-
+	
 	# Since we just opened the project, the save state is true
 	# Why deferred?
 	# If not some of the deserialized object alter the state after this function ends
@@ -158,8 +172,9 @@ func _on_fdg_open_project_file_selected(path):
 	# to the hierarchy untill the idle time, when they call set_state(false).
 	# So we just delay this call to that idle time also.
 	SingletonObject.call_deferred("save_state", true)
-
-	self.save_path = path
+	
+	self.save_path = project_path
+# end of open_project_given_path function
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:

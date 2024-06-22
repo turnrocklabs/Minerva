@@ -1,13 +1,13 @@
 class_name ChatPane
 extends TabContainer
 
+var icActive = preload("res://assets/icons/Microphone_active.png")
+
 var provider: BaseProvider:
 	set(value):
 		provider = value
 		if provider:
 			update_token_estimation() # Update token estimation if provider changes
-var icActive = preload("res://assets/icons/Microphone_active.png")
-var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 
 ## add new chat 
 func _on_new_chat():
@@ -78,6 +78,12 @@ func _on_btn_inspect_pressed():
 	%InspectorPopup.borderless = false
 	%InspectorPopup.size = target_size
 	%InspectorPopup.popup_centered()
+
+
+# this will just call `_on_chat_pressed` since it will regenerate response for last user message
+# if there's no model response
+func regenerate_response():
+	_on_chat_pressed()
 
 
 func _on_chat_pressed():
@@ -157,6 +163,8 @@ func _on_chat_pressed():
 	## Inform the user history item that the response has arrived
 	user_history_item.response_arrived.emit(chi)
 
+	SingletonObject.ChatList[current_tab].VBox.scroll_to_bottom()
+
 	model_msg_node.loading = false
 
 
@@ -212,8 +220,12 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 	else:
 		push_warning("Trying to delete chat history item %s with no rendered node attached to it" % item)
 		return
-
-	if not auto_merge: return
+	
+	# if `auto_merge` is true, keep the item until we find previous and next history items
+	# and delete it at the end
+	if not auto_merge:
+		history.HistoryItemList.erase(item)
+		return
 
 	if not history:
 		for h in SingletonObject.ChatList:
@@ -227,14 +239,21 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 
 	var item_index = history.HistoryItemList.find(item)
 
-	for citem: ChatHistoryItem in history.HistoryItemList.slice(item_index+1):
-		if citem.rendered_node:
-			citem.rendered_node.queue_free()
-			history.HistoryItemList.erase(citem)
-			break
+	var previous: ChatHistoryItem
+	var next: ChatHistoryItem
+
+	if item_index > 0:
+		previous = history.HistoryItemList[item_index-1]
+
+	if item_index < history.HistoryItemList.size()-1:
+		next = history.HistoryItemList[item_index+1]
+
+	if previous and next and previous.Role == next.Role:
+		previous.merge(next)
+		remove_chat_history_item(next, history, false)
+		previous.rendered_node.history_item = previous # force rerender
 
 	history.HistoryItemList.erase(item)
-
 
 
 func render_history(chat_history: ChatHistory):
@@ -270,7 +289,7 @@ func _ready():
 		provider = %AISettings.get_selected_provider().new()
 		set_provider(provider)
 	
-	SingletonObject.initialize_chats(provider, self)
+	SingletonObject.initialize_chats(self)
 
 ## Changes the provider that this chat panes uses to generate responses
 func set_provider(new_provider: BaseProvider):
@@ -314,10 +333,11 @@ func _on_btn_test_pressed():
 func clear_all_chats():
 	for child in get_children():
 		remove_child(child)
-	add_child(SingletonObject.Provider)
+	add_child(SingletonObject.Chats.provider)
 
 func update_token_estimation():
-	%EstimatedTokensLabel.text = str(provider.estimate_tokens(%txtMainUserInput.text))
+	var token_count = provider.estimate_tokens(%txtMainUserInput.text)
+	%EstimatedTokensLabel.text = "%s (%s$)" % [token_count, provider.token_cost * token_count]
 
 
 # region Edit provider Title
@@ -363,14 +383,53 @@ func _on_btn_chat_settings_pressed():
 ## When user types in the chat box, estimate tokens count based on selected provider
 func _on_txt_main_user_input_text_changed():
 	update_token_estimation()
+
+func _on_txt_main_user_input_text_set():
+	update_token_estimation()
+
 func _on_btn_microphone_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
 	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %btnMicrophone
+	%btnMicrophone.icon = icActive
 	
-	if SingletonObject.AtT.State == "Active":
-		%btnMicrophone.icon = icActive
-	else:
-		%btnMicrophone.icon = icStatic
-		
+# region Auto Scroll
 
+# code for auto scroll on message content selection
+
+# determines how much to scroll the chat container scroll container
+# 0 being no scroll
+# this being a float insted of bool allows for faster
+# scroll further the mouse is outside the control
+var _scroll_factor:= 0.0
+
+
+# will check if theres open chat tab and apply the scroll factor to selected tab
+func _process(delta: float):
+	if not SingletonObject.ChatList.is_empty():
+		SingletonObject.ChatList[current_tab].VBox.get_parent().scroll_vertical += _scroll_factor*3*delta
+
+func _input(event):
+	if not event is InputEventMouseMotion: return
+
+	# Check if is *probably* being currently selected
+	# by checking if mouse is currently pressed
+	# and that mouse is outside of the chat tab control
+
+	if (
+		Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and
+		not get_rect().has_point(get_local_mouse_position())
+	):
+		# mouse is outside of chat tab control
+		# we check if it's under
+		if get_local_mouse_position().y > get_rect().size.y:
+			# scroll factor will be positive number thats difference in
+			# mouse position and bottom of the chat tab
+			_scroll_factor = get_local_mouse_position().y - get_rect().size.y
+		# or above it
+		else:
+			_scroll_factor = get_local_mouse_position().y
+
+	else:
+		_scroll_factor = 0
 

@@ -19,6 +19,9 @@ var model_name:= "Unknown"
 ## Model short name to be displayed in the chat message bubble
 var short_name = "NA"
 
+## Cost of one token in $
+var token_cost: float = 0
+
 var active_request: HTTPRequest
 # var active_bot: BotResponse
 
