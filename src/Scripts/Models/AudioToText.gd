@@ -71,7 +71,6 @@ func _StartConverting():
 			print("Failed to open audio file: ", file_path)
 	else:
 		effect.set_recording_active(true)
-		State = "Active"
 
 func _on_request_completed(_result, response_code, _headers, body):
 	if response_code == 200:
