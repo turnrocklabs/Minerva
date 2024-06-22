@@ -58,3 +58,23 @@ func _on_btn_voice_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoice
 	%btnVoice.icon = icActive
+	
+
+var notes_enabled = true
+func _on_disable_notes_button_pressed() -> void:
+	if !notes_enabled:
+		%DisableNotesButton.text = "Disable All"
+		SingletonObject.toggle_all_notes(notes_enabled)
+	if notes_enabled:
+		%DisableNotesButton.text = "Enable All"
+		SingletonObject.toggle_all_notes(notes_enabled)
+	
+	notes_enabled = !notes_enabled
+
+
+
+
+
+
+func _on_disable_notes_button_toggled(toggled_on: bool) -> void:
+	pass # Replace with function body.

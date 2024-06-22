@@ -4,13 +4,13 @@
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
 [ext_resource type="Script" path="res://scripts/Chat.gd" id="1_v60s0"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="2_bjp7m"]
-[ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
-[ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
-[ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
+[ext_resource type="Texture2D" uid="uid://8qaewgqcvy18" path="res://assets/generated/gears_icon_24-removebg-preview.png" id="5_igkcl"]
+[ext_resource type="Texture2D" uid="uid://dfai1lvbg10ka" path="res://assets/generated/search_icon_24_no_bg.png" id="6_5wjht"]
 [ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
+[ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
 
 [node name="Chats" type="Control"]
-custom_minimum_size = Vector2(480, 0)
+custom_minimum_size = Vector2(540, 0)
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -133,17 +133,17 @@ theme_override_constants/separation = 16
 [node name="btnChatSettings" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "AI Settings"
-icon = ExtResource("2_ckjb8")
+icon = ExtResource("5_igkcl")
 
 [node name="btnInspect" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Inspect Turn"
-icon = ExtResource("3_7u8vt")
+icon = ExtResource("6_5wjht")
 
 [node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Send Message"
-icon = ExtResource("2_pt51a")
+icon = ExtResource("7_51nod")
 
 [node name="btnMicrophone" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
