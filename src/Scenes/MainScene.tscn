@@ -53,8 +53,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 234.0
-offset_bottom = 96.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -115,6 +115,14 @@ size_flags_horizontal = 4
 size_flags_vertical = 4
 text = "Create"
 
+[node name="btnVoiceForNoteTab" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread"]
+unique_name_in_owner = true
+layout_mode = 2
+offset_left = 58.0
+offset_right = 84.0
+offset_bottom = 26.0
+icon = ExtResource("13_bg3bn")
+
 [node name="VBoxRoot" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
 layout_mode = 1
@@ -131,7 +139,7 @@ theme_override_constants/separation = 16
 [node name="menuMain" type="MenuBar" parent="VBoxRoot"]
 layout_mode = 2
 size_flags_vertical = 0
-theme_override_constants/h_separation = 5
+theme_override_constants/h_separation = 6
 theme_override_font_sizes/font_size = 18
 prefer_global_menu = false
 script = ExtResource("1_oipdw")
@@ -222,6 +230,7 @@ theme_override_constants/separation = 16
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 16
+split_offset = -100
 
 [node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
@@ -340,6 +349,12 @@ size_flags_stretch_ratio = 1.5
 placeholder_text = "Note head
 "
 
+[node name="btnVoiceForHeader" type="Button" parent="CreatNewNote/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+icon = ExtResource("13_bg3bn")
+
 [node name="NoteDescription" type="TextEdit" parent="CreatNewNote/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -352,14 +367,15 @@ placeholder_text = "Note Description"
 layout_mode = 2
 alignment = 2
 
-[node name="AddNote" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-text = "Add note"
-
 [node name="btnVoice" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("13_bg3bn")
+
+[node name="AddNote" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "Add note"
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
@@ -370,6 +386,7 @@ autoplay = true
 bus = &"Rec"
 
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
+[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_about_to_popup"]
@@ -383,5 +400,6 @@ bus = &"Rec"
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
 [connection signal="tab_clicked" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
 [connection signal="tab_hovered" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
-[connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/AddNote" to="." method="_on_add_note_pressed"]
+[connection signal="pressed" from="CreatNewNote/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
 [connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
+[connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/AddNote" to="." method="_on_add_note_pressed"]
