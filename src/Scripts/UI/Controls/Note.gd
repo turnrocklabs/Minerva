@@ -6,6 +6,7 @@ signal note_deleted()
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
 @onready var description_node: RichTextLabel = %Description
+@onready var drag_texture_rect: TextureRect = $PanelContainer/v/DragTextureRect
 
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
@@ -24,6 +25,8 @@ var memory_item: MemoryItem:
 
 
 func _ready():
+	SingletonObject.theme_changed.connect(change_modulate_for_texture)
+	change_modulate_for_texture()
 	var new_size: Vector2 = size * 0.15
 	set_size(new_size)
 	label_node.text_changed.connect(
@@ -31,6 +34,12 @@ func _ready():
 			if memory_item: memory_item.Title = text
 	)
 
+func change_modulate_for_texture():
+	var theme_enum = SingletonObject.get_theme()
+	if theme_enum == SingletonObject.theme.LIGHT_MODE:
+		drag_texture_rect.modulate = Color("282828")
+	if theme_enum == SingletonObject.theme.DARK_MODE:
+		drag_texture_rect.modulate = Color("f0f0f0")
 
 func _to_string():
 	return "Note %s" % memory_item.Title
@@ -44,6 +53,8 @@ func _process(_delta):
 	if not get_global_rect().has_point(get_global_mouse_position()):
 		_upper_separator.visible = false
 		_lower_separator.visible = false
+	
+	
 
 func _notification(notification_type):
 	match notification_type:

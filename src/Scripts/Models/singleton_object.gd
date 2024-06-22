@@ -25,10 +25,11 @@ func save_recent_project(path: String):
 	
 	if recent_projects_array:
 		if recent_projects_array.size() > 5:
-			recent_projects_array.remove_at(4)
+			recent_projects_array.remove_at(0)
 			config_file.erase_section("OpenRecent")
-			for project in recent_projects_array:
-				save_to_config_file("OpenRecent", project[1], project[0])
+			for project_name_saved in recent_projects_array:
+				var saved_path = get_project_path(project_name_saved)
+				save_to_config_file("OpenRecent", project_name_saved, saved_path)
 	save_to_config_file("OpenRecent",project_name, path)
 	
 
@@ -36,6 +37,7 @@ func save_recent_project(path: String):
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
 	if has_recent_projects():
+		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
 	return ["no recent projects"]
 
@@ -59,16 +61,16 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 
 signal AttachNoteFile(file_path:String)
 
-var notes_enabled = false
-func disable_notes_in_tab():
+
+func toggle_all_notes(notes_enabled: bool):
 	if notes_enabled:
 		NotesTab.Disable_All()
 	if !notes_enabled:
 		NotesTab.enable_all()
-	
-	notes_enabled = !notes_enabled
-	
-	
+
+#TODO implement function for disabling all notes in single tab
+func toggle_single_tab(_enable: bool):
+	pass
 
 #endregion Notes
 
@@ -233,6 +235,11 @@ func all_project_features_open() -> bool:
 
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
+signal theme_changed(theme_enum)
+
+func get_theme() -> int:
+	return config_file.get_value("theme", "theme_enum")
+
 
 func set_theme(themeID: int) -> void:
 	match themeID:
@@ -244,6 +251,7 @@ func set_theme(themeID: int) -> void:
 			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
 			root_control.theme = dark_theme
 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
+	theme_changed.emit(themeID)
 
 
 #endregion Theme change
