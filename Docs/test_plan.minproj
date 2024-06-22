@@ -1,0 +1,140 @@
+{
+	"ChatList": [],
+	"Editors": [],
+	"ThreadList": [
+		{
+			"MemoryItemList": [
+				{
+					"Content": "- Reorder Chat tabs and add a chat\n- Reorder editor tabs and edit a document\n-- text\n-- graphics\n- Reorder Notes tabs and add a note",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 0,
+					"OwningThread": "e48a9669156bd9f27f4d25da7c1fd6f9048ee6dc24feaa374e38cdfc96ba97aa",
+					"Pinned": false,
+					"Title": "Tabs",
+					"Visible": true
+				}
+			],
+			"ThreadId": "e48a9669156bd9f27f4d25da7c1fd6f9048ee6dc24feaa374e38cdfc96ba97aa",
+			"ThreadName": "tests"
+		},
+		{
+			"MemoryItemList": [
+				{
+					"Content": "Scenario 1. Enter a new note in a blank tab. \nScenario 2. Enter a new note in a new blank tab. \nScenario 3. Enter a new note in a tab with other notes. \nScenario 4. Enter a new note in a second tab with other notes.",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 0,
+					"OwningThread": "9babd8006044d0ddd2d3c7be7eb4faa6b5318ba71857b7b0c786c98cb4b42a10",
+					"Pinned": false,
+					"Title": "Typed note",
+					"Visible": true
+				},
+				{
+					"Content": "Scenario 1. Enter a new voice note. \nScenario 2. Enter a new voice note, but click add note before the task has finished processing microphone input. \n",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 1,
+					"OwningThread": "9babd8006044d0ddd2d3c7be7eb4faa6b5318ba71857b7b0c786c98cb4b42a10",
+					"Pinned": false,
+					"Title": "voice notes",
+					"Visible": true
+				}
+			],
+			"ThreadId": "9babd8006044d0ddd2d3c7be7eb4faa6b5318ba71857b7b0c786c98cb4b42a10",
+			"ThreadName": "Notes"
+		},
+		{
+			"MemoryItemList": [
+				{
+					"Content": "Create a long text response from the AI and begin doing the following drags. \nFirst, drag a small section from the top to the bottom, the whole thing. \nSecond, drag a single paragraph from the top over to the editor. \nThird, grab a single paragraph from the middle over to the editor. \nLast, drag a single paragraph from the bottom, dragging up, and then taking that over to the editor.",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 0,
+					"OwningThread": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
+					"Pinned": false,
+					"Title": "Drag Text from chat to editor",
+					"Visible": true
+				},
+				{
+					"Content": "- Open a small PNG file.\n- Open a large jpg image file.",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 1,
+					"OwningThread": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
+					"Pinned": false,
+					"Title": "Open an image file",
+					"Visible": true
+				},
+				{
+					"Content": "- Open a new text file and write text into it, then save it. \n- Open a new image file, draw something into it, and save it.",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 2,
+					"OwningThread": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
+					"Pinned": false,
+					"Title": "New Files",
+					"Visible": true
+				},
+				{
+					"Content": "- Edit a text file and save it.\n- Edit an image file and save it.",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 3,
+					"OwningThread": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
+					"Pinned": false,
+					"Title": "Edit and save",
+					"Visible": true
+				}
+			],
+			"ThreadId": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
+			"ThreadName": "Editor"
+		},
+		{
+			"MemoryItemList": [
+				{
+					"Content": "Scenario one, general hello there type of chats. \nScenario two, chats with notes. Use the notes and ask a question from data within the notes. \nScenario three, chats with code generation. \nScenario four, chats with long code generation.",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 0,
+					"OwningThread": "48b25cf2b360b31922f14a0c3876bb8ddc9934eb349301cb98bb223c60e6773e",
+					"Pinned": false,
+					"Title": "typed chats",
+					"Visible": true
+				}
+			],
+			"ThreadId": "48b25cf2b360b31922f14a0c3876bb8ddc9934eb349301cb98bb223c60e6773e",
+			"ThreadName": "Chats"
+		},
+		{
+			"MemoryItemList": [
+				{
+					"Content": "Start with one of the OpenAI models like GPT-4.0, then change to a different OpenAI model like GPT-3.5. \nAfter that, start with an OpenAI model like GPT-4.0, then change to the Google or Anthropic provider models. \nAfter that, start with a different provider, such as Google or Anthropic, and then change over to OpenAI.",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 0,
+					"OwningThread": "4693dee494551f93c19f93974e835e15969e057b20d0a6dd000401883c5f7f54",
+					"Pinned": false,
+					"Title": "change model",
+					"Visible": true
+				},
+				{
+					"Content": "- Add API keys\n- Change User's Name",
+					"ContentType": "",
+					"Enabled": false,
+					"Order": 1,
+					"OwningThread": "4693dee494551f93c19f93974e835e15969e057b20d0a6dd000401883c5f7f54",
+					"Pinned": false,
+					"Title": "Preferences",
+					"Visible": true
+				}
+			],
+			"ThreadId": "4693dee494551f93c19f93974e835e15969e057b20d0a6dd000401883c5f7f54",
+			"ThreadName": "Providers"
+		}
+	],
+	"active_chatindex": 0,
+	"active_notes_index": 0,
+	"active_provider": 0,
+	"last_tab_index": 0
+}
