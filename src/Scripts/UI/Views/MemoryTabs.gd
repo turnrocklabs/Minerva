@@ -96,10 +96,8 @@ func create_new_notes_tab(tab_name: String = "notes 1"):
 	thread.ThreadName = tab_name
 	var thread_memories: Array[MemoryItem] = []
 	thread.MemoryItemList = thread_memories
-	get_tab_bar().set
+
 	SingletonObject.ThreadList.append(thread)
-	var checkbutton = CheckButton.new()
-	SingletonObject.ThreadList.append(checkbutton)
 	render_thread(thread)
 
 
