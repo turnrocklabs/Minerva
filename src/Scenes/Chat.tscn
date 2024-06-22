@@ -1,12 +1,13 @@
-[gd_scene load_steps=8 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=9 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
+[ext_resource type="Script" path="res://scripts/Chat.gd" id="1_v60s0"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="2_bjp7m"]
 [ext_resource type="Texture2D" uid="uid://b5qxpcrqre5wu" path="res://assets/generated/gears_icon_24.webp" id="2_ckjb8"]
 [ext_resource type="Texture2D" uid="uid://b8cwbadreb21v" path="res://assets/generated/send_icon_24.webp" id="2_pt51a"]
 [ext_resource type="Texture2D" uid="uid://bf8t60b36fba0" path="res://assets/generated/search_icon_24.webp" id="3_7u8vt"]
-[ext_resource type="Texture2D" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
+[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
 
 [node name="Chats" type="Control"]
 custom_minimum_size = Vector2(480, 0)
@@ -18,6 +19,7 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+script = ExtResource("1_v60s0")
 
 [node name="InspectorPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
@@ -30,8 +32,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 516.0
+offset_bottom = 516.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -114,6 +116,7 @@ script = ExtResource("1_2uf7u")
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer3/VSplitContainer"]
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/separation = 16
 
 [node name="txtMainUserInput" type="TextEdit" parent="VBoxContainer3/VSplitContainer/VBoxContainer"]
 unique_name_in_owner = true
@@ -157,10 +160,11 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 16
 
-[node name="Label" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
+[node name="PromptCountLabel" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
-text = "Estimated Prompt Count:"
+text = "Estimated Prompt Count: "
 
 [node name="EstimatedTokensLabel" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
