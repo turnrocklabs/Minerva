@@ -66,7 +66,7 @@ func Serialize() -> Dictionary:
 
 
 static func Deserialize(data: Dictionary) -> ChatHistory:
-	var ch = ChatHistory.new(SingletonObject.Provider, data.get("HistoryId"))
+	var ch = ChatHistory.new(SingletonObject.Chats.provider, data.get("HistoryId"))
 
 	ch.HistoryName = data.get("HistoryName")
 
