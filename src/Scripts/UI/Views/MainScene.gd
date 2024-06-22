@@ -31,7 +31,7 @@ func _gui_input(event):
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
 	#set up windows size
-	var target_size = %VBoxRoot.size - Vector2(200, 200)
+	var target_size = %VBoxRoot.size - Vector2(1500, 200)
 	%CreatNewNote.borderless = false
 	%CreatNewNote.size = target_size
 	%CreatNewNote.popup_centered()
@@ -63,3 +63,23 @@ func _on_btn_voice_pressed():
 		%btnVoice.icon = icActive
 	else:
 		%btnVoice.icon = icStatic
+
+
+func _on_btn_voice_for_header_pressed():
+	SingletonObject.AtT.FieldForFilling = %NoteHead
+	SingletonObject.AtT._StartConverting()
+	
+	if SingletonObject.AtT.State == "Active":
+		%btnVoiceForHeader.icon = icActive
+	else:
+		%btnVoiceForHeader.icon = icStatic
+
+
+func _on_btn_voice_for_note_tab_pressed():
+	SingletonObject.AtT.FieldForFilling = %txtNewTabName
+	SingletonObject.AtT._StartConverting()
+	
+	if SingletonObject.AtT.State == "Active":
+		%btnVoiceForNoteTab.icon = icActive
+	else:
+		%btnVoiceForNoteTab.icon = icStatic
