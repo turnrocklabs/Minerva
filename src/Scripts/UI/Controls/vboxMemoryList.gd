@@ -4,7 +4,7 @@ var Memories: Array[MemoryItem] = []
 var MainTabContainer
 var MainThreadId
 
-## initilize the box
+## initialize the box
 func _init(_parent, _threadId, _mem = null):
 	self.MainTabContainer = _parent
 	self.MainThreadId = _threadId
@@ -16,8 +16,7 @@ func _init(_parent, _threadId, _mem = null):
 		render_items()
 	pass
 
-
-## goes trough note nodes and updates the memory item order accordingly
+## goes through note nodes and updates the memory item order accordingly
 func _update_memory_item_order():
 	var i = 0
 	for note in get_children():
@@ -32,12 +31,18 @@ func _notification(notification_type):
 			if is_inside_tree(): _update_memory_item_order()
 		NOTIFICATION_ENTER_TREE:
 			_update_memory_item_order()
-		
 		# When the drag is over, maybe the order of notes changed, so rerender them
 		NOTIFICATION_DRAG_END:
-			SingletonObject.NotesTab.render_threads()
+			_update_memory_item_order()
+			render_items()  # Re-render items after drag ends
 
 func render_items():
+	# Clear existing children
+	for child in get_children():
+		if child is Note:
+			child.queue_free()
+			
+	# Re-add memory items
 	for item in Memories:
 		var note_control: Note = load("res://Scenes/Note.tscn").instantiate()
 		
@@ -46,9 +51,8 @@ func render_items():
 
 		note_control.memory_item = item
 
-		# when the note control is deleted, delete the memory item, so it doesnt get rerendered next time
+		# When the note control is deleted, delete the memory item, so it doesn't get re-rendered next time
 		note_control.note_deleted.connect(self.MainTabContainer.delete_note.bind(item))
-
 
 func _memory_thread_find(thread_id: String) -> MemoryThread:
 	return SingletonObject.ThreadList.filter(
@@ -56,21 +60,17 @@ func _memory_thread_find(thread_id: String) -> MemoryThread:
 			return t.ThreadId == thread_id
 	).pop_front()
 
-# we can also drop the Note in a vBoxMemoryList
+# We can also drop the Note in a VBoxMemoryList
 func _can_drop_data(_at_position: Vector2, data):
-	if not data is Note: return
+	if not data is Note: return false
 	return true
-
 
 func _drop_data(_at_position: Vector2, data):
 	if not data is Note: return
 
 	var target_thread = _memory_thread_find(MainThreadId)
-
 	var dragged_note_thread = _memory_thread_find(data.memory_item.OwningThread)
 
 	dragged_note_thread.MemoryItemList.erase(data.memory_item)
-
 	target_thread.MemoryItemList.insert(0, data.memory_item)
-
 	data.memory_item.OwningThread = target_thread.ThreadId
