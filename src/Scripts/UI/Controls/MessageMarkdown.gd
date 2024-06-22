@@ -133,7 +133,7 @@ func _on_continue_button_pressed():
 
 
 func _on_clip_button_pressed():
-	DisplayServer.clipboard_set(label.text)
+	DisplayServer.clipboard_set(label.markdown_text)
 
 
 func _on_note_button_pressed():
@@ -168,77 +168,46 @@ class TextSegment:
 		else:
 			return content
 
-## Based on the code block content, this function will
-## try to find the syntax name near the '```' in the markdown text
-func _extract_code_block_syntax(code_text: String) -> String:
-	
-	label.markdown_text.rfind("```")
-
-	# Try to find where in markdown text is our parsed bbcode
-	# so we can get the syntax
-	var replace = {
-		"[code]":  "",
-		"[/code]":  "",
-		"[lb]":  "[",
-		"[rb]":  "]",
-	}
-
-	var to_find = code_text
-	for key in replace:
-		to_find = to_find.replace(key, replace[key])
-
-	var idx = label.markdown_text.find(to_find)
-	
-	var syntax_idx = label.markdown_text.substr(0, idx).rfind("```")
-
-	var syntax = label.markdown_text.substr(syntax_idx).split("\n")[0]
-	syntax = syntax.replace("`", "")
-
-	# if theres no syntax return space char, not empty string
-	# empty string would meand it's a normal text segment
-	return syntax if syntax else " "
-
 
 var _regex = RegEx.new()
 func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
-	_regex.compile(r"(\[code\])((.|\n)*?)(\[\/code\])")
+	_regex.compile(r"(\[code(?: syntax=(?P<syntax>.*?))?\])(?P<content>(.|\n)*?)(\[\/code\])")
 
 	var found: Array[TextSegment] = []
 
 	var keep_searching = true
 	var offset = 0
 
-	var code_text: String
+	var match_: RegExMatch
 
+	# keep searching until we find a code block that's not one line
 	while keep_searching:
-		var match_: RegExMatch = _regex.search(text.content, offset)
+		match_ = _regex.search(text.content, offset)
 
 		if not match_: return [text]
 
-		# content between [code][/code]
-		code_text = match_.get_string()
-
 		# if it's one line code we'll just skip it by setting the offset and searching again
-		if code_text.count("\n") == 0:
+		if match_.get_string().count("\n") == 0:
 			offset = match_.get_end()
 			continue
 		else:
 			keep_searching = false
 
-
-	# index where code text starts, includes [code]
-	var code_text_start = text.content.find(code_text)
-
 	# replace this text segment with extracted text segments from it
 	# if theres no code blocks in it, it will just return array with this same element
-	var new_ts1 = _extract_text_segments(TextSegment.new(text.content.substr(0, code_text_start)))
+	var new_ts1 = _extract_text_segments(TextSegment.new(text.content.substr(0, match_.get_start())))
 	found.append_array(new_ts1)
 
+	# if theres no syntax, just set it to anything but emty string
+	# since empty string would mean it's not a code block
+	var syntax = match_.get_string("syntax")
+	if not syntax: syntax = "Plain Text"
+
 	# place code block between them
-	found.append(TextSegment.new(text.content.substr(code_text_start, code_text.length()), _extract_code_block_syntax(code_text)))
+	found.append(TextSegment.new(match_.get_string("content"), syntax))
 
 	# same thing
-	var new_ts2 = _extract_text_segments(TextSegment.new(text.content.substr(code_text_start + code_text.length())))
+	var new_ts2 = _extract_text_segments(TextSegment.new(text.content.substr(match_.get_end())))
 	found.append_array(new_ts2)
 		
 

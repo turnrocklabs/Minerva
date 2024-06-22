@@ -268,23 +268,23 @@ func _ready():
 	render_threads()
 
 
-func _notification(what):
-	match what:
-		NOTIFICATION_DRAG_BEGIN: _drag_active = true
-		NOTIFICATION_DRAG_END: _drag_active = false
+# func _notification(what):
+# 	match what:
+# 		NOTIFICATION_DRAG_BEGIN: _drag_active = true
+# 		NOTIFICATION_DRAG_END: _drag_active = false
 
 
-var clicked:= false
-func _on_tab_clicked(tab: int):
+# var clicked:= false
+# func _on_tab_clicked(tab: int):
 	
-	if clicked:
-		var tab_title = get_tab_bar().get_tab_title(tab)
-		open_threads_popup(tab_title, tab)
+# 	if clicked:
+# 		var tab_title = get_tab_bar().get_tab_title(tab)
+# 		open_threads_popup(tab_title, tab)
 
-	clicked = true
-	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
+# 	clicked = true
+# 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
 
 
-func _on_tab_hovered(tab: int):
-	if _drag_active:
-		current_tab = tab
+# func _on_tab_hovered(tab: int):
+# 	if _drag_active:
+# 		current_tab = tab
