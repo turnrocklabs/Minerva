@@ -188,7 +188,9 @@ func _convert_markdown(source_text = "") -> String:
 					_debug("... closing backtick block")
 					continue
 			else:
-				_converted_text += "[code]"
+				# append the syntax to the code tag
+				var syntax = line.replace("```", "").strip_edges()
+				_converted_text += "[code syntax=%s]" % syntax
 				within_backtick_block = true
 				#current_code_block_char_count = line.strip_edges().length()
 				current_code_block_char_count = _get_codeblock_char_count(line, "`")
@@ -204,7 +206,9 @@ func _convert_markdown(source_text = "") -> String:
 					_debug("... closing tilde block")
 					continue
 			else:
-				_converted_text += "[code]"
+				# append the syntax to the code tag
+				var syntax = line.replace("```", "").strip_edges()
+				_converted_text += "[code syntax=%s]" % syntax
 				within_tilde_block = true
 				current_code_block_char_count = line.strip_edges().length()
 				_debug("... opening tilde block")

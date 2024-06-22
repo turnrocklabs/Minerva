@@ -4,12 +4,6 @@ extends VBoxContainer
 
 signal memorize_item(text_to_memorize:String)
 
-var _dummy_msg_node: Node
-var loading_response := false:
-	set(value):
-		if value: _create_dummy_response()
-		elif is_instance_valid(_dummy_msg_node): _dummy_msg_node.free()
-		loading_response = value
 
 var chat_history: ChatHistory
 var MainTabContainer
@@ -51,11 +45,16 @@ func _messages_list_changed():
 	if last_message.history_item.Role == ChatHistoryItem.ChatRole.USER:
 		last_message.editable = true
 
-func _create_dummy_response():
-	pass
-	# var br = BotResponse.new()
-	# br.FullText = "●︎●︎●︎"
-	# _dummy_msg_node = await add_bot_message(br)
+
+func scroll_to_bottom():
+	var scroll_container = get_parent() as ScrollContainer
+
+	# wait for message to update the scroll container dimensions
+	await scroll_container.get_v_scroll_bar().changed
+
+	# scroll to bottom
+	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().max_value
+
 
 ## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
 func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
@@ -65,8 +64,9 @@ func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
 
 	add_child(msg_node)
 
-	await get_tree().process_frame
-	get_parent().ensure_control_visible(msg_node)
+	scroll_to_bottom()
+
+	# scroll_container.ensure_control_visible(msg_node)
 
 	return msg_node
 

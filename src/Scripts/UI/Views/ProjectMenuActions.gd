@@ -11,7 +11,7 @@ var save_path: String
 # it also blanks out the save file variable to force a save_as
 func _new_project():
 	SingletonObject.initialize_notes()
-	SingletonObject.initialize_chats(SingletonObject.Provider, SingletonObject.Chats)
+	SingletonObject.initialize_chats(SingletonObject.Chats)
 	save_path = ""
 	pass
 
@@ -97,10 +97,14 @@ func deserialize_project(data: Dictionary):
 		threads.append(MemoryThread.Deserialize(thread_data))
 	SingletonObject.initialize_notes(threads)
 
+	# will be float if loaded from json, cast it to int
+	var provider_enum_index = int(data.get("active_provider", 0))
+	SingletonObject.Chats.set_provider(SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new())
+
 	var chats: Array[ChatHistory] = []
 	for chat_data in data.get("ChatList", []):
 		chats.append(ChatHistory.Deserialize(chat_data))
-	SingletonObject.initialize_chats(SingletonObject.Provider, SingletonObject.Chats, chats)
+	SingletonObject.initialize_chats(SingletonObject.Chats, chats)
 
 	# We need to cast Array to Array[String] because deserialize expects that type
 	var editor_files: Array[String] = []
@@ -110,10 +114,6 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 	SingletonObject.NotesTab.current_tab = data.get("active_notes_index", 0)
-
-	# will be float if loaded from json, cast it to int
-	var provider_enum_index = int(data.get("active_provider", 0))
-	SingletonObject.Chats.set_provider(SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new())
 
 
 func close_project():
