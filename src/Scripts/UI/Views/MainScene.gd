@@ -29,7 +29,7 @@ func _gui_input(event):
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
 	#set up windows size
-	var target_size = %VBoxRoot.size - Vector2(200, 200)
+	var target_size = %VBoxRoot.size - Vector2(1500, 200)
 	%CreatNewNote.borderless = false
 	%CreatNewNote.size = target_size
 	%CreatNewNote.popup_centered()
