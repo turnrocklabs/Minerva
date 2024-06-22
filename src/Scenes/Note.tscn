@@ -1,7 +1,7 @@
 [gd_scene load_steps=7 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
-[ext_resource type="Texture2D" uid="uid://bfichs8o3wt8b" path="res://assets/icons/drag.png" id="2_fkdjp"]
+[ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_24px_no_bg.png" id="2_vvcoi"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="4_vm57c"]
 
@@ -42,11 +42,10 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 16
 
 [node name="DragTextureRect" type="TextureRect" parent="PanelContainer/v"]
-modulate = Color(0.00392157, 1, 1, 1)
-custom_minimum_size = Vector2(0, 20)
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 mouse_default_cursor_shape = 6
-texture = ExtResource("2_fkdjp")
+texture = ExtResource("2_vvcoi")
 expand_mode = 2
 stretch_mode = 5
 
@@ -54,7 +53,7 @@ stretch_mode = 5
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="CheckButton" type="CheckButton" parent="PanelContainer/v/h"]
+[node name="CheckButton" type="CheckButton" parent="PanelContainer/v/h" groups=["NoteCheckButton"]]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0

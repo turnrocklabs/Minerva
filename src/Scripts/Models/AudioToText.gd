@@ -5,8 +5,10 @@ var effect
 var recording
 var file_path = "res://VioceAudio.wav"
 
-var State = "Active"
-
+var icActive = preload("res://assets/icons/Microphone_active.png")
+var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
+var btn:Button
+#varibles for changing state
 
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
 
@@ -18,7 +20,7 @@ func _ready():
 	
 func _StartConverting():
 	if effect.is_recording_active():
-		State = "Static"
+		btn.icon = icStatic
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
 		recording.save_to_wav(file_path)
@@ -62,6 +64,7 @@ func _StartConverting():
 				"Content-Type: multipart/form-data; boundary=" + boundary]
 				# Send the request with the concatenated PoolByteArray
 				http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
+				btn.disabled = true
 			else:
 				print("Invalid file format. Header: ", header_str)
 		else:
@@ -70,7 +73,7 @@ func _StartConverting():
 		effect.set_recording_active(true)
 		State = "Active"
 
-func _on_request_completed(result, response_code, headers, body):
+func _on_request_completed(_result, response_code, _headers, body):
 	if response_code == 200:
 		var response_json = JSON.parse_string(body.get_string_from_utf8())
 		# Check if the 'text' key exists in the response
@@ -78,8 +81,9 @@ func _on_request_completed(result, response_code, headers, body):
 			var transcription = response_json["text"]
 			print("Transcription:", transcription)
 			FieldForFilling.text = transcription
+			btn.disabled = false
+			btn.icon = icStatic
 		else:
 			print("Unexpected response format:", response_json)
 	else:
 		print("Error:", response_code, "Response:", body.get_string_from_utf8())
-
