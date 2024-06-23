@@ -173,6 +173,7 @@ text = "- -"
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
+[connection signal="child_order_changed" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_child_order_changed"]
 [connection signal="tab_clicked" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_tab_clicked"]
 [connection signal="text_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_text_changed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChatSettings" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_chat_settings_pressed"]
