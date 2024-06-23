@@ -75,6 +75,7 @@ func _on_btn_create_thread_pressed():
 	
 	%NewThreadPopup.hide()
 
+## add indexxing system here
 func create_new_notes_tab(tab_name: String = "notes 1"):
 	var thread = MemoryThread.new()
 	thread.ThreadName = tab_name
@@ -300,3 +301,7 @@ func _process(delta):
 	if _needs_update:
 		render_threads()
 		_needs_update = false
+
+
+func _on_child_order_changed():
+	pass # Replace with function body.

@@ -7,7 +7,7 @@ var ThreadList: Array[MemoryThread]:
 		ThreadList = value
 
 var NotesTab: MemoryTabs
-
+##reorder array
 func initialize_notes(threads: Array[MemoryThread] = []):
 	ThreadList = threads
 	

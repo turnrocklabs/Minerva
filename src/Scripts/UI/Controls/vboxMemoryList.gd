@@ -33,8 +33,7 @@ func _notification(notification_type):
 			_update_memory_item_order()
 		# When the drag is over, maybe the order of notes changed, so rerender them
 		NOTIFICATION_DRAG_END:
-			_update_memory_item_order()
-			render_items()  # Re-render items after drag ends
+			pass
 
 func render_items():
 	# Clear existing children

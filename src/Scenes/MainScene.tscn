@@ -351,14 +351,14 @@ placeholder_text = "Note Description"
 layout_mode = 2
 alignment = 2
 
-[node name="AddNote" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-text = "Add note"
-
 [node name="btnVoice" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("13_bg3bn")
+
+[node name="AddNote" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Add note"
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
@@ -380,7 +380,8 @@ bus = &"Rec"
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
+[connection signal="child_order_changed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_child_order_changed"]
 [connection signal="tab_clicked" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
 [connection signal="tab_hovered" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
-[connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/AddNote" to="." method="_on_add_note_pressed"]
 [connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
+[connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/AddNote" to="." method="_on_add_note_pressed"]
