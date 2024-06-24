@@ -42,8 +42,6 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 
-	print(prompt)
-	breakpoint
 	# Just take the last prompt
 	var request_body = {
 		"model": model_name,
