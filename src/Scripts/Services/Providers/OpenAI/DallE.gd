@@ -69,9 +69,11 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 #   "created": 1589478378,
 #   "data": [
 #     {
+#       "revised_prompt": "...",
 #       "url": "https://..."
 #     },
 #     {
+#       "revised_prompt": "...",
 #       "url": "https://..."
 #     }
 #   ]
@@ -79,11 +81,12 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
-	
+	print(data)
 	# set the used provider so update model name
 	response.provider = SingletonObject.Chats.provider
 
 	response.image = await _download_image(data["data"][0]["url"])
+	response.image.set_meta("caption", data["data"][0].get("revised_prompt"))
 	
 	return response
 

@@ -4,7 +4,7 @@ extends RefCounted
 enum PartType {TEXT, CODE, JPEG}
 enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
 
-static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Images", "Order", "Type", "ModelName", "ModelShortName"]
+static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Images", "Captions", "Order", "Type", "ModelName", "ModelShortName"]
 
 # This signal is to be emited when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
@@ -123,6 +123,11 @@ func Serialize() -> Dictionary:
 			return path
 	)
 
+	var captions_ = Images.map(
+		func(img: Image):
+			return img.get_meta("caption")
+	)
+
 	var save_dict: Dictionary = {
 		"Role": Role,
 		"InjectedNote": InjectedNote,
@@ -131,7 +136,8 @@ func Serialize() -> Dictionary:
 		"Type": Type,
 		"ModelName": ModelName,
 		"ModelShortName": ModelShortName,
-		"Images": images_
+		"Images": images_,
+		"Captions": captions_,
 	}
 	return save_dict
 
@@ -144,8 +150,13 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	data.merge({
 		"ModelName": "NA",
 		"ModelShortName": "NA",
-		"Images": []
+		"Images": [],
+		"Captions": []
 	})
+	
+	# Make sure "Captions" has same number of elements as "Images"
+	if data["Captions"].size() == data["Images"].size():
+		data["Captions"].resize(data.get("Images").size())
 
 	# endregion
 
@@ -163,7 +174,12 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 				))
 
 				value = img_arr
-				
+			
+			# Make sure `Captions` is after `Images` in `SERIALIZER_FIELDS`
+			# so the images array is set
+			"Captions":
+				for i in range((value as Array).size()):
+					chi.Images[i].set_meta("caption", value[i])
 
 		chi.set(prop, value)
 
