@@ -5,7 +5,7 @@ extends RefCounted
 
 var id: StringName
 var text: String
-var picture: Texture
+var image: Image
 
 ## Setting the error property marks this response as invalid
 var error: String

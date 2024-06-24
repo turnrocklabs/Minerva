@@ -4,7 +4,7 @@ extends RefCounted
 enum PartType {TEXT, CODE, JPEG}
 enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
 
-static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type", "ModelName", "ModelShortName"]
+static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Images", "Order", "Type", "ModelName", "ModelShortName"]
 
 # This signal is to be emited when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
@@ -21,8 +21,8 @@ var InjectedNote: String:
 var Message: String:
 	set(value): SingletonObject.save_state(false); Message = value
 
-var Base64Data: String:
-	set(value): SingletonObject.save_state(false); Base64Data = value
+var Images: Array[Image]:
+	set(value): SingletonObject.save_state(false); Images = value
 
 var Order: int:
 	set(value): SingletonObject.save_state(false); Order = value
@@ -56,9 +56,13 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 	self.Type = _type
 	self.Role = _role
 	self.Message = ""
-	self.Base64Data = ""
 	self.Complete = true
 	self.provider = SingletonObject.Chats.provider
+
+	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
+	rng.randomize() # Uses the current time to seed the random number generator
+	var random_number = rng.randi() # Generates a random integer
+	self.Id = str(random_number).sha256_text()
 
 	response_arrived.connect(_on_response_arrived)
 
@@ -88,18 +92,46 @@ func to_bot_response() -> BotResponse:
 
 	return res
 
+func _save_image(image: Image, path: String) -> int:
+	var dir_err = DirAccess.make_dir_recursive_absolute(path.get_base_dir()) 
+	if dir_err != OK:
+		SingletonObject.ErrorDisplay(
+			"Error saving",
+			"Couldn't create images directory (%s). Error: %s" % [path, error_string(dir_err)]
+		)
+		push_error("Couldn't create images directory (%s). Error: %s" % [path, error_string(dir_err)])
+
+	var err = image.save_webp(path)
+	if err != OK:
+		SingletonObject.ErrorDisplay(
+			"Error saving",
+			"Couldn't save image (%s) of history item (%s) at path (%s). Error: %s" % [image, self, path, error_string(err)]
+		)
+		push_error("Couldn't save image (%s) of history item (%s) at path (%s). Error: %s" % [image, self, path, error_string(err)])
+
+	return err
+
 ## Function:
 # Serialize the item to a string
 func Serialize() -> Dictionary:
+
+	# Save images to user folder
+	var images_ = Images.map(
+		func(img: Image):
+			var path = "user://images/%s.webp" % self.Id
+			_save_image(img, path)
+			return path
+	)
+
 	var save_dict: Dictionary = {
 		"Role": Role,
 		"InjectedNote": InjectedNote,
-		"Message" : Message,
-		"Base64Data" : Base64Data,
-		"Order" : Order,
-		"Type" : Type,
+		"Message": Message,
+		"Order": Order,
+		"Type": Type,
 		"ModelName": ModelName,
 		"ModelShortName": ModelShortName,
+		"Images": images_
 	}
 	return save_dict
 
@@ -115,7 +147,20 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	var chi = ChatHistoryItem.new()
 
 	for prop in SERIALIZER_FIELDS:
-		chi.set(prop, data.get(prop))
+		var value = data.get(prop)
+		
+		match prop:
+			"Images":
+				var img_arr: Array[Image] = []
+				img_arr.assign((value as Array).map(
+					func(path: String):
+						return Image.load_from_file(path)
+				))
+
+				value = img_arr
+				
+
+		chi.set(prop, value)
 
 	return chi
 
