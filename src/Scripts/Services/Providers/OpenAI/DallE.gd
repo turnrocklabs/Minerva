@@ -46,6 +46,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	var request_body = {
 		"model": model_name,
 		"prompt": prompt.back(),
+		"response_format": "b64_json",
 	}
 
 	request_body.merge(additional_params)
@@ -85,33 +86,14 @@ func to_bot_response(data: Variant) -> BotResponse:
 	# set the used provider so update model name
 	response.provider = SingletonObject.Chats.provider
 
-	response.image = await _download_image(data["data"][0]["url"])
+	response.image = Image.new()
+	response.image.load_png_from_buffer(
+		Marshalls.base64_to_raw(data["data"][0]["b64_json"])
+	)
+
 	response.image.set_meta("caption", data["data"][0].get("revised_prompt"))
 	
 	return response
-
-
-func _download_image(url: String = "https://oaidalleapiprodscus.blob.core.windows.net/private/org-vsbxWIIUksxCuAv5S327SWcJ/user-qD2wsOQViEZT0rBMkt2Wm92p/img-bN5JIZhcLbGsa3RaQCMzJUjG.png?st=2024-06-23T14%3A23%3A51Z&se=2024-06-23T16%3A23%3A51Z&sp=r&sv=2023-11-03&sr=b&rscd=inline&rsct=image/png&skoid=6aaadede-4fb3-4698-a8f6-684d7786b067&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2024-06-22T23%3A57%3A06Z&ske=2024-06-23T23%3A57%3A06Z&sks=b&skv=2023-11-03&sig=ir4UmOwtEuFixXH6mMVXHcn/fm4d5wUK21ZOYhJ%2B3Wk%3D") -> Image:
-	
-	var http_request = HTTPRequest.new()
-	add_child(http_request)
-
-	var http_error = http_request.request(url)
-	if http_error != OK:
-		print("An error occurred in the HTTP request.")
-	
-	var request_results: Array = await http_request.request_completed
-
-	var results = RequestResults.from_request_response(request_results, http_request, url)
-
-	var image: = Image.new()
-	var err = image.load_png_from_buffer(results.body)
-	if err != OK:
-		push_error("Error (%s) while downloading image file from %s" % [error_string(err), url])
-		return null
-
-	return image
-
 
 func wrap_memory(list_memories: String) -> String:
 	var output: String = "Given this background information:\n\n"
