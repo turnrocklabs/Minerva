@@ -137,12 +137,17 @@ func Serialize() -> Dictionary:
 
 
 static func Deserialize(data: Dictionary) -> ChatHistoryItem:
-	# Backwards compatibility
-	# In case we don't have model specified just use this as a fallback
+	# region Backwards compatibility
+
+	# 1. In case we don't have model specified just use this as a fallback
+	# 2. Old project files don't have "Images" field
 	data.merge({
 		"ModelName": "NA",
 		"ModelShortName": "NA",
+		"Images": []
 	})
+
+	# endregion
 
 	var chi = ChatHistoryItem.new()
 
