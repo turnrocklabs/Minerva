@@ -14,10 +14,12 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
+@onready var whiteB = %WhiteBoard
 
 enum TYPE {
 	Text,
 	Graphics,
+	WhiteBoard,
 }
 
 var file: String
@@ -40,9 +42,11 @@ static func create(type_: TYPE, file_ = null) -> Editor:
 			editor.get_node("%CodeEdit").visible = true
 		Editor.TYPE.Graphics:
 			editor.get_node("%TextureRect").visible = true
+		Editor.TYPE.WhiteBoard:
+			editor.get_node("%WhiteBoard").visible = true
 
 	return editor
-
+	
 func _ready():
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
 	
@@ -52,6 +56,8 @@ func _ready():
 			TYPE.Graphics: _load_graphics_file(file)
 	
 	_on_file_dialog_file_selected
+	
+	
 
 
 func _load_text_file(filename: String):
@@ -138,13 +144,12 @@ func save_file_to_disc(path: String):
 			
 		TYPE.Graphics:
 			pass
+			
+		TYPE.WhiteBoard:
+			pass
 	
 	_file_saved = true
 	file_saved_in_disc = true
 	
-
-
-
-
 func _on_save_button_pressed():
 	pass # Replace with function body.
