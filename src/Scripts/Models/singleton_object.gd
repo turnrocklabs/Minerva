@@ -27,6 +27,7 @@ var ChatList: Array[ChatHistory]:
 		# save_state(false)
 		ChatList = value
 
+var last_thread_index: int
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
 var Provider: BaseProvider
