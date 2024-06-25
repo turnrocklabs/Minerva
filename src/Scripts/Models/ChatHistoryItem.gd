@@ -92,25 +92,6 @@ func to_bot_response() -> BotResponse:
 
 	return res
 
-func _save_image(image: Image, path: String) -> int:
-	var dir_err = DirAccess.make_dir_recursive_absolute(path.get_base_dir()) 
-	if dir_err != OK:
-		SingletonObject.ErrorDisplay(
-			"Error saving",
-			"Couldn't create images directory (%s). Error: %s" % [path, error_string(dir_err)]
-		)
-		push_error("Couldn't create images directory (%s). Error: %s" % [path, error_string(dir_err)])
-
-	var err = image.save_webp(path)
-	if err != OK:
-		SingletonObject.ErrorDisplay(
-			"Error saving",
-			"Couldn't save image (%s) of history item (%s) at path (%s). Error: %s" % [image, self, path, error_string(err)]
-		)
-		push_error("Couldn't save image (%s) of history item (%s) at path (%s). Error: %s" % [image, self, path, error_string(err)])
-
-	return err
-
 ## Function:
 # Serialize the item to a string
 func Serialize() -> Dictionary:
@@ -118,9 +99,8 @@ func Serialize() -> Dictionary:
 	# Save images to user folder
 	var images_ = Images.map(
 		func(img: Image):
-			var path = "user://images/%s.webp" % self.Id
-			_save_image(img, path)
-			return path
+			var b64_data = Marshalls.raw_to_base64(img.save_png_to_buffer())
+			return b64_data
 	)
 
 	var captions_ = Images.map(
@@ -169,8 +149,10 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 			"Images":
 				var img_arr: Array[Image] = []
 				img_arr.assign((value as Array).map(
-					func(path: String):
-						return Image.load_from_file(path)
+					func(b64_data: String):
+						var img = Image.new()
+						img.load_png_from_buffer(Marshalls.base64_to_raw(b64_data))
+						return img
 				))
 
 				value = img_arr

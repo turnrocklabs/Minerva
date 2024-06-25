@@ -23,7 +23,7 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 		# if the request was successful, parse it to bot response
 		if (response.response_code >= 200 and response.response_code <= 299):
-			bot_response = await to_bot_response(data)
+			bot_response = to_bot_response(data)
 		# otherwise extract the error
 		else:
 			
@@ -60,7 +60,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		["Authorization: Bearer %s" % API_KEY]
 	)
 
-	var item = await _parse_request_results(response)
+	var item = _parse_request_results(response)
 	
 	SingletonObject.chat_completed.emit(item)
 
