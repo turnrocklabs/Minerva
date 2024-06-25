@@ -17,23 +17,23 @@ func _init(_parent, _threadId, _mem = null):
 	pass
 
 ## goes through note nodes and updates the memory item order accordingly
-func _update_memory_item_order():
-	var i = 0
-	for note in get_children():
-		if not note is Note: continue
-		note.memory_item.Order = i
-		i += 1
+#func _update_memory_item_order():
+	#var i = 0
+	#for note in get_children():
+		#if not note is Note: continue
+		#note.memory_item.Order = i
+		#i += 1
 
-func _notification(notification_type):
-	match notification_type:
-		# Change MemoryItem Order when notes order changes
-		NOTIFICATION_CHILD_ORDER_CHANGED:
-			if is_inside_tree(): _update_memory_item_order()
-		NOTIFICATION_ENTER_TREE:
-			_update_memory_item_order()
-		# When the drag is over, maybe the order of notes changed, so rerender them
-		NOTIFICATION_DRAG_END:
-			pass
+#func _notification(notification_type):
+	#match notification_type:
+		## Change MemoryItem Order when notes order changes
+		#NOTIFICATION_CHILD_ORDER_CHANGED:
+			#if is_inside_tree(): _update_memory_item_order()
+		#NOTIFICATION_ENTER_TREE:
+			#_update_memory_item_order()
+		## When the drag is over, maybe the order of notes changed, so rerender them
+		#NOTIFICATION_DRAG_END:
+			#pass
 
 func render_items():
 	# Clear existing children
