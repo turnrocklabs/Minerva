@@ -1,4 +1,4 @@
-[gd_scene load_steps=21 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=24 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -17,6 +17,9 @@
 [ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
 [ext_resource type="Texture2D" uid="uid://b53y87xjob8ri" path="res://assets/generated/paperclip_icon_24-removebg-preview.png" id="13_sb4aw"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
+[ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="17_ijkb2"]
+[ext_resource type="Texture2D" uid="uid://drca67spd2k7f" path="res://assets/conquest_of_revachol_flat_contrast.jpg" id="18_fhje1"]
+[ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -48,6 +51,7 @@ grow_vertical = 2
 
 [node name="ErrorDisplayPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
+initial_position = 2
 size = Vector2i(238, 100)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ErrorDisplayPopup"]
@@ -75,16 +79,19 @@ size_flags_vertical = 6
 
 [node name="PreferencesPopup" parent="." instance=ExtResource("3_3hcc1")]
 unique_name_in_owner = true
+initial_position = 2
 size = Vector2i(522, 320)
 visible = false
 
 [node name="NewThreadPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
+initial_position = 2
+size = Vector2i(117, 100)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 96.0
+offset_right = 113.0
 offset_bottom = 96.0
 size_flags_horizontal = 3
 
@@ -161,7 +168,7 @@ access = 2
 unique_name_in_owner = true
 title = "Project"
 size = Vector2i(150, 166)
-item_count = 5
+item_count = 4
 item_0/text = "New"
 item_0/id = 0
 item_1/text = "Open"
@@ -172,9 +179,6 @@ item_2/disabled = true
 item_3/text = "Save As..."
 item_3/id = 3
 item_3/disabled = true
-item_4/text = "Close project"
-item_4/id = 4
-item_4/disabled = true
 
 [node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
 unique_name_in_owner = true
@@ -344,56 +348,178 @@ script = ExtResource("1_gunt8")
 
 [node name="CreatNewNote" type="PopupPanel" parent="."]
 unique_name_in_owner = true
-size = Vector2i(136, 100)
+title = "Create New Note"
+initial_position = 2
+size = Vector2i(400, 750)
+visible = true
+min_size = Vector2i(144, 0)
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CreatNewNote"]
+[node name="Panel" type="Panel" parent="CreatNewNote"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 132.0
-offset_bottom = 139.0
-size_flags_horizontal = 3
+offset_right = -4.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
 
-[node name="Label" type="Label" parent="CreatNewNote/VBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="CreatNewNote/Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 2.0
+offset_right = -3.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 16
+
+[node name="CreateNewNoteLabel" type="Label" parent="CreatNewNote/Panel/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Create new note"
 
-[node name="NoteHead" type="TextEdit" parent="CreatNewNote/VBoxContainer"]
+[node name="AddNotePopUp" type="Button" parent="CreatNewNote/Panel/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-size_flags_stretch_ratio = 1.5
-placeholder_text = "Note head
-"
+size_flags_horizontal = 8
+size_flags_vertical = 8
+disabled = true
+text = "Add note"
 
-[node name="btnVoiceForHeader" type="Button" parent="CreatNewNote/VBoxContainer"]
+[node name="NoteHead" type="TextEdit" parent="CreatNewNote/Panel/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.5
+placeholder_text = "Note Title"
+caret_blink = true
+
+[node name="btnVoiceForHeader" type="Button" parent="CreatNewNote/Panel/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 icon = ExtResource("13_bg3bn")
 
-[node name="NoteDescription" type="TextEdit" parent="CreatNewNote/VBoxContainer"]
-unique_name_in_owner = true
+[node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="CreatNewNote/Panel/VBoxContainer"]
 layout_mode = 2
+
+[node name="PickNoteLabel" type="Label" parent="CreatNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+layout_mode = 2
+text = "Pick Note Type:"
+
+[node name="TextNoteCheckBox" type="CheckBox" parent="CreatNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+layout_mode = 2
+button_group = ExtResource("17_ijkb2")
+text = "Text Note"
+
+[node name="AudioCheckBox" type="CheckBox" parent="CreatNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+layout_mode = 2
+button_group = ExtResource("17_ijkb2")
+text = "Audio Note"
+
+[node name="ImageCheckBox" type="CheckBox" parent="CreatNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+layout_mode = 2
+button_group = ExtResource("17_ijkb2")
+text = "Image Note"
+
+[node name="TextNoteControl" type="Control" parent="CreatNewNote/Panel/VBoxContainer"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="NoteDescription" type="TextEdit" parent="CreatNewNote/Panel/VBoxContainer/TextNoteControl"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_bottom = 350.0
+grow_horizontal = 2
+grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 8.11
-placeholder_text = "Note Description"
+placeholder_text = "Type a Note Description or press the mic button 
+for a trancription"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="CreatNewNote/VBoxContainer"]
-layout_mode = 2
-alignment = 2
-
-[node name="btnVoice" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
+[node name="btnVoice" type="Button" parent="CreatNewNote/Panel/VBoxContainer/TextNoteControl"]
 unique_name_in_owner = true
 layout_mode = 2
+offset_left = 330.0
+offset_top = 310.0
+offset_right = 366.0
+offset_bottom = 336.0
 icon = ExtResource("13_bg3bn")
 
-[node name="AddNote" type="Button" parent="CreatNewNote/VBoxContainer/HBoxContainer"]
+[node name="AudioControl" type="Control" parent="CreatNewNote/Panel/VBoxContainer"]
+visible = false
 layout_mode = 2
-size_flags_horizontal = 8
-text = "Add note"
+
+[node name="Button" type="Button" parent="CreatNewNote/Panel/VBoxContainer/AudioControl"]
+layout_mode = 0
+offset_left = 110.0
+offset_top = 200.0
+offset_right = 315.0
+offset_bottom = 240.0
+text = "Press To Record Note"
+
+[node name="ImageControl" type="Control" parent="CreatNewNote/Panel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 400)
+layout_mode = 2
+
+[node name="Control" type="Control" parent="CreatNewNote/Panel/VBoxContainer/ImageControl"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="Panel" parent="CreatNewNote/Panel/VBoxContainer/ImageControl/Control"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="DropImageLabel" type="Label" parent="CreatNewNote/Panel/VBoxContainer/ImageControl/Control/Panel"]
+layout_mode = 0
+offset_left = 118.0
+offset_top = 150.0
+offset_right = 281.0
+offset_bottom = 173.0
+text = "Drop Image File Here"
+
+[node name="FileIconTextureRect" type="TextureRect" parent="CreatNewNote/Panel/VBoxContainer/ImageControl/Control/Panel"]
+texture_filter = 1
+layout_mode = 0
+offset_left = 180.0
+offset_top = 185.0
+offset_right = 220.0
+offset_bottom = 225.0
+texture = ExtResource("18_mitgl")
+
+[node name="ImagePreview" type="TextureRect" parent="CreatNewNote/Panel/VBoxContainer/ImageControl"]
+visible = false
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 1
+anchors_preset = 14
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_top = 150.0
+offset_bottom = 350.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("18_fhje1")
+expand_mode = 2
+stretch_mode = 5
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
@@ -424,6 +550,7 @@ bus = &"Rec"
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
 [connection signal="tab_clicked" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
 [connection signal="tab_hovered" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
-[connection signal="pressed" from="CreatNewNote/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
-[connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
-[connection signal="pressed" from="CreatNewNote/VBoxContainer/HBoxContainer/AddNote" to="." method="_on_add_note_pressed"]
+[connection signal="pressed" from="CreatNewNote/Panel/VBoxContainer/AddNotePopUp" to="." method="_on_add_note_pressed"]
+[connection signal="text_changed" from="CreatNewNote/Panel/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
+[connection signal="pressed" from="CreatNewNote/Panel/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
+[connection signal="pressed" from="CreatNewNote/Panel/VBoxContainer/TextNoteControl/btnVoice" to="." method="_on_btn_voice_pressed"]

@@ -143,9 +143,7 @@ func load_recent_projects():
 		var recent_projects = SingletonObject.get_recent_projects()
 		if recent_projects:
 			for item in recent_projects:
-				print(item)
 				submenu.add_item(item)
-		
 		
 		project.add_child(submenu)# adds submenu to scene tree
 		#add submenu as a submenu of indicated item

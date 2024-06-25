@@ -3,6 +3,8 @@
 class_name MemoryTabs
 extends TabContainer
 
+
+
 # just use current_tab
 # var ActiveThreadIndex: int:
 var _drag_active := false
@@ -136,7 +138,7 @@ func add_note(user_title:String, user_content: String, _source: String = ""):
 	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
-	new_memory.Enabled = true
+	new_memory.Enabled = false
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
