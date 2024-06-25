@@ -12,7 +12,7 @@ func _ready() -> void:
 func _on_file_index_pressed(index):
 	match index:
 		0:
-			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Text)
+			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.WhiteBoard)
 		1:
 			%fdgOpenFile.popup_centered(Vector2i(800, 600))
 		2: # this match is for the save button
