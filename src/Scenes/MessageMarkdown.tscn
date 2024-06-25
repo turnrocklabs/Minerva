@@ -145,6 +145,7 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 1
 theme_override_styles/panel = SubResource("StyleBoxFlat_hjfue")
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer"]
@@ -193,7 +194,6 @@ label_settings = SubResource("LabelSettings_3dxq6")
 
 [node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
-focus_mode = 2
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_2nrlj")
 bbcode_enabled = true
@@ -311,6 +311,7 @@ text = "O4"
 label_settings = SubResource("LabelSettings_l0yj0")
 horizontal_alignment = 1
 
+[connection signal="gui_input" from="." to="." method="_on_gui_input"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/ClipButton" to="." method="_on_clip_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/NoteButton" to="." method="_on_note_button_pressed"]

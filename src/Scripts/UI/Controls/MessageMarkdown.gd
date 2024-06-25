@@ -47,7 +47,6 @@ var editable:= false:
 
 func _ready():
 	_render_history_item()
-
 	# set the message for the edit popup
 	edit_popup.message = self
 
@@ -152,6 +151,28 @@ func _on_edit_button_pressed():
 	edit_popup.popup_centered()
 
 
+# since auto scroll on text selection is kinda broken
+# we made a workaround
+
+# code below emits a `message_selection` signal when text selection starts or ends
+# if mouse is not pressed emit false
+# if mouse is pressed AND somoe of richtextlabels have selected text emit true
+
+var _pressed: = false
+func _on_gui_input(event: InputEvent):
+	if event is InputEventMouseButton:
+		_pressed = event.is_pressed()
+		if not _pressed:
+			get_parent().message_selection.emit(self, false)
+		return
+	
+	if event is InputEventMouseMotion:
+		for ch: RichTextLabel in %MessageLabelsContainer.get_children():
+			if not ch.get_selected_text().is_empty():
+				get_parent().message_selection.emit(self, true)
+
+
+
 ## Class that represents a message text segment
 ## If it has set syntax, it's treated like a code label
 class TextSegment:
@@ -236,6 +257,8 @@ func _create_code_labels():
 			node.bbcode_enabled = true
 			node.selection_enabled = true
 			node.text = ts.content
+			node.focus_mode = Control.FOCUS_NONE # disable auto scroll to bottom on focus
+			node.mouse_filter = Control.MOUSE_FILTER_PASS
 
 			# set the color for model message
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
