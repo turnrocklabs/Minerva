@@ -2,6 +2,7 @@ class_name ChatPane
 extends TabContainer
 
 var icActive = preload("res://assets/icons/Microphone_active.png")
+@onready var txt_main_user_input: TextEdit = %txtMainUserInput
 
 var provider: BaseProvider:
 	set(value):
@@ -87,7 +88,10 @@ func regenerate_response():
 
 
 func _on_chat_pressed():
-	
+	execute_chat()
+
+
+func execute_chat():
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 
@@ -406,6 +410,9 @@ var _scroll_factor:= 0.0
 
 # will check if theres open chat tab and apply the scroll factor to selected tab
 func _process(delta: float):
+	if txt_main_user_input.has_focus():
+		if Input.is_action_just_pressed("control_enter"):
+			execute_chat()
 	if not SingletonObject.ChatList.is_empty():
 		SingletonObject.ChatList[current_tab].VBox.get_parent().scroll_vertical += _scroll_factor*3*delta
 

@@ -3,9 +3,10 @@ extends VBoxContainer
 
 signal note_deleted()
 
+var note_type = SingletonObject.note_type.TEXT
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
-@onready var description_node: RichTextLabel = %Description
+@onready var description_node: RichTextLabel = %NoteTextBody
 @onready var drag_texture_rect: TextureRect = $PanelContainer/v/DragTextureRect
 
 @onready var _upper_separator: HSeparator = %UpperSeparator
@@ -25,8 +26,10 @@ var memory_item: MemoryItem:
 
 
 func _ready():
+	# connecting signal for changing the dots texture when the main theme changes
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
 	change_modulate_for_texture()
+	
 	var new_size: Vector2 = size * 0.15
 	set_size(new_size)
 	label_node.text_changed.connect(
@@ -34,12 +37,14 @@ func _ready():
 			if memory_item: memory_item.Title = text
 	)
 
+#method for changing the dots texture when the main theme changes
 func change_modulate_for_texture():
 	var theme_enum = SingletonObject.get_theme()
 	if theme_enum == SingletonObject.theme.LIGHT_MODE:
 		drag_texture_rect.modulate = Color("282828")
 	if theme_enum == SingletonObject.theme.DARK_MODE:
 		drag_texture_rect.modulate = Color("f0f0f0")
+
 
 func _to_string():
 	return "Note %s" % memory_item.Title
@@ -191,3 +196,11 @@ func _on_edit_button_pressed():
 
 	# show the editor if it's hidden
 	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+
+func _on_title_text_submitted(new_text: String) -> void:
+	%Title.release_focus()
+
+
+func _on_image_caption_line_edit_text_submitted(new_text: String) -> void:
+	%ImageCaptionLineEdit.release_focus()

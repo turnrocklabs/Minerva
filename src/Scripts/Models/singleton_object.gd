@@ -5,7 +5,6 @@ var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
 func save_to_config_file(section: String, field: String, value):
-	
 	config_file.get_sections()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
@@ -17,21 +16,15 @@ func has_recent_projects() -> bool:
 
 func save_recent_project(path: String):
 	var path_split = path.split("/")
-	print(path_split)
 	var project_name_index: int = path_split.size() - 1
 	var project_name = path_split[project_name_index]
 	
-	var recent_projects_array = get_recent_projects()
-	
-	if recent_projects_array:
-		if recent_projects_array.size() > 5:
-			recent_projects_array.remove_at(0)
-			config_file.erase_section("OpenRecent")
-			for project_name_saved in recent_projects_array:
-				var saved_path = get_project_path(project_name_saved)
-				save_to_config_file("OpenRecent", project_name_saved, saved_path)
+	if has_recent_projects():# checks if there are recent project saved
+		var recent_projects_array = get_recent_projects()
+		#checks if there are 5 recent projects saved and deletes the first one saved
+		if recent_projects_array.size() >= 5:
+			config_file.erase_section_key("OpenRecent", recent_projects_array[0])
 	save_to_config_file("OpenRecent",project_name, path)
-	
 
 # this function returns an array with the files 
 # names of the recent project saved in config file
@@ -41,11 +34,19 @@ func get_recent_projects() -> Array:
 		return config_file.get_section_keys("OpenRecent")
 	return ["no recent projects"]
 
+
 func get_project_path(project_name: String) -> String:
 	return config_file.get_value("OpenRecent", project_name)
 #endregion Config File
 
 #region Notes
+enum note_type {
+	TEXT,
+	AUDIO, 
+	IMAGE,
+	VIDEO
+}
+
 var ThreadList: Array[MemoryThread]:
 	set(value):
 		# save_state(false)
@@ -67,10 +68,6 @@ func toggle_all_notes(notes_enabled: bool):
 		NotesTab.Disable_All()
 	if !notes_enabled:
 		NotesTab.enable_all()
-
-#TODO implement function for disabling all notes in single tab
-func toggle_single_tab(_enable: bool):
-	pass
 
 #endregion Notes
 

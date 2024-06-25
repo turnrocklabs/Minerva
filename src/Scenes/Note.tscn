@@ -1,9 +1,10 @@
-[gd_scene load_steps=7 format=3 uid="uid://fr1vfchpwjq2"]
+[gd_scene load_steps=8 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
 [ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_24px_no_bg.png" id="2_vvcoi"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="4_vm57c"]
+[ext_resource type="Texture2D" uid="uid://drca67spd2k7f" path="res://assets/conquest_of_revachol_flat_contrast.jpg" id="5_7q8w0"]
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_fc11w"]
 color = Color(0.164706, 0.345098, 0.831373, 1)
@@ -49,28 +50,29 @@ texture = ExtResource("2_vvcoi")
 expand_mode = 2
 stretch_mode = 5
 
-[node name="h" type="HBoxContainer" parent="PanelContainer/v"]
+[node name="headHBoxContainer" type="HBoxContainer" parent="PanelContainer/v"]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="CheckButton" type="CheckButton" parent="PanelContainer/v/h" groups=["NoteCheckButton"]]
+[node name="CheckButton" type="CheckButton" parent="PanelContainer/v/headHBoxContainer" groups=["NoteCheckButton"]]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
 
-[node name="Title" type="LineEdit" parent="PanelContainer/v/h"]
+[node name="Title" type="LineEdit" parent="PanelContainer/v/headHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 1
 text = "Lfforem ipsum dolor sit amet"
 flat = true
+caret_blink = true
 
-[node name="EditButton" type="Button" parent="PanelContainer/v/h"]
+[node name="EditButton" type="Button" parent="PanelContainer/v/headHBoxContainer"]
 layout_mode = 2
 icon = ExtResource("4_vm57c")
 
-[node name="RemoveButton" type="Button" parent="PanelContainer/v/h"]
+[node name="RemoveButton" type="Button" parent="PanelContainer/v/headHBoxContainer"]
 layout_mode = 2
 icon = ExtResource("4_05ydn")
 
@@ -78,14 +80,65 @@ icon = ExtResource("4_05ydn")
 layout_mode = 2
 mouse_filter = 1
 
-[node name="Description" type="RichTextLabel" parent="PanelContainer/v"]
+[node name="NoteTextBody" type="RichTextLabel" parent="PanelContainer/v"]
 unique_name_in_owner = true
+visible = false
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 focus_mode = 2
 text = "Lfforem ipsum dolor sit amet, consectetur adipiscing elit. Sed eget eleifend massa. Proin urna sapien, consectetur in nisi sit amet, pulvinar egestas neque. Etiam in hendrerit lectus, id sollicitudin lacus. Donec sed tempor ante. Praesent id sagittis erat. Fusce eleifend nisi tempus orci tincidunt congue. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus"
 autowrap_mode = 2
+context_menu_enabled = true
+threaded = true
 selection_enabled = true
+
+[node name="ImageVBoxContainer" type="VBoxContainer" parent="PanelContainer/v"]
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="PanelContainer/v/ImageVBoxContainer"]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+texture = ExtResource("5_7q8w0")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="ImageCaptionHBoxContainer" type="HBoxContainer" parent="PanelContainer/v/ImageVBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="ImageCaptionLabel" type="Label" parent="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer"]
+layout_mode = 2
+text = "Image Caption:"
+
+[node name="ImageCaptionLineEdit" type="LineEdit" parent="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "image caption here"
+max_length = 75
+flat = true
+caret_blink = true
+
+[node name="AudioHBoxContainer" type="HBoxContainer" parent="PanelContainer/v"]
+visible = false
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="PlayPauseButton" type="Button" parent="PanelContainer/v/AudioHBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 4
+text = "Play
+"
+
+[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="PanelContainer/v/AudioHBoxContainer"]
+
+[node name="ProgressBar" type="ProgressBar" parent="PanelContainer/v/AudioHBoxContainer"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+show_percentage = false
 
 [node name="LowerSeparator" type="HSeparator" parent="."]
 unique_name_in_owner = true
@@ -93,6 +146,8 @@ visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 
-[connection signal="toggled" from="PanelContainer/v/h/CheckButton" to="." method="_on_check_button_toggled"]
-[connection signal="pressed" from="PanelContainer/v/h/EditButton" to="." method="_on_edit_button_pressed"]
-[connection signal="pressed" from="PanelContainer/v/h/RemoveButton" to="." method="_on_remove_button_pressed"]
+[connection signal="toggled" from="PanelContainer/v/headHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="text_submitted" from="PanelContainer/v/headHBoxContainer/Title" to="." method="_on_title_text_submitted"]
+[connection signal="pressed" from="PanelContainer/v/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
+[connection signal="pressed" from="PanelContainer/v/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]
+[connection signal="text_submitted" from="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_submitted"]
