@@ -1,5 +1,5 @@
 class_name PreferencesPopup
-extends PopupPanel
+extends PersistentWindow
 
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
@@ -22,6 +22,7 @@ var config_file = ConfigFile.new()
 
 
 func _ready():
+	super()
 	var res_code = config_file.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 	match res_code:
 		ERR_FILE_NOT_FOUND:

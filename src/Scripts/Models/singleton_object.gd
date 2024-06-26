@@ -99,8 +99,8 @@ func _ready():
 		return
 	
 	
-	var theme_enum = config_file.get_value("theme", "theme_enum")
-	set_theme(theme_enum)
+	# var theme_enum = config_file.get_value("theme", "theme_enum")
+	# set_theme(theme_enum)
 
 
 func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = []):
@@ -129,7 +129,7 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 ###
 # Create a common error display system that will popup an error and show
 # and show the message
-var errorPopup: PopupPanel
+var errorPopup: PersistentWindow
 var errorTitle: Label
 var errorText: Label
 func ErrorDisplay(error_title:String, error_message: String):
