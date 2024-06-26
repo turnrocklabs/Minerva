@@ -2,9 +2,8 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
 
-[node name="PreferencesPopup" type="PopupPanel"]
+[node name="PreferencesPopup" type="Window"]
 size = Vector2i(520, 298)
-visible = true
 script = ExtResource("1_snp1b")
 
 [node name="v" type="VBoxContainer" parent="."]
