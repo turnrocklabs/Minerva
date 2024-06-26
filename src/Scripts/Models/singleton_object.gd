@@ -1,5 +1,11 @@
 extends Node
 
+#region global variables?
+var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
+
+
+#endregion global variables
+
 #region Config File
 var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()

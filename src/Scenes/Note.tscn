@@ -93,9 +93,11 @@ threaded = true
 selection_enabled = true
 
 [node name="ImageVBoxContainer" type="VBoxContainer" parent="PanelContainer/v"]
+unique_name_in_owner = true
 layout_mode = 2
 
-[node name="TextureRect" type="TextureRect" parent="PanelContainer/v/ImageVBoxContainer"]
+[node name="NoteImage" type="TextureRect" parent="PanelContainer/v/ImageVBoxContainer"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 texture = ExtResource("5_7q8w0")
@@ -120,6 +122,7 @@ flat = true
 caret_blink = true
 
 [node name="AudioHBoxContainer" type="HBoxContainer" parent="PanelContainer/v"]
+unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
@@ -132,6 +135,7 @@ text = "Play
 "
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="PanelContainer/v/AudioHBoxContainer"]
+unique_name_in_owner = true
 
 [node name="ProgressBar" type="ProgressBar" parent="PanelContainer/v/AudioHBoxContainer"]
 custom_minimum_size = Vector2(100, 0)
@@ -151,3 +155,4 @@ theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]
 [connection signal="text_submitted" from="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_submitted"]
+[connection signal="toggled" from="PanelContainer/v/AudioHBoxContainer/PlayPauseButton" to="." method="_on_play_pause_button_toggled"]

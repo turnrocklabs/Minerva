@@ -8,11 +8,20 @@ static var SERIALIZER_FIELDS = ["Enabled", "Title", "Content", "DataType", "Visi
 var Enabled: bool = true:
 	set(value): SingletonObject.save_state(false); Enabled = value
 
+var Type: int = SingletonObject.note_type.TEXT:
+	set(value): SingletonObject.save_state(false); Type = value
+
 var Title: String:
 	set(value): SingletonObject.save_state(false); Title = value
 
 var Content: String:
 	set(value): SingletonObject.save_state(false); Content = value
+
+var image: Texture2D:
+	set(value): SingletonObject.save_state(false); image = value
+
+var audio:
+	set(value): SingletonObject.save_state(false); audio = value
 
 var ContentType: String:
 	set(value): SingletonObject.save_state(false); ContentType = value

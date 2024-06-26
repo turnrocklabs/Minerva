@@ -127,7 +127,7 @@ func render_threads():
 	
 
 
-func add_note(user_title:String, user_content: String, _source: String = ""):
+func add_note(user_title:String, user_content, _source: String = ""):
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -139,6 +139,7 @@ func add_note(user_title:String, user_content: String, _source: String = ""):
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
+	new_memory.Type =2
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
@@ -147,6 +148,24 @@ func add_note(user_title:String, user_content: String, _source: String = ""):
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
 
+
+#region Add notes methods
+
+func add_text_note():
+	pass
+
+
+func add_audio_note():
+	pass
+
+
+func add_image_note():
+	pass
+
+
+
+
+#endregion Add notes methods
 
 ## Will delete the memory_item from the memory list
 func delete_note(memory_item: MemoryItem):
@@ -235,7 +254,7 @@ func attach_file(the_file: String):
 		file_type = "text"
 		content = file.get_as_text()
 		content_type = "text/plain"
-	elif file_ext in ["png", "jpg", "jpeg", "gif", "bmp", "tiff"]:
+	elif file_ext in SingletonObject.supported_image_formats:
 		file_type = "image"
 		var file_data = file.get_buffer(file.get_length())
 		content = Marshalls.raw_to_base64(file_data)

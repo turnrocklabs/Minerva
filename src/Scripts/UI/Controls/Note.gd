@@ -8,6 +8,8 @@ var note_type = SingletonObject.note_type.TEXT
 @onready var label_node: LineEdit = %Title
 @onready var description_node: RichTextLabel = %NoteTextBody
 @onready var drag_texture_rect: TextureRect = $PanelContainer/v/DragTextureRect
+@onready var note_image: TextureRect = %NoteImage
+@onready var audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
 
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
@@ -21,8 +23,34 @@ var memory_item: MemoryItem:
 		if not value: return
 
 		label_node.text = value.Title
-		description_node.text = value.Content
 		checkbutton_node.button_pressed = value.Enabled
+		if memory_item.Type == SingletonObject.note_type.TEXT:
+			description_node.text = value.Content
+		if memory_item.Type == SingletonObject.note_type.IMAGE:
+			note_image.texture = value.image
+		if memory_item.Type == SingletonObject.note_type.AUDIO:
+			audio_stream_player.stream = value.audio
+
+func new_text_note():
+	%NoteTextBody.visible = true
+	%ImageVBoxContainer.visible = false
+	%AudioHBoxContainer.visible = false
+	return self
+
+
+func new_image_note():
+	%ImageVBoxContainer.visible = true
+	%AudioHBoxContainer.visible = false
+	%NoteTextBody.visible = false
+	return self
+
+
+func new_audio_note():
+	%AudioHBoxContainer.visible = true
+	%NoteTextBody.visible = false
+	%ImageVBoxContainer.visible = false
+	return self
+
 
 
 func _ready():
@@ -198,9 +226,16 @@ func _on_edit_button_pressed():
 	SingletonObject.main_ui.set_editor_pane_visible(true)
 
 
-func _on_title_text_submitted(new_text: String) -> void:
+func _on_title_text_submitted(_new_text: String) -> void:
 	%Title.release_focus()
 
 
-func _on_image_caption_line_edit_text_submitted(new_text: String) -> void:
+func _on_image_caption_line_edit_text_submitted(_new_text: String) -> void:
 	%ImageCaptionLineEdit.release_focus()
+
+
+func _on_play_pause_button_toggled(toggled_on: bool) -> void:
+	if toggled_on:
+		audio_stream_player.play()
+	else: 
+		audio_stream_player.stop()
