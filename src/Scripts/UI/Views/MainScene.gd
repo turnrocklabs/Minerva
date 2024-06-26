@@ -3,18 +3,18 @@ extends Control
 #varibles where weadding out notes Head and descriptionn
 
 @onready var _default_zoom = theme.default_font_size
-@onready var text_note_check_box: CheckBox = $CreatNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox/TextNoteCheckBox
-@onready var audio_check_box: CheckBox = $CreatNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox/AudioCheckBox
-@onready var image_check_box: CheckBox = $CreatNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox/ImageCheckBox
+@onready var text_note_check_box: CheckBox = %TextNoteCheckBox
+@onready var audio_check_box: CheckBox = %AudioCheckBox
+@onready var image_check_box: CheckBox = %ImageCheckBox
 
 var note_enum = SingletonObject.note_type.TEXT
 
 var icActive = preload("res://assets/icons/Microphone_active.png")
 
 func _ready() -> void:
-	text_note_check_box.button_group.pressed.connect(change_note_type)
-	
-	
+	# we connect the signals when the project runs
+	text_note_check_box.button_group.pressed.connect(change_note_type)# signal for the note type checkbtn group
+	%CreateNewNote.files_dropped.connect(_on_image_files_dropped)# sinnal for drop image file on image note
 
 func zoom_ui(factor: int):
 	if theme.has_default_font_size():
@@ -39,11 +39,7 @@ func _gui_input(event):
 
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
-	#set up windows size
-	var target_size = %VBoxRoot.size - Vector2(1450, 280)
-	%CreatNewNote.borderless = false
-	%CreatNewNote.size = Vector2(400, 700)
-	%CreatNewNote.popup_centered()
+	%CreateNewNote.popup_centered()
 	
 #Creating new note
 func _on_add_note_pressed():
@@ -51,12 +47,10 @@ func _on_add_note_pressed():
 	var Head = %NoteHead
 	var Description = %NoteDescription
 	
-	
-	
 	SingletonObject.NotesTab.add_note(Head.text, Description.text)
 	Head.clear()
 	Description.clear()
-	%CreatNewNote.hide()
+	%CreateNewNote.hide()
 	%AddNotePopUp.disabled = true
 
 #btn attachment for notes
@@ -87,6 +81,7 @@ func _on_btn_voice_for_note_tab_pressed():
 	%btnVoiceForNoteTab.icon = icActive
 
 
+# this method calls the singleton object to toggle the enable/disable all notes in all tabs
 var notes_enabled = true
 func _on_disable_notes_button_pressed() -> void:
 	if !notes_enabled:
@@ -99,6 +94,25 @@ func _on_disable_notes_button_pressed() -> void:
 	notes_enabled = !notes_enabled
 
 
+#region Create New note Window
+
+# the exclusive flag get  changed a lot in these methods 
+#because there can only be one exclusive window at the time
+#so you give up the exclusivity when closed (errors come up otherwise)
+
+#this get called when the CREATE NOTE WINDOW is about to pop up
+func _on_create_new_note_about_to_popup() -> void:
+	text_note_check_box.button_pressed = true
+	%CreateNewNote.exclusive = true
+
+# method for handling close button pressed
+func _on_creat_new_note_close_requested() -> void:
+	%CreateNewNote.hide()
+	%CreateNewNote.exclusive = false
+
+
+#this method gets called when there is a change in the 
+#title text and toggles the enabled feature on add note button
 func _on_note_head_text_changed() -> void:
 	var text: String = %NoteHead.text
 	if text.length() > 0:
@@ -106,21 +120,82 @@ func _on_note_head_text_changed() -> void:
 	else: 
 		%AddNotePopUp.disabled = true
 
-
+# toggles the visibility of inputs based en note type selection
 func change_note_type(button: CheckBox): 
 	if button.text == "Text Note":
-		print("text note selected")
 		note_enum = SingletonObject.note_type.TEXT
+		%TextNoteControl.visible = true
+		%AudioControl.visible = false
+		%ImageControl.visible = false
 	if button.text == "Audio Note":
-		print("Image note selected")
 		note_enum = SingletonObject.note_type.AUDIO
+		%TextNoteControl.visible = false
+		%AudioControl.visible = true
+		%ImageControl.visible = false
 	if button.text == "Image Note":
-		print("Image note selected")
-		print_rich("[b]bold text ehere[/b]")
 		note_enum = SingletonObject.note_type.IMAGE
+		%TextNoteControl.visible = false
+		%AudioControl.visible = false
+		%ImageControl.visible = true
+
+#region Image fileDialog
+
+# open dialog for loading image file and changes window exclusivity
+func _on_open_image_file_button_pressed() -> void:
+	%ImageNoteFileDialog.popup_centered()
+	%CreateNewNote.exclusive = false
+	%ImageNoteFileDialog.exclusive = true
+
+#when image file is selected we give up exclusivity and load the image
+func _on_image_note_file_dialog_file_selected(path: String) -> void:
+	%ImageNoteFileDialog.exclusive = false
+	%CreateNewNote.exclusive = true
+	set_image_preview(path)
+
+#give up exclusivity on cancel clicked
+func _on_image_note_file_dialog_canceled() -> void:
+	%ImageNoteFileDialog.exclusive = false
+	%CreateNewNote.exclusive = true
+#endregion Image fileDialog
+
+#method for loading image file to note preview textureRect
+func set_image_preview(path: String) -> void:
+	var image = Image.new()
+	image.load(path)
 	
-	print(note_enum)
-	
+	var image_texture = ImageTexture.new()
+	image_texture.set_image(image)
+	%ImagePreview.texture = image_texture
+
+
+func _on_image_files_dropped(files):
+	if %DropImageControl.visible:
+		var path: String = files[0]# get the first file to be dropped
+		var file_format = path.split(".")[path.split(".").size() - 1]# get the file format
+		
+		# check if file format is supported
+		if file_format in SingletonObject.supported_image_formats:
+			set_image_preview(path)
+			%ImageDropPanel.visible = false
+			%ImagePreview.visible = true
+		else:
+			#TODO implement error pop up or something
+			print_rich("[b]image format not supported :c \n Maybe one day c:[/b]")
+	#else: #mouse_over end
+	#	print("outside the dropdown area")
+
+#TODO change this tom use mouse entered mouse exited signals
+func mouse_over_control(node: Control) -> bool:
+	var mouse_pos = get_local_mouse_position()
+	if mouse_pos.x < node.global_position.x \
+			or mouse_pos.x > node.global_position.x + node.size.x \
+			or mouse_pos.y < node.global_position.y \
+			or mouse_pos.y > node.global_position.y + node.size.y:
+		return false
+	return true
+
+#endregion Create New note Window
+
 
 
 
