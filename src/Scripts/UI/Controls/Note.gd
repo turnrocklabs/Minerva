@@ -27,8 +27,8 @@ var memory_item: MemoryItem:
 func _ready():
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
 	change_modulate_for_texture()
-	var new_size: Vector2 = size * 0.15
-	set_size(new_size)
+	# var new_size: Vector2 = size * 0.15
+	# set_size(new_size)
 	label_node.text_changed.connect(
 		func(text):
 			if memory_item: memory_item.Title = text
@@ -75,12 +75,15 @@ func _get_drag_data(at_position: Vector2) -> Note:
 
 	preview.add_child(preview_note)
 
-	preview_note.size = size
-	preview.size = size
+	preview.custom_minimum_size = size
+	preview_note.custom_minimum_size = size
 
 	preview_note.position = -at_position
 
-	preview.modulate.a = 0.5
+	var tween = get_tree().create_tween()
+	tween.tween_property(preview, "modulate:a", 0.5, 0.2)
+
+	# preview.modulate.a = 0.5
 
 	set_drag_preview(preview)
 
