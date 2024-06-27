@@ -65,6 +65,8 @@ func _render_history_item():
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
 	else: _setup_model_message()
 
+	visible = history_item.Visible
+
 	history_item.rendered_node = self
 
 	_create_code_labels()
@@ -151,6 +153,10 @@ func _on_regenerate_button_pressed():
 func _on_edit_button_pressed():
 	edit_popup.popup_centered()
 
+func _on_hide_button_pressed():
+	history_item.Visible = false
+	# TODO: use the `render` method here
+	history_item = history_item
 
 ## Class that represents a message text segment
 ## If it has set syntax, it's treated like a code label

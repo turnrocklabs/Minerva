@@ -77,6 +77,16 @@ func _on_view_index_pressed(index: int):
 	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(2))
 
 
+func _on_chat_id_pressed(id: int):
+	match id:
+		0: # Unhide All
+			for ch in SingletonObject.ChatList:
+				for chi in ch.HistoryItemList:
+					if not chi.Visible:
+						chi.Visible = true
+						chi.rendered_node.history_item = chi # TODO: use render method
+
+
 func _on_view_about_to_popup():
 	view.set_item_checked(0, SingletonObject.main_ui.chat_pane.visible)
 	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)
