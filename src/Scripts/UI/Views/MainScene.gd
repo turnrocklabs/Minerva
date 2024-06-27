@@ -48,6 +48,8 @@ func _on_add_note_pressed():
 	var Description = %NoteDescription
 	
 	SingletonObject.NotesTab.add_note(Head.text, Description.text)
+	if note_enum == SingletonObject.note_type.TEXT:
+		SingletonObject.NotesTab.add_note(Head.text, Description.text)
 	Head.clear()
 	Description.clear()
 	%CreateNewNote.hide()

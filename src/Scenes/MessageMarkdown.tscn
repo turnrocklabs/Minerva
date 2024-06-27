@@ -264,12 +264,13 @@ h4 = SubResource("Resource_j3mc0")
 h5 = SubResource("Resource_whtla")
 h6 = SubResource("Resource_f738n")
 
-[node name="LoadingLabel" type="Label" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+[node name="LoadingLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 visible = false
+custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
-theme_override_colors/font_color = Color(0, 0, 0, 1)
-text = "●︎●︎●︎"
+bbcode_enabled = true
+text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
 
 [node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
