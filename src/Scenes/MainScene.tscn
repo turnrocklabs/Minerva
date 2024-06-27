@@ -84,7 +84,7 @@ unique_name_in_owner = true
 [node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 96.0
+offset_right = 113.0
 offset_bottom = 96.0
 size_flags_horizontal = 3
 
@@ -244,7 +244,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Chats" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
-custom_minimum_size = Vector2(580, 0)
+custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 1
 

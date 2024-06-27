@@ -115,12 +115,18 @@ static func new_message() -> MessageMarkdown:
 	return msg
 
 ## Updates tokens cost label in the top left corner
-func update_tokens_cost(estimated: int, correct: int) -> void:
-	var price = history_item.provider.token_cost * estimated
+## Passing `estimated` parameter as `-1` will only show the correct tokens count
+func update_tokens_cost(correct: int, estimated: int = -1) -> void:
+	var price = history_item.provider.token_cost * correct
 
 	tokens_cost.visible = true
-	tokens_cost.text = "%s/%s" % [estimated, correct]
-	tokens_cost.tooltip_text = "Estimated %s tokens (%s), used %s" % [estimated, price, correct]
+	if estimated != -1:
+		tokens_cost.text = "%s/%s" % [estimated, correct]
+		tokens_cost.tooltip_text = "Estimated %s tokens, used %s (%s$)" % [estimated, correct, price]
+	else:
+		tokens_cost.text = "%s" % correct
+		tokens_cost.tooltip_text = "Used %s tokens (%s$)" % [correct, price]
+
 
 
 # Continues the generation of the response

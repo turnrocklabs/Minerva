@@ -47,8 +47,15 @@ func Format(_chat: ChatHistoryItem) -> Variant:
 func _on_request_completed(_result, _response_code, _headers, _body, _http_request, _url):
 	pass
 
+## Estimates token amount for the given string.
 func estimate_tokens(_input: String) -> int:
 	push_error("estimate_tokens method of %s not implemented" % get_script().resource_path.get_file())
+	return 0
+
+## Estimates token amount for the given input.
+## `input` parameter is as the parameter for the `generate_content` function.
+func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
+	push_error("estimate_tokens_from_prompt method of %s not implemented" % get_script().resource_path.get_file())
 	return 0
 
 # endregion

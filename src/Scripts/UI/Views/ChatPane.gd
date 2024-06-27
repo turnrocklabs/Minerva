@@ -117,12 +117,12 @@ func _on_chat_pressed():
 		history.HistoryItemList.append(user_history_item)
 		
 		# make a chat request
-		history_list = create_prompt(user_history_item)
+		history_list = create_prompt()
 
 		user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(user_history_item)
 
 		# Set the tokens estimation label. Correct token will be 0 until we get a response
-		user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), 0)
+		user_msg_node.update_tokens_cost(0, provider.estimate_tokens_from_prompt(history_list))
 	
 	else:
 		# since we already have the message in user history create the prompt with no additional items
@@ -150,11 +150,17 @@ func _on_chat_pressed():
 	chi.Role = ChatHistoryItem.ChatRole.MODEL
 	chi.Message = bot_response.text
 	chi.Error = bot_response.error
-	chi.provider = SingletonObject.Chats.provider
+	chi.provider = provider
 	chi.Complete = bot_response.complete
 
 	# Update user message node
-	user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
+	# user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
+	user_msg_node.update_tokens_cost(
+		bot_response.prompt_tokens,
+		provider.estimate_tokens_from_prompt(history_list)
+	)
+
+	model_msg_node.update_tokens_cost(bot_response.completion_tokens, -1)
 
 	# Change the history item and the mesasge node will update itself
 	model_msg_node.history_item = chi
@@ -336,7 +342,13 @@ func clear_all_chats():
 	add_child(SingletonObject.Chats.provider)
 
 func update_token_estimation():
-	var token_count = provider.estimate_tokens(%txtMainUserInput.text)
+	if not SingletonObject.Chats: return
+
+	var chi = ChatHistoryItem.new()
+	chi.Message = %txtMainUserInput.text
+	
+	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi))
+
 	%EstimatedTokensLabel.text = "%s (%s$)" % [token_count, provider.token_cost * token_count]
 
 
