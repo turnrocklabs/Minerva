@@ -154,9 +154,7 @@ func _on_edit_button_pressed():
 	edit_popup.popup_centered()
 
 func _on_hide_button_pressed():
-	history_item.Visible = false
-	# TODO: use the `render` method here
-	history_item = history_item
+	SingletonObject.Chats.hide_chat_history_item(history_item, null, false)
 
 ## Class that represents a message text segment
 ## If it has set syntax, it's treated like a code label
