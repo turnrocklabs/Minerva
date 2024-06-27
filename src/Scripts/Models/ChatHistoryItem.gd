@@ -4,7 +4,17 @@ extends RefCounted
 enum PartType {TEXT, CODE, JPEG}
 enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
 
-static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type", "ModelName", "ModelShortName"]
+static var SERIALIZER_FIELDS = [
+	"Role",
+	"InjectedNote",
+	"Message",
+	"Base64Data",
+	"Order",
+	"Type",
+	"ModelName",
+	"ModelShortName",
+	"Visible",
+]
 
 # This signal is to be emited when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
@@ -42,6 +52,8 @@ var Complete: bool:
 var Error: String:
 	set(value): SingletonObject.save_state(false); Error = value
 
+var Visible: bool = true:
+	set(value): SingletonObject.save_state(false); Visible = value
 
 var provider: BaseProvider:
 	set(value):
@@ -100,6 +112,7 @@ func Serialize() -> Dictionary:
 		"Type" : Type,
 		"ModelName": ModelName,
 		"ModelShortName": ModelShortName,
+		"Visible": Visible,
 	}
 	return save_dict
 
@@ -110,6 +123,7 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	data.merge({
 		"ModelName": "NA",
 		"ModelShortName": "NA",
+		"Visible": true,
 	})
 
 	var chi = ChatHistoryItem.new()
