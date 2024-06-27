@@ -29,36 +29,91 @@ layout_mode = 2
 size_flags_vertical = 3
 script = ExtResource("2_ooqtk")
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/WhiteBoard"]
+[node name="White" type="ColorRect" parent="VBoxContainer/WhiteBoard"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Colors" type="ColorPicker" parent="VBoxContainer/WhiteBoard"]
+unique_name_in_owner = true
+visible = false
+z_index = 1
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -298.0
+offset_top = -136.0
+offset_bottom = 136.0
+grow_horizontal = 0
+grow_vertical = 2
+sampler_visible = false
+color_modes_visible = false
+sliders_visible = false
+hex_visible = false
+presets_visible = false
+
+[node name="Buttons" type="HBoxContainer" parent="VBoxContainer/WhiteBoard"]
 z_index = 1
 clip_contents = true
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 52.0
+offset_bottom = 31.0
 grow_horizontal = 2
+theme_override_constants/separation = 8
 
-[node name="Clear" type="Button" parent="VBoxContainer/WhiteBoard/HBoxContainer"]
+[node name="Clear" type="Button" parent="VBoxContainer/WhiteBoard/Buttons"]
 custom_minimum_size = Vector2(83.17, 0)
 layout_mode = 2
 text = "Clear
 "
 
-[node name="BrushSize" type="OptionButton" parent="VBoxContainer/WhiteBoard/HBoxContainer"]
+[node name="BrushSize" type="OptionButton" parent="VBoxContainer/WhiteBoard/Buttons"]
 unique_name_in_owner = true
 layout_mode = 2
+item_count = 10
+selected = 0
+popup/item_0/text = "1"
+popup/item_0/id = 1
+popup/item_1/text = "2"
+popup/item_1/id = 2
+popup/item_2/text = "3"
+popup/item_2/id = 3
+popup/item_3/text = "4"
+popup/item_3/id = 4
+popup/item_4/text = "5"
+popup/item_4/id = 5
+popup/item_5/text = "6"
+popup/item_5/id = 6
+popup/item_6/text = "7"
+popup/item_6/id = 7
+popup/item_7/text = "8"
+popup/item_7/id = 8
+popup/item_8/text = "9"
+popup/item_8/id = 9
+popup/item_9/text = "10"
+popup/item_9/id = 10
 
-[node name="ColorPalete" type="Button" parent="VBoxContainer/WhiteBoard/HBoxContainer"]
+[node name="ColorPalete" type="Button" parent="VBoxContainer/WhiteBoard/Buttons"]
 layout_mode = 2
 text = "color"
 
-[node name="eraser" type="Button" parent="VBoxContainer/WhiteBoard/HBoxContainer"]
+[node name="eraser" type="Button" parent="VBoxContainer/WhiteBoard/Buttons"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "eraser"
 
-[node name="Draw" type="Line2D" parent="VBoxContainer/WhiteBoard"]
-clip_children = 2
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/WhiteBoard"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
 
 [node name="CodeEdit" type="CodeEdit" parent="VBoxContainer"]
 unique_name_in_owner = true
@@ -92,10 +147,15 @@ access = 2
 
 [node name="Node2D" type="Node2D" parent="."]
 
-[connection signal="pressed" from="VBoxContainer/WhiteBoard/HBoxContainer/Clear" to="VBoxContainer/WhiteBoard" method="_on_clear_pressed"]
-[connection signal="item_selected" from="VBoxContainer/WhiteBoard/HBoxContainer/BrushSize" to="VBoxContainer/WhiteBoard" method="_on_brush_size_item_selected"]
-[connection signal="pressed" from="VBoxContainer/WhiteBoard/HBoxContainer/ColorPalete" to="VBoxContainer/WhiteBoard" method="_on_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/WhiteBoard/HBoxContainer/eraser" to="VBoxContainer/WhiteBoard" method="_on_eraser_pressed"]
+[connection signal="color_changed" from="VBoxContainer/WhiteBoard/Colors" to="VBoxContainer/WhiteBoard" method="_on_colors_color_changed"]
+[connection signal="mouse_entered" from="VBoxContainer/WhiteBoard/Colors" to="VBoxContainer/WhiteBoard" method="_on_colors_mouse_entered"]
+[connection signal="mouse_exited" from="VBoxContainer/WhiteBoard/Colors" to="VBoxContainer/WhiteBoard" method="_on_colors_mouse_exited"]
+[connection signal="mouse_entered" from="VBoxContainer/WhiteBoard/Buttons" to="VBoxContainer/WhiteBoard" method="_on_buttons_mouse_entered"]
+[connection signal="mouse_exited" from="VBoxContainer/WhiteBoard/Buttons" to="VBoxContainer/WhiteBoard" method="_on_buttons_mouse_exited"]
+[connection signal="pressed" from="VBoxContainer/WhiteBoard/Buttons/Clear" to="VBoxContainer/WhiteBoard" method="_on_clear_pressed"]
+[connection signal="item_selected" from="VBoxContainer/WhiteBoard/Buttons/BrushSize" to="VBoxContainer/WhiteBoard" method="_on_brush_size_item_selected"]
+[connection signal="pressed" from="VBoxContainer/WhiteBoard/Buttons/ColorPalete" to="VBoxContainer/WhiteBoard" method="_on_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/WhiteBoard/Buttons/eraser" to="VBoxContainer/WhiteBoard" method="_on_eraser_pressed"]
 [connection signal="text_changed" from="VBoxContainer/CodeEdit" to="VBoxContainer/CodeEdit" method="_on_text_changed"]
 [connection signal="pressed" from="VBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
 [connection signal="canceled" from="CloseDialog" to="." method="_on_save_dialog_canceled"]
