@@ -121,8 +121,9 @@ func _on_chat_pressed():
 
 		user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(user_history_item)
 
-		# Set the tokens estimation label. Correct token will be 0 until we get a response
-		user_msg_node.update_tokens_cost(0, provider.estimate_tokens_from_prompt(history_list))
+		user_history_item.EstimatedTokenCost = provider.estimate_tokens_from_prompt(history_list)
+		# rerender the message wince we changed the history item
+		user_msg_node.render()
 	
 	else:
 		# since we already have the message in user history create the prompt with no additional items
@@ -152,15 +153,11 @@ func _on_chat_pressed():
 	chi.Error = bot_response.error
 	chi.provider = provider
 	chi.Complete = bot_response.complete
+	chi.TokenCost = bot_response.completion_tokens
 
 	# Update user message node
-	# user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
-	user_msg_node.update_tokens_cost(
-		bot_response.prompt_tokens,
-		provider.estimate_tokens_from_prompt(history_list)
-	)
-
-	model_msg_node.update_tokens_cost(bot_response.completion_tokens, -1)
+	user_history_item.TokenCost = bot_response.prompt_tokens
+	user_msg_node.render()
 
 	# Change the history item and the mesasge node will update itself
 	model_msg_node.history_item = chi
