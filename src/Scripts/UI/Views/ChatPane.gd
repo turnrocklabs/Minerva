@@ -256,6 +256,46 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 	history.HistoryItemList.erase(item)
 
 
+## Will hide the chat histoy item. If `remove_pair` is true
+## and the item is user message it will also hide the answer or 
+## the question if the item is bot message if the item is present in any chat history.
+func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, remove_pair: = true):	
+	item.Visible = false
+	item.rendered_node.history_item = item ## TODO: use render method
+
+	if not remove_pair: return
+	
+	if not history:
+		for h in SingletonObject.ChatList:
+			if h.HistoryItemList.has(item):
+				history = h
+				break
+
+	if not history:
+		push_warning("Hiding history item %s not present in any history item list" % item)
+		return
+		
+	var item_index = history.HistoryItemList.find(item)
+
+	## if the item is user message, check if there's next message that's model and hide it
+	if item.Role == ChatHistoryItem.ChatRole.USER:
+		if history.HistoryItemList.size() > item_index:
+			var next_item = history.HistoryItemList[item_index+1]
+			if next_item.Role == ChatHistoryItem.ChatRole.MODEL:
+				next_item.Visible = false
+				next_item.rendered_node.history_item = next_item ## TODO: use render method
+
+	## if the item is user message, check if there's previous message that's user and hide it
+	elif item.Role == ChatHistoryItem.ChatRole.MODEL:
+		if item_index > 0:
+			var previous_item = history.HistoryItemList[item_index-1]
+			if previous_item.Role == ChatHistoryItem.ChatRole.USER:
+				previous_item.Visible = false
+				previous_item.rendered_node.history_item = previous_item ## TODO: use render method
+
+	
+
+
 func render_history(chat_history: ChatHistory):
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
