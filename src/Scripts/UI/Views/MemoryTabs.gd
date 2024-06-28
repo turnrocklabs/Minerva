@@ -5,7 +5,7 @@ extends TabContainer
 # just use current_tab
 # var ActiveThreadIndex: int:
 
-var _drag_active := true
+var _drag_active := false
 var _hovered_tab := -1
 var _hover_timer
 
@@ -34,6 +34,27 @@ func Disable_All():
 				item.Enabled = false
 	self.render_threads()
 	pass
+
+func enable_all():
+	for this_thread:MemoryThread in SingletonObject.ThreadList:
+		for item:MemoryItem in this_thread.MemoryItemList:
+			if !item.Enabled:
+				item.Enabled = true
+	self.render_threads()
+
+
+func enable_notes_in_tab():
+	var currentNotesTab = SingletonObject.ThreadList[current_tab]
+	for item:MemoryItem in currentNotesTab:
+		if !item.Enabled:
+			item.Enabled = true
+
+
+func disable_notes_in_tab():
+	var currentNotesTab = SingletonObject.ThreadList[current_tab]
+	for item:MemoryItem in currentNotesTab:
+		if item.Enabled:
+			item.Enabled = false
 
 
 func open_threads_popup(name: String = "", tab = null):
@@ -80,6 +101,7 @@ func create_new_notes_tab(tab_name: String = "notes 1"):
 	thread.ThreadName = tab_name
 	var thread_memories: Array[MemoryItem] = []
 	thread.MemoryItemList = thread_memories
+
 	SingletonObject.ThreadList.append(thread)
 	render_thread(thread)
 
@@ -213,7 +235,7 @@ func attach_file(the_file: String):
 	var content_type = ""
 	var title = the_file.get_file().get_basename()
 
-	if file_ext in ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd"]:
+	if file_ext in ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
 		file_type = "text"
 		content = file.get_as_text()
 		content_type = "text/plain"
@@ -290,6 +312,11 @@ func _on_tab_clicked(tab: int):
 
 	clicked = true
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
+
+
+func _on_tab_hovered(tab: int):
+	if _drag_active:
+		current_tab = tab
 
 # This function is called when the ThreadList is modified
 func _on_thread_list_changed():

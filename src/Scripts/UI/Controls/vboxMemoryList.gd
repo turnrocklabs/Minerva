@@ -3,9 +3,15 @@ extends VBoxContainer
 var Memories: Array[MemoryItem] = []
 var MainTabContainer
 var MainThreadId
-
-## initialize the box
+var disable_notes_button
+## initilize the box
 func _init(_parent, _threadId, _mem = null):
+	# we add separateionh for the chidren of the HBoxContainer
+	add_theme_constant_override("Separation", 12)
+	
+	#we add a disable notes button
+	add_child(initialise_disable_button())
+	
 	self.MainTabContainer = _parent
 	self.MainThreadId = _threadId
 	self.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -16,7 +22,35 @@ func _init(_parent, _threadId, _mem = null):
 		render_items()
 	pass
 
-## goes through note nodes and updates the memory item order accordingly
+
+func initialise_disable_button() -> CheckButton:
+	disable_notes_button = CheckButton.new()
+	disable_notes_button.text = "Notes Enabled"
+	disable_notes_button.button_pressed = true
+	disable_notes_button.alignment = 2# we use a constant for the aligmanet (RIGHT)
+	disable_notes_button.toggled.connect(_on_toggled_diable_notes_button)
+	return disable_notes_button
+
+
+func _on_toggled_diable_notes_button(toggled_on: bool) -> void:
+	if toggled_on:
+		disable_notes_button.text = "Notes Enabled"
+		toggle_notes(toggled_on)
+	if !toggled_on:
+		disable_notes_button.text = "Notes Disabled"
+		toggle_notes(toggled_on)
+
+
+func toggle_notes(toggled_on: bool) -> void:
+	var notes = get_children()
+	for note in notes:
+		if note.is_in_group("notes_in_tab"):
+			if toggled_on:
+				note.checkbutton_node.button_pressed = true
+			if !toggled_on:
+				note.checkbutton_node.button_pressed = false
+
+## goes trough note nodes and updates the memory item order accordingly
 func _update_memory_item_order():
 	var i = 0
 	for note in get_children():
@@ -45,7 +79,7 @@ func render_items():
 	# Re-add memory items
 	for item in Memories:
 		var note_control: Note = load("res://Scenes/Note.tscn").instantiate()
-		
+		note_control.add_to_group("notes_in_tab")
 		self.add_child.call_deferred(note_control)
 		await note_control.ready
 
