@@ -231,6 +231,15 @@ item_0/text = "Unhide All"
 item_0/icon = ExtResource("7_rdia2")
 item_0/id = 0
 
+[node name="Notes" type="PopupMenu" parent="VBoxRoot/menuMain"]
+title = "Chat"
+size = Vector2i(126, 100)
+hide_on_checkable_item_selection = false
+item_count = 1
+item_0/text = "Unhide All"
+item_0/icon = ExtResource("7_rdia2")
+item_0/id = 0
+
 [node name="MainUI" type="HBoxContainer" parent="VBoxRoot"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -425,6 +434,7 @@ bus = &"Rec"
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_about_to_popup"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_index_pressed"]
 [connection signal="id_pressed" from="VBoxRoot/menuMain/Chat" to="VBoxRoot/menuMain" method="_on_chat_id_pressed"]
+[connection signal="id_pressed" from="VBoxRoot/menuMain/Notes" to="VBoxRoot/menuMain" method="_on_notes_id_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/NewLineButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_new_line_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
