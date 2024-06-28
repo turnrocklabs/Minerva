@@ -62,39 +62,37 @@ func _on_project_index_pressed(index):
 			pass
 
 
-func _on_view_index_pressed(index: int):
+func _on_view_id_pressed(id: int):
 	# if zoom items are selected
-	match index:
+	match id:
 		4: SingletonObject.main_scene.zoom_ui(5); return
 		5: SingletonObject.main_scene.zoom_ui(-5); return
 		6: SingletonObject.main_scene.reset_zoom(); return
+		8: _unhide_notes()
+		9: _unhide_messages()
 
-	if view.is_item_checkable(index):
-		view.toggle_item_checked(index)
+	if view.is_item_checkable(id):
+		view.toggle_item_checked(id)
 	
 	SingletonObject.main_ui.set_chat_pane_visible(view.is_item_checked(0))
 	SingletonObject.main_ui.set_editor_pane_visible(view.is_item_checked(1))
 	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(2))
 
 
-func _on_chat_id_pressed(id: int):
-	match id:
-		0: # Unhide All
-			for ch in SingletonObject.ChatList:
-				for chi in ch.HistoryItemList:
-					if not chi.Visible:
-						chi.Visible = true
-						chi.rendered_node.history_item = chi # TODO: use render method
+func _unhide_notes():
+	for ch in SingletonObject.ChatList:
+		for chi in ch.HistoryItemList:
+			if not chi.Visible:
+				chi.Visible = true
+				chi.rendered_node.history_item = chi # TODO: use render method
 
 
-func _on_notes_id_pressed(id: int):
-	match id:
-		0: # Unhide All
-			for thread in SingletonObject.ThreadList:
-				for item in thread.MemoryItemList:
-					if not item.Visible:
-						item.Visible = true
-			SingletonObject.NotesTab.render_threads()
+func _unhide_messages():
+	for thread in SingletonObject.ThreadList:
+		for item in thread.MemoryItemList:
+			if not item.Visible:
+				item.Visible = true
+	SingletonObject.NotesTab.render_threads()
 
 
 func _on_view_about_to_popup():
