@@ -58,8 +58,7 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 	self.Message = ""
 	self.Base64Data = ""
 	self.Complete = true
-	self.ModelName = SingletonObject.Chats.provider.model_name
-	self.ModelShortName = SingletonObject.Chats.provider.short_name
+	self.provider = SingletonObject.Chats.provider
 
 	response_arrived.connect(_on_response_arrived)
 
@@ -119,3 +118,10 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 		chi.set(prop, data.get(prop))
 
 	return chi
+
+
+## Merges two history items together
+func merge(item: ChatHistoryItem) -> void:
+	Message = "%s\n%s" % [Message, item.Message]
+	InjectedNote = "%s\n%s" % [InjectedNote, item.InjectedNote]
+	Complete = Complete and item.Complete
