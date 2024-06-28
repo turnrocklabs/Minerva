@@ -87,6 +87,16 @@ func _on_chat_id_pressed(id: int):
 						chi.rendered_node.history_item = chi # TODO: use render method
 
 
+func _on_notes_id_pressed(id: int):
+	match id:
+		0: # Unhide All
+			for thread in SingletonObject.ThreadList:
+				for item in thread.MemoryItemList:
+					if not item.Visible:
+						item.Visible = true
+			SingletonObject.NotesTab.render_threads()
+
+
 func _on_view_about_to_popup():
 	view.set_item_checked(0, SingletonObject.main_ui.chat_pane.visible)
 	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)

@@ -22,6 +22,7 @@ var memory_item: MemoryItem:
 		label_node.text = value.Title
 		description_node.text = value.Content
 		checkbutton_node.button_pressed = value.Enabled
+		visible = value.Visible
 
 
 func _ready():
@@ -191,3 +192,14 @@ func _on_edit_button_pressed():
 
 	# show the editor if it's hidden
 	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+
+func _on_hide_button_pressed():
+	
+	var tween = get_tree().create_tween()
+	tween.tween_property(self, "modulate:a", 0, 0.2)
+	tween.tween_callback(
+		func():
+			memory_item.Visible = false
+			memory_item = memory_item
+	)
