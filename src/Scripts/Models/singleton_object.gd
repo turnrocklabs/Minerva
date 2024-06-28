@@ -45,6 +45,7 @@ func get_project_path(project_name: String) -> String:
 	return config_file.get_value("OpenRecent", project_name)
 #endregion Config File
 
+
 #region Notes
 enum note_type {
 	TEXT,

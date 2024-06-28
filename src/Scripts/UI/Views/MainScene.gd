@@ -15,6 +15,8 @@ func _ready() -> void:
 	# we connect the signals when the project runs
 	text_note_check_box.button_group.pressed.connect(change_note_type)# signal for the note type checkbtn group
 	%CreateNewNote.files_dropped.connect(_on_image_files_dropped)# sinnal for drop image file on image note
+	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD_PRIMARY):
+		%DropImageLabel.text = "Drop or Paste \nImage File Here"
 
 func zoom_ui(factor: int):
 	if theme.has_default_font_size():
@@ -196,7 +198,35 @@ func mouse_over_control(node: Control) -> bool:
 		return false
 	return true
 
+#check for right click on drop image control node
+func _on_drop_image_control_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		match event.button_index:
+			MOUSE_BUTTON_LEFT:
+				pass
+			MOUSE_BUTTON_RIGHT:
+				print("right click")
+				paste_image_from_clipboard()
+
+
+func paste_image_from_clipboard():
+	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
+		if DisplayServer.clipboard_has_image():
+			%ImageDropPanel.visible = false
+			%ImagePreview.visible = true
+			var clipboard_image: Image = DisplayServer.clipboard_get_image()
+			var image_texture = ImageTexture.new()
+			image_texture.set_image(clipboard_image)
+			%ImagePreview.texture = image_texture
+	else: 
+		print("Display Server does not support clipboard feature :c, its agodot thing")
+	
 #endregion Create New note Window
+
+
+
+
+
 
 
 
