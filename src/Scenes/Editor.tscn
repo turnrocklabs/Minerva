@@ -24,6 +24,7 @@ theme_override_constants/separation = 12
 
 [node name="WhiteBoard" type="Panel" parent="VBoxContainer"]
 unique_name_in_owner = true
+visible = false
 clip_contents = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -31,6 +32,7 @@ script = ExtResource("2_ooqtk")
 
 [node name="White" type="ColorRect" parent="VBoxContainer/WhiteBoard"]
 unique_name_in_owner = true
+clip_contents = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -67,10 +69,9 @@ anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 31.0
 grow_horizontal = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 12
 
 [node name="Clear" type="Button" parent="VBoxContainer/WhiteBoard/Buttons"]
-custom_minimum_size = Vector2(83.17, 0)
 layout_mode = 2
 text = "Clear
 "
@@ -109,11 +110,6 @@ text = "color"
 unique_name_in_owner = true
 layout_mode = 2
 text = "eraser"
-
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/WhiteBoard"]
-layout_mode = 0
-offset_right = 40.0
-offset_bottom = 40.0
 
 [node name="CodeEdit" type="CodeEdit" parent="VBoxContainer"]
 unique_name_in_owner = true
