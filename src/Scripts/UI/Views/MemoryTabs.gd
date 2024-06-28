@@ -126,8 +126,8 @@ func render_threads():
 		self.current_tab = clampi(last_thread, 0, self.get_child_count()-1)
 	
 
-
-func add_note(user_title:String, user_content, _source: String = ""):
+#region Add notes methods
+func add_note(user_title:String, user_content: String, _source: String = ""):
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -139,7 +139,7 @@ func add_note(user_title:String, user_content, _source: String = ""):
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
-	new_memory.Type =2
+	new_memory.Type = SingletonObject.note_type.TEXT
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
@@ -149,18 +149,46 @@ func add_note(user_title:String, user_content, _source: String = ""):
 	render_threads()
 
 
-#region Add notes methods
+func add_audio_note(note_title: String, note_audio):
+	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
+		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
+		#return
+		await create_new_notes_tab()
+	
+	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
+	
+	# Create a memory item.
+	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.Enabled = false
+	new_memory.Type = SingletonObject.note_type.IMAGE
+	new_memory.Title = note_title
+	new_memory.audio = note_audio
+	new_memory.Visible = true
+	
+	# append the new memory item to the active thread memory list
+	active_thread.MemoryItemList.append(new_memory)
+	render_threads()
 
-func add_text_note():
-	pass
 
-
-func add_audio_note():
-	pass
-
-
-func add_image_note():
-	pass
+func add_image_note(note_title: String, note_image: Image):
+	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
+		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
+		#return
+		await create_new_notes_tab()
+	
+	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
+	
+	# Create a memory item.
+	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.Enabled = false
+	new_memory.Type = SingletonObject.note_type.IMAGE
+	new_memory.Title = note_title
+	new_memory.image = note_image
+	new_memory.Visible = true
+	
+	# append the new memory item to the active thread memory list
+	active_thread.MemoryItemList.append(new_memory)
+	render_threads()
 
 
 

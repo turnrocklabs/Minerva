@@ -49,11 +49,19 @@ func _on_add_note_pressed():
 	var Head = %NoteHead
 	var Description = %NoteDescription
 	
-	SingletonObject.NotesTab.add_note(Head.text, Description.text)
+	#SingletonObject.NotesTab.add_note(Head.text, Description.text)
 	if note_enum == SingletonObject.note_type.TEXT:
 		SingletonObject.NotesTab.add_note(Head.text, Description.text)
+	if note_enum == SingletonObject.note_type.IMAGE:
+		SingletonObject.NotesTab.add_image_note(Head.text, %ImagePreview.texture.get_image())
+	if note_enum == SingletonObject.note_type.AUDIO:
+		#SingletonObject.NotesTab.add_audio_note(Head.text, %ImagePreview.get_image())
+		pass
 	Head.clear()
 	Description.clear()
+	%ImagePreview.texture = null
+	%ImageDropPanel.visible = true
+	# TODO clear audio file
 	%CreateNewNote.hide()
 	%AddNotePopUp.disabled = true
 
@@ -208,7 +216,7 @@ func _on_drop_image_control_gui_input(event: InputEvent) -> void:
 				print("right click")
 				paste_image_from_clipboard()
 
-
+# check if display server can paste image from clipboard and does so
 func paste_image_from_clipboard():
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
 		if DisplayServer.clipboard_has_image():

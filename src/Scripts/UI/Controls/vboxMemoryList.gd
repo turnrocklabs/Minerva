@@ -72,15 +72,16 @@ func _notification(notification_type):
 
 func render_items():
 	for item in Memories:
-		var note_control: Note
+		var note_control: Note = load("res://Scenes/Note.tscn").instantiate()
+		#checks how the note is going to be rendered
 		if item.Type == SingletonObject.note_type.TEXT:
-			note_control = load("res://Scenes/Note.tscn").instantiate().new_text_note()
+			note_control.new_text_note()
 		if item.Type == SingletonObject.note_type.IMAGE:
-			note_control = load("res://Scenes/Note.tscn").instantiate().new_image_note()
+			note_control.new_image_note()
 		if item.Type == SingletonObject.note_type.AUDIO:
-			note_control = load("res://Scenes/Note.tscn").instantiate().new_audio_note()
+			note_control.new_audio_note()
 		
-		note_control.add_to_group("notes_in_tab")
+		note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
 		self.add_child.call_deferred(note_control)
 		await note_control.ready
 

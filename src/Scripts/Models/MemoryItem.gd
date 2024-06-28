@@ -14,13 +14,13 @@ var Type: int = SingletonObject.note_type.TEXT:
 var Title: String:
 	set(value): SingletonObject.save_state(false); Title = value
 
-var Content: String:
+var Content: String = "":
 	set(value): SingletonObject.save_state(false); Content = value
 
-var image: Texture2D:
+var image: Image = null:
 	set(value): SingletonObject.save_state(false); image = value
 
-var audio:
+var audio = null:
 	set(value): SingletonObject.save_state(false); audio = value
 
 var ContentType: String:
