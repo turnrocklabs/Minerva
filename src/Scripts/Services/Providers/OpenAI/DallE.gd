@@ -115,3 +115,5 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 func estimate_tokens(_input: String) -> int:
 	return 0
 
+func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
+	return 0
