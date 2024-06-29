@@ -57,7 +57,7 @@ func create_prompt(append_item: ChatHistoryItem = null) -> Array[Variant]:
 		append_item.InjectedNote = working_memory
 		print(append_item)
 		# also append the new item since it's not in the history yet
-		history_list.append(history.Provider.Format(append_item))
+		history_list.append(provider.Format(append_item))
 
 	return history_list
 
@@ -124,7 +124,7 @@ func execute_chat():
 		history.HistoryItemList.append(user_history_item)
 		
 		# make a chat request
-		history_list = create_prompt(user_history_item)
+		history_list = create_prompt()
 
 		user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(user_history_item)
 
@@ -153,12 +153,14 @@ func execute_chat():
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
-	chi.Id = bot_response.id
+	if bot_response.id: chi.Id = bot_response.id
 	chi.Role = ChatHistoryItem.ChatRole.MODEL
 	chi.Message = bot_response.text
 	chi.Error = bot_response.error
 	chi.provider = SingletonObject.Chats.provider
 	chi.Complete = bot_response.complete
+	if bot_response.image:
+		chi.Images = ([bot_response.image] as Array[Image])
 
 	# Update user message node
 	user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
