@@ -116,6 +116,8 @@ func regenerate_response(chi: ChatHistoryItem):
 	if not existing_response:
 		existing_response = ChatHistoryItem.new()
 		existing_response.Role = ChatHistoryItem.ChatRole.MODEL
+		history.HistoryItemList.append(existing_response)
+		await SingletonObject.ChatList[current_tab].VBox.add_history_item(existing_response)
 
 	# We format items until we get to the user response
 	var predicate = func(item: ChatHistoryItem) -> Array:
@@ -130,11 +132,15 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	var bot_response = await provider.generate_content(history_list)
 	
-	existing_response.Id = bot_response.id
+	if bot_response.id: existing_response.Id = bot_response.id
+	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
 	existing_response.Message = bot_response.text
 	existing_response.Error = bot_response.error
-	existing_response.provider = SingletonObject.Chats.provider
+	existing_response.provider = provider
 	existing_response.Complete = bot_response.complete
+	existing_response.TokenCost = bot_response.completion_tokens
+	if bot_response.image:
+		existing_response.Images = ([bot_response.image] as Array[Image])
 
 	existing_response.rendered_node.render()
 

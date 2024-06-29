@@ -55,6 +55,7 @@ func set_message_loading(loading_: bool):
 	%LoadingLabel.visible = loading_
 	
 	%MessageLabelsContainer.visible = not loading_
+	%ImagesGridContainer.visible = not loading_
 
 	_toggle_controls(not loading_)
 
