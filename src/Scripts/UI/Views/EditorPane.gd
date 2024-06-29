@@ -49,14 +49,15 @@ func restore_deleted_tab(tab_name: String):
 
 func _process(delta):
 	if Input.is_action_just_pressed("ui_undo"):
-		# Get the name of the last deleted tab
-		var last_deleted_tab = SingletonObject.undo.deleted_tabs.keys().back()
-		if last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "middle":
-			restore_deleted_tab(last_deleted_tab)
-		elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "left":
-			SingletonObject.Chats.restore_deleted_tab(last_deleted_tab)
-		elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "right":
-			SingletonObject.NotesTab.restore_deleted_tab(last_deleted_tab)
+		if not SingletonObject.undo.deleted_tabs.is_empty():
+			# Get the name of the last deleted tab
+			var last_deleted_tab = SingletonObject.undo.deleted_tabs.keys().back()
+			if last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "middle":
+				restore_deleted_tab(last_deleted_tab)
+			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "left":
+				SingletonObject.Chats.restore_deleted_tab(last_deleted_tab)
+			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "right":
+				SingletonObject.NotesTab.restore_deleted_tab(last_deleted_tab)
 			
 func add_control(item: Node, name_: String) -> Node:
 	var scrollable = ScrollContainer.new()
