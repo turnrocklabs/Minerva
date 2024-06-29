@@ -13,7 +13,6 @@ var MemoryItemList: Array[MemoryItem]:
 	set(value): SingletonObject.save_state(false); MemoryItemList = value
 
 
-
 # initialize with a new ThreadId
 func _init(optional_threadId = null):
 	if optional_threadId == null:
@@ -27,7 +26,6 @@ func _init(optional_threadId = null):
 		# threadId was provided, use it
 		self.ThreadId = optional_threadId
 	pass
-
 
 ## Function:
 # serialize the contents into a single structure
@@ -43,7 +41,7 @@ func Serialize() -> Dictionary:
 		"ThreadName": ThreadName,
 		"MemoryItemList": serialized_memories
 	}
-
+	
 	return save_dict
 
 

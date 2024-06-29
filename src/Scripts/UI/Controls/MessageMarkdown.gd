@@ -27,7 +27,7 @@ var content: String:
 var history_item: ChatHistoryItem:
 	set(value):
 		history_item = value
-		_render_history_item()
+		render()
 
 ## Setting this property to true will set the loading state for the message
 ## and hide any other content except the loading label
@@ -36,17 +36,16 @@ var loading:= false:
 		set_message_loading(value)
 		loading = value
 
-## Enables the edit and regenerate button for this node if it's displaying a user message.
+## Enables the edit button for this node if it's displaying a user message.
 ## Changing this property for non user messages has no effect.
 var editable:= false:
 	set(value):
 		editable = value
 		%EditButton.visible = editable
-		%RegenerateButton.visible = editable
 
 
 func _ready():
-	_render_history_item()
+	render()
 
 	# set the message for the edit popup
 	edit_popup.message = self
@@ -55,19 +54,40 @@ func _ready():
 func set_message_loading(loading_: bool):
 	%LoadingLabel.visible = loading_
 	
+	%MessageLabelsContainer.visible = not loading_
+	%ImagesGridContainer.visible = not loading_
+
 	_toggle_controls(not loading_)
 
 
-# This function will take the history item and render it as user or model message
-func _render_history_item():
-	if not history_item: return
+## This function will rerender the messaged using set `history_item`.
+## Either call this function or set the `history_item` whos setter will trigger it.
+func render():
+	if not (history_item and is_node_ready()): return
 
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
 	else: _setup_model_message()
 
+	visible = history_item.Visible
+
+	_update_tokens_cost()
+
 	history_item.rendered_node = self
 
 	_create_code_labels()
+
+
+func _update_tokens_cost() -> void:
+	var price = history_item.provider.token_cost * history_item.TokenCost
+
+	tokens_cost.visible = true
+	if history_item.EstimatedTokenCost:
+		tokens_cost.text = "%s/%s" % [history_item.EstimatedTokenCost, history_item.TokenCost]
+		tokens_cost.tooltip_text = "Estimated %s tokens, used %s (%s$)" % [history_item.EstimatedTokenCost, history_item.TokenCost, price]
+	else:
+		tokens_cost.text = "%s" % history_item.TokenCost
+		tokens_cost.tooltip_text = "Used %s tokens (%s$)" % [history_item.TokenCost, price]
+
 
 ## Will disable/enable nodes in the `controls` group which contains all message buttons
 func _toggle_controls(enabled:= true):
@@ -81,6 +101,8 @@ func _setup_user_message():
 	label.markdown_text = history_item.Message
 	label.set("theme_override_colors/default_color", Color.WHITE)
 
+	%RegenerateButton.visible = true
+
 	var style: StyleBoxFlat = get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = user_message_color
 
@@ -90,6 +112,22 @@ func _setup_model_message():
 
 	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
 	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
+
+	for ch in %ImagesGridContainer.get_children(): ch.free()
+
+	for image in history_item.Images:
+		var texture_rect = TextureRect.new()
+		texture_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		texture_rect.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
+		texture_rect.texture = ImageTexture.create_from_image(image)
+
+		# Show the caption of the image as a tooltip
+		var tt = image.get_meta("caption", "")
+		if tt.length() > 60: tt = tt.left(57) + "..."
+
+		texture_rect.tooltip_text = tt
+
+		%ImagesGridContainer.add_child(texture_rect)
 	
 	label.set("theme_override_colors/default_color", Color.BLACK)
 	
@@ -114,13 +152,6 @@ static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
 	return msg
 
-## Updates tokens cost label in the top left corner
-func update_tokens_cost(estimated: int, correct: int) -> void:
-	var price = history_item.provider.token_cost * estimated
-
-	tokens_cost.visible = true
-	tokens_cost.text = "%s/%s" % [estimated, correct]
-	tokens_cost.tooltip_text = "Estimated %s tokens (%s), used %s" % [estimated, price, correct]
 
 
 # Continues the generation of the response
@@ -145,11 +176,35 @@ func _on_delete_button_pressed():
 	SingletonObject.Chats.remove_chat_history_item(history_item)
 
 func _on_regenerate_button_pressed():
-	SingletonObject.Chats.regenerate_response()
+	SingletonObject.Chats.regenerate_response(history_item)
 
 
 func _on_edit_button_pressed():
 	edit_popup.popup_centered()
+
+func _on_hide_button_pressed():
+	SingletonObject.Chats.hide_chat_history_item(history_item, null, false)
+
+# since auto scroll on text selection is kinda broken
+# we made a workaround
+
+# code below emits a `message_selection` signal when text selection starts or ends
+# if mouse is not pressed emit false
+# if mouse is pressed AND somoe of richtextlabels have selected text emit true
+
+var _pressed: = false
+func _on_gui_input(event: InputEvent):
+	if event is InputEventMouseButton:
+		_pressed = event.is_pressed()
+		if not _pressed:
+			get_parent().message_selection.emit(self, false)
+		return
+	
+	if event is InputEventMouseMotion:
+		for ch: RichTextLabel in %MessageLabelsContainer.get_children():
+			if not ch.get_selected_text().is_empty():
+				get_parent().message_selection.emit(self, true)
+
 
 
 ## Class that represents a message text segment
@@ -236,6 +291,8 @@ func _create_code_labels():
 			node.bbcode_enabled = true
 			node.selection_enabled = true
 			node.text = ts.content
+			node.focus_mode = Control.FOCUS_NONE # disable auto scroll to bottom on focus
+			node.mouse_filter = Control.MOUSE_FILTER_PASS
 
 			# set the color for model message
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
