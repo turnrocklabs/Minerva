@@ -13,7 +13,7 @@ var icActive = preload("res://assets/icons/Microphone_active.png")
 
 
 var effect: AudioEffect
-var audio_recording
+var audio_recording: AudioStreamWAV
 
 
 func _ready() -> void:
@@ -67,7 +67,6 @@ func _on_add_note_pressed():
 		SingletonObject.NotesTab.add_image_note(Head.text, %ImagePreview.texture.get_image())
 	if note_enum == SingletonObject.note_type.AUDIO:
 		SingletonObject.NotesTab.add_audio_note(Head.text, audio_recording)
-		pass
 	Head.clear()
 	Description.clear()
 	%ImagePreview.texture = null
@@ -250,10 +249,10 @@ func _on_record_audio_button_pressed() -> void:
 		audio_recording = effect.get_recording() # type -> AudioStreamWAV
 		%RecordAudioButton.text = "Press To Record Note"
 		effect.set_recording_active(false)
-		%PlayAudioButton.disabled = true
+		%PlayAudioButton.disabled = false
 	else:
 		effect.set_recording_active(true)
-		%PlayAudioButton.disabled = false
+		%PlayAudioButton.disabled = true
 		%RecordAudioButton.text = "recording audio..."
 	
 

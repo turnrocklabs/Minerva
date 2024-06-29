@@ -3,7 +3,6 @@ extends VBoxContainer
 
 signal note_deleted()
 
-var note_type = SingletonObject.note_type.TEXT
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
 @onready var description_node: RichTextLabel = %NoteTextBody
@@ -250,8 +249,9 @@ func _on_image_caption_line_edit_text_submitted(_new_text: String) -> void:
 	%ImageCaptionLineEdit.release_focus()
 
 
-func _on_play_pause_button_toggled(toggled_on: bool) -> void:
-	if toggled_on:
-		audio_stream_player.play()
-	else: 
+
+func _on_play_pause_button_pressed() -> void:
+	if audio_stream_player.playing:
 		audio_stream_player.stop()
+	else: 
+		audio_stream_player.play()
