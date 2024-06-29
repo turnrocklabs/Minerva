@@ -122,7 +122,7 @@ func render_threads():
 
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
 	for i in range(SingletonObject.ThreadList.size()):
-		var thread = SingletonObject.ThreadList[i]
+		var thread = SingletonObject.ThreadList[i];
 		var tab = %tcThreads.get_child(i)
 
 		# If the tab exists, update its content:
@@ -200,8 +200,8 @@ func add_image_note(note_title: String, note_image: Image, image_caption: String
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.IMAGE
 	new_memory.Title = note_title
-	new_memory.image = note_image
-	new_memory.image_caption = image_caption
+	new_memory.Memory_Image = note_image
+	new_memory.Image_caption = image_caption
 	new_memory.Visible = true
 	
 	# append the new memory item to the active thread memory list
