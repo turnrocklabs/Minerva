@@ -158,6 +158,7 @@ theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 
 [connection signal="toggled" from="PanelContainer/v/headHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="text_submitted" from="PanelContainer/v/headHBoxContainer/Title" to="." method="_on_title_text_submitted"]
+[connection signal="pressed" from="PanelContainer/v/headHBoxContainer/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]
 [connection signal="text_submitted" from="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_submitted"]
