@@ -4,7 +4,7 @@ extends RefCounted
 enum PartType {TEXT, CODE, JPEG}
 enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
 
-static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Base64Data", "Order", "Type", "ModelName", "ModelShortName"]
+static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Images", "Captions", "Order", "Type", "ModelName", "ModelShortName"]
 
 # This signal is to be emited when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
@@ -21,8 +21,8 @@ var InjectedNote: String:
 var Message: String:
 	set(value): SingletonObject.save_state(false); Message = value
 
-var Base64Data: String:
-	set(value): SingletonObject.save_state(false); Base64Data = value
+var Images: Array[Image]:
+	set(value): SingletonObject.save_state(false); Images = value
 
 var Order: int:
 	set(value): SingletonObject.save_state(false); Order = value
@@ -56,9 +56,13 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
 	self.Type = _type
 	self.Role = _role
 	self.Message = ""
-	self.Base64Data = ""
 	self.Complete = true
 	self.provider = SingletonObject.Chats.provider
+
+	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
+	rng.randomize() # Uses the current time to seed the random number generator
+	var random_number = rng.randi() # Generates a random integer
+	self.Id = str(random_number).sha256_text()
 
 	response_arrived.connect(_on_response_arrived)
 
@@ -91,31 +95,75 @@ func to_bot_response() -> BotResponse:
 ## Function:
 # Serialize the item to a string
 func Serialize() -> Dictionary:
+
+	# Save images to user folder
+	var images_ = Images.map(
+		func(img: Image):
+			var b64_data = Marshalls.raw_to_base64(img.save_png_to_buffer())
+			return b64_data
+	)
+
+	var captions_ = Images.map(
+		func(img: Image):
+			return img.get_meta("caption")
+	)
+
 	var save_dict: Dictionary = {
 		"Role": Role,
 		"InjectedNote": InjectedNote,
-		"Message" : Message,
-		"Base64Data" : Base64Data,
-		"Order" : Order,
-		"Type" : Type,
+		"Message": Message,
+		"Order": Order,
+		"Type": Type,
 		"ModelName": ModelName,
 		"ModelShortName": ModelShortName,
+		"Images": images_,
+		"Captions": captions_,
 	}
 	return save_dict
 
 
 static func Deserialize(data: Dictionary) -> ChatHistoryItem:
-	# Backwards compatibility
-	# In case we don't have model specified just use this as a fallback
+	# region Backwards compatibility
+
+	# 1. In case we don't have model specified just use this as a fallback
+	# 2. Old project files don't have "Images" field
 	data.merge({
 		"ModelName": "NA",
 		"ModelShortName": "NA",
+		"Images": [],
+		"Captions": []
 	})
+	
+	# Make sure "Captions" has same number of elements as "Images"
+	if data["Captions"].size() == data["Images"].size():
+		data["Captions"].resize(data.get("Images").size())
+
+	# endregion
 
 	var chi = ChatHistoryItem.new()
 
 	for prop in SERIALIZER_FIELDS:
-		chi.set(prop, data.get(prop))
+		var value = data.get(prop)
+		
+		match prop:
+			"Images":
+				var img_arr: Array[Image] = []
+				img_arr.assign((value as Array).map(
+					func(b64_data: String):
+						var img = Image.new()
+						img.load_png_from_buffer(Marshalls.base64_to_raw(b64_data))
+						return img
+				))
+
+				value = img_arr
+			
+			# Make sure `Captions` is after `Images` in `SERIALIZER_FIELDS`
+			# so the images array is set
+			"Captions":
+				for i in range((value as Array).size()):
+					chi.Images[i].set_meta("caption", value[i])
+
+		chi.set(prop, value)
 
 	return chi
 

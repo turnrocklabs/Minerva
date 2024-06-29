@@ -89,6 +89,22 @@ func _setup_model_message():
 
 	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
 	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
+
+	for ch in %ImagesGridContainer.get_children(): ch.free()
+
+	for image in history_item.Images:
+		var texture_rect = TextureRect.new()
+		texture_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		texture_rect.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
+		texture_rect.texture = ImageTexture.create_from_image(image)
+
+		# Show the caption of the image as a tooltip
+		var tt = image.get_meta("caption", "")
+		if tt.length() > 60: tt = tt.left(57) + "..."
+
+		texture_rect.tooltip_text = tt
+
+		%ImagesGridContainer.add_child(texture_rect)
 	
 	label.set("theme_override_colors/default_color", Color.BLACK)
 	

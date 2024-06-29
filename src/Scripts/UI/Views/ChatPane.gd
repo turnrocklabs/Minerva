@@ -1,13 +1,20 @@
 class_name ChatPane
 extends TabContainer
 
+
 var icActive = preload("res://assets/icons/Microphone_active.png")
+var closed_chat_data: ChatHistory  # Store the data of the closed chat
+var control: Control  # Store the tab control
+var container: TabContainer  # Store the TabContainer
+@onready var txt_main_user_input: TextEdit = %txtMainUserInput
 
 var provider: BaseProvider:
 	set(value):
 		provider = value
 		if provider:
 			update_token_estimation() # Update token estimation if provider changes
+
+
 
 ## add new chat 
 func _on_new_chat():
@@ -48,14 +55,11 @@ func create_prompt(append_item: ChatHistoryItem = null) -> Array[Variant]:
 	# append the working memory
 	if append_item:
 		append_item.InjectedNote = working_memory
-
+		print(append_item)
 		# also append the new item since it's not in the history yet
-		history_list.append(history.Provider.Format(append_item))
+		history_list.append(provider.Format(append_item))
 
 	return history_list
-
-
-
 
 func _on_btn_inspect_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
@@ -87,7 +91,10 @@ func regenerate_response():
 
 
 func _on_chat_pressed():
-	
+	execute_chat()
+
+
+func execute_chat():
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 
@@ -117,7 +124,7 @@ func _on_chat_pressed():
 		history.HistoryItemList.append(user_history_item)
 		
 		# make a chat request
-		history_list = create_prompt(user_history_item)
+		history_list = create_prompt()
 
 		user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(user_history_item)
 
@@ -146,12 +153,14 @@ func _on_chat_pressed():
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
-	chi.Id = bot_response.id
+	if bot_response.id: chi.Id = bot_response.id
 	chi.Role = ChatHistoryItem.ChatRole.MODEL
 	chi.Message = bot_response.text
 	chi.Error = bot_response.error
 	chi.provider = SingletonObject.Chats.provider
 	chi.Complete = bot_response.complete
+	if bot_response.image:
+		chi.Images = ([bot_response.image] as Array[Image])
 
 	# Update user message node
 	user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
@@ -257,6 +266,8 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 
 
 func render_history(chat_history: ChatHistory):
+	
+	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -282,6 +293,7 @@ func render_history(chat_history: ChatHistory):
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
@@ -302,15 +314,27 @@ func set_provider(new_provider: BaseProvider):
 
 
 func _on_close_tab(tab: int, container: TabContainer):
-	# Remove the tab control
-	var control = container.get_tab_control(tab)
+	self.control = container.get_tab_control(tab)
+	self.container = container 
+	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	container.remove_child(control)
-	SingletonObject.ChatList.remove_at(tab)
 
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-# func _process(delta):
-# 	pass
+# Function to restore a deleted tab
+func restore_deleted_tab(tab_name: String):
+	if tab_name in SingletonObject.undo.deleted_tabs:
+		var data = SingletonObject.undo.deleted_tabs[tab_name]
+		var tab = data["tab"]
+		var control = data["control"]
+		var history = data["history"]
+		data["timer"].stop()
+		#Add the control back to the TabContainer
+		%tcChats.add_child(control)
+		
+		# Set the tab index and restore the history
+		set_current_tab(tab)
+		SingletonObject.ChatList[tab] = history
+		# Clear the deleted tab from the dictionary
+		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
@@ -356,9 +380,7 @@ func _on_edit_title_dialog_confirmed():
 # Detect the double click and open the title edit popup
 var clicked:= false
 func _on_tab_clicked(tab: int):
-
 	if clicked: show_title_edit_dialog(tab)
-
 	clicked = true
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
 
@@ -392,4 +414,17 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.icon = icActive
-	
+
+func _process(_delta: float):
+	if txt_main_user_input.has_focus():
+		if Input.is_action_just_pressed("control_enter"):
+			execute_chat()
+
+func _on_child_order_changed():
+	# Update ChatList in the SingletonObject
+	SingletonObject.ChatList = []  # Clear the existing list
+	for child in get_children():
+		if child is ScrollContainer:
+			var vbox_chat = child.get_child(0)
+			if vbox_chat is VBoxChat:
+				SingletonObject.ChatList.append(vbox_chat.chat_history)
