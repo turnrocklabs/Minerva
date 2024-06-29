@@ -8,6 +8,7 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
 [ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/PreferencesPopup.tscn" id="3_3hcc1"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 [ext_resource type="Texture2D" uid="uid://cukfnot0gnafc" path="res://assets/icons/Horizontal_split.png" id="8_oxf75"]
@@ -48,10 +49,14 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="ErrorDisplayPopup" type="PopupPanel" parent="."]
+[node name="ErrorDisplayPopup" type="Window" parent="."]
 unique_name_in_owner = true
 initial_position = 2
 size = Vector2i(238, 100)
+visible = false
+transient = true
+exclusive = true
+script = ExtResource("3_w58y5")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ErrorDisplayPopup"]
 anchors_preset = 15
@@ -59,8 +64,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 234.0
+offset_bottom = 96.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -82,16 +87,19 @@ initial_position = 2
 size = Vector2i(522, 320)
 visible = false
 
-[node name="NewThreadPopup" type="PopupPanel" parent="."]
+[node name="NewThreadPopup" type="Window" parent="."]
 unique_name_in_owner = true
-initial_position = 2
-size = Vector2i(117, 100)
+visible = false
+transient = true
+exclusive = true
+script = ExtResource("3_w58y5")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 113.0
-offset_bottom = 96.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 size_flags_horizontal = 3
 
 [node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
@@ -361,9 +369,11 @@ unique_name_in_owner = true
 title = "Create New Note"
 initial_position = 2
 size = Vector2i(400, 700)
-visible = false
-unresizable = true
 min_size = Vector2i(144, 0)
+visible = false
+transient = true
+exclusive = true
+script = ExtResource("3_w58y5")
 
 [node name="Panel" type="Panel" parent="CreateNewNote"]
 anchors_preset = 15
