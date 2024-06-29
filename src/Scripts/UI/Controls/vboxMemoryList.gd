@@ -22,11 +22,11 @@ func _init(_parent, _threadId, _mem = null):
 		render_items()
 	pass
 
-
+#create a checkbutton for toggling enabled notes 
 func initialise_disable_button() -> CheckButton:
 	disable_notes_button = CheckButton.new()
 	disable_notes_button.text = "Notes Enabled"
-	disable_notes_button.button_pressed = true
+	disable_notes_button.button_pressed = false
 	disable_notes_button.alignment = 2# we use a constant for the aligmanet (RIGHT)
 	disable_notes_button.toggled.connect(_on_toggled_diable_notes_button)
 	return disable_notes_button
@@ -79,7 +79,15 @@ func render_items():
 	# Re-add memory items
 	for item in Memories:
 		var note_control: Note = load("res://Scenes/Note.tscn").instantiate()
-		note_control.add_to_group("notes_in_tab")
+		#checks how the note is going to be rendered
+		if item.Type == SingletonObject.note_type.TEXT:
+			note_control.new_text_note()
+		if item.Type == SingletonObject.note_type.IMAGE:
+			note_control.new_image_note()
+		if item.Type == SingletonObject.note_type.AUDIO:
+			note_control.new_audio_note()
+		
+		note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
 		self.add_child.call_deferred(note_control)
 		await note_control.ready
 
