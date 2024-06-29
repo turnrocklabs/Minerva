@@ -133,7 +133,7 @@ func _setup_model_message():
 	
 	var style: StyleBox = get_node("%PanelContainer").get("theme_override_styles/panel")
 
-	var continue_btn = get_node("%ContinueButton") as Button	
+	var continue_btn = get_node("%ContinueButton") as Button
 	continue_btn.visible = not history_item.Complete
 
 	# we can't edit model messages
@@ -168,7 +168,10 @@ func _on_clip_button_pressed():
 
 
 func _on_note_button_pressed():
-	SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text)
+	if history_item.Images.size() > 0:
+		SingletonObject.NotesTab.add_image_note("Image note", history_item.Images[0], history_item.Images[0].get_meta("caption", ""))
+	else:
+		SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text)
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 

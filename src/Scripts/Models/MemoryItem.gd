@@ -20,6 +20,9 @@ var Content: String = "":
 var image: Image = null:
 	set(value): SingletonObject.save_state(false); image = value
 
+var image_caption: String = "":
+	set(value): SingletonObject.save_state(false); image_caption = value
+
 var audio: AudioStreamWAV = null:
 	set(value): SingletonObject.save_state(false); audio = value
 
