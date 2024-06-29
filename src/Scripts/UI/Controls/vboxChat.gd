@@ -4,6 +4,10 @@ extends VBoxContainer
 
 signal memorize_item(text_to_memorize:String)
 
+# emitted when text selection for any of rich text labels start or end
+signal message_selection(message: MessageMarkdown, active: bool)
+
+@onready var scroll_container = get_parent() as ScrollContainer
 
 var chat_history: ChatHistory
 var MainTabContainer
@@ -21,7 +25,10 @@ func _init(_parent):
 
 func _ready():
 	self.size = self.Parent.size
-	pass
+	message_selection.connect(
+		func(_msg: MessageMarkdown, active: bool):
+			_text_selection = active
+	)
 
 
 func _notification(what):
@@ -47,8 +54,6 @@ func _messages_list_changed():
 
 
 func scroll_to_bottom():
-	var scroll_container = get_parent() as ScrollContainer
-
 	# wait for message to update the scroll container dimensions
 	await scroll_container.get_v_scroll_bar().changed
 
@@ -86,3 +91,51 @@ func render_items():
 
 	for item in chat_history.HistoryItemList:
 		item.Order = order
+
+
+
+# region Auto Scroll
+
+# code for auto scroll on message content selection
+
+# determines how much to scroll the chat container scroll container
+# 0 being no scroll
+# this being a float insted of bool allows for faster
+# scroll further the mouse is outside the control
+var _scroll_factor:= 0.0
+var _text_selection:= false
+
+
+# will check if theres open chat tab and apply the scroll factor to selected tab
+func _process(delta: float):
+	if _text_selection: # only if text selection is active for any rich text label
+		scroll_container.scroll_vertical += _scroll_factor*3*delta
+
+func _input(event):
+	if event is InputEventMouseButton: pass
+		# scroll_container.visi
+
+	if not event is InputEventMouseMotion: return
+
+	# Check if is *probably* being currently selected
+	# by checking if mouse is currently pressed
+	# and that mouse is outside of the chat tab control
+
+	if (
+		Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and
+		not scroll_container.get_rect().has_point(scroll_container.get_local_mouse_position())
+		and scroll_container.get_local_mouse_position().x > scroll_container.get_rect().position.x
+		and scroll_container.get_local_mouse_position().x < scroll_container.get_rect().size.x
+	):
+		# mouse is outside of chat tab control
+		# we check if it's under
+		if scroll_container.get_local_mouse_position().y > scroll_container.get_rect().size.y:
+			# scroll factor will be positive number thats difference in
+			# mouse position and bottom of the chat tab
+			_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y
+		# or above it
+		else:
+			_scroll_factor = scroll_container.get_local_mouse_position().y
+
+	else:
+		_scroll_factor = 0
