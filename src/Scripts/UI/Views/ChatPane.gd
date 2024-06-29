@@ -136,7 +136,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.provider = SingletonObject.Chats.provider
 	existing_response.Complete = bot_response.complete
 
-	existing_response.rendered_node.history_item = existing_response # TODO: use render method
+	existing_response.rendered_node.render()
 
 	existing_response.rendered_node.loading = false
 
@@ -324,7 +324,7 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 ## the question if the item is bot message if the item is present in any chat history.
 func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, remove_pair: = true):	
 	item.Visible = false
-	item.rendered_node.history_item = item ## TODO: use render method
+	item.rendered_node.render()
 
 	if not remove_pair: return
 	
@@ -346,7 +346,7 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 			var next_item = history.HistoryItemList[item_index+1]
 			if next_item.Role == ChatHistoryItem.ChatRole.MODEL:
 				next_item.Visible = false
-				next_item.rendered_node.history_item = next_item ## TODO: use render method
+				next_item.rendered_node.render()
 
 	## if the item is user message, check if there's previous message that's user and hide it
 	elif item.Role == ChatHistoryItem.ChatRole.MODEL:
@@ -354,7 +354,7 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 			var previous_item = history.HistoryItemList[item_index-1]
 			if previous_item.Role == ChatHistoryItem.ChatRole.USER:
 				previous_item.Visible = false
-				previous_item.rendered_node.history_item = previous_item ## TODO: use render method
+				previous_item.rendered_node.render()
 
 	
 
