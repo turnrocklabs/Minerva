@@ -40,6 +40,7 @@ func _StartConverting():
 
 				# Make the API request
 				var http_request = HTTPRequest.new()
+				http_request.use_threads = true
 				add_child(http_request)
 				http_request.connect("request_completed", self._on_request_completed)
 
