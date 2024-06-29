@@ -1,30 +1,32 @@
-class_name AudioToTexts
 extends Node
+
+class_name AudioToTexts
 
 var effect
 var recording
-var file_path = "res://VioceAudio.wav"
+var file_path = "res://VoiceAudio.wav"
 
-var icActive = preload("res://assets/icons/Microphone_active.png")
 var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
-var btn:Button
-#varibles for changing state
+
+var is_audio_issues = false
+
+var btn: Button
+var FieldForFilling: TextEdit
 
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
-
-var FieldForFilling:TextEdit
+const DB_THRESHOLD = 50
+const SILENCE_THRESHOLD = 1 # Adjust this threshold as needed
 
 func _ready():
 	var idx = AudioServer.get_bus_index("Rec")
 	effect = AudioServer.get_bus_effect(idx, 0)
-	
+
 func _StartConverting():
 	if effect.is_recording_active():
 		btn.icon = icStatic
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
 		recording.save_to_wav(file_path)
-		
 
 		# Verify that the format is indeed WAV
 		var file = FileAccess.open(file_path, FileAccess.READ)
@@ -38,39 +40,72 @@ func _StartConverting():
 				var audio_data = file.get_buffer(file.get_length())
 				file.close()
 
-				# Make the API request
-				var http_request = HTTPRequest.new()
-				add_child(http_request)
-				http_request.connect("request_completed", self._on_request_completed)
+				# Calculate RMS
+				var rms = _calculate_rms(audio_data)
+				var db = 20 * log(rms) / log(10)
 
-				# Prepare the multipart/form-data request
-				var boundary = "--------------------------" + str(Time.get_ticks_msec())
-				var form_data = PackedByteArray()
+				# Calculate zero-crossings
+				var zero_crossings = _calculate_zero_crossings(audio_data)
 
-				# Construct the form-data with correct headers and audio data
-				form_data.append_array("--".to_ascii_buffer() + boundary.to_ascii_buffer() + "\r\n".to_ascii_buffer())
-				form_data.append_array("Content-Disposition: form-data; name=\"model\"\r\n\r\n".to_ascii_buffer())
-				form_data.append_array("whisper-1\r\n".to_ascii_buffer())
+				print("Audio level (dB):", db)
+				print("Zero crossings:", zero_crossings)
 
-				form_data.append_array("--".to_ascii_buffer() + boundary.to_ascii_buffer() + "\r\n".to_ascii_buffer())
-				form_data.append_array("Content-Disposition: form-data; name=\"file\"; filename=\"VioceAudio.wav\"\r\n".to_ascii_buffer())
-				form_data.append_array("Content-Type: audio/wav\r\n\r\n".to_ascii_buffer())
-				form_data.append_array(header)
-				form_data.append_array(audio_data)
-				form_data.append_array("\r\n".to_ascii_buffer() + "--".to_ascii_buffer() + boundary.to_ascii_buffer() + "--\r\n".to_ascii_buffer())
+				if db > DB_THRESHOLD and zero_crossings > SILENCE_THRESHOLD:
+					# Make the API request
+					var http_request = HTTPRequest.new()
+					add_child(http_request)
+					http_request.connect("request_completed", self._on_request_completed)
+					# Prepare the multipart/form-data request
+					var boundary = "--------------------------" + str(Time.get_ticks_msec())
+					var form_data = PackedByteArray()
 
-				var headers = ["Authorization: Bearer " + SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENAI)
-				,
-				"Content-Type: multipart/form-data; boundary=" + boundary]
-				# Send the request with the concatenated PoolByteArray
-				http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
-				btn.disabled = true
+					# Construct the form-data with correct headers and audio data
+					form_data.append_array("--".to_ascii_buffer() + boundary.to_ascii_buffer() + "\r\n".to_ascii_buffer())
+					form_data.append_array("Content-Disposition: form-data; name=\"model\"\r\n\r\n".to_ascii_buffer())
+					form_data.append_array("whisper-1\r\n".to_ascii_buffer())
+
+					form_data.append_array("--".to_ascii_buffer() + boundary.to_ascii_buffer() + "\r\n".to_ascii_buffer())
+					form_data.append_array("Content-Disposition: form-data; name=\"file\"; filename=\"VoiceAudio.wav\"\r\n".to_ascii_buffer())
+					form_data.append_array("Content-Type: audio/wav\r\n\r\n".to_ascii_buffer())
+					form_data.append_array(header)
+					form_data.append_array(audio_data)
+					form_data.append_array("\r\n".to_ascii_buffer() + "--".to_ascii_buffer() + boundary.to_ascii_buffer() + "--\r\n".to_ascii_buffer())
+
+					var headers = ["Authorization: Bearer " + SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENAI),
+					"Content-Type: multipart/form-data; boundary=" + boundary]
+					# Send the request with the concatenated PackedByteArray
+					http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
+					btn.disabled = true
+					btn.icon = icStatic
+				else:
+					print("Audio level is too low or silent, not sending the file.")
 			else:
 				print("Invalid file format. Header: ", header_str)
 		else:
 			print("Failed to open audio file: ", file_path)
 	else:
 		effect.set_recording_active(true)
+
+func _calculate_rms(audio_data: PackedByteArray) -> float:
+	var sum = 0.0
+	for i in range(0, audio_data.size(), 2):
+		var sample = int(audio_data[i] | (audio_data[i+1] << 8))
+		if sample & 0x8000:
+			sample = -(0x10000 - sample)
+		sum += float(sample) * float(sample)
+	return sqrt(sum / (audio_data.size() / 2))
+
+func _calculate_zero_crossings(audio_data: PackedByteArray) -> int:
+	var zero_crossings = 0
+	var last_sample = 0
+	for i in range(0, audio_data.size(), 2):
+		var sample = int(audio_data[i] | (audio_data[i+1] << 8))
+		if sample & 0x8000:
+			sample = -(0x10000 - sample)
+		if (last_sample < 0 and sample >= 0) or (last_sample >= 0 and sample < 0):
+			zero_crossings += 1
+		last_sample = sample
+	return zero_crossings
 
 func _on_request_completed(_result, response_code, _headers, body):
 	if response_code == 200:

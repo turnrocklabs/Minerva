@@ -2,6 +2,7 @@ class_name ChatPane
 extends TabContainer
 
 var icActive = preload("res://assets/icons/Microphone_active.png")
+var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 
 var provider: BaseProvider:
 	set(value):
@@ -388,11 +389,14 @@ func _on_txt_main_user_input_text_set():
 	update_token_estimation()
 
 func _on_btn_microphone_pressed():
-	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
-	SingletonObject.AtT._StartConverting()
-	SingletonObject.AtT.btn = %btnMicrophone
-	%btnMicrophone.icon = icActive
-	
+	if SingletonObject.AtT.is_audio_issues == false: 
+		SingletonObject.AtT.FieldForFilling = %txtMainUserInput
+		SingletonObject.AtT._StartConverting()
+		SingletonObject.AtT.btn = %btnMicrophone
+		%btnMicrophone.icon = icActive
+	else:
+		%btnMicrophone.icon = icStatic
+		
 # region Auto Scroll
 
 # code for auto scroll on message content selection
@@ -432,4 +436,3 @@ func _input(event):
 
 	else:
 		_scroll_factor = 0
-
