@@ -11,12 +11,23 @@ var note_enum = SingletonObject.note_type.TEXT
 
 var icActive = preload("res://assets/icons/Microphone_active.png")
 
+
+var effect: AudioEffect
+var audio_recording
+
+
 func _ready() -> void:
 	# we connect the signals when the project runs
 	text_note_check_box.button_group.pressed.connect(change_note_type)# signal for the note type checkbtn group
 	%CreateNewNote.files_dropped.connect(_on_image_files_dropped)# sinnal for drop image file on image note
+	
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD_PRIMARY):
 		%DropImageLabel.text = "Drop or Paste \nImage File Here"
+	
+	#setting up audio things
+	var idx = AudioServer.get_bus_index("Rec")
+	effect = AudioServer.get_bus_effect(idx, 0)
+	
 
 func zoom_ui(factor: int):
 	if theme.has_default_font_size():
@@ -55,7 +66,7 @@ func _on_add_note_pressed():
 	if note_enum == SingletonObject.note_type.IMAGE:
 		SingletonObject.NotesTab.add_image_note(Head.text, %ImagePreview.texture.get_image())
 	if note_enum == SingletonObject.note_type.AUDIO:
-		#SingletonObject.NotesTab.add_audio_note(Head.text, %ImagePreview.get_image())
+		SingletonObject.NotesTab.add_audio_note(Head.text, audio_recording)
 		pass
 	Head.clear()
 	Description.clear()
@@ -150,6 +161,9 @@ func change_note_type(button: CheckBox):
 		%AudioControl.visible = false
 		%ImageControl.visible = true
 
+
+#region Image Note region
+
 #region Image fileDialog
 
 # open dialog for loading image file and changes window exclusivity
@@ -193,8 +207,6 @@ func _on_image_files_dropped(files):
 		else:
 			#TODO implement error pop up or something
 			print_rich("[b]image format not supported :c \n Maybe one day c:[/b]")
-	#else: #mouse_over end
-	#	print("outside the dropdown area")
 
 #TODO change this tom use mouse entered mouse exited signals
 func mouse_over_control(node: Control) -> bool:
@@ -228,8 +240,41 @@ func paste_image_from_clipboard():
 			%ImagePreview.texture = image_texture
 	else: 
 		print("Display Server does not support clipboard feature :c, its agodot thing")
+#endregion Image Note region
+
+#region Audio Note
+
+# gets called when redord button is pressed
+func _on_record_audio_button_pressed() -> void:
+	if effect.is_recording_active():
+		audio_recording = effect.get_recording() # type -> AudioStreamWAV
+		%RecordAudioButton.text = "Press To Record Note"
+		effect.set_recording_active(false)
+		%PlayAudioButton.disabled = true
+	else:
+		effect.set_recording_active(true)
+		%PlayAudioButton.disabled = false
+		%RecordAudioButton.text = "recording audio..."
 	
+
+# plays the recorded audio note
+func _on_play_audio_button_pressed() -> void:
+	%AudioNoteStreamPlayer.stream = audio_recording
+	%AudioNoteStreamPlayer.play()
+
+#endregion Audio Note
+
+
+
+
 #endregion Create New note Window
+
+
+
+
+
+
+
 
 
 
