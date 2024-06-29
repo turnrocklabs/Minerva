@@ -36,7 +36,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/icon_separation = 5
-drag_to_rearrange_enabled = true
 
 [node name="RightControl" type="Control" parent="VBoxContainer/HBoxContainer"]
 visible = false

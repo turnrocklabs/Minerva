@@ -387,7 +387,7 @@ func render_history(chat_history: ChatHistory):
 	%tcChats.add_child(scroll_container)
 
 	for item in chat_history.HistoryItemList:
-		SingletonObject.ChatList[current_tab].VBox.add_history_item(item)
+		vboxChat.add_history_item(item)
 
 
 
