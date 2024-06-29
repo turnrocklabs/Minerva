@@ -41,7 +41,7 @@ func Serialize() -> Dictionary:
 		"ThreadName": ThreadName,
 		"MemoryItemList": serialized_memories
 	}
-	SingletonObject.undo.A = save_dict
+	
 	return save_dict
 
 
