@@ -1,6 +1,5 @@
 class_name ChatHistory
 extends RefCounted
-
 ## Each LLM provider has a different concept of turn-based chats and multi-modal parts.
 # Note: Modal, not model.  Modal refers to text, video, audio, etc.
 # This abstraction is an interface to create a standard that each provider can then use.
@@ -38,11 +37,32 @@ func _init(_provider, optional_historyId = null):
 	HistoryItemList = []
 	pass
 
-func To_Prompt() -> Array[Variant]:
+
+## Creates prompt from this history using the set provider.
+## The `predivate` parameter is a `Callable` that returns an `Array` of 2 booleans.
+## First detemines if provided item should be added to the returned list,
+## while second detemines if the execution of the function should stop and the value returned immediately.
+func To_Prompt(predicate: Callable = Callable()) -> Array[Variant]:
 	var retVal:Array[Variant] = []
+
 	for chat: ChatHistoryItem in self.HistoryItemList:
-		var item: Variant = Provider.Format(chat)
-		retVal.append(item)
+		
+		if predicate.is_valid():
+			var results = predicate.call(chat)
+			var should_add: bool = results[0]
+			var should_continue: bool = results[1]
+
+			if should_add:
+				var item: Variant = Provider.Format(chat)
+				retVal.append(item)
+
+			if not should_continue:
+				return retVal
+		else:
+			# TODO: When each chat tab uses it's own prvider change this
+			var item: Variant = SingletonObject.Chats.provider.Format(chat)
+			retVal.append(item)
+
 	return retVal
 
 
@@ -61,9 +81,7 @@ func Serialize() -> Dictionary:
 		"HistoryName" : HistoryName,
 		"HistoryItemList" : serialized_items
 	}
-
 	return save_dict
-
 
 static func Deserialize(data: Dictionary) -> ChatHistory:
 	var ch = ChatHistory.new(SingletonObject.Chats.provider, data.get("HistoryId"))

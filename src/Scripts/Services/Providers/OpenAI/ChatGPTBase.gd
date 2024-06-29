@@ -9,7 +9,6 @@ func _init():
 	BASE_URL = "https://api.openai.com"
 	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
 
-## VRACAJ BOT RESPONSE
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response:= BotResponse.new()
 
@@ -73,8 +72,23 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 			role = "assistant"
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "system"
+	
+	# Get all image captions in array of strings
+	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
+	var image_captions: String
 
-	var text: String = chat_item.InjectedNote + chat_item.Message if chat_item.InjectedNote else chat_item.Message
+	# if there are images, construct the image captions into one string for prompt
+	if not image_captions_array.is_empty():
+		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
+
+
+	var text = """
+		%s
+		%s
+		%s
+	""" % [chat_item.Message, image_captions, chat_item.InjectedNote]
+
+	text = text.strip_edges()
 
 	return {
 		"role": role,
@@ -135,5 +149,16 @@ func to_bot_response(data: Variant) -> BotResponse:
 	return response
 
 
-func estimate_tokens(input: String) -> int:
+func estimate_tokens(input) -> int:
 	return roundi(input.get_slice_count(" ") * 1.5)
+
+
+func estimate_tokens_from_prompt(input: Array[Variant]):
+	var all_messages: Array[String] = []
+
+	# get all user messages
+	for msg: Dictionary in input:
+		# if msg["role"] != "user": continue
+		all_messages.append(msg["content"])
+	
+	return estimate_tokens("".join(all_messages))

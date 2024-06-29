@@ -1,4 +1,4 @@
-extends PopupPanel
+extends PersistentWindow
 
 
 @onready var _provider_option_button = %ProviderOptionButton as OptionButton
@@ -11,6 +11,7 @@ func get_selected_provider() -> GDScript:
 	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[_provider_option_button.get_selected_id()]
 
 func _ready():
+	super()
 	populate_microphones()
 	SingletonObject.theme_changed.connect(set_theme_option_menu)
 	theme_option_button.selected = SingletonObject.get_theme()
