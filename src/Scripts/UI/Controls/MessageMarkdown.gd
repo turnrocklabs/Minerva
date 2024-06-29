@@ -36,13 +36,12 @@ var loading:= false:
 		set_message_loading(value)
 		loading = value
 
-## Enables the edit and regenerate button for this node if it's displaying a user message.
+## Enables the edit button for this node if it's displaying a user message.
 ## Changing this property for non user messages has no effect.
 var editable:= false:
 	set(value):
 		editable = value
 		%EditButton.visible = editable
-		%RegenerateButton.visible = editable
 
 
 func _ready():
@@ -55,6 +54,9 @@ func _ready():
 func set_message_loading(loading_: bool):
 	%LoadingLabel.visible = loading_
 	
+	%MessageLabelsContainer.visible = not loading_
+	%ImagesGridContainer.visible = not loading_
+
 	_toggle_controls(not loading_)
 
 
@@ -98,6 +100,8 @@ func _setup_user_message():
 	right_control.get_node("%MsgSenderAvatar").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
 	label.markdown_text = history_item.Message
 	label.set("theme_override_colors/default_color", Color.WHITE)
+
+	%RegenerateButton.visible = true
 
 	var style: StyleBoxFlat = get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = user_message_color
@@ -172,7 +176,7 @@ func _on_delete_button_pressed():
 	SingletonObject.Chats.remove_chat_history_item(history_item)
 
 func _on_regenerate_button_pressed():
-	SingletonObject.Chats.regenerate_response()
+	SingletonObject.Chats.regenerate_response(history_item)
 
 
 func _on_edit_button_pressed():

@@ -34,7 +34,8 @@ func ensure_chat_open() -> void:
 
 ## Generates the full turn prompt using the history of the active chat and the selected provider.
 ## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.
-func create_prompt(append_item: ChatHistoryItem = null) -> Array[Variant]:
+## Check `History.To_Prompt` for explanation on `predicate`.
+func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Callable()) -> Array[Variant]:
 	# get history of the active chat tab if there is one
 	if len(SingletonObject.ChatList) <= current_tab:
 		return []
@@ -46,7 +47,7 @@ func create_prompt(append_item: ChatHistoryItem = null) -> Array[Variant]:
 	print(working_memory)
 
 	# history will turn it into a prompts using the selected provider
-	var history_list: Array[Variant] = history.To_Prompt()
+	var history_list: Array[Variant] = history.To_Prompt(predicate)
 
 	# If we don't have a new item but we have active notes, we still need new item to add the noted in there
 	if not append_item and working_memory:
@@ -84,10 +85,66 @@ func _on_btn_inspect_pressed():
 	%InspectorPopup.popup_centered()
 
 
-# this will just call `_on_chat_pressed` since it will regenerate response for last user message
-# if there's no model response
-func regenerate_response():
-	_on_chat_pressed()
+## Takes a chat history item and regenerates the prompt for it.
+## Regenerates response will be placed in next
+func regenerate_response(chi: ChatHistoryItem):
+	
+	if chi.Role != ChatHistoryItem.ChatRole.USER:
+		push_warning("Tried to regenerate response for history item %s who's Role is not user" % chi)
+		return
+
+	var history: ChatHistory
+	if not history:
+		for h in SingletonObject.ChatList:
+			if h.HistoryItemList.has(chi):
+				history = h
+				break
+
+	if not history:
+		push_warning("Trying to regenerate response for history item %s not present in any history item list" % chi)
+		return
+	
+	var index = history.HistoryItemList.find(chi)
+
+	var existing_response: ChatHistoryItem
+
+	for item in history.HistoryItemList.slice(index):
+		if item.Role == ChatHistoryItem.ChatRole.MODEL:
+			existing_response = item
+			break
+
+	if not existing_response:
+		existing_response = ChatHistoryItem.new()
+		existing_response.Role = ChatHistoryItem.ChatRole.MODEL
+		history.HistoryItemList.append(existing_response)
+		await SingletonObject.ChatList[current_tab].VBox.add_history_item(existing_response)
+
+	# We format items until we get to the user response
+	var predicate = func(item: ChatHistoryItem) -> Array:
+		return [
+			history.HistoryItemList.find(item) < index,
+			history.HistoryItemList.find(item) < index,
+		]
+
+	var history_list = create_prompt(chi, predicate)
+
+	existing_response.rendered_node.loading = true
+
+	var bot_response = await provider.generate_content(history_list)
+	
+	if bot_response.id: existing_response.Id = bot_response.id
+	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
+	existing_response.Message = bot_response.text
+	existing_response.Error = bot_response.error
+	existing_response.provider = provider
+	existing_response.Complete = bot_response.complete
+	existing_response.TokenCost = bot_response.completion_tokens
+	if bot_response.image:
+		existing_response.Images = ([bot_response.image] as Array[Image])
+
+	existing_response.rendered_node.render()
+
+	existing_response.rendered_node.loading = false
 
 
 func _on_chat_pressed():
@@ -273,7 +330,7 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 ## the question if the item is bot message if the item is present in any chat history.
 func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, remove_pair: = true):	
 	item.Visible = false
-	item.rendered_node.history_item = item ## TODO: use render method
+	item.rendered_node.render()
 
 	if not remove_pair: return
 	
@@ -295,7 +352,7 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 			var next_item = history.HistoryItemList[item_index+1]
 			if next_item.Role == ChatHistoryItem.ChatRole.MODEL:
 				next_item.Visible = false
-				next_item.rendered_node.history_item = next_item ## TODO: use render method
+				next_item.rendered_node.render()
 
 	## if the item is user message, check if there's previous message that's user and hide it
 	elif item.Role == ChatHistoryItem.ChatRole.MODEL:
@@ -303,7 +360,7 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 			var previous_item = history.HistoryItemList[item_index-1]
 			if previous_item.Role == ChatHistoryItem.ChatRole.USER:
 				previous_item.Visible = false
-				previous_item.rendered_node.history_item = previous_item ## TODO: use render method
+				previous_item.rendered_node.render()
 
 	
 
