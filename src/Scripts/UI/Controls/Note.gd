@@ -3,10 +3,13 @@ extends VBoxContainer
 
 signal note_deleted()
 
+var note_type = SingletonObject.note_type.TEXT
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
-@onready var description_node: RichTextLabel = %Description
+@onready var description_node: RichTextLabel = %NoteTextBody
 @onready var drag_texture_rect: TextureRect = $PanelContainer/v/DragTextureRect
+@onready var note_image: TextureRect = %NoteImage
+@onready var audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
 
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
@@ -20,14 +23,44 @@ var memory_item: MemoryItem:
 		if not value: return
 
 		label_node.text = value.Title
-		description_node.text = value.Content
 		checkbutton_node.button_pressed = value.Enabled
 		visible = value.Visible
+		if memory_item.Type == SingletonObject.note_type.TEXT:
+			description_node.text = value.Content
+		if memory_item.Type == SingletonObject.note_type.IMAGE:
+			var image_texture = ImageTexture.new()
+			image_texture.set_image(value.image)
+			note_image.texture = image_texture
+		if memory_item.Type == SingletonObject.note_type.AUDIO:
+			audio_stream_player.stream = value.audio
+
+func new_text_note():
+	%NoteTextBody.visible = true
+	%ImageVBoxContainer.visible = false
+	%AudioHBoxContainer.visible = false
+	return self
+
+
+func new_image_note():
+	%ImageVBoxContainer.visible = true
+	%AudioHBoxContainer.visible = false
+	%NoteTextBody.visible = false
+	return self
+
+
+func new_audio_note():
+	%AudioHBoxContainer.visible = true
+	%NoteTextBody.visible = false
+	%ImageVBoxContainer.visible = false
+	return self
+
 
 
 func _ready():
+	# connecting signal for changing the dots texture when the main theme changes
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
 	change_modulate_for_texture()
+	
 	var new_size: Vector2 = size * 0.15
 	set_size(new_size)
 	label_node.text_changed.connect(
@@ -35,12 +68,14 @@ func _ready():
 			if memory_item: memory_item.Title = text
 	)
 
+#method for changing the dots texture when the main theme changes
 func change_modulate_for_texture():
 	var theme_enum = SingletonObject.get_theme()
 	if theme_enum == SingletonObject.theme.LIGHT_MODE:
 		drag_texture_rect.modulate = Color("282828")
 	if theme_enum == SingletonObject.theme.DARK_MODE:
 		drag_texture_rect.modulate = Color("f0f0f0")
+
 
 func _to_string():
 	return "Note %s" % memory_item.Title
@@ -203,3 +238,18 @@ func _on_hide_button_pressed():
 			memory_item.Visible = false
 			memory_item = memory_item
 	)
+
+
+func _on_title_text_submitted(_new_text: String) -> void:
+	%Title.release_focus()
+
+
+func _on_image_caption_line_edit_text_submitted(_new_text: String) -> void:
+	%ImageCaptionLineEdit.release_focus()
+
+
+func _on_play_pause_button_toggled(toggled_on: bool) -> void:
+	if toggled_on:
+		audio_stream_player.play()
+	else: 
+		audio_stream_player.stop()
