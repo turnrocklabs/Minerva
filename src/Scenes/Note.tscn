@@ -16,13 +16,9 @@ color = Color(0.164706, 0.345098, 0.831373, 1)
 thickness = 10
 
 [node name="Note" type="VBoxContainer"]
-custom_minimum_size = Vector2(400, 0)
-anchors_preset = -1
+anchors_preset = 15
 anchor_right = 1.0
-anchor_bottom = 0.183
-offset_top = -16.0
-offset_right = -920.0
-offset_bottom = 26.36
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 16

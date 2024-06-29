@@ -392,16 +392,16 @@ func _notification(what):
 		NOTIFICATION_DRAG_END: _drag_active = false
 
 
-var clicked:= false
+var clicked: = -1
 func _on_tab_clicked(tab: int):
-	print(current_tab)
 	
-	if clicked:
+	if clicked != -1:
 		var tab_title = get_tab_bar().get_tab_title(tab)
 		open_threads_popup(tab_title, tab)
+		return
 
-	clicked = true
-	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
+	clicked = tab
+	get_tree().create_timer(0.4).timeout.connect(func(): clicked = -1)
 
 
 func _on_tab_hovered(tab: int):
