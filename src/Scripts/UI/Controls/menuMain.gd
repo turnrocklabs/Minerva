@@ -4,10 +4,6 @@ extends MenuBar
 @onready var project: PopupMenu = $Project
 
 
-func _ready() -> void:
-	pass
-
-
 # handle file options
 func _on_file_index_pressed(index):
 	match index:
