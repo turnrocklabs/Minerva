@@ -60,7 +60,7 @@ var ThreadList: Array[MemoryThread]:
 		ThreadList = value
 
 var NotesTab: MemoryTabs
-
+##reorder array
 func initialize_notes(threads: Array[MemoryThread] = []):
 	ThreadList = threads
 	
@@ -87,15 +87,19 @@ var ChatList: Array[ChatHistory]:
 		# save_state(false)
 		ChatList = value
 
+var last_thread_index: int
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
 # var Provider: BaseProvider
 var Chats: ChatPane
-
+#Add undo to use it throught the singleton
+var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
+
 func _ready():
 	add_child(AtT)
+	add_child(undo)
 	
 	
 	var err = config_file.load(config_file_name)

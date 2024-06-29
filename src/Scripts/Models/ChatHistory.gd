@@ -1,6 +1,5 @@
 class_name ChatHistory
 extends RefCounted
-
 ## Each LLM provider has a different concept of turn-based chats and multi-modal parts.
 # Note: Modal, not model.  Modal refers to text, video, audio, etc.
 # This abstraction is an interface to create a standard that each provider can then use.
@@ -61,9 +60,7 @@ func Serialize() -> Dictionary:
 		"HistoryName" : HistoryName,
 		"HistoryItemList" : serialized_items
 	}
-
 	return save_dict
-
 
 static func Deserialize(data: Dictionary) -> ChatHistory:
 	var ch = ChatHistory.new(SingletonObject.Chats.provider, data.get("HistoryId"))

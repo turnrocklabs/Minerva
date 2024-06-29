@@ -1,7 +1,11 @@
 class_name ChatPane
 extends TabContainer
 
+
 var icActive = preload("res://assets/icons/Microphone_active.png")
+var closed_chat_data: ChatHistory  # Store the data of the closed chat
+var control: Control  # Store the tab control
+var container: TabContainer  # Store the TabContainer
 @onready var txt_main_user_input: TextEdit = %txtMainUserInput
 
 var provider: BaseProvider:
@@ -9,6 +13,8 @@ var provider: BaseProvider:
 		provider = value
 		if provider:
 			update_token_estimation() # Update token estimation if provider changes
+
+
 
 ## add new chat 
 func _on_new_chat():
@@ -49,14 +55,11 @@ func create_prompt(append_item: ChatHistoryItem = null) -> Array[Variant]:
 	# append the working memory
 	if append_item:
 		append_item.InjectedNote = working_memory
-
+		print(append_item)
 		# also append the new item since it's not in the history yet
 		history_list.append(history.Provider.Format(append_item))
 
 	return history_list
-
-
-
 
 func _on_btn_inspect_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
@@ -261,6 +264,8 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 
 
 func render_history(chat_history: ChatHistory):
+	
+	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -286,6 +291,7 @@ func render_history(chat_history: ChatHistory):
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
@@ -306,15 +312,27 @@ func set_provider(new_provider: BaseProvider):
 
 
 func _on_close_tab(tab: int, container: TabContainer):
-	# Remove the tab control
-	var control = container.get_tab_control(tab)
+	self.control = container.get_tab_control(tab)
+	self.container = container 
+	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	container.remove_child(control)
-	SingletonObject.ChatList.remove_at(tab)
 
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-# func _process(delta):
-# 	pass
+# Function to restore a deleted tab
+func restore_deleted_tab(tab_name: String):
+	if tab_name in SingletonObject.undo.deleted_tabs:
+		var data = SingletonObject.undo.deleted_tabs[tab_name]
+		var tab = data["tab"]
+		var control = data["control"]
+		var history = data["history"]
+		data["timer"].stop()
+		#Add the control back to the TabContainer
+		%tcChats.add_child(control)
+		
+		# Set the tab index and restore the history
+		set_current_tab(tab)
+		SingletonObject.ChatList[tab] = history
+		# Clear the deleted tab from the dictionary
+		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
@@ -360,9 +378,7 @@ func _on_edit_title_dialog_confirmed():
 # Detect the double click and open the title edit popup
 var clicked:= false
 func _on_tab_clicked(tab: int):
-
 	if clicked: show_title_edit_dialog(tab)
-
 	clicked = true
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
 
@@ -439,4 +455,12 @@ func _input(event):
 
 	else:
 		_scroll_factor = 0
-
+		
+func _on_child_order_changed():
+	# Update ChatList in the SingletonObject
+	SingletonObject.ChatList = []  # Clear the existing list
+	for child in get_children():
+		if child is ScrollContainer:
+			var vbox_chat = child.get_child(0)
+			if vbox_chat is VBoxChat:
+				SingletonObject.ChatList.append(vbox_chat.chat_history)
