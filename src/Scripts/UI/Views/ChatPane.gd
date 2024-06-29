@@ -414,50 +414,12 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.icon = icActive
-	
-# region Auto Scroll
 
-# code for auto scroll on message content selection
-
-# determines how much to scroll the chat container scroll container
-# 0 being no scroll
-# this being a float insted of bool allows for faster
-# scroll further the mouse is outside the control
-var _scroll_factor:= 0.0
-
-
-# will check if theres open chat tab and apply the scroll factor to selected tab
-func _process(delta: float):
+func _process(_delta: float):
 	if txt_main_user_input.has_focus():
 		if Input.is_action_just_pressed("control_enter"):
 			execute_chat()
-	if not SingletonObject.ChatList.is_empty():
-		SingletonObject.ChatList[current_tab].VBox.get_parent().scroll_vertical += _scroll_factor*3*delta
 
-func _input(event):
-	if not event is InputEventMouseMotion: return
-
-	# Check if is *probably* being currently selected
-	# by checking if mouse is currently pressed
-	# and that mouse is outside of the chat tab control
-
-	if (
-		Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and
-		not get_rect().has_point(get_local_mouse_position())
-	):
-		# mouse is outside of chat tab control
-		# we check if it's under
-		if get_local_mouse_position().y > get_rect().size.y:
-			# scroll factor will be positive number thats difference in
-			# mouse position and bottom of the chat tab
-			_scroll_factor = get_local_mouse_position().y - get_rect().size.y
-		# or above it
-		else:
-			_scroll_factor = get_local_mouse_position().y
-
-	else:
-		_scroll_factor = 0
-		
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
 	SingletonObject.ChatList = []  # Clear the existing list

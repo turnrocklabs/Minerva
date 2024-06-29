@@ -121,7 +121,7 @@ func render_threads():
 	var last_thread = self.current_tab
 
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
-	for i in range(SingletonObject.ThreadList.size()):
+	for i in range(SingletonObject.ThreadList.size()-1):
 		var thread = SingletonObject.ThreadList[i]
 		var tab = %tcThreads.get_child(i)
 
