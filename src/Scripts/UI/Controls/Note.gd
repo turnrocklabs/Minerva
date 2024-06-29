@@ -28,11 +28,11 @@ var memory_item: MemoryItem:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
 			var image_texture = ImageTexture.new()
-			image_texture.set_image(value.image)
+			image_texture.set_image(value.Memory_Image)
 			note_image.texture = image_texture
-			%ImageCaptionLineEdit.text = value.image_caption
+			%ImageCaptionLineEdit.text = value.Image_caption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
-			audio_stream_player.stream = value.audio
+			audio_stream_player.stream = value.Audio
 
 func new_text_note():
 	%NoteTextBody.visible = true
