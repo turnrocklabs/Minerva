@@ -8,7 +8,7 @@ var file_path = "res://VoiceAudio.wav"
 
 var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 
-var is_audio_issues = false
+var is_audio_issues
 
 var btn: Button
 var FieldForFilling: TextEdit
@@ -43,13 +43,10 @@ func _StartConverting():
 				# Calculate RMS
 				var rms = _calculate_rms(audio_data)
 				var db = 20 * log(rms) / log(10)
-
 				# Calculate zero-crossings
 				var zero_crossings = _calculate_zero_crossings(audio_data)
-
-				print("Audio level (dB):", db)
-				print("Zero crossings:", zero_crossings)
-
+				
+				
 				if db > DB_THRESHOLD and zero_crossings > SILENCE_THRESHOLD:
 					# Make the API request
 					var http_request = HTTPRequest.new()
@@ -79,6 +76,9 @@ func _StartConverting():
 					btn.icon = icStatic
 				else:
 					print("Audio level is too low or silent, not sending the file.")
+					FieldForFilling.text = "Audio Error: Microphone is either too quiet or turned off."
+					btn.icon = icStatic
+					
 			else:
 				print("Invalid file format. Header: ", header_str)
 		else:

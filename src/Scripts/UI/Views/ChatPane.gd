@@ -389,13 +389,14 @@ func _on_txt_main_user_input_text_set():
 	update_token_estimation()
 
 func _on_btn_microphone_pressed():
-	if SingletonObject.AtT.is_audio_issues == false: 
+	# Trigger the conversion process in the AudioToTexts singleton
+	SingletonObject.AtT._StartConverting()
+	%btnMicrophone.icon = icStatic
+	# Updating the button icon based on audio status
+	if SingletonObject.AtT.is_audio_issues == false:
 		SingletonObject.AtT.FieldForFilling = %txtMainUserInput
-		SingletonObject.AtT._StartConverting()
 		SingletonObject.AtT.btn = %btnMicrophone
 		%btnMicrophone.icon = icActive
-	else:
-		%btnMicrophone.icon = icStatic
 		
 # region Auto Scroll
 
