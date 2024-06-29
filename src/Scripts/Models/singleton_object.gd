@@ -1,11 +1,16 @@
 extends Node
 
+#region global variables?
+var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
+
+
+#endregion global variables
+
 #region Config File
 var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
 func save_to_config_file(section: String, field: String, value):
-	
 	config_file.get_sections()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
@@ -17,21 +22,15 @@ func has_recent_projects() -> bool:
 
 func save_recent_project(path: String):
 	var path_split = path.split("/")
-	print(path_split)
 	var project_name_index: int = path_split.size() - 1
 	var project_name = path_split[project_name_index]
 	
-	var recent_projects_array = get_recent_projects()
-	
-	if recent_projects_array:
-		if recent_projects_array.size() > 5:
-			recent_projects_array.remove_at(0)
-			config_file.erase_section("OpenRecent")
-			for project_name_saved in recent_projects_array:
-				var saved_path = get_project_path(project_name_saved)
-				save_to_config_file("OpenRecent", project_name_saved, saved_path)
+	if has_recent_projects():# checks if there are recent project saved
+		var recent_projects_array = get_recent_projects()
+		#checks if there are 5 recent projects saved and deletes the first one saved
+		if recent_projects_array.size() >= 5:
+			config_file.erase_section_key("OpenRecent", recent_projects_array[0])
 	save_to_config_file("OpenRecent",project_name, path)
-	
 
 # this function returns an array with the files 
 # names of the recent project saved in config file
@@ -41,18 +40,27 @@ func get_recent_projects() -> Array:
 		return config_file.get_section_keys("OpenRecent")
 	return ["no recent projects"]
 
+
 func get_project_path(project_name: String) -> String:
 	return config_file.get_value("OpenRecent", project_name)
 #endregion Config File
 
+
 #region Notes
+enum note_type {
+	TEXT,
+	AUDIO, 
+	IMAGE,
+	VIDEO
+}
+
 var ThreadList: Array[MemoryThread]:
 	set(value):
 		# save_state(false)
 		ThreadList = value
 
 var NotesTab: MemoryTabs
-
+##reorder array
 func initialize_notes(threads: Array[MemoryThread] = []):
 	ThreadList = threads
 	
@@ -68,10 +76,6 @@ func toggle_all_notes(notes_enabled: bool):
 	if !notes_enabled:
 		NotesTab.enable_all()
 
-#TODO implement function for disabling all notes in single tab
-func toggle_single_tab(_enable: bool):
-	pass
-
 #endregion Notes
 
 #region Chats
@@ -83,15 +87,19 @@ var ChatList: Array[ChatHistory]:
 		# save_state(false)
 		ChatList = value
 
+var last_thread_index: int
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
 # var Provider: BaseProvider
 var Chats: ChatPane
-
+#Add undo to use it throught the singleton
+var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
+
 func _ready():
 	add_child(AtT)
+	add_child(undo)
 	
 	
 	var err = config_file.load(config_file_name)
@@ -99,8 +107,8 @@ func _ready():
 		return
 	
 	
-	var theme_enum = config_file.get_value("theme", "theme_enum")
-	set_theme(theme_enum)
+	# var theme_enum = config_file.get_value("theme", "theme_enum")
+	# set_theme(theme_enum)
 
 
 func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = []):
@@ -129,7 +137,7 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 ###
 # Create a common error display system that will popup an error and show
 # and show the message
-var errorPopup: PopupPanel
+var errorPopup: PersistentWindow
 var errorTitle: Label
 var errorText: Label
 func ErrorDisplay(error_title:String, error_message: String):
@@ -151,6 +159,7 @@ enum API_MODEL_PROVIDERS {
 	CHAT_GPT_4O,
 	CHAT_GPT_35_TURBO,
 	GOOGLE_VERTEX,
+	DALLE,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -158,6 +167,7 @@ var API_MODEL_PROVIDER_SCRIPTS = {
 	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX: GoogleVertex,
+	API_MODEL_PROVIDERS.DALLE: DallE,
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value
