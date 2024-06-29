@@ -149,5 +149,16 @@ func to_bot_response(data: Variant) -> BotResponse:
 	return response
 
 
-func estimate_tokens(input: String) -> int:
+func estimate_tokens(input) -> int:
 	return roundi(input.get_slice_count(" ") * 1.5)
+
+
+func estimate_tokens_from_prompt(input: Array[Variant]):
+	var all_messages: Array[String] = []
+
+	# get all user messages
+	for msg: Dictionary in input:
+		# if msg["role"] != "user": continue
+		all_messages.append(msg["content"])
+	
+	return estimate_tokens("".join(all_messages))
