@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=24 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -8,7 +8,6 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
 [ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/PreferencesPopup.tscn" id="3_3hcc1"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 [ext_resource type="Texture2D" uid="uid://cukfnot0gnafc" path="res://assets/icons/Horizontal_split.png" id="8_oxf75"]
@@ -19,6 +18,7 @@
 [ext_resource type="Texture2D" uid="uid://b53y87xjob8ri" path="res://assets/generated/paperclip_icon_24-removebg-preview.png" id="13_sb4aw"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 [ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="17_ijkb2"]
+[ext_resource type="Texture2D" uid="uid://drca67spd2k7f" path="res://assets/conquest_of_revachol_flat_contrast.jpg" id="18_fhje1"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
@@ -49,14 +49,10 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="ErrorDisplayPopup" type="Window" parent="."]
+[node name="ErrorDisplayPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
 initial_position = 2
 size = Vector2i(238, 100)
-visible = false
-transient = true
-exclusive = true
-script = ExtResource("3_w58y5")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ErrorDisplayPopup"]
 anchors_preset = 15
@@ -87,19 +83,16 @@ initial_position = 2
 size = Vector2i(522, 320)
 visible = false
 
-[node name="NewThreadPopup" type="Window" parent="."]
+[node name="NewThreadPopup" type="PopupPanel" parent="."]
 unique_name_in_owner = true
-visible = false
-transient = true
-exclusive = true
-script = ExtResource("3_w58y5")
+initial_position = 2
+size = Vector2i(117, 100)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 113.0
+offset_bottom = 96.0
 size_flags_horizontal = 3
 
 [node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
@@ -255,7 +248,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Chats" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(580, 0)
 layout_mode = 2
 size_flags_horizontal = 1
 
@@ -346,6 +339,7 @@ icon = ExtResource("12_6jk4t")
 
 [node name="tcThreads" type="TabContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
@@ -354,7 +348,7 @@ script = ExtResource("1_gunt8")
 
 [node name="ImageNoteFileDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
-title = "Open a File"
+title = "Open an Image File"
 initial_position = 2
 size = Vector2i(500, 500)
 exclusive = false
@@ -362,18 +356,15 @@ ok_button_text = "Open"
 dialog_hide_on_ok = true
 file_mode = 0
 access = 2
-filters = PackedStringArray("*.png", "*.jpg", "*.webp", "*.jpeg", "*.svg", "*.bmp")
+filters = PackedStringArray("*.png", "*.jpg", "*.webp")
 
 [node name="CreateNewNote" type="Window" parent="."]
 unique_name_in_owner = true
 title = "Create New Note"
 initial_position = 2
 size = Vector2i(400, 700)
+unresizable = true
 min_size = Vector2i(144, 0)
-visible = false
-transient = true
-exclusive = true
-script = ExtResource("3_w58y5")
 
 [node name="Panel" type="Panel" parent="CreateNewNote"]
 anchors_preset = 15
@@ -489,29 +480,16 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="RecordAudioButton" type="Button" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
-unique_name_in_owner = true
+[node name="Button" type="Button" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
 layout_mode = 0
-offset_left = 85.0
+offset_left = 90.0
 offset_top = 150.0
-offset_right = 290.0
+offset_right = 295.0
 offset_bottom = 190.0
 text = "Press To Record Note"
 
-[node name="PlayAudioButton" type="Button" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_right = 12.0
-offset_bottom = 40.0
-disabled = true
-text = "play audio"
-
-[node name="AudioNoteStreamPlayer" type="AudioStreamPlayer" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
-unique_name_in_owner = true
-
 [node name="ImageControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer"]
 unique_name_in_owner = true
-visible = false
 custom_minimum_size = Vector2(0, 350)
 layout_mode = 2
 
@@ -523,33 +501,16 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_default_cursor_shape = 7
-
-[node name="ImagePreview" type="TextureRect" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl"]
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(0, 200)
-layout_mode = 1
-anchors_preset = 14
-anchor_top = 0.5
-anchor_right = 1.0
-anchor_bottom = 0.5
-offset_top = -75.0
-offset_bottom = 125.0
-grow_horizontal = 2
-grow_vertical = 2
-expand_mode = 2
-stretch_mode = 5
 
 [node name="ImageDropPanel" type="Panel" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl"]
 unique_name_in_owner = true
+layout_direction = 1
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
 
 [node name="DropColorRect" type="ColorRect" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
 unique_name_in_owner = true
@@ -558,20 +519,15 @@ offset_left = 100.0
 offset_top = 100.0
 offset_right = 300.0
 offset_bottom = 300.0
-mouse_filter = 2
-mouse_default_cursor_shape = 2
 color = Color(0.0768359, 0.0768358, 0.0768358, 1)
 
 [node name="DropImageLabel" type="Label" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
-unique_name_in_owner = true
 layout_mode = 0
 offset_left = 118.0
-offset_top = 121.57
+offset_top = 150.0
 offset_right = 281.0
-offset_bottom = 170.57
+offset_bottom = 173.0
 text = "Drop Image File Here"
-horizontal_alignment = 1
-vertical_alignment = 1
 
 [node name="FileIconTextureRect" type="TextureRect" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
 texture_filter = 1
@@ -590,6 +546,23 @@ offset_right = 168.0
 offset_bottom = 60.0
 text = "Open File Dialog"
 icon = ExtResource("18_mitgl")
+
+[node name="ImagePreview" type="TextureRect" parent="CreateNewNote/Panel/VBoxContainer/ImageControl"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 1
+anchors_preset = 14
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_top = -75.0
+offset_bottom = 125.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("18_fhje1")
+expand_mode = 2
+stretch_mode = 5
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
@@ -614,10 +587,10 @@ bus = &"Rec"
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/DisableNotesButton" to="." method="_on_disable_notes_button_pressed"]
+[connection signal="toggled" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/DisableNotesButton" to="." method="_on_disable_notes_button_toggled"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
-[connection signal="child_order_changed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_child_order_changed"]
 [connection signal="tab_clicked" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
 [connection signal="tab_hovered" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
 [connection signal="canceled" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_canceled"]
@@ -628,8 +601,4 @@ bus = &"Rec"
 [connection signal="text_changed" from="CreateNewNote/Panel/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/TextNoteControl/btnVoice" to="." method="_on_btn_voice_pressed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AudioControl/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AudioControl/PlayAudioButton" to="." method="_on_play_audio_button_pressed"]
-[connection signal="gui_input" from="CreateNewNote/Panel/VBoxContainer/ImageControl" to="." method="_on_drop_image_control_gui_input"]
-[connection signal="gui_input" from="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl" to="." method="_on_drop_image_control_gui_input"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/ImageControl/OpenImageFileButton" to="." method="_on_open_image_file_button_pressed"]

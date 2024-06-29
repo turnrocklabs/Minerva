@@ -1,5 +1,5 @@
 class_name MessageEditPopup
-extends PopupPanel
+extends PersistentWindow
 
 var message: MessageMarkdown
 
