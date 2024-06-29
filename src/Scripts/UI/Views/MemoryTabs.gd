@@ -121,14 +121,14 @@ func render_threads():
 	var last_thread = self.current_tab
 
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
-	for i in range(SingletonObject.ThreadList.size()-1):
+	for i in range(SingletonObject.ThreadList.size()):
 		var thread = SingletonObject.ThreadList[i]
 		var tab = %tcThreads.get_child(i)
 
 		# If the tab exists, update its content:
 		if tab:
 			var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread.ThreadId, thread.MemoryItemList)
-			tab.get_child(0).remove_child(tab.get_child(0))
+			tab.remove_child(tab.get_child(0))
 			tab.add_child(vboxMemoryList)
 			tab.name = thread.ThreadName
 			tab.set_meta("thread", thread)

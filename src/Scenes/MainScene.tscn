@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=24 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -369,10 +369,10 @@ unique_name_in_owner = true
 title = "Create New Note"
 initial_position = 2
 size = Vector2i(400, 700)
-min_size = Vector2i(144, 0)
 visible = false
 transient = true
 exclusive = true
+min_size = Vector2i(144, 0)
 script = ExtResource("3_w58y5")
 
 [node name="Panel" type="Panel" parent="CreateNewNote"]
