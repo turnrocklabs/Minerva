@@ -2,12 +2,9 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageEditPopup.gd" id="1_6d1qi"]
 
-[node name="MessageEditPopup" type="PopupPanel"]
+[node name="MessageEditPopup" type="Window"]
 position = Vector2i(0, 36)
 size = Vector2i(500, 250)
-visible = true
-unresizable = false
-borderless = false
 script = ExtResource("1_6d1qi")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
