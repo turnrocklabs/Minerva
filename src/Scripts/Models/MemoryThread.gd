@@ -41,7 +41,6 @@ func Serialize() -> Dictionary:
 		"ThreadName": ThreadName,
 		"MemoryItemList": serialized_memories
 	}
-	
 	return save_dict
 
 
