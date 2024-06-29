@@ -40,7 +40,8 @@ func _init(_provider, optional_historyId = null):
 func To_Prompt() -> Array[Variant]:
 	var retVal:Array[Variant] = []
 	for chat: ChatHistoryItem in self.HistoryItemList:
-		var item: Variant = Provider.Format(chat)
+		# TODO: When each chat tab uses it's own prvider change this
+		var item: Variant = SingletonObject.Chats.provider.Format(chat)
 		retVal.append(item)
 	return retVal
 

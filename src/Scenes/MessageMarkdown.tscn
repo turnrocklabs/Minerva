@@ -277,6 +277,10 @@ text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="ImagesGridContainer" type="GridContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="h2" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
 

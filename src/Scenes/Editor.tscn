@@ -31,9 +31,10 @@ script = ExtResource("2_g3oqj")
 
 [node name="TextureRect" type="TextureRect" parent="VBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_vertical = 3
+expand_mode = 4
+stretch_mode = 4
 
 [node name="SaveButton" type="Button" parent="VBoxContainer"]
 layout_mode = 2
