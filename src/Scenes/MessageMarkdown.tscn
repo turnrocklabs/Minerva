@@ -1,11 +1,14 @@
-[gd_scene load_steps=27 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=31 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
 [ext_resource type="PackedScene" uid="uid://clmnhuxss1a02" path="res://Scenes/MessageEditPopup.tscn" id="2_g2tku"]
 [ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_p2uud"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
+[ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="4_qpk4n"]
+[ext_resource type="Texture2D" uid="uid://1qda4os658si" path="res://assets/icons/clipboard_icon_white_no_bg.png" id="4_tp7wr"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
@@ -40,6 +43,9 @@ corner_radius_top_left = 20
 corner_radius_top_right = 20
 corner_radius_bottom_right = 20
 corner_radius_bottom_left = 20
+
+[sub_resource type="CanvasTexture" id="CanvasTexture_vtaaj"]
+diffuse_texture = ExtResource("4_tp7wr")
 
 [sub_resource type="LabelSettings" id="LabelSettings_3dxq6"]
 font_size = 10
@@ -145,6 +151,7 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 1
 theme_override_styles/panel = SubResource("StyleBoxFlat_hjfue")
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer"]
@@ -168,6 +175,11 @@ layout_mode = 2
 size_flags_horizontal = 10
 theme_override_constants/separation = 12
 
+[node name="HideButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
+layout_mode = 2
+tooltip_text = "Hide this history item, but keep it in history list."
+icon = ExtResource("3_p2uud")
+
 [node name="EditButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 unique_name_in_owner = true
 layout_mode = 2
@@ -175,11 +187,11 @@ icon = ExtResource("10_h3jau")
 
 [node name="ClipButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 layout_mode = 2
-text = "Clip"
+icon = SubResource("CanvasTexture_vtaaj")
 
 [node name="NoteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 layout_mode = 2
-text = "Note"
+icon = ExtResource("4_qpk4n")
 
 [node name="DeleteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 layout_mode = 2
@@ -259,14 +271,20 @@ h4 = SubResource("Resource_j3mc0")
 h5 = SubResource("Resource_whtla")
 h6 = SubResource("Resource_f738n")
 
-[node name="LoadingLabel" type="Label" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+[node name="LoadingLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 visible = false
+custom_minimum_size = Vector2(0, 23)
 layout_mode = 2
-theme_override_colors/font_color = Color(0, 0, 0, 1)
-text = "●︎●︎●︎"
+size_flags_vertical = 4
+bbcode_enabled = true
+text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
 
 [node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ImagesGridContainer" type="GridContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 layout_mode = 2
 
@@ -310,6 +328,8 @@ text = "O4"
 label_settings = SubResource("LabelSettings_l0yj0")
 horizontal_alignment = 1
 
+[connection signal="gui_input" from="." to="." method="_on_gui_input"]
+[connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/ClipButton" to="." method="_on_clip_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/NoteButton" to="." method="_on_note_button_pressed"]

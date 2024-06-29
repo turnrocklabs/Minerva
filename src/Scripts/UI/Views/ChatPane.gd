@@ -1,13 +1,20 @@
 class_name ChatPane
 extends TabContainer
 
+
 var icActive = preload("res://assets/icons/Microphone_active.png")
+var closed_chat_data: ChatHistory  # Store the data of the closed chat
+var control: Control  # Store the tab control
+var container: TabContainer  # Store the TabContainer
+@onready var txt_main_user_input: TextEdit = %txtMainUserInput
 
 var provider: BaseProvider:
 	set(value):
 		provider = value
 		if provider:
 			update_token_estimation() # Update token estimation if provider changes
+
+
 
 ## add new chat 
 func _on_new_chat():
@@ -49,14 +56,11 @@ func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Ca
 	# append the working memory
 	if append_item:
 		append_item.InjectedNote = working_memory
-
+		print(append_item)
 		# also append the new item since it's not in the history yet
-		history_list.append(history.Provider.Format(append_item))
+		history_list.append(provider.Format(append_item))
 
 	return history_list
-
-
-
 
 func _on_btn_inspect_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
@@ -138,7 +142,10 @@ func regenerate_response(chi: ChatHistoryItem):
 
 
 func _on_chat_pressed():
-	
+	execute_chat()
+
+
+func execute_chat():
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 
@@ -168,12 +175,13 @@ func _on_chat_pressed():
 		history.HistoryItemList.append(user_history_item)
 		
 		# make a chat request
-		history_list = create_prompt(user_history_item)
+		history_list = create_prompt()
 
 		user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(user_history_item)
 
-		# Set the tokens estimation label. Correct token will be 0 until we get a response
-		user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), 0)
+		user_history_item.EstimatedTokenCost = provider.estimate_tokens_from_prompt(history_list)
+		# rerender the message wince we changed the history item
+		user_msg_node.render()
 	
 	else:
 		# since we already have the message in user history create the prompt with no additional items
@@ -197,15 +205,19 @@ func _on_chat_pressed():
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
-	chi.Id = bot_response.id
+	if bot_response.id: chi.Id = bot_response.id
 	chi.Role = ChatHistoryItem.ChatRole.MODEL
 	chi.Message = bot_response.text
 	chi.Error = bot_response.error
-	chi.provider = SingletonObject.Chats.provider
+	chi.provider = provider
 	chi.Complete = bot_response.complete
+	chi.TokenCost = bot_response.completion_tokens
+	if bot_response.image:
+		chi.Images = ([bot_response.image] as Array[Image])
 
 	# Update user message node
-	user_msg_node.update_tokens_cost(SingletonObject.Chats.provider.estimate_tokens(user_history_item.Message), bot_response.prompt_tokens)
+	user_history_item.TokenCost = bot_response.prompt_tokens
+	user_msg_node.render()
 
 	# Change the history item and the mesasge node will update itself
 	model_msg_node.history_item = chi
@@ -307,7 +319,49 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 	history.HistoryItemList.erase(item)
 
 
+## Will hide the chat histoy item. If `remove_pair` is true
+## and the item is user message it will also hide the answer or 
+## the question if the item is bot message if the item is present in any chat history.
+func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, remove_pair: = true):	
+	item.Visible = false
+	item.rendered_node.history_item = item ## TODO: use render method
+
+	if not remove_pair: return
+	
+	if not history:
+		for h in SingletonObject.ChatList:
+			if h.HistoryItemList.has(item):
+				history = h
+				break
+
+	if not history:
+		push_warning("Hiding history item %s not present in any history item list" % item)
+		return
+		
+	var item_index = history.HistoryItemList.find(item)
+
+	## if the item is user message, check if there's next message that's model and hide it
+	if item.Role == ChatHistoryItem.ChatRole.USER:
+		if history.HistoryItemList.size() > item_index:
+			var next_item = history.HistoryItemList[item_index+1]
+			if next_item.Role == ChatHistoryItem.ChatRole.MODEL:
+				next_item.Visible = false
+				next_item.rendered_node.history_item = next_item ## TODO: use render method
+
+	## if the item is user message, check if there's previous message that's user and hide it
+	elif item.Role == ChatHistoryItem.ChatRole.MODEL:
+		if item_index > 0:
+			var previous_item = history.HistoryItemList[item_index-1]
+			if previous_item.Role == ChatHistoryItem.ChatRole.USER:
+				previous_item.Visible = false
+				previous_item.rendered_node.history_item = previous_item ## TODO: use render method
+
+	
+
+
 func render_history(chat_history: ChatHistory):
+	
+	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -333,6 +387,7 @@ func render_history(chat_history: ChatHistory):
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
@@ -353,15 +408,27 @@ func set_provider(new_provider: BaseProvider):
 
 
 func _on_close_tab(tab: int, container: TabContainer):
-	# Remove the tab control
-	var control = container.get_tab_control(tab)
+	self.control = container.get_tab_control(tab)
+	self.container = container 
+	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	container.remove_child(control)
-	SingletonObject.ChatList.remove_at(tab)
 
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-# func _process(delta):
-# 	pass
+# Function to restore a deleted tab
+func restore_deleted_tab(tab_name: String):
+	if tab_name in SingletonObject.undo.deleted_tabs:
+		var data = SingletonObject.undo.deleted_tabs[tab_name]
+		var tab = data["tab"]
+		var control = data["control"]
+		var history = data["history"]
+		data["timer"].stop()
+		#Add the control back to the TabContainer
+		%tcChats.add_child(control)
+		
+		# Set the tab index and restore the history
+		set_current_tab(tab)
+		SingletonObject.ChatList[tab] = history
+		# Clear the deleted tab from the dictionary
+		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
@@ -387,7 +454,13 @@ func clear_all_chats():
 	add_child(SingletonObject.Chats.provider)
 
 func update_token_estimation():
-	var token_count = provider.estimate_tokens(%txtMainUserInput.text)
+	if not SingletonObject.Chats: return
+
+	var chi = ChatHistoryItem.new()
+	chi.Message = %txtMainUserInput.text
+	
+	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi))
+
 	%EstimatedTokensLabel.text = "%s (%s$)" % [token_count, provider.token_cost * token_count]
 
 
@@ -407,9 +480,7 @@ func _on_edit_title_dialog_confirmed():
 # Detect the double click and open the title edit popup
 var clicked:= false
 func _on_tab_clicked(tab: int):
-
 	if clicked: show_title_edit_dialog(tab)
-
 	clicked = true
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
 
@@ -443,44 +514,17 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.icon = icActive
-	
-# region Auto Scroll
 
-# code for auto scroll on message content selection
+func _process(_delta: float):
+	if txt_main_user_input.has_focus():
+		if Input.is_action_just_pressed("control_enter"):
+			execute_chat()
 
-# determines how much to scroll the chat container scroll container
-# 0 being no scroll
-# this being a float insted of bool allows for faster
-# scroll further the mouse is outside the control
-var _scroll_factor:= 0.0
-
-
-# will check if theres open chat tab and apply the scroll factor to selected tab
-func _process(delta: float):
-	if not SingletonObject.ChatList.is_empty():
-		SingletonObject.ChatList[current_tab].VBox.get_parent().scroll_vertical += _scroll_factor*3*delta
-
-func _input(event):
-	if not event is InputEventMouseMotion: return
-
-	# Check if is *probably* being currently selected
-	# by checking if mouse is currently pressed
-	# and that mouse is outside of the chat tab control
-
-	if (
-		Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and
-		not get_rect().has_point(get_local_mouse_position())
-	):
-		# mouse is outside of chat tab control
-		# we check if it's under
-		if get_local_mouse_position().y > get_rect().size.y:
-			# scroll factor will be positive number thats difference in
-			# mouse position and bottom of the chat tab
-			_scroll_factor = get_local_mouse_position().y - get_rect().size.y
-		# or above it
-		else:
-			_scroll_factor = get_local_mouse_position().y
-
-	else:
-		_scroll_factor = 0
-
+func _on_child_order_changed():
+	# Update ChatList in the SingletonObject
+	SingletonObject.ChatList = []  # Clear the existing list
+	for child in get_children():
+		if child is ScrollContainer:
+			var vbox_chat = child.get_child(0)
+			if vbox_chat is VBoxChat:
+				SingletonObject.ChatList.append(vbox_chat.chat_history)

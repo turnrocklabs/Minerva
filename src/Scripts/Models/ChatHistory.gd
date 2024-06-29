@@ -1,6 +1,5 @@
 class_name ChatHistory
 extends RefCounted
-
 ## Each LLM provider has a different concept of turn-based chats and multi-modal parts.
 # Note: Modal, not model.  Modal refers to text, video, audio, etc.
 # This abstraction is an interface to create a standard that each provider can then use.
@@ -60,7 +59,8 @@ func To_Prompt(predicate: Callable = Callable()) -> Array[Variant]:
 			if not should_continue:
 				return retVal
 		else:
-			var item: Variant = Provider.Format(chat)
+			# TODO: When each chat tab uses it's own prvider change this
+			var item: Variant = SingletonObject.Chats.provider.Format(chat)
 			retVal.append(item)
 
 	return retVal
@@ -81,9 +81,7 @@ func Serialize() -> Dictionary:
 		"HistoryName" : HistoryName,
 		"HistoryItemList" : serialized_items
 	}
-
 	return save_dict
-
 
 static func Deserialize(data: Dictionary) -> ChatHistory:
 	var ch = ChatHistory.new(SingletonObject.Chats.provider, data.get("HistoryId"))
