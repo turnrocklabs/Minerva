@@ -55,14 +55,11 @@ func create_prompt(append_item: ChatHistoryItem = null) -> Array[Variant]:
 	# append the working memory
 	if append_item:
 		append_item.InjectedNote = working_memory
-
+		print(append_item)
 		# also append the new item since it's not in the history yet
 		history_list.append(history.Provider.Format(append_item))
 
 	return history_list
-
-
-
 
 func _on_btn_inspect_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
@@ -294,6 +291,7 @@ func render_history(chat_history: ChatHistory):
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
@@ -380,9 +378,7 @@ func _on_edit_title_dialog_confirmed():
 # Detect the double click and open the title edit popup
 var clicked:= false
 func _on_tab_clicked(tab: int):
-
 	if clicked: show_title_edit_dialog(tab)
-
 	clicked = true
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
 
@@ -459,4 +455,12 @@ func _input(event):
 
 	else:
 		_scroll_factor = 0
-
+		
+func _on_child_order_changed():
+	# Update ChatList in the SingletonObject
+	SingletonObject.ChatList = []  # Clear the existing list
+	for child in get_children():
+		if child is ScrollContainer:
+			var vbox_chat = child.get_child(0)
+			if vbox_chat is VBoxChat:
+				SingletonObject.ChatList.append(vbox_chat.chat_history)

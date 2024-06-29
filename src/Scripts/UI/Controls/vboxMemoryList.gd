@@ -58,17 +58,16 @@ func _update_memory_item_order():
 		note.memory_item.Order = i
 		i += 1
 
-func _notification(notification_type):
-	match notification_type:
-		# Change MemoryItem Order when notes order changes
-		NOTIFICATION_CHILD_ORDER_CHANGED:
-			if is_inside_tree(): _update_memory_item_order()
-		NOTIFICATION_ENTER_TREE:
-			_update_memory_item_order()
-		# When the drag is over, maybe the order of notes changed, so rerender them
-		NOTIFICATION_DRAG_END:
-			_update_memory_item_order()
-			render_items()  # Re-render items after drag ends
+#func _notification(notification_type):
+	#match notification_type:
+		## Change MemoryItem Order when notes order changes
+		#NOTIFICATION_CHILD_ORDER_CHANGED:
+			#if is_inside_tree(): _update_memory_item_order()
+		#NOTIFICATION_ENTER_TREE:
+			#_update_memory_item_order()
+		## When the drag is over, maybe the order of notes changed, so rerender them
+		#NOTIFICATION_DRAG_END:
+			#pass
 
 func render_items():
 	# Clear existing children
