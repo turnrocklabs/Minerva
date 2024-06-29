@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
 [ext_resource type="PackedScene" uid="uid://clmnhuxss1a02" path="res://Scenes/MessageEditPopup.tscn" id="2_g2tku"]
-[ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://botx2rpgbwnlj" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_p2uud"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
@@ -183,18 +183,22 @@ icon = ExtResource("3_p2uud")
 [node name="EditButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 unique_name_in_owner = true
 layout_mode = 2
+tooltip_text = "Edit Message Contens"
 icon = ExtResource("10_h3jau")
 
 [node name="ClipButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 layout_mode = 2
+tooltip_text = "Copy Message Contents"
 icon = SubResource("CanvasTexture_vtaaj")
 
 [node name="NoteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 layout_mode = 2
+tooltip_text = "Create a Note from The Message"
 icon = ExtResource("4_qpk4n")
 
 [node name="DeleteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 layout_mode = 2
+tooltip_text = "Delete Message"
 icon = ExtResource("10_6uibh")
 
 [node name="TokensCostLabel" type="Label" parent="MarginContainer/HBoxContainer/PanelContainer/v"]

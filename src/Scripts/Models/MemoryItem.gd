@@ -20,7 +20,7 @@ var Content: String = "":
 var image: Image = null:
 	set(value): SingletonObject.save_state(false); image = value
 
-var audio: AudioStreamWAV = null:# type? -> AudioStreamWAV
+var audio: AudioStreamWAV = null:
 	set(value): SingletonObject.save_state(false); audio = value
 
 var ContentType: String:

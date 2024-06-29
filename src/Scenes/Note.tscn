@@ -142,6 +142,7 @@ text = "Play
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="PanelContainer/v/AudioHBoxContainer"]
 unique_name_in_owner = true
+volume_db = 4.0
 
 [node name="ProgressBar" type="ProgressBar" parent="PanelContainer/v/AudioHBoxContainer"]
 custom_minimum_size = Vector2(100, 0)
@@ -162,4 +163,4 @@ theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]
 [connection signal="text_submitted" from="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_submitted"]
-[connection signal="toggled" from="PanelContainer/v/AudioHBoxContainer/PlayPauseButton" to="." method="_on_play_pause_button_toggled"]
+[connection signal="pressed" from="PanelContainer/v/AudioHBoxContainer/PlayPauseButton" to="." method="_on_play_pause_button_pressed"]
