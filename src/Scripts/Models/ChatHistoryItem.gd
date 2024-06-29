@@ -16,6 +16,7 @@ static var SERIALIZER_FIELDS = [
 	"ModelShortName",
 	"EstimatedTokenCost",
 	"TokenCost",
+	"Visible",
 ]
 
 # This signal is to be emited when new message in the history list is added
@@ -53,6 +54,9 @@ var Complete: bool:
 
 var Error: String:
 	set(value): SingletonObject.save_state(false); Error = value
+
+var Visible: bool = true:
+	set(value): SingletonObject.save_state(false); Visible = value
 
 ## Estimated amount of tokens of this history item.
 ## `null` if no estimation was made for this history item.
@@ -136,6 +140,7 @@ func Serialize() -> Dictionary:
 		"Type": Type,
 		"ModelName": ModelName,
 		"ModelShortName": ModelShortName,
+		"Visible": Visible,
 		"EstimatedTokenCost": EstimatedTokenCost,
 		"TokenCost": TokenCost,
 		"Images": images_,
@@ -152,6 +157,7 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	data.merge({
 		"ModelName": "NA",
 		"ModelShortName": "NA",
+		"Visible": true,
 		"TokenCost": 0,
 		"Images": [],
 		"Captions": []

@@ -66,6 +66,8 @@ func render():
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
 	else: _setup_model_message()
 
+	visible = history_item.Visible
+
 	_update_tokens_cost()
 
 	history_item.rendered_node = self
@@ -176,6 +178,8 @@ func _on_regenerate_button_pressed():
 func _on_edit_button_pressed():
 	edit_popup.popup_centered()
 
+func _on_hide_button_pressed():
+	SingletonObject.Chats.hide_chat_history_item(history_item, null, false)
 
 # since auto scroll on text selection is kinda broken
 # we made a workaround
