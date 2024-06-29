@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://fr1vfchpwjq2"]
+[gd_scene load_steps=9 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
 [ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_24px_no_bg.png" id="2_vvcoi"]
@@ -69,7 +69,7 @@ text = "Lfforem ipsum dolor sit amet"
 flat = true
 caret_blink = true
 
-[node name="HideButton" type="Button" parent="PanelContainer/v/h"]
+[node name="HideButton" type="Button" parent="PanelContainer/v/headHBoxContainer"]
 layout_mode = 2
 tooltip_text = "Hide this note"
 icon = ExtResource("3_x4kas")
@@ -157,7 +157,6 @@ layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 
 [connection signal="toggled" from="PanelContainer/v/headHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
-[connection signal="pressed" from="PanelContainer/v/headHBoxContainer/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="text_submitted" from="PanelContainer/v/headHBoxContainer/Title" to="." method="_on_title_text_submitted"]
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]

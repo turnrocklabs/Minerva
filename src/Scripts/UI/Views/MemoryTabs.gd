@@ -364,6 +364,34 @@ func _ready():
 	SingletonObject.AttachNoteFile.connect(self.attach_file)
 	render_threads()
 
+
+# if we are dragging a note above a tab, we can drop it there
+func _can_drop_data(at_position: Vector2, data):
+	var tab_idx = get_tab_idx_at_point(at_position)
+
+	return tab_idx != -1 and data is Note
+
+# find out which tab we are above
+# and get it's vboxMemoryList control (which is the only child of the scroll container)
+# then call it's _drop_data so it handles the Note by just appendg it and removing it from the old thread
+func _drop_data(at_position: Vector2, data):
+	if not data is Note: return
+
+	var tab_idx = get_tab_idx_at_point(at_position)
+
+	var control = get_tab_control(tab_idx)
+
+	var vbox_memory_list = control.get_child(0)
+
+	vbox_memory_list._drop_data(at_position, data)
+
+
+func _notification(what):
+	match what:
+		NOTIFICATION_DRAG_BEGIN: _drag_active = true
+		NOTIFICATION_DRAG_END: _drag_active = false
+
+
 var clicked:= false
 func _on_tab_clicked(tab: int):
 	print(current_tab)
@@ -391,14 +419,18 @@ func _process(delta):
 		_needs_update = false
 
 
-func _on_child_order_changed():
-	# Update SingletonObject.ThreadList after tab reordering
-	var new_thread_list: Array[MemoryThread] = []
-	if %tcThreads == null:
-		pass
-	else:
-		for child in %tcThreads.get_children():
-			new_thread_list.append(child.get_meta("thread"))
+# FIXME: This will interfere with render threads on project load
+# one note tab is loaded and then since child is added this function is called
+# and it changes the SingletonObject.ThreadList which causes the loop in render threads
+# to fail since array that it's looping through is altered
+# func _on_child_order_changed():
+# 	# Update SingletonObject.ThreadList after tab reordering
+# 	var new_thread_list: Array[MemoryThread] = []
+# 	if %tcThreads == null:
+# 		pass
+# 	else:
+# 		for child in %tcThreads.get_children():
+# 			new_thread_list.append(child.get_meta("thread"))
 		
-		SingletonObject.ThreadList = new_thread_list
-		print(SingletonObject.ThreadList)
+# 		SingletonObject.ThreadList = new_thread_list
+# 		print(SingletonObject.ThreadList)

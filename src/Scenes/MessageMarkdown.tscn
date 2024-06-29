@@ -1,4 +1,4 @@
-[gd_scene load_steps=30 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=31 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
@@ -205,6 +205,7 @@ label_settings = SubResource("LabelSettings_3dxq6")
 
 [node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
+focus_mode = 2
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_2nrlj")
 bbcode_enabled = true
