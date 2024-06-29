@@ -357,7 +357,7 @@ func _ready():
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 
 	# Connect signals for changes in your data
-	SingletonObject.connect("ThreadListChanged", self._on_thread_list_changed) 
+	# SingletonObject.connect("ThreadListChanged", self._on_thread_list_changed) 
 
 	SingletonObject.ThreadList = []
 	SingletonObject.NotesTab = self
