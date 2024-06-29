@@ -1,10 +1,11 @@
-[gd_scene load_steps=30 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=31 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
 [ext_resource type="PackedScene" uid="uid://clmnhuxss1a02" path="res://Scenes/MessageEditPopup.tscn" id="2_g2tku"]
 [ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_p2uud"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="4_qpk4n"]
 [ext_resource type="Texture2D" uid="uid://1qda4os658si" path="res://assets/icons/clipboard_icon_white_no_bg.png" id="4_tp7wr"]
@@ -174,6 +175,11 @@ layout_mode = 2
 size_flags_horizontal = 10
 theme_override_constants/separation = 12
 
+[node name="HideButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
+layout_mode = 2
+tooltip_text = "Hide this history item, but keep it in history list."
+icon = ExtResource("3_p2uud")
+
 [node name="EditButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 unique_name_in_owner = true
 layout_mode = 2
@@ -199,6 +205,7 @@ label_settings = SubResource("LabelSettings_3dxq6")
 
 [node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
+focus_mode = 2
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_2nrlj")
 bbcode_enabled = true
@@ -323,6 +330,7 @@ label_settings = SubResource("LabelSettings_l0yj0")
 horizontal_alignment = 1
 
 [connection signal="gui_input" from="." to="." method="_on_gui_input"]
+[connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/ClipButton" to="." method="_on_clip_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/NoteButton" to="." method="_on_note_button_pressed"]
