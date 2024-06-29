@@ -82,7 +82,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
-	print(data)
+
 	# set the used provider so update model name
 	response.provider = SingletonObject.Chats.provider
 
