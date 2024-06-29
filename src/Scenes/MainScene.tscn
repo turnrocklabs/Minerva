@@ -255,7 +255,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Chats" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
-custom_minimum_size = Vector2(580, 0)
+custom_minimum_size = Vector2(600, 0)
 layout_mode = 2
 size_flags_horizontal = 1
 

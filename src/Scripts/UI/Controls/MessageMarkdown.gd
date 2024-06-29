@@ -27,7 +27,7 @@ var content: String:
 var history_item: ChatHistoryItem:
 	set(value):
 		history_item = value
-		_render_history_item()
+		render()
 
 ## Setting this property to true will set the loading state for the message
 ## and hide any other content except the loading label
@@ -46,7 +46,8 @@ var editable:= false:
 
 
 func _ready():
-	_render_history_item()
+	render()
+
 	# set the message for the edit popup
 	edit_popup.message = self
 
@@ -57,16 +58,32 @@ func set_message_loading(loading_: bool):
 	_toggle_controls(not loading_)
 
 
-# This function will take the history item and render it as user or model message
-func _render_history_item():
-	if not history_item: return
+## This function will rerender the messaged using set `history_item`.
+## Either call this function or set the `history_item` whos setter will trigger it.
+func render():
+	if not (history_item and is_node_ready()): return
 
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
 	else: _setup_model_message()
 
+	_update_tokens_cost()
+
 	history_item.rendered_node = self
 
 	_create_code_labels()
+
+
+func _update_tokens_cost() -> void:
+	var price = history_item.provider.token_cost * history_item.TokenCost
+
+	tokens_cost.visible = true
+	if history_item.EstimatedTokenCost:
+		tokens_cost.text = "%s/%s" % [history_item.EstimatedTokenCost, history_item.TokenCost]
+		tokens_cost.tooltip_text = "Estimated %s tokens, used %s (%s$)" % [history_item.EstimatedTokenCost, history_item.TokenCost, price]
+	else:
+		tokens_cost.text = "%s" % history_item.TokenCost
+		tokens_cost.tooltip_text = "Used %s tokens (%s$)" % [history_item.TokenCost, price]
+
 
 ## Will disable/enable nodes in the `controls` group which contains all message buttons
 func _toggle_controls(enabled:= true):
@@ -129,13 +146,6 @@ static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
 	return msg
 
-## Updates tokens cost label in the top left corner
-func update_tokens_cost(estimated: int, correct: int) -> void:
-	var price = history_item.provider.token_cost * estimated
-
-	tokens_cost.visible = true
-	tokens_cost.text = "%s/%s" % [estimated, correct]
-	tokens_cost.tooltip_text = "Estimated %s tokens (%s), used %s" % [estimated, price, correct]
 
 
 # Continues the generation of the response

@@ -4,7 +4,19 @@ extends RefCounted
 enum PartType {TEXT, CODE, JPEG}
 enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
 
-static var SERIALIZER_FIELDS = ["Role", "InjectedNote", "Message", "Images", "Captions", "Order", "Type", "ModelName", "ModelShortName"]
+static var SERIALIZER_FIELDS = [
+	"Role",
+	"InjectedNote",
+	"Message",
+	"Images",
+	"Captions",
+	"Order",
+	"Type",
+	"ModelName",
+	"ModelShortName",
+	"EstimatedTokenCost",
+	"TokenCost",
+]
 
 # This signal is to be emited when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
@@ -42,6 +54,14 @@ var Complete: bool:
 var Error: String:
 	set(value): SingletonObject.save_state(false); Error = value
 
+## Estimated amount of tokens of this history item.
+## `null` if no estimation was made for this history item.
+var EstimatedTokenCost: int:
+	set(value): SingletonObject.save_state(false); EstimatedTokenCost = value
+
+## Amount of tokens of this history item
+var TokenCost: int = 0:
+	set(value): SingletonObject.save_state(false); TokenCost = value
 
 var provider: BaseProvider:
 	set(value):
@@ -116,6 +136,8 @@ func Serialize() -> Dictionary:
 		"Type": Type,
 		"ModelName": ModelName,
 		"ModelShortName": ModelShortName,
+		"EstimatedTokenCost": EstimatedTokenCost,
+		"TokenCost": TokenCost,
 		"Images": images_,
 		"Captions": captions_,
 	}
@@ -130,6 +152,7 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	data.merge({
 		"ModelName": "NA",
 		"ModelShortName": "NA",
+		"TokenCost": 0,
 		"Images": [],
 		"Captions": []
 	})
