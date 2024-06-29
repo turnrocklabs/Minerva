@@ -80,7 +80,7 @@ func _unhide_notes():
 		for chi in ch.HistoryItemList:
 			if not chi.Visible:
 				chi.Visible = true
-				chi.rendered_node.history_item = chi # TODO: use render method
+				chi.rendered_node.render()
 
 
 func _unhide_messages():
