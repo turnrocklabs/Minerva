@@ -76,3 +76,13 @@ func get_user_initials() -> String:
 	return ("%s%s" % [n1, n2]).to_upper()
 
 
+func _on_open_ai_check_box_toggled(toggled_on: bool) -> void:
+	%leOpenAI.secret = !toggled_on
+
+
+func _on_anthropic_check_box_toggled(toggled_on: bool) -> void:
+	%leAnthropic.secret = !toggled_on
+
+
+func _on_google_vertex_check_box_toggled(toggled_on: bool) -> void:
+	%leGoogleVertex.secret = !toggled_on

@@ -1,16 +1,17 @@
-[gd_scene load_steps=2 format=3 uid="uid://booxo77json0y"]
+[gd_scene load_steps=3 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="2_hapo6"]
 
 [node name="PreferencesPopup" type="Window"]
+initial_position = 4
 size = Vector2i(520, 298)
 script = ExtResource("1_snp1b")
 
 [node name="v" type="VBoxContainer" parent="."]
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 516.0
-offset_bottom = 294.0
+offset_left = 10.0
+offset_right = 522.0
+offset_bottom = 290.0
 
 [node name="SectionsContainer" type="VBoxContainer" parent="v"]
 custom_minimum_size = Vector2(512, 0)
@@ -26,6 +27,7 @@ text = "API Keys"
 
 [node name="HBoxContainer" type="HBoxContainer" parent="v/SectionsContainer/v"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="Label" type="Label" parent="v/SectionsContainer/v/HBoxContainer"]
 layout_mode = 2
@@ -37,9 +39,15 @@ text = "Google Vertex"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+secret = true
+
+[node name="GoogleVertexCheckBox" type="CheckBox" parent="v/SectionsContainer/v/HBoxContainer"]
+layout_mode = 2
+theme_override_icons/checked = ExtResource("2_hapo6")
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="v/SectionsContainer/v"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="Label" type="Label" parent="v/SectionsContainer/v/HBoxContainer2"]
 layout_mode = 2
@@ -51,9 +59,15 @@ text = "Anthropic"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+secret = true
+
+[node name="AnthropicCheckBox" type="CheckBox" parent="v/SectionsContainer/v/HBoxContainer2"]
+layout_mode = 2
+theme_override_icons/checked = ExtResource("2_hapo6")
 
 [node name="HBoxContainer3" type="HBoxContainer" parent="v/SectionsContainer/v"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="Label" type="Label" parent="v/SectionsContainer/v/HBoxContainer3"]
 layout_mode = 2
@@ -65,6 +79,11 @@ text = "OpenAI"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+secret = true
+
+[node name="OpenAICheckBox" type="CheckBox" parent="v/SectionsContainer/v/HBoxContainer3"]
+layout_mode = 2
+theme_override_icons/checked = ExtResource("2_hapo6")
 
 [node name="HSeparator" type="HSeparator" parent="v/SectionsContainer"]
 layout_mode = 2
@@ -112,4 +131,7 @@ layout_mode = 2
 text = "Save"
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
+[connection signal="toggled" from="v/SectionsContainer/v/HBoxContainer/GoogleVertexCheckBox" to="." method="_on_google_vertex_check_box_toggled"]
+[connection signal="toggled" from="v/SectionsContainer/v/HBoxContainer2/AnthropicCheckBox" to="." method="_on_anthropic_check_box_toggled"]
+[connection signal="toggled" from="v/SectionsContainer/v/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
 [connection signal="pressed" from="v/h/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]
