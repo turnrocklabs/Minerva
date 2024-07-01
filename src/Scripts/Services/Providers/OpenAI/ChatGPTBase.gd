@@ -71,7 +71,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		ChatHistoryItem.ChatRole.ASSISTANT:
 			role = "assistant"
 		ChatHistoryItem.ChatRole.MODEL:
-			role = "system"
+			role = "assistant"
 	
 	# Get all image captions in array of strings
 	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
@@ -86,7 +86,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		%s
 		%s
 		%s
-	""" % [chat_item.Message, image_captions, chat_item.InjectedNote]
+	""" % [image_captions, chat_item.InjectedNote, chat_item.Message]
 
 	text = text.strip_edges()
 
