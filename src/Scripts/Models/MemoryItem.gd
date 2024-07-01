@@ -17,13 +17,13 @@ var Title: String:
 var Content: String = "":
 	set(value): SingletonObject.save_state(false); Content = value
 
-var Memory_Image: Image = null:
+var Memory_Image: Image = Image.new():
 	set(value): SingletonObject.save_state(false); Memory_Image = value
 
 var Image_caption: String = "":
 	set(value): SingletonObject.save_state(false); Image_caption = value
 
-var Audio: AudioStreamWAV = null:
+var Audio: AudioStreamWAV = AudioStreamWAV.new():
 	set(value): SingletonObject.save_state(false); Audio = value
 
 var ContentType: String:
@@ -55,16 +55,16 @@ func _enable_toggle():
 # Serialize takes this instance of a MemoryItem and serializes it so it can be represented as JSON
 func Serialize() -> Dictionary:
 	var b64_data_image
-	if Memory_Image:
-		b64_data_image = Marshalls.raw_to_base64(Memory_Image.save_png_to_buffer())
+	if Memory_Image != null:
+		b64_data_image = Marshalls.variant_to_base64(Memory_Image, true)
 	else:
-		b64_data_image = ""
+		b64_data_image = Marshalls.variant_to_base64(Image.new(), true)
 	
 	var b64_data_audio
-	if Audio:
-		b64_data_audio = Marshalls.raw_to_base64(Audio.data)
+	if Audio != null:
+		b64_data_audio = Marshalls.variant_to_base64(Audio, true)
 	else:
-		b64_data_audio = ""
+		b64_data_audio = Marshalls.variant_to_base64( AudioStreamWAV.new(), true)
 	
 	var save_dict:Dictionary = {
 		"Enabled": Enabled,
@@ -92,12 +92,18 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 		var value = data.get(prop)
 		if prop == "Memory_Image":
 			#decode to png
-			var img = Image.new()
-			img.load_png_from_buffer(Marshalls.base64_to_raw(value))
-			value = img
+			
+			if value != null:
+				var img = Image.new()
+				
+				img.load_png_from_buffer(Marshalls.base64_to_raw(value))
+				value = img
 		if prop == "Audio":
-			var audio = AudioStreamWAV.new()
-			audio.data = Marshalls.base64_to_raw(value)
+			if value != null:
+				var audio = Marshalls.base64_to_variant(value, true)
+				#audio = Marshalls.base64_to_variant(value, true)
+				print(audio.data.size())
+				value = audio
 		
 		mi.set(prop, value)
 	

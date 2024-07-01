@@ -509,7 +509,7 @@ text = "play audio"
 
 [node name="AudioNoteStreamPlayer" type="AudioStreamPlayer" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
 unique_name_in_owner = true
-volume_db = 4.0
+volume_db = 1.0
 
 [node name="ImageControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer"]
 unique_name_in_owner = true

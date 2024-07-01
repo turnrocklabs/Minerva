@@ -179,7 +179,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.AUDIO
 	new_memory.Title = note_title
-	new_memory.audio = note_audio
+	new_memory.Audio = note_audio
 	new_memory.Visible = true
 	
 	# append the new memory item to the active thread memory list
