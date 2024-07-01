@@ -12,7 +12,7 @@ func _ready() -> void:
 func _on_file_index_pressed(index):
 	match index:
 		0:
-			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.WhiteBoard)
+			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Text)
 		1:
 			%fdgOpenFile.popup_centered(Vector2i(800, 600))
 		2: # this match is for the save button
@@ -38,7 +38,8 @@ func _on_file_index_pressed(index):
 			%PreferencesPopup.borderless = false
 			%PreferencesPopup.size = target_size
 			%PreferencesPopup.popup_centered()
-
+		5:
+			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.WhiteBoard)
 
 ## Handler:
 # _on_project_index_pressed handles the "Project" menu.

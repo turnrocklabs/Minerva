@@ -74,12 +74,11 @@ func _load_graphics_file(filename: String):
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straing away
 func prompt_close(show_save_file_dialog := false) -> bool:
+	var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
+
 	match type:
 		TYPE.WhiteBoard:
-			var dialog = ($FileDialog as FileDialog)
-			var _filters = dialog.filters
-			dialog.filters = [".png"]
-			dialog.filters = _filters
+			$FileDialog.filters = PackedStringArray(["*.png"])
 			
 	if not prompt_save: return true
 	if not show_save_file_dialog:
@@ -98,6 +97,7 @@ func prompt_close(show_save_file_dialog := false) -> bool:
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
 		await ($FileDialog as FileDialog).visibility_changed
+		($FileDialog as FileDialog).filters = dialog_filters
 	else:
 		_on_file_dialog_file_selected(file)
 	
@@ -109,7 +109,6 @@ func prompt_close(show_save_file_dialog := false) -> bool:
 	# if user canceled the file select dialog, just return to the edtior
 	else:
 		return false
-
 
 func is_content_saved() -> bool:
 	match type:
