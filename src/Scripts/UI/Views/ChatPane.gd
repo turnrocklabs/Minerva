@@ -508,6 +508,10 @@ func _on_btn_chat_settings_pressed():
 	%AISettings.popup_centered()
 
 
+func _on_btn_clear_pressed():
+	%txtMainUserInput.text = ""
+
+
 ## When user types in the chat box, estimate tokens count based on selected provider
 func _on_txt_main_user_input_text_changed():
 	update_token_estimation()
