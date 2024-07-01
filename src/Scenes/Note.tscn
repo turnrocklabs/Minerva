@@ -138,7 +138,7 @@ text = "Play
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="PanelContainer/v/AudioHBoxContainer"]
 unique_name_in_owner = true
-volume_db = 4.0
+volume_db = 1.0
 
 [node name="ProgressBar" type="ProgressBar" parent="PanelContainer/v/AudioHBoxContainer"]
 custom_minimum_size = Vector2(100, 0)
