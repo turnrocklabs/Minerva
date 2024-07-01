@@ -84,9 +84,5 @@ func _on_disable_notes_button_pressed() -> void:
 	notes_enabled = !notes_enabled
 
 
-
-
-
-
 func _on_disable_notes_button_toggled(toggled_on: bool) -> void:
 	pass # Replace with function body.

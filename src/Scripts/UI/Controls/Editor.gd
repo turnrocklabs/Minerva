@@ -74,6 +74,13 @@ func _load_graphics_file(filename: String):
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straing away
 func prompt_close(show_save_file_dialog := false) -> bool:
+	match type:
+		TYPE.WhiteBoard:
+			var dialog = ($FileDialog as FileDialog)
+			var _filters = dialog.filters
+			dialog.filters = [".png"]
+			dialog.filters = _filters
+			
 	if not prompt_save: return true
 	if not show_save_file_dialog:
 		$CloseDialog.popup_centered(Vector2i(300, 100))
@@ -136,18 +143,23 @@ func _on_file_dialog_file_selected(path: String):
 
 
 func save_file_to_disc(path: String):
-	var save_file = FileAccess.open(path, FileAccess.WRITE)
 	file = path
 	match type:
 		TYPE.Text:
+			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			save_file.store_string(code_edit.text)
 			
 		TYPE.Graphics:
 			pass
 			
 		TYPE.WhiteBoard:
-			pass
-	
+			var dialog = ($FileDialog as FileDialog)
+			var _filters = dialog.filters
+			dialog.filters = [".png"]
+			dialog.filters = _filters
+			var pic = %PlaceForScreen.get_viewport().get_texture().get_image()
+			pic.save_png(path)
+			
 	_file_saved = true
 	file_saved_in_disc = true
 	
