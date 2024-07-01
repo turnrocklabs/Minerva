@@ -16,9 +16,6 @@ var mouse_over_color_palette = false # Flag to track if mouse is over _ColorPale
 var mouse_over_buttons_panel = false
 var drawing_enabled = true # Flag to control drawing
 
-func _ready():
-	_ColorRect.size = Vector2(200, 200)
-
 func _input(event: InputEvent):
 	var mouse_position = get_local_mouse_position()
 
@@ -49,9 +46,6 @@ func _input(event: InputEvent):
 					current_line.add_point(mouse_position)
 			elif is_erasing:
 				erase_line_at(mouse_position)
-
-func _process(delta):
-	pass
 
 func _on_clear_pressed():
 	for child in _ColorRect.get_children():
