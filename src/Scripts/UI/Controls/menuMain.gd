@@ -140,7 +140,7 @@ func set_active():
 
 #load recent projects if they exist on the config file
 #this function gets called on ready and when you hover over menuMain
-var submenu = PopupMenu.new()
+var submenu
 var projects_size: int
 func load_recent_projects():
 	if SingletonObject.has_recent_projects():# check if user has recent projects
@@ -150,7 +150,7 @@ func load_recent_projects():
 			project.remove_item(project.item_count - 1)
 		
 		# create submenu item, fill it with recent projectd and add to menu
-		submenu.clear()
+		submenu = PopupMenu.new()
 		submenu.name = "OpenRecentSubmenu"
 		submenu.add_to_group("open_recent")
 		submenu.index_pressed.connect(_on_open_recent_project)
