@@ -1,11 +1,10 @@
-[gd_scene load_steps=9 format=3 uid="uid://fr1vfchpwjq2"]
+[gd_scene load_steps=8 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
 [ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_24px_no_bg.png" id="2_vvcoi"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_x4kas"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="4_vm57c"]
-[ext_resource type="Texture2D" uid="uid://drca67spd2k7f" path="res://assets/conquest_of_revachol_flat_contrast.jpg" id="5_7q8w0"]
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_fc11w"]
 color = Color(0.164706, 0.345098, 0.831373, 1)
@@ -102,7 +101,6 @@ layout_mode = 2
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
-texture = ExtResource("5_7q8w0")
 expand_mode = 3
 stretch_mode = 5
 

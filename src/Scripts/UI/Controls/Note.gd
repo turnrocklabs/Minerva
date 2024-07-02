@@ -13,7 +13,7 @@ signal note_deleted()
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
 
-
+var downscaled_image: Image
 # this will react each time memory item is changed
 var memory_item: MemoryItem:
 	set(value):
@@ -28,7 +28,9 @@ var memory_item: MemoryItem:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
 			var image_texture = ImageTexture.new()
-			image_texture.set_image(value.Memory_Image)
+			downscaled_image = value.Memory_Image
+			downscaled_image = downscale_image(downscaled_image)
+			image_texture.set_image(downscaled_image)
 			note_image.texture = image_texture
 			%ImageCaptionLineEdit.text = value.Image_caption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
@@ -47,13 +49,22 @@ func new_image_note():
 	%NoteTextBody.visible = false
 	return self
 
+#  this method resizes the image so the texture rec doesn't render images at full res
+func downscale_image(image: Image) -> Image:
+	var image_size = image.get_size()
+	if image_size.y > 200:
+		var image_ratio = image_size.y/ 200.0
+		image_size.y = image_size.y / image_ratio
+		image_size.x = image_size.x / image_ratio
+		image.resize(image_size.x, image_size.y, Image.INTERPOLATE_LANCZOS)
+	return image
+
 
 func new_audio_note():
 	%AudioHBoxContainer.visible = true
 	%NoteTextBody.visible = false
 	%ImageVBoxContainer.visible = false
 	return self
-
 
 
 func _ready():
