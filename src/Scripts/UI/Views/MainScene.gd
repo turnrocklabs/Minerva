@@ -14,7 +14,7 @@ var icActive = preload("res://assets/icons/Microphone_active.png")
 
 var effect: AudioEffect
 var audio_recording: AudioStreamWAV
-
+var image_original_res: Image
 
 func _ready() -> void:
 	# we connect the signals when the project runs
@@ -64,7 +64,7 @@ func _on_add_note_pressed():
 	if note_enum == SingletonObject.note_type.TEXT:
 		SingletonObject.NotesTab.add_note(Head.text, Description.text)
 	if note_enum == SingletonObject.note_type.IMAGE:
-		SingletonObject.NotesTab.add_image_note(Head.text, %ImagePreview.texture.get_image())
+		SingletonObject.NotesTab.add_image_note(Head.text, image_original_res)
 	if note_enum == SingletonObject.note_type.AUDIO:
 		SingletonObject.NotesTab.add_audio_note(Head.text, audio_recording)
 	Head.clear()
@@ -130,6 +130,8 @@ func _on_create_new_note_about_to_popup() -> void:
 # method for handling close button pressed
 func _on_creat_new_note_close_requested() -> void:
 	%CreateNewNote.hide()
+	%ImagePreview.texture = null
+	%ImageDropPanel.visible = true
 	%CreateNewNote.exclusive = false
 
 
@@ -187,7 +189,13 @@ func _on_image_note_file_dialog_canceled() -> void:
 func set_image_preview(path: String) -> void:
 	var image = Image.new()
 	image.load(path)
-	
+	image_original_res = image
+	var image_size = image.get_size()
+	if image_size.y > 200:
+		var image_ratio = image_size.y/ 200.0
+		image_size.y = image_size.y / image_ratio
+		image_size.x = image_size.x / image_ratio
+		image.resize(image_size.x, image_size.y, Image.INTERPOLATE_LANCZOS)
 	var image_texture = ImageTexture.new()
 	image_texture.set_image(image)
 	%ImagePreview.texture = image_texture
