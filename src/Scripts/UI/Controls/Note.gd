@@ -28,6 +28,7 @@ var memory_item: MemoryItem:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
 			var image_texture = ImageTexture.new()
+			# we create another image to manipulate so the original doesn't get changed
 			downscaled_image = value.Memory_Image
 			downscaled_image = downscale_image(downscaled_image)
 			image_texture.set_image(downscaled_image)
@@ -49,6 +50,8 @@ func new_image_note():
 	%NoteTextBody.visible = false
 	return self
 
+# FIXME maybe we could move this function to Singleton so all images 
+# can be resized and add another paremeter to place the 200 constant
 #  this method resizes the image so the texture rec doesn't render images at full res
 func downscale_image(image: Image) -> Image:
 	var image_size = image.get_size()

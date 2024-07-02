@@ -208,7 +208,7 @@ item_4/id = 1
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "View"
-size = Vector2i(211, 228)
+size = Vector2i(211, 251)
 hide_on_checkable_item_selection = false
 item_count = 10
 item_0/text = "Chats"
