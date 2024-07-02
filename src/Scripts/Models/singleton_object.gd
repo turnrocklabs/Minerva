@@ -25,11 +25,11 @@ func save_recent_project(path: String):
 	var project_name_index: int = path_split.size() - 1
 	var project_name = path_split[project_name_index]
 	
-	if has_recent_projects():# checks if there are recent project saved
-		var recent_projects_array = get_recent_projects()
-		#checks if there are 5 recent projects saved and deletes the first one saved
-		if recent_projects_array.size() >= 5:
-			config_file.erase_section_key("OpenRecent", recent_projects_array[0])
+	#if has_recent_projects():# checks if there are recent project saved
+		#var recent_projects_array = get_recent_projects()
+		##checks if there are 5 recent projects saved and deletes the first one saved
+		#if recent_projects_array.size() >= 5:
+			#config_file.erase_section_key("OpenRecent", recent_projects_array[0])
 	save_to_config_file("OpenRecent",project_name, path)
 
 # this function returns an array with the files 
@@ -43,6 +43,13 @@ func get_recent_projects() -> Array:
 
 func get_project_path(project_name: String) -> String:
 	return config_file.get_value("OpenRecent", project_name)
+
+
+func clear_recent_projects() -> void:
+	config_file.erase_section("OpenRecent")
+	config_file.save(config_file_name)
+
+
 #endregion Config File
 
 

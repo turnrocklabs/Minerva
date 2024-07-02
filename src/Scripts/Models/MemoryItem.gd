@@ -96,7 +96,7 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			if value != null:
 				var img = Image.new()
 				
-				img.load_png_from_buffer(Marshalls.base64_to_raw(value))
+				img = Marshalls.base64_to_variant(value, true)
 				value = img
 		if prop == "Audio":
 			if value != null:
