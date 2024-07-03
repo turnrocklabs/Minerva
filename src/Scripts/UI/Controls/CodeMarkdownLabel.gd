@@ -1,6 +1,10 @@
 class_name CodeMarkdownLabel
 extends PanelContainer
 
+
+func get_selected_text() -> String:
+	return %CodeLabel.get_selected_text()
+
 func _parse_code_block(input: String) -> String:
 	# Adjusted regex to ignore [lb] and [rb] and still remove other bbcode
 	var regex = RegEx.new()

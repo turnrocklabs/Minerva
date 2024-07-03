@@ -36,7 +36,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/MainVBox/ProviderHBox"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Provider:"
+text = "Default Provider:"
 vertical_alignment = 1
 
 [node name="ProviderOptionButton" type="OptionButton" parent="MarginContainer/MainVBox/ProviderHBox"]

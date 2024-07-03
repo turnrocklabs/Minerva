@@ -30,6 +30,8 @@ func _ready():
 			_text_selection = active
 	)
 
+	add_child(chat_history.provider)
+
 
 func _notification(what):
 	match what:

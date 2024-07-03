@@ -14,17 +14,17 @@ var HistoryItemList: Array[ChatHistoryItem]:
 	set(value): SingletonObject.save_state(false); HistoryItemList = value
 
 var VBox: VBoxChat
-var Provider
+var provider: BaseProvider
 
 
 
-static var SERIALIZER_FIELDS = ["HistoryId", "HistoryName", "HistoryItemList"]
+static var SERIALIZER_FIELDS = ["HistoryId", "HistoryName", "HistoryItemList", "Provider"]
 
 
 ## initialize with a new HistoryId
 
 func _init(_provider, optional_historyId = null):
-	self.Provider = _provider
+	self.provider = _provider
 	if optional_historyId == null:
 		var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
 		rng.randomize() # Uses the current time to seed the random number generator
@@ -53,14 +53,13 @@ func To_Prompt(predicate: Callable = Callable()) -> Array[Variant]:
 			var should_continue: bool = results[1]
 
 			if should_add:
-				var item: Variant = Provider.Format(chat)
+				var item: Variant = provider.Format(chat)
 				retVal.append(item)
 
 			if not should_continue:
 				return retVal
 		else:
-			# TODO: When each chat tab uses it's own prvider change this
-			var item: Variant = SingletonObject.Chats.provider.Format(chat)
+			var item: Variant = provider.Format(chat)
 			retVal.append(item)
 
 	return retVal
@@ -79,17 +78,24 @@ func Serialize() -> Dictionary:
 	var save_dict:Dictionary = {
 		"HistoryId" : HistoryId,
 		"HistoryName" : HistoryName,
+		"Provider": SingletonObject.get_active_provider(SingletonObject.ChatList.find(self)),
 		"HistoryItemList" : serialized_items
 	}
 	return save_dict
 
 static func Deserialize(data: Dictionary) -> ChatHistory:
-	var ch = ChatHistory.new(SingletonObject.Chats.provider, data.get("HistoryId"))
+	# will be float if loaded from json, cast it to int
+	var provider_enum_index = int(data.get("Provider", 0))
+	var provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
+
+	var ch = ChatHistory.new(provider_obj, data.get("HistoryId"))
 
 	ch.HistoryName = data.get("HistoryName")
 
 	for chi_data in data.get("HistoryItemList", []):
-		ch.HistoryItemList.append(ChatHistoryItem.Deserialize(chi_data))
+		var chi = ChatHistoryItem.Deserialize(chi_data)
+		chi.provider = ch.provider
+		ch.HistoryItemList.append(chi)
 
 	return ch
 

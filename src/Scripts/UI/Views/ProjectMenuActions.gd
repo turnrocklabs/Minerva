@@ -37,7 +37,7 @@ func save_project():
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
 		var editor = item_list.get_item_metadata(item_idx)
-		await editor.prompt_close(true) # FIXME: somehow not prompt the first prompt from here
+		await editor.prompt_close(true)
 		editor.queue_free()
 
 	if save_path == null or save_path == "":
@@ -99,7 +99,7 @@ func deserialize_project(data: Dictionary):
 
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("active_provider", 0))
-	SingletonObject.Chats.set_provider(SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new())
+	SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index]
 
 	var chats: Array[ChatHistory] = []
 	for chat_data in data.get("ChatList", []):

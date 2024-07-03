@@ -131,7 +131,7 @@ func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
 	
 	# set the used provider so update model name
-	response.provider = SingletonObject.Chats.provider
+	response.provider = self
 
 	# the id will be useful if we need to complete the response with second request
 	response.id = data["id"]
