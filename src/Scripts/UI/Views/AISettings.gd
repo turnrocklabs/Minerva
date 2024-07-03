@@ -45,6 +45,11 @@ func _on_about_to_popup():
 func _on_theme_option_button_item_selected(index: int) -> void:
 	SingletonObject.set_theme(index)
 
+func set_theme_option_menu(theme_enum: int):
+	theme_option_button.selected = theme_enum
+
+
+
 func populate_microphones():
 	# Get the list of available microphones
 	var input_devices = AudioServer.get_input_device_list()
@@ -67,5 +72,4 @@ func _on_microphone_selected(index: int):
 	# Optionally, you can notify the user or perform any other action
 	print("Selected microphone:", selected_device)
 
-func set_theme_option_menu(theme_enum: int):
-	theme_option_button.selected = theme_enum
+

@@ -45,6 +45,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="ThemeHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+visible = false
 layout_mode = 2
 
 [node name="ThemeLabel" type="Label" parent="MarginContainer/MainVBox/ThemeHBoxContainer"]
@@ -79,6 +80,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 clip_text = true
 fit_to_longest_item = false
+allow_reselect = true
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="item_selected" from="MarginContainer/MainVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]

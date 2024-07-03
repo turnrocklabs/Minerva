@@ -9,6 +9,7 @@ signal note_deleted()
 @onready var drag_texture_rect: TextureRect = $PanelContainer/v/DragTextureRect
 @onready var note_image: TextureRect = %NoteImage
 @onready var audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
+@onready var image_caption_line_edit: LineEdit = %ImageCaptionLineEdit
 
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
@@ -33,7 +34,7 @@ var memory_item: MemoryItem:
 			downscaled_image = downscale_image(downscaled_image)
 			image_texture.set_image(downscaled_image)
 			note_image.texture = image_texture
-			%ImageCaptionLineEdit.text = value.Image_caption
+			image_caption_line_edit.text = value.Image_caption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.Audio
 
@@ -256,13 +257,18 @@ func _on_hide_button_pressed():
 	)
 
 
-func _on_title_text_submitted(_new_text: String) -> void:
-	%Title.release_focus()
+func _on_title_text_submitted(new_text: String) -> void:
+	label_node.release_focus()
+	if memory_item: memory_item.Title = new_text
 
 
-func _on_image_caption_line_edit_text_submitted(_new_text: String) -> void:
-	%ImageCaptionLineEdit.release_focus()
+func _on_image_caption_line_edit_text_submitted(new_text: String) -> void:
+	image_caption_line_edit.release_focus()
+	if memory_item: memory_item.Image_caption = new_text
 
+
+func _on_image_caption_line_edit_text_changed(new_text: String) -> void:
+	if memory_item: memory_item.Image_caption = new_text
 
 
 func _on_play_pause_button_pressed() -> void:
@@ -270,3 +276,6 @@ func _on_play_pause_button_pressed() -> void:
 		audio_stream_player.stop()
 	else: 
 		audio_stream_player.play()
+
+
+

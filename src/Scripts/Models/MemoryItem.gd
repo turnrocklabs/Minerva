@@ -93,7 +93,7 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 		if prop == "Memory_Image":
 			#decode to png
 			var img = Image.new()
-			if Marshalls.base64_to_variant(value, true).get_size().x > 1:
+			if value != null:
 				img = Marshalls.base64_to_variant(value, true)
 				value = img
 			else:
@@ -101,8 +101,6 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 		if prop == "Audio":
 			if value != null:
 				var audio = Marshalls.base64_to_variant(value, true)
-				#audio = Marshalls.base64_to_variant(value, true)
-				print(audio.data.size())
 				value = audio
 		
 		mi.set(prop, value)
