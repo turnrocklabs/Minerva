@@ -21,26 +21,17 @@ func _ready():
 		var instance = script.new()
 		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.model_name], key)
 
-	# _provider_option_button.select(SingletonObject.)
 
 func _on_provider_option_button_item_selected(index: int):
 	var item_id = _provider_option_button.get_item_id(index)
 
-	var provider_object: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
+	var provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id]
 
-	SingletonObject.Chats.set_provider(provider_object)
-	# show a messageg in each chat tab that we changed the model
-	for chat_history in SingletonObject.ChatList:
-		chat_history.VBox.add_program_message("Changed provider to %s %s" % [provider_object.provider_name, provider_object.model_name])
+	SingletonObject.Chats.default_provider_script = provider_script
 
-
-
-func _on_about_to_popup():
-	var active_provider = SingletonObject.get_active_provider()
-	var item_index = _provider_option_button.get_item_index(active_provider)
+	if SingletonObject.ChatList.is_empty():
+		SingletonObject.Chats._provider_option_button.select(index)
 	
-	_provider_option_button.select(item_index)
-
 
 func _on_theme_option_button_item_selected(index: int) -> void:
 	SingletonObject.set_theme(index)

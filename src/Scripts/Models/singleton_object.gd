@@ -171,11 +171,11 @@ var API_MODEL_PROVIDER_SCRIPTS = {
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value
-## for the provider currently in use by the `SingletonObject.Chats`
-func get_active_provider() -> API_MODEL_PROVIDERS:
+## for the provider currently in use by passed tab or the active one
+func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MODEL_PROVIDERS:
 	
 	# get currently used provider script
-	var provider_script = Chats.provider.get_script()
+	var provider_script = ChatList[tab].provider.get_script()
 
 	for key: API_MODEL_PROVIDERS in API_MODEL_PROVIDER_SCRIPTS:
 		if API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:

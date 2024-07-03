@@ -6,25 +6,34 @@ var icActive = preload("res://assets/icons/Microphone_active.png")
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
-@onready var txt_main_user_input: TextEdit = %txtMainUserInput
 
-var provider: BaseProvider:
-	set(value):
-		provider = value
-		if provider:
-			update_token_estimation() # Update token estimation if provider changes
+@onready var txt_main_user_input: TextEdit = %txtMainUserInput
+@onready var _provider_option_button: ProviderOptionButton = %ProviderOptionButton
+
+# Script of the default provider to use when creating new chat tab
+var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
 
 
 ## add new chat 
 func _on_new_chat():
-	var tab_name:String = "Chat" + str(SingletonObject.last_tab_index)
-	SingletonObject.last_tab_index += 1
-	var history: ChatHistory = ChatHistory.new(self.provider)
+	var tab_name: = "Chat %s" % (get_tab_count()+1)
+
+	var provider_obj: BaseProvider = default_provider_script.new()
+
+	# If there are no open chat tabs, use provider from the dropdown as the provider
+	if SingletonObject.ChatList.is_empty():
+		var p_id = _provider_option_button.get_selected_id()
+		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
+
+	# use the provider currently set on this object
+	var history: ChatHistory = ChatHistory.new(provider_obj)
 	history.HistoryName = tab_name
 	history.HistoryItemList = []
 	SingletonObject.ChatList.append(history)
 	render_history(history)
+
+	current_tab = get_tab_count()-1
 
 
 ## Opens a chat tab if one isn't open yet
@@ -42,9 +51,7 @@ func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Ca
 	
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	
-	var working_memory: String = SingletonObject.NotesTab.To_Prompt(provider)
-
-	print(working_memory)
+	var working_memory: String = SingletonObject.NotesTab.To_Prompt(history.provider)
 
 	# history will turn it into a prompts using the selected provider
 	var history_list: Array[Variant] = history.To_Prompt(predicate)
@@ -56,9 +63,8 @@ func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Ca
 	# append the working memory
 	if append_item:
 		append_item.InjectedNote = working_memory
-		print(append_item)
 		# also append the new item since it's not in the history yet
-		history_list.append(provider.Format(append_item))
+		history_list.append(history.provider.Format(append_item))
 
 	return history_list
 
@@ -116,8 +122,9 @@ func regenerate_response(chi: ChatHistoryItem):
 	if not existing_response:
 		existing_response = ChatHistoryItem.new()
 		existing_response.Role = ChatHistoryItem.ChatRole.MODEL
+		existing_response.provider = SingletonObject.ChatList[current_tab].provider
 		history.HistoryItemList.append(existing_response)
-		await SingletonObject.ChatList[current_tab].VBox.add_history_item(existing_response)
+		await history.VBox.add_history_item(existing_response)
 
 	# We format items until we get to the user response
 	var predicate = func(item: ChatHistoryItem) -> Array:
@@ -130,13 +137,13 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	existing_response.rendered_node.loading = true
 
-	var bot_response = await provider.generate_content(history_list)
+	var bot_response = await history.provider.generate_content(history_list)
 	
 	if bot_response.id: existing_response.Id = bot_response.id
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
 	existing_response.Message = bot_response.text
 	existing_response.Error = bot_response.error
-	existing_response.provider = provider
+	existing_response.provider = history.provider
 	existing_response.Complete = bot_response.complete
 	existing_response.TokenCost = bot_response.completion_tokens
 	if bot_response.image:
@@ -183,9 +190,9 @@ func execute_chat():
 		# make a chat request
 		history_list = create_prompt()
 
-		user_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(user_history_item)
+		user_msg_node = await history.VBox.add_history_item(user_history_item)
 
-		user_history_item.EstimatedTokenCost = provider.estimate_tokens_from_prompt(history_list)
+		user_history_item.EstimatedTokenCost = history.provider.estimate_tokens_from_prompt(history_list)
 		# rerender the message wince we changed the history item
 		user_msg_node.render()
 	
@@ -202,12 +209,13 @@ func execute_chat():
 	# Add empty history item, to show the loading state
 	var dummy_item = ChatHistoryItem.new()
 	dummy_item.Role = ChatHistoryItem.ChatRole.MODEL
+	dummy_item.provider = history.provider
 	
-	var model_msg_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(dummy_item)
+	var model_msg_node = await history.VBox.add_history_item(dummy_item)
 	model_msg_node.loading = true
 
 	# This function can be awaited for the request to finish
-	var bot_response = await provider.generate_content(history_list)
+	var bot_response = await history.provider.generate_content(history_list)
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
@@ -215,7 +223,7 @@ func execute_chat():
 	chi.Role = ChatHistoryItem.ChatRole.MODEL
 	chi.Message = bot_response.text
 	chi.Error = bot_response.error
-	chi.provider = provider
+	chi.provider = history.provider
 	chi.Complete = bot_response.complete
 	chi.TokenCost = bot_response.completion_tokens
 	if bot_response.image:
@@ -232,7 +240,7 @@ func execute_chat():
 	## Inform the user history item that the response has arrived
 	user_history_item.response_arrived.emit(chi)
 
-	SingletonObject.ChatList[current_tab].VBox.scroll_to_bottom()
+	history.VBox.scroll_to_bottom()
 
 	model_msg_node.loading = false
 
@@ -251,7 +259,7 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 	
 	# remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
 
-	var bot_response = await SingletonObject.Chats.provider.generate_content(history_list)
+	var bot_response = await partial_chi.provider.generate_content(history_list)
 
 	partial_chi.Message += bot_response.text
 	partial_chi.Complete = bot_response.complete
@@ -393,31 +401,17 @@ func render_history(chat_history: ChatHistory):
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
-	if provider == null:
-		provider = %AISettings.get_selected_provider().new()
-		set_provider(provider)
-	
 	SingletonObject.initialize_chats(self)
 
-## Changes the provider that this chat panes uses to generate responses
-func set_provider(new_provider: BaseProvider):
-	if provider.is_inside_tree(): remove_child(provider)
 
-	add_child(new_provider)
-	# new_provider.chat_completed.connect(self.render_single_chat)
-
-	provider = new_provider
-
-
-func _on_close_tab(tab: int, container: TabContainer):
-	self.control = container.get_tab_control(tab)
-	self.container = container 
+func _on_close_tab(tab: int, closed_tab_container: TabContainer):
+	self.control = closed_tab_container.get_tab_control(tab)
+	self.container = closed_tab_container 
 	SingletonObject.undo.store_deleted_tab(tab, control,"left")
-	container.remove_child(control)
+	closed_tab_container.remove_child(control)
 
 # Function to restore a deleted tab
 func restore_deleted_tab(tab_name: String):
@@ -457,14 +451,15 @@ func _on_btn_test_pressed():
 func clear_all_chats():
 	for child in get_children():
 		remove_child(child)
-	add_child(SingletonObject.Chats.provider)
 
 func update_token_estimation():
-	if not SingletonObject.Chats: return
+	if SingletonObject.ChatList.is_empty(): return
 
 	var chi = ChatHistoryItem.new()
 	chi.Message = %txtMainUserInput.text
 	
+	var provider: = SingletonObject.ChatList[current_tab].provider
+
 	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi))
 
 	%EstimatedTokensLabel.text = "%s (%s$)" % [token_count, provider.token_cost * token_count]
@@ -525,11 +520,6 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.icon = icActive
 
-func _process(_delta: float):
-	if txt_main_user_input.has_focus():
-		if Input.is_action_just_pressed("control_enter"):
-			execute_chat()
-
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
 	SingletonObject.ChatList = []  # Clear the existing list
@@ -538,3 +528,26 @@ func _on_child_order_changed():
 			var vbox_chat = child.get_child(0)
 			if vbox_chat is VBoxChat:
 				SingletonObject.ChatList.append(vbox_chat.chat_history)
+
+
+
+func _on_provider_option_button_provider_selected(provider_: BaseProvider):
+	if SingletonObject.ChatList.is_empty(): return
+
+	var history = SingletonObject.ChatList[current_tab]
+
+	history.provider = provider_
+	if not provider_.is_inside_tree():
+		history.VBox.add_child(provider_)
+
+	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.model_name])
+
+# when tab changes, set the provider to one that that chat tab is using
+func _on_tab_changed(tab: int):
+	var active_provider = SingletonObject.get_active_provider(tab)
+
+	var item_index = _provider_option_button.get_item_index(active_provider)
+
+	_provider_option_button.select(item_index)
+
+	SingletonObject.last_tab_index = tab

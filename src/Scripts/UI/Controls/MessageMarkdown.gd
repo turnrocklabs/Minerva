@@ -201,7 +201,7 @@ func _on_gui_input(event: InputEvent):
 		return
 	
 	if event is InputEventMouseMotion:
-		for ch: RichTextLabel in %MessageLabelsContainer.get_children():
+		for ch in %MessageLabelsContainer.get_children(): # ch is either RichTextLabel or CodeMarkdownLabel
 			if not ch.get_selected_text().is_empty():
 				get_parent().message_selection.emit(self, true)
 

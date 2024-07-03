@@ -84,7 +84,7 @@ func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
 
 	# set the used provider so update model name
-	response.provider = SingletonObject.Chats.provider
+	response.provider = self
 
 	response.image = Image.new()
 	response.image.load_png_from_buffer(
