@@ -42,7 +42,7 @@ func _ready():
 	theme_option_button.selected = SingletonObject.get_theme()
 	
 	SingletonObject.mic_changed.connect(set_microphone_option_menu)
-	set_microphone_option_menu()
+	set_microphone_option_menu(SingletonObject.get_microphone())
 
 func set_field_values():
 	_fields["first_name"].text = config_file.get_value("USER", "first_name", "Not")
@@ -96,6 +96,7 @@ func _on_anthropic_check_box_toggled(toggled_on: bool) -> void:
 func _on_google_vertex_check_box_toggled(toggled_on: bool) -> void:
 	%leGoogleVertex.secret = !toggled_on
 
+#region Theme preference
 
 func set_theme_option_menu(theme_enum: int):
 	theme_option_button.selected = theme_enum
@@ -104,8 +105,11 @@ func set_theme_option_menu(theme_enum: int):
 func _on_theme_option_button_item_selected(index: int) -> void:
 	SingletonObject.set_theme(index)
 
+#endregion Theme preference
 
-func set_microphone_option_menu():
+#region Mic preferences
+
+func set_microphone_option_menu(mic_to_set):
 	# Get the list of available microphones
 	var input_devices = AudioServer.get_input_device_list()
 
@@ -116,10 +120,12 @@ func set_microphone_option_menu():
 	var index = 0
 	for device in input_devices:
 		microphones.add_item(device)
-		if SingletonObject.get_microphone() == device:
+		if mic_to_set == device:
 			microphones.selected = index
 		index += 1
 
 
 func _on_microphones_item_selected(index: int) -> void:
 	SingletonObject.set_microphone(microphones.get_item_text(index))
+
+#endregion Mic preferences
