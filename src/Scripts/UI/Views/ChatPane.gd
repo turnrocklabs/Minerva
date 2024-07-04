@@ -533,3 +533,9 @@ func _on_tab_changed(tab: int):
 	_provider_option_button.select(item_index)
 
 	SingletonObject.last_tab_index = tab
+
+## if enter is pressed, accept the event and trigger chat
+func _on_txt_main_user_input_gui_input(event: InputEvent):
+	if event.is_action_pressed("ui_accept"):
+		_on_chat_pressed()
+		accept_event()
