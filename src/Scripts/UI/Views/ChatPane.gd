@@ -159,49 +159,31 @@ func _on_chat_pressed():
 
 
 func execute_chat():
+	if %txtMainUserInput.text.is_empty(): return
+
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
-	var existing_message = false
+	## prepare an append item for the history
+	var user_history_item: = ChatHistoryItem.new()
+	user_history_item.Message = %txtMainUserInput.text
+	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 
-	# if last message is user message, that means we have no reply for it.
-	# FIXME: if user spams the chat button, this will run multiple times
-	var lst_chi = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
-	if lst_chi and lst_chi.Role == ChatHistoryItem.ChatRole.USER:
-		existing_message = true
+	%txtMainUserInput.text = ""
 
-	var history_list: Array[Variant]
-	var user_msg_node: MessageMarkdown
-	var user_history_item: ChatHistoryItem
-
-	if not existing_message:
-		## prepare an append item for the history
-		user_history_item = ChatHistoryItem.new()
-		user_history_item.Message = %txtMainUserInput.text
-		user_history_item.Role = ChatHistoryItem.ChatRole.USER
-
-		%txtMainUserInput.text = ""
-
-		# add the message to the history list before we construct the prompt, so it gets included
-		history.HistoryItemList.append(user_history_item)
-		
-		# make a chat request
-		history_list = create_prompt()
-
-		user_msg_node = await history.VBox.add_history_item(user_history_item)
-
-		user_history_item.EstimatedTokenCost = history.provider.estimate_tokens_from_prompt(history_list)
-		# rerender the message wince we changed the history item
-		user_msg_node.render()
+	# add the message to the history list before we construct the prompt, so it gets included
+	history.HistoryItemList.append(user_history_item)
 	
-	else:
-		# since we already have the message in user history create the prompt with no additional items
-		history_list = create_prompt()
+	# make a chat request
+	var history_list: = create_prompt()
 
-		user_msg_node = lst_chi.rendered_node
-		user_history_item = lst_chi
+	var user_msg_node: = await history.VBox.add_history_item(user_history_item)
+
+	user_history_item.EstimatedTokenCost = history.provider.estimate_tokens_from_prompt(history_list)
+	# rerender the message wince we changed the history item
+	user_msg_node.render()
 	
 	# we made the prompt, disable the notes now
 	SingletonObject.NotesTab.Disable_All()
