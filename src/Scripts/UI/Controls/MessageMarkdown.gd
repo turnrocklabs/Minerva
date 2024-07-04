@@ -127,7 +127,8 @@ func _setup_model_message():
 
 		texture_rect.tooltip_text = tt
 
-		%ImagesGridContainer.add_child(texture_rect)
+		var img_node = ChatImage.create(image)
+		%ImagesGridContainer.add_child(img_node)
 	
 	label.set("theme_override_colors/default_color", Color.BLACK)
 	
