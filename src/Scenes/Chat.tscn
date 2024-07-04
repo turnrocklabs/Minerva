@@ -13,8 +13,10 @@
 [ext_resource type="PackedScene" uid="uid://celpfkr7c745u" path="res://Scenes/ProviderOptionButton.tscn" id="9_xd60x"]
 
 [sub_resource type="InputEventKey" id="InputEventKey_rh3fk"]
-device = -1
+pressed = true
 keycode = 4194309
+physical_keycode = 4194309
+key_label = 4194309
 
 [sub_resource type="Shortcut" id="Shortcut_4b3s7"]
 events = [SubResource("InputEventKey_rh3fk")]
@@ -197,6 +199,7 @@ size_flags_horizontal = 8
 [connection signal="child_order_changed" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_child_order_changed"]
 [connection signal="tab_changed" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_tab_changed"]
 [connection signal="tab_clicked" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_tab_clicked"]
+[connection signal="gui_input" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_gui_input"]
 [connection signal="text_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_text_changed"]
 [connection signal="text_set" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_text_set"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChatSettings" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_chat_settings_pressed"]
