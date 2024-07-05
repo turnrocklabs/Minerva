@@ -305,8 +305,6 @@ func paste_image_from_clipboard():
 				image.load(path)
 				memory_item.Memory_Image = image
 				set_note_image(image)
-				%ImageDropPanel.visible = false
-				%ImagePreview.visible = true
 			else:
 				print_rich("[b]file format not supported :c[/b]")
 		else:
