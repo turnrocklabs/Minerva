@@ -275,7 +275,7 @@ func set_theme(themeID: int) -> void:
 
 #region Audio Settings
 
-signal mic_changed(micrphone: String)
+signal mic_changed(micrphone)
 
 func get_microphone():
 	return config_file.get_value("AudioSettings", "SelectedMic",  "Default")
