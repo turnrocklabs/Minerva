@@ -125,6 +125,14 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "eraser"
 
+[node name="DrawZone" type="ColorRect" parent="VBoxContainer/WhiteBoard"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+color = Color(1, 0, 1, 1)
+
 [node name="CodeEdit" type="CodeEdit" parent="VBoxContainer"]
 unique_name_in_owner = true
 visible = false
