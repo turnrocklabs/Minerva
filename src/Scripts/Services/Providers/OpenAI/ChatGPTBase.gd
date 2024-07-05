@@ -52,7 +52,10 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 		"%s/v1/chat/completions" % BASE_URL,
 		HTTPClient.METHOD_POST,
 		body_stringified,
-		["Authorization: Bearer %s" % API_KEY]
+		[
+			"Content-Type: application/json",
+			"Authorization: Bearer %s" % API_KEY
+		],
 	)
 
 	var item = _parse_request_results(response)

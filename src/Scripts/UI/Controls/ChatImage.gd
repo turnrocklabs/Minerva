@@ -37,3 +37,6 @@ func _on_save_file_dialog_file_selected(path: String):
 func _on_edit_button_pressed():
 	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Graphics, null, "Chat Image")
 	editor.texture_rect.texture = ImageTexture.create_from_image(image)
+
+func _on_check_button_toggled(toggled_on: bool):
+	image.set_meta("active", toggled_on)
