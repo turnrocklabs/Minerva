@@ -100,6 +100,7 @@ text = "Chats"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
+tooltip_text = "Creates a new chat tab"
 focus_mode = 0
 text = "New Chat"
 icon = ExtResource("2_bjp7m")
@@ -151,7 +152,7 @@ icon = ExtResource("7_51nod")
 [node name="btnMicrophone" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-tooltip_text = "Send Message"
+tooltip_text = "record message"
 icon = ExtResource("6_iop5c")
 
 [node name="SystemButton" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]

@@ -294,22 +294,27 @@ text = "Editor"
 
 [node name="UndoButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+tooltip_text = "Undo (Returns Editor to previous state)"
 icon = ExtResource("11_srtkx")
 
 [node name="BackSpaceButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+tooltip_text = "Backspace"
 icon = ExtResource("12_j6ukv")
 
 [node name="NewLineButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+tooltip_text = "Start new line"
 icon = ExtResource("11_p11dv")
 
 [node name="HButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+tooltip_text = "splits the editor in 2 horizontal panes"
 icon = SubResource("CanvasTexture_o30k1")
 
 [node name="VButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
 
 [node name="vboxEditorMain" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer" node_paths=PackedStringArray("editor_pane")]
@@ -345,23 +350,27 @@ text = "Notes"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "Disable all notes in all current tabs"
 text = "Disable All"
 
 [node name="btnCreateNote" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "Creates a new note in current active tab"
 text = "Create Note"
 icon = ExtResource("12_w08x7")
 
 [node name="btnAddAttachement" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "Creates a new note from a given text file"
 text = "Attach File"
 icon = ExtResource("13_sb4aw")
 
 [node name="btnNewTab" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "Creates a new notes tab"
 text = "New Tab"
 icon = ExtResource("12_6jk4t")
 
