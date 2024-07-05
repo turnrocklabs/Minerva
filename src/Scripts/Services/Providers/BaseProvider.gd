@@ -96,11 +96,10 @@ class RequestResults extends RefCounted:
 
 # Helper function to make HTTP requests
 ## This function will return array of 
-func make_request(url: String, method: int, body: String="", headers: Array[String]= []) -> RequestResults:
+func make_request(url: String, method: int, body: Variant = "", headers: Array[String]= []) -> RequestResults:
 	# setup request object for the delta endpoint and append API key
 	var http_request = active_request
 	http_request.use_threads = true
-	headers.append("Content-Type: application/json")
 
 	if len(API_KEY) != 0:
 		#add_child(http_request)
@@ -117,7 +116,14 @@ func make_request(url: String, method: int, body: String="", headers: Array[Stri
 	else:
 		print("HTTPRequest is not part of the scene tree.")
 
-	var error = http_request.request(url, headers, method, body)
+	var error: int
+
+	if body is PackedByteArray:
+		error = http_request.request_raw(url, headers, method, body)
+	else:
+		error = http_request.request(url, headers, method, str(body))
+
+	
 	if error != OK:
 		push_error("An error occurred during the HTTP request: %s" % error)
 		return null
