@@ -154,6 +154,10 @@ layout_mode = 2
 tooltip_text = "Send Message"
 icon = ExtResource("6_iop5c")
 
+[node name="SystemButton" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "System Prompt"
+
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Test"

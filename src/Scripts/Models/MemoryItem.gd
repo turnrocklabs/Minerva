@@ -17,7 +17,8 @@ var Title: String:
 var Content: String = "":
 	set(value): SingletonObject.save_state(false); Content = value
 
-var Memory_Image: Image = Image.new():
+
+var Memory_Image: Image = Image.create(1, 1,false,Image.FORMAT_RGB8):
 	set(value): SingletonObject.save_state(false); Memory_Image = value
 
 var Image_caption: String = "":
@@ -55,10 +56,12 @@ func _enable_toggle():
 # Serialize takes this instance of a MemoryItem and serializes it so it can be represented as JSON
 func Serialize() -> Dictionary:
 	var b64_data_image
-	if Memory_Image != null:
+	if Memory_Image.get_size().x > 1:
 		b64_data_image = Marshalls.variant_to_base64(Memory_Image, true)
 	else:
-		b64_data_image = Marshalls.variant_to_base64(Image.new(), true)
+		var placeholder_image = Image.create(1, 1,false,Image.FORMAT_RGB8)
+		b64_data_image = Marshalls.variant_to_base64(placeholder_image, true)
+		pass
 	
 	var b64_data_audio
 	if Audio != null:
@@ -93,11 +96,10 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 		if prop == "Memory_Image":
 			#decode to png
 			var img = Image.new()
-			if value != null:
-				img = Marshalls.base64_to_variant(value, true)
-				value = img
-			else:
-				value = img
+			#if value.get_size().x > 1:
+			img = Marshalls.base64_to_variant(value, true)
+			value = img
+			
 		if prop == "Audio":
 			if value != null:
 				var audio = Marshalls.base64_to_variant(value, true)
