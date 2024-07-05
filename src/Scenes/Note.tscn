@@ -94,7 +94,6 @@ selection_enabled = true
 
 [node name="ImageVBoxContainer" type="VBoxContainer" parent="PanelContainer/v"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 
 [node name="NoteImage" type="TextureRect" parent="PanelContainer/v/ImageVBoxContainer"]
@@ -156,6 +155,7 @@ theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/v/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]
+[connection signal="gui_input" from="PanelContainer/v/ImageVBoxContainer" to="." method="_on_image_v_box_container_gui_input"]
 [connection signal="text_changed" from="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_changed"]
 [connection signal="text_submitted" from="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_submitted"]
 [connection signal="pressed" from="PanelContainer/v/AudioHBoxContainer/PlayPauseButton" to="." method="_on_play_pause_button_pressed"]

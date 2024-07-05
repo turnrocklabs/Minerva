@@ -28,12 +28,7 @@ var memory_item: MemoryItem:
 		if memory_item.Type == SingletonObject.note_type.TEXT:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
-			var image_texture = ImageTexture.new()
-			# we create another image to manipulate so the original doesn't get changed
-			downscaled_image = value.Memory_Image
-			downscaled_image = downscale_image(downscaled_image)
-			image_texture.set_image(downscaled_image)
-			note_image.texture = image_texture
+			set_note_image(value.Memory_Image)
 			image_caption_line_edit.text = value.Image_caption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.Audio
@@ -64,6 +59,14 @@ func downscale_image(image: Image) -> Image:
 	return image
 
 
+# set the image of the note to the given image
+func set_note_image(image: Image) -> void:
+	downscaled_image = downscale_image(image)# we create another image so we dont manipulate the og
+	var image_texture = ImageTexture.new()
+	image_texture.set_image(downscaled_image)
+	note_image.texture = image_texture
+
+
 func new_audio_note():
 	%AudioHBoxContainer.visible = true
 	%NoteTextBody.visible = false
@@ -74,7 +77,7 @@ func new_audio_note():
 func _ready():
 	# connecting signal for changing the dots texture when the main theme changes
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
-	change_modulate_for_texture()
+	change_modulate_for_texture(SingletonObject.get_theme())
 	# var new_size: Vector2 = size * 0.15
 	# set_size(new_size)
 	label_node.text_changed.connect(
@@ -83,8 +86,8 @@ func _ready():
 	)
 
 #method for changing the dots texture when the main theme changes
-func change_modulate_for_texture():
-	var theme_enum = SingletonObject.get_theme()
+func change_modulate_for_texture(theme_enum: int):
+	#var theme_enum = SingletonObject.get_theme()
 	if theme_enum == SingletonObject.theme.LIGHT_MODE:
 		drag_texture_rect.modulate = Color("282828")
 	if theme_enum == SingletonObject.theme.DARK_MODE:
@@ -278,4 +281,43 @@ func _on_play_pause_button_pressed() -> void:
 		audio_stream_player.play()
 
 
+
+#region Paste image 
+
+func _on_image_v_box_container_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		match event.button_index:
+			MOUSE_BUTTON_LEFT:
+				pass
+			MOUSE_BUTTON_RIGHT:
+				print("right click")
+				paste_image_from_clipboard()
+
+
+# check if display server can paste image from clipboard and does so
+func paste_image_from_clipboard():
+	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
+		if DisplayServer.clipboard_has():
+			var path = DisplayServer.clipboard_get().split("\n")[0]
+			var file_format = get_file_format(path)
+			if file_format in SingletonObject.supported_image_formats:
+				var image = Image.new()
+				image.load(path)
+				memory_item.Memory_Image = image
+				set_note_image(image)
+				%ImageDropPanel.visible = false
+				%ImagePreview.visible = true
+			else:
+				print_rich("[b]file format not supported :c[/b]")
+		else:
+			print("no iamge to put here")
+	else: 
+		print("Display Server does not support clipboard feature :c, its a godot thing")
+
+
+func get_file_format(path: String) -> String:
+	return path.split(".")[path.split(".").size() -1]
+
+
+#endregion Paste image 
 

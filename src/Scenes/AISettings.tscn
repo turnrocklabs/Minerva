@@ -66,6 +66,7 @@ popup/item_1/text = "Dark Mode"
 popup/item_1/id = 1
 
 [node name="MicrophoneContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+visible = false
 layout_mode = 2
 
 [node name="ThemeLabel" type="Label" parent="MarginContainer/MainVBox/MicrophoneContainer"]

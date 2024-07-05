@@ -71,7 +71,7 @@ func _on_add_note_pressed():
 	Description.clear()
 	%ImagePreview.texture = null
 	%ImageDropPanel.visible = true
-	# TODO clear audio file
+	audio_recording = null
 	%CreateNewNote.hide()
 	%AddNotePopUp.disabled = true
 
