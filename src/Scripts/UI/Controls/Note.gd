@@ -9,11 +9,12 @@ signal note_deleted()
 @onready var drag_texture_rect: TextureRect = $PanelContainer/v/DragTextureRect
 @onready var note_image: TextureRect = %NoteImage
 @onready var audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
+@onready var image_caption_line_edit: LineEdit = %ImageCaptionLineEdit
 
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
 
-
+var downscaled_image: Image
 # this will react each time memory item is changed
 var memory_item: MemoryItem:
 	set(value):
@@ -27,16 +28,10 @@ var memory_item: MemoryItem:
 		if memory_item.Type == SingletonObject.note_type.TEXT:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
-			var image_texture = ImageTexture.new()
-			image_texture.set_image(value.image)
-			note_image.texture = image_texture
-
-			# set the caption if available
-			%ImageCaptionLineEdit.text = value.image.get_meta("caption", "")
-			DisplayServer.clipboard_set(value.image.get_meta("caption", ""))
-
+			set_note_image(value.Memory_Image)
+			image_caption_line_edit.text = value.Image_caption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
-			audio_stream_player.stream = value.audio
+			audio_stream_player.stream = value.Audio
 
 func new_text_note():
 	%NoteTextBody.visible = true
@@ -51,6 +46,26 @@ func new_image_note():
 	%NoteTextBody.visible = false
 	return self
 
+# FIXME maybe we could move this function to Singleton so all images 
+# can be resized and add another paremeter to place the 200 constant
+#  this method resizes the image so the texture rec doesn't render images at full res
+func downscale_image(image: Image) -> Image:
+	var image_size = image.get_size()
+	if image_size.y > 200:
+		var image_ratio = image_size.y/ 200.0
+		image_size.y = image_size.y / image_ratio
+		image_size.x = image_size.x / image_ratio
+		image.resize(image_size.x, image_size.y, Image.INTERPOLATE_LANCZOS)
+	return image
+
+
+# set the image of the note to the given image
+func set_note_image(image: Image) -> void:
+	downscaled_image = downscale_image(image)# we create another image so we dont manipulate the og
+	var image_texture = ImageTexture.new()
+	image_texture.set_image(downscaled_image)
+	note_image.texture = image_texture
+
 
 func new_audio_note():
 	%AudioHBoxContainer.visible = true
@@ -59,11 +74,10 @@ func new_audio_note():
 	return self
 
 
-
 func _ready():
 	# connecting signal for changing the dots texture when the main theme changes
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
-	change_modulate_for_texture()
+	change_modulate_for_texture(SingletonObject.get_theme())
 	# var new_size: Vector2 = size * 0.15
 	# set_size(new_size)
 	label_node.text_changed.connect(
@@ -72,8 +86,8 @@ func _ready():
 	)
 
 #method for changing the dots texture when the main theme changes
-func change_modulate_for_texture():
-	var theme_enum = SingletonObject.get_theme()
+func change_modulate_for_texture(theme_enum: int):
+	#var theme_enum = SingletonObject.get_theme()
 	if theme_enum == SingletonObject.theme.LIGHT_MODE:
 		drag_texture_rect.modulate = Color("282828")
 	if theme_enum == SingletonObject.theme.DARK_MODE:
@@ -246,13 +260,18 @@ func _on_hide_button_pressed():
 	)
 
 
-func _on_title_text_submitted(_new_text: String) -> void:
-	%Title.release_focus()
+func _on_title_text_submitted(new_text: String) -> void:
+	label_node.release_focus()
+	if memory_item: memory_item.Title = new_text
 
 
-func _on_image_caption_line_edit_text_submitted(_new_text: String) -> void:
-	%ImageCaptionLineEdit.release_focus()
+func _on_image_caption_line_edit_text_submitted(new_text: String) -> void:
+	image_caption_line_edit.release_focus()
+	if memory_item: memory_item.Image_caption = new_text
 
+
+func _on_image_caption_line_edit_text_changed(new_text: String) -> void:
+	if memory_item: memory_item.Image_caption = new_text
 
 
 func _on_play_pause_button_pressed() -> void:
@@ -260,3 +279,43 @@ func _on_play_pause_button_pressed() -> void:
 		audio_stream_player.stop()
 	else: 
 		audio_stream_player.play()
+
+
+
+#region Paste image 
+
+func _on_image_v_box_container_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		match event.button_index:
+			MOUSE_BUTTON_LEFT:
+				pass
+			MOUSE_BUTTON_RIGHT:
+				print("right click")
+				paste_image_from_clipboard()
+
+
+# check if display server can paste image from clipboard and does so
+func paste_image_from_clipboard():
+	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
+		if DisplayServer.clipboard_has():
+			var path = DisplayServer.clipboard_get().split("\n")[0]
+			var file_format = get_file_format(path)
+			if file_format in SingletonObject.supported_image_formats:
+				var image = Image.new()
+				image.load(path)
+				memory_item.Memory_Image = image
+				set_note_image(image)
+			else:
+				print_rich("[b]file format not supported :c[/b]")
+		else:
+			print("no iamge to put here")
+	else: 
+		print("Display Server does not support clipboard feature :c, its a godot thing")
+
+
+func get_file_format(path: String) -> String:
+	return path.split(".")[path.split(".").size() -1]
+
+
+#endregion Paste image 
+

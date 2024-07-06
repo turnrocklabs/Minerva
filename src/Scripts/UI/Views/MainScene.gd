@@ -14,7 +14,7 @@ var icActive = preload("res://assets/icons/Microphone_active.png")
 
 var effect: AudioEffect
 var audio_recording: AudioStreamWAV
-
+var image_original_res: Image
 
 func _ready() -> void:
 	# we connect the signals when the project runs
@@ -64,14 +64,14 @@ func _on_add_note_pressed():
 	if note_enum == SingletonObject.note_type.TEXT:
 		SingletonObject.NotesTab.add_note(Head.text, Description.text)
 	if note_enum == SingletonObject.note_type.IMAGE:
-		SingletonObject.NotesTab.add_image_note(Head.text, %ImagePreview.texture.get_image())
+		SingletonObject.NotesTab.add_image_note(Head.text, image_original_res)
 	if note_enum == SingletonObject.note_type.AUDIO:
 		SingletonObject.NotesTab.add_audio_note(Head.text, audio_recording)
 	Head.clear()
 	Description.clear()
 	%ImagePreview.texture = null
 	%ImageDropPanel.visible = true
-	# TODO clear audio file
+	audio_recording = null
 	%CreateNewNote.hide()
 	%AddNotePopUp.disabled = true
 
@@ -130,6 +130,8 @@ func _on_create_new_note_about_to_popup() -> void:
 # method for handling close button pressed
 func _on_creat_new_note_close_requested() -> void:
 	%CreateNewNote.hide()
+	%ImagePreview.texture = null
+	%ImageDropPanel.visible = true
 	%CreateNewNote.exclusive = false
 
 
@@ -187,7 +189,13 @@ func _on_image_note_file_dialog_canceled() -> void:
 func set_image_preview(path: String) -> void:
 	var image = Image.new()
 	image.load(path)
-	
+	image_original_res = image
+	var image_size = image.get_size()
+	if image_size.y > 200:
+		var image_ratio = image_size.y/ 200.0
+		image_size.y = image_size.y / image_ratio
+		image_size.x = image_size.x / image_ratio
+		image.resize(image_size.x, image_size.y, Image.INTERPOLATE_LANCZOS)
 	var image_texture = ImageTexture.new()
 	image_texture.set_image(image)
 	%ImagePreview.texture = image_texture
@@ -196,7 +204,7 @@ func set_image_preview(path: String) -> void:
 func _on_image_files_dropped(files):
 	if %DropImageControl.visible:
 		var path: String = files[0]# get the first file to be dropped
-		var file_format = path.split(".")[path.split(".").size() - 1]# get the file format
+		var file_format = get_file_format(path)# get the file format
 		
 		# check if file format is supported
 		if file_format in SingletonObject.supported_image_formats:
@@ -227,16 +235,25 @@ func _on_drop_image_control_gui_input(event: InputEvent) -> void:
 				print("right click")
 				paste_image_from_clipboard()
 
+
+func get_file_format(path: String) -> String:
+	return path.split(".")[path.split(".").size() -1]
+
+
 # check if display server can paste image from clipboard and does so
 func paste_image_from_clipboard():
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
-		if DisplayServer.clipboard_has_image():
-			%ImageDropPanel.visible = false
-			%ImagePreview.visible = true
-			var clipboard_image: Image = DisplayServer.clipboard_get_image()
-			var image_texture = ImageTexture.new()
-			image_texture.set_image(clipboard_image)
-			%ImagePreview.texture = image_texture
+		if DisplayServer.clipboard_has():
+			var path = DisplayServer.clipboard_get().split("\n")[0]
+			var file_format = get_file_format(path)
+			if file_format in SingletonObject.supported_image_formats:
+				set_image_preview(path)
+				%ImageDropPanel.visible = false
+				%ImagePreview.visible = true
+			else:
+				print_rich("[b]file format not supported :c[/b]")
+		else:
+			print("no iamge to put here")
 	else: 
 		print("Display Server does not support clipboard feature :c, its agodot thing")
 #endregion Image Note region

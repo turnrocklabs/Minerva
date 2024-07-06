@@ -512,6 +512,10 @@ func _on_child_order_changed():
 				SingletonObject.ChatList.append(vbox_chat.chat_history)
 
 
+func _on_system_button_pressed() -> void:
+	%SystemPrompt.popup()
+
+
 
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	if SingletonObject.ChatList.is_empty(): return
