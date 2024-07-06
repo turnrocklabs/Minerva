@@ -62,4 +62,4 @@ func _on_check_button_toggled(toggled_on: bool):
 
 
 func _on_note_button_pressed():
-	SingletonObject.NotesTab.add_image_note("Image note", image)
+	SingletonObject.NotesTab.add_image_note("Image note", image, image.get_meta("caption", ""))
