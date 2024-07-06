@@ -119,7 +119,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "image caption here"
-max_length = 75
 flat = true
 caret_blink = true
 
