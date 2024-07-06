@@ -30,6 +30,11 @@ var memory_item: MemoryItem:
 			var image_texture = ImageTexture.new()
 			image_texture.set_image(value.image)
 			note_image.texture = image_texture
+
+			# set the caption if available
+			%ImageCaptionLineEdit.text = value.image.get_meta("caption", "")
+			DisplayServer.clipboard_set(value.image.get_meta("caption", ""))
+
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.audio
 

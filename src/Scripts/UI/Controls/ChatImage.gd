@@ -59,3 +59,7 @@ func _on_check_button_toggled(toggled_on: bool):
 	image.set_meta("active", toggled_on)
 
 	image_active_state_changed.emit(toggled_on)
+
+
+func _on_note_button_pressed():
+	SingletonObject.NotesTab.add_image_note("Image note", image)
