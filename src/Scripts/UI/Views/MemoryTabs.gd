@@ -120,9 +120,13 @@ func render_threads():
 	# Save the last active thread.
 	var last_thread = self.current_tab
 
+	# we must delete existing noted so creating new project works
+	for c in %tcThreads.get_children():
+		c.free()
+	
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
 	for i in range(SingletonObject.ThreadList.size()):
-		var thread = SingletonObject.ThreadList[i]
+		var thread = SingletonObject.ThreadList[i];
 		var tab = %tcThreads.get_child(i)
 
 		# If the tab exists, update its content:
@@ -179,7 +183,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.AUDIO
 	new_memory.Title = note_title
-	new_memory.audio = note_audio
+	new_memory.Audio = note_audio
 	new_memory.Visible = true
 	
 	# append the new memory item to the active thread memory list
@@ -187,7 +191,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
 	render_threads()
 
 
-func add_image_note(note_title: String, note_image: Image):
+func add_image_note(note_title: String, note_image: Image, imageCaption: String = ""):
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		#return
@@ -200,7 +204,8 @@ func add_image_note(note_title: String, note_image: Image):
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.IMAGE
 	new_memory.Title = note_title
-	new_memory.image = note_image
+	new_memory.MemoryImage = note_image
+	new_memory.ImageCaption = imageCaption
 	new_memory.Visible = true
 	
 	# append the new memory item to the active thread memory list

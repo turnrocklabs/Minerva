@@ -11,7 +11,7 @@ extends HBoxContainer
 @export var error_message_color: Color
 
 @onready var tokens_cost: Label = %TokensCostLabel
-@onready var edit_popup: MessageEditPopup = %MessageEditPopup
+@onready var text_edit: TextEdit = %MessageTextEdit
 
 ## Content of this message in markdown, returns `label.text`
 ## Setting this property will update the history item and rerender the note
@@ -43,12 +43,16 @@ var editable:= false:
 		editable = value
 		%EditButton.visible = editable
 
+## Returns all rendered chat images in this message
+var images: Array[ChatImage]:
+	get:
+		var images_: Array[ChatImage] = []
+		images_.assign(%ImagesGridContainer.get_children().filter(func(node: Node): return node is ChatImage))
+		return images_
+
 
 func _ready():
 	render()
-
-	# set the message for the edit popup
-	edit_popup.message = self
 
 ## sets loading label visibility to `loading_` and toggles_controls
 func set_message_loading(loading_: bool):
@@ -121,19 +125,21 @@ func _setup_model_message():
 		texture_rect.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
 		texture_rect.texture = ImageTexture.create_from_image(image)
 
-		# Show the caption of the image as a tooltip
-		var tt = image.get_meta("caption", "")
-		if tt.length() > 60: tt = tt.left(57) + "..."
+		var img_node = ChatImage.create(image)
 
-		texture_rect.tooltip_text = tt
+		# tell the vBoxChat if image is activated
+		img_node.image_active_state_changed.connect(
+			func(active: bool):
+				(get_parent() as VBoxChat).image_activated.emit(img_node, active)
+		)
 
-		%ImagesGridContainer.add_child(texture_rect)
+		%ImagesGridContainer.add_child(img_node)
 	
 	label.set("theme_override_colors/default_color", Color.BLACK)
 	
 	var style: StyleBox = get_node("%PanelContainer").get("theme_override_styles/panel")
 
-	var continue_btn = get_node("%ContinueButton") as Button	
+	var continue_btn = get_node("%ContinueButton") as Button
 	continue_btn.visible = not history_item.Complete
 
 	# we can't edit model messages
@@ -168,7 +174,10 @@ func _on_clip_button_pressed():
 
 
 func _on_note_button_pressed():
-	SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text)
+	if history_item.Images.size() > 0:
+		SingletonObject.NotesTab.add_image_note("Image note", history_item.Images[0], history_item.Images[0].get_meta("caption", ""))
+	else:
+		SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text)
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 
@@ -180,7 +189,26 @@ func _on_regenerate_button_pressed():
 
 
 func _on_edit_button_pressed():
-	edit_popup.popup_centered()
+	# edit_popup.popup_centered()
+	%MessageLabelsContainer.visible = false
+
+	text_edit.visible = true
+	text_edit.text = content
+	text_edit.grab_focus()
+
+# when we click outside the text edit, hide it and save changes
+func _input(event: InputEvent):
+	if text_edit.visible and event is InputEventMouseButton and event.pressed:
+
+		if not text_edit.get_global_rect().has_point(event.global_position):
+			if text_edit.text:
+				content = text_edit.text
+			
+			%MessageLabelsContainer.visible = true
+			text_edit.visible = false
+
+			get_viewport().set_input_as_handled()
+
 
 func _on_hide_button_pressed():
 	SingletonObject.Chats.hide_chat_history_item(history_item, null, false)
@@ -201,7 +229,7 @@ func _on_gui_input(event: InputEvent):
 		return
 	
 	if event is InputEventMouseMotion:
-		for ch: RichTextLabel in %MessageLabelsContainer.get_children():
+		for ch in %MessageLabelsContainer.get_children(): # ch is either RichTextLabel or CodeMarkdownLabel
 			if not ch.get_selected_text().is_empty():
 				get_parent().message_selection.emit(self, true)
 
