@@ -128,12 +128,6 @@ func _setup_model_message():
 		texture_rect.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
 		texture_rect.texture = ImageTexture.create_from_image(image)
 
-		# Show the caption of the image as a tooltip
-		var tt = image.get_meta("caption", "")
-		if tt.length() > 60: tt = tt.left(57) + "..."
-
-		texture_rect.tooltip_text = tt
-
 		var img_node = ChatImage.create(image)
 
 		# tell the vBoxChat if image is activated
