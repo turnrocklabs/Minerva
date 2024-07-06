@@ -52,7 +52,10 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 		"%s/v1/chat/completions" % BASE_URL,
 		HTTPClient.METHOD_POST,
 		body_stringified,
-		["Authorization: Bearer %s" % API_KEY]
+		[
+			"Content-Type: application/json",
+			"Authorization: Bearer %s" % API_KEY
+		],
 	)
 
 	var item = _parse_request_results(response)
@@ -71,7 +74,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		ChatHistoryItem.ChatRole.ASSISTANT:
 			role = "assistant"
 		ChatHistoryItem.ChatRole.MODEL:
-			role = "system"
+			role = "assistant"
 	
 	# Get all image captions in array of strings
 	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
@@ -86,7 +89,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		%s
 		%s
 		%s
-	""" % [chat_item.Message, image_captions, chat_item.InjectedNote]
+	""" % [image_captions, chat_item.InjectedNote, chat_item.Message]
 
 	text = text.strip_edges()
 
@@ -131,7 +134,7 @@ func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
 	
 	# set the used provider so update model name
-	response.provider = SingletonObject.Chats.provider
+	response.provider = self
 
 	# the id will be useful if we need to complete the response with second request
 	response.id = data["id"]

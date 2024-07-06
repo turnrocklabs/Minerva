@@ -10,26 +10,22 @@ var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "
 var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
+# use this method to save any settings to the file
 func save_to_config_file(section: String, field: String, value):
-	config_file.get_sections()
+	#config_file.get_sections()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
 
-
+#method for checking if the user has saved files
 func has_recent_projects() -> bool:
 	return config_file.has_section("OpenRecent")
 
-
+#method for adding the project to the open recent list
 func save_recent_project(path: String):
 	var path_split = path.split("/")
 	var project_name_index: int = path_split.size() - 1
 	var project_name = path_split[project_name_index]
 	
-	if has_recent_projects():# checks if there are recent project saved
-		var recent_projects_array = get_recent_projects()
-		#checks if there are 5 recent projects saved and deletes the first one saved
-		if recent_projects_array.size() >= 5:
-			config_file.erase_section_key("OpenRecent", recent_projects_array[0])
 	save_to_config_file("OpenRecent",project_name, path)
 
 # this function returns an array with the files 
@@ -40,9 +36,16 @@ func get_recent_projects() -> Array:
 		return config_file.get_section_keys("OpenRecent")
 	return ["no recent projects"]
 
-
+# method for getting the p0ath on disk of the specified project file
 func get_project_path(project_name: String) -> String:
 	return config_file.get_value("OpenRecent", project_name)
+
+# method for erasing all the recently opened projects
+func clear_recent_projects() -> void:
+	config_file.erase_section("OpenRecent")
+	config_file.save(config_file_name)
+
+
 #endregion Config File
 
 
@@ -107,8 +110,13 @@ func _ready():
 		return
 	
 	
-	# var theme_enum = config_file.get_value("theme", "theme_enum")
-	# set_theme(theme_enum)
+	var theme_enum = get_theme()
+	if theme_enum > -1:
+		set_theme(theme_enum)
+	
+	var mic_selected = get_microphone()
+	if mic_selected:
+		set_microphone(mic_selected)
 
 
 func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = []):
@@ -171,11 +179,11 @@ var API_MODEL_PROVIDER_SCRIPTS = {
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value
-## for the provider currently in use by the `SingletonObject.Chats`
-func get_active_provider() -> API_MODEL_PROVIDERS:
+## for the provider currently in use by passed tab or the active one
+func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MODEL_PROVIDERS:
 	
-	# get currently used provider script
-	var provider_script = Chats.provider.get_script()
+	# get currently used provider script or the chats default one
+	var provider_script = Chats.default_provider_script if ChatList.is_empty() else ChatList[tab].provider.get_script()
 
 	for key: API_MODEL_PROVIDERS in API_MODEL_PROVIDER_SCRIPTS:
 		if API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
@@ -262,7 +270,29 @@ func set_theme(themeID: int) -> void:
 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 	theme_changed.emit(themeID)
 
-
 #endregion Theme change
+
+
+#region Audio Settings
+
+signal mic_changed(micrphone)
+
+func get_microphone():
+	return config_file.get_value("AudioSettings", "SelectedMic",  "Default")
+
+
+func set_microphone(mic: String) -> void:
+	AudioServer.set_input_device(mic)
+	save_to_config_file("AudioSettings", "SelectedMic", mic)
+	mic_changed.emit(mic)
+
+
+#endregion Audio Settings
+
+
+
+
+
+
 
 

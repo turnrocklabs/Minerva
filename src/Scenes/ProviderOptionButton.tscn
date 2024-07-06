@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://celpfkr7c745u"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/ProviderOptionButton.gd" id="1_kgywg"]
+
+[node name="ProviderOptionButton" type="OptionButton"]
+script = ExtResource("1_kgywg")
+
+[connection signal="item_selected" from="." to="." method="_on_item_selected"]

@@ -1,0 +1,83 @@
+[gd_scene load_steps=7 format=3 uid="uid://r5b4cwe432qh"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/ChatImage.gd" id="1_6oqm2"]
+[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="2_0hlvg"]
+[ext_resource type="Texture2D" uid="uid://bjnled20cq210" path="res://assets/icons/download.png" id="2_505wb"]
+[ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="3_ix1p3"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_wikf1"]
+bg_color = Color(0, 0, 0, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_2gddn"]
+content_margin_left = 15.0
+content_margin_top = 5.0
+content_margin_right = 5.0
+content_margin_bottom = 5.0
+bg_color = Color(0.196078, 0.196078, 0.196078, 1)
+
+[node name="ChatImage" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_wikf1")
+script = ExtResource("1_6oqm2")
+
+[node name="SaveFileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+size = Vector2i(600, 500)
+access = 2
+filters = PackedStringArray("*.png")
+
+[node name="v" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="p" type="PanelContainer" parent="v"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_2gddn")
+
+[node name="h" type="HBoxContainer" parent="v/p"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="v/p/h"]
+layout_mode = 2
+text = "Image"
+
+[node name="CheckButton" type="CheckButton" parent="v/p/h"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="v/p/h"]
+layout_mode = 2
+size_flags_horizontal = 10
+theme_override_constants/separation = 10
+
+[node name="EditButton" type="Button" parent="v/p/h/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Edit image"
+icon = ExtResource("2_0hlvg")
+
+[node name="NoteButton" type="Button" parent="v/p/h/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Create note from image"
+icon = ExtResource("3_ix1p3")
+
+[node name="SaveButton" type="Button" parent="v/p/h/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Save image"
+icon = ExtResource("2_505wb")
+
+[node name="TextureRect" type="TextureRect" parent="v"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+expand_mode = 5
+
+[connection signal="file_selected" from="SaveFileDialog" to="." method="_on_save_file_dialog_file_selected"]
+[connection signal="toggled" from="v/p/h/CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="pressed" from="v/p/h/HBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
+[connection signal="pressed" from="v/p/h/HBoxContainer/NoteButton" to="." method="_on_note_button_pressed"]
+[connection signal="pressed" from="v/p/h/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]

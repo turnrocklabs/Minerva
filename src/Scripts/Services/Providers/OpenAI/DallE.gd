@@ -8,8 +8,8 @@ func _init():
 	BASE_URL = "https://api.openai.com/v1/images"
 	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
 
-	model_name = "dall-e-3"
-	short_name = "D3"
+	model_name = "dall-e-2"
+	short_name = "D2"
 	token_cost = 0
 
 
@@ -40,25 +40,70 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 	return bot_response
 
 
+## Creates dummy mask in lower right quarter of the image
+func _dummy_mask(image: Image) -> Image:
+	
+	var mask = Image.new()
+	mask.copy_from(image)
+	
+	mask.convert(Image.FORMAT_RGBA8)
+
+	var half_width = mask.get_width() / floor(2)
+	var half_height = mask.get_height() / floor(2)
+
+	for x in range(half_width, mask.get_width()):
+		for y in range(half_height, mask.get_height()):
+			mask.set_pixel(x, y, Color.TRANSPARENT)
+
+	return mask
+
+
+
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
+	# if we have active image this will be a edit request
+	var active_image: Image
+
+	for formatted_data in prompt:
+		for image in formatted_data["images"]:
+			if image.get_meta("active", false):
+				active_image = image
 
 	# Just take the last prompt
 	var request_body = {
 		"model": model_name,
-		"prompt": prompt.back(),
+		"prompt": prompt.back()["text"],
 		"response_format": "b64_json",
 	}
 
 	request_body.merge(additional_params)
-
-	var body_stringified: String = JSON.stringify(request_body)
 	
-	var response: RequestResults = await make_request(
-		"%s/generations" % BASE_URL,
-		HTTPClient.METHOD_POST,
-		body_stringified,
-		["Authorization: Bearer %s" % API_KEY]
-	)
+	var response: RequestResults
+	
+	if active_image:
+		var boundary: = _generate_form_data_boundary()
+
+		response = await make_request(
+			"%s/edits" % BASE_URL,
+			HTTPClient.METHOD_POST,
+			_construct_edit_form_data(request_body, _dummy_mask(active_image), boundary),
+			[
+				'Content-Type: multipart/form-data;boundary=%s' % boundary,
+				"Authorization: Bearer %s" % API_KEY
+			],
+		)
+	
+
+	else:
+		request_body["model"] = "dall-e-3" # we can use dall-e-3 for generating images
+		response = await make_request(
+			"%s/generations" % BASE_URL,
+			HTTPClient.METHOD_POST,
+			JSON.stringify(request_body),
+			[
+				"Content-Type: application/json",
+				"Authorization: Bearer %s" % API_KEY
+			],
+		)
 
 	var item = _parse_request_results(response)
 	
@@ -84,7 +129,7 @@ func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
 
 	# set the used provider so update model name
-	response.provider = SingletonObject.Chats.provider
+	response.provider = self
 
 	response.image = Image.new()
 	response.image.load_png_from_buffer(
@@ -109,7 +154,10 @@ func wrap_memory(list_memories: String) -> String:
 func Format(chat_item: ChatHistoryItem) -> Variant:
 	var text: String = chat_item.InjectedNote + chat_item.Message if chat_item.InjectedNote else chat_item.Message
 
-	return text
+	return {
+		"text": text,
+		"images": chat_item.Images
+	}
 
 
 func estimate_tokens(_input: String) -> int:
@@ -117,3 +165,52 @@ func estimate_tokens(_input: String) -> int:
 
 func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
 	return 0
+
+
+#region Form Data
+
+## Generate boundary string for form data.
+## See https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/POST
+func _generate_form_data_boundary() -> String:
+	# Create some random bytes to generate our boundary value
+	var crypto = Crypto.new()
+	var random_bytes = crypto.generate_random_bytes(16)
+	return '%s' % random_bytes.hex_encode()
+
+## takes `request_data`, `image`, and form data `boundary` to construct
+## form data for the request
+func _construct_edit_form_data(request_data: Dictionary, image: Image, boundary: String) -> PackedByteArray:
+	# Create our body
+	var body: = PackedByteArray()
+
+	for key in request_data:
+		_form_data_append_line(body, "--%s" % boundary)
+		_form_data_append_line(body, 'Content-Disposition: form-data; name="%s"' % key)
+		_form_data_append_line(body, '')
+		_form_data_append_line(body, request_data[key])
+
+	# add the image field
+	_form_data_append_line(body, "--%s" % boundary)
+	_form_data_append_line(body, 'Content-Disposition: form-data; name="image"; filename="image.png"')
+	_form_data_append_line(body, 'Content-Type: image/png')
+	_form_data_append_line(body, 'Content-Transfer-Encoding: binary')
+	_form_data_append_line(body, '')
+
+	_form_data_append_bytes(body, image.save_png_to_buffer())
+	_form_data_append_line(body, '')
+
+	_form_data_append_line(body, "--%s--" % boundary)
+
+	return body
+
+
+func _form_data_append_line(buffer:PackedByteArray, line:String) -> void:
+	buffer.append_array(line.to_ascii_buffer())
+	buffer.append_array('\r\n'.to_ascii_buffer())
+
+
+func _form_data_append_bytes(buffer:PackedByteArray, bytes:PackedByteArray) -> void:
+	buffer.append_array(bytes)
+	buffer.append_array('\r\n'.to_ascii_buffer())
+
+# endregion

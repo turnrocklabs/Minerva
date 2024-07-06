@@ -17,6 +17,9 @@ const PROVIDERS = {
 	"openai": %leOpenAI,
 }
 
+@onready var theme_option_button: OptionButton = %ThemeOptionButton
+@onready var microphones: OptionButton = %Microphones
+
 
 var config_file = ConfigFile.new()
 
@@ -34,6 +37,12 @@ func _ready():
 			config_file.set_value("USER", "first_name", "Not")
 			config_file.set_value("USER", "last_name", "Avaivable")
 	set_field_values()
+	
+	SingletonObject.theme_changed.connect(set_theme_option_menu)
+	theme_option_button.selected = SingletonObject.get_theme()
+	
+	SingletonObject.mic_changed.connect(set_microphone_option_menu)
+	set_microphone_option_menu(SingletonObject.get_microphone())
 
 func set_field_values():
 	_fields["first_name"].text = config_file.get_value("USER", "first_name", "Not")
@@ -46,6 +55,7 @@ func set_field_values():
 
 
 func _on_btn_save_prefs_pressed():
+	print("hahahahh")
 	config_file.set_value("USER", "first_name", _fields["first_name"].text)
 	config_file.set_value("USER", "last_name", _fields["last_name"].text)
 
@@ -76,3 +86,47 @@ func get_user_initials() -> String:
 	return ("%s%s" % [n1, n2]).to_upper()
 
 
+func _on_open_ai_check_box_toggled(toggled_on: bool) -> void:
+	%leOpenAI.secret = !toggled_on
+
+
+func _on_anthropic_check_box_toggled(toggled_on: bool) -> void:
+	%leAnthropic.secret = !toggled_on
+
+
+func _on_google_vertex_check_box_toggled(toggled_on: bool) -> void:
+	%leGoogleVertex.secret = !toggled_on
+
+#region Theme preference
+
+func set_theme_option_menu(theme_enum: int):
+	theme_option_button.selected = theme_enum
+
+
+func _on_theme_option_button_item_selected(index: int) -> void:
+	SingletonObject.set_theme(index)
+
+#endregion Theme preference
+
+#region Mic preferences
+
+func set_microphone_option_menu(mic_to_set):
+	# Get the list of available microphones
+	var input_devices = AudioServer.get_input_device_list()
+
+	# Clear any existing options in the OptionButton
+	microphones.clear()
+
+	# Add each microphone to the OptionButton
+	var index = 0
+	for device in input_devices:
+		microphones.add_item(device)
+		if mic_to_set == device:
+			microphones.selected = index
+		index += 1
+
+
+func _on_microphones_item_selected(index: int) -> void:
+	SingletonObject.set_microphone(microphones.get_item_text(index))
+
+#endregion Mic preferences

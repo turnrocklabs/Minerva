@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=28 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -14,7 +14,10 @@
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="7_rdia2"]
 [ext_resource type="Texture2D" uid="uid://cukfnot0gnafc" path="res://assets/icons/Horizontal_split.png" id="8_oxf75"]
 [ext_resource type="Texture2D" uid="uid://juldbjk5u4wl" path="res://assets/icons/Vertical_split.png" id="9_fr5ee"]
+[ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icon.png" id="11_p11dv"]
+[ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_arrow.png" id="11_srtkx"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="12_6jk4t"]
+[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icon.png" id="12_j6ukv"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="12_w08x7"]
 [ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
 [ext_resource type="Texture2D" uid="uid://b53y87xjob8ri" path="res://assets/generated/paperclip_icon_24-removebg-preview.png" id="13_sb4aw"]
@@ -90,6 +93,8 @@ visible = false
 
 [node name="NewThreadPopup" type="Window" parent="."]
 unique_name_in_owner = true
+position = Vector2i(0, 36)
+size = Vector2i(117, 100)
 visible = false
 transient = true
 exclusive = true
@@ -99,6 +104,10 @@ script = ExtResource("3_w58y5")
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 113.0
+offset_bottom = 96.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -192,7 +201,7 @@ item_3/disabled = true
 unique_name_in_owner = true
 title = "File"
 size = Vector2i(123, 143)
-item_count = 5
+item_count = 6
 item_0/text = "New"
 item_0/id = 2
 item_1/text = "Open"
@@ -205,10 +214,12 @@ item_3/id = 4
 item_3/disabled = true
 item_4/text = "Preferences"
 item_4/id = 1
+item_5/text = "New draw"
+item_5/id = 5
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "View"
-size = Vector2i(211, 228)
+size = Vector2i(211, 251)
 hide_on_checkable_item_selection = false
 item_count = 10
 item_0/text = "Chats"
@@ -265,7 +276,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Chats" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
-custom_minimum_size = Vector2(600, 0)
+custom_minimum_size = Vector2(630, 0)
 layout_mode = 2
 size_flags_horizontal = 1
 
@@ -289,16 +300,29 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 24
 text = "Editor"
 
+[node name="UndoButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Undo (Returns Editor to previous state)"
+icon = ExtResource("11_srtkx")
+
+[node name="BackSpaceButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Backspace"
+icon = ExtResource("12_j6ukv")
+
 [node name="NewLineButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-text = "\\n"
+tooltip_text = "Start new line"
+icon = ExtResource("11_p11dv")
 
 [node name="HButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+tooltip_text = "splits the editor in 2 horizontal panes"
 icon = SubResource("CanvasTexture_o30k1")
 
 [node name="VButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
 
 [node name="vboxEditorMain" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer" node_paths=PackedStringArray("editor_pane")]
@@ -334,23 +358,27 @@ text = "Notes"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "Disable all notes in all current tabs"
 text = "Disable All"
 
 [node name="btnCreateNote" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "Creates a new note in current active tab"
 text = "Create Note"
 icon = ExtResource("12_w08x7")
 
 [node name="btnAddAttachement" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "Creates a new note from a given text file"
 text = "Attach File"
 icon = ExtResource("13_sb4aw")
 
 [node name="btnNewTab" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "Creates a new notes tab"
 text = "New Tab"
 icon = ExtResource("12_6jk4t")
 
@@ -509,7 +537,7 @@ text = "play audio"
 
 [node name="AudioNoteStreamPlayer" type="AudioStreamPlayer" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
 unique_name_in_owner = true
-volume_db = 4.0
+volume_db = 1.0
 
 [node name="ImageControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer"]
 unique_name_in_owner = true
