@@ -94,6 +94,7 @@ selection_enabled = true
 
 [node name="ImageVBoxContainer" type="VBoxContainer" parent="PanelContainer/v"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [node name="NoteImage" type="TextureRect" parent="PanelContainer/v/ImageVBoxContainer"]
