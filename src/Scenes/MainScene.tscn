@@ -93,6 +93,7 @@ visible = false
 
 [node name="NewThreadPopup" type="Window" parent="."]
 unique_name_in_owner = true
+size = Vector2i(117, 100)
 position = Vector2i(0, 36)
 visible = false
 transient = true
@@ -103,8 +104,10 @@ script = ExtResource("3_w58y5")
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -4.5
-offset_right = 4.5
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 113.0
+offset_bottom = 96.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -198,7 +201,7 @@ item_3/disabled = true
 unique_name_in_owner = true
 title = "File"
 size = Vector2i(123, 143)
-item_count = 5
+item_count = 6
 item_0/text = "New"
 item_0/id = 2
 item_1/text = "Open"
@@ -211,6 +214,8 @@ item_3/id = 4
 item_3/disabled = true
 item_4/text = "Preferences"
 item_4/id = 1
+item_5/text = "New draw"
+item_5/id = 5
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "View"

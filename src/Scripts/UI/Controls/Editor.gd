@@ -14,10 +14,12 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
+@onready var whiteB = %WhiteBoard
 
 enum TYPE {
 	Text,
 	Graphics,
+	WhiteBoard,
 }
 
 var file: String
@@ -40,9 +42,11 @@ static func create(type_: TYPE, file_ = null) -> Editor:
 			editor.get_node("%CodeEdit").visible = true
 		Editor.TYPE.Graphics:
 			editor.get_node("%TextureRect").visible = true
+		Editor.TYPE.WhiteBoard:
+			editor.get_node("%WhiteBoard").visible = true
 
 	return editor
-
+	
 func _ready():
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
 	
@@ -52,6 +56,8 @@ func _ready():
 			TYPE.Graphics: _load_graphics_file(file)
 	
 	_on_file_dialog_file_selected
+	
+	
 
 
 func _load_text_file(filename: String):
@@ -68,6 +74,12 @@ func _load_graphics_file(filename: String):
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straing away
 func prompt_close(show_save_file_dialog := false) -> bool:
+	var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
+
+	match type:
+		TYPE.WhiteBoard:
+			$FileDialog.filters = PackedStringArray(["*.png"])
+			
 	if not prompt_save: return true
 	if not show_save_file_dialog:
 		$CloseDialog.popup_centered(Vector2i(300, 100))
@@ -85,6 +97,7 @@ func prompt_close(show_save_file_dialog := false) -> bool:
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
 		await ($FileDialog as FileDialog).visibility_changed
+		($FileDialog as FileDialog).filters = dialog_filters
 	else:
 		_on_file_dialog_file_selected(file)
 	
@@ -96,7 +109,6 @@ func prompt_close(show_save_file_dialog := false) -> bool:
 	# if user canceled the file select dialog, just return to the edtior
 	else:
 		return false
-
 
 func is_content_saved() -> bool:
 	match type:
@@ -130,21 +142,25 @@ func _on_file_dialog_file_selected(path: String):
 
 
 func save_file_to_disc(path: String):
-	var save_file = FileAccess.open(path, FileAccess.WRITE)
 	file = path
 	match type:
 		TYPE.Text:
+			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			save_file.store_string(code_edit.text)
 			
 		TYPE.Graphics:
 			pass
-	
+			
+		TYPE.WhiteBoard:
+			var dialog = ($FileDialog as FileDialog)
+			var _filters = dialog.filters
+			dialog.filters = [".png"]
+			dialog.filters = _filters
+			var pic = %PlaceForScreen.get_viewport().get_texture().get_image()
+			pic.save_png(path)
+			
 	_file_saved = true
 	file_saved_in_disc = true
 	
-
-
-
-
 func _on_save_button_pressed():
 	SingletonObject.NotesTab.add_image_note("From file Editor", %TextureRect.texture.get_image(), "editor caption c:")
