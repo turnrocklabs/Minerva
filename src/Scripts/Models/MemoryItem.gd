@@ -3,7 +3,7 @@ extends RefCounted ## so I get memory management and signals.
 
 ## MemoryItem is my stab at a single memory item that I can then use as I want.
 
-static var SERIALIZER_FIELDS = ["Enabled", "Type", "Title", "Content", "Memory_Image", "Image_caption", "Audio", "DataType", "Visible", "Pinned", "Order"]
+static var SERIALIZER_FIELDS = ["Enabled", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order"]
 
 var Enabled: bool = true:
 	set(value): SingletonObject.save_state(false); Enabled = value
@@ -17,14 +17,13 @@ var Title: String:
 var Content: String = "":
 	set(value): SingletonObject.save_state(false); Content = value
 
+var MemoryImage: Image:
+	set(value): SingletonObject.save_state(false); MemoryImage = value
 
-var Memory_Image: Image = Image.create(1, 1,false,Image.FORMAT_RGB8):
-	set(value): SingletonObject.save_state(false); Memory_Image = value
+var ImageCaption: String = "":
+	set(value): SingletonObject.save_state(false); ImageCaption = value
 
-var Image_caption: String = "":
-	set(value): SingletonObject.save_state(false); Image_caption = value
-
-var Audio: AudioStreamWAV = AudioStreamWAV.new():
+var Audio: AudioStreamWAV:
 	set(value): SingletonObject.save_state(false); Audio = value
 
 var ContentType: String:
@@ -56,29 +55,23 @@ func _enable_toggle():
 # Serialize takes this instance of a MemoryItem and serializes it so it can be represented as JSON
 func Serialize() -> Dictionary:
 	var b64_data_image
-	if Memory_Image.get_size().x > 1:
-		b64_data_image = Marshalls.variant_to_base64(Memory_Image, true)
-	else:
-		var placeholder_image = Image.create(1, 1,false,Image.FORMAT_RGB8)
-		b64_data_image = Marshalls.variant_to_base64(placeholder_image, true)
-		pass
+	if MemoryImage:
+		b64_data_image = Marshalls.raw_to_base64(MemoryImage.save_png_to_buffer())
 	
+
 	var b64_data_audio
-	if Audio != null:
+	if Audio:
 		b64_data_audio = Marshalls.variant_to_base64(Audio, true)
-	else:
-		b64_data_audio = Marshalls.variant_to_base64( AudioStreamWAV.new(), true)
-	
+
 	var save_dict:Dictionary = {
 		"Enabled": Enabled,
 		"Title": Title,
 		"Content": Content,
 		"Type": Type,
 		"ContentType": ContentType,
-		#encode the image to png and then to base64
-		"Memory_Image": b64_data_image,
+		"MemoryImage": b64_data_image,
 		"Audio": b64_data_audio,
-		"Image_caption": Image_caption,
+		"ImageCaption": ImageCaption,
 		"Visible": Visible,
 		"Pinned": Pinned,
 		"Order": Order,
@@ -88,22 +81,24 @@ func Serialize() -> Dictionary:
 
 
 static func Deserialize(data: Dictionary) -> MemoryItem:
-
 	var mi = MemoryItem.new(data.get("OwningThread"))
 
 	for prop in SERIALIZER_FIELDS:
 		var value = data.get(prop)
-		if prop == "Memory_Image":
-			#decode to png
+
+		if prop == "MemoryImage":
+			if not value: continue # if no data, just skip
+
 			var img = Image.new()
-			#if value.get_size().x > 1:
-			img = Marshalls.base64_to_variant(value, true)
+			img.load_png_from_buffer(Marshalls.base64_to_raw(value))
 			value = img
 			
 		if prop == "Audio":
-			if value != null:
-				var audio = Marshalls.base64_to_variant(value, true)
-				value = audio
+			if not value: continue # if no data, just skip
+
+			var audio: AudioStreamWAV = Marshalls.base64_to_variant(value, true)
+
+			value = audio
 		
 		mi.set(prop, value)
 	

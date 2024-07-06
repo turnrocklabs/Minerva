@@ -28,8 +28,8 @@ var memory_item: MemoryItem:
 		if memory_item.Type == SingletonObject.note_type.TEXT:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
-			set_note_image(value.Memory_Image)
-			image_caption_line_edit.text = value.Image_caption
+			set_note_image(value.MemoryImage)
+			image_caption_line_edit.text = value.ImageCaption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.Audio
 
@@ -61,7 +61,12 @@ func downscale_image(image: Image) -> Image:
 
 # set the image of the note to the given image
 func set_note_image(image: Image) -> void:
-	downscaled_image = downscale_image(image)# we create another image so we dont manipulate the og
+	# create a copy of a image so we don't downscale the original
+	downscaled_image = Image.new()
+	downscaled_image.copy_from(image)
+
+	downscaled_image = downscale_image(downscaled_image)
+	
 	var image_texture = ImageTexture.new()
 	image_texture.set_image(downscaled_image)
 	note_image.texture = image_texture
@@ -267,11 +272,11 @@ func _on_title_text_submitted(new_text: String) -> void:
 
 func _on_image_caption_line_edit_text_submitted(new_text: String) -> void:
 	image_caption_line_edit.release_focus()
-	if memory_item: memory_item.Image_caption = new_text
+	if memory_item: memory_item.ImageCaption = new_text
 
 
 func _on_image_caption_line_edit_text_changed(new_text: String) -> void:
-	if memory_item: memory_item.Image_caption = new_text
+	if memory_item: memory_item.ImageCaption = new_text
 
 
 func _on_play_pause_button_pressed() -> void:
@@ -303,7 +308,7 @@ func paste_image_from_clipboard():
 			if file_format in SingletonObject.supported_image_formats:
 				var image = Image.new()
 				image.load(path)
-				memory_item.Memory_Image = image
+				memory_item.MemoryImage = image
 				set_note_image(image)
 			else:
 				print_rich("[b]file format not supported :c[/b]")

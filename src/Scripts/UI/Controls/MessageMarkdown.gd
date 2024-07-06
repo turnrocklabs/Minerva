@@ -11,7 +11,6 @@ extends HBoxContainer
 @export var error_message_color: Color
 
 @onready var tokens_cost: Label = %TokensCostLabel
-@onready var edit_popup: MessageEditPopup = %MessageEditPopup
 @onready var text_edit: TextEdit = %MessageTextEdit
 
 ## Content of this message in markdown, returns `label.text`
@@ -54,9 +53,6 @@ var images: Array[ChatImage]:
 
 func _ready():
 	render()
-
-	# set the message for the edit popup
-	edit_popup.message = self
 
 ## sets loading label visibility to `loading_` and toggles_controls
 func set_message_loading(loading_: bool):
