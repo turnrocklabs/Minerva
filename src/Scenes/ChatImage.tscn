@@ -45,6 +45,7 @@ layout_mode = 2
 text = "Image"
 
 [node name="CheckButton" type="CheckButton" parent="v/p/h"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="v/p/h"]

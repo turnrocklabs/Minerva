@@ -2,6 +2,8 @@ class_name ChatImage
 extends PanelContainer
 
 
+signal image_active_state_changed(active: bool)
+
 const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 @onready var _save_dialog = %SaveFileDialog as FileDialog
 
@@ -9,6 +11,14 @@ const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 	set(value):
 		image = value
 		%TextureRect.texture = ImageTexture.create_from_image(image)
+
+## Proxy for this nodes `CheckButton.button_pressed` property.
+## Setting this property will result in use of `BaseButton.set_pressed_no_signal`.
+var active: = false:
+	set(value):
+		active = value
+		(%CheckButton as CheckButton).set_pressed_no_signal(value)
+	get: return %CheckButton.button_pressed
 
 
 
@@ -40,3 +50,5 @@ func _on_edit_button_pressed():
 
 func _on_check_button_toggled(toggled_on: bool):
 	image.set_meta("active", toggled_on)
+
+	image_active_state_changed.emit(toggled_on)
