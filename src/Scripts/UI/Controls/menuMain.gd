@@ -34,7 +34,8 @@ func _on_file_index_pressed(index):
 			%PreferencesPopup.borderless = false
 			%PreferencesPopup.size = target_size
 			%PreferencesPopup.popup_centered()
-
+		5:
+			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.WhiteBoard)
 
 ## Handler:
 # _on_project_index_pressed handles the "Project" menu.

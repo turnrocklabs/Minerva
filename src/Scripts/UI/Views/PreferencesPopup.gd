@@ -55,6 +55,7 @@ func set_field_values():
 
 
 func _on_btn_save_prefs_pressed():
+	print("hahahahh")
 	config_file.set_value("USER", "first_name", _fields["first_name"].text)
 	config_file.set_value("USER", "last_name", _fields["last_name"].text)
 
