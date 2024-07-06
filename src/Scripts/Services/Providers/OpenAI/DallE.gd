@@ -80,7 +80,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	var body_stringified: String = JSON.stringify(request_body)
 	
 	var response: RequestResults
-
+	
 	if active_image:
 		var boundary: = _generate_form_data_boundary()
 

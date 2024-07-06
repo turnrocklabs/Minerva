@@ -7,6 +7,11 @@ signal memorize_item(text_to_memorize:String)
 # emitted when text selection for any of rich text labels start or end
 signal message_selection(message: MessageMarkdown, active: bool)
 
+## emitted when user activates a image for editing
+## MessageMarkdown emits this signal
+signal image_activated(image: ChatImage, active: bool)
+
+
 @onready var scroll_container = get_parent() as ScrollContainer
 
 var chat_history: ChatHistory
@@ -29,6 +34,8 @@ func _ready():
 		func(_msg: MessageMarkdown, active: bool):
 			_text_selection = active
 	)
+
+	image_activated.connect(_on_image_activated)
 
 	add_child(chat_history.provider)
 
@@ -141,3 +148,14 @@ func _input(event):
 
 	else:
 		_scroll_factor = 0
+
+
+## When image is activated, deactivate all other images as only one at the time can be active
+func _on_image_activated(chat_image: ChatImage, active: bool):
+	for chi in chat_history.HistoryItemList:
+		# skip if there's no rendered node
+		if not chi.rendered_node: continue
+
+		for c_image: ChatImage in chi.rendered_node.images:
+			if c_image == chat_image: c_image.active = active
+			else: c_image.active = false

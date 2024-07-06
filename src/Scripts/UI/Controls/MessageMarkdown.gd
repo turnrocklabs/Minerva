@@ -43,6 +43,13 @@ var editable:= false:
 		editable = value
 		%EditButton.visible = editable
 
+## Returns all rendered chat images in this message
+var images: Array[ChatImage]:
+	get:
+		var images_: Array[ChatImage] = []
+		images_.assign(%ImagesGridContainer.get_children().filter(func(node: Node): return node is ChatImage))
+		return images_
+
 
 func _ready():
 	render()
@@ -128,6 +135,13 @@ func _setup_model_message():
 		texture_rect.tooltip_text = tt
 
 		var img_node = ChatImage.create(image)
+
+		# tell the vBoxChat if image is activated
+		img_node.image_active_state_changed.connect(
+			func(active: bool):
+				(get_parent() as VBoxChat).image_activated.emit(img_node, active)
+		)
+
 		%ImagesGridContainer.add_child(img_node)
 	
 	label.set("theme_override_colors/default_color", Color.BLACK)
