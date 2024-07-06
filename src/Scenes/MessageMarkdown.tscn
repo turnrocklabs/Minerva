@@ -1,8 +1,7 @@
-[gd_scene load_steps=31 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=30 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="PackedScene" uid="uid://clmnhuxss1a02" path="res://Scenes/MessageEditPopup.tscn" id="2_g2tku"]
 [ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_p2uud"]
@@ -114,10 +113,6 @@ label = NodePath("MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel")
 user_message_color = Color(0.164706, 0.345098, 0.831373, 1)
 bot_message_color = Color(0, 0.592157, 0.470588, 1)
 error_message_color = Color(0.737255, 0, 0.109804, 1)
-
-[node name="MessageEditPopup" parent="." instance=ExtResource("2_g2tku")]
-unique_name_in_owner = true
-visible = false
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2
@@ -287,6 +282,13 @@ text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
 [node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 layout_mode = 2
+
+[node name="MessageTextEdit" type="TextEdit" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+wrap_mode = 1
+scroll_fit_content_height = true
 
 [node name="ImagesGridContainer" type="GridContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true

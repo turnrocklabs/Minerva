@@ -12,6 +12,7 @@ extends HBoxContainer
 
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var edit_popup: MessageEditPopup = %MessageEditPopup
+@onready var text_edit: TextEdit = %MessageTextEdit
 
 ## Content of this message in markdown, returns `label.text`
 ## Setting this property will update the history item and rerender the note
@@ -189,7 +190,26 @@ func _on_regenerate_button_pressed():
 
 
 func _on_edit_button_pressed():
-	edit_popup.popup_centered()
+	# edit_popup.popup_centered()
+	%MessageLabelsContainer.visible = false
+
+	text_edit.visible = true
+	text_edit.text = content
+	text_edit.grab_focus()
+
+# when we click outside the text edit, hide it and save changes
+func _input(event: InputEvent):
+	if text_edit.visible and event is InputEventMouseButton and event.pressed:
+
+		if not text_edit.get_global_rect().has_point(event.global_position):
+			if text_edit.text:
+				content = text_edit.text
+			
+			%MessageLabelsContainer.visible = true
+			text_edit.visible = false
+
+			get_viewport().set_input_as_handled()
+
 
 func _on_hide_button_pressed():
 	SingletonObject.Chats.hide_chat_history_item(history_item, null, false)
