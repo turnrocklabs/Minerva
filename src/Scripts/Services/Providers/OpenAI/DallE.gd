@@ -76,8 +76,6 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	}
 
 	request_body.merge(additional_params)
-
-	var body_stringified: String = JSON.stringify(request_body)
 	
 	var response: RequestResults
 	
@@ -96,10 +94,11 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	
 
 	else:
+		request_body["model"] = "dall-e-3" # we can use dall-e-3 for generating images
 		response = await make_request(
 			"%s/generations" % BASE_URL,
 			HTTPClient.METHOD_POST,
-			body_stringified,
+			JSON.stringify(request_body),
 			[
 				"Content-Type: application/json",
 				"Authorization: Bearer %s" % API_KEY
