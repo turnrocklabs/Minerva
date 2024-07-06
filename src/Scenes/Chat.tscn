@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=10 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://dfai1lvbg10ka" path="res://assets/generated/search_icon_24_no_bg.png" id="6_5wjht"]
 [ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
+[ext_resource type="PackedScene" uid="uid://bpj336qyc0vse" path="res://Scenes/system_prompt.tscn" id="9_dlgym"]
 
 [node name="Chats" type="Control"]
 custom_minimum_size = Vector2(540, 0)
@@ -157,7 +158,7 @@ icon = ExtResource("6_iop5c")
 
 [node name="SystemButton" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-text = "System Prompt"
+text = "SP"
 
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -180,6 +181,10 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 
+[node name="SystemPrompt" parent="." instance=ExtResource("9_dlgym")]
+unique_name_in_owner = true
+visible = false
+
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
@@ -191,4 +196,5 @@ size_flags_horizontal = 8
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_inspect_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_microphone_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/SystemButton" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_system_button_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_test_pressed"]
