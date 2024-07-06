@@ -12,6 +12,13 @@ const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 		image = value
 		%TextureRect.texture = ImageTexture.create_from_image(image)
 
+		# Show the caption of the image as a tooltip
+		var tt = image.get_meta("caption", "")
+		if tt.length() > 60: tt = tt.left(57) + "..."
+
+		%TextureRect.tooltip_text = tt
+
+
 ## Proxy for this nodes `CheckButton.button_pressed` property.
 ## Setting this property will result in use of `BaseButton.set_pressed_no_signal`.
 var active: = false:
