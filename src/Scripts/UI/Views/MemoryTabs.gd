@@ -120,6 +120,10 @@ func render_threads():
 	# Save the last active thread.
 	var last_thread = self.current_tab
 
+	# we must delete existing noted so creating new project works
+	for c in %tcThreads.get_children():
+		c.free()
+	
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
 	for i in range(SingletonObject.ThreadList.size()):
 		var thread = SingletonObject.ThreadList[i];
