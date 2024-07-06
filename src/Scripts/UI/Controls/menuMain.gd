@@ -141,8 +141,8 @@ func set_active():
 #load recent projects if they exist on the config file
 #this function gets called on ready and when you hover over menuMain
 var submenu
+var projects_size: int
 func load_recent_projects():
-	
 	if SingletonObject.has_recent_projects():# check if user has recent projects
 		
 		# this if statement removes the open recent item if there was one already
@@ -155,9 +155,14 @@ func load_recent_projects():
 		submenu.add_to_group("open_recent")
 		submenu.index_pressed.connect(_on_open_recent_project)
 		var recent_projects = SingletonObject.get_recent_projects()
+		projects_size = recent_projects.size()
 		if recent_projects:
 			for item in recent_projects:
 				submenu.add_item(item)
+		
+		submenu.add_separator()
+		var clear_recent_item = "Clear recent Projects"
+		submenu.add_item(clear_recent_item)
 		
 		project.add_child(submenu)# adds submenu to scene tree
 		#add submenu as a submenu of indicated item
@@ -165,9 +170,12 @@ func load_recent_projects():
 
 
 func _on_open_recent_project(index: int):
-	var selected_project_name = submenu.get_item_text(index)
-	SingletonObject.OpenRecentProject.emit(selected_project_name)
-
+	if projects_size + 1 == index:
+		SingletonObject.clear_recent_projects()
+		print("clear recent projects")
+	else:
+		var selected_project_name = submenu.get_item_text(index)
+		SingletonObject.OpenRecentProject.emit(selected_project_name)
 
 
 

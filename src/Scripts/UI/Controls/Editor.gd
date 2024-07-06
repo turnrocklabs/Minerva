@@ -147,4 +147,4 @@ func save_file_to_disc(path: String):
 
 
 func _on_save_button_pressed():
-	pass # Replace with function body.
+	SingletonObject.NotesTab.add_image_note("From file Editor", %TextureRect.texture.get_image(), "editor caption c:")

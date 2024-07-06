@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://dfai1lvbg10ka" path="res://assets/generated/search_icon_24_no_bg.png" id="6_5wjht"]
 [ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
+[ext_resource type="PackedScene" uid="uid://bpj336qyc0vse" path="res://Scenes/system_prompt.tscn" id="9_dlgym"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="9_4ngla"]
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
 [ext_resource type="PackedScene" uid="uid://celpfkr7c745u" path="res://Scenes/ProviderOptionButton.tscn" id="9_xd60x"]
@@ -112,6 +113,7 @@ text = "Chats"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
+tooltip_text = "Creates a new chat tab"
 focus_mode = 0
 text = "New Chat"
 icon = ExtResource("2_bjp7m")
@@ -165,8 +167,12 @@ icon = ExtResource("7_51nod")
 [node name="btnMicrophone" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-tooltip_text = "Record Message"
+tooltip_text = "record message"
 icon = ExtResource("6_iop5c")
+
+[node name="SystemButton" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "SP"
 
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -193,6 +199,10 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 
+[node name="SystemPrompt" parent="." instance=ExtResource("9_dlgym")]
+unique_name_in_owner = true
+visible = false
+
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
@@ -206,6 +216,7 @@ size_flags_horizontal = 8
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_inspect_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_microphone_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/SystemButton" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_system_button_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_test_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnClear" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_clear_pressed"]
 [connection signal="provider_selected" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ProviderOptionButton" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_provider_option_button_provider_selected"]
