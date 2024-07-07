@@ -44,7 +44,7 @@ stretch = true
 [node name="PlaceForScreen" type="SubViewport" parent="VBoxContainer/WhiteBoard/ScreenshptHolder"]
 unique_name_in_owner = true
 handle_input_locally = false
-size = Vector2i(1920, 1025)
+size = Vector2i(2, 2)
 render_target_update_mode = 0
 
 [node name="White" type="ColorRect" parent="VBoxContainer/WhiteBoard/ScreenshptHolder/PlaceForScreen"]

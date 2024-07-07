@@ -243,7 +243,7 @@ func get_file_format(path: String) -> String:
 # check if display server can paste image from clipboard and does so
 func paste_image_from_clipboard():
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
-		if DisplayServer.clipboard_has():
+		if DisplayServer.clipboard_has_image():
 			var path = DisplayServer.clipboard_get().split("\n")[0]
 			var file_format = get_file_format(path)
 			if file_format in SingletonObject.supported_image_formats:
