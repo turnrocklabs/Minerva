@@ -93,7 +93,7 @@ visible = false
 
 [node name="NewThreadPopup" type="Window" parent="."]
 unique_name_in_owner = true
-position = Vector2i(0, 36)
+initial_position = 4
 size = Vector2i(117, 100)
 visible = false
 transient = true
