@@ -44,7 +44,6 @@ static func create(type_: TYPE, file_ = null) -> Editor:
 			editor.get_node("%TextureRect").visible = true
 		Editor.TYPE.WhiteBoard:
 			editor.get_node("%WhiteBoard").visible = true
-			editor.get_node("%Buttons").visible = true
 
 	return editor
 	
