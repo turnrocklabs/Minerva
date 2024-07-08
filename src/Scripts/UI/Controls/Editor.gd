@@ -44,6 +44,7 @@ static func create(type_: TYPE, file_ = null) -> Editor:
 			editor.get_node("%TextureRect").visible = true
 		Editor.TYPE.WhiteBoard:
 			editor.get_node("%WhiteBoard").visible = true
+			editor.get_node("%Buttons").visible = true
 
 	return editor
 	
@@ -53,7 +54,7 @@ func _ready():
 	if file:
 		match type:
 			TYPE.Text: _load_text_file(file)
-			TYPE.Graphics: _load_graphics_file(file)
+			TYPE.WhiteBoard: _load_graphics_file(file)
 	
 	_on_file_dialog_file_selected
 	
@@ -68,7 +69,8 @@ func _load_text_file(filename: String):
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	var texture_item = ImageTexture.create_from_image(image)
-	texture_rect.texture = texture_item
+	%EditPic.texture = texture_item
+	#texture_rect.texture = texture_item
 
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first

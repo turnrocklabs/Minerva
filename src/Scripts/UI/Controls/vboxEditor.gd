@@ -55,7 +55,7 @@ func open_file(filename: String):
 
 	## Determine file type
 	if _is_graphics_file(filename):
-		editor_pane.add(Editor.TYPE.Graphics, filename)
+		editor_pane.add(Editor.TYPE.WhiteBoard, filename)
 		# new_control = TextureRect.new()
 		# new_control.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED # keep the image at center
 
