@@ -1,3 +1,4 @@
+class_name WhiteBoard
 extends Panel
 
 @onready var _BrushSizes: OptionButton = %BrushSize
@@ -22,7 +23,7 @@ var is_mouse_down = false
 
 # Smoothing parameters 
 const SMOOTHING_FACTOR = 0.25 
-const MIN_DISTANCE = 2  
+const MIN_DISTANCE = 2
 
 func _input(event: InputEvent):
 	var mouse_position = get_local_mouse_position()
