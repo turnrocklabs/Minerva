@@ -9,6 +9,7 @@ extends Panel
 @onready var _Pen: Sprite2D = %Pen
 @onready var _Eraser: Sprite2D = %Eraser
 @onready var eraser: Button = %eraser
+@onready var screen_viewport_container: SubViewportContainer = %ScreenViewportHolder
 
 var is_drawing: bool = false
 var BrushSize = 1
@@ -47,10 +48,10 @@ func _input(event: InputEvent):
 			if is_eraser_active:
 				erase_line_at(mouse_position)
 				_Eraser.visible = true
-				_Eraser.position = mouse_position + Vector2(10, -9)
+				_Eraser.position = mouse_position + Vector2(10, 15)
 			else:
 				_Pen.visible = true
-				_Pen.position = mouse_position + Vector2(10, -9)
+				_Pen.position = mouse_position + Vector2(10, 15)
 				smooth_line(last_position, last_pressure, mouse_position, event.pressure)
 				last_pressure = event.pressure
 				Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
