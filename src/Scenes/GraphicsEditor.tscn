@@ -1,0 +1,27 @@
+[gd_scene load_steps=3 format=3 uid="uid://1snj5jsurqrt"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
+[ext_resource type="Texture2D" uid="uid://slpk40bumw5b" path="res://masaze.jpg" id="2_jm75h"]
+
+[node name="GraphicsEditor" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_dqx0p")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="LayersContainer" type="CenterContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TextureRect" type="TextureRect" parent="VBoxContainer/LayersContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+texture = ExtResource("2_jm75h")
