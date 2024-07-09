@@ -201,6 +201,8 @@ func set_image_preview(path: String) -> void:
 	var image_texture = ImageTexture.new()
 	image_texture.set_image(image)
 	%ImagePreview.texture = image_texture
+	%ImageDropPanel.visible = false
+	%ImagePreview.visible = true
 
 
 func _on_image_files_dropped(files):
