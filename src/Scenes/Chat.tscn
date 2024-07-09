@@ -146,6 +146,12 @@ wrap_mode = 1
 layout_mode = 2
 theme_override_constants/separation = 16
 
+[node name="ProviderOptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" instance=ExtResource("9_xd60x")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+fit_to_longest_item = false
+
 [node name="btnChatSettings" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "AI Settings"
@@ -155,19 +161,6 @@ icon = ExtResource("5_igkcl")
 layout_mode = 2
 tooltip_text = "Inspect Turn"
 icon = ExtResource("6_5wjht")
-
-[node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" node_paths=PackedStringArray("shortcut_context")]
-layout_mode = 2
-tooltip_text = "Send Message"
-shortcut_context = NodePath("../../txtMainUserInput")
-shortcut = SubResource("Shortcut_4b3s7")
-icon = ExtResource("7_51nod")
-
-[node name="btnMicrophone" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-tooltip_text = "record message"
-icon = ExtResource("8_tl5be")
 
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -179,11 +172,18 @@ layout_mode = 2
 tooltip_text = "Clear the input field"
 icon = ExtResource("9_4ngla")
 
-[node name="ProviderOptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" instance=ExtResource("9_xd60x")]
+[node name="btnMicrophone" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 0
-fit_to_longest_item = false
+tooltip_text = "record message"
+icon = ExtResource("8_tl5be")
+
+[node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" node_paths=PackedStringArray("shortcut_context")]
+layout_mode = 2
+tooltip_text = "Send Message"
+shortcut_context = NodePath("../../txtMainUserInput")
+shortcut = SubResource("Shortcut_4b3s7")
+icon = ExtResource("7_51nod")
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 clip_contents = true
@@ -205,10 +205,10 @@ size_flags_horizontal = 8
 [connection signal="gui_input" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_gui_input"]
 [connection signal="text_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_text_changed"]
 [connection signal="text_set" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_text_set"]
+[connection signal="provider_selected" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ProviderOptionButton" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_provider_option_button_provider_selected"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChatSettings" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_chat_settings_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_inspect_pressed"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_microphone_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_test_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnClear" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_clear_pressed"]
-[connection signal="provider_selected" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ProviderOptionButton" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_provider_option_button_provider_selected"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_microphone_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
