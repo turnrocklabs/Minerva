@@ -57,7 +57,8 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 		body_stringified,
 		[
 			"Content-Type: application/json",
-			"x-api-key: %s" % API_KEY
+			"x-api-key: %s" % API_KEY,
+			"anthropic-version: 2023-06-01",
 		],
 	)
 
