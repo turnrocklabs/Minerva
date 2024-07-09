@@ -24,6 +24,7 @@ theme_override_constants/separation = 12
 
 [node name="WhiteBoard" parent="VBoxContainer" instance=ExtResource("2_b23ua")]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [node name="CodeEdit" type="CodeEdit" parent="VBoxContainer"]

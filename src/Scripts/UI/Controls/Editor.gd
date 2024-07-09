@@ -68,7 +68,7 @@ func _load_text_file(filename: String):
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	var texture_item = ImageTexture.create_from_image(image)
-	%EditPic.texture = texture_item
+	whiteB.get_node("%EditPic").texture = texture_item
 	#texture_rect.texture = texture_item
 
 ## Prompts user to save the file
@@ -157,7 +157,7 @@ func save_file_to_disc(path: String):
 			var _filters = dialog.filters
 			dialog.filters = [".png"]
 			dialog.filters = _filters
-			var pic = %PlaceForScreen.get_viewport().get_texture().get_image()
+			var pic = whiteB.get_node("%PlaceForScreen").get_viewport().get_texture().get_image()
 			pic.save_png(path)
 			
 	_file_saved = true
