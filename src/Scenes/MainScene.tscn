@@ -1,4 +1,4 @@
-[gd_scene load_steps=28 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=29 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -11,6 +11,7 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
+[ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow.png" id="6_vobga"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="7_rdia2"]
 [ext_resource type="Texture2D" uid="uid://cukfnot0gnafc" path="res://assets/icons/Horizontal_split.png" id="8_oxf75"]
 [ext_resource type="Texture2D" uid="uid://juldbjk5u4wl" path="res://assets/icons/Vertical_split.png" id="9_fr5ee"]
@@ -94,10 +95,11 @@ visible = false
 [node name="NewThreadPopup" type="Window" parent="."]
 unique_name_in_owner = true
 initial_position = 4
-size = Vector2i(350, 100)
+size = Vector2i(350, 80)
 visible = false
 transient = true
 exclusive = true
+max_size = Vector2i(350, 100)
 script = ExtResource("3_w58y5")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
@@ -148,7 +150,8 @@ icon = ExtResource("22_285lg")
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
-text = "Create"
+tooltip_text = "Create Notes Tab"
+icon = ExtResource("6_vobga")
 
 [node name="VBoxRoot" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
@@ -302,6 +305,10 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 24
 text = "Editor"
+
+[node name="ClearButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Clear"
 
 [node name="UndoButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
