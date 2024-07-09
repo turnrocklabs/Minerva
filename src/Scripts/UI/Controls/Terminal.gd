@@ -19,9 +19,14 @@ func _wrap_windows_command(user_input: String) -> PackedStringArray:
 		"cd /d %s && %s && echo %s!cd!" % [cwd, user_input, cwd_delimiter],
 	]
 
-	print(full_cmd)
 	return full_cmd
 
+func _wrap_linux_command(user_input: String) -> PackedStringArray:
+	var full_cmd = [
+		'(cd %s && %s && echo "%s$(pwd)")' % [cwd, user_input, cwd_delimiter]
+	]
+
+	return full_cmd
 
 
 func _init():
@@ -29,16 +34,19 @@ func _init():
 		"Windows":
 			shell = OS.get_environment("COMSPEC")
 			wrap_command = _wrap_windows_command
+
 		"macOS":
 			print("macOS")
+
 		"Linux", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
-			print("Linux/BSD")
+			shell = OS.get_environment("SHELL")
+			wrap_command = _wrap_linux_command
+
 		"Android":
 			print("Android")
+
 		"iOS":
 			print("iOS")
-		"Web":
-			print("Web")
 
 
 func execute_command(input: String) -> void:
@@ -51,7 +59,7 @@ func execute_command(input: String) -> void:
 	# last line is current working directory, so we just extarct that
 	var cmd_results: String = output.back()
 
-	print([cmd_results])
+	# print([cmd_results])
 
 	var cwd_index_start = cmd_results.rfind(cwd_delimiter)
 
