@@ -95,6 +95,7 @@ visible = false
 unique_name_in_owner = true
 initial_position = 4
 size = Vector2i(350, 100)
+visible = false
 transient = true
 exclusive = true
 script = ExtResource("3_w58y5")
