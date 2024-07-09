@@ -6,7 +6,7 @@ func _init():
 	BASE_URL = "https://api.anthropic.com/v1"
 	PROVIDER = SingletonObject.API_PROVIDER.ANTHROPIC
 
-	model_name = "claude-3-5-sonnet-20240620"
+	model_name = "claude-3.5-sonnet"
 	short_name = "CS"
 	token_cost = 1.5 # https://claude101.com/claude-3-5-sonnet/
 
@@ -42,7 +42,7 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 
 	var request_body = {
-		"model": model_name,
+		"model": "claude-3-5-sonnet-20240620",
 		"messages": prompt,
 		"max_tokens": 1024,
 	}
@@ -163,7 +163,7 @@ func to_bot_response(data: Variant) -> BotResponse:
 	if finish_reason == "max_tokens":
 		response.complete = false
 	
-	response.prompt_tokens = data["usage"]["prompt_tokens"]
+	response.prompt_tokens = data["usage"]["input_tokens"]
 	response.completion_tokens = data["usage"]["output_tokens"]
 
 	# TODO: this could also be used tool, but since we don't use that yet, it should always be text
