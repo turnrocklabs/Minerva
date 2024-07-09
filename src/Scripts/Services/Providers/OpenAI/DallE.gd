@@ -62,11 +62,20 @@ func _dummy_mask(image: Image) -> Image:
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 	# if we have active image this will be a edit request
 	var active_image: Image
+	var edit: = false # if this is a image edit for the active image, otherwise image variation
+
+	# FIXME: this is dirry and should be handled by 'wrap_memory' somehow
+	# relies on notes not being disable before calling this function
+	for thread: MemoryThread in SingletonObject.ThreadList:
+		for mem_item: MemoryItem in thread.MemoryItemList:
+			if mem_item.Enabled and mem_item.MemoryImage:
+				active_image = mem_item.MemoryImage
 
 	for formatted_data in prompt:
 		for image in formatted_data["images"]:
 			if image.get_meta("active", false):
 				active_image = image
+				edit = true
 
 	# Just take the last prompt
 	var request_body = {
@@ -80,17 +89,32 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	var response: RequestResults
 	
 	if active_image:
-		var boundary: = _generate_form_data_boundary()
+		if edit:
+			var boundary: = _generate_form_data_boundary()
 
-		response = await make_request(
-			"%s/edits" % BASE_URL,
-			HTTPClient.METHOD_POST,
-			_construct_edit_form_data(request_body, _dummy_mask(active_image), boundary),
-			[
-				'Content-Type: multipart/form-data;boundary=%s' % boundary,
-				"Authorization: Bearer %s" % API_KEY
-			],
-		)
+			response = await make_request(
+				"%s/edits" % BASE_URL,
+				HTTPClient.METHOD_POST,
+				_construct_edit_form_data(request_body, _dummy_mask(active_image), boundary),
+				[
+					'Content-Type: multipart/form-data;boundary=%s' % boundary,
+					"Authorization: Bearer %s" % API_KEY
+				],
+			)
+		else: # image variation
+			var boundary: = _generate_form_data_boundary()
+
+			request_body.erase("prompt") # no prompt for variation
+
+			response = await make_request(
+				"%s/variations" % BASE_URL,
+				HTTPClient.METHOD_POST,
+				_construct_edit_form_data(request_body, active_image, boundary),
+				[
+					'Content-Type: multipart/form-data;boundary=%s' % boundary,
+					"Authorization: Bearer %s" % API_KEY
+				],
+			)
 	
 
 	else:
@@ -149,8 +173,6 @@ func wrap_memory(list_memories: String) -> String:
 	return output
 
 
-# When fomatting the message for the DALLE, just create a array of text prompts
-# and we will use the last one
 func Format(chat_item: ChatHistoryItem) -> Variant:
 	var text: String = chat_item.InjectedNote + chat_item.Message if chat_item.InjectedNote else chat_item.Message
 

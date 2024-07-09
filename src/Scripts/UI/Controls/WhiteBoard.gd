@@ -24,6 +24,13 @@ var last_position: Vector2 = Vector2.ZERO
 var last_pressure: float = 0.0
 var is_mouse_down = false
 
+## Setting this will change the image texture we draw on, where we set the mask meta
+var image: Image:
+	set(value):
+		image = value
+		get_node("%EditPic").texture = ImageTexture.create_from_image(image)
+
+
 # Smoothing parameters 
 const SMOOTHING_FACTOR = 0.25 
 const MIN_DISTANCE = 2
@@ -201,18 +208,51 @@ func _create_selection_rectangle():
 	if not selection_rect:
 		selection_rect = ColorRect.new()
 		selection_rect.color = Color(0, 1, 0, 0.5)
+
+		# Set anchors to stretch with the parent
+		selection_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+
 		_ColorRect.add_child(selection_rect)
 
 func _update_selection_rectangle(current_position: Vector2):
 	if selection_rect:
 		var rect_size = current_position - selection_start
-		selection_rect.position = selection_start
-		selection_rect.size = rect_size
+
+		# Calculate position and scale based on start position and size
+		selection_rect.position = Vector2(
+			min(selection_start.x, current_position.x), 
+			min(selection_start.y, current_position.y)
+		)
+		selection_rect.size = Vector2(
+			abs(rect_size.x), 
+			abs(rect_size.y)
+		)
 
 func _finalize_selection(current_position: Vector2):
 	if selection_rect:
 		var rect_size = current_position - selection_start
-		print("Selected zone size:", rect_size)
-		print("Selected zone position:", selection_start)
+
+		var selection_region = Rect2(selection_start, rect_size)
+
+		if selection_region.get_area() < 1.0: return
+
+		selection_rect.visible = false
+		
+		await get_tree().process_frame
+
+		var pic: = get_node("%PlaceForScreen").get_viewport().get_texture().get_image()
+		pic.save_png(r"C:\Users\milos\OneDrive\Desktop\pic.png")
+
+		var epic: = get_node("%EditPic").get_viewport().get_texture().get_image()
+		epic.save_png(r"C:\Users\milos\OneDrive\Desktop\edit-pic.png")
+
+		if image:
+			var im = image.get_region(selection_region)
+			
+			im.save_png(r"C:\Users\milos\OneDrive\Desktop\mask.png")
+			print("Saved mask")
+
+		selection_rect.visible = true
+
 		# Don't queue_free() the selection_rect, keep it in the scene
 		is_selecting_zone = false
