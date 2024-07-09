@@ -48,8 +48,8 @@ func _dummy_mask(image: Image) -> Image:
 	
 	mask.convert(Image.FORMAT_RGBA8)
 
-	var half_width = mask.get_width() / floor(2)
-	var half_height = mask.get_height() / floor(2)
+	var half_width = 0#with here
+	var half_height = 0#height here
 
 	for x in range(half_width, mask.get_width()):
 		for y in range(half_height, mask.get_height()):

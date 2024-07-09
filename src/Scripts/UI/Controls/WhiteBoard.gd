@@ -1,15 +1,17 @@
-class_name WhiteBoard
 extends Panel
 
 @onready var _BrushSizes: OptionButton = %BrushSize
 @onready var _ColorPalette: Control = %Colors
-@onready var _ColorRect: ColorRect = %White
+@onready var _ColorRect: ColorRect = %Layer1
 @onready var _DrawZone: ColorRect = %DrawZone
 @onready var _ButtonsZone: HBoxContainer = %Buttons
 @onready var _Pen: Sprite2D = %Pen
 @onready var _Eraser: Sprite2D = %Eraser
 @onready var eraser: Button = %eraser
 @onready var screen_viewport_container: SubViewportContainer = %ScreenViewportHolder
+@onready var _Layers: SubViewport = %PlaceForScreen
+@onready var _LayersChooser: OptionButton = %Layers
+@onready var _SelectZoneButton: Button = %SelectZone
 
 var is_drawing: bool = false
 var BrushSize = 1
@@ -26,12 +28,27 @@ var is_mouse_down = false
 const SMOOTHING_FACTOR = 0.25 
 const MIN_DISTANCE = 2
 
+var layer_count = 1
+var layer_last_idx = 0
+
+var is_selecting_zone = false
+var selection_rect: ColorRect = null
+var selection_start: Vector2 = Vector2.ZERO
+
 func _input(event: InputEvent):
 	var mouse_position = get_local_mouse_position()
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			is_mouse_down = event.pressed
-			if is_mouse_down and _is_mouse_in_drawing_zone(mouse_position) and not mouse_over_color_palette and not mouse_over_buttons_panel:
+			if is_selecting_zone:
+				if is_mouse_down:
+					# Start selection
+					selection_start = mouse_position
+					_create_selection_rectangle()
+				else:
+					# Finalize selection (but keep the rectangle)
+					_finalize_selection(mouse_position)
+			elif is_mouse_down and _is_mouse_in_drawing_zone(mouse_position) and not mouse_over_color_palette and not mouse_over_buttons_panel:
 				is_drawing = true
 				last_position = mouse_position
 				last_pressure = 1.0
@@ -42,9 +59,11 @@ func _input(event: InputEvent):
 			else:
 				is_drawing = false
 				Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-
 	elif event is InputEventMouseMotion:
-		if is_mouse_down and is_drawing and _is_mouse_in_drawing_zone(mouse_position) and not mouse_over_color_palette and not mouse_over_buttons_panel:
+		if is_selecting_zone and selection_rect:
+			# Update selection rectangle
+			_update_selection_rectangle(mouse_position)
+		elif is_mouse_down and is_drawing and _is_mouse_in_drawing_zone(mouse_position) and not mouse_over_color_palette and not mouse_over_buttons_panel:
 			if is_eraser_active:
 				erase_line_at(mouse_position)
 				_Eraser.visible = true
@@ -141,3 +160,59 @@ func _is_mouse_in_drawing_zone(mouse_position: Vector2) -> bool:
 			mouse_position.x <= rect_global_pos.x + rect_size.x and
 			rect_global_pos.y <= mouse_position.y and 
 			mouse_position.y <= rect_global_pos.y + rect_size.y)
+
+# Add new layer
+func _on_add_newlayer_pressed():
+	layer_count += 1
+	var cr = ColorRect.new()
+	var Lname = "Layer" + str(layer_count)
+	cr.name = Lname
+	cr.set_anchors_preset(cr.PRESET_FULL_RECT)
+	cr.clip_contents = true
+	cr.color = Color.TRANSPARENT
+	_LayersChooser.add_item(Lname)
+	_Layers.add_child(cr)
+
+	# Select the newly created layer
+	_LayersChooser.select(layer_count - 1)
+	_on_layers_item_selected(layer_count - 1)
+
+func _on_layers_item_selected(index):
+	_ColorRect = _Layers.get_node(_LayersChooser.get_item_text(index))
+	layer_last_idx = index
+
+func _on_delete_chossed_layer_pressed():
+	if _Layers.get_child_count() > 0:
+		layer_count -= 1
+		_Layers.remove_child(_ColorRect)
+		_LayersChooser.remove_item(layer_last_idx)
+
+		# Select the first layer if available, otherwise create a new one
+		if _Layers.get_child_count() > 0:
+			_LayersChooser.select(0)
+			_on_layers_item_selected(0)
+		else:
+			_on_add_newlayer_pressed()
+
+func _on_select_zone_pressed():
+	is_selecting_zone = true
+
+func _create_selection_rectangle():
+	if not selection_rect:
+		selection_rect = ColorRect.new()
+		selection_rect.color = Color(0, 1, 0, 0.5)
+		_ColorRect.add_child(selection_rect)
+
+func _update_selection_rectangle(current_position: Vector2):
+	if selection_rect:
+		var rect_size = current_position - selection_start
+		selection_rect.position = selection_start
+		selection_rect.size = rect_size
+
+func _finalize_selection(current_position: Vector2):
+	if selection_rect:
+		var rect_size = current_position - selection_start
+		print("Selected zone size:", rect_size)
+		print("Selected zone position:", selection_start)
+		# Don't queue_free() the selection_rect, keep it in the scene
+		is_selecting_zone = false
