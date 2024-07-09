@@ -19,11 +19,11 @@
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="12_6jk4t"]
 [ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icon.png" id="12_j6ukv"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="12_w08x7"]
-[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="13_bg3bn"]
 [ext_resource type="Texture2D" uid="uid://b53y87xjob8ri" path="res://assets/generated/paperclip_icon_24-removebg-preview.png" id="13_sb4aw"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 [ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="17_ijkb2"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
+[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="22_285lg"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -93,9 +93,8 @@ visible = false
 
 [node name="NewThreadPopup" type="Window" parent="."]
 unique_name_in_owner = true
-position = Vector2i(0, 36)
-size = Vector2i(117, 100)
-visible = false
+initial_position = 4
+size = Vector2i(350, 100)
 transient = true
 exclusive = true
 script = ExtResource("3_w58y5")
@@ -105,12 +104,11 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
-offset_top = 4.0
-offset_right = 113.0
-offset_bottom = 96.0
+offset_right = -6.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
+alignment = 1
 
 [node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
 custom_minimum_size = Vector2(0, 35)
@@ -124,12 +122,16 @@ text = "Name"
 
 [node name="txtNewTabName" type="TextEdit" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Tab Name"
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
 layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+theme_override_constants/separation = 16
 
 [node name="Label" type="Label" parent="NewThreadPopup/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -139,7 +141,7 @@ size_flags_vertical = 0
 [node name="btnVoiceForNoteTab" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
-icon = ExtResource("13_bg3bn")
+icon = ExtResource("22_285lg")
 
 [node name="btnCreateThread" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
@@ -453,7 +455,7 @@ caret_blink = true
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
-icon = ExtResource("13_bg3bn")
+icon = ExtResource("22_285lg")
 
 [node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="CreateNewNote/Panel/VBoxContainer"]
 layout_mode = 2
@@ -510,7 +512,7 @@ offset_left = 330.0
 offset_top = 310.0
 offset_right = 366.0
 offset_bottom = 336.0
-icon = ExtResource("13_bg3bn")
+icon = ExtResource("22_285lg")
 
 [node name="AudioControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer"]
 unique_name_in_owner = true

@@ -84,7 +84,7 @@ func _on_btn_voice_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteDescription
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoice
-	%btnVoice.icon = icActive
+	%btnVoice.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
 
 
@@ -92,15 +92,17 @@ func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteHead
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForHeader
-	%btnVoiceForHeader.icon = icActive
-	%AddNotePopUp.disabled = false
+	#%btnVoiceForHeader.icon = icActive
+	%btnVoiceForHeader.modulate = Color.LIME_GREEN
+	#%AddNotePopUp.disabled = false
 
 
 func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForNoteTab
-	%btnVoiceForNoteTab.icon = icActive
+	#%btnVoiceForNoteTab.icon = icActive
+	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 
 
 # this method calls the singleton object to toggle the enable/disable all notes in all tabs
@@ -278,7 +280,6 @@ func get_image_from_clipboard():
 	%ImageDropPanel.visible = false
 	%ImagePreview.visible = true
 
-
 #endregion Image Note region
 
 #region Audio Note
@@ -305,17 +306,6 @@ func _on_play_audio_button_pressed() -> void:
 
 
 #endregion Create New note Window
-
-
-
-
-
-
-
-
-
-
-
 
 
 

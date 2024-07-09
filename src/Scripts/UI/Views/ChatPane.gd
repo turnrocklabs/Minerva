@@ -501,7 +501,7 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
-	%btnMicrophone.icon = icActive
+	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
 
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
