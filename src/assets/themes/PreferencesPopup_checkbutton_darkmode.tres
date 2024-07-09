@@ -1,0 +1,75 @@
+[gd_resource type="Theme" load_steps=8 format=3 uid="uid://d1451jp68l03i"]
+
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="1_l1yw8"]
+[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/visibility_not_visible.png" id="2_3jl8q"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_jc7wp"]
+bg_color = Color(0.141176, 0.286275, 0.388235, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+expand_margin_left = 4.0
+expand_margin_top = 4.0
+expand_margin_right = 4.0
+expand_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_27ey4"]
+bg_color = Color(0.141176, 0.286275, 0.388235, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+expand_margin_left = 4.0
+expand_margin_top = 4.0
+expand_margin_right = 4.0
+expand_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_43cco"]
+bg_color = Color(0.141176, 0.286275, 0.388235, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+expand_margin_left = 4.0
+expand_margin_top = 4.0
+expand_margin_right = 4.0
+expand_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_j0im3"]
+bg_color = Color(0.141176, 0.286275, 0.388235, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+expand_margin_left = 4.0
+expand_margin_top = 4.0
+expand_margin_right = 4.0
+expand_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_mjqgq"]
+bg_color = Color(0.141176, 0.286275, 0.388235, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+expand_margin_left = 4.0
+expand_margin_top = 4.0
+expand_margin_right = 4.0
+expand_margin_bottom = 4.0
+
+[resource]
+Button/colors/icon_disabled_color = Color(1, 1, 1, 0.4)
+Button/colors/icon_focus_color = Color(1, 1, 1, 1)
+Button/colors/icon_hover_color = Color(1, 1, 1, 1)
+Button/colors/icon_hover_pressed_color = Color(1, 1, 1, 1)
+Button/colors/icon_normal_color = Color(1, 1, 1, 1)
+Button/colors/icon_pressed_color = Color(1, 1, 1, 1)
+CheckBox/colors/font_color = Color(0.875, 0.875, 0.875, 1)
+CheckBox/icons/checked = ExtResource("1_l1yw8")
+CheckBox/icons/unchecked = ExtResource("2_3jl8q")
+CheckBox/styles/focus = SubResource("StyleBoxFlat_jc7wp")
+CheckBox/styles/hover = SubResource("StyleBoxFlat_27ey4")
+CheckBox/styles/hover_pressed = SubResource("StyleBoxFlat_43cco")
+CheckBox/styles/normal = SubResource("StyleBoxFlat_j0im3")
+CheckBox/styles/pressed = SubResource("StyleBoxFlat_mjqgq")
