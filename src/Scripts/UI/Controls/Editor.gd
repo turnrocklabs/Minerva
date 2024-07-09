@@ -163,4 +163,9 @@ func save_file_to_disc(path: String):
 	file_saved_in_disc = true
 	
 func _on_save_button_pressed():
-	SingletonObject.NotesTab.add_image_note("From file Editor", %TextureRect.texture.get_image(), "editor caption c:")
+	if %TextureRect.texture:
+		SingletonObject.NotesTab.add_image_note("From file Editor", %TextureRect.texture.get_image(), "editor caption c:")
+		return
+	if  %PlaceForScreen.get_viewport().get_texture().get_image():
+		SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+		

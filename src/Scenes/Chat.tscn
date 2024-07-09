@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=14 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
@@ -6,10 +6,9 @@
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="2_bjp7m"]
 [ext_resource type="Texture2D" uid="uid://8qaewgqcvy18" path="res://assets/generated/gears_icon_24-removebg-preview.png" id="5_igkcl"]
 [ext_resource type="Texture2D" uid="uid://dfai1lvbg10ka" path="res://assets/generated/search_icon_24_no_bg.png" id="6_5wjht"]
-[ext_resource type="Texture2D" uid="uid://6ah5i8wdcpjn" path="res://assets/icons/Microphone_statick.jpg" id="6_iop5c"]
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
+[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="8_tl5be"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="9_4ngla"]
-[ext_resource type="PackedScene" uid="uid://bpj336qyc0vse" path="res://Scenes/system_prompt.tscn" id="9_dlgym"]
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
 [ext_resource type="PackedScene" uid="uid://celpfkr7c745u" path="res://Scenes/ProviderOptionButton.tscn" id="9_xd60x"]
 
@@ -168,7 +167,7 @@ icon = ExtResource("7_51nod")
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "record message"
-icon = ExtResource("6_iop5c")
+icon = ExtResource("8_tl5be")
 
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
