@@ -64,3 +64,13 @@ func _on_microphone_selected(index: int):
 	print("Selected microphone:", selected_device)
 
 
+signal create_system_prompt_message(message,role)
+
+func _on_accept_button_pressed() -> void:
+	var system_prompt_text = %SystemPromptTextEdit.text
+	create_system_prompt_message.emit(system_prompt_text, ChatHistoryItem.ChatRole.SYSTEM)
+
+
+func _on_cancel_button_pressed() -> void:
+	%SystemPromptTextEdit.text = ""
+	hide()
