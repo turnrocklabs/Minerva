@@ -387,6 +387,7 @@ func _ready():
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
 	SingletonObject.initialize_chats(self)
+	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
 
 
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
@@ -543,3 +544,40 @@ func _on_txt_main_user_input_gui_input(event: InputEvent):
 	if event.is_action_pressed("ui_enter"):
 		_on_chat_pressed()
 		accept_event()
+
+
+#region Add New HistoryItem
+
+func add_new_system_prompt_item(message: String, _role: ChatHistoryItem.ChatRole = ChatHistoryItem.ChatRole.USER):
+	var new_chat_history_item: ChatHistoryItem = ChatHistoryItem.new()
+	new_chat_history_item.Message = message
+	new_chat_history_item.Role = _role
+	
+	ensure_chat_open()
+	
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	
+	# we check if there is already a System prompt item in the history and remove it if so
+	if history.HistoryItemList.size() > 0:
+		if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
+			history.HistoryItemList.pop_front()
+		# we add the system prompt to the first place in the chat
+		
+	history.HistoryItemList.insert(0,new_chat_history_item)
+
+
+
+func chat_tab_exists():
+	if len(SingletonObject.ChatList) <= current_tab:
+		return false
+	return true
+
+#endregion Add New HistoryItem
+
+
+
+
+
+
+
+
