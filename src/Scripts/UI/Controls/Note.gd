@@ -302,18 +302,25 @@ func _on_image_v_box_container_gui_input(event: InputEvent) -> void:
 # check if display server can paste image from clipboard and does so
 func paste_image_from_clipboard():
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
-		if DisplayServer.clipboard_has():
-			var path = DisplayServer.clipboard_get().split("\n")[0]
-			var file_format = get_file_format(path)
-			if file_format in SingletonObject.supported_image_formats:
-				var image = Image.new()
-				image.load(path)
+		if OS.get_name() == "Windows":
+			if DisplayServer.clipboard_has_image():
+				var image = DisplayServer.clipboard_get_image()
 				memory_item.MemoryImage = image
 				set_note_image(image)
+		
+		if OS.get_name() == "Linux":
+			if DisplayServer.clipboard_has():
+				var path = DisplayServer.clipboard_get().split("\n")[0]
+				var file_format = get_file_format(path)
+				if file_format in SingletonObject.supported_image_formats:
+					var image = Image.new()
+					image.load(path)
+					memory_item.MemoryImage = image
+					set_note_image(image)
+				else:
+					print_rich("[b]file format not supported :c[/b]")
 			else:
-				print_rich("[b]file format not supported :c[/b]")
-		else:
-			print("no iamge to put here")
+				print("no image to put here")
 	else: 
 		print("Display Server does not support clipboard feature :c, its a godot thing")
 
