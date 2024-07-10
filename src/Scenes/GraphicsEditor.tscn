@@ -1,18 +1,50 @@
 [gd_scene load_steps=3 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
-[ext_resource type="Texture2D" uid="uid://slpk40bumw5b" path="res://masaze.jpg" id="2_jm75h"]
+[ext_resource type="Texture2D" uid="uid://i248p4cmb0b2" path="res://assets/generated/transparency.bmp" id="2_3ydf8"]
 
-[node name="GraphicsEditor" type="PanelContainer"]
+[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
+_color_picker = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ColorPickerButton")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 25
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/MarginContainer"]
+layout_mode = 2
+
+[node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+tooltip_text = "Brush Size"
+max_value = 20.0
+value = 5.0
+rounded = true
+
+[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(25, 25)
+layout_mode = 2
+color = Color(0.447059, 0.447059, 0.67451, 1)
+
+[node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 5.0
 
 [node name="LayersContainer" type="CenterContainer" parent="VBoxContainer"]
 unique_name_in_owner = true
@@ -21,7 +53,11 @@ size_flags_vertical = 3
 
 [node name="TextureRect" type="TextureRect" parent="VBoxContainer/LayersContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(500, 500)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-texture = ExtResource("2_jm75h")
+texture = ExtResource("2_3ydf8")
+stretch_mode = 1
+
+[connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
