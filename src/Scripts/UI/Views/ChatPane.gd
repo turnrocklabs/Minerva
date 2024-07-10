@@ -573,11 +573,3 @@ func chat_tab_exists():
 	return true
 
 #endregion Add New HistoryItem
-
-
-
-
-
-
-
-

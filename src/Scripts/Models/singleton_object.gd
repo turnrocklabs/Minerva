@@ -3,7 +3,6 @@ extends Node
 #region global variables?
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
 
-
 #endregion global variables
 
 #region Config File
@@ -287,9 +286,9 @@ func set_microphone(mic: String) -> void:
 	AudioServer.set_input_device(mic)
 	save_to_config_file("AudioSettings", "SelectedMic", mic)
 	mic_changed.emit(mic)
-
-
 #endregion Audio Settings
+
+
 
 
 

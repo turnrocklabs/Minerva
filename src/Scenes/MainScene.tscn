@@ -1,4 +1,4 @@
-[gd_scene load_steps=29 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=30 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -25,6 +25,7 @@
 [ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="17_ijkb2"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
 [ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="22_285lg"]
+[ext_resource type="Script" path="res://addons/onscreenkeyboard/onscreen_keyboard.gd" id="26_7ekcn"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -130,6 +131,13 @@ layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Tab Name"
 
+[node name="OnscreenKeyboardMain22" type="PanelContainer" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("26_7ekcn")
+auto_show = false
+
 [node name="HBoxContainer2" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
@@ -220,7 +228,7 @@ item_3/id = 4
 item_3/disabled = true
 item_4/text = "Preferences"
 item_4/id = 1
-item_5/text = "New draw"
+item_5/text = "New drawing"
 item_5/id = 5
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
@@ -638,6 +646,22 @@ size_flags_horizontal = 8
 size_flags_vertical = 8
 disabled = true
 text = "Add note"
+
+[node name="OnscreenKeyboardMain" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -459.5
+offset_top = -248.0
+offset_right = 459.5
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("26_7ekcn")
+auto_show = false
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")

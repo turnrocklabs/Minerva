@@ -131,3 +131,12 @@ func _on_microphones_item_selected(index: int) -> void:
 	SingletonObject.set_microphone(microphones.get_item_text(index))
 
 #endregion Mic preferences
+
+
+func _on_check_virtual_button_pressed():
+	if %CheckVirtualButton.button_pressed == true:
+		$"../OnscreenKeyboardMain".auto_show = true
+		$"../NewThreadPopup/VBoxContainer/HBoxTopRow/OnscreenKeyboardMain22".auto_show = true
+	else:
+		$"../OnscreenKeyboardMain".auto_show = false
+		$"../NewThreadPopup/VBoxContainer/HBoxTopRow/OnscreenKeyboardMain22".auto_show = false

@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
-[ext_resource type="Theme" uid="uid://d1451jp68l03i" path="res://assets/themes/PreferencesPopup_checkbutton_darkmode.tres" id="2_ynj3k"]
+[ext_resource type="Theme" uid="uid://dlec7d3t4v0nd" path="res://assets/themes/PreferencesPopup_checkbutton_darkmode.tres" id="2_ynj3k"]
 
 [node name="PreferencesPopup" type="Window"]
 initial_position = 4
@@ -178,6 +178,26 @@ allow_reselect = true
 [node name="HSeparator3" type="HSeparator" parent="v"]
 layout_mode = 2
 
+[node name="VBoxContainer" type="VBoxContainer" parent="v"]
+layout_mode = 2
+
+[node name="MicrophoneContainer" type="HBoxContainer" parent="v/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="VirtualKeyboard" type="Label" parent="v/VBoxContainer/MicrophoneContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Virtual Keyboard:"
+vertical_alignment = 1
+
+[node name="CheckVirtualButton" type="CheckButton" parent="v/VBoxContainer/MicrophoneContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HSeparator4" type="HSeparator" parent="v"]
+layout_mode = 2
+
 [node name="btnSavePrefs" type="Button" parent="v"]
 layout_mode = 2
 size_flags_horizontal = 0
@@ -189,4 +209,5 @@ text = "Save"
 [connection signal="toggled" from="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
 [connection signal="item_selected" from="v/SectionsContainer/ThemeVBoxContainer/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]
 [connection signal="item_selected" from="v/SectionsContainer/VBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
+[connection signal="pressed" from="v/VBoxContainer/MicrophoneContainer/CheckVirtualButton" to="." method="_on_check_virtual_button_pressed"]
 [connection signal="pressed" from="v/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]

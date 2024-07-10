@@ -34,7 +34,7 @@ window/subwindows/embed_subwindows=false
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/markdownlabel/plugin.cfg")
+enabled=PackedStringArray("res://addons/markdownlabel/plugin.cfg", "res://addons/onscreenkeyboard/plugin.cfg")
 
 [input]
 
