@@ -13,6 +13,9 @@ var HistoryName: String:
 var HistoryItemList: Array[ChatHistoryItem]:
 	set(value): SingletonObject.save_state(false); HistoryItemList = value
 
+var HasUsedSystemPrompt: bool = false:
+	set(value): SingletonObject.save_state(false); HasUsedSystemPrompt = value
+
 var VBox: VBoxChat
 var provider: BaseProvider
 

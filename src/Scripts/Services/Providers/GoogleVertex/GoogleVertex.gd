@@ -166,6 +166,8 @@ func Format(chat:ChatHistoryItem) -> Variant:
 
 	if chat.Role == ChatHistoryItem.ChatRole.USER:
 		role = "user"
+	elif chat.Role == ChatHistoryItem.ChatRole.SYSTEM:
+		role = "user"
 	else:
 		role = "model"
 	
