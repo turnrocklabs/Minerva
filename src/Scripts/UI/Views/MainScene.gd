@@ -213,8 +213,6 @@ func _on_image_files_dropped(files):
 		# check if file format is supported
 		if file_format in SingletonObject.supported_image_formats:
 			set_image_preview(path)
-			%ImageDropPanel.visible = false
-			%ImagePreview.visible = true
 		else:
 			#TODO implement error pop up or something
 			print_rich("[b]image format not supported :c \n Maybe one day c:[/b]")
