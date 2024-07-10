@@ -132,7 +132,7 @@ func image_draw(image: Image, pos: Vector2, color: Color, point_size: int):
 		if pixel.x >= 0 and pixel.x < image.get_width() and pixel.y >= 0 and pixel.y < image.get_height():
 			image.set_pixelv(pixel, color if not _masking else Color.TRANSPARENT)
 
-func _input(event: InputEvent):
+func _gui_input(event: InputEvent):
 	if event is InputEventMouseButton and event.is_action("draw"):
 		drawing = event.pressed
 		_draw_begin = drawing
