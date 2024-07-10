@@ -163,4 +163,13 @@ func save_file_to_disc(path: String):
 	file_saved_in_disc = true
 	
 func _on_save_button_pressed():
-	prompt_close(true)
+	if TYPE.Text == type:
+		SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+		return
+	if TYPE.Graphics == type:
+		SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+		return
+	if TYPE.WhiteBoard == type:
+		SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+		return
+	

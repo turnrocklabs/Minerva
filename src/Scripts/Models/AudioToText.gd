@@ -5,8 +5,8 @@ var effect
 var recording
 var file_path = "res://VioceAudio.wav"
 
-var icActive = preload("res://assets/icons/Microphone_active.png")
-var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
+#var icActive = preload("res://assets/icons/Microphone_active.png")
+#var icStatic = preload("res://assets/icons/Microphone_statick.jpg")
 var btn:Button
 #varibles for changing state
 
@@ -20,7 +20,7 @@ func _ready():
 	
 func _StartConverting():
 	if effect.is_recording_active():
-		btn.icon = icStatic
+		btn.modulate = Color.WHITE
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
 		recording.save_to_wav(file_path)
@@ -82,7 +82,7 @@ func _on_request_completed(_result, response_code, _headers, body):
 			print("Transcription:", transcription)
 			FieldForFilling.text = transcription
 			btn.disabled = false
-			btn.icon = icStatic
+			btn.modulate = Color.WHITE
 		else:
 			print("Unexpected response format:", response_json)
 	else:
