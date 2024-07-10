@@ -15,6 +15,7 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
 @onready var whiteB = %WhiteBoard
+@onready var graphics_editor = %GraphicsEditor
 
 enum TYPE {
 	Text,
@@ -41,9 +42,7 @@ static func create(type_: TYPE, file_ = null) -> Editor:
 		Editor.TYPE.Text:
 			editor.get_node("%CodeEdit").visible = true
 		Editor.TYPE.Graphics:
-			editor.get_node("%TextureRect").visible = true
-		Editor.TYPE.WhiteBoard:
-			editor.get_node("%WhiteBoard").visible = true
+			editor.get_node("%GraphicsEditor").visible = true
 
 	return editor
 	
@@ -53,7 +52,7 @@ func _ready():
 	if file:
 		match type:
 			TYPE.Text: _load_text_file(file)
-			TYPE.WhiteBoard: _load_graphics_file(file)
+			TYPE.Graphics: _load_graphics_file(file)
 	
 	_on_file_dialog_file_selected
 	
@@ -67,8 +66,10 @@ func _load_text_file(filename: String):
 
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
-	var texture_item = ImageTexture.create_from_image(image)
-	whiteB.get_node("%EditPic").texture = texture_item
+	graphics_editor.setup_from_image(image)
+
+	# var texture_item = ImageTexture.create_from_image(image)
+	# whiteB.get_node("%EditPic").texture = texture_item
 	#texture_rect.texture = texture_item
 
 ## Prompts user to save the file
@@ -78,7 +79,7 @@ func prompt_close(show_save_file_dialog := false) -> bool:
 	var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 
 	match type:
-		TYPE.WhiteBoard:
+		TYPE.Graphics:
 			$FileDialog.filters = PackedStringArray(["*.png"])
 			
 	if not prompt_save: return true
@@ -150,18 +151,16 @@ func save_file_to_disc(path: String):
 			save_file.store_string(code_edit.text)
 			
 		TYPE.Graphics:
-			pass
-			
-		TYPE.WhiteBoard:
 			var dialog = ($FileDialog as FileDialog)
 			var _filters = dialog.filters
 			dialog.filters = [".png"]
 			dialog.filters = _filters
-			var pic = whiteB.get_node("%PlaceForScreen").get_viewport().get_texture().get_image()
-			pic.save_png(path)
+
+			var img = graphics_editor.image
+			if img: img.save_png(path)
 			
 	_file_saved = true
 	file_saved_in_disc = true
 	
 func _on_save_button_pressed():
-	SingletonObject.NotesTab.add_image_note("From file Editor", %TextureRect.texture.get_image(), "editor caption c:")
+	prompt_close(true)

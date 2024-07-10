@@ -88,6 +88,8 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	
 	var response: RequestResults
 	
+	print(active_image.get_meta("mask", null))
+
 	if active_image:
 		if edit:
 			var boundary: = _generate_form_data_boundary()
@@ -95,7 +97,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 			response = await make_request(
 				"%s/edits" % BASE_URL,
 				HTTPClient.METHOD_POST,
-				_construct_edit_form_data(request_body, _dummy_mask(active_image), boundary),
+				_construct_edit_form_data(request_body, active_image.get_meta("mask"), boundary),
 				[
 					'Content-Type: multipart/form-data;boundary=%s' % boundary,
 					"Authorization: Bearer %s" % API_KEY

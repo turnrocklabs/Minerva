@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=5 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="PackedScene" uid="uid://do5x4x4h5ddlk" path="res://Scenes/WhiteBoard.tscn" id="2_b23ua"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/EditorCodeEdit.gd" id="2_g3oqj"]
+[ext_resource type="PackedScene" uid="uid://1snj5jsurqrt" path="res://Scenes/GraphicsEditor.tscn" id="3_rd38o"]
 
 [node name="Editor" type="Control"]
 layout_mode = 3
@@ -26,6 +27,13 @@ theme_override_constants/separation = 12
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+
+[node name="GraphicsEditor" parent="VBoxContainer" instance=ExtResource("3_rd38o")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 
 [node name="CodeEdit" type="CodeEdit" parent="VBoxContainer"]
 unique_name_in_owner = true
