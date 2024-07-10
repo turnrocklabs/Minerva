@@ -87,8 +87,6 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	request_body.merge(additional_params)
 	
 	var response: RequestResults
-	
-	print(active_image.get_meta("mask", null))
 
 	if active_image:
 		if edit:
@@ -190,6 +188,8 @@ func estimate_tokens(_input: String) -> int:
 func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
 	return 0
 
+func continue_partial_response(_partial_chi: ChatHistoryItem):
+	return null
 
 #region Form Data
 
