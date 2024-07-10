@@ -176,14 +176,14 @@ func execute_chat():
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 
 	%txtMainUserInput.text = ""
-
-	# add the message to the history list before we construct the prompt, so it gets included
-	history.HistoryItemList.append(user_history_item)
 	
 	# make a chat request
-	var history_list: = create_prompt()
+	var history_list: = create_prompt(user_history_item)
 
 	var user_msg_node: = await history.VBox.add_history_item(user_history_item)
+
+	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
+	history.HistoryItemList.append(user_history_item)
 
 	user_history_item.EstimatedTokenCost = history.provider.estimate_tokens_from_prompt(history_list)
 	# rerender the message wince we changed the history item
