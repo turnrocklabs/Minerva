@@ -184,9 +184,6 @@ func execute_chat():
 	user_history_item.EstimatedTokenCost = history.provider.estimate_tokens_from_prompt(history_list)
 	# rerender the message wince we changed the history item
 	user_msg_node.render()
-	
-	# we made the prompt, disable the notes now
-	SingletonObject.NotesTab.Disable_All()
 
 	# Add empty history item, to show the loading state
 	var dummy_item = ChatHistoryItem.new()
@@ -198,6 +195,9 @@ func execute_chat():
 
 	# This function can be awaited for the request to finish
 	var bot_response = await history.provider.generate_content(history_list)
+
+	# we made the prompt, disable the notes now
+	SingletonObject.NotesTab.Disable_All()
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
