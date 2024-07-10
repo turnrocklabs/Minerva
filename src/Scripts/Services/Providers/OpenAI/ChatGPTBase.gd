@@ -73,6 +73,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 			role = "user"
 		ChatHistoryItem.ChatRole.ASSISTANT:
 			role = "assistant"
+		ChatHistoryItem.ChatRole.SYSTEM:
+			role = "system"
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "assistant"
 	

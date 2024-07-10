@@ -548,29 +548,31 @@ func _on_txt_main_user_input_gui_input(event: InputEvent):
 
 #region Add New HistoryItem
 
-func add_new_system_prompt_item(message: String, _role: ChatHistoryItem.ChatRole = ChatHistoryItem.ChatRole.USER):
-	var new_chat_history_item: ChatHistoryItem = ChatHistoryItem.new()
-	new_chat_history_item.Message = message
-	new_chat_history_item.Role = _role
+func add_new_system_prompt_item(message: String):
+	ensure_chat_open() # we check if their a chat open first
 	
-	ensure_chat_open()
+	var new_chat_history_item: ChatHistoryItem = ChatHistoryItem.new()# we create the chat item
+	new_chat_history_item.Message = message 
+	if SingletonObject.get_active_provider() == SingletonObject.API_MODEL_PROVIDERS.CHAT_GPT_4O:
+		new_chat_history_item.Role = ChatHistoryItem.ChatRole.SYSTEM
+	else:
+		new_chat_history_item.Role = ChatHistoryItem.ChatRole.USER
 	
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	
 	# we check if there is already a System prompt item in the history and remove it if so
 	if history.HistoryItemList.size() > 0:
-		if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
+		if history.HasUsedSystemPrompt: #history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
 			history.HistoryItemList.pop_front()
-		# we add the system prompt to the first place in the chat
-		
+	
+	# we add the system prompt to the first place in the chat
+	history.HasUsedSystemPrompt = true #we save the state so we can replace the chat item
 	history.HistoryItemList.insert(0,new_chat_history_item)
 
 
-
-func chat_tab_exists():
-	if len(SingletonObject.ChatList) <= current_tab:
-		return false
-	return true
+func get_first_chat_item() -> ChatHistoryItem:
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	return history.HistoryItemList.front()
 
 #endregion Add New HistoryItem
 
