@@ -64,7 +64,8 @@ func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Ca
 	if append_item:
 		append_item.InjectedNote = working_memory
 		# also append the new item since it's not in the history yet
-		history_list.append(history.provider.Format(append_item))
+		var item = history.provider.Format(append_item)
+		if item: history_list.append(item)
 
 	return history_list
 
@@ -554,11 +555,8 @@ func add_new_system_prompt_item(message: String):
 	ensure_chat_open() # we check if their a chat open first
 	
 	var new_chat_history_item: ChatHistoryItem = ChatHistoryItem.new()# we create the chat item
-	new_chat_history_item.Message = message 
-	if SingletonObject.get_active_provider() == SingletonObject.API_MODEL_PROVIDERS.CHAT_GPT_4O:
-		new_chat_history_item.Role = ChatHistoryItem.ChatRole.SYSTEM
-	else:
-		new_chat_history_item.Role = ChatHistoryItem.ChatRole.USER
+	new_chat_history_item.Message = message
+	new_chat_history_item.Role = ChatHistoryItem.ChatRole.SYSTEM
 	
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	
