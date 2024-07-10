@@ -129,6 +129,8 @@ func estimate_tokens_from_prompt(input: Array[Variant]):
 	return estimate_tokens("".join(all_messages))
 
 
+func continue_partial_response(_partial_chi: ChatHistoryItem):
+	return null
 
 
 # {

@@ -165,3 +165,10 @@ func estimate_tokens_from_prompt(input: Array[Variant]):
 		all_messages.append(msg["content"])
 	
 	return estimate_tokens("".join(all_messages))
+
+
+func continue_partial_response(_partial_chi: ChatHistoryItem):
+	var chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
+	chi.Message = "finish"
+
+	return chi
