@@ -1,0 +1,178 @@
+[gd_scene load_steps=4 format=3 uid="uid://do5x4x4h5ddlk"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/WhiteBoard.gd" id="1_nufbo"]
+[ext_resource type="Texture2D" uid="uid://chh8q3tyei46m" path="res://assets/icons/pen.png" id="2_2wrjw"]
+[ext_resource type="Texture2D" uid="uid://bx5jx18sf3f26" path="res://assets/icons/eraser.png" id="3_6ootu"]
+
+[node name="WhiteBoard" type="Panel"]
+clip_contents = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+script = ExtResource("1_nufbo")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Buttons" type="HBoxContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
+z_index = 1
+clip_contents = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Clear" type="Button" parent="VBoxContainer/Buttons"]
+layout_mode = 2
+text = "Clear
+"
+
+[node name="BrushSize" type="OptionButton" parent="VBoxContainer/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+item_count = 10
+selected = 0
+popup/item_0/text = "1"
+popup/item_0/id = 1
+popup/item_1/text = "2"
+popup/item_1/id = 2
+popup/item_2/text = "3"
+popup/item_2/id = 3
+popup/item_3/text = "4"
+popup/item_3/id = 4
+popup/item_4/text = "5"
+popup/item_4/id = 5
+popup/item_5/text = "6"
+popup/item_5/id = 6
+popup/item_6/text = "7"
+popup/item_6/id = 7
+popup/item_7/text = "8"
+popup/item_7/id = 8
+popup/item_8/text = "9"
+popup/item_8/id = 9
+popup/item_9/text = "10"
+popup/item_9/id = 10
+
+[node name="ColorPalete" type="Button" parent="VBoxContainer/Buttons"]
+layout_mode = 2
+text = "color"
+
+[node name="eraser" type="Button" parent="VBoxContainer/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "eraser"
+
+[node name="Layers" type="OptionButton" parent="VBoxContainer/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+item_count = 1
+selected = 0
+popup/item_0/text = "Layer1"
+popup/item_0/id = 0
+
+[node name="AddNewlayer" type="Button" parent="VBoxContainer/Buttons"]
+layout_mode = 2
+text = "add new layer"
+
+[node name="DeleteChossedLayer" type="Button" parent="VBoxContainer/Buttons"]
+layout_mode = 2
+text = "delete layer"
+
+[node name="SelectZone" type="Button" parent="VBoxContainer/Buttons"]
+layout_mode = 2
+text = "AI zone"
+
+[node name="ScreenViewportHolder" type="SubViewportContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+stretch = true
+
+[node name="PlaceForScreen" type="SubViewport" parent="VBoxContainer/ScreenViewportHolder"]
+unique_name_in_owner = true
+handle_input_locally = false
+size = Vector2i(1920, 1045)
+render_target_update_mode = 4
+
+[node name="Layer1" type="ColorRect" parent="VBoxContainer/ScreenViewportHolder/PlaceForScreen"]
+unique_name_in_owner = true
+clip_contents = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="EditPic" type="TextureRect" parent="VBoxContainer/ScreenViewportHolder/PlaceForScreen/Layer1"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 1080.0
+grow_horizontal = 2
+expand_mode = 5
+stretch_mode = 4
+
+[node name="Colors" type="ColorPicker" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 1
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -298.0
+offset_top = -136.0
+offset_bottom = 136.0
+grow_horizontal = 0
+grow_vertical = 2
+sampler_visible = false
+color_modes_visible = false
+sliders_visible = false
+hex_visible = false
+presets_visible = false
+
+[node name="DrawZone" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+color = Color(1, 0, 1, 1)
+
+[node name="Pen" type="Sprite2D" parent="."]
+unique_name_in_owner = true
+visible = false
+position = Vector2(868, 778)
+scale = Vector2(0.0546874, 0.0546874)
+texture = ExtResource("2_2wrjw")
+
+[node name="Eraser" type="Sprite2D" parent="."]
+unique_name_in_owner = true
+visible = false
+position = Vector2(868, 778)
+scale = Vector2(0.0546874, 0.0546874)
+texture = ExtResource("3_6ootu")
+
+[connection signal="mouse_entered" from="VBoxContainer/Buttons" to="." method="_on_buttons_mouse_entered"]
+[connection signal="mouse_exited" from="VBoxContainer/Buttons" to="." method="_on_buttons_mouse_exited"]
+[connection signal="pressed" from="VBoxContainer/Buttons/Clear" to="." method="_on_clear_pressed"]
+[connection signal="item_selected" from="VBoxContainer/Buttons/BrushSize" to="." method="_on_brush_size_item_selected"]
+[connection signal="pressed" from="VBoxContainer/Buttons/ColorPalete" to="." method="_on_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/Buttons/eraser" to="." method="_on_eraser_pressed"]
+[connection signal="item_selected" from="VBoxContainer/Buttons/Layers" to="." method="_on_layers_item_selected"]
+[connection signal="pressed" from="VBoxContainer/Buttons/AddNewlayer" to="." method="_on_add_newlayer_pressed"]
+[connection signal="pressed" from="VBoxContainer/Buttons/DeleteChossedLayer" to="." method="_on_delete_chossed_layer_pressed"]
+[connection signal="pressed" from="VBoxContainer/Buttons/SelectZone" to="." method="_on_select_zone_pressed"]
+[connection signal="color_changed" from="Colors" to="." method="_on_colors_color_changed"]
+[connection signal="mouse_entered" from="Colors" to="." method="_on_colors_mouse_entered"]
+[connection signal="mouse_exited" from="Colors" to="." method="_on_colors_mouse_exited"]
