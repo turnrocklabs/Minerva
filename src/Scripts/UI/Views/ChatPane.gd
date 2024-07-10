@@ -166,6 +166,9 @@ func execute_chat():
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
+	var last_msg = history.HistoryItemList.back()
+	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
+
 	## prepare an append item for the history
 	var user_history_item: = ChatHistoryItem.new()
 	user_history_item.Message = %txtMainUserInput.text
@@ -234,8 +237,7 @@ func execute_chat():
 ## merging the new and the initial response into one and returning it.
 func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 	# make a chat request with temporary chat history item
-	var temp_chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
-	temp_chi.Message = "continue"
+	var temp_chi = partial_chi.provider.continue_partial_response(partial_chi)
 
 	var history_list: Array[Variant] = SingletonObject.Chats.create_prompt(temp_chi)
 	
@@ -243,7 +245,7 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 
 	var bot_response = await partial_chi.provider.generate_content(history_list)
 
-	partial_chi.Message += bot_response.text
+	partial_chi.Message += " %s" % bot_response.text
 	partial_chi.Complete = bot_response.complete
 
 	# set the history item for the rendered node so it gets rerendered
