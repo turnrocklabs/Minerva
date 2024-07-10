@@ -35,7 +35,7 @@ func _on_file_index_pressed(index):
 			%PreferencesPopup.size = target_size
 			%PreferencesPopup.popup_centered()
 		5:
-			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.WhiteBoard)
+			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Graphics)
 
 ## Handler:
 # _on_project_index_pressed handles the "Project" menu.
