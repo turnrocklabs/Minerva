@@ -1,8 +1,8 @@
 extends PersistentWindow
 
+signal create_system_prompt_message(message)
 
 @onready var _provider_option_button = %ProviderOptionButton as OptionButton
-@onready var theme_option_button: OptionButton = %ThemeOptionButton as OptionButton
 @onready var option_button:OptionButton = %Microphones
 
 ## Returns the script of the provider thats selected.
@@ -12,10 +12,6 @@ func get_selected_provider() -> GDScript:
 
 func _ready():
 	super()
-	populate_microphones()
-	SingletonObject.theme_changed.connect(set_theme_option_menu)
-	theme_option_button.selected = SingletonObject.get_theme()
-	# populate the options button with avaivable model providers
 	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance = script.new()
@@ -31,46 +27,32 @@ func _on_provider_option_button_item_selected(index: int):
 
 	if SingletonObject.ChatList.is_empty():
 		SingletonObject.Chats._provider_option_button.select(index)
-	
-
-func _on_theme_option_button_item_selected(index: int) -> void:
-	SingletonObject.set_theme(index)
-
-func set_theme_option_menu(theme_enum: int):
-	theme_option_button.selected = theme_enum
 
 
 
-func populate_microphones():
-	# Get the list of available microphones
-	var input_devices = AudioServer.get_input_device_list()
-
-	# Clear any existing options in the OptionButton
-	option_button.clear()
-
-	# Add each microphone to the OptionButton
-	for device in input_devices:
-		option_button.add_item(device)
-	option_button.connect("item_selected", self._on_microphone_selected)
-
-# Function called when user selects a microphone
-func _on_microphone_selected(index: int):
-	var selected_device = option_button.get_item_text(index)
-	
-	# Set the selected microphone as the active input device
-	AudioServer.set_input_device(selected_device)
-	
-	# Optionally, you can notify the user or perform any other action
-	print("Selected microphone:", selected_device)
-
-
-signal create_system_prompt_message(message,role)
 
 func _on_accept_button_pressed() -> void:
 	var system_prompt_text = %SystemPromptTextEdit.text
-	create_system_prompt_message.emit(system_prompt_text, ChatHistoryItem.ChatRole.SYSTEM)
+	create_system_prompt_message.emit(system_prompt_text)
+	hide()
 
 
 func _on_cancel_button_pressed() -> void:
 	%SystemPromptTextEdit.text = ""
 	hide()
+
+
+func _on_about_to_popup() -> void:
+	if SingletonObject.ChatList.size() > 0:
+		var current_tab: int = SingletonObject.Chats.current_tab
+		if SingletonObject.ChatList[current_tab].HasUsedSystemPrompt:
+			var chat_item = SingletonObject.Chats.get_first_chat_item()
+			%SystemPromptTextEdit.text = chat_item.Message
+
+
+func _on_record_sytem_prompt_button_pressed() -> void:
+	%SystemPromptTextEdit.text = ""
+	SingletonObject.AtT.FieldForFilling = %SystemPromptTextEdit
+	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %RecordSytemPromptButton
+	%RecordSytemPromptButton.modulate = Color(Color.LIME_GREEN)
