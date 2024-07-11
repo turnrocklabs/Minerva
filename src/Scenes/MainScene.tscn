@@ -131,13 +131,6 @@ layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Tab Name"
 
-[node name="OnscreenKeyboardMain22" type="PanelContainer" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-visible = false
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("26_7ekcn")
-auto_show = false
-
 [node name="HBoxContainer2" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
@@ -661,7 +654,6 @@ offset_right = 459.5
 grow_horizontal = 2
 grow_vertical = 0
 script = ExtResource("26_7ekcn")
-auto_show = false
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
