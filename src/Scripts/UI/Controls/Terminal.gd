@@ -33,7 +33,8 @@ func _wrap_windows_command(user_input: String) -> PackedStringArray:
 
 func _wrap_linux_command(user_input: String) -> PackedStringArray:
 	var full_cmd = [
-		'(cd %s && %s & echo "%s$(pwd)")' % [cwd, user_input, cwd_delimiter]
+		"-c",
+		"\"cd %s && %s & echo '%s$(pwd)'\"" % [cwd, user_input, cwd_delimiter]
 	]
 
 	return full_cmd
@@ -60,6 +61,8 @@ func execute_command(input: String) -> void:
 	var output = []
 
 	var args = wrap_command.call(input)
+
+	print("Running: %s %s" % [shell, " ".join(args)])
 
 	var pid = OS.execute(shell, args, output, true)
 
