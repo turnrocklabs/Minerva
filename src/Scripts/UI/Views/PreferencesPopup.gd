@@ -87,6 +87,7 @@ func get_user_initials() -> String:
 
 
 func _on_open_ai_check_box_toggled(toggled_on: bool) -> void:
+	
 	%leOpenAI.secret = !toggled_on
 
 

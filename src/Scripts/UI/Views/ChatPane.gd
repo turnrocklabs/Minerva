@@ -64,7 +64,8 @@ func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Ca
 	if append_item:
 		append_item.InjectedNote = working_memory
 		# also append the new item since it's not in the history yet
-		history_list.append(history.provider.Format(append_item))
+		var item = history.provider.Format(append_item)
+		if item: history_list.append(item)
 
 	return history_list
 
@@ -166,27 +167,27 @@ func execute_chat():
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
+	var last_msg = history.HistoryItemList.back()
+	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
+
 	## prepare an append item for the history
 	var user_history_item: = ChatHistoryItem.new()
 	user_history_item.Message = %txtMainUserInput.text
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 
 	%txtMainUserInput.text = ""
-
-	# add the message to the history list before we construct the prompt, so it gets included
-	history.HistoryItemList.append(user_history_item)
 	
 	# make a chat request
-	var history_list: = create_prompt()
+	var history_list: = create_prompt(user_history_item)
 
 	var user_msg_node: = await history.VBox.add_history_item(user_history_item)
+
+	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
+	history.HistoryItemList.append(user_history_item)
 
 	user_history_item.EstimatedTokenCost = history.provider.estimate_tokens_from_prompt(history_list)
 	# rerender the message wince we changed the history item
 	user_msg_node.render()
-	
-	# we made the prompt, disable the notes now
-	SingletonObject.NotesTab.Disable_All()
 
 	# Add empty history item, to show the loading state
 	var dummy_item = ChatHistoryItem.new()
@@ -198,6 +199,9 @@ func execute_chat():
 
 	# This function can be awaited for the request to finish
 	var bot_response = await history.provider.generate_content(history_list)
+
+	# we made the prompt, disable the notes now
+	SingletonObject.NotesTab.Disable_All()
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
@@ -234,8 +238,7 @@ func execute_chat():
 ## merging the new and the initial response into one and returning it.
 func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 	# make a chat request with temporary chat history item
-	var temp_chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
-	temp_chi.Message = "continue"
+	var temp_chi = partial_chi.provider.continue_partial_response(partial_chi)
 
 	var history_list: Array[Variant] = SingletonObject.Chats.create_prompt(temp_chi)
 	
@@ -243,7 +246,7 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 
 	var bot_response = await partial_chi.provider.generate_content(history_list)
 
-	partial_chi.Message += bot_response.text
+	partial_chi.Message += " %s" % bot_response.text
 	partial_chi.Complete = bot_response.complete
 
 	# set the history item for the rendered node so it gets rerendered
@@ -387,6 +390,7 @@ func _ready():
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
 	SingletonObject.initialize_chats(self)
+	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
 
 
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
@@ -500,7 +504,7 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
-	%btnMicrophone.icon = icActive
+	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
 
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
@@ -543,3 +547,39 @@ func _on_txt_main_user_input_gui_input(event: InputEvent):
 	if event.is_action_pressed("ui_enter"):
 		_on_chat_pressed()
 		accept_event()
+
+
+#region Add New HistoryItem
+
+func add_new_system_prompt_item(message: String):
+	ensure_chat_open() # we check if their a chat open first
+	
+	var new_chat_history_item: ChatHistoryItem = ChatHistoryItem.new()# we create the chat item
+	new_chat_history_item.Message = message
+	new_chat_history_item.Role = ChatHistoryItem.ChatRole.SYSTEM
+	
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	
+	# we check if there is already a System prompt item in the history and remove it if so
+	if history.HistoryItemList.size() > 0:
+		if history.HasUsedSystemPrompt: #history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
+			history.HistoryItemList.pop_front()
+	
+	# we add the system prompt to the first place in the chat
+	history.HasUsedSystemPrompt = true #we save the state so we can replace the chat item
+	history.HistoryItemList.insert(0,new_chat_history_item)
+
+
+func get_first_chat_item() -> ChatHistoryItem:
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	return history.HistoryItemList.front()
+
+#endregion Add New HistoryItem
+
+
+
+
+
+
+
+

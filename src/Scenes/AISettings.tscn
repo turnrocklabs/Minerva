@@ -1,10 +1,12 @@
-[gd_scene load_steps=2 format=3 uid="uid://bdgef0ru6o5ux"]
+[gd_scene load_steps=3 format=3 uid="uid://bdgef0ru6o5ux"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/AISettings.gd" id="1_2377q"]
+[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="2_bhryf"]
 
 [node name="AISettings" type="Window"]
-position = Vector2i(0, 36)
+initial_position = 4
 size = Vector2i(648, 480)
+unresizable = true
 script = ExtResource("1_2377q")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
@@ -44,27 +46,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ThemeHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
-visible = false
-layout_mode = 2
-
-[node name="ThemeLabel" type="Label" parent="MarginContainer/MainVBox/ThemeHBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Theme:"
-vertical_alignment = 1
-
-[node name="ThemeOptionButton" type="OptionButton" parent="MarginContainer/MainVBox/ThemeHBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-item_count = 2
-allow_reselect = true
-popup/item_0/text = "Light Mode"
-popup/item_0/id = 0
-popup/item_1/text = "Dark Mode"
-popup/item_1/id = 1
-
 [node name="MicrophoneContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
 visible = false
 layout_mode = 2
@@ -83,6 +64,54 @@ clip_text = true
 fit_to_longest_item = false
 allow_reselect = true
 
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="systemPromptLabel" type="Label" parent="MarginContainer/MainVBox/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "System prompts are special messages used to steer 
+the behavior of the LLM Model if the model supports
+ them.  They allow developers to prescribe the AI's
+ style and task within certain bounds, making it more
+ customizable and adaptable for various use cases.
+(At the moment Only ChatGPT Supports System Prompts)"
+mouse_filter = 0
+text = "Type System Prompt Message: "
+
+[node name="RecordSytemPromptButton" type="Button" parent="MarginContainer/MainVBox/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("2_bhryf")
+
+[node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 230)
+layout_mode = 2
+placeholder_text = "Type System Prompt here"
+wrap_mode = 1
+
+[node name="HFlowContainer" type="HFlowContainer" parent="MarginContainer/MainVBox/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/h_separation = 16
+
+[node name="AcceptButton" type="Button" parent="MarginContainer/MainVBox/VBoxContainer/HFlowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Accept"
+
+[node name="CancelButton" type="Button" parent="MarginContainer/MainVBox/VBoxContainer/HFlowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Close"
+
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="item_selected" from="MarginContainer/MainVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
-[connection signal="item_selected" from="MarginContainer/MainVBox/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]
+[connection signal="pressed" from="MarginContainer/MainVBox/VBoxContainer/HBoxContainer/RecordSytemPromptButton" to="." method="_on_record_sytem_prompt_button_pressed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/VBoxContainer/HFlowContainer/AcceptButton" to="." method="_on_accept_button_pressed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/VBoxContainer/HFlowContainer/CancelButton" to="." method="_on_cancel_button_pressed"]

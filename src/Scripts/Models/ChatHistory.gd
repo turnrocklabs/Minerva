@@ -13,6 +13,9 @@ var HistoryName: String:
 var HistoryItemList: Array[ChatHistoryItem]:
 	set(value): SingletonObject.save_state(false); HistoryItemList = value
 
+var HasUsedSystemPrompt: bool = false:
+	set(value): SingletonObject.save_state(false); HasUsedSystemPrompt = value
+
 var VBox: VBoxChat
 var provider: BaseProvider
 
@@ -54,13 +57,13 @@ func To_Prompt(predicate: Callable = Callable()) -> Array[Variant]:
 
 			if should_add:
 				var item: Variant = provider.Format(chat)
-				retVal.append(item)
+				if item: retVal.append(item)
 
 			if not should_continue:
 				return retVal
 		else:
 			var item: Variant = provider.Format(chat)
-			retVal.append(item)
+			if item: retVal.append(item)
 
 	return retVal
 
