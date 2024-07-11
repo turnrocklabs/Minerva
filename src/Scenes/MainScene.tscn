@@ -1,4 +1,4 @@
-[gd_scene load_steps=29 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=30 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -36,7 +36,7 @@ diffuse_texture = ExtResource("8_oxf75")
 
 [sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_i6lnv"]
 
-[node name="RootControl" type="Control"]
+[node name="RootControl" type="Control" node_paths=PackedStringArray("terminal")]
 texture_filter = 1
 layout_mode = 3
 anchors_preset = 15
@@ -46,6 +46,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("1_cx4qy")
 script = ExtResource("2_65hnk")
+terminal = NodePath("VBoxRoot/VSplitContainer/Terminal")
 
 [node name="Panel" type="Panel" parent="."]
 layout_mode = 1
@@ -260,94 +261,101 @@ item_9/text = "Show All Notes"
 item_9/icon = ExtResource("7_rdia2")
 item_9/id = 9
 
-[node name="MainUI" type="HBoxContainer" parent="VBoxRoot"]
+[node name="VSplitContainer" type="VSplitContainer" parent="VBoxRoot"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+split_offset = -50
+
+[node name="MainUI" type="HBoxContainer" parent="VBoxRoot/VSplitContainer"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 5
 script = ExtResource("2_kohxl")
 
-[node name="HSplitContainer" type="HSplitContainer" parent="VBoxRoot/MainUI"]
+[node name="HSplitContainer" type="HSplitContainer" parent="VBoxRoot/VSplitContainer/MainUI"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 16
 
-[node name="HSplitContainer2" type="HSplitContainer" parent="VBoxRoot/MainUI/HSplitContainer"]
+[node name="HSplitContainer2" type="HSplitContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 16
 split_offset = -100
 
-[node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
+[node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Chats" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
+[node name="Chats" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
 custom_minimum_size = Vector2(630, 0)
 layout_mode = 2
 size_flags_horizontal = 1
 
-[node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2"]
+[node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 16
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="EditorLabel" type="Label" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="EditorLabel" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 24
 text = "Editor"
 
-[node name="ClearButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="ClearButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Clear"
 
-[node name="UndoButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Undo (Returns Editor to previous state)"
 icon = ExtResource("11_srtkx")
 
-[node name="BackSpaceButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="BackSpaceButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Backspace"
 icon = ExtResource("12_j6ukv")
 
-[node name="NewLineButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="NewLineButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Start new line"
 icon = ExtResource("11_p11dv")
 
-[node name="HButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="HButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 horizontal panes"
 icon = SubResource("CanvasTexture_o30k1")
 
-[node name="VButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="VButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
 
-[node name="vboxEditorMain" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer" node_paths=PackedStringArray("editor_pane")]
+[node name="vboxEditorMain" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer" node_paths=PackedStringArray("editor_pane")]
 layout_mode = 2
 size_flags_vertical = 3
 script = ExtResource("3_welkk")
 editor_pane = NodePath("EditorPane")
 
-[node name="EditorPane" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" instance=ExtResource("4_826g6")]
+[node name="EditorPane" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" instance=ExtResource("4_826g6")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 0)
 layout_mode = 2
 
-[node name="RightPane" type="VBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer"]
+[node name="RightPane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
@@ -355,50 +363,57 @@ size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.5
 theme_override_constants/separation = 16
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane"]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="NotesLabel" type="Label" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+[node name="NotesLabel" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 2
 theme_override_font_sizes/font_size = 24
 text = "Notes"
 
-[node name="DisableNotesButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+[node name="DisableNotesButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Disable all notes in all current tabs"
 text = "Disable All"
 
-[node name="btnCreateNote" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+[node name="btnCreateNote" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Creates a new note in current active tab"
 text = "Create Note"
 icon = ExtResource("12_w08x7")
 
-[node name="btnAddAttachement" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+[node name="btnAddAttachement" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Creates a new note from a given text file"
 text = "Attach File"
 icon = ExtResource("13_sb4aw")
 
-[node name="btnNewTab" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+[node name="btnNewTab" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Creates a new notes tab"
 text = "New Tab"
 icon = ExtResource("12_6jk4t")
 
-[node name="tcThreads" type="TabContainer" parent="VBoxRoot/MainUI/HSplitContainer/RightPane"]
+[node name="tcThreads" type="TabContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 script = ExtResource("1_gunt8")
+
+[node name="Terminal" parent="VBoxRoot/VSplitContainer" instance=ExtResource("25_g5bq8")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.3
 
 [node name="ImageNoteFileDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
@@ -648,28 +663,11 @@ stream = SubResource("AudioStreamMicrophone_i6lnv")
 autoplay = true
 bus = &"Rec"
 
-[node name="TerminalContainer" type="VSplitContainer" parent="."]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="Control" type="Control" parent="TerminalContainer"]
-layout_mode = 2
-mouse_filter = 2
-
-[node name="Terminal" parent="TerminalContainer" instance=ExtResource("25_g5bq8")]
-layout_mode = 2
-
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
-[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
+[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="focus_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_mouse_entered"]
-[connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
+[connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_about_to_popup"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_about_to_popup"]
@@ -677,16 +675,16 @@ layout_mode = 2
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_about_to_popup"]
 [connection signal="id_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_id_pressed"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_index_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/NewLineButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_new_line_button_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/DisableNotesButton" to="." method="_on_disable_notes_button_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
-[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
-[connection signal="child_order_changed" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_child_order_changed"]
-[connection signal="tab_clicked" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
-[connection signal="tab_hovered" from="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/NewLineButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_new_line_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/DisableNotesButton" to="." method="_on_disable_notes_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
+[connection signal="child_order_changed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_child_order_changed"]
+[connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
+[connection signal="tab_hovered" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
 [connection signal="canceled" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_canceled"]
 [connection signal="file_selected" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_file_selected"]
 [connection signal="about_to_popup" from="CreateNewNote" to="." method="_on_create_new_note_about_to_popup"]

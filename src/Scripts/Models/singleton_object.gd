@@ -134,13 +134,13 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 
 #region Editor
 
-@onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
+@onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
 
 #endregion
 
 #region Common UI Tasks
 
-@onready var main_ui = $"/root/RootControl/VBoxRoot/MainUI"
+@onready var main_ui = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI"
 
 ###
 # Create a common error display system that will popup an error and show
