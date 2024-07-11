@@ -6,7 +6,7 @@ extends Control
 @onready var text_note_check_box: CheckBox = %TextNoteCheckBox
 @onready var audio_check_box: CheckBox = %AudioCheckBox
 @onready var image_check_box: CheckBox = %ImageCheckBox
-@onready var terminal_container: Control = %TerminalContainer
+@export  var terminal: Terminal
 
 var note_enum = SingletonObject.note_type.TEXT
 
@@ -54,7 +54,7 @@ func _gui_input(event):
 
 func _input(event):
 	if event.is_action_released("ui_terminal", true):
-		terminal_container.visible = not terminal_container.visible
+		terminal.visible = not terminal.visible
 
 
 #Show the window where we can add note
