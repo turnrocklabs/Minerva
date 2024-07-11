@@ -48,6 +48,8 @@ func restore_deleted_tab(tab_name: String):
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
 func _process(delta):
+	if Tabs.get_tab_count() > 0:
+		pass
 	if Input.is_action_just_pressed("ui_undo"):
 		if not SingletonObject.undo.deleted_tabs.is_empty():
 			# Get the name of the last deleted tab

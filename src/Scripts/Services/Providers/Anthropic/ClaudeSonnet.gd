@@ -1,13 +1,17 @@
-class_name ChatGPTBase
+class_name ClaudeSonnet
 extends BaseProvider
 
-
-# Change the `model_name` and `short_name` in _ready function
+var system_prompt: String
 
 func _init():
-	provider_name = "OpenAI"
-	BASE_URL = "https://api.openai.com"
-	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
+	provider_name = "Anthropic"
+	BASE_URL = "https://api.anthropic.com/v1"
+	PROVIDER = SingletonObject.API_PROVIDER.ANTHROPIC
+
+	model_name = "claude-3.5-sonnet"
+	short_name = "CS"
+	token_cost = 1.5 / 1_000_000 # https://claude101.com/claude-3-5-sonnet/
+
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response:= BotResponse.new()
@@ -36,12 +40,13 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 	return bot_response
 
 
-# https://platform.openai.com/docs/guides/text-generation/chat-completions-api
+# https://docs.anthropic.com/en/api/messages
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
-
 	var request_body = {
-		"model": model_name,
+		"model": "claude-3-5-sonnet-20240620",
 		"messages": prompt,
+		"max_tokens": 4096,
+		"system": system_prompt
 	}
 
 	request_body.merge(additional_params)
@@ -49,12 +54,13 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	var body_stringified: String = JSON.stringify(request_body)
 	
 	var response: RequestResults = await make_request(
-		"%s/v1/chat/completions" % BASE_URL,
+		"%s/messages" % BASE_URL,
 		HTTPClient.METHOD_POST,
 		body_stringified,
 		[
 			"Content-Type: application/json",
-			"Authorization: Bearer %s" % API_KEY
+			"x-api-key: %s" % API_KEY,
+			"anthropic-version: 2023-06-01",
 		],
 	)
 
@@ -65,16 +71,26 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	return item
 
 
+func wrap_memory(list_memories: String) -> String:
+	var output: String = "Given this background information:\n\n"
+	output += "### Reference Information ###\n"
+	output += list_memories
+	output += "### End Reference Information ###\n\n"
+	output += "Respond to the user's message: \n\n"
+	return output
+
+
 func Format(chat_item: ChatHistoryItem) -> Variant:
 	var role: String
 
 	match chat_item.Role:
 		ChatHistoryItem.ChatRole.USER:
 			role = "user"
+		ChatHistoryItem.ChatRole.SYSTEM:
+			system_prompt = chat_item.Message # Save as system prompt and return null
+			return null
 		ChatHistoryItem.ChatRole.ASSISTANT:
 			role = "assistant"
-		ChatHistoryItem.ChatRole.SYSTEM:
-			role = "system"
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "assistant"
 	
@@ -101,61 +117,10 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	}
 
 
-func wrap_memory(list_memories: String) -> String:
-	var output: String = "Given this background information:\n\n"
-	output += "### Reference Information ###\n"
-	output += list_memories
-	output += "### End Reference Information ###\n\n"
-	output += "Respond to the user's message: \n\n"
-	return output
-
-# {
-#   "id": "chatcmpl-9LJ12Ijrr2MAwBtHQdO3xHMut1pAn",
-#   "object": "chat.completion",
-#   "created": 1714865012,
-#   "model": "gpt-3.5-turbo-0125",
-#   "choices": [
-#     {
-#       "index": 0,
-#       "message": {
-#         "role": "assistant",
-#         "content": "Hello! How can I assist you today?"
-#       },
-#       "logprobs": null,
-#       "finish_reason": "stop"
-#     }
-#   ],
-#   "usage": {
-#     "prompt_tokens": 8,
-#     "completion_tokens": 9,
-#     "total_tokens": 17
-#   },
-#   "system_fingerprint": "fp_3b956da36b"
-# }
-func to_bot_response(data: Variant) -> BotResponse:
-	var response = BotResponse.new()
-	
-	# set the used provider so update model name
-	response.provider = self
-
-	# the id will be useful if we need to complete the response with second request
-	response.id = data["id"]
-
-	var finish_reason = data["choices"][0]["finish_reason"]
-
-	if finish_reason == "length":
-		response.complete = false
-	
-	response.prompt_tokens = data["usage"]["prompt_tokens"]
-	response.completion_tokens = data["usage"]["completion_tokens"]
-
-	response.text = data["choices"][0]["message"]["content"]
-	
-	return response
 
 
 func estimate_tokens(input) -> int:
-	return roundi(input.get_slice_count(" ") * 1.5)
+	return roundi(input.get_slice_count(" ") * 1.335)
 
 
 func estimate_tokens_from_prompt(input: Array[Variant]):
@@ -170,7 +135,46 @@ func estimate_tokens_from_prompt(input: Array[Variant]):
 
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):
-	var chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
-	chi.Message = "finish"
+	return null
 
-	return chi
+
+# {
+#   "content": [
+#     {
+#       "text": "Hi! My name is Claude.",
+#       "type": "text"
+#     }
+#   ],
+#   "id": "msg_013Zva2CMHLNnXjNJJKqJ2EF",
+#   "model": "claude-3-5-sonnet-20240620",
+#   "role": "assistant",
+#   "stop_reason": "end_turn",
+#   "stop_sequence": null,
+#   "type": "message",
+#   "usage": {
+#     "input_tokens": 10,
+#     "output_tokens": 25
+#   }
+# }
+func to_bot_response(data: Variant) -> BotResponse:
+	var response = BotResponse.new()
+	
+	# set the used provider so update model name
+	response.provider = self
+
+	# the id will be useful if we need to complete the response with second request
+	response.id = data["id"]
+
+	var finish_reason = data["stop_reason"]
+
+	if finish_reason == "max_tokens":
+		response.complete = false
+	
+	response.prompt_tokens = data["usage"]["input_tokens"]
+	response.completion_tokens = data["usage"]["output_tokens"]
+
+	# TODO: this could also be used tool, but since we don't use that yet, it should always be text
+	response.text = data["content"][0]["text"]
+	
+	return response
+

@@ -22,7 +22,7 @@ func _ready() -> void:
 	text_note_check_box.button_group.pressed.connect(change_note_type)# signal for the note type checkbtn group
 	%CreateNewNote.files_dropped.connect(_on_image_files_dropped)# sinnal for drop image file on image note
 	
-	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD_PRIMARY):
+	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
 		%DropImageLabel.text = "Drop or Paste \nImage File Here"
 	
 	#setting up audio things
@@ -91,7 +91,7 @@ func _on_btn_voice_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteDescription
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoice
-	%btnVoice.icon = icActive
+	%btnVoice.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
 
 
@@ -99,15 +99,17 @@ func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteHead
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForHeader
-	%btnVoiceForHeader.icon = icActive
-	%AddNotePopUp.disabled = false
+	#%btnVoiceForHeader.icon = icActive
+	%btnVoiceForHeader.modulate = Color.LIME_GREEN
+	#%AddNotePopUp.disabled = false
 
 
 func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForNoteTab
-	%btnVoiceForNoteTab.icon = icActive
+	#%btnVoiceForNoteTab.icon = icActive
+	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 
 
 # this method calls the singleton object to toggle the enable/disable all notes in all tabs
@@ -206,6 +208,8 @@ func set_image_preview(path: String) -> void:
 	var image_texture = ImageTexture.new()
 	image_texture.set_image(image)
 	%ImagePreview.texture = image_texture
+	%ImageDropPanel.visible = false
+	%ImagePreview.visible = true
 
 
 func _on_image_files_dropped(files):
@@ -216,8 +220,6 @@ func _on_image_files_dropped(files):
 		# check if file format is supported
 		if file_format in SingletonObject.supported_image_formats:
 			set_image_preview(path)
-			%ImageDropPanel.visible = false
-			%ImagePreview.visible = true
 		else:
 			#TODO implement error pop up or something
 			print_rich("[b]image format not supported :c \n Maybe one day c:[/b]")
@@ -250,19 +252,41 @@ func get_file_format(path: String) -> String:
 # check if display server can paste image from clipboard and does so
 func paste_image_from_clipboard():
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
-		if DisplayServer.clipboard_has():
-			var path = DisplayServer.clipboard_get().split("\n")[0]
-			var file_format = get_file_format(path)
-			if file_format in SingletonObject.supported_image_formats:
-				set_image_preview(path)
-				%ImageDropPanel.visible = false
-				%ImagePreview.visible = true
-			else:
-				print_rich("[b]file format not supported :c[/b]")
-		else:
-			print("no iamge to put here")
+		
+		if OS.get_name() == "Linux":
+			if DisplayServer.clipboard_has_image():
+				get_image_from_clipboard()
+			if DisplayServer.clipboard_has():
+				get_image_file_from_clipboard()
+		
+		if OS.get_name() == "Windows":
+			if DisplayServer.clipboard_has_image():
+				get_image_from_clipboard()
+			
 	else: 
-		print("Display Server does not support clipboard feature :c, its agodot thing")
+		print("Display Server does not support clipboard feature")
+
+
+func get_image_file_from_clipboard():
+	var path = DisplayServer.clipboard_get().split("\n")[0]
+	var file_format = get_file_format(path)
+	print("path file: " + path)
+	if file_format in SingletonObject.supported_image_formats:
+		set_image_preview(path)
+		%ImageDropPanel.visible = false
+		%ImagePreview.visible = true
+	else:
+		print_rich("[b]file format not supported :c[/b]")
+
+func get_image_from_clipboard():
+	var image = DisplayServer.clipboard_get_image()
+	image_original_res = image
+	var image_texture = ImageTexture.new()
+	image_texture.set_image(image)
+	%ImagePreview.texture = image_texture
+	%ImageDropPanel.visible = false
+	%ImagePreview.visible = true
+
 #endregion Image Note region
 
 #region Audio Note
@@ -288,20 +312,7 @@ func _on_play_audio_button_pressed() -> void:
 #endregion Audio Note
 
 
-
-
 #endregion Create New note Window
-
-
-
-
-
-
-
-
-
-
-
 
 
 
