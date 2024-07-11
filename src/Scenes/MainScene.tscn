@@ -227,9 +227,9 @@ item_5/id = 5
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
 title = "View"
-size = Vector2i(211, 251)
+size = Vector2i(211, 255)
 hide_on_checkable_item_selection = false
-item_count = 10
+item_count = 11
 item_0/text = "Chats"
 item_0/checkable = 1
 item_0/checked = true
@@ -242,24 +242,27 @@ item_2/text = "Notes"
 item_2/checkable = 1
 item_2/checked = true
 item_2/id = 2
-item_3/text = ""
-item_3/id = 3
-item_3/separator = true
-item_4/text = "Zoom In"
-item_4/id = 4
-item_5/text = "Zoom Out"
-item_5/id = 5
-item_6/text = "Reset Zoom"
-item_6/id = 6
-item_7/text = ""
-item_7/id = 7
-item_7/separator = true
-item_8/text = "Show All Messages"
-item_8/icon = ExtResource("7_rdia2")
-item_8/id = 8
-item_9/text = "Show All Notes"
+item_3/text = "Terminal"
+item_3/checkable = 1
+item_3/id = 10
+item_4/text = ""
+item_4/id = 3
+item_4/separator = true
+item_5/text = "Zoom In"
+item_5/id = 4
+item_6/text = "Zoom Out"
+item_6/id = 5
+item_7/text = "Reset Zoom"
+item_7/id = 6
+item_8/text = ""
+item_8/id = 7
+item_8/separator = true
+item_9/text = "Show All Messages"
 item_9/icon = ExtResource("7_rdia2")
-item_9/id = 9
+item_9/id = 8
+item_10/text = "Show All Notes"
+item_10/icon = ExtResource("7_rdia2")
+item_10/id = 9
 
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxRoot"]
 unique_name_in_owner = true
@@ -268,11 +271,12 @@ size_flags_vertical = 3
 mouse_filter = 2
 split_offset = -50
 
-[node name="MainUI" type="HBoxContainer" parent="VBoxRoot/VSplitContainer"]
+[node name="MainUI" type="HBoxContainer" parent="VBoxRoot/VSplitContainer" node_paths=PackedStringArray("terminal_pane")]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 5
 script = ExtResource("2_kohxl")
+terminal_pane = NodePath("../Terminal")
 
 [node name="HSplitContainer" type="HSplitContainer" parent="VBoxRoot/VSplitContainer/MainUI"]
 layout_mode = 2
@@ -674,7 +678,6 @@ bus = &"Rec"
 [connection signal="index_pressed" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_index_pressed"]
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_about_to_popup"]
 [connection signal="id_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_id_pressed"]
-[connection signal="index_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_index_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/NewLineButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_new_line_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
