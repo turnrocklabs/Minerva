@@ -3,6 +3,7 @@ extends PersistentWindow
 signal create_system_prompt_message(message)
 
 @onready var _provider_option_button = %ProviderOptionButton as OptionButton
+@onready var option_button:OptionButton = %Microphones
 
 ## Returns the script of the provider thats selected.
 ## `get_selected_provider().new()` to instantiate it
@@ -55,19 +56,3 @@ func _on_record_sytem_prompt_button_pressed() -> void:
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %RecordSytemPromptButton
 	%RecordSytemPromptButton.modulate = Color(Color.LIME_GREEN)
-
-
-func _on_temp_h_slider_value_changed(value: float) -> void:
-	%TempSliderValueLabel.text = str(value)
-
-
-func _on_top_ph_slider_value_changed(value: float) -> void:
-	%TopPValueLabel.text = str(value)
-
-
-func _on_freq_h_slider_value_changed(value: float) -> void:
-	%FreqPenSliderValueLabel.text = str(value)
-
-
-func _on_presence_h_slider_value_changed(value: float) -> void:
-	%PresPenSliderValueLabel.text = str(value)
