@@ -160,7 +160,6 @@ func add_note(user_title:String, user_content: String, _source: String = ""):
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.TEXT
-	new_memory.ContentType = "text" 
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
@@ -183,7 +182,6 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.AUDIO
-	new_memory.ContentType = "audio" 
 	new_memory.Title = note_title
 	new_memory.Audio = note_audio
 	new_memory.Visible = true
@@ -205,7 +203,6 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.IMAGE
-	new_memory.ContentType = "image" 
 	new_memory.Title = note_title
 	new_memory.MemoryImage = note_image
 	new_memory.ImageCaption = imageCaption
@@ -262,11 +259,10 @@ func _on_close_tab(tab: int, container: TabContainer):
 		render_threads()
 
 		# Store deleted tab for potential undo
-		# FIXME: this code breacks the app when a tab is closed, I believe it's Danil's code                                                                                                                                                                                                                                                                           
-		#SingletonObject.undo.store_deleted_tab_right(tab, control, "right")
+		SingletonObject.undo.store_deleted_tab_right(tab, control, "right")
 	
 	# Remove the tab control from the TabContainer
-	#container.remove_child(control) 
+	container.remove_child(control) 
 	
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
@@ -309,18 +305,7 @@ func attach_file(the_file: String):
 	var file_type = ""
 	var content = ""
 	var content_type = ""
-	#var memory_image
-	var audio
 	var title = the_file.get_file().get_basename()
-	
-	# Get the active thread
-	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) < self.current_tab:
-		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
-		return
-	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
-
-	# Create a new memory item
-	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 
 	if file_ext in ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
 		file_type = "text"
@@ -330,30 +315,29 @@ func attach_file(the_file: String):
 		file_type = "image"
 		var file_data = file.get_buffer(file.get_length())
 		content = Marshalls.raw_to_base64(file_data)
-		var new_image = Image.new()
-		new_image.load_from_file(the_file)
-		new_memory.MemoryImage = new_image
-		new_memory.Type = SingletonObject.note_type.IMAGE
 		content_type = "image/%s" % file_ext
-	elif file_ext in SingletonObject.supported_video_formats:
+	elif file_ext in ["mp4", "mov", "avi", "mkv", "webm"]:
 		file_type = "video"
 		var file_data = file.get_buffer(file.get_length())
 		content = Marshalls.raw_to_base64(file_data)
 		content_type = "video/%s" % file_ext
-	elif file_ext in SingletonObject.supported_audio_formats:
+	elif file_ext in ["mp3", "wav", "ogg", "flac"]:
 		file_type = "audio"
 		var file_data = file.get_buffer(file.get_length())
-		new_memory.Type = SingletonObject.note_type.AUDIO
-		audio = AudioStream.new()
-		audio.data = file_data
-		new_memory.Audio = audio
 		content = Marshalls.raw_to_base64(file_data)
 		content_type = "audio/%s" % file_ext
 	else:
 		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
 		return
 
-	
+	# Get the active thread
+	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) < self.current_tab:
+		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
+		return
+	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
+
+	# Create a new memory item
+	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = true
 	new_memory.Title = title
 	new_memory.Content = content
