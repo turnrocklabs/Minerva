@@ -129,3 +129,47 @@ func toggle_vertical_split() -> void:
 	_copy_children_to(LeftControl, BottomControl)
 
 	BottomControl.visible = not BottomControl.visible
+
+
+
+
+#region  Enable Editor Buttons
+signal enable_editor_action_buttons(enable)
+
+func _on_tab_container_tab_selected(tab: int) -> void:
+	if Tabs.get_current_tab_control():
+		return
+	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+		enable_editor_action_buttons.emit(true)
+	else: 
+		enable_editor_action_buttons.emit(false)
+
+
+#endregion  Enable Editor Buttons
+
+
+
+
+func _on_tab_container_child_exiting_tree(node: Node) -> void:
+	if Tabs.get_current_tab_control() == null:
+		return
+	if Tabs.get_tab_count() < 1:
+		enable_editor_action_buttons.emit(false)
+	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+		enable_editor_action_buttons.emit(true)
+	else: 
+		enable_editor_action_buttons.emit(false)
+
+
+func _on_tab_container_tree_exited() -> void:
+	enable_editor_action_buttons.emit(false)
+
+
+func _on_tab_container_tab_changed(tab: int) -> void:
+	if Tabs.get_tab_count() < 1:
+		enable_editor_action_buttons.emit(false)
+	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+		enable_editor_action_buttons.emit(true)
+	else: 
+		enable_editor_action_buttons.emit(false)
+
