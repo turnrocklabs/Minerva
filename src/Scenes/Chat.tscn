@@ -141,6 +141,7 @@ layout_mode = 2
 size_flags_vertical = 3
 placeholder_text = "Hello there!"
 wrap_mode = 1
+caret_blink = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer"]
 layout_mode = 2
