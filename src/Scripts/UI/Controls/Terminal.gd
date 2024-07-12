@@ -34,11 +34,10 @@ func _wrap_windows_command(user_input: String) -> PackedStringArray:
 func _wrap_linux_command(user_input: String) -> PackedStringArray:
 	var full_cmd = [
 		"-c",
-		"\"cd %s && %s & echo %s$(pwd)\"" % [cwd, user_input, cwd_delimiter]
+		"cd %s; '%s'; echo '%s'$PWD" % [cwd, user_input, cwd_delimiter]
 	]
 
 	return full_cmd
-
 
 func _ready():
 	cwd = OS.get_data_dir()
@@ -48,11 +47,7 @@ func _ready():
 			shell = OS.get_environment("COMSPEC")
 			wrap_command = _wrap_windows_command
 
-		"macOS":
-			shell = OS.get_environment("SHELL")
-			wrap_command = _wrap_linux_command
-
-		"Linux", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
+		"Linux", "macOS", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
 			shell = OS.get_environment("SHELL")
 			wrap_command = _wrap_linux_command
 
@@ -64,20 +59,27 @@ func execute_command(input: String) -> void:
 
 	print("Running: %s %s" % [shell, " ".join(args)])
 
-	var pid = OS.execute(shell, args, output, true)
-
+	var _pid = OS.execute(shell, args, output, true)
+	
 	# last line is current working directory, so we just extarct that
-	var cmd_results: String = output.back()
+	var cmd_result: String = output.back()
+	
+	var cwd_index_start = cmd_result.rfind(cwd_delimiter)
 
-	# print([cmd_results])
+	cwd = cmd_result.substr(cwd_index_start+cwd_delimiter.length()).strip_edges()
 
-	var cwd_index_start = cmd_results.rfind(cwd_delimiter)
+	cmd_result = cmd_result.substr(0, cwd_index_start)
 
-	cwd = cmd_results.substr(cwd_index_start+cwd_delimiter.length()).strip_edges()
+	
+	# If theres \f clear the textedit
+	# eg. clear/cls command will just output \f
+	if "\f" in cmd_result:
+		var idx = cmd_result.rfind("\f")
 
-	cmd_results = cmd_results.substr(0, cwd_index_start)
-
-	text_edit.text += "%s> %s" % [cwd, cmd_results]
+		cmd_result = cmd_result.substr(idx)
+		text_edit.text = cmd_result
+	else:
+		text_edit.text += "%s>%s\n%s" % [cwd, input, cmd_result]
 
 	_history.insert(0, input)
 	_history_idx = -1
