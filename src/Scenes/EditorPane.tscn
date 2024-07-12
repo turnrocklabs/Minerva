@@ -29,7 +29,6 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer/HBoxContainer/LeftControl"]
-unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -37,7 +36,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/icon_separation = 5
-drag_to_rearrange_enabled = true
 
 [node name="RightControl" type="Control" parent="VBoxContainer/HBoxContainer"]
 visible = false
@@ -48,8 +46,3 @@ size_flags_horizontal = 3
 visible = false
 layout_mode = 2
 size_flags_vertical = 3
-
-[connection signal="child_exiting_tree" from="VBoxContainer/HBoxContainer/LeftControl/TabContainer" to="." method="_on_tab_container_child_exiting_tree"]
-[connection signal="tab_changed" from="VBoxContainer/HBoxContainer/LeftControl/TabContainer" to="." method="_on_tab_container_tab_changed"]
-[connection signal="tab_selected" from="VBoxContainer/HBoxContainer/LeftControl/TabContainer" to="." method="_on_tab_container_tab_selected"]
-[connection signal="tree_exited" from="VBoxContainer/HBoxContainer/LeftControl/TabContainer" to="." method="_on_tab_container_tree_exited"]
