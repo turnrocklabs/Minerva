@@ -324,4 +324,3 @@ func _on_new_thread_popup_about_to_popup() -> void:
 #endregion new tab popup
 
 
-
