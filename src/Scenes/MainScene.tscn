@@ -306,23 +306,27 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 24
 text = "Editor"
 
-[node name="ClearButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="ClearButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
+disabled = true
 text = "Clear"
 
-[node name="UndoButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="UndoButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Undo (Returns Editor to previous state)"
+disabled = true
 icon = ExtResource("11_srtkx")
 
-[node name="BackSpaceButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="BackSpaceButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Backspace"
+disabled = true
 icon = ExtResource("12_j6ukv")
 
-[node name="NewLineButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="NewLineButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Start new line"
+disabled = true
 icon = ExtResource("11_p11dv")
 
 [node name="HButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
@@ -647,6 +651,7 @@ stream = SubResource("AudioStreamMicrophone_i6lnv")
 autoplay = true
 bus = &"Rec"
 
+[connection signal="about_to_popup" from="NewThreadPopup" to="." method="_on_new_thread_popup_about_to_popup"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="focus_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_focus_entered"]
@@ -659,6 +664,9 @@ bus = &"Rec"
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_about_to_popup"]
 [connection signal="id_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_id_pressed"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_index_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/ClearButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_clear_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/UndoButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_undo_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/BackSpaceButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_back_space_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/NewLineButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_new_line_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
