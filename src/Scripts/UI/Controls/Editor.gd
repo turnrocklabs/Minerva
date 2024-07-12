@@ -164,12 +164,46 @@ func save_file_to_disc(path: String):
 	
 func _on_save_button_pressed():
 	if TYPE.Text == type:
-		SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+		SingletonObject.NotesTab.add_note(name, code_edit.text)
 		return
 	if TYPE.Graphics == type:
-		SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+		SingletonObject.NotesTab.add_image_note(name, graphics_editor.image, "Sketch")
 		return
 	if TYPE.WhiteBoard == type:
-		SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+		SingletonObject.NotesTab.add_image_note(name, %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 		return
-	
+
+
+func delete_last_char() -> void:
+	if TYPE.Text != type:
+		return
+	if code_edit.get_selected_text().length() < 1:
+		var text: String =code_edit.text
+		code_edit.text = text.erase(text.length() - 1, 1)
+	code_edit.delete_selection()
+	code_edit.grab_focus()
+
+
+func add_new_line() -> void:
+	var caret_pos = code_edit.get_caret_column()
+	var first_half = code_edit.text.substr(0, caret_pos)
+	var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
+	code_edit.text = first_half + "\n" + snd_half
+	code_edit.grab_focus()
+
+
+func undo_action():
+	code_edit.undo()
+	code_edit.grab_focus()
+
+
+func clear_text():
+	%CodeEdit.clear()
+	code_edit.grab_focus()
+
+
+
+
+
+
+
