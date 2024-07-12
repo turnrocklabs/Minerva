@@ -98,7 +98,7 @@ stretch = true
 [node name="PlaceForScreen" type="SubViewport" parent="VBoxContainer/ScreenViewportHolder"]
 unique_name_in_owner = true
 handle_input_locally = false
-size = Vector2i(1920, 1045)
+size = Vector2i(2, 2)
 render_target_update_mode = 4
 
 [node name="Layer1" type="ColorRect" parent="VBoxContainer/ScreenViewportHolder/PlaceForScreen"]

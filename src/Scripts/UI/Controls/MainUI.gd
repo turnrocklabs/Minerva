@@ -4,6 +4,7 @@ extends HBoxContainer
 @onready var chat_pane = %LeftPane
 @onready var editor_pane = %MiddlePane
 @onready var notes_pane = %RightPane
+@export var terminal_pane: Terminal
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
@@ -30,3 +31,7 @@ func set_editor_pane_visible(visible_: bool = true):
 
 func set_notes_pane_visible(visible_: bool = true):
 	notes_pane.visible = visible_
+
+func set_terminal_pane_visible(visible_: bool = true):
+	terminal_pane.visible = visible_
+
