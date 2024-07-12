@@ -5,7 +5,7 @@
 
 [node name="AISettings" type="Window"]
 initial_position = 4
-size = Vector2i(648, 520)
+size = Vector2i(648, 480)
 unresizable = true
 script = ExtResource("1_2377q")
 
@@ -46,112 +46,33 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="TemperatureHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+[node name="MicrophoneContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+visible = false
 layout_mode = 2
-size_flags_vertical = 4
-theme_override_constants/separation = 16
 
-[node name="TempLabel" type="Label" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Temperature"
-
-[node name="TempHSlider" type="HSlider" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
-custom_minimum_size = Vector2(260, 0)
-layout_mode = 2
-size_flags_horizontal = 10
-min_value = 0.1
-max_value = 2.0
-step = 0.1
-value = 1.0
-
-[node name="TempSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(30, 0)
-layout_mode = 2
-text = "1.0"
-
-[node name="TopPHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
-layout_mode = 2
-theme_override_constants/separation = 16
-
-[node name="TopPLabel" type="Label" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
+[node name="ThemeLabel" type="Label" parent="MarginContainer/MainVBox/MicrophoneContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Top P:"
+text = "Microphone:"
+vertical_alignment = 1
 
-[node name="TopPHSlider" type="HSlider" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
-custom_minimum_size = Vector2(260, 0)
-layout_mode = 2
-size_flags_horizontal = 10
-min_value = 0.1
-max_value = 1.0
-step = 0.1
-value = 1.0
-
-[node name="TopPValueLabel" type="Label" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
+[node name="Microphones" type="OptionButton" parent="MarginContainer/MainVBox/MicrophoneContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(30, 0)
-layout_mode = 2
-text = "1"
-
-[node name="FrecuencyBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_constants/separation = 16
-
-[node name="FreqPenLabel" type="Label" parent="MarginContainer/MainVBox/FrecuencyBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Frecuency Penalty:"
+clip_text = true
+fit_to_longest_item = false
+allow_reselect = true
 
-[node name="FreqHSlider" type="HSlider" parent="MarginContainer/MainVBox/FrecuencyBoxContainer"]
-custom_minimum_size = Vector2(260, 0)
-layout_mode = 2
-size_flags_horizontal = 10
-max_value = 2.0
-step = 0.1
-
-[node name="FreqPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/FrecuencyBoxContainer"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(30, 0)
-layout_mode = 2
-text = "0
-"
-
-[node name="PresenceHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_constants/separation = 16
-
-[node name="PresPenLabel" type="Label" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Presence Penalty:"
-
-[node name="PresenceHSlider" type="HSlider" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
-custom_minimum_size = Vector2(260, 0)
-layout_mode = 2
-size_flags_horizontal = 10
-max_value = 2.0
-step = 0.1
-
-[node name="PresPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(30, 0)
-layout_mode = 2
-text = "0
-"
-
-[node name="SystemPromptVBoxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox"]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="systemPromptLabel" type="Label" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer"]
+[node name="systemPromptLabel" type="Label" parent="MarginContainer/MainVBox/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "System prompts are special messages used to steer 
@@ -163,39 +84,34 @@ the behavior of the LLM Model if the model supports
 mouse_filter = 0
 text = "Type System Prompt Message: "
 
-[node name="RecordSytemPromptButton" type="Button" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer"]
+[node name="RecordSytemPromptButton" type="Button" parent="MarginContainer/MainVBox/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("2_bhryf")
 
-[node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer"]
+[node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/VBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(320, 180)
+custom_minimum_size = Vector2(320, 230)
 layout_mode = 2
 placeholder_text = "Type System Prompt here"
 wrap_mode = 1
-caret_blink = true
 
-[node name="HFlowContainer" type="HFlowContainer" parent="MarginContainer/MainVBox"]
+[node name="HFlowContainer" type="HFlowContainer" parent="MarginContainer/MainVBox/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/h_separation = 16
 
-[node name="AcceptButton" type="Button" parent="MarginContainer/MainVBox/HFlowContainer"]
+[node name="AcceptButton" type="Button" parent="MarginContainer/MainVBox/VBoxContainer/HFlowContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Accept"
 
-[node name="CancelButton" type="Button" parent="MarginContainer/MainVBox/HFlowContainer"]
+[node name="CancelButton" type="Button" parent="MarginContainer/MainVBox/VBoxContainer/HFlowContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Close"
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="item_selected" from="MarginContainer/MainVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TemperatureHBoxContainer/TempHSlider" to="." method="_on_temp_h_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TopPHBoxContainer/TopPHSlider" to="." method="_on_top_ph_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/FrecuencyBoxContainer/FreqHSlider" to="." method="_on_freq_h_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/PresenceHBoxContainer/PresenceHSlider" to="." method="_on_presence_h_slider_value_changed"]
-[connection signal="pressed" from="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer/RecordSytemPromptButton" to="." method="_on_record_sytem_prompt_button_pressed"]
-[connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/AcceptButton" to="." method="_on_accept_button_pressed"]
-[connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/CancelButton" to="." method="_on_cancel_button_pressed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/VBoxContainer/HBoxContainer/RecordSytemPromptButton" to="." method="_on_record_sytem_prompt_button_pressed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/VBoxContainer/HFlowContainer/AcceptButton" to="." method="_on_accept_button_pressed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/VBoxContainer/HFlowContainer/CancelButton" to="." method="_on_cancel_button_pressed"]
