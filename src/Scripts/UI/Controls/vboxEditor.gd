@@ -16,6 +16,7 @@ var _opened_files: Array[String] = []:
 func _ready() -> void:
 	editor_pane.enable_editor_action_buttons.connect(_toggle_enable_action_buttons)
 
+
 func _exit_tree() -> void:
 	editor_pane.enable_editor_action_buttons.disconnect(_toggle_enable_action_buttons)
 

@@ -36,7 +36,8 @@ var file_saved_in_disc := false # this is used when you press the save button on
 static func create(type_: TYPE, file_ = null) -> Editor:
 	var editor = scene.instantiate()
 	editor.type = type_
-	if file_: editor.file = file_
+	if file_: 
+		editor.file = file_
 
 	match type_:
 		Editor.TYPE.Text:
@@ -55,18 +56,18 @@ func _ready():
 			TYPE.Graphics: _load_graphics_file(file)
 	
 	_on_file_dialog_file_selected
-	
-	
 
 
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	code_edit.text = fa_object.get_as_text()
+	%SaveButton.disabled = false
 
 
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	graphics_editor.setup_from_image(image)
+	%SaveButton.disabled = false
 
 	# var texture_item = ImageTexture.create_from_image(image)
 	# whiteB.get_node("%EditPic").texture = texture_item
@@ -141,6 +142,7 @@ func _on_close_dialog_custom_action(action: StringName):
 
 func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
+	%SaveButton.disabled = false
 
 
 func save_file_to_disc(path: String):
@@ -161,8 +163,15 @@ func save_file_to_disc(path: String):
 			
 	_file_saved = true
 	file_saved_in_disc = true
-	
+
+#region bottom of the pane buttons
 func _on_save_button_pressed():
+	if file:
+		save_file_to_disc(file)
+	return
+
+
+func _on_create_note_button_pressed() -> void:
 	if TYPE.Text == type:
 		SingletonObject.NotesTab.add_note(name, code_edit.text)
 		return
@@ -173,18 +182,26 @@ func _on_save_button_pressed():
 		SingletonObject.NotesTab.add_image_note(name, %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 		return
 
+#endregion bottom of the pane buttons
 
 func delete_last_char() -> void:
 	if TYPE.Text != type:
 		return
 	if code_edit.get_selected_text().length() < 1:
-		var text: String =code_edit.text
-		code_edit.text = text.erase(text.length() - 1, 1)
+		var caret_pos = code_edit.get_caret_column()
+		var first_half = code_edit.text.substr(0, caret_pos)
+		var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
+		code_edit.text = first_half.erase(first_half.length() - 1, 1) + snd_half
+		code_edit.set_caret_column(caret_pos - 1)
+		code_edit.grab_focus()
+		return
 	code_edit.delete_selection()
 	code_edit.grab_focus()
 
 
 func add_new_line() -> void:
+	if TYPE.Text != type:
+		return
 	var caret_pos = code_edit.get_caret_column()
 	var first_half = code_edit.text.substr(0, caret_pos)
 	var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
@@ -193,17 +210,15 @@ func add_new_line() -> void:
 
 
 func undo_action():
+	if TYPE.Text != type:
+		return
 	code_edit.undo()
 	code_edit.grab_focus()
 
 
 func clear_text():
+	if TYPE.Text != type:
+		return
 	%CodeEdit.clear()
 	code_edit.grab_focus()
-
-
-
-
-
-
 

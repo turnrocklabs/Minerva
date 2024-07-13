@@ -541,7 +541,7 @@ func _on_tab_changed(tab: int):
 
 ## if enter is pressed, accept the event and trigger chat
 func _on_txt_main_user_input_gui_input(event: InputEvent):
-	if event.is_action_pressed("ui_enter"):
+	if event.is_action_pressed("control_enter"):
 		_on_chat_pressed()
 		accept_event()
 
