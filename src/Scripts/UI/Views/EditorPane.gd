@@ -19,11 +19,12 @@ func _ready():
 
 
 func _on_close_tab(tab: int, container: TabContainer):
+	if Editor.TYPE.WhiteBoard:
+		GraphicsEditor.layer_Number = 0
 	var control = container.get_tab_control(tab)
 	if control is Editor:
 		if not control.is_content_saved():
 			var should_close = await control.prompt_close()
-			
 			if should_close:
 				container.remove_child(control)
 				SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
