@@ -172,4 +172,3 @@ func _on_save_button_pressed():
 	if TYPE.WhiteBoard == type:
 		SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 		return
-	
