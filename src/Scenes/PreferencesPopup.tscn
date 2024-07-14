@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
-[ext_resource type="Theme" uid="uid://d1451jp68l03i" path="res://assets/themes/PreferencesPopup_checkbutton_darkmode.tres" id="2_ynj3k"]
+[ext_resource type="Theme" uid="uid://7jpd5cf0v2l3" path="res://assets/themes/PreferencesPopup_checkbutton_darkmode.tres" id="2_ynj3k"]
 
 [node name="PreferencesPopup" type="Window"]
 initial_position = 4

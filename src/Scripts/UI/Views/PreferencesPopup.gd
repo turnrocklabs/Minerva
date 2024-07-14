@@ -111,14 +111,13 @@ func _on_theme_option_button_item_selected(index: int) -> void:
 
 #region Mic preferences
 
+# Update the microphone option menu with available microphones and select the current one
 func set_microphone_option_menu(mic_to_set):
-	# Get the list of available microphones
+	print("Updating microphone list...")  # Debug print
 	var input_devices = AudioServer.get_input_device_list()
+	print("Available microphones: ", input_devices)  # Debug print
 
-	# Clear any existing options in the OptionButton
 	microphones.clear()
-
-	# Add each microphone to the OptionButton
 	var index = 0
 	for device in input_devices:
 		microphones.add_item(device)
@@ -126,8 +125,9 @@ func set_microphone_option_menu(mic_to_set):
 			microphones.selected = index
 		index += 1
 
-
+# Called when a microphone is selected from the list
 func _on_microphones_item_selected(index: int) -> void:
-	SingletonObject.set_microphone(microphones.get_item_text(index))
-
-#endregion Mic preferences
+	print("Microphone selected index: ", index)  # Debug print
+	var selected_mic = microphones.get_item_text(index)
+	print("Microphone selected: ", selected_mic)  # Debug print
+	SingletonObject.set_microphone(selected_mic)

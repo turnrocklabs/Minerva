@@ -279,22 +279,15 @@ func get_theme() -> int:
 
 signal mic_changed(micrphone)
 
-func get_microphone():
-	return config_file.get_value("AudioSettings", "SelectedMic",  "Default")
-
-
 func set_microphone(mic: String) -> void:
+	print("Setting microphone: ", mic)  # Debug print
 	AudioServer.set_input_device(mic)
 	save_to_config_file("AudioSettings", "SelectedMic", mic)
 	mic_changed.emit(mic)
 
+# Get the currently selected microphone from config file
+func get_microphone():
+	return config_file.get_value("AudioSettings", "SelectedMic", "Default")
+
 
 #endregion Audio Settings
-
-
-
-
-
-
-
-
