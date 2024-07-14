@@ -12,12 +12,18 @@ signal masking_ended()
 @export var _apply_mask_button: Button
 @export var masking_color: Color
 
+var selectedLayer:String
+var selectedIndex:int
+
+static var layer_Number = -1
+
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
 
 var image: Image:
 	get: return _draw_layer.image if _draw_layer else null
 
 var drawing = false
+var erasing = false 
 
 var brush_size: int = 5:
 	set(value):
@@ -25,37 +31,44 @@ var brush_size: int = 5:
 		_brush_slider.value = value
 
 var brush_color: Color:
-	get: return _color_picker.color if not _masking else Color.TRANSPARENT
-
+	get: 
+		if _masking:
+			return Color.TRANSPARENT 
+		elif erasing:
+			return Color.TRANSPARENT  
+		else:
+			return _color_picker.color
 
 var _last_pos: Vector2
 var _draw_begin: = false
 
 var _draw_layer: Layer
 var _mask_layer: Layer
+var _background_image: Image  # Store the background image
 
-## Is masking active. Active masking prevents any color, except for tranparency to be active
+## Is masking active. Active masking prevents any color, except for transparency to be active
 var _masking: bool:
 	set(value):
 		_masking = value
 		_mask_check_button.button_pressed = value
 		_apply_mask_button.visible = value
-		if not value: masking_ended.emit()
-	
-	get: return _mask_check_button.button_pressed
+		if not value: 
+			masking_ended.emit()
+	get: 
+		return _mask_check_button.button_pressed
 
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	
+	layer_Number += 1
 	setup(Vector2(1000, 1000), Color.WHITE)
-
-	
 
 
 func setup_from_image(image_: Image):
-	for ch in _layers_container.get_children(true): ch.queue_free()
+	for ch in _layers_container.get_children(true): 
+		ch.queue_free()
 	_draw_layer = _create_layer(image_)
+	_background_image = image_.duplicate()  # Store the initial background
 
 	var transparency_node = TextureRect.new()
 	transparency_node.stretch_mode = TextureRect.STRETCH_TILE
@@ -75,16 +88,16 @@ func setup(canvas_size: Vector2, background_color: Color):
 
 func create_image():
 	var img = Image.create(1000, 1000, false, Image.FORMAT_RGBA8)
-	img.fill(Color.WHITE)
+	
+	img.fill(Color(255,255,255,0))
 
 	_draw_layer = _create_layer(img)
+	_background_image = img.duplicate() # Store the initial background
 
 
 func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
 	var layer = Layer.create(from)
-
 	_layers_container.add_child(layer, false, internal)
-
 	return layer
 
 
@@ -125,12 +138,14 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 
 	return pixels
 
-
 ## Checks if given pixel is within the image and draws it using `set_pixelv`
 func image_draw(image: Image, pos: Vector2, color: Color, point_size: int):
 	for pixel in get_circle_pixels(pos, point_size):
 		if pixel.x >= 0 and pixel.x < image.get_width() and pixel.y >= 0 and pixel.y < image.get_height():
-			image.set_pixelv(pixel, color if not _masking else Color.TRANSPARENT)
+			if erasing and image.get_pixelv(pixel).a > 0.1: 
+				image.set_pixelv(pixel, _background_image.get_pixelv(pixel)) # Restore from bg
+			elif not erasing:
+				image.set_pixelv(pixel, color) 
 
 func _gui_input(event: InputEvent):
 	if event is InputEventMouseButton and event.is_action("draw"):
@@ -138,8 +153,7 @@ func _gui_input(event: InputEvent):
 		_draw_begin = drawing
 
 
-func _process(_delta):
-
+func _input(event):
 	if drawing:
 		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 		var mouse_pos = _layers_container.get_local_mouse_position()
@@ -152,17 +166,15 @@ func _process(_delta):
 
 		if _draw_begin:
 			_last_pos = current_pos
-
 			image_draw(active_layer.image, current_pos, brush_color, brush_size)
 
 		for line_pixel in bresenham_line(_last_pos, current_pos):
 			image_draw(active_layer.image, line_pixel, brush_color, brush_size)
 
 		_last_pos = current_pos
-		
 		_draw_begin = false
-		
 		active_layer.update()
+
 	else:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -173,7 +185,6 @@ func _on_h_slider_value_changed(value):
 
 func _on_mask_check_button_toggled(toggled_on: bool):
 	_masking = toggled_on
-
 	_draw_layer.visible = not _masking
 
 	if toggled_on:
@@ -196,7 +207,28 @@ func _on_mask_check_button_toggled(toggled_on: bool):
 
 
 func _on_apply_mask_button_pressed():
-
 	image.set_meta("mask", _mask_layer.image)
-
 	_masking = false
+
+func _on_erasing_pressed():
+	erasing = not erasing  # Toggle erasing on/off
+
+func _on_addlayer_pressed():
+	create_image()
+	layer_Number += 1
+	%PickLayers.add_item("Layer"+str(layer_Number))
+	%PickLayers.select(%PickLayers.selected + 1)
+
+func _on_remove_layer_pressed():
+	var layers = layer_Number
+	if layers > 1:
+		%LayersContainer.remove_child(%LayersContainer.get_node(selectedLayer))
+		%PickLayers.remove_item(selectedIndex)
+		%PickLayers.select(selectedIndex - 1)
+		layer_Number -= 1
+
+#selecting layer
+func _on_pick_layers_item_selected(index):
+	selectedLayer = %PickLayers.get_item_text(index)
+	_draw_layer = %LayersContainer.get_node(selectedLayer)
+	selectedIndex = index
