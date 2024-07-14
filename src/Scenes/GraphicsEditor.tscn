@@ -1,6 +1,9 @@
-[gd_scene load_steps=2 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=5 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
+[ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="3_aanik"]
+[ext_resource type="Texture2D" uid="uid://cnvsja4y7kp1m" path="res://assets/icons/remove_minus.png" id="4_l7xrh"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_mask_check_button", "_apply_mask_button")]
 anchors_preset = 15
@@ -27,6 +30,7 @@ theme_override_constants/margin_bottom = 5
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/MarginContainer"]
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
+theme_override_constants/separation = 10
 
 [node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
@@ -53,6 +57,26 @@ layout_mode = 2
 tooltip_text = "Apply created mask"
 text = "Apply Mask"
 
+[node name="Erasing" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+layout_mode = 2
+icon = ExtResource("2_tkvqr")
+
+[node name="PickLayers" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+item_count = 1
+selected = 0
+popup/item_0/text = "Layer1"
+popup/item_0/id = 0
+
+[node name="addlayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+layout_mode = 2
+icon = ExtResource("3_aanik")
+
+[node name="removeLayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+layout_mode = 2
+icon = ExtResource("4_l7xrh")
+
 [node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2
 
@@ -69,3 +93,7 @@ size_flags_vertical = 3
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
 [connection signal="toggled" from="VBoxContainer/MarginContainer/HBoxContainer/MaskCheckButton" to="." method="_on_mask_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Erasing" to="." method="_on_erasing_pressed"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/PickLayers" to="." method="_on_pick_layers_item_selected"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/addlayer" to="." method="_on_addlayer_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/removeLayer" to="." method="_on_remove_layer_pressed"]
