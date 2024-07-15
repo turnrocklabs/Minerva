@@ -1,9 +1,10 @@
-[gd_scene load_steps=6 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=7 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="PackedScene" uid="uid://do5x4x4h5ddlk" path="res://Scenes/WhiteBoard.tscn" id="2_b23ua"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/EditorCodeEdit.gd" id="2_g3oqj"]
 [ext_resource type="PackedScene" uid="uid://1snj5jsurqrt" path="res://Scenes/GraphicsEditor.tscn" id="3_rd38o"]
+[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="5_ypv55"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="6_now0o"]
 
 [node name="Editor" type="Control"]
@@ -52,13 +53,23 @@ size_flags_vertical = 3
 expand_mode = 5
 stretch_mode = 4
 
-[node name="SaveButton" type="Button" parent="VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="AudioBTN" type="Button" parent="VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("5_ypv55")
+
+[node name="SaveButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Create note"
 icon = ExtResource("6_now0o")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer"]
+visible = false
 layout_mode = 2
 
 [node name="CloseDialog" type="ConfirmationDialog" parent="."]
@@ -72,7 +83,8 @@ access = 2
 [node name="Node2D" type="Node2D" parent="."]
 
 [connection signal="text_changed" from="VBoxContainer/CodeEdit" to="VBoxContainer/CodeEdit" method="_on_text_changed"]
-[connection signal="pressed" from="VBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/AudioBTN" to="." method="_on_audio_btn_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
 [connection signal="canceled" from="CloseDialog" to="." method="_on_save_dialog_canceled"]
 [connection signal="confirmed" from="CloseDialog" to="." method="_on_save_dialog_confirmed"]
 [connection signal="custom_action" from="CloseDialog" to="." method="_on_close_dialog_custom_action"]
