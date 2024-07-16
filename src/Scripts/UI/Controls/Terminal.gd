@@ -22,6 +22,11 @@ var wrap_command: Callable
 var shell: String
 
 
+static func create() -> Terminal:
+	var terminal = preload("res://Scenes/Terminal.tscn").instantiate()
+	return terminal
+
+
 func _wrap_windows_command(user_input: String) -> PackedStringArray:
 	var full_cmd = [
 		"/V:ON",

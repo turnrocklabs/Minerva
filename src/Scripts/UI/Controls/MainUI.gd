@@ -4,7 +4,7 @@ extends HBoxContainer
 @onready var chat_pane = %LeftPane
 @onready var editor_pane = %MiddlePane
 @onready var notes_pane = %RightPane
-@export var terminal_pane: Terminal
+@export var terminal_pane: TerminalTabContainer
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
