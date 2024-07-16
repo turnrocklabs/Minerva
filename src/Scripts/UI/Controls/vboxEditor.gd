@@ -102,7 +102,7 @@ func _on_v_button_pressed():
 
 
 func _on_new_line_button_pressed() -> void:
-	pass # Replace with function body.
+	%EditorPane.Tabs.get_current_tab_control().add_new_line()
 
 
 func _on_back_space_button_pressed() -> void:
