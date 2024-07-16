@@ -2,7 +2,7 @@ extends Node
 
 #region global variables?
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
-var supported_text_fortmats: PackedStringArray = ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]
+var supported_text_fortmats: PackedStringArray = ["rs", "toml", "txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg", "flac"]
 #endregion global variables

@@ -477,6 +477,7 @@ func _on_btn_attach_file_pressed():
 	%AttachFileDialog.popup_centered(Vector2i(700, 500))
 
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
+	%AttachFileDialog.exclusive = false
 	for fp in paths:
 		SingletonObject.AttachNoteFile.emit(fp)
 		await get_tree().process_frame
