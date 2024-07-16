@@ -1,3 +1,6 @@
+### Updated GraphicsEditor Script ###
+
+### Title: GraphicsEditor
 class_name GraphicsEditor
 extends PanelContainer
 
@@ -138,35 +141,35 @@ func image_draw(image: Image, pos: Vector2, color: Color, point_size: int):
 			elif not erasing:
 				image.set_pixelv(pixel, color)
 
-func _gui_input(event: InputEvent):
+func _input(event):
+	# Handle drawing actions
 	if event is InputEventMouseButton and event.is_action("draw"):
 		drawing = event.pressed
 		_draw_begin = drawing
+	
+	if event is InputEventMouseMotion:
+		if drawing:
+			var mouse_pos = _layers_container.get_local_mouse_position()
 
-func _input(event):
-	if drawing:
-		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
-		var mouse_pos = _layers_container.get_local_mouse_position()
+			var offset_x = (_layers_container.size.x - _draw_layer.image.get_width()) / 2
+			var offset_y = (_layers_container.size.y - _draw_layer.image.get_height()) / 2
+			var current_pos = Vector2(mouse_pos.x - offset_x, mouse_pos.y - offset_y)
 
-		var offset_x = (_layers_container.size.x - _draw_layer.image.get_width()) / 2
-		var offset_y = (_layers_container.size.y - _draw_layer.image.get_height()) / 2
-		var current_pos = Vector2(mouse_pos.x - offset_x, mouse_pos.y - offset_y)
+			var active_layer = _mask_layer if _masking else _draw_layer
 
-		var active_layer = _mask_layer if _masking else _draw_layer
+			if _draw_begin:
+				_last_pos = current_pos
+				image_draw(active_layer.image, current_pos, brush_color, brush_size * event.pressure)
 
-		if _draw_begin:
+			for line_pixel in bresenham_line(_last_pos, current_pos):
+				image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
+
 			_last_pos = current_pos
-			image_draw(active_layer.image, current_pos, brush_color, brush_size)
+			_draw_begin = false
+			active_layer.update()
 
-		for line_pixel in bresenham_line(_last_pos, current_pos):
-			image_draw(active_layer.image, line_pixel, brush_color, brush_size)
-
-		_last_pos = current_pos
-		_draw_begin = false
-		active_layer.update()
-
-	else:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		else:
+			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 func _on_h_slider_value_changed(value):
 	brush_size = value
@@ -218,3 +221,5 @@ func _on_pick_layers_item_selected(index):
 	selectedLayer = %PickLayers.get_item_text(index)
 	selectedIndex = index
 	_draw_layer = %LayersContainer.get_node(selectedLayer)
+
+### End Updated GraphicsEditor Script ###
