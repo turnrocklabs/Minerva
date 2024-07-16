@@ -111,7 +111,7 @@ func _on_new_line_button_pressed() -> void:
 
 func _on_back_space_button_pressed() -> void:
 	if %EditorPane.Tabs.get_current_tab_control():
-		%EditorPane.Tabs.get_current_tab_control().delete_last_char()
+		%EditorPane.Tabs.get_current_tab_control().delete_chars()
 	else:
 		_toggle_enable_action_buttons(false)
 

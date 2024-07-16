@@ -184,15 +184,11 @@ func _on_create_note_button_pressed() -> void:
 
 #endregion bottom of the pane buttons
 
-func delete_last_char() -> void:
+func delete_chars() -> void:
 	if TYPE.Text != type:
 		return
 	if code_edit.get_selected_text().length() < 1:
-		var caret_pos = code_edit.get_caret_column()
-		var first_half = code_edit.text.substr(0, caret_pos)
-		var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
-		code_edit.text = first_half.erase(first_half.length() - 1, 1) + snd_half
-		code_edit.set_caret_column(caret_pos - 1)
+		code_edit.backspace()
 		code_edit.grab_focus()
 		return
 	code_edit.delete_selection()
@@ -202,10 +198,7 @@ func delete_last_char() -> void:
 func add_new_line() -> void:
 	if TYPE.Text != type:
 		return
-	var caret_pos = code_edit.get_caret_column()
-	var first_half = code_edit.text.substr(0, caret_pos)
-	var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
-	code_edit.text = first_half + "\n" + snd_half
+	code_edit.insert_text_at_caret("\n")
 	code_edit.grab_focus()
 
 

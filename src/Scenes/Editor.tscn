@@ -67,13 +67,13 @@ alignment = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
-tooltip_text = "Create note"
+tooltip_text = "save to file (pops up a file dialog the first tme)"
 disabled = true
 text = "Save"
 
 [node name="CreateNoteButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
-tooltip_text = "save to file (pops up a file dialog the first tme)"
+tooltip_text = "Creates note from editor tab content"
 icon = ExtResource("6_now0o")
 
 [node name="CloseDialog" type="ConfirmationDialog" parent="."]
