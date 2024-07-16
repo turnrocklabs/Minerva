@@ -155,6 +155,7 @@ func _on_tab_container_child_exiting_tree(node: Node) -> void:
 		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
+		return
 	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
