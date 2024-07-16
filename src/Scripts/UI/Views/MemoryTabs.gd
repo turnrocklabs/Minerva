@@ -322,7 +322,7 @@ func attach_file(the_file: String):
 	# Create a new memory item
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 
-	if file_ext in ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
+	if file_ext in SingletonObject.supported_text_fortmats:# ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
 		file_type = "text"
 		content = file.get_as_text()
 		content_type = "text/plain"
