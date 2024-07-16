@@ -41,10 +41,7 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_vertical = 3
-deselect_on_focus_loss_enabled = false
 wrap_mode = 1
-caret_blink = true
-caret_multiple = false
 script = ExtResource("2_g3oqj")
 
 [node name="TextureRect" type="TextureRect" parent="VBoxContainer"]

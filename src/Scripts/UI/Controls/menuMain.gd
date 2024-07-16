@@ -67,13 +67,16 @@ func _on_view_id_pressed(id: int):
 		6: SingletonObject.main_scene.reset_zoom(); return
 		8: _unhide_notes()
 		9: _unhide_messages()
-
-	if view.is_item_checkable(id):
-		view.toggle_item_checked(id)
 	
-	SingletonObject.main_ui.set_chat_pane_visible(view.is_item_checked(0))
-	SingletonObject.main_ui.set_editor_pane_visible(view.is_item_checked(1))
-	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(2))
+	var index = view.get_item_index(id)
+	
+	if view.is_item_checkable(index):
+		view.toggle_item_checked(index)
+	
+	SingletonObject.main_ui.set_chat_pane_visible(view.is_item_checked(view.get_item_index(0)))
+	SingletonObject.main_ui.set_editor_pane_visible(view.is_item_checked(view.get_item_index(1)))
+	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(view.get_item_index(2)))
+	SingletonObject.main_ui.set_terminal_pane_visible(view.is_item_checked(view.get_item_index(10)))
 
 
 func _unhide_notes():
@@ -96,6 +99,7 @@ func _on_view_about_to_popup():
 	view.set_item_checked(0, SingletonObject.main_ui.chat_pane.visible)
 	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)
 	view.set_item_checked(2, SingletonObject.main_ui.notes_pane.visible)
+	view.set_item_checked(view.get_item_index(10), SingletonObject.main_ui.terminal_pane.visible)
 
 
 func _on_file_about_to_popup():
