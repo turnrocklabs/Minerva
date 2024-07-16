@@ -22,14 +22,9 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="TextEdit" type="TextEdit" parent="ScrollContainer/v"]
+[node name="OutputsContainer" type="VBoxContainer" parent="ScrollContainer/v"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 0
-editable = false
-wrap_mode = 1
-scroll_fit_content_height = true
 
 [node name="h" type="HBoxContainer" parent="ScrollContainer/v"]
 layout_mode = 2
@@ -51,7 +46,6 @@ layout_mode = 2
 text = "Enter"
 flat = true
 
-[connection signal="text_set" from="ScrollContainer/v/TextEdit" to="." method="_on_text_edit_text_set"]
 [connection signal="gui_input" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_gui_input"]
 [connection signal="text_submitted" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_text_submitted"]
 [connection signal="pressed" from="ScrollContainer/v/h/Button" to="." method="_on_button_pressed"]
