@@ -328,7 +328,6 @@ text = "Editor"
 
 [node name="ClearButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
-disabled = true
 text = "Clear"
 
 [node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
@@ -674,6 +673,7 @@ stream = SubResource("AudioStreamMicrophone_i6lnv")
 autoplay = true
 bus = &"Rec"
 
+[connection signal="about_to_popup" from="NewThreadPopup" to="." method="_on_new_thread_popup_about_to_popup"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="focus_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_focus_entered"]
