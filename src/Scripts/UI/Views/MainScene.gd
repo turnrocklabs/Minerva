@@ -6,6 +6,7 @@ extends Control
 @onready var text_note_check_box: CheckBox = %TextNoteCheckBox
 @onready var audio_check_box: CheckBox = %AudioCheckBox
 @onready var image_check_box: CheckBox = %ImageCheckBox
+@export  var terminal: Terminal
 
 var note_enum = SingletonObject.note_type.TEXT
 
@@ -49,6 +50,12 @@ func _gui_input(event):
 		zoom_ui(-1)
 		
 		accept_event()
+
+
+func _input(event):
+	if event.is_action_released("ui_terminal", true):
+		terminal.visible = not terminal.visible
+
 
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
@@ -94,7 +101,7 @@ func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.btn = %btnVoiceForHeader
 	#%btnVoiceForHeader.icon = icActive
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
-	%AddNotePopUp.disabled = false
+	#%AddNotePopUp.disabled = false
 
 
 func _on_btn_voice_for_note_tab_pressed():
@@ -126,7 +133,6 @@ func _on_disable_notes_button_pressed() -> void:
 
 #this get called when the CREATE NOTE WINDOW is about to pop up
 func _on_create_new_note_about_to_popup() -> void:
-	%NoteHead.grab_focus()
 	text_note_check_box.button_pressed = true
 	%CreateNewNote.exclusive = true
 
@@ -308,13 +314,6 @@ func _on_play_audio_button_pressed() -> void:
 
 #endregion Create New note Window
 
-
-
-#region new tab popup
-func _on_new_thread_popup_about_to_popup() -> void:
-	%txtNewTabName.grab_focus()
-
-#endregion new tab popup
 
 
 

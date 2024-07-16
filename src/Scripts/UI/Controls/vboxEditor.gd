@@ -27,7 +27,6 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 			button.disabled = !enable
 
 
-
 func serialize() -> Array[String]:
 	return _opened_files
 
@@ -103,10 +102,7 @@ func _on_v_button_pressed():
 
 
 func _on_new_line_button_pressed() -> void:
-	if %EditorPane.Tabs.get_current_tab_control():
-		%EditorPane.Tabs.get_current_tab_control().add_new_line()
-	else:
-		_toggle_enable_action_buttons(false)
+	pass # Replace with function body.
 
 
 func _on_back_space_button_pressed() -> void:
@@ -116,15 +112,5 @@ func _on_back_space_button_pressed() -> void:
 		_toggle_enable_action_buttons(false)
 
 
-func _on_undo_button_pressed() -> void:
-	if %EditorPane.Tabs.get_current_tab_control():
-		%EditorPane.Tabs.get_current_tab_control().undo_action()
-	else:
-		_toggle_enable_action_buttons(false)
 
 
-func _on_clear_button_pressed() -> void:
-	if %EditorPane.Tabs.get_current_tab_control():
-		%EditorPane.Tabs.get_current_tab_control().clear_text()
-	else:
-		_toggle_enable_action_buttons(false)

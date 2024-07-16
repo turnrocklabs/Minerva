@@ -173,13 +173,13 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 	if TYPE.Text == type:
-		SingletonObject.NotesTab.add_note(name, code_edit.text)
+		SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 		return
 	if TYPE.Graphics == type:
-		SingletonObject.NotesTab.add_image_note(name, graphics_editor.image, "Sketch")
+		SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 		return
 	if TYPE.WhiteBoard == type:
-		SingletonObject.NotesTab.add_image_note(name, %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+		SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 		return
 
 #endregion bottom of the pane buttons
@@ -214,4 +214,3 @@ func clear_text():
 		return
 	%CodeEdit.clear()
 	code_edit.grab_focus()
-

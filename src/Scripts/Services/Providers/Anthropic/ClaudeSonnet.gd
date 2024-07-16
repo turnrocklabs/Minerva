@@ -1,6 +1,8 @@
 class_name ClaudeSonnet
 extends BaseProvider
 
+var system_prompt: String
+
 func _init():
 	provider_name = "Anthropic"
 	BASE_URL = "https://api.anthropic.com/v1"
@@ -8,7 +10,7 @@ func _init():
 
 	model_name = "claude-3.5-sonnet"
 	short_name = "CS"
-	token_cost = 1.5 # https://claude101.com/claude-3-5-sonnet/
+	token_cost = 1.5 / 1_000_000 # https://claude101.com/claude-3-5-sonnet/
 
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
@@ -40,11 +42,11 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 # https://docs.anthropic.com/en/api/messages
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
-
 	var request_body = {
 		"model": "claude-3-5-sonnet-20240620",
 		"messages": prompt,
-		"max_tokens": 1024,
+		"max_tokens": 4096,
+		"system": system_prompt
 	}
 
 	request_body.merge(additional_params)
@@ -85,7 +87,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		ChatHistoryItem.ChatRole.USER:
 			role = "user"
 		ChatHistoryItem.ChatRole.SYSTEM:
-			role = "user"
+			system_prompt = chat_item.Message # Save as system prompt and return null
+			return null
 		ChatHistoryItem.ChatRole.ASSISTANT:
 			role = "assistant"
 		ChatHistoryItem.ChatRole.MODEL:
@@ -131,6 +134,8 @@ func estimate_tokens_from_prompt(input: Array[Variant]):
 	return estimate_tokens("".join(all_messages))
 
 
+func continue_partial_response(_partial_chi: ChatHistoryItem):
+	return null
 
 
 # {

@@ -227,7 +227,7 @@ func _on_remove_button_pressed():
 
 
 func _on_edit_button_pressed():
-	var ep: EditorPane = $"/root/RootControl/VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane"
+	var ep: EditorPane = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane"
 
 	for i in range(ep.Tabs.get_tab_count()):
 		var tab_control = ep.Tabs.get_tab_control(i)
