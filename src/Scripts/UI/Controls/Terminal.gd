@@ -6,7 +6,7 @@ signal execution_finished()
 @export var _send_button: BaseButton
 
 @onready var command_line_edit: LineEdit = %CommandLineEdit
-@onready var text_edit: TextEdit = %TextEdit
+@onready var outputs_container: VBoxContainer = %OutputsContainer
 @onready var cwd_label: Label = %CwdLabel
 
 const cwd_delimiter = "##cwd##"
@@ -53,6 +53,42 @@ func _wrap_linux_command(user_input: String) -> PackedStringArray:
 
 	return full_cmd
 
+
+func display_output(output: String) -> void:
+	var output_container = HBoxContainer.new()
+	
+	var check_button = CheckButton.new()
+	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	check_button.toggled.connect(_on_output_check_button_toggled.bind(output, check_button))
+	output_container.add_child(check_button)
+
+	var label = RichTextLabel.new()
+	label.fit_content = true
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.text = output
+	output_container.add_child(label)
+
+	outputs_container.add_child(output_container)
+
+
+func _on_output_check_button_toggled(on: bool, output: String, btn: CheckButton):
+	# If memory item is somehow deleted from `SingletonObject.ThreadList` this will break
+	# but user can't do that since the note is not visible
+	if not btn.has_meta("memory_item"):
+		btn.set_meta("memory_item", await SingletonObject.NotesTab.add_note("Terminal Note", output))
+	
+	var item: MemoryItem = btn.get_meta("memory_item")
+
+	var present = SingletonObject.ThreadList.any(func(thread: MemoryThread): return item in thread.MemoryItemList)
+
+	if not present and on: # if this item is not present in any thread, create new
+		item = await SingletonObject.NotesTab.add_note("Terminal Note", output)
+		btn.set_meta("memory_item", item)
+
+	item.Enabled = on
+	item.Visible = false
+
+
 func _ready():
 	cwd = OS.get_data_dir()
 
@@ -90,7 +126,6 @@ func _execute_command(input: String) -> Array:
 func execute_thread_command(input: String):
 	_thread = Thread.new()
 	_thread.start(_execute_command.bind(input), Thread.PRIORITY_LOW)
-	print("Thread started")
 
 	var callback = func():
 		var output = _thread.get_meta("output")
@@ -111,9 +146,11 @@ func execute_thread_command(input: String):
 			var idx = cmd_result.rfind("\f")
 
 			cmd_result = cmd_result.substr(idx)
-			text_edit.text = cmd_result
+			# output_label.text = cmd_result
+			display_output(cmd_result)
 		else:
-			text_edit.text += "%s>%s\n%s" % [cwd, input, cmd_result]
+			display_output("%s>%s\n%s" % [cwd, input, cmd_result])
+			# output_label.text += "%s>%s\n%s" % [cwd, input, cmd_result]
 
 		_history.insert(0, input)
 		_history_idx = -1
@@ -150,10 +187,3 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			await get_tree().process_frame
 			command_line_edit.caret_column = command_line_edit.text.length()
 
-
-func _on_text_edit_text_set():
-	var scroll_container: ScrollContainer = %ScrollContainer
-	await scroll_container.get_v_scroll_bar().changed
-
-	# scroll to bottom
-	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
