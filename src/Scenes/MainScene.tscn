@@ -315,25 +315,21 @@ text = "Editor"
 
 [node name="ClearButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
-disabled = true
 text = "Clear"
 
 [node name="UndoButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Undo (Returns Editor to previous state)"
-disabled = true
 icon = ExtResource("11_srtkx")
 
 [node name="BackSpaceButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Backspace"
-disabled = true
 icon = ExtResource("12_j6ukv")
 
 [node name="NewLineButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Start new line"
-disabled = true
 icon = ExtResource("11_p11dv")
 
 [node name="HButton" type="Button" parent="VBoxRoot/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
