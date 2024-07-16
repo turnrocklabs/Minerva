@@ -52,14 +52,26 @@ size_flags_vertical = 3
 expand_mode = 5
 stretch_mode = 4
 
-[node name="SaveButton" type="Button" parent="VBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer"]
+visible = false
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="SaveButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
-tooltip_text = "Create note"
-icon = ExtResource("6_now0o")
+tooltip_text = "save to file (pops up a file dialog the first tme)"
+disabled = true
+text = "Save"
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer"]
+[node name="CreateNoteButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
+tooltip_text = "Creates note from editor tab content"
+icon = ExtResource("6_now0o")
 
 [node name="CloseDialog" type="ConfirmationDialog" parent="."]
 title = "You have unsaved open editor "
@@ -72,7 +84,8 @@ access = 2
 [node name="Node2D" type="Node2D" parent="."]
 
 [connection signal="text_changed" from="VBoxContainer/CodeEdit" to="VBoxContainer/CodeEdit" method="_on_text_changed"]
-[connection signal="pressed" from="VBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]
 [connection signal="canceled" from="CloseDialog" to="." method="_on_save_dialog_canceled"]
 [connection signal="confirmed" from="CloseDialog" to="." method="_on_save_dialog_confirmed"]
 [connection signal="custom_action" from="CloseDialog" to="." method="_on_close_dialog_custom_action"]
