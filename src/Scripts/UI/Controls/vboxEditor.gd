@@ -18,10 +18,11 @@ func _ready() -> void:
 
 
 func _toggle_enable_action_buttons(enable: bool) -> void:
-	var editor_action_buttons = get_tree().get_nodes_in_group("editor_action_button")
-	if editor_action_buttons:
-		for button: Button in editor_action_buttons:
-			button.disabled = !enable
+	if get_tree():
+		var editor_action_buttons = get_tree().get_nodes_in_group("editor_action_button")
+		if editor_action_buttons:
+			for button: Button in editor_action_buttons:
+				button.disabled = !enable
 
 
 func serialize() -> Array[String]:
