@@ -163,6 +163,15 @@ func save_file_to_disc(path: String):
 			
 	_file_saved = true
 	file_saved_in_disc = true
+	name = get_file_name(path)
+
+
+func get_file_name(path: String) -> String:
+	if path.length() <= 1:
+		return path
+	var split_path = path.split("/")
+	return split_path[split_path.size() -1].split(".")[0]
+
 
 #region bottom of the pane buttons
 func _on_save_button_pressed():
@@ -187,18 +196,23 @@ func _on_create_note_button_pressed() -> void:
 func delete_chars() -> void:
 	if TYPE.Text != type:
 		return
-	print(code_edit.get_selected_text())
-	if code_edit.get_selected_text().length() >= 1:
-		var caret_pos = code_edit.get_caret_column()
-		var first_half = code_edit.text.substr(0, caret_pos)
-		var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
-		code_edit.text = first_half.erase(first_half.length() - 1, 1) + snd_half
-		code_edit.set_caret_column(caret_pos - 1)
-		code_edit.grab_focus()
-		return
-	code_edit.delete_selection()
+	
+	code_edit.backspace()
 	
 	code_edit.grab_focus()
+	
+	#if code_edit.get_selected_text().length()  < 1:
+		#var caret_col = code_edit.get_caret_column()
+		#var caret_line = code_edit.get_caret_line()
+		#var first_half = code_edit.text.substr(0, caret_pos)
+		#var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
+		#code_edit.text = first_half.erase(first_half.length() - 1, 1) + snd_half
+		#code_edit.set_caret_column(caret_pos - 1)
+		#
+		#code_edit.grab_focus()
+		#return
+	
+	
 
 
 func add_new_line() -> void:

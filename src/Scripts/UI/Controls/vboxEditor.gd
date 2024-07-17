@@ -17,9 +17,6 @@ func _ready() -> void:
 	editor_pane.enable_editor_action_buttons.connect(_toggle_enable_action_buttons)
 
 
-func _exit_tree() -> void:
-	editor_pane.enable_editor_action_buttons.disconnect(_toggle_enable_action_buttons)
-
 func _toggle_enable_action_buttons(enable: bool) -> void:
 	var editor_action_buttons = get_tree().get_nodes_in_group("editor_action_button")
 	if editor_action_buttons:
@@ -102,7 +99,8 @@ func _on_v_button_pressed():
 
 
 func _on_new_line_button_pressed() -> void:
-	%EditorPane.Tabs.get_current_tab_control().add_new_line()
+	if %EditorPane.Tabs.get_current_tab_control():
+		%EditorPane.Tabs.get_current_tab_control().add_new_line()
 
 
 func _on_back_space_button_pressed() -> void:
@@ -112,5 +110,11 @@ func _on_back_space_button_pressed() -> void:
 		_toggle_enable_action_buttons(false)
 
 
+func _on_clear_button_pressed():
+	if %EditorPane.Tabs.get_current_tab_control():
+		%EditorPane.Tabs.get_current_tab_control().clear_text()
 
 
+func _on_undo_button_pressed():
+	if %EditorPane.Tabs.get_current_tab_control():
+		%EditorPane.Tabs.get_current_tab_control().undo_action()
