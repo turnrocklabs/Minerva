@@ -14,7 +14,6 @@ var container: TabContainer  # Store the TabContainer
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
 
-
 ## add new chat 
 func _on_new_chat():
 	var tab_name: = "Chat %s" % (get_tab_count()+1)

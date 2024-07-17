@@ -3,10 +3,16 @@ extends RefCounted ## so I get memory management and signals.
 
 ## MemoryItem is my stab at a single memory item that I can then use as I want.
 
-static var SERIALIZER_FIELDS = ["Enabled", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order"]
+static var SERIALIZER_FIELDS = ["Enabled", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order"]
 
 var Enabled: bool = true:
-	set(value): SingletonObject.save_state(false); Enabled = value
+	set(value):
+		SingletonObject.save_state(false)
+		if not Locked: Enabled = value
+
+## If memory item is locked, changing the `Enabled` property is not possible
+var Locked: bool = false:
+	set(value): SingletonObject.save_state(false); Locked = value
 
 var Type: int = SingletonObject.note_type.TEXT:
 	set(value): SingletonObject.save_state(false); Type = value
@@ -65,6 +71,7 @@ func Serialize() -> Dictionary:
 
 	var save_dict:Dictionary = {
 		"Enabled": Enabled,
+		"Locked": Locked,
 		"Title": Title,
 		"Content": Content,
 		"Type": Type,
