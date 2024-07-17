@@ -36,6 +36,7 @@ theme_override_constants/separation = 10
 unique_name_in_owner = true
 editor_description = "Brush sizes
 "
+visible = false
 custom_minimum_size = Vector2(250, 0)
 layout_mode = 2
 size_flags_vertical = 1
@@ -47,12 +48,15 @@ rounded = true
 [node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Brush color"
+visible = false
 layout_mode = 2
 text = "Color"
 color = Color(0.447059, 0.447059, 0.67451, 1)
 
 [node name="MaskCheckButton" type="CheckButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
 editor_description = "AI zone,when enabled"
+visible = false
 layout_mode = 2
 
 [node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
@@ -62,13 +66,16 @@ tooltip_text = "Apply created mask"
 text = "Apply Mask"
 
 [node name="Erasing" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
 editor_description = "Eraser for drawn lines"
+visible = false
 layout_mode = 2
 icon = ExtResource("2_tkvqr")
 
 [node name="PickLayers" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Layers"
+visible = false
 layout_mode = 2
 item_count = 1
 selected = 0
@@ -76,12 +83,16 @@ popup/item_0/text = "Layer1"
 popup/item_0/id = 0
 
 [node name="addlayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
 editor_description = "Add new layer"
+visible = false
 layout_mode = 2
 icon = ExtResource("3_aanik")
 
 [node name="removeLayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
 editor_description = "Remove selected layer"
+visible = false
 layout_mode = 2
 icon = ExtResource("4_l7xrh")
 

@@ -35,6 +35,7 @@ func _on_file_index_pressed(index):
 			%PreferencesPopup.size = target_size
 			%PreferencesPopup.popup_centered()
 		5:
+			SingletonObject.is_graph = true
 			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Graphics)
 
 ## Handler:
