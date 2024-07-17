@@ -187,11 +187,17 @@ func _on_create_note_button_pressed() -> void:
 func delete_chars() -> void:
 	if TYPE.Text != type:
 		return
-	if code_edit.get_selected_text().length() < 1:
-		code_edit.backspace()
+	print(code_edit.get_selected_text())
+	if code_edit.get_selected_text().length() >= 1:
+		var caret_pos = code_edit.get_caret_column()
+		var first_half = code_edit.text.substr(0, caret_pos)
+		var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
+		code_edit.text = first_half.erase(first_half.length() - 1, 1) + snd_half
+		code_edit.set_caret_column(caret_pos - 1)
 		code_edit.grab_focus()
 		return
 	code_edit.delete_selection()
+	
 	code_edit.grab_focus()
 
 
