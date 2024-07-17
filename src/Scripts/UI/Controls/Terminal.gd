@@ -60,6 +60,7 @@ func display_output(output: String) -> void:
 	var check_button = CheckButton.new()
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	check_button.toggled.connect(_on_output_check_button_toggled.bind(output, check_button))
+	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
 	output_container.add_child(check_button)
 
 	var label = RichTextLabel.new()
@@ -87,6 +88,18 @@ func _on_output_check_button_toggled(on: bool, output: String, btn: CheckButton)
 
 	item.Enabled = on
 	item.Visible = false
+	item.Locked = true
+	SingletonObject.NotesTab.render_threads() # rerender it since it's not visible now
+
+
+func _on_output_check_button_tree_exiting(btn: CheckButton):
+	if not btn.has_meta("memory_item"): return
+	
+	var item: MemoryItem = btn.get_meta("memory_item")
+
+	var thread: = SingletonObject.get_thread(item.OwningThread)
+
+	thread.MemoryItemList.erase(item)
 
 
 func _ready():
