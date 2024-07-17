@@ -122,24 +122,30 @@ func render_threads():
 
 	# we must delete existing noted so creating new project works
 	for c in %tcThreads.get_children():
-		c.free()
+		c.queue_free()
 	
+	for thread in SingletonObject.ThreadList:
+		render_thread(thread)
+	
+
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
-	for i in range(SingletonObject.ThreadList.size()):
-		var thread = SingletonObject.ThreadList[i];
-		var tab = %tcThreads.get_child(i)
+	# for i in range(SingletonObject.ThreadList.size()):
+	# 	var thread = SingletonObject.ThreadList[i];
+	# 	var tab = %tcThreads.get_child(i)
+	# 	tab.queue_free()
+	# 	render_thread(thread)
 
 		# If the tab exists, update its content:
-		if tab:
-			var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread.ThreadId, thread.MemoryItemList)
-			tab.remove_child(tab.get_child(0))
-			tab.add_child(vboxMemoryList)
-			tab.name = thread.ThreadName
-			tab.set_meta("thread", thread)
+		# if tab:
+		# 	var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread.ThreadId, thread.MemoryItemList)
+		# 	tab.remove_child(tab.get_child(0))
+		# 	tab.add_child(vboxMemoryList)
+		# 	tab.name = thread.ThreadName
+		# 	tab.set_meta("thread", thread)
 
-		# If the tab doesn't exist, create a new one:
-		else:
-			render_thread(thread)
+		# # If the tab doesn't exist, create a new one:
+		# else:
+		# 	render_thread(thread)
 
 	# Restore the last active thread:
 	if self.get_child_count():
@@ -229,6 +235,10 @@ func delete_note(memory_item: MemoryItem):
 	active_thread.MemoryItemList.remove_at(idx)
 
 func render_thread(thread_item: MemoryThread):
+	
+	var any_visible = thread_item.MemoryItemList.any(func(item: MemoryItem): return item.Visible)
+	if not any_visible: return # if we have no visible notes don't render anything right now
+
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -257,8 +267,9 @@ func _on_close_tab(tab: int, container: TabContainer):
 		# Remove the thread from the list
 		SingletonObject.ThreadList.remove_at(thread_idx)
 
+		# this will crash the program by freeing the `control` object
 		# Update the UI with the remaining threads
-		render_threads()
+		# render_threads()
 
 		# Store deleted tab for potential undo
 		SingletonObject.undo.store_deleted_tab_right(tab, control, "right")

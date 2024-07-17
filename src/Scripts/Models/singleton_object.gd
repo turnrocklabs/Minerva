@@ -81,6 +81,11 @@ func toggle_all_notes(notes_enabled: bool):
 	if !notes_enabled:
 		NotesTab.enable_all()
 
+## Returns `MemoryThread` with the given `ThreadId` or null if none are found
+func get_thread(thread_id: String) -> MemoryThread:
+	var r_arr = ThreadList.filter(func(thread: MemoryThread): return thread.ThreadId == thread_id)
+	return r_arr.pop_front()
+
 #endregion Notes
 
 #region Chats
