@@ -133,6 +133,7 @@ func _on_disable_notes_button_pressed() -> void:
 
 #this get called when the CREATE NOTE WINDOW is about to pop up
 func _on_create_new_note_about_to_popup() -> void:
+	%NoteHead.grab_focus()
 	text_note_check_box.button_pressed = true
 	%CreateNewNote.exclusive = true
 
@@ -310,10 +311,14 @@ func _on_play_audio_button_pressed() -> void:
 	%AudioNoteStreamPlayer.play()
 
 #endregion Audio Note
-
-
 #endregion Create New note Window
 
+
+#region new tab popup
+func _on_new_thread_popup_about_to_popup() -> void:
+	%txtNewTabName.grab_focus()
+
+#endregion new tab popup
 
 
 
