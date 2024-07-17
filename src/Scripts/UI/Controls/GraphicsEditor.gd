@@ -61,9 +61,26 @@ var _masking: bool:
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	if SingletonObject.is_graph == true:
+		#only drawing
+		%ColorPickerButton.visible = SingletonObject.is_graph
+		%Erasing.visible = SingletonObject.is_graph
+		%PickLayers.visible = SingletonObject.is_graph
+		%addlayer.visible = SingletonObject.is_graph
+		%removeLayer.visible = SingletonObject.is_graph
+		%BrushHSlider.visible = SingletonObject.is_graph
+	elif SingletonObject.is_masking == true:
+		#editing and drawing
+		%MaskCheckButton.visible = SingletonObject.is_masking
+		%BrushHSlider.visible = SingletonObject.is_masking
+		%Erasing.visible = SingletonObject.is_masking
+		%ColorPickerButton.visible = SingletonObject.is_masking
+	
 	layer_Number += 1
 	setup(Vector2(1000, 1000), Color.WHITE)
-
+	SingletonObject.is_graph = false
+	SingletonObject.is_masking = false
+	
 func setup_from_image(image_: Image):
 	for ch in _layers_container.get_children(true): 
 		ch.queue_free()
@@ -179,6 +196,7 @@ func _on_mask_check_button_toggled(toggled_on: bool):
 	_draw_layer.visible = not _masking
 
 	if toggled_on:
+		
 		var bgd_img = Image.new()
 		bgd_img.fill(masking_color)
 
@@ -194,6 +212,7 @@ func _on_mask_check_button_toggled(toggled_on: bool):
 		background_mask_layer.queue_free()
 		_mask_layer.queue_free()
 	else:
+		
 		_mask_layer = null
 
 func _on_apply_mask_button_pressed():
@@ -202,6 +221,11 @@ func _on_apply_mask_button_pressed():
 
 func _on_erasing_pressed():
 	erasing = not erasing  # Toggle erasing on/off
+	if erasing:
+		%Erasing.modulate = Color.LIME_GREEN
+	else:
+		%Erasing.modulate = Color.WHITE
+	
 
 func _on_addlayer_pressed():
 	layer_Number += 1

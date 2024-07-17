@@ -2,7 +2,8 @@ extends Node
 
 #region global variables?
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
-
+var is_graph:bool
+var is_masking:bool
 
 #endregion global variables
 
@@ -290,11 +291,3 @@ func set_microphone(mic: String) -> void:
 
 
 #endregion Audio Settings
-
-
-
-
-
-
-
-
