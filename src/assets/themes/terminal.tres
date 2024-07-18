@@ -1,0 +1,20 @@
+[gd_resource type="Theme" load_steps=5 format=3 uid="uid://cdp8qvjvdfebe"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_lxph6"]
+bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ra2aq"]
+bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3i5ud"]
+bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hxj7t"]
+bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
+
+[resource]
+LineEdit/constants/caret_width = 12
+LineEdit/styles/focus = SubResource("StyleBoxFlat_lxph6")
+LineEdit/styles/normal = SubResource("StyleBoxFlat_ra2aq")
+Panel/styles/panel = SubResource("StyleBoxFlat_3i5ud")
+PanelContainer/styles/panel = SubResource("StyleBoxFlat_hxj7t")

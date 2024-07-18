@@ -1,5 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://vpf0a1bogbnc"]
+[gd_scene load_steps=3 format=3 uid="uid://vpf0a1bogbnc"]
 
+[ext_resource type="Theme" uid="uid://cdp8qvjvdfebe" path="res://assets/themes/terminal.tres" id="1_dfgdu"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Terminal.gd" id="1_o05gx"]
 
 [node name="Terminal" type="PanelContainer" node_paths=PackedStringArray("_send_button")]
@@ -8,6 +9,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("1_dfgdu")
 script = ExtResource("1_o05gx")
 _send_button = NodePath("ScrollContainer/v/h/Button")
 
@@ -20,7 +22,7 @@ follow_focus = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_override_constants/separation = 0
+theme_override_constants/separation = 8
 
 [node name="TextEdit" type="TextEdit" parent="ScrollContainer/v"]
 unique_name_in_owner = true
@@ -43,6 +45,8 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 flat = true
+caret_blink = true
+caret_force_displayed = true
 
 [node name="Button" type="Button" parent="ScrollContainer/v/h"]
 layout_mode = 2
