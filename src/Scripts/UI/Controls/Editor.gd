@@ -182,14 +182,22 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 	if TYPE.Text == type:
-		SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+		if file:
+			SingletonObject.NotesTab.add_note(get_file_name(file), code_edit.text)
+		else:
+			SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 		return
 	if TYPE.Graphics == type:
-		SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+		if file:
+			SingletonObject.NotesTab.add_image_note(get_file_name(file), graphics_editor.image, "Sketch")
+		else:
+			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 		return
 	if TYPE.WhiteBoard == type:
-		SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
-		return
+		if file:
+			SingletonObject.NotesTab.add_image_note(get_file_name(file), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+		else:
+			SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 
 #endregion bottom of the pane buttons
 
