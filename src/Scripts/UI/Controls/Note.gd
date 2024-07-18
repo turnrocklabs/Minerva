@@ -100,7 +100,7 @@ func change_modulate_for_texture(theme_enum: int):
 
 
 func _to_string():
-	return "Note %s" % memory_item.Title
+	return "Notedadsa %s" % memory_item.Title
 
 # check if we are showing the separator.
 # if yes that means we were dragging the note above this note

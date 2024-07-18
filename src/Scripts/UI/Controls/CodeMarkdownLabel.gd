@@ -38,3 +38,29 @@ static func create(code_text: String, syntax: String = "Plain Text") -> CodeMark
 	code_panel.get_node("%ExtractButton").pressed.connect(code_panel._extract_code_label)
 
 	return code_panel
+
+
+func _on_replace_all_pressed():
+	# Get the reference to the EditorPane
+	var ep: EditorPane = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane"
+	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
+
+	print("Replacing all text in the text editor.")
+	
+	# Get the currently active tab
+	var current_tab = ep.Tabs.get_current_tab()
+
+	# Check if the active tab is an Editor and is a Text editor
+	if ep.Tabs.get_child(current_tab) is Editor:
+		var editor = ep.Tabs.get_child(current_tab)
+		if editor.type == Editor.TYPE.Text:
+			var code_edit_node = editor.get_node("%CodeEdit")
+			if code_edit_node:
+				code_edit_node.text = text_without_tags
+				return
+			else:
+				print("Error: CodeEdit node not found in active Text tab.")
+		else:
+			print("Error: Active tab is not a Text editor.")
+	else:
+		print("Error: Active tab is not an Editor.")
