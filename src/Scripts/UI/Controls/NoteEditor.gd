@@ -6,7 +6,7 @@ signal on_memory_item_changed()
 @onready var code_edit: CodeEdit = get_node("CodeEdit")
 
 var memory_item: MemoryItem
-
+var type = Editor.TYPE.Text
 
 func _ready():
 	code_edit.text = memory_item.Content
