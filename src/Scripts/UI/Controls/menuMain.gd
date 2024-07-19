@@ -2,6 +2,7 @@ extends MenuBar
 
 @onready var view = $View as PopupMenu
 @onready var project: PopupMenu = $Project
+@onready var edit: PopupMenu = %File
 
 
 # handle file options
@@ -127,6 +128,8 @@ func _on_mouse_entered() -> void:
 	if active:
 		load_recent_projects()
 		active = false
+		
+		#add submenu fro button new edit
 		
 		timer = Timer.new()
 		timer.wait_time = 5.0
