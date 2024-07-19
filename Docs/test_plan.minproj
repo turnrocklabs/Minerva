@@ -55,7 +55,7 @@
 				{
 					"Audio": null,
 					"Content": "Scenarios:\n- Only 1:  A new project with a single text note.  Edit the single text note.\n- Edit 2: Edit 2 text notes back to back.\n- Edit Moved: Move a text note between tabs and edit it.\n- Edit Graphics: Edit a graphics note.\n- Edit 2 graphics: Edit 2 graphics notes back to back.\n- Edit Moved Graphics note: Edit a graphics note moved between tabs.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -191,7 +191,7 @@
 				{
 					"Audio": null,
 					"Content": "Create 1: DallE Prompt and create an image.\nCreate 2: Create 2 different, unrelated Dalle Prompts in the same chat and make different images.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -205,7 +205,7 @@
 				{
 					"Audio": null,
 					"Content": "Edit 1 DallE Image with a mask.\nEdit 2 unrelated DallE images with multiple masks per image.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -225,7 +225,7 @@
 				{
 					"Audio": null,
 					"Content": "Use the terminal to get a \"directory\" of the current directory.\nChange directories\nRun a python, rust, or go program.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -239,7 +239,7 @@
 				{
 					"Audio": null,
 					"Content": "Send 1 turn from 1 tab of the terminal to the LLM for analysis of some sort.\nSend 2 turns from 2 tabs of the terminal to the LLM for analysis of some sort.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -259,7 +259,7 @@
 				{
 					"Audio": null,
 					"Content": "Create a test note by voice.\nChange microphones during the note to a muted, but present, microphone.  Verify no sound received.\n",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -279,7 +279,7 @@
 				{
 					"Audio": null,
 					"Content": "Open 1 Text file. Validate file name and content.\nOpen 2 Text Files in tabs. Validate filename and content.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -293,7 +293,7 @@
 				{
 					"Audio": null,
 					"Content": "Open 1 graphics file. Validate name, content.\nOpen 2 graphics files.  Validate name, content.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -307,7 +307,7 @@
 				{
 					"Audio": null,
 					"Content": "Edit and save 1 text file.  Validate change.\nEdit and save 2 text files.  Validate change.\nEdit and save a graphics file.  Validate change.\nEdit and save 2 graphics files.  Validate change.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -321,7 +321,7 @@
 				{
 					"Audio": null,
 					"Content": "Open a project file.  Validate it opens.  Validate user knows to wait if project is large.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -335,7 +335,7 @@
 				{
 					"Audio": null,
 					"Content": "Save a project with notes, chats, and editor content open.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -349,10 +349,58 @@
 			],
 			"ThreadId": "ab3bd248effabb41bcb4a504ec98487d97e91d18611731abc6729e23a4369b3f",
 			"ThreadName": "Projects and Files"
+		},
+		{
+			"MemoryItemList": [
+				{
+					"Audio": null,
+					"Content": "No errors or warnings when starting Godot and opening Minerva.",
+					"ContentType": "text",
+					"Enabled": false,
+					"ImageCaption": "",
+					"MemoryImage": null,
+					"Order": 0,
+					"OwningThread": "3bc339c7f628a312dda5b4cb8b0e9638d71b58168b2ac8686df47e2bdd97ebb6",
+					"Pinned": false,
+					"Title": "Open Clean",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "No crashes, errors, or warnings when closing Minerva.",
+					"ContentType": "text",
+					"Enabled": false,
+					"ImageCaption": "",
+					"MemoryImage": null,
+					"Order": 1,
+					"OwningThread": "3bc339c7f628a312dda5b4cb8b0e9638d71b58168b2ac8686df47e2bdd97ebb6",
+					"Pinned": false,
+					"Title": "Close Clean",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "Number of issues listed, including warning, in debugger is 0 during execution of Minerva.",
+					"ContentType": "text",
+					"Enabled": false,
+					"ImageCaption": "",
+					"MemoryImage": null,
+					"Order": 2,
+					"OwningThread": "3bc339c7f628a312dda5b4cb8b0e9638d71b58168b2ac8686df47e2bdd97ebb6",
+					"Pinned": false,
+					"Title": "No Debuggter issues",
+					"Type": 0,
+					"Visible": true
+				}
+			],
+			"ThreadId": "3bc339c7f628a312dda5b4cb8b0e9638d71b58168b2ac8686df47e2bdd97ebb6",
+			"ThreadName": "Misc"
 		}
 	],
 	"active_chatindex": 0,
-	"active_notes_index": 8,
+	"active_notes_index": 9,
 	"default_provider": 0,
 	"last_tab_index": 0
 }
