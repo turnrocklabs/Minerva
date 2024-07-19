@@ -100,22 +100,44 @@ func _on_v_button_pressed():
 
 
 func _on_new_line_button_pressed() -> void:
-	if %EditorPane.Tabs.get_current_tab_control():
-		%EditorPane.Tabs.get_current_tab_control().add_new_line()
+	var current_tab = %EditorPane.Tabs.get_current_tab_control()
+	if current_tab:
+		if current_tab.get_class() == "ScrollContainer":
+			current_tab.get_node("NoteEditor").add_new_line()
+		else:
+			current_tab.add_new_line()
 
 
 func _on_back_space_button_pressed() -> void:
-	if %EditorPane.Tabs.get_current_tab_control():
-		%EditorPane.Tabs.get_current_tab_control().delete_chars()
-	else:
-		_toggle_enable_action_buttons(false)
+	var current_tab = %EditorPane.Tabs.get_current_tab_control()
+	if current_tab:
+		if current_tab.get_class() == "ScrollContainer":
+			current_tab.get_node("NoteEditor").delete_chars()
+		else:
+			current_tab.delete_chars()
+	#if %EditorPane.Tabs.get_current_tab_control():
+		#%EditorPane.Tabs.get_current_tab_control().delete_chars()
+	#else:
+		#_toggle_enable_action_buttons(false)
 
 
 func _on_clear_button_pressed():
-	if %EditorPane.Tabs.get_current_tab_control():
-		%EditorPane.Tabs.get_current_tab_control().clear_text()
+	var current_tab = %EditorPane.Tabs.get_current_tab_control()
+	if current_tab:
+		if current_tab.get_class() == "ScrollContainer":
+			current_tab.get_node("NoteEditor").clear_text()
+		else:
+			current_tab.clear_text()
+	#if %EditorPane.Tabs.get_current_tab_control():
+		#%EditorPane.Tabs.get_current_tab_control().clear_text()
 
 
 func _on_undo_button_pressed():
-	if %EditorPane.Tabs.get_current_tab_control():
-		%EditorPane.Tabs.get_current_tab_control().undo_action()
+	var current_tab = %EditorPane.Tabs.get_current_tab_control()
+	if current_tab:
+		if current_tab.get_class() == "ScrollContainer":
+			current_tab.get_node("NoteEditor").undo_action()
+		else:
+			current_tab.undo_action()
+	#if %EditorPane.Tabs.get_current_tab_control():
+		#%EditorPane.Tabs.get_current_tab_control().undo_action()

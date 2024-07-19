@@ -21,6 +21,7 @@ enum TYPE {
 	Text,
 	Graphics,
 	WhiteBoard,
+	NOTE_EDITOR
 }
 
 var file: String
@@ -201,6 +202,7 @@ func _on_create_note_button_pressed() -> void:
 
 #endregion bottom of the pane buttons
 
+#region Editor buttons
 func delete_chars() -> void:
 	if TYPE.Text != type:
 		return
@@ -219,8 +221,6 @@ func delete_chars() -> void:
 		#
 		#code_edit.grab_focus()
 		#return
-	
-	
 
 
 func add_new_line() -> void:
@@ -242,3 +242,5 @@ func clear_text():
 		return
 	%CodeEdit.clear()
 	code_edit.grab_focus()
+
+#endregion Editor buttons
