@@ -225,7 +225,6 @@ func _on_remove_button_pressed():
 	note_deleted.emit()
 
 
-
 func _on_edit_button_pressed():
 	var ep: EditorPane = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane"
 
@@ -248,8 +247,7 @@ func _on_edit_button_pressed():
 	label_node.text_changed.connect(
 		func(text):
 			container.name = text
-	)
-
+	) 
 	# show the editor if it's hidden
 	SingletonObject.main_ui.set_editor_pane_visible(true)
 
