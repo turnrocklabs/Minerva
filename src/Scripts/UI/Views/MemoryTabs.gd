@@ -340,8 +340,22 @@ func attach_file(the_file: String):
 	elif file_ext in SingletonObject.supported_audio_formats:
 		file_type = "audio"
 		type= SingletonObject.note_type.AUDIO
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
+		var buffer = file.get_buffer(file.get_length())
+		if file_ext == "mp3":
+			var mp3AudioStrem = AudioStreamMP3.new()
+			mp3AudioStrem.data = buffer
+			new_memory.Audio = mp3AudioStrem
+		if file_ext == "wav":
+			var wavAudioStream = AudioStreamWAV.new()
+			wavAudioStream.data = buffer
+			wavAudioStream.format = AudioStreamWAV.FORMAT_16_BITS
+			new_memory.Audio = wavAudioStream
+		if file_ext == "ogg":
+			var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)
+			new_memory.Audio = oggAudioStream
+		content = Marshalls.raw_to_base64(buffer)
+		file_type = "audio"
+		type= SingletonObject.note_type.AUDIO
 		content_type = "audio/%s" % file_ext
 	else:
 		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")

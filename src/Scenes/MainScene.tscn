@@ -418,6 +418,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
+drag_to_rearrange_enabled = true
 script = ExtResource("1_gunt8")
 
 [node name="TerminalTabContainer" parent="VBoxRoot/VSplitContainer" instance=ExtResource("23_ejoiu")]

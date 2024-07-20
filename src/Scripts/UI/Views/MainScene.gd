@@ -105,7 +105,7 @@ func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.btn = %btnVoiceForHeader
 	#%btnVoiceForHeader.icon = icActive
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
-	#%AddNotePopUp.disabled = false
+	%AddNotePopUp.disabled = false
 
 
 func _on_btn_voice_for_note_tab_pressed():
