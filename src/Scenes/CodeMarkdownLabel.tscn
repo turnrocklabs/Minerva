@@ -113,6 +113,12 @@ layout_mode = 2
 size_flags_horizontal = 10
 text = "Extract"
 
+[node name="ReplaceAll" type="Button" parent="v/p/h/HBoxContainer"]
+editor_description = "Replacing all in active tab"
+layout_mode = 2
+size_flags_horizontal = 8
+text = "Replace All"
+
 [node name="CopyButton" type="Button" parent="v/p/h/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -147,3 +153,5 @@ h3 = SubResource("Resource_6ck5t")
 h4 = SubResource("Resource_j3mc0")
 h5 = SubResource("Resource_whtla")
 h6 = SubResource("Resource_f738n")
+
+[connection signal="pressed" from="v/p/h/HBoxContainer/ReplaceAll" to="." method="_on_replace_all_pressed"]

@@ -1,3 +1,5 @@
+### Reference Information ###
+### Title: EditorPane
 ## This is for a tabbed editor in the middle pane of the main work chat view.
 class_name EditorPane
 extends Control
@@ -31,6 +33,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 		else:
 			container.remove_child(control)
 			SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
+
 	else:
 		container.remove_child(control)
 		SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
@@ -155,30 +158,23 @@ func toggle_vertical_split() -> void:
 signal enable_editor_action_buttons(enable)
 
 func _on_tab_container_tab_selected(tab: int) -> void:
-	var current_tab = Tabs.get_current_tab_control()
-	if current_tab == null:
+	var current_control = Tabs.get_current_tab_control()
+	if not current_control:
 		return
-	if current_tab.get_class() == "ScrollContainer":
-		enable_editor_action_buttons.emit(true)
-		return
-	elif current_tab.type == Editor.TYPE.Text:
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
 
-#endregion  Enable Editor Buttons
 
 func _on_tab_container_child_exiting_tree(node: Node) -> void:
-	var current_tab = Tabs.get_current_tab_control()
-	if current_tab == null:
+	if not Tabs.get_current_tab_control():
 		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
 		return
-	if current_tab.get_class() == "ScrollContainer":
-		enable_editor_action_buttons.emit(true)
-		return
-	elif current_tab.type == Editor.TYPE.Text:
+	var current_control = Tabs.get_current_tab_control()
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
@@ -194,11 +190,12 @@ func _on_tab_container_tab_changed(tab: int) -> void:
 		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
-	if current_tab.get_class() == "ScrollContainer":
-		enable_editor_action_buttons.emit(true)
 		return
-	elif current_tab.type == Editor.TYPE.Text:
+	var current_control = Tabs.get_current_tab_control()
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
 
+###
+### End Reference Information ###
