@@ -61,13 +61,13 @@ func _ready():
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	code_edit.text = fa_object.get_as_text()
-	%SaveButton.disabled = false
+	# %SaveButton.disabled = false
 
 
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	graphics_editor.setup_from_image(image)
-	%SaveButton.disabled = false
+	# %SaveButton.disabled = false
 
 	# var texture_item = ImageTexture.create_from_image(image)
 	# whiteB.get_node("%EditPic").texture = texture_item
@@ -142,7 +142,7 @@ func _on_close_dialog_custom_action(action: StringName):
 
 func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
-	%SaveButton.disabled = false
+	# %SaveButton.disabled = false
 
 
 func save_file_to_disc(path: String):
@@ -166,9 +166,7 @@ func save_file_to_disc(path: String):
 
 #region bottom of the pane buttons
 func _on_save_button_pressed():
-	if file:
-		save_file_to_disc(file)
-	return
+	prompt_close(true)
 
 
 func _on_create_note_button_pressed() -> void:
