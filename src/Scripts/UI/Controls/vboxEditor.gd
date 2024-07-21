@@ -67,6 +67,7 @@ func open_file(filename: String):
 
 	## Determine file type
 	if _is_graphics_file(filename):
+		SingletonObject.is_graph = true
 		editor_pane.add(Editor.TYPE.Graphics, filename)
 		# new_control = TextureRect.new()
 		# new_control.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED # keep the image at center
@@ -86,6 +87,7 @@ func open_file(filename: String):
 	# new_control.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# editor_pane.add(Editor.TYPE.Text, filename)
+
 
 func _on_h_button_pressed():
 	if not editor_pane: return
