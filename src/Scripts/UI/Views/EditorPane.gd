@@ -67,7 +67,6 @@ func add_control(item: Node, name_: String) -> Node:
 	scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scrollable.name = name_
-	
 	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	item.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
@@ -85,12 +84,30 @@ func add(type: Editor.TYPE, file = null, name_ = null) -> Editor:
 
 	var editor_node = Editor.create(type, file)
 	
-	if name_: editor_node.name = name_
-
+	if name_: 
+		editor_node.name = name_
+	elif file:
+		editor_node.name = get_file_name(file)
+	else:
+		match type:
+			Editor.TYPE.Text:
+				editor_node.name = "tab " + str(Tabs.get_tab_count() + 1)
+			Editor.TYPE.Graphics:
+				editor_node.name = "Graphics " + str(Tabs.get_tab_count() + 1)
+			Editor.TYPE.WhiteBoard:
+				editor_node.name = "drawing " + str(Tabs.get_tab_count() + 1)
+	
 	self.Tabs.add_child(editor_node)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
-
+	
 	return editor_node
+
+
+func get_file_name(path: String) -> String:
+	if path.length() <= 1:
+		return path
+	var split_path = path.split("/")
+	return split_path[split_path.size() -1].split(".")[0]
 
 
 func unsaved_editors() -> Array[Editor]:
@@ -130,3 +147,58 @@ func toggle_vertical_split() -> void:
 	_copy_children_to(LeftControl, BottomControl)
 
 	BottomControl.visible = not BottomControl.visible
+
+
+
+
+#region  Enable Editor Buttons
+signal enable_editor_action_buttons(enable)
+
+func _on_tab_container_tab_selected(tab: int) -> void:
+	var current_tab = Tabs.get_current_tab_control()
+	if current_tab == null:
+		return
+	if current_tab.get_class() == "ScrollContainer":
+		enable_editor_action_buttons.emit(true)
+		return
+	elif current_tab.type == Editor.TYPE.Text:
+		enable_editor_action_buttons.emit(true)
+	else: 
+		enable_editor_action_buttons.emit(false)
+
+#endregion  Enable Editor Buttons
+
+func _on_tab_container_child_exiting_tree(node: Node) -> void:
+	var current_tab = Tabs.get_current_tab_control()
+	if current_tab == null:
+		return
+	if Tabs.get_tab_count() < 1:
+		enable_editor_action_buttons.emit(false)
+		return
+	if current_tab.get_class() == "ScrollContainer":
+		enable_editor_action_buttons.emit(true)
+		return
+	elif current_tab.type == Editor.TYPE.Text:
+		enable_editor_action_buttons.emit(true)
+	else: 
+		enable_editor_action_buttons.emit(false)
+
+
+func _on_tab_container_tree_exited() -> void:
+	enable_editor_action_buttons.emit(false)
+
+
+func _on_tab_container_tab_changed(tab: int) -> void:
+	var current_tab = Tabs.get_current_tab_control()
+	if Tabs == null:
+		return
+	if Tabs.get_tab_count() < 1:
+		enable_editor_action_buttons.emit(false)
+	if current_tab.get_class() == "ScrollContainer":
+		enable_editor_action_buttons.emit(true)
+		return
+	elif current_tab.type == Editor.TYPE.Text:
+		enable_editor_action_buttons.emit(true)
+	else: 
+		enable_editor_action_buttons.emit(false)
+
