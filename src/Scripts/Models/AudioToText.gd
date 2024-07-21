@@ -80,7 +80,7 @@ func _on_request_completed(_result, response_code, _headers, body):
 		if response_json.has("text"):
 			var transcription = response_json["text"]
 			print("Transcription:", transcription)
-			FieldForFilling.text = transcription
+			FieldForFilling.text += " " + transcription
 			btn.disabled = false
 			btn.modulate = Color.WHITE
 		else:
