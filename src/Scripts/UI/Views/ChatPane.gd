@@ -391,6 +391,11 @@ func _ready():
 	
 	SingletonObject.initialize_chats(self)
 	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
+	
+	#this is for overriding the separation in the open file dialog
+	#this seems to be the only way I can access it
+	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
+	hbox.set("theme_override_constants/separation", 12)
 
 
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
