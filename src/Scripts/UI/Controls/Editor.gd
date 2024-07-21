@@ -220,3 +220,10 @@ func clear_text():
 		return
 	%CodeEdit.clear()
 	code_edit.grab_focus()
+
+
+func _on_audio_btn_pressed():
+	SingletonObject.AtT.FieldForFilling = %CodeEdit
+	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %AudioBTN
+	%AudioBTN.modulate = Color(Color.LIME_GREEN)
