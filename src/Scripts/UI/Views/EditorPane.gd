@@ -73,12 +73,12 @@ func add_control(item: Node, name_: String) -> Node:
 	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	item.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	scrollable.add_child(item)
-
-	self.Tabs.add_child(scrollable)
+	# scrollable.add_child(item)
+	item.name = name_
+	self.Tabs.add_child(item)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
 
-	return scrollable
+	return item
 
 
 
