@@ -21,11 +21,12 @@ func _ready():
 
 
 func _on_close_tab(tab: int, container: TabContainer):
+	if Editor.TYPE.WhiteBoard:
+		GraphicsEditor.layer_Number = 0
 	var control = container.get_tab_control(tab)
 	if control is Editor:
 		if not control.is_content_saved():
 			var should_close = await control.prompt_close()
-			
 			if should_close:
 				container.remove_child(control)
 				SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
@@ -69,7 +70,6 @@ func add_control(item: Node, name_: String) -> Node:
 	scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scrollable.name = name_
-	
 	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	item.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
@@ -185,6 +185,9 @@ func _on_tab_container_tree_exited() -> void:
 
 
 func _on_tab_container_tab_changed(tab: int) -> void:
+	var current_tab = Tabs.get_current_tab_control()
+	if Tabs == null:
+		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
 		return

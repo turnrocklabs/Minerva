@@ -29,6 +29,10 @@ func _ready() -> void:
 	var idx = AudioServer.get_bus_index("Rec")
 	effect = AudioServer.get_bus_effect(idx, 0)
 	
+	#this is for overriding the separation in the open file dialog
+	#this seems to be the only way I can access it
+	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
+	hbox.set("theme_override_constants/separation", 12)
 
 func zoom_ui(factor: int):
 	if theme.has_default_font_size():
@@ -101,7 +105,7 @@ func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.btn = %btnVoiceForHeader
 	#%btnVoiceForHeader.icon = icActive
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
-	#%AddNotePopUp.disabled = false
+	%AddNotePopUp.disabled = false
 
 
 func _on_btn_voice_for_note_tab_pressed():
