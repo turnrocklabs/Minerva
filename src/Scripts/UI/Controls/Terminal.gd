@@ -1,11 +1,20 @@
 class_name Terminal
 extends PanelContainer
 
+signal execution_finished()
+
+@export var _send_button: BaseButton
+
 @onready var command_line_edit: LineEdit = %CommandLineEdit
 @onready var text_edit: TextEdit = %TextEdit
 @onready var cwd_label: Label = %CwdLabel
 
 const cwd_delimiter = "##cwd##"
+
+var _thread: Thread:
+	set(value):
+		_thread = value
+		_send_button.disabled = _thread != null
 
 ## History of used commands
 var _history: = PackedStringArray()
@@ -20,6 +29,11 @@ var cwd: String:
 
 var wrap_command: Callable
 var shell: String
+
+
+static func create() -> Terminal:
+	var terminal = preload("res://Scenes/Terminal.tscn").instantiate()
+	return terminal
 
 
 func _wrap_windows_command(user_input: String) -> PackedStringArray:
@@ -52,49 +66,70 @@ func _ready():
 			wrap_command = _wrap_linux_command
 
 
-func execute_command(input: String) -> void:
+func _process(_delta):
+	if not _thread or not _thread.is_started(): return
+
+	if not _thread.is_alive():
+		_thread.set_meta("output", _thread.wait_to_finish())
+		if _thread.get_meta("callback", null) is Callable:
+			_thread.get_meta("callback").call()
+			_thread = null
+
+
+func _execute_command(input: String) -> Array:
 	var output = []
 
 	var args = wrap_command.call(input)
 
 	print("Running: %s %s" % [shell, " ".join(args)])
 
-	var _pid = OS.execute(shell, args, output, true)
+	OS.execute(shell, args, output, true)
+	return output
+
+
+func execute_thread_command(input: String):
+	_thread = Thread.new()
+	_thread.start(_execute_command.bind(input), Thread.PRIORITY_LOW)
+	print("Thread started")
+
+	var callback = func():
+		var output = _thread.get_meta("output")
+
+		# last line is current working directory, so we just extarct that
+		var cmd_result: String = output.back()
+		
+		var cwd_index_start = cmd_result.rfind(cwd_delimiter)
+
+		cwd = cmd_result.substr(cwd_index_start+cwd_delimiter.length()).strip_edges()
+
+		cmd_result = cmd_result.substr(0, cwd_index_start)
+
+		
+		# If theres \f clear the textedit
+		# eg. clear/cls command will just output \f
+		if "\f" in cmd_result:
+			var idx = cmd_result.rfind("\f")
+
+			cmd_result = cmd_result.substr(idx)
+			text_edit.text = cmd_result
+		else:
+			text_edit.text += "%s>%s\n%s" % [cwd, input, cmd_result]
+
+		_history.insert(0, input)
+		_history_idx = -1
 	
-	# last line is current working directory, so we just extarct that
-	var cmd_result: String = output.back()
-	
-	var cwd_index_start = cmd_result.rfind(cwd_delimiter)
-
-	cwd = cmd_result.substr(cwd_index_start+cwd_delimiter.length()).strip_edges()
-
-	cmd_result = cmd_result.substr(0, cwd_index_start)
-
-	
-	# If theres \f clear the textedit
-	# eg. clear/cls command will just output \f
-	if "\f" in cmd_result:
-		var idx = cmd_result.rfind("\f")
-
-		cmd_result = cmd_result.substr(idx)
-		text_edit.text = cmd_result
-	else:
-		text_edit.text += "%s>%s\n%s" % [cwd, input, cmd_result]
-
-	_history.insert(0, input)
-	_history_idx = -1
-
+	_thread.set_meta("callback", callback)
 
 
 func _on_button_pressed():
 	if not command_line_edit.text.is_empty():
-		execute_command(command_line_edit.text)
+		execute_thread_command(command_line_edit.text)
 		command_line_edit.text = ""
 
 
 func _on_command_line_edit_text_submitted(new_text):
-	if not command_line_edit.text.is_empty():
-		execute_command(new_text)
+	if not command_line_edit.text.is_empty() and not _thread:
+		execute_thread_command(new_text)
 		command_line_edit.text = ""
 
 

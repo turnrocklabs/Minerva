@@ -1,6 +1,6 @@
 [gd_scene load_steps=30 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Theme" uid="uid://cp35jeejtilwm" path="res://assets/themes/dark_mode.theme" id="1_cx4qy"]
+[ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_66w4a"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
@@ -25,7 +25,7 @@
 [ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="17_ijkb2"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
 [ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="22_285lg"]
-[ext_resource type="PackedScene" uid="uid://vpf0a1bogbnc" path="res://Scenes/Terminal.tscn" id="25_g5bq8"]
+[ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -36,7 +36,7 @@ diffuse_texture = ExtResource("8_oxf75")
 
 [sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_i6lnv"]
 
-[node name="RootControl" type="Control" node_paths=PackedStringArray("terminal")]
+[node name="RootControl" type="Control" node_paths=PackedStringArray("terminal_container")]
 texture_filter = 1
 layout_mode = 3
 anchors_preset = 15
@@ -44,9 +44,9 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("1_cx4qy")
+theme = ExtResource("1_66w4a")
 script = ExtResource("2_65hnk")
-terminal = NodePath("VBoxRoot/VSplitContainer/Terminal")
+terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
 [node name="Panel" type="Panel" parent="."]
 layout_mode = 1
@@ -59,34 +59,41 @@ grow_vertical = 2
 [node name="ErrorDisplayPopup" type="Window" parent="."]
 unique_name_in_owner = true
 initial_position = 2
-size = Vector2i(238, 100)
+size = Vector2i(200, 250)
 visible = false
-transient = true
-exclusive = true
+unresizable = true
+min_size = Vector2i(200, 250)
 script = ExtResource("3_w58y5")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ErrorDisplayPopup"]
+custom_minimum_size = Vector2(200, 250)
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 234.0
-offset_bottom = 96.0
+offset_right = -10.0
 grow_horizontal = 2
 grow_vertical = 2
 
 [node name="lblErrorHeader" type="Label" parent="ErrorDisplayPopup/VBoxContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
-size_flags_vertical = 2
+theme_override_font_sizes/font_size = 32
 text = "An Error Occurred."
 label_settings = SubResource("LabelSettings_c0x6k")
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="lblErrorMessage" type="Label" parent="ErrorDisplayPopup/VBoxContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(240, 100)
 layout_mode = 2
 size_flags_vertical = 6
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+clip_text = true
 
 [node name="PreferencesPopup" parent="." instance=ExtResource("3_3hcc1")]
 unique_name_in_owner = true
@@ -276,7 +283,7 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 5
 script = ExtResource("2_kohxl")
-terminal_pane = NodePath("../Terminal")
+terminal_pane = NodePath("../TerminalTabContainer")
 
 [node name="HSplitContainer" type="HSplitContainer" parent="VBoxRoot/VSplitContainer/MainUI"]
 layout_mode = 2
@@ -412,8 +419,7 @@ size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 script = ExtResource("1_gunt8")
 
-[node name="Terminal" parent="VBoxRoot/VSplitContainer" instance=ExtResource("25_g5bq8")]
-unique_name_in_owner = true
+[node name="TerminalTabContainer" parent="VBoxRoot/VSplitContainer" instance=ExtResource("23_ejoiu")]
 visible = false
 layout_mode = 2
 size_flags_vertical = 3
@@ -667,6 +673,7 @@ stream = SubResource("AudioStreamMicrophone_i6lnv")
 autoplay = true
 bus = &"Rec"
 
+[connection signal="about_to_popup" from="NewThreadPopup" to="." method="_on_new_thread_popup_about_to_popup"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="focus_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_focus_entered"]

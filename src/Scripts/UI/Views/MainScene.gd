@@ -6,7 +6,7 @@ extends Control
 @onready var text_note_check_box: CheckBox = %TextNoteCheckBox
 @onready var audio_check_box: CheckBox = %AudioCheckBox
 @onready var image_check_box: CheckBox = %ImageCheckBox
-@export  var terminal: Terminal
+@export  var terminal_container: TerminalTabContainer
 
 var note_enum = SingletonObject.note_type.TEXT
 
@@ -54,7 +54,7 @@ func _gui_input(event):
 
 func _input(event):
 	if event.is_action_released("ui_terminal", true):
-		terminal.visible = not terminal.visible
+		terminal_container.visible = not terminal_container.visible
 
 
 #Show the window where we can add note
@@ -133,6 +133,7 @@ func _on_disable_notes_button_pressed() -> void:
 
 #this get called when the CREATE NOTE WINDOW is about to pop up
 func _on_create_new_note_about_to_popup() -> void:
+	%NoteHead.grab_focus()
 	text_note_check_box.button_pressed = true
 	%CreateNewNote.exclusive = true
 
@@ -310,10 +311,14 @@ func _on_play_audio_button_pressed() -> void:
 	%AudioNoteStreamPlayer.play()
 
 #endregion Audio Note
-
-
 #endregion Create New note Window
 
+
+#region new tab popup
+func _on_new_thread_popup_about_to_popup() -> void:
+	%txtNewTabName.grab_focus()
+
+#endregion new tab popup
 
 
 
