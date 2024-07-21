@@ -1,5 +1,3 @@
-### Updated GraphicsEditor Script ###
-
 ### Title: GraphicsEditor
 class_name GraphicsEditor
 extends PanelContainer
@@ -73,15 +71,38 @@ func _ready():
 		#editing and drawing
 		%MaskCheckButton.visible = SingletonObject.is_masking
 		%BrushHSlider.visible = SingletonObject.is_masking
-		%Erasing.visible = SingletonObject.is_masking
-		%ColorPickerButton.visible = SingletonObject.is_masking
-	
+		%Erasing.visible = SingletonObject.is_masking 
 	layer_Number += 1
 	setup(Vector2(1000, 1000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
+
+func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) -> Vector2:
+	var aspect_ratio = original_size.x / original_size.y
+	var target_width = original_size.x
+	var target_height = original_size.y
+	
+	if original_size.x > max_size.x:
+		target_width = max_size.x
+		target_height = target_width / aspect_ratio
+		
+		if target_height > max_size.y:
+			target_height = max_size.y
+			target_width = target_height * aspect_ratio
+
+	elif original_size.y > max_size.y:
+		target_height = max_size.y
+		target_width = target_height * aspect_ratio
+		
+		if target_width > max_size.x:
+			target_width = max_size.x
+			target_height = target_width / aspect_ratio
+	
+	return Vector2(target_width, target_height)
 	
 func setup_from_image(image_: Image):
+	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(1000, 800))
+	image_.resize(new_size.x, new_size.y)
 	for ch in _layers_container.get_children(true): 
 		ch.queue_free()
 	_draw_layer = _create_layer(image_)
@@ -98,13 +119,11 @@ func setup_from_image(image_: Image):
 func setup(canvas_size: Vector2, background_color: Color):
 	var img = Image.create(canvas_size.x, canvas_size.y, false, Image.FORMAT_RGBA8)
 	img.fill(background_color)
-
 	setup_from_image(img)
 
 func create_image():
 	var img = Image.create(1000, 1000, false, Image.FORMAT_RGBA8)
 	img.fill(Color(255, 255, 255, 0))
-
 	_draw_layer = _create_layer(img)
 	_background_images[_draw_layer.name] = img.duplicate()  # Store the initial background
 
@@ -245,5 +264,3 @@ func _on_pick_layers_item_selected(index):
 	selectedLayer = %PickLayers.get_item_text(index)
 	selectedIndex = index
 	_draw_layer = %LayersContainer.get_node(selectedLayer)
-
-### End Updated GraphicsEditor Script ###
