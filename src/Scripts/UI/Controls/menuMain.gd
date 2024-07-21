@@ -89,6 +89,8 @@ func _on_project_index_pressed(index):
 			## Save as a project
 			SingletonObject.SaveProjectAs.emit()
 			pass
+		4:
+			SingletonObject.PackageProject.emit()
 
 func _on_view_id_pressed(id: int):
 	# if zoom items are selected
