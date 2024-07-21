@@ -7,9 +7,13 @@ extends VBoxContainer
 var _opened_files: Array[String] = []:
 	get:
 		var files: Array[String] = []
+		print("EDITOR LOOP")
 		for editor in editor_pane.get_children():
+			print(editor)
+			breakpoint
 			if not editor is Editor or not editor.file: continue
 			files.append(editor.file)
+		print(files)
 		return files
 
 
@@ -28,11 +32,14 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 
 
 func serialize() -> Array[String]:
-	return _opened_files
+	var files: Array[String] = []
+	# first get all open editors
+	for editor in editor_pane.open_editors():
+		if editor.file: files.append(editor.file)
+	
+	return files
 
 func deserialize(files: Array[String]):
-	_opened_files = files
-
 	for file in files:
 		open_file(file)
 

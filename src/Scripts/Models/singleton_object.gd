@@ -211,6 +211,7 @@ signal OpenProject
 signal OpenRecentProject(recent_project_name: String)
 signal SaveProject
 signal SaveProjectAs
+signal PackageProject
 signal CloseProject
 signal RedrawAll
 

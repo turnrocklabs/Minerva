@@ -167,9 +167,7 @@ func save_file_to_disc(path: String):
 
 #region bottom of the pane buttons
 func _on_save_button_pressed():
-	if file:
-		save_file_to_disc(file)
-	return
+	prompt_close(true)
 
 
 func _on_create_note_button_pressed() -> void:
