@@ -62,20 +62,20 @@ func _process(delta):
 				SingletonObject.NotesTab.restore_deleted_tab(last_deleted_tab)
 			
 func add_control(item: Node, name_: String) -> Node:
-	var scrollable = ScrollContainer.new()
-	scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scrollable.name = name_
+	# var scrollable = ScrollContainer.new()
+	# scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# scrollable.name = name_
 	
-	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	item.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# item.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	scrollable.add_child(item)
-
-	self.Tabs.add_child(scrollable)
+	# scrollable.add_child(item)
+	item.name = name_
+	self.Tabs.add_child(item)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
 
-	return scrollable
+	return item
 
 
 
@@ -157,7 +157,7 @@ signal enable_editor_action_buttons(enable)
 func _on_tab_container_tab_selected(tab: int) -> void:
 	if Tabs.get_current_tab_control():
 		return
-	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+	if Tabs.get_current_tab_control().get("type") == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
@@ -170,7 +170,7 @@ func _on_tab_container_child_exiting_tree(node: Node) -> void:
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
 		return
-	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+	if Tabs.get_current_tab_control().get("type") == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
@@ -183,7 +183,7 @@ func _on_tab_container_tree_exited() -> void:
 func _on_tab_container_tab_changed(tab: int) -> void:
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
-	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+	if Tabs.get_current_tab_control().get("type") == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
