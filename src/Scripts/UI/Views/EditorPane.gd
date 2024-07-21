@@ -1,3 +1,5 @@
+### Reference Information ###
+### Title: EditorPane
 ## This is for a tabbed editor in the middle pane of the main work chat view.
 class_name EditorPane
 extends Control
@@ -19,17 +21,19 @@ func _ready():
 
 
 func _on_close_tab(tab: int, container: TabContainer):
+	if Editor.TYPE.WhiteBoard:
+		GraphicsEditor.layer_Number = 0
 	var control = container.get_tab_control(tab)
 	if control is Editor:
 		if not control.is_content_saved():
 			var should_close = await control.prompt_close()
-			
 			if should_close:
 				container.remove_child(control)
 				SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
 		else:
 			container.remove_child(control)
 			SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
+
 	else:
 		container.remove_child(control)
 		SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
@@ -62,13 +66,12 @@ func _process(delta):
 				SingletonObject.NotesTab.restore_deleted_tab(last_deleted_tab)
 			
 func add_control(item: Node, name_: String) -> Node:
-	# var scrollable = ScrollContainer.new()
-	# scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# scrollable.name = name_
-	
-	# item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# item.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var scrollable = ScrollContainer.new()
+	scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scrollable.name = name_
+	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	item.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# scrollable.add_child(item)
 	item.name = name_
@@ -155,22 +158,23 @@ func toggle_vertical_split() -> void:
 signal enable_editor_action_buttons(enable)
 
 func _on_tab_container_tab_selected(tab: int) -> void:
-	if Tabs.get_current_tab_control():
+	var current_control = Tabs.get_current_tab_control()
+	if not current_control:
 		return
-	if Tabs.get_current_tab_control().get("type") == Editor.TYPE.Text:
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
 
-#endregion  Enable Editor Buttons
 
 func _on_tab_container_child_exiting_tree(node: Node) -> void:
-	if Tabs.get_current_tab_control() == null:
+	if not Tabs.get_current_tab_control():
 		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
 		return
-	if Tabs.get_current_tab_control().get("type") == Editor.TYPE.Text:
+	var current_control = Tabs.get_current_tab_control()
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
@@ -181,10 +185,17 @@ func _on_tab_container_tree_exited() -> void:
 
 
 func _on_tab_container_tab_changed(tab: int) -> void:
+	var current_tab = Tabs.get_current_tab_control()
+	if Tabs == null:
+		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
-	if Tabs.get_current_tab_control().get("type") == Editor.TYPE.Text:
+		return
+	var current_control = Tabs.get_current_tab_control()
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
 
+###
+### End Reference Information ###

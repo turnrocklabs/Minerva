@@ -23,7 +23,7 @@ var MemoryImage: Image:
 var ImageCaption: String = "":
 	set(value): SingletonObject.save_state(false); ImageCaption = value
 
-var Audio: AudioStreamWAV:
+var Audio: AudioStream:
 	set(value): SingletonObject.save_state(false); Audio = value
 
 var ContentType: String:
@@ -96,7 +96,7 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 		if prop == "Audio":
 			if not value: continue # if no data, just skip
 
-			var audio: AudioStreamWAV = Marshalls.base64_to_variant(value, true)
+			var audio: AudioStream = Marshalls.base64_to_variant(value, true)
 
 			value = audio
 		

@@ -1,5 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://bbu6grgjnwrvw"]
+[gd_scene load_steps=3 format=3 uid="uid://bbu6grgjnwrvw"]
 
+[ext_resource type="Theme" uid="uid://cdp8qvjvdfebe" path="res://assets/themes/terminal.tres" id="1_1nu0h"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/TerminalTabContainer.gd" id="1_n8p1u"]
 
 [node name="TerminalTabContainer" type="VBoxContainer" node_paths=PackedStringArray("_tab_bar", "_controls_container")]
@@ -8,6 +9,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("1_1nu0h")
 script = ExtResource("1_n8p1u")
 _tab_bar = NodePath("h/TabBar")
 _controls_container = NodePath("PanelContainer")
