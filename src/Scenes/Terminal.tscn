@@ -1,0 +1,57 @@
+[gd_scene load_steps=2 format=3 uid="uid://vpf0a1bogbnc"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Terminal.gd" id="1_o05gx"]
+
+[node name="Terminal" type="PanelContainer" node_paths=PackedStringArray("_send_button")]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_o05gx")
+_send_button = NodePath("ScrollContainer/v/h/Button")
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+follow_focus = true
+
+[node name="v" type="VBoxContainer" parent="ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="TextEdit" type="TextEdit" parent="ScrollContainer/v"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+editable = false
+wrap_mode = 1
+scroll_fit_content_height = true
+
+[node name="h" type="HBoxContainer" parent="ScrollContainer/v"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="CwdLabel" type="Label" parent="ScrollContainer/v/h"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CommandLineEdit" type="LineEdit" parent="ScrollContainer/v/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+flat = true
+caret_blink = true
+
+[node name="Button" type="Button" parent="ScrollContainer/v/h"]
+layout_mode = 2
+text = "Enter"
+flat = true
+
+[connection signal="text_set" from="ScrollContainer/v/TextEdit" to="." method="_on_text_edit_text_set"]
+[connection signal="gui_input" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_gui_input"]
+[connection signal="text_submitted" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_text_submitted"]
+[connection signal="pressed" from="ScrollContainer/v/h/Button" to="." method="_on_button_pressed"]
