@@ -190,7 +190,7 @@ layout_mode = 1
 unique_name_in_owner = true
 title = "Open a File"
 initial_position = 4
-size = Vector2i(392, 163)
+size = Vector2i(465, 163)
 popup_window = true
 ok_button_text = "Open"
 file_mode = 0
@@ -338,6 +338,7 @@ icon = ExtResource("11_srtkx")
 [node name="BackSpaceButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Backspace"
+focus_mode = 0
 icon = ExtResource("12_j6ukv")
 
 [node name="NewLineButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
@@ -417,6 +418,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
+drag_to_rearrange_enabled = true
 script = ExtResource("1_gunt8")
 
 [node name="TerminalTabContainer" parent="VBoxRoot/VSplitContainer" instance=ExtResource("23_ejoiu")]
@@ -679,6 +681,7 @@ bus = &"Rec"
 [connection signal="focus_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_mouse_entered"]
 [connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
+[connection signal="tree_entered" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/menuMain/ProjectManagement" method="_on_fdg_open_file_tree_entered"]
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_about_to_popup"]
 [connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
 [connection signal="about_to_popup" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_about_to_popup"]
