@@ -308,43 +308,66 @@ func attach_file(the_file: String):
 	var file_type = ""
 	var content = ""
 	var content_type = ""
+	var type
 	var title = the_file.get_file().get_basename()
-
-	if file_ext in SingletonObject.supported_text_fortmats:# ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
-		file_type = "text"
-		content = file.get_as_text()
-		content_type = "text/plain"
-	elif file_ext in SingletonObject.supported_image_formats:
-		file_type = "image"
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		content_type = "image/%s" % file_ext
-	elif file_ext in SingletonObject.supported_video_formats:
-		file_type = "video"
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		content_type = "video/%s" % file_ext
-	elif file_ext in SingletonObject.supported_audio_formats:
-		file_type = "audio"
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		content_type = "audio/%s" % file_ext
-	else:
-		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
-		return
-
+	
 	# Get the active thread
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) < self.current_tab:
 		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		return
 	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
-
-	# Create a new memory item
+	
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	
+	if file_ext in SingletonObject.supported_text_fortmats:# ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
+		file_type = "text"
+		content = file.get_as_text()
+		content_type = "text/plain"
+		type = SingletonObject.note_type.TEXT
+	elif file_ext in SingletonObject.supported_image_formats:
+		file_type = "image"
+		type= SingletonObject.note_type.IMAGE
+		var file_data = file.get_buffer(file.get_length())
+		content = Marshalls.raw_to_base64(file_data)
+		new_memory.MemoryImage = Image.load_from_file(the_file)
+		content_type = "image/%s" % file_ext
+	elif file_ext in SingletonObject.supported_video_formats:
+		file_type = "video"
+		type= SingletonObject.note_type.VIDEO
+		var file_data = file.get_buffer(file.get_length())
+		content = Marshalls.raw_to_base64(file_data)
+		content_type = "video/%s" % file_ext
+	elif file_ext in SingletonObject.supported_audio_formats:
+		file_type = "audio"
+		type= SingletonObject.note_type.AUDIO
+		var buffer = file.get_buffer(file.get_length())
+		if file_ext == "mp3":
+			var mp3AudioStrem = AudioStreamMP3.new()
+			mp3AudioStrem.data = buffer
+			new_memory.Audio = mp3AudioStrem
+		if file_ext == "wav":
+			var wavAudioStream = AudioStreamWAV.new()
+			wavAudioStream.data = buffer
+			wavAudioStream.format = AudioStreamWAV.FORMAT_16_BITS
+			new_memory.Audio = wavAudioStream
+		if file_ext == "ogg":
+			var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)
+			new_memory.Audio = oggAudioStream
+		content = Marshalls.raw_to_base64(buffer)
+		file_type = "audio"
+		type= SingletonObject.note_type.AUDIO
+		content_type = "audio/%s" % file_ext
+	else:
+		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
+		return
+	
+	# Create a new memory item
+	#var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = true
 	new_memory.Title = title
 	new_memory.Content = content
 	new_memory.ContentType = content_type
+	new_memory.Type = type
 	new_memory.Visible = true
 
 	# Append the new memory item to the active thread memory list
@@ -353,7 +376,6 @@ func attach_file(the_file: String):
 
 	file.close()
 	pass
-
 
 
 # Called when the node enters the scene tree for the first time.

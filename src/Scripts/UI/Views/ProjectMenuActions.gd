@@ -208,3 +208,8 @@ func _on_exit_confirmation_dialog_confirmed():
 func _on_exit_confirmation_dialog_custom_action(action: StringName):
 	if action == "exit":
 		get_tree().quit()
+
+
+func _on_fdg_open_file_tree_entered():
+	var openProjectHbox: HBoxContainer = %fdgOpenProject.get_vbox().get_child(0)
+	openProjectHbox.set("theme_override_constants/separation", 12)
