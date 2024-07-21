@@ -160,6 +160,7 @@ func add_note(user_title:String, user_content: String, _source: String = ""):
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.TEXT
+	new_memory.ContentType = "text"
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
@@ -182,6 +183,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.AUDIO
+	new_memory.ContentType = "audio"
 	new_memory.Title = note_title
 	new_memory.Audio = note_audio
 	new_memory.Visible = true
@@ -203,6 +205,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.IMAGE
+	new_memory.ContentType = "image"
 	new_memory.Title = note_title
 	new_memory.MemoryImage = note_image
 	new_memory.ImageCaption = imageCaption
@@ -307,7 +310,7 @@ func attach_file(the_file: String):
 	var content_type = ""
 	var title = the_file.get_file().get_basename()
 
-	if file_ext in ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
+	if file_ext in SingletonObject.supported_text_fortmats:# ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
 		file_type = "text"
 		content = file.get_as_text()
 		content_type = "text/plain"
@@ -316,12 +319,12 @@ func attach_file(the_file: String):
 		var file_data = file.get_buffer(file.get_length())
 		content = Marshalls.raw_to_base64(file_data)
 		content_type = "image/%s" % file_ext
-	elif file_ext in ["mp4", "mov", "avi", "mkv", "webm"]:
+	elif file_ext in SingletonObject.supported_video_formats:
 		file_type = "video"
 		var file_data = file.get_buffer(file.get_length())
 		content = Marshalls.raw_to_base64(file_data)
 		content_type = "video/%s" % file_ext
-	elif file_ext in ["mp3", "wav", "ogg", "flac"]:
+	elif file_ext in SingletonObject.supported_audio_formats:
 		file_type = "audio"
 		var file_data = file.get_buffer(file.get_length())
 		content = Marshalls.raw_to_base64(file_data)

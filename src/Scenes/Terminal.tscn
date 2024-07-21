@@ -2,13 +2,14 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Terminal.gd" id="1_o05gx"]
 
-[node name="Terminal" type="PanelContainer"]
+[node name="Terminal" type="PanelContainer" node_paths=PackedStringArray("_send_button")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_o05gx")
+_send_button = NodePath("ScrollContainer/v/h/Button")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="."]
 unique_name_in_owner = true
