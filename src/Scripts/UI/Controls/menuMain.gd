@@ -1,15 +1,16 @@
+### Reference Information ###
+### Title: menuMain
 extends MenuBar
 
 @onready var view = $View as PopupMenu
 @onready var project: PopupMenu = $Project
 @onready var edit: PopupMenu = %File
 
+# Add a new submenu for 'File'
+@onready var file_submenu: PopupMenu = PopupMenu.new()
 
-# handle file options
 func _on_file_index_pressed(index):
 	match index:
-		0:
-			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Text)
 		1:
 			%fdgOpenFile.popup_centered(Vector2i(800, 600))
 		2: # this match is for the save button
@@ -35,12 +36,46 @@ func _on_file_index_pressed(index):
 			%PreferencesPopup.borderless = false
 			%PreferencesPopup.size = target_size
 			%PreferencesPopup.popup_centered()
-		5:
-			SingletonObject.is_graph = true
-			SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Graphics)
 
-## Handler:
-# _on_project_index_pressed handles the "Project" menu.
+# Handle new file creation
+func handle_new_file():
+	SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Text)
+
+# Handle new graphics creation
+func handle_new_graphics():
+	SingletonObject.is_graph = true
+	SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Graphics)
+
+func _on_file_submenu_index_pressed(index):
+	match index:
+		0:
+			handle_new_file()
+		1:
+			handle_new_graphics()
+
+func _ready():
+	# Create the new submenu
+	file_submenu.name = "file_submenu"
+	file_submenu.add_item("New File")
+	file_submenu.add_item("New Graphics")
+	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
+	
+	# Add the "New" submenu to the top of the "File" menu
+	%File.add_child(file_submenu)
+	%File.add_submenu_item("New", "file_submenu", 0)  # Note the index 0 here
+
+	# Add the rest of the "File" menu items
+	%File.add_item("Open", 1)
+	%File.add_item("Save", 2)
+	%File.add_item("Save As", 3)
+	%File.add_item("Preferences", 4)
+	
+	# Make appropriate connections
+	%File.index_pressed.connect(_on_file_index_pressed)
+	%File.about_to_popup.connect(_on_file_about_to_popup)
+	
+	# Other existing code...
+
 func _on_project_index_pressed(index):
 	match index:
 		0:
@@ -53,13 +88,12 @@ func _on_project_index_pressed(index):
 			pass
 		2:
 			## Save a project
-			SingletonObject.SaveProject.emit()
+			SingletonObject.SaveProject.emit() 
 			pass
 		3:
 			## Save as a project
 			SingletonObject.SaveProjectAs.emit()
 			pass
-
 
 func _on_view_id_pressed(id: int):
 	# if zoom items are selected
@@ -77,14 +111,12 @@ func _on_view_id_pressed(id: int):
 	SingletonObject.main_ui.set_editor_pane_visible(view.is_item_checked(1))
 	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(2))
 
-
 func _unhide_notes():
 	for ch in SingletonObject.ChatList:
 		for chi in ch.HistoryItemList:
 			if not chi.Visible:
 				chi.Visible = true
 				chi.rendered_node.render()
-
 
 func _unhide_messages():
 	for thread in SingletonObject.ThreadList:
@@ -93,12 +125,10 @@ func _unhide_messages():
 				item.Visible = true
 	SingletonObject.NotesTab.render_threads()
 
-
 func _on_view_about_to_popup():
 	view.set_item_checked(0, SingletonObject.main_ui.chat_pane.visible)
 	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)
 	view.set_item_checked(2, SingletonObject.main_ui.notes_pane.visible)
-
 
 func _on_file_about_to_popup():
 	#checks if current tabs exists and enables saving features if so
@@ -108,7 +138,6 @@ func _on_file_about_to_popup():
 	else: 
 		%File.set_item_disabled(2, true)
 		%File.set_item_disabled(3, true)
-
 
 func _on_project_about_to_popup() -> void:
 	#checks if current editor tabs, chat tabs or notes exists 
@@ -123,7 +152,7 @@ func _on_project_about_to_popup() -> void:
 #this function gets call when the mouse ehovers over the MenuBar
 #it has a timer so it doesn't execute all the time
 var timer
-var active: bool =true
+var active: bool = true
 func _on_mouse_entered() -> void:
 	if active:
 		load_recent_projects()
@@ -137,11 +166,9 @@ func _on_mouse_entered() -> void:
 		add_child(timer)
 		timer.start()
 
-
 func set_active():
 	active = true
-	timer.queue_free() 
-
+	timer.queue_free()
 
 #load recent projects if they exist on the config file
 #this function gets called on ready and when you hover over menuMain
@@ -173,7 +200,6 @@ func load_recent_projects():
 		#add submenu as a submenu of indicated item
 		project.add_submenu_item("Open Recent", "OpenRecentSubmenu")
 
-
 func _on_open_recent_project(index: int):
 	if projects_size + 1 == index:
 		SingletonObject.clear_recent_projects()
@@ -182,6 +208,5 @@ func _on_open_recent_project(index: int):
 		var selected_project_name = submenu.get_item_text(index)
 		SingletonObject.OpenRecentProject.emit(selected_project_name)
 
-
-
-
+###
+### End Reference Information ###w
