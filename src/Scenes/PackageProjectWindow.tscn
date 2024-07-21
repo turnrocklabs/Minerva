@@ -1,0 +1,48 @@
+[gd_scene load_steps=5 format=3 uid="uid://07je20q0n83t"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/PackageProjectWindow.gd" id="1_0sxx4"]
+[ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="2_wnlyi"]
+[ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="3_kmt8e"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/FileTree.gd" id="4_8s7vc"]
+
+[node name="PackageProjectWindow" type="Window" node_paths=PackedStringArray("original_files_tree", "package_files_tree")]
+position = Vector2i(0, 36)
+size = Vector2i(800, 600)
+script = ExtResource("1_0sxx4")
+original_files_tree = NodePath("HBoxContainer/v/GroupsTree")
+package_files_tree = NodePath("HBoxContainer/v2/FilesTree")
+directory_icon = ExtResource("2_wnlyi")
+file_icon = ExtResource("3_kmt8e")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="v" type="VBoxContainer" parent="HBoxContainer"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="GroupsTree" type="Tree" parent="HBoxContainer/v"]
+layout_mode = 2
+size_flags_vertical = 3
+hide_root = true
+drop_mode_flags = 2
+script = ExtResource("4_8s7vc")
+
+[node name="v2" type="VBoxContainer" parent="HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FilesTree" type="Tree" parent="HBoxContainer/v2"]
+layout_mode = 2
+size_flags_vertical = 3
+hide_root = true
+script = ExtResource("4_8s7vc")
+
+[connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
