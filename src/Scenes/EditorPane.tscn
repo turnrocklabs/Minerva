@@ -46,3 +46,8 @@ size_flags_horizontal = 3
 visible = false
 layout_mode = 2
 size_flags_vertical = 3
+
+[connection signal="child_exiting_tree" from="VBoxContainer/HBoxContainer/LeftControl/TabContainer" to="." method="_on_tab_container_child_exiting_tree"]
+[connection signal="tab_changed" from="VBoxContainer/HBoxContainer/LeftControl/TabContainer" to="." method="_on_tab_container_tab_changed"]
+[connection signal="tab_selected" from="VBoxContainer/HBoxContainer/LeftControl/TabContainer" to="." method="_on_tab_container_tab_selected"]
+[connection signal="tree_exited" from="VBoxContainer/HBoxContainer/LeftControl/TabContainer" to="." method="_on_tab_container_tree_exited"]

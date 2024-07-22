@@ -123,8 +123,12 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.editor_container.deserialize(editor_files)
 	
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
-	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 	SingletonObject.NotesTab.current_tab = data.get("active_notes_index", 0)
+	
+	# Set the current tab only if it's within the present tabs
+	var current_tab = data.get("active_chatindex", 0)
+	if SingletonObject.Chats.get_tab_count()-1 >= current_tab:
+		SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 
 
 func close_project():
@@ -220,3 +224,8 @@ func _on_exit_confirmation_dialog_confirmed():
 func _on_exit_confirmation_dialog_custom_action(action: StringName):
 	if action == "exit":
 		get_tree().quit()
+
+
+func _on_fdg_open_file_tree_entered():
+	var openProjectHbox: HBoxContainer = %fdgOpenProject.get_vbox().get_child(0)
+	openProjectHbox.set("theme_override_constants/separation", 12)

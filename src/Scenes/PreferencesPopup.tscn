@@ -1,7 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://booxo77json0y"]
+[gd_scene load_steps=2 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
-[ext_resource type="Theme" uid="uid://d1451jp68l03i" path="res://assets/themes/PreferencesPopup_checkbutton_darkmode.tres" id="2_ynj3k"]
+[ext_resource type="Theme" uid="uid://dlec7d3t4v0nd" path="res://assets/themes/PreferencesPopup_checkbutton_darkmode.tres" id="2_ynj3k"]
 
 [node name="PreferencesPopup" type="Window"]
 initial_position = 4
@@ -41,9 +41,9 @@ layout_mode = 2
 size_flags_horizontal = 3
 secret = true
 
-[node name="GoogleVertexCheckBox" type="CheckBox" parent="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer"]
+[node name="GoogleVertexCheckBox" type="CheckBox" parent="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer" groups=["visibilityButton"]]
 layout_mode = 2
-theme = ExtResource("2_ynj3k")
+theme_type_variation = &"visibilityCheckButton"
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="v/SectionsContainer/APIKeysVBoxContainer"]
 layout_mode = 2
@@ -61,9 +61,9 @@ layout_mode = 2
 size_flags_horizontal = 3
 secret = true
 
-[node name="AnthropicCheckBox" type="CheckBox" parent="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2"]
+[node name="AnthropicCheckBox" type="CheckBox" parent="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2" groups=["visibilityButton"]]
 layout_mode = 2
-theme = ExtResource("2_ynj3k")
+theme_type_variation = &"visibilityCheckButton"
 
 [node name="HBoxContainer3" type="HBoxContainer" parent="v/SectionsContainer/APIKeysVBoxContainer"]
 layout_mode = 2
@@ -81,10 +81,10 @@ layout_mode = 2
 size_flags_horizontal = 3
 secret = true
 
-[node name="OpenAICheckBox" type="CheckBox" parent="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3"]
+[node name="OpenAICheckBox" type="CheckBox" parent="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3" groups=["visibilityButton"]]
 unique_name_in_owner = true
 layout_mode = 2
-theme = ExtResource("2_ynj3k")
+theme_type_variation = &"visibilityCheckButton"
 
 [node name="HSeparator" type="HSeparator" parent="v/SectionsContainer"]
 layout_mode = 2

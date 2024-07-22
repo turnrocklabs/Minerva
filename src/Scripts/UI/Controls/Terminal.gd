@@ -200,3 +200,10 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			await get_tree().process_frame
 			command_line_edit.caret_column = command_line_edit.text.length()
 
+
+func _on_text_edit_text_set():
+	var scroll_container: ScrollContainer = %ScrollContainer
+	await scroll_container.get_v_scroll_bar().changed
+
+	# scroll to bottom
+	scroll_container.scroll_vertical = int(scroll_container.get_v_scroll_bar().max_value)
