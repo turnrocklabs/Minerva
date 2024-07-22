@@ -69,12 +69,7 @@ func _ready():
 	%File.add_item("Save", 2)
 	%File.add_item("Save As", 3)
 	%File.add_item("Preferences", 4)
-	
-	# Make appropriate connections
-	%File.index_pressed.connect(_on_file_index_pressed)
-	%File.about_to_popup.connect(_on_file_about_to_popup)
-	
-	# Other existing code...
+
 
 func _on_project_index_pressed(index):
 	match index:

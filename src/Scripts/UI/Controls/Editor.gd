@@ -55,8 +55,6 @@ func _ready():
 		match type:
 			TYPE.Text: _load_text_file(file)
 			TYPE.Graphics: _load_graphics_file(file)
-	
-	_on_file_dialog_file_selected
 
 
 func _load_text_file(filename: String):
