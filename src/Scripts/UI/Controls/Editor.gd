@@ -14,7 +14,7 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
-@onready var whiteB = %WhiteBoard
+# @onready var whiteB = %WhiteBoard
 @onready var graphics_editor = %GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
@@ -56,6 +56,8 @@ func _ready():
 		match type:
 			TYPE.Text: _load_text_file(file)
 			TYPE.Graphics: _load_graphics_file(file)
+	
+	_note_check_button.disabled = type != TYPE.Text
 
 
 func _load_text_file(filename: String):
@@ -240,14 +242,15 @@ func clear_text():
 	%CodeEdit.clear()
 	code_edit.grab_focus()
 
-#endregion Editor buttons
-
 
 func _on_audio_btn_pressed():
 	SingletonObject.AtT.FieldForFilling = %CodeEdit
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %AudioBTN
 	%AudioBTN.modulate = Color(Color.LIME_GREEN)
+
+#endregion Editor buttons
+
 
 func create_note() -> MemoryItem:
 	if TYPE.Text == type:
