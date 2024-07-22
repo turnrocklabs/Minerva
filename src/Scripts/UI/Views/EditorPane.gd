@@ -1,3 +1,5 @@
+### Reference Information ###
+### Title: EditorPane
 ## This is for a tabbed editor in the middle pane of the main work chat view.
 class_name EditorPane
 extends Control
@@ -19,17 +21,19 @@ func _ready():
 
 
 func _on_close_tab(tab: int, container: TabContainer):
+	if Editor.TYPE.WhiteBoard:
+		GraphicsEditor.layer_Number = 0
 	var control = container.get_tab_control(tab)
 	if control is Editor:
 		if not control.is_content_saved():
 			var should_close = await control.prompt_close()
-			
 			if should_close:
 				container.remove_child(control)
 				SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
 		else:
 			container.remove_child(control)
 			SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
+
 	else:
 		container.remove_child(control)
 		SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
@@ -47,7 +51,7 @@ func restore_deleted_tab(tab_name: String):
 		# Remove the data from the deleted_tabs dictionary
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
-func _process(delta):
+func _process(_delta):
 	if Tabs.get_tab_count() > 0:
 		pass
 	if Input.is_action_just_pressed("ui_undo"):
@@ -66,16 +70,15 @@ func add_control(item: Node, name_: String) -> Node:
 	scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scrollable.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scrollable.name = name_
-	
 	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	item.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	scrollable.add_child(item)
-
-	self.Tabs.add_child(scrollable)
+	# scrollable.add_child(item)
+	item.name = name_
+	self.Tabs.add_child(item)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
 
-	return scrollable
+	return item
 
 
 
@@ -84,11 +87,22 @@ func add(type: Editor.TYPE, file = null, name_ = null) -> Editor:
 
 	var editor_node = Editor.create(type, file)
 	
-	if name_: editor_node.name = name_
-
+	if name_: 
+		editor_node.name = name_
+	elif file:
+		editor_node.name = get_file_name(file)
+	else:
+		match type:
+			Editor.TYPE.Text:
+				editor_node.name = "tab " + str(Tabs.get_tab_count() + 1)
+			Editor.TYPE.Graphics:
+				editor_node.name = "Graphics " + str(Tabs.get_tab_count() + 1)
+			Editor.TYPE.WhiteBoard:
+				editor_node.name = "drawing " + str(Tabs.get_tab_count() + 1)
+	
 	self.Tabs.add_child(editor_node)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
-
+	
 	return editor_node
 
 func open_editors() -> Array[Editor]:
@@ -98,6 +112,13 @@ func open_editors() -> Array[Editor]:
 		editors.append(child)
 	
 	return editors
+
+func get_file_name(path: String) -> String:
+	if path.length() <= 1:
+		return path
+	var split_path = path.split("/")
+	return split_path[split_path.size() -1].split(".")[0]
+
 
 func unsaved_editors() -> Array[Editor]:
 	var editors: Array[Editor] = []
@@ -143,27 +164,24 @@ func toggle_vertical_split() -> void:
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
 
-func _on_tab_container_tab_selected(tab: int) -> void:
-	if Tabs.get_current_tab_control():
+func _on_tab_container_tab_selected(_tab: int) -> void:
+	var current_control = Tabs.get_current_tab_control()
+	if not current_control:
 		return
-	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
 
 
-#endregion  Enable Editor Buttons
-
-
-
-
-func _on_tab_container_child_exiting_tree(node: Node) -> void:
-	if Tabs.get_current_tab_control() == null:
+func _on_tab_container_child_exiting_tree(_node: Node) -> void:
+	if not Tabs.get_current_tab_control():
 		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
 		return
-	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+	var current_control = Tabs.get_current_tab_control()
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
@@ -173,11 +191,18 @@ func _on_tab_container_tree_exited() -> void:
 	enable_editor_action_buttons.emit(false)
 
 
-func _on_tab_container_tab_changed(tab: int) -> void:
+func _on_tab_container_tab_changed(_tab: int) -> void:
+	# var current_tab = Tabs.get_current_tab_control()
+	if Tabs == null:
+		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
-	if Tabs.get_current_tab_control().type == Editor.TYPE.Text:
+		return
+	var current_control = Tabs.get_current_tab_control()
+	if current_control is Editor and current_control.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
 
+###
+### End Reference Information ###

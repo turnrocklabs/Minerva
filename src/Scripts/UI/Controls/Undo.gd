@@ -11,8 +11,8 @@ var deleted_tabs = {}  # Dictionary to store deleted tabs and their data
 var TimeForRemove = 180.0
 
 # We store data from deleted tabs
-func store_deleted_tab(tab: int, control: Control, WhichWindow: String):
-	var tab_name = control.name
+func store_deleted_tab(tab: int, control_: Control, WhichWindow: String):
+	var tab_name = control_.name
 	var history = SingletonObject.ChatList[tab]
 	
 	var timer := Timer.new()
@@ -24,14 +24,14 @@ func store_deleted_tab(tab: int, control: Control, WhichWindow: String):
 	deleted_tabs[tab_name] = {
 		"WhichWindow": WhichWindow,
 		"tab": tab,
-		"control": control,
+		"control": control_,
 		"history": history,
 		"timer": timer
 	}
 	deleted_tabs[tab_name]["timer"].start()
 	
-func store_deleted_tab_right(tab: int, control: Control, WhichWindow: String):
-	var tab_name = control.name
+func store_deleted_tab_right(tab: int, control_: Control, WhichWindow: String):
+	var tab_name = control_.name
 	
 	var timer := Timer.new()
 	add_child(timer)
@@ -42,14 +42,14 @@ func store_deleted_tab_right(tab: int, control: Control, WhichWindow: String):
 	deleted_tabs[tab_name] = {
 		"WhichWindow": WhichWindow,
 		"tab": tab,
-		"control": control,
+		"control": control_,
 		"timer": timer
 	}
 	
 	deleted_tabs[tab_name]["timer"].start()
 	
-func store_deleted_tab_mid(tab: int, control: Control, WhichWindow: String):
-	var tab_name = control.name
+func store_deleted_tab_mid(tab: int, control_: Control, WhichWindow: String):
+	var tab_name = control_.name
 	
 	var timer := Timer.new()
 	add_child(timer)
@@ -60,7 +60,7 @@ func store_deleted_tab_mid(tab: int, control: Control, WhichWindow: String):
 	deleted_tabs[tab_name] = {
 		"WhichWindow": WhichWindow,
 		"tab": tab,
-		"control": control,
+		"control": control_,
 		"timer": timer
 	}
 	

@@ -7,8 +7,8 @@ extends TabContainer
 # var ActiveThreadIndex: int:
 
 var _drag_active := false
-var _hovered_tab := -1
-var _hover_timer
+# var _hovered_tab := -1
+# var _hover_timer
 
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
@@ -58,13 +58,13 @@ func disable_notes_in_tab():
 			item.Enabled = false
 
 
-func open_threads_popup(name: String = "", tab = null):
+func open_threads_popup(tab_name: String = "", tab = null):
 	var target_size = %VBoxRoot.size / 5 #- Vector2(100, 100)
 	%NewThreadPopup.borderless = false
 	%NewThreadPopup.size = target_size
 	
 	# %NewThreadPopup/VBoxContainer/HBoxTopRow/txtNewTabName
-	%txtNewTabName.text = name
+	%txtNewTabName.text = tab_name
 
 	var update = tab != null
 
@@ -129,23 +129,9 @@ func render_threads():
 	
 
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
-	# for i in range(SingletonObject.ThreadList.size()):
-	# 	var thread = SingletonObject.ThreadList[i];
-	# 	var tab = %tcThreads.get_child(i)
-	# 	tab.queue_free()
-	# 	render_thread(thread)
-
-		# If the tab exists, update its content:
-		# if tab:
-		# 	var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread.ThreadId, thread.MemoryItemList)
-		# 	tab.remove_child(tab.get_child(0))
-		# 	tab.add_child(vboxMemoryList)
-		# 	tab.name = thread.ThreadName
-		# 	tab.set_meta("thread", thread)
-
-		# # If the tab doesn't exist, create a new one:
-		# else:
-		# 	render_thread(thread)
+	for i in range(SingletonObject.ThreadList.size()):
+		var thread = SingletonObject.ThreadList[i];
+		render_thread(thread)
 
 	# Restore the last active thread:
 	if self.get_child_count():
@@ -166,6 +152,7 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.TEXT
+	new_memory.ContentType = "text"
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
@@ -190,6 +177,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.AUDIO
+	new_memory.ContentType = "audio"
 	new_memory.Title = note_title
 	new_memory.Audio = note_audio
 	new_memory.Visible = true
@@ -211,6 +199,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.IMAGE
+	new_memory.ContentType = "image"
 	new_memory.Title = note_title
 	new_memory.MemoryImage = note_image
 	new_memory.ImageCaption = imageCaption
@@ -251,11 +240,9 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.add_child(vboxMemoryList)
 
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
-	var foo: String = thread_item.ThreadName
-	scroll_container.name = foo  # Set the tab title
+	scroll_container.name = thread_item.ThreadName
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
 	%tcThreads.add_child(scroll_container)
-	pass
 
 
 func _on_close_tab(tab: int, container: TabContainer):
@@ -280,7 +267,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
 		var data = SingletonObject.undo.deleted_tabs[tab_name]
-		var tab = data["tab"]
+		
 		var control = data["control"]
 		data["timer"].stop()
 		# Get the MemoryThread associated with the tab.
@@ -315,46 +302,69 @@ func attach_file(the_file: String):
 
 	# Determine the file type
 	var file_ext = the_file.get_extension().to_lower()
+	@warning_ignore("unused_variable")
 	var file_type = ""
 	var content = ""
 	var content_type = ""
+	var type
 	var title = the_file.get_file().get_basename()
-
-	if file_ext in SingletonObject.supported_text_fortmats:# ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
-		file_type = "text"
-		content = file.get_as_text()
-		content_type = "text/plain"
-	elif file_ext in SingletonObject.supported_image_formats:
-		file_type = "image"
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		content_type = "image/%s" % file_ext
-	elif file_ext in ["mp4", "mov", "avi", "mkv", "webm"]:
-		file_type = "video"
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		content_type = "video/%s" % file_ext
-	elif file_ext in ["mp3", "wav", "ogg", "flac"]:
-		file_type = "audio"
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		content_type = "audio/%s" % file_ext
-	else:
-		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
-		return
-
+	
 	# Get the active thread
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) < self.current_tab:
 		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		return
 	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
-
-	# Create a new memory item
+	
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	
+	if file_ext in SingletonObject.supported_text_fortmats:# ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
+		file_type = "text"
+		content = file.get_as_text()
+		content_type = "text/plain"
+		type = SingletonObject.note_type.TEXT
+	elif file_ext in SingletonObject.supported_image_formats:
+		file_type = "image"
+		type= SingletonObject.note_type.IMAGE
+		var file_data = file.get_buffer(file.get_length())
+		content = Marshalls.raw_to_base64(file_data)
+		new_memory.MemoryImage = Image.load_from_file(the_file)
+		content_type = "image/%s" % file_ext
+	elif file_ext in SingletonObject.supported_video_formats:
+		file_type = "video"
+		type= SingletonObject.note_type.VIDEO
+		var file_data = file.get_buffer(file.get_length())
+		content = Marshalls.raw_to_base64(file_data)
+		content_type = "video/%s" % file_ext
+	elif file_ext in SingletonObject.supported_audio_formats:
+		file_type = "audio"
+		type= SingletonObject.note_type.AUDIO
+		var buffer = file.get_buffer(file.get_length())
+		if file_ext == "mp3":
+			var mp3AudioStrem = AudioStreamMP3.new()
+			mp3AudioStrem.data = buffer
+			new_memory.Audio = mp3AudioStrem
+		if file_ext == "wav":
+			var wavAudioStream = AudioStreamWAV.new()
+			wavAudioStream.data = buffer
+			wavAudioStream.format = AudioStreamWAV.FORMAT_16_BITS
+			new_memory.Audio = wavAudioStream
+		if file_ext == "ogg":
+			var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)
+			new_memory.Audio = oggAudioStream
+		content = Marshalls.raw_to_base64(buffer)
+		file_type = "audio"
+		type= SingletonObject.note_type.AUDIO
+		content_type = "audio/%s" % file_ext
+	else:
+		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
+		return
+	
+	# Create a new memory item
 	new_memory.Enabled = true
 	new_memory.Title = title
 	new_memory.Content = content
 	new_memory.ContentType = content_type
+	new_memory.Type = type
 	new_memory.Visible = true
 
 	# Append the new memory item to the active thread memory list
@@ -363,7 +373,6 @@ func attach_file(the_file: String):
 
 	file.close()
 	pass
-
 
 
 # Called when the node enters the scene tree for the first time.
@@ -431,7 +440,7 @@ func _on_thread_list_changed():
 	_needs_update = true
 
 # This function is called every frame
-func _process(delta):
+func _process(_delta):
 	if _needs_update:
 		render_threads()
 		_needs_update = false
