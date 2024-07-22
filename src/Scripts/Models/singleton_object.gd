@@ -8,6 +8,8 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]#, "flac"]
 var is_graph:bool
 var is_masking:bool
 
+@onready var root: Node = $"/root"
+
 #endregion global variables
 
 #region Config File
@@ -138,13 +140,17 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 
 #region Editor
 
-@onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
+@onready var editor_container: EditorContainer = root.get_node_or_null(
+	"RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
+)
 
 #endregion
 
 #region Common UI Tasks
 
-@onready var main_ui = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI"
+@onready var main_ui = root.get_node_or_null(
+	"RootControl/VBoxRoot/VSplitContainer/MainUI"
+)
 
 ###
 # Create a common error display system that will popup an error and show
@@ -158,7 +164,7 @@ func ErrorDisplay(error_title:String, error_message: String):
 	errorPopup.popup_centered()
 	pass
 
-@onready var main_scene = $"/root/RootControl"
+@onready var main_scene = root.get_node_or_null("RootControl")
 
 #endregion Common UI Tasks
 
@@ -198,7 +204,7 @@ func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MO
 	# fallback value
 	return API_MODEL_PROVIDERS.CHAT_GPT_4O
 
-@onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
+@onready var preferences_popup: PreferencesPopup = root.get_node_or_null("RootControl/PreferencesPopup")
 
 #endregion API Consumer
 
@@ -253,9 +259,6 @@ func all_project_features_open() -> bool:
 
 #region Theme change
 
-# get the root control node and apply the theme to it, all its children inherit the theme
-@onready var root_control: Control = $"/root/RootControl"
-
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
 signal theme_changed(theme_enum)
@@ -268,11 +271,11 @@ func set_theme(themeID: int) -> void:
 	match themeID:
 		theme.LIGHT_MODE:
 			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
-			root_control.theme = light_theme
+			if main_scene: main_scene.theme = light_theme
 			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
 		theme.DARK_MODE:
 			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
-			root_control.theme = dark_theme
+			if main_scene: main_scene.theme = dark_theme
 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 	theme_changed.emit(themeID)
 

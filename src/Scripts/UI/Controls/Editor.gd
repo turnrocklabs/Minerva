@@ -14,7 +14,7 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
-@onready var whiteB = %WhiteBoard
+# @onready var whiteB = %WhiteBoard
 @onready var graphics_editor = %GraphicsEditor
 
 enum TYPE {
