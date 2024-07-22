@@ -31,6 +31,7 @@ var Role: ChatRole:
 var InjectedNote: String:
 	set(value): SingletonObject.save_state(false); InjectedNote = value
 
+@warning_ignore("shadowed_global_identifier")
 var Message: String:
 	set(value): SingletonObject.save_state(false); Message = value
 

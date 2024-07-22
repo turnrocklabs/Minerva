@@ -7,8 +7,8 @@ extends TabContainer
 # var ActiveThreadIndex: int:
 
 var _drag_active := false
-var _hovered_tab := -1
-var _hover_timer
+# var _hovered_tab := -1
+# var _hover_timer
 
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
@@ -58,13 +58,13 @@ func disable_notes_in_tab():
 			item.Enabled = false
 
 
-func open_threads_popup(name: String = "", tab = null):
+func open_threads_popup(tab_name: String = "", tab = null):
 	var target_size = %VBoxRoot.size / 5 #- Vector2(100, 100)
 	%NewThreadPopup.borderless = false
 	%NewThreadPopup.size = target_size
 	
 	# %NewThreadPopup/VBoxContainer/HBoxTopRow/txtNewTabName
-	%txtNewTabName.text = name
+	%txtNewTabName.text = tab_name
 
 	var update = tab != null
 
@@ -127,7 +127,11 @@ func render_threads():
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
 	for i in range(SingletonObject.ThreadList.size()):
 		var thread = SingletonObject.ThreadList[i];
-		var tab = %tcThreads.get_child(i)
+		var tab: Control
+
+		# if there's a tab with that index
+		if %tcThreads.get_child_count()-1 >= i:
+			tab = %tcThreads.get_child(i)
 
 		# If the tab exists, update its content:
 		if tab:
@@ -270,7 +274,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
 		var data = SingletonObject.undo.deleted_tabs[tab_name]
-		var tab = data["tab"]
+		
 		var control = data["control"]
 		data["timer"].stop()
 		# Get the MemoryThread associated with the tab.
@@ -305,6 +309,7 @@ func attach_file(the_file: String):
 
 	# Determine the file type
 	var file_ext = the_file.get_extension().to_lower()
+	@warning_ignore("unused_variable")
 	var file_type = ""
 	var content = ""
 	var content_type = ""
@@ -362,7 +367,6 @@ func attach_file(the_file: String):
 		return
 	
 	# Create a new memory item
-	#var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = true
 	new_memory.Title = title
 	new_memory.Content = content
@@ -443,7 +447,7 @@ func _on_thread_list_changed():
 	_needs_update = true
 
 # This function is called every frame
-func _process(delta):
+func _process(_delta):
 	if _needs_update:
 		render_threads()
 		_needs_update = false
