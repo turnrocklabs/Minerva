@@ -167,7 +167,7 @@ func execute_chat():
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
-	var last_msg = history.HistoryItemList.back()
+	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
 
 	## prepare an append item for the history
