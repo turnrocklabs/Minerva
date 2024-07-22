@@ -15,8 +15,9 @@ run/main_scene="res://Scenes/MainScene.tscn"
 config/features=PackedStringArray("4.2", "Forward Plus")
 run/max_fps=50
 boot_splash/bg_color=Color(0.0784314, 0.0784314, 0.0784314, 1)
-boot_splash/image="res://handshake_logo-removebg-preview_3.png"
-config/icon="res://icon.png"
+boot_splash/image="res://handshake_logo-_green.png"
+boot_splash/fullsize=false
+config/icon="res://handshake_logo-_green.png"
 
 [audio]
 
