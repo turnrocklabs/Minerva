@@ -126,12 +126,6 @@ func render_threads():
 	
 	for thread in SingletonObject.ThreadList:
 		render_thread(thread)
-	
-
-	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
-	for i in range(SingletonObject.ThreadList.size()):
-		var thread = SingletonObject.ThreadList[i];
-		render_thread(thread)
 
 	# Restore the last active thread:
 	if self.get_child_count():

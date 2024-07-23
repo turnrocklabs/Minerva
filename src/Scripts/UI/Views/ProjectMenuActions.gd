@@ -34,15 +34,16 @@ func save_project_as(file=""):
 
 
 func package_project():
-
-	# var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
-	# for item_idx in item_list.get_selected_items():
-	# 	var editor = item_list.get_item_metadata(item_idx)
-	# 	await editor.prompt_close(true)
-	# 	editor.queue_free()
+	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
+	for item_idx in item_list.get_selected_items():
+		var editor = item_list.get_item_metadata(item_idx)
+		await editor.prompt_close(true)
+		editor.queue_free()
 
 	var ppw: PackageProjectWindow = %PackageProjectWindow
+
 	ppw.data = serialize_project()
+	
 	ppw.popup_centered()
 
 
