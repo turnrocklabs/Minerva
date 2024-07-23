@@ -154,7 +154,7 @@ var timer
 var active: bool = true
 func _on_mouse_entered() -> void:
 	if active:
-		load_recent_projects()
+		call_deferred("load_recent_projects")# load_recent_projects()
 		active = false
 		
 		#add submenu fro button new edit
