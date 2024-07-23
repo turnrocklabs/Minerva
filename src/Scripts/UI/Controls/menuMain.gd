@@ -12,7 +12,7 @@ extends MenuBar
 func _on_file_index_pressed(index):
 	match index:
 		1:
-			%fdgOpenFile.popup_centered(Vector2i(800, 600))
+			%fdgOpenFile.popup_centered()
 		2: # this match is for the save button
 				# get current editor tab
 			var tabs = SingletonObject.editor_container.editor_pane.Tabs
@@ -32,9 +32,9 @@ func _on_file_index_pressed(index):
 				current_editor_tab.prompt_close(true)
 		4:
 			## Set a target size, have a border, and display the preferences popup.
-			var target_size = %VBoxRoot.size / 2
-			%PreferencesPopup.borderless = false
-			%PreferencesPopup.size = target_size
+			#var target_size = %VBoxRoot.size / 2
+			#%PreferencesPopup.borderless = false
+			#%PreferencesPopup.size = target_size
 			%PreferencesPopup.popup_centered()
 
 # Handle new file creation

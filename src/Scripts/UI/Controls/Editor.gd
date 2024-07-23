@@ -206,17 +206,6 @@ func delete_chars() -> void:
 	code_edit.backspace()
 	
 	code_edit.grab_focus()
-	
-	#if code_edit.get_selected_text().length()  < 1:
-		#var caret_col = code_edit.get_caret_column()
-		#var caret_line = code_edit.get_caret_line()
-		#var first_half = code_edit.text.substr(0, caret_pos)
-		#var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
-		#code_edit.text = first_half.erase(first_half.length() - 1, 1) + snd_half
-		#code_edit.set_caret_column(caret_pos - 1)
-		#
-		#code_edit.grab_focus()
-		#return
 
 
 func add_new_line() -> void:
