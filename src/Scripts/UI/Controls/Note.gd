@@ -231,9 +231,10 @@ func _on_edit_button_pressed():
 	for i in range(ep.Tabs.get_tab_count()):
 		var tab_control = ep.Tabs.get_tab_control(i)
 
-		if tab_control.get_meta("associated_object") == memory_item:
-			ep.Tabs.current_tab = i
-			return
+		if tab_control.get_meta("associated_object"):
+			if tab_control.get_meta("associated_object") == memory_item:
+				ep.Tabs.current_tab = i
+				return
 
 	var note_editor = NoteEditor.create(memory_item)
 
