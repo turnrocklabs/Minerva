@@ -119,17 +119,19 @@ static func package_project() -> Dictionary:
 
 ## Generates package file that includes project and editor files in one bundle.[br]
 ## [param project_data] is dictionary that holds serialized data of current project
-## that MUST container [param original_files] open in editor.[br]
+## that MUST contain [param original_files] open in editor.[br]
 ## [param original_files] is an array open editor file paths.[br]
 ## [param package_files] is an array of same size as [param original_files]
 ## that maps where in bundle the appropriate original file should be placed
 ## [param save_path] is where the resulting bundle file will be. [br]
+## Returns [int] error. To know what happened connect to [signal package_generation_failed]
+## before running this function.
 func generate_package_file(
 	project_data: Dictionary,
 	original_files: PackedStringArray,
 	package_files: PackedStringArray,
 	save_path: String
-):
+) -> int:
 	project_data = project_data.duplicate(true) # copy the data so the original doesn't get changed
 	
 	# Make sure both arrays are the same size
@@ -138,12 +140,12 @@ func generate_package_file(
 			ERR_INVALID_DATA,
 			"Original and Package file path provided are not the same size (%s != %s)" % [original_files.size(), package_files.size()]
 		)
-		return
+		return ERR_INVALID_DATA
 	
 	var writer: = ZIPPacker.new()
 
 	var err = writer.open(save_path)
-	if err != OK: return
+	if err != OK: return err
 
 	# loop through file paths to copy them from original to package destination insize the zip file
 	for i in range(original_files.size()):
@@ -155,7 +157,7 @@ func generate_package_file(
 		if not fa:
 			var open_err: = FileAccess.get_open_error()
 			package_generation_failed.emit(open_err, "Failed to read the file: %s" % original_path)
-			return
+			return open_err
 		
 		# all files go into the `files` directory
 		writer.start_file("files/%s" % package_path)
@@ -169,9 +171,8 @@ func generate_package_file(
 		var editors = (project_data["Editors"] as Array[String])
 		var idx: = editors.find(fa.get_path())
 		if idx == -1:
-			breakpoint
 			package_generation_failed.emit(ERR_INVALID_DATA, "Project data editors doesn't contain editor with path: %s" % fa.get_path())
-			return
+			return ERR_INVALID_DATA
 		editors[idx] = package_path
 
 	writer.start_file("project.minproj")
@@ -180,6 +181,7 @@ func generate_package_file(
 
 	writer.close()
 
+	return OK
 
 
 
