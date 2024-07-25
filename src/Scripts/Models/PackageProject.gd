@@ -10,6 +10,8 @@ signal package_generation_failed(error: int, message: String)
 ## Make sure it's a power of 2.
 const FILE_READ_BUFFER = 8192
 
+const project_fp = "project.minproj"
+const pkg_base_dir = "files"
 
 ## This function tries to find the lowest common parent directory for all passed file paths.
 ## Returns the directory path
@@ -55,13 +57,13 @@ static func _get_root_path(path: String) -> String:
 
 ## Given the list of file paths this function returns dictionary of files grouped by common parent.
 ## The dictionary key is group file path, the value is list of directories with `original` and `package` paths for file.
-## [code]
+## [codeblock]
 ## }
 ## 	"d/shared_proj": [
 ## 		{ "original": "D:/shared_proj/main.py", "package": "d/shared_proj/main.py" }
 ## 	]
 ## }
-## [/code]
+## [/codeblock]
 static func generate_path_groups(open_files: Array) -> Dictionary:
 	var root_groups = {}
 	var folder_names = {}
@@ -160,7 +162,7 @@ func generate_package_file(
 			return open_err
 		
 		# all files go into the `files` directory
-		writer.start_file("files/%s" % package_path)
+		writer.start_file("%s/%s" % [pkg_base_dir, package_path])
 
 		while fa.get_position() < fa.get_length():
 			writer.write_file(fa.get_buffer(FILE_READ_BUFFER))
@@ -175,7 +177,7 @@ func generate_package_file(
 			return ERR_INVALID_DATA
 		editors[idx] = package_path
 
-	writer.start_file("project.minproj")
+	writer.start_file(project_fp)
 	writer.write_file(JSON.stringify(project_data).to_utf8_buffer())
 	writer.close_file()
 
@@ -183,5 +185,88 @@ func generate_package_file(
 
 	return OK
 
+#region Unpacking
+
+var _unpack_err: String
+func get_unpack_package_file_error() -> String:
+	return _unpack_err
 
 
+
+## Given the directory path [param dir], ensures it's a valid absolute directory path
+## that exists on the filesystem.[br]
+## Returns [OK] if so.
+func _validate_directory(dir: String) -> int:
+	dir = dir.get_base_dir()
+	if not dir.is_absolute_path():
+		_unpack_err = "Destination parameter (%s) is not valid absolute path."
+		return ERR_INVALID_PARAMETER
+
+	# create destination path if it doesn't exist
+	if not DirAccess.dir_exists_absolute(dir):
+		var dir_err: = DirAccess.make_dir_recursive_absolute(dir)
+		
+		if dir_err != OK:
+			_unpack_err = "Failed assert destination path (%s) exists." % dir
+			return dir_err
+
+	return OK
+
+## If error occurred during unpacking of the package,
+## this function will clean the partially unpacked files by deleting them
+func error_cleanup(paths: PackedStringArray):
+	for p in paths:
+		print("PackageProject: Cleaning up %s" % p)
+		DirAccess.remove_absolute(p)
+
+
+
+func unpack_package_file(package_file: String, files_destination: String, project_destination: String) -> int:
+	
+	# _validate_directory will automatically populate _unpack_err
+	var ferr: = _validate_directory(files_destination)
+	if ferr != OK: return ferr
+
+	var perr : = _validate_directory(project_destination)
+	if perr != OK: return perr
+
+	var reader: = ZIPReader.new()
+
+	var err := reader.open(package_file)
+	if err != OK:
+		_unpack_err = "Failed to open package file (%s) for reading." % package_file
+		return err
+
+	var written_files: = PackedStringArray()
+
+	# No way to read specific buffer size, gotta read the whole file
+	var project_data: Dictionary = JSON.parse_string( reader.read_file(project_fp).get_string_from_utf8() )
+
+	var editors: Array[String] = project_data["Editors"]
+
+	for i in range(editors.size()):
+		var pkg_path: = editors[i]
+		var buffer: = reader.read_file("%s/%s" % [pkg_base_dir, pkg_path])
+
+		var write_path: = "%s/%s" % [files_destination, pkg_path]
+
+		var fa: = FileAccess.open(write_path, FileAccess.WRITE)
+		if not fa:
+			_unpack_err = "Failed to open file (%s) for writing." % write_path
+			error_cleanup(written_files)
+			return FileAccess.get_open_error()
+
+		fa.store_buffer(buffer)
+		written_files.append(fa.get_path_absolute())
+
+		editors[i] = write_path
+
+	var proj_fa: = FileAccess.open(project_destination, FileAccess.WRITE)
+	if not proj_fa:
+		_unpack_err = "Failed to open file (%s) for writing." % project_destination
+		error_cleanup(written_files)
+		return FileAccess.get_open_error() 
+
+	return OK
+
+#endregion
