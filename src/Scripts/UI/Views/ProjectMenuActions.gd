@@ -47,6 +47,11 @@ func package_project():
 	ppw.popup_centered()
 
 
+func unpackage_project():
+	var upw: UnpackageProjectWindow = %UnpackageProjectWindow
+
+	upw.popup_centered()
+
 func save_project():
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
@@ -147,6 +152,7 @@ func _ready():
 	SingletonObject.SaveProject.connect(self.save_project)
 	SingletonObject.SaveProjectAs.connect(self.save_project_as)
 	SingletonObject.PackageProject.connect(self.package_project)
+	SingletonObject.UnpackageProject.connect(self.unpackage_project)
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)

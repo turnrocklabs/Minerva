@@ -30,7 +30,7 @@ func show_message(title_: String, message: String) -> void:
 
 func _on_about_to_popup():
 	save_path = "D:/package.minpackage"
-	var common_parents = PackageProject.generate_path_groups(data["Editors"])
+	var common_parents = ProjectPackage.generate_path_groups(data["Editors"])
 	
 	populate_package_files_tree(common_parents)
 
@@ -163,22 +163,20 @@ func get_final_file_paths() -> Dictionary:
 
 
 func _on_package_button_pressed():
-	var packager: = PackageProject.new()
-
-	packager.package_generation_failed.connect(
-		func(error: int, message: String):
-			show_message(error_string(error), message)
-	,CONNECT_ONE_SHOT)
+	var packager: = ProjectPackage.new()
 
 	var files_data: = get_final_file_paths()
-	var err: = packager.generate_package_file(data, files_data["original_files"], files_data["package_files"], save_path)
+	var err: = packager.save_package(data, files_data["original_files"], files_data["package_files"], save_path)
 
-	if not err:
-		show_message("Success", "Successfully saved package at %s" % save_path)
-		dialog.visibility_changed.connect(
-			func(): if not dialog.visible: hide(),
-			CONNECT_ONE_SHOT
-		)
+	if err != OK:
+		show_message(error_string(err), packager.get_last_error())
+		return
+
+	show_message("Success", "Successfully saved package at %s" % save_path)
+	dialog.visibility_changed.connect(
+		func(): if not dialog.visible: hide(),
+		CONNECT_ONE_SHOT
+	)
 
 func _on_file_dialog_file_selected(path: String):
 	save_path = path
