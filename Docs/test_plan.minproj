@@ -355,7 +355,7 @@
 				{
 					"Audio": null,
 					"Content": "No errors or warnings when starting Godot and opening Minerva.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -369,7 +369,7 @@
 				{
 					"Audio": null,
 					"Content": "No crashes, errors, or warnings when closing Minerva.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -383,7 +383,7 @@
 				{
 					"Audio": null,
 					"Content": "Number of issues listed, including warning, in debugger is 0 during execution of Minerva.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"MemoryImage": null,
@@ -391,6 +391,20 @@
 					"OwningThread": "3bc339c7f628a312dda5b4cb8b0e9638d71b58168b2ac8686df47e2bdd97ebb6",
 					"Pinned": false,
 					"Title": "No Debuggter issues",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "Open a text note in the editor.\nSplit the editor window.\nOpen a text note into the split window.",
+					"ContentType": "text",
+					"Enabled": false,
+					"ImageCaption": "",
+					"MemoryImage": null,
+					"Order": 3,
+					"OwningThread": "3bc339c7f628a312dda5b4cb8b0e9638d71b58168b2ac8686df47e2bdd97ebb6",
+					"Pinned": false,
+					"Title": "Split editor windows",
 					"Type": 0,
 					"Visible": true
 				}
