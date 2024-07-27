@@ -38,7 +38,7 @@ theme_override_constants/separation = 10
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
-text = "Google Vertex"
+text = "Google AI"
 
 [node name="leGoogleVertex" type="LineEdit" parent="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer"]
 unique_name_in_owner = true

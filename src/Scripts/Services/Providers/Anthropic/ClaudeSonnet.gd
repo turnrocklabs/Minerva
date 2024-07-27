@@ -71,10 +71,10 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	return item
 
 
-func wrap_memory(list_memories: String) -> String:
+func wrap_memory(item: MemoryItem) -> Variant:
 	var output: String = "Given this background information:\n\n"
 	output += "### Reference Information ###\n"
-	output += list_memories
+	output += item.Content
 	output += "### End Reference Information ###\n\n"
 	output += "Respond to the user's message: \n\n"
 	return output
@@ -102,12 +102,13 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	if not image_captions_array.is_empty():
 		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
 
+	var text_notes = chat_item.InjectedNotes.filter(func(note): return note is String)
 
 	var text = """
 		%s
 		%s
 		%s
-	""" % [image_captions, chat_item.InjectedNote, chat_item.Message]
+	""" % [image_captions, "\n".join(text_notes), chat_item.Message]
 
 	text = text.strip_edges()
 

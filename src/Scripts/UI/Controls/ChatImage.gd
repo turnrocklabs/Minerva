@@ -75,6 +75,7 @@ func _on_edit_button_pressed():
 func _on_check_button_toggled(toggled_on: bool):
 	image.set_meta("active", toggled_on)
 	image_active_state_changed.emit(toggled_on)
+	print(image.get_data())
 
 
 func _on_note_button_pressed():

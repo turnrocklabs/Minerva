@@ -36,7 +36,7 @@ func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}
 	push_error("generate_content method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
-func wrap_memory(_list_memories: String) -> String:
+func wrap_memory(_item: MemoryItem) -> Variant:
 	push_error("wrap_memory method of %s not implemented" % get_script().resource_path.get_file())
 	return ""
 
