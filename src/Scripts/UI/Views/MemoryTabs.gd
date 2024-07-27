@@ -127,23 +127,7 @@ func render_threads():
 	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
 	for i in range(SingletonObject.ThreadList.size()):
 		var thread = SingletonObject.ThreadList[i];
-		var tab: Control
-
-		# if there's a tab with that index
-		if %tcThreads.get_child_count()-1 >= i:
-			tab = %tcThreads.get_child(i)
-
-		# If the tab exists, update its content:
-		if tab:
-			var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread.ThreadId, thread.MemoryItemList)
-			tab.remove_child(tab.get_child(0))
-			tab.add_child(vboxMemoryList)
-			tab.name = thread.ThreadName
-			tab.set_meta("thread", thread)
-
-		# If the tab doesn't exist, create a new one:
-		else:
-			render_thread(thread)
+		render_thread(thread)
 
 	# Restore the last active thread:
 	if self.get_child_count():
@@ -246,11 +230,9 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.add_child(vboxMemoryList)
 
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
-	var foo: String = thread_item.ThreadName
-	scroll_container.name = foo  # Set the tab title
+	scroll_container.name = thread_item.ThreadName
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
 	%tcThreads.add_child(scroll_container)
-	pass
 
 
 func _on_close_tab(tab: int, container: TabContainer):
@@ -261,9 +243,6 @@ func _on_close_tab(tab: int, container: TabContainer):
 	if thread_idx != -1:
 		# Remove the thread from the list
 		SingletonObject.ThreadList.remove_at(thread_idx)
-
-		# Update the UI with the remaining threads
-		render_threads()
 
 		# Store deleted tab for potential undo
 		SingletonObject.undo.store_deleted_tab_right(tab, control, "right")

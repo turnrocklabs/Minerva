@@ -14,7 +14,6 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
-@onready var whiteB = %WhiteBoard
 @onready var graphics_editor = %GraphicsEditor
 
 enum TYPE {
@@ -67,10 +66,6 @@ func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	graphics_editor.setup_from_image(image)
 	# %SaveButton.disabled = false
-
-	# var texture_item = ImageTexture.create_from_image(image)
-	# whiteB.get_node("%EditPic").texture = texture_item
-	#texture_rect.texture = texture_item
 
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
