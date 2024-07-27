@@ -164,17 +164,19 @@ func to_bot_response(data: Variant) -> BotResponse:
 	
 	return response
 
-func wrap_memory(list_memories: String) -> String:
+func wrap_memory(item: Variant) -> Variant:
 	var output: String = "Given this background information:\n\n"
 	output += "### Reference Information ###\n"
-	output += list_memories
+	output += item.Content
 	output += "### End Reference Information ###\n\n"
 	output += "Respond to the user's message: \n\n"
 	return output
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
-	var text: String = chat_item.InjectedNote + chat_item.Message if chat_item.InjectedNote else chat_item.Message
+	var text_notes = chat_item.InjectedNotes.filter(func(note): return note is String)
+
+	var text: String = chat_item.Message if text_notes.is_empty() else "%s%s" % ["\n".join(text_notes), chat_item.Message]
 
 	return {
 		"text": text,

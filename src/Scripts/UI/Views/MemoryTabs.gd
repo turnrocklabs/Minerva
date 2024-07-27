@@ -14,18 +14,14 @@ var _drag_active := false
 var _needs_update := false
 
 ## return a single large string of all active memories
-func To_Prompt(Provider) -> String:
-	var have_information: bool = false
-	var output: String = ""
+func To_Prompt(provider: BaseProvider) -> Array[Variant]:
+	var output: Array[Variant] = []
+
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
-				have_information = true
-				output += "### Title: %s" % item.Title + '\n'
-				output += item.Content + '\n'
-				output += "###" + '\n'
-	if have_information:
-		output = Provider.wrap_memory(output)
+				output.append(provider.wrap_memory(item))
+	
 	return output
 
 func Disable_All():

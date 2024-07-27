@@ -50,7 +50,7 @@ func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Ca
 	
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	
-	var working_memory: String = SingletonObject.NotesTab.To_Prompt(history.provider)
+	var working_memory: = SingletonObject.NotesTab.To_Prompt(history.provider)
 
 	# history will turn it into a prompts using the selected provider
 	var history_list: Array[Variant] = history.To_Prompt(predicate)
@@ -61,7 +61,7 @@ func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Ca
 	
 	# append the working memory
 	if append_item:
-		append_item.InjectedNote = working_memory
+		append_item.InjectedNotes = working_memory
 		# also append the new item since it's not in the history yet
 		var item = history.provider.Format(append_item)
 		if item: history_list.append(item)
@@ -222,7 +222,7 @@ func execute_chat():
 	model_msg_node.history_item = chi
 	history.HistoryItemList.append(chi)
 
-	## Inform the user history item that the response has arrived
+	## Inform the user history item that the responsew has arrived
 	user_history_item.response_arrived.emit(chi)
 
 	history.VBox.scroll_to_bottom()
