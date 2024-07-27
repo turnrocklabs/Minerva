@@ -3,19 +3,6 @@ extends VBoxContainer
 
 @export var editor_pane: EditorPane
 
-# get all open editors that have a file associated
-var _opened_files: Array[String] = []:
-	get:
-		var files: Array[String] = []
-		print("EDITOR LOOP")
-		for editor in editor_pane.get_children():
-			print(editor)
-			breakpoint
-			if not editor is Editor or not editor.file: continue
-			files.append(editor.file)
-		print(files)
-		return files
-
 
 func _ready() -> void:
 	editor_pane.enable_editor_action_buttons.connect(_toggle_enable_action_buttons)
@@ -54,7 +41,6 @@ func _is_graphics_file(filename: String) -> bool:
 
 func _on_open_file(filename:String):
 	open_file(filename)
-	# _opened_files.append(filename)
 	SingletonObject.save_state(false)
 
 
