@@ -11,10 +11,14 @@ config_version=5
 [application]
 
 config/name="AgentInator"
+config/tags=PackedStringArray("desktop", "upwork", "work")
 run/main_scene="res://Scenes/MainScene.tscn"
 config/features=PackedStringArray("4.2", "Forward Plus")
 run/max_fps=50
-config/icon="res://icon.svg"
+boot_splash/bg_color=Color(0.0784314, 0.0784314, 0.0784314, 1)
+boot_splash/image="res://handshake_logo-_green.png"
+boot_splash/fullsize=false
+config/icon="res://handshake_logo-_green.png"
 
 [audio]
 
