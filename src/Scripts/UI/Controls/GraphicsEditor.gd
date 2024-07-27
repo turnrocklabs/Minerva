@@ -73,7 +73,7 @@ func _ready():
 		%BrushHSlider.visible = SingletonObject.is_masking
 		%Erasing.visible = SingletonObject.is_masking 
 	layer_Number += 1
-	setup(Vector2(1000, 1000), Color.WHITE)
+	setup(Vector2i(1000, 1000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
 
@@ -116,7 +116,7 @@ func setup_from_image(image_: Image):
 
 	image = image_
 
-func setup(canvas_size: Vector2, background_color: Color):
+func setup(canvas_size: Vector2i, background_color: Color):
 	var img = Image.create(canvas_size.x, canvas_size.y, false, Image.FORMAT_RGBA8)
 	img.fill(background_color)
 	setup_from_image(img)
@@ -169,13 +169,13 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 	return pixels
 
 ## Checks if given pixel is within the image and draws it using `set_pixelv`
-func image_draw(image: Image, pos: Vector2, color: Color, point_size: int):
+func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int):
 	for pixel in get_circle_pixels(pos, point_size):
-		if pixel.x >= 0 and pixel.x < image.get_width() and pixel.y >= 0 and pixel.y < image.get_height():
-			if erasing and image.get_pixelv(pixel).a > 0.1: 
-				image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))  # Restore from the layer's bg
+		if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
+			if erasing and target_image.get_pixelv(pixel).a > 0.1: 
+				target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))  # Restore from the layer's bg
 			elif not erasing:
-				image.set_pixelv(pixel, color)
+				target_image.set_pixelv(pixel, color)
 
 func _input(event):
 	# Handle drawing actions
@@ -257,7 +257,7 @@ func _on_remove_layer_pressed():
 		%LayersContainer.remove_child(%LayersContainer.get_node(selectedLayer))
 		%PickLayers.remove_item(selectedIndex)
 		%PickLayers.select(selectedIndex - 1)
-		layer_Number - 1
+		layer_Number -= 1
 
 # Selecting layer
 func _on_pick_layers_item_selected(index):

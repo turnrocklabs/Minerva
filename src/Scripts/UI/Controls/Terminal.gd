@@ -156,4 +156,4 @@ func _on_text_edit_text_set():
 	await scroll_container.get_v_scroll_bar().changed
 
 	# scroll to bottom
-	scroll_container.scroll_vertical = scroll_container.get_v_scroll_bar().max_value
+	scroll_container.scroll_vertical = int(scroll_container.get_v_scroll_bar().max_value)

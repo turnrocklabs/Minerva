@@ -51,7 +51,7 @@ func restore_deleted_tab(tab_name: String):
 		# Remove the data from the deleted_tabs dictionary
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
-func _process(delta):
+func _process(_delta):
 	if Tabs.get_tab_count() > 0:
 		pass
 	if Input.is_action_just_pressed("ui_undo"):
@@ -157,7 +157,7 @@ func toggle_vertical_split() -> void:
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
 
-func _on_tab_container_tab_selected(tab: int) -> void:
+func _on_tab_container_tab_selected(_tab: int) -> void:
 	var current_control = Tabs.get_current_tab_control()
 	if not current_control:
 		return
@@ -167,7 +167,7 @@ func _on_tab_container_tab_selected(tab: int) -> void:
 		enable_editor_action_buttons.emit(false)
 
 
-func _on_tab_container_child_exiting_tree(node: Node) -> void:
+func _on_tab_container_child_exiting_tree(_node: Node) -> void:
 	if not Tabs.get_current_tab_control():
 		return
 	if Tabs.get_tab_count() < 1:
@@ -184,8 +184,8 @@ func _on_tab_container_tree_exited() -> void:
 	enable_editor_action_buttons.emit(false)
 
 
-func _on_tab_container_tab_changed(tab: int) -> void:
-	var current_tab = Tabs.get_current_tab_control()
+func _on_tab_container_tab_changed(_tab: int) -> void:
+	# var current_tab = Tabs.get_current_tab_control()
 	if Tabs == null:
 		return
 	if Tabs.get_tab_count() < 1:
