@@ -105,6 +105,13 @@ func add(type: Editor.TYPE, file = null, name_ = null) -> Editor:
 	
 	return editor_node
 
+func open_editors() -> Array[Editor]:
+	var editors: Array[Editor] = []
+	for child in self.Tabs.get_children():
+		if not child is Editor: continue
+		editors.append(child)
+	
+	return editors
 
 func get_file_name(path: String) -> String:
 	if path.length() <= 1:

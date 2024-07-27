@@ -53,13 +53,29 @@ func _on_file_submenu_index_pressed(index):
 		1:
 			handle_new_graphics()
 
+
+func _on_package_submenu_id_pressed(id: int):
+	match id:
+		0: SingletonObject.PackageProject.emit()
+		1: SingletonObject.UnpackageProject.emit()
+
 func _ready():
 	# Create the new submenu
 	file_submenu.name = "file_submenu"
 	file_submenu.add_item("New File")
 	file_submenu.add_item("New Graphics")
 	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
+
+	# Create package project submenu
+	var package_submenu: = PopupMenu.new()
+	package_submenu.name = "Package Project"
+	package_submenu.add_item("Create", 0)
+	package_submenu.add_item("Unpack", 1)
+	package_submenu.id_pressed.connect(_on_package_submenu_id_pressed)
 	
+	%Project.add_child(package_submenu)
+	%Project.add_submenu_item("Package Project", package_submenu.name, 0)
+
 	# Add the "New" submenu to the top of the "File" menu
 	%File.add_child(file_submenu)
 	%File.add_submenu_item("New", "file_submenu", 0)  # Note the index 0 here

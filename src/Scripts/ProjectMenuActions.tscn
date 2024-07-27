@@ -1,6 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://d2so5me225hvr"]
+[gd_scene load_steps=5 format=3 uid="uid://d2so5me225hvr"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ProjectMenuActions.gd" id="1_qee6b"]
+[ext_resource type="PackedScene" uid="uid://dqedarkllyoxl" path="res://Scenes/PackageProjectWindow.tscn" id="2_gfvo3"]
+[ext_resource type="PackedScene" uid="uid://cwhswjsdlmgfa" path="res://Scenes/UnpackageProjectWindow.tscn" id="2_ktass"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_xgnui"]
 font_size = 12
@@ -29,6 +31,14 @@ title = "Save the project"
 size = Vector2i(454, 159)
 access = 2
 filters = PackedStringArray("*.minproj")
+
+[node name="UnpackageProjectWindow" parent="." instance=ExtResource("2_ktass")]
+unique_name_in_owner = true
+visible = false
+
+[node name="PackageProjectWindow" parent="." instance=ExtResource("2_gfvo3")]
+unique_name_in_owner = true
+visible = false
 
 [node name="ExitConfirmationDialog" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
