@@ -174,7 +174,9 @@ func wrap_memory(item: Variant) -> Variant:
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
-	var text: String = chat_item.Message if chat_item.InjectedNotes.is_empty() else "%s%s" % ["\n".join(chat_item.InjectedNotes), chat_item.Message]
+	var text_notes = chat_item.InjectedNotes.filter(func(note): return note is String)
+
+	var text: String = chat_item.Message if text_notes.is_empty() else "%s%s" % ["\n".join(text_notes), chat_item.Message]
 
 	return {
 		"text": text,
