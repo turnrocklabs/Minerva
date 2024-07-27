@@ -102,12 +102,13 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	if not image_captions_array.is_empty():
 		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
 
+	var text_notes = chat_item.InjectedNotes.filter(func(note): return note is String)
 
 	var text = """
 		%s
 		%s
 		%s
-	""" % [image_captions, "\n".join(chat_item.InjectedNotes), chat_item.Message]
+	""" % [image_captions, "\n".join(text_notes), chat_item.Message]
 
 	text = text.strip_edges()
 
