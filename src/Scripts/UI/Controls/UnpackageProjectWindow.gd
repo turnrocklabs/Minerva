@@ -120,7 +120,7 @@ func _on_project_path_change_button_pressed():
 
 func _on_project_path_file_dialog_file_selected(path: String):
 	_project_path_line_edit.text = path
-	_export_button_update()
+	_project_path_line_edit.text_changed.emit()
 
 ## when path changes validate it's correct
 func _on_project_path_line_edit_text_changed(new_text: String):
@@ -138,7 +138,7 @@ func _on_files_path_change_button_pressed():
 
 func _on_files_path_file_dialog_dir_selected(dir: String):
 	_files_path_line_edit.text = dir
-	_export_button_update()
+	_files_path_line_edit.text_changed.emit()
 
 func _on_files_path_line_edit_text_changed(new_text: String):
 	_files_export_path_valid = true
