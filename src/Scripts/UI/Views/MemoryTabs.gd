@@ -214,10 +214,6 @@ func delete_note(memory_item: MemoryItem):
 	active_thread.MemoryItemList.remove_at(idx)
 
 func render_thread(thread_item: MemoryThread):
-	
-	var any_visible = thread_item.MemoryItemList.any(func(item: MemoryItem): return item.Visible)
-	if not any_visible: return # if we have no visible notes don't render anything right now
-
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
