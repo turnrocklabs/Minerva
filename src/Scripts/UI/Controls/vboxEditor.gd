@@ -3,22 +3,13 @@ extends VBoxContainer
 
 @export var editor_pane: EditorPane
 
-# get all open editors that have a file associated
-var _opened_files: Array[String] = []:
-	get:
-		var files: Array[String] = []
-		for editor in editor_pane.get_children():
-			if not editor is Editor or not editor.file: continue
-			files.append(editor.file)
-		return files
-
 
 func _ready() -> void:
 	editor_pane.enable_editor_action_buttons.connect(_toggle_enable_action_buttons)
 
 
 func _toggle_enable_action_buttons(enable: bool) -> void:
-	if get_tree():
+	if is_inside_tree():
 		var editor_action_buttons = get_tree().get_nodes_in_group("editor_action_button")
 		if editor_action_buttons:
 			for button: Button in editor_action_buttons:
@@ -26,11 +17,14 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 
 
 func serialize() -> Array[String]:
-	return _opened_files
+	var files: Array[String] = []
+	# first get all open editors
+	for editor in editor_pane.open_editors():
+		if editor.file: files.append(editor.file)
+	
+	return files
 
 func deserialize(files: Array[String]):
-	_opened_files = files
-
 	for file in files:
 		open_file(file)
 
@@ -47,7 +41,6 @@ func _is_graphics_file(filename: String) -> bool:
 
 func _on_open_file(filename:String):
 	open_file(filename)
-	# _opened_files.append(filename)
 	SingletonObject.save_state(false)
 
 
@@ -117,10 +110,6 @@ func _on_back_space_button_pressed() -> void:
 			current_tab.get_node("NoteEditor").delete_chars()
 		else:
 			current_tab.delete_chars()
-	#if %EditorPane.Tabs.get_current_tab_control():
-		#%EditorPane.Tabs.get_current_tab_control().delete_chars()
-	#else:
-		#_toggle_enable_action_buttons(false)
 
 
 func _on_clear_button_pressed():
@@ -130,8 +119,6 @@ func _on_clear_button_pressed():
 			current_tab.get_node("NoteEditor").clear_text()
 		else:
 			current_tab.clear_text()
-	#if %EditorPane.Tabs.get_current_tab_control():
-		#%EditorPane.Tabs.get_current_tab_control().clear_text()
 
 
 func _on_undo_button_pressed():
@@ -141,5 +128,3 @@ func _on_undo_button_pressed():
 			current_tab.get_node("NoteEditor").undo_action()
 		else:
 			current_tab.undo_action()
-	#if %EditorPane.Tabs.get_current_tab_control():
-		#%EditorPane.Tabs.get_current_tab_control().undo_action()
