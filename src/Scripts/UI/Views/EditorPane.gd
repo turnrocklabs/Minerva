@@ -77,7 +77,7 @@ func add_control(item: Node, name_: String) -> Node:
 	item.name = name_
 	self.Tabs.add_child(item)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
-
+	enable_editor_action_buttons.emit(true)
 	return item
 
 
@@ -168,13 +168,16 @@ func _on_tab_container_tab_selected(_tab: int) -> void:
 
 
 func _on_tab_container_child_exiting_tree(_node: Node) -> void:
-	if not Tabs.get_current_tab_control():
+	var current_tab = Tabs.get_current_tab_control()
+	if current_tab == null:
 		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
 		return
-	var current_control = Tabs.get_current_tab_control()
-	if current_control is Editor and current_control.type == Editor.TYPE.Text:
+	if current_tab.get_class() == "ScrollContainer":
+		enable_editor_action_buttons.emit(true)
+		return
+	elif current_tab.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
@@ -185,14 +188,15 @@ func _on_tab_container_tree_exited() -> void:
 
 
 func _on_tab_container_tab_changed(_tab: int) -> void:
-	# var current_tab = Tabs.get_current_tab_control()
+	var current_tab = Tabs.get_current_tab_control()
 	if Tabs == null:
 		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
+	if current_tab.get_class() == "ScrollContainer":
+		enable_editor_action_buttons.emit(true)
 		return
-	var current_control = Tabs.get_current_tab_control()
-	if current_control is Editor and current_control.type == Editor.TYPE.Text:
+	elif current_tab.type == Editor.TYPE.Text:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
