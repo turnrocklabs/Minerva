@@ -18,7 +18,7 @@ func _ready() -> void:
 
 
 func _toggle_enable_action_buttons(enable: bool) -> void:
-	if get_tree():
+	if is_inside_tree():
 		var editor_action_buttons = get_tree().get_nodes_in_group("editor_action_button")
 		if editor_action_buttons:
 			for button: Button in editor_action_buttons:

@@ -57,7 +57,7 @@ func estimate_tokens(_input: String) -> int:
 func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
 	return 0
 
-func continue_partial_response(partial_chi: ChatHistoryItem):
+func continue_partial_response(_partial_chi: ChatHistoryItem):
 	push_error("continue_partial_response method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
