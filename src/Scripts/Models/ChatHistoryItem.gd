@@ -6,7 +6,7 @@ enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
 
 static var SERIALIZER_FIELDS = [
 	"Role",
-	"InjectedNote",
+	"InjectedNotes",
 	"Message",
 	"Images",
 	"Captions",
@@ -28,8 +28,8 @@ var Id: String:
 var Role: ChatRole:
 	set(value): SingletonObject.save_state(false); Role = value
 
-var InjectedNote: String:
-	set(value): SingletonObject.save_state(false); InjectedNote = value
+var InjectedNotes: Array[Variant]:
+	set(value): SingletonObject.save_state(false); InjectedNotes = value
 
 var Message: String:
 	set(value): SingletonObject.save_state(false); Message = value
@@ -138,7 +138,7 @@ func Serialize() -> Dictionary:
 
 	var save_dict: Dictionary = {
 		"Role": Role,
-		"InjectedNote": InjectedNote,
+		"InjectedNotes": Marshalls.variant_to_base64(InjectedNotes),
 		"Message": Message,
 		"Order": Order,
 		"Type": Type,
@@ -171,9 +171,15 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	if data["Captions"].size() == data["Images"].size():
 		data["Captions"].resize(data.get("Images").size())
 
+	var chi = ChatHistoryItem.new()
+
+	# InjectedNote changed to InjectedNotes.
+	# Just place the old InjectedNote into the array
+	if data.has("InjectedNote"):
+		chi.InjectedNotes = [data["InjectedNote"]]
+
 	# endregion
 
-	var chi = ChatHistoryItem.new()
 
 	for prop in SERIALIZER_FIELDS:
 		var value = data.get(prop)
@@ -195,6 +201,17 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 			"Captions":
 				for i in range((value as Array).size()):
 					chi.Images[i].set_meta("caption", value[i])
+			
+			"InjectedNotes":
+				var b64_notes = data.get("InjectedNotes")
+
+				# Condition "len < 4" is true. Returning: ERR_INVALID_DATA
+				# base64 string is invalid if it's less than 4 characters
+				if not b64_notes.length() < 4:
+					value = Marshalls.base64_to_variant(b64_notes)
+				
+				if not value:
+					value = []
 
 		chi.set(prop, value)
 
@@ -204,5 +221,5 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 ## Merges two history items together
 func merge(item: ChatHistoryItem) -> void:
 	Message = "%s\n%s" % [Message, item.Message]
-	InjectedNote = "%s\n%s" % [InjectedNote, item.InjectedNote]
+	InjectedNotes.append_array(item.InjectedNotes)
 	Complete = Complete and item.Complete

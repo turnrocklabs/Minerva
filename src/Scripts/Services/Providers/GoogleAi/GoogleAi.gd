@@ -38,49 +38,27 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 	return bot_response
 
-func imga() -> String:
-	var img = Image.new()
-	var load_result = img.load("res://fffffffff.png")
-	
-	if load_result != OK:
-		push_error("Failed to load image")
-		return ""
-	
-	# Resize image if necessary
-	if img.get_width() > 1024 or img.get_height() > 1024:
-		img.resize(1024, 1024)
-	
-	var img_data = img.save_png_to_buffer()
-	# Ensure the image data is not empty before proceeding
-	if img_data.is_empty():
-		push_error("Image data is empty after encoding")
-		return ""
-	
-	var encoded_data = Marshalls.variant_to_base64(img_data)
-	
-	return encoded_data
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}):
-	var image_data = imga()
-	if image_data == "":
-		push_error("Failed to encode image")
-		return
 
 	var request_body = {
-		"contents": [
-			{
-				"parts": [
-					{"text": system_prompt},
-					{
-						"inline_data": {
-							"mime_type": "image/png",
-							"data": image_data
-						}
-					}
-				]
-			}
-		]
+		"contents": prompt
 	}
+
+	
+			# {
+			# 	"parts": [
+			# 		{"text": system_prompt},
+			# 		{
+			# 			"inline_data": {
+			# 				"mime_type": "image/png",
+			# 				"data": image_data
+			# 			}
+			# 		}
+			# 	]
+			# }
+		
+
 
 	request_body.merge(additional_params)
 	
@@ -105,13 +83,25 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 
 	return item
 
-func wrap_memory(list_memories: String) -> String:
-	var output: String = "Given this background information:\n\n"
-	output += "### Reference Information ###\n"
-	output += list_memories
-	output += "### End Reference Information ###\n\n"
-	output += "Respond to the user's message: \n\n"
-	return output
+func wrap_memory(item: MemoryItem) -> Variant:
+
+	# Return either string for text notes or dictionary for image notes
+
+	if item.MemoryImage:
+		return {
+			"inline_data": {
+				"mime_type": "image/png",
+				"data": Marshalls.raw_to_base64(item.MemoryImage.save_png_to_buffer())
+			}
+		}
+	
+	else:
+		var output = "Given this background information:\n\n"
+		output += "### Reference Information ###\n"
+		output += item.Content
+		output += "### End Reference Information ###\n\n"
+		output += "Respond to the user's message: \n\n"
+		return output
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
 	var role: String
@@ -127,28 +117,44 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "model"
 	
+	# text_notes will be added straight to the text that's passed as the prompt message
+	var text_notes: = PackedStringArray()
+
+	# image_notes should be formatted properly inside the wrap_memory method
+	var image_notes: Array[Dictionary] = []
+
+	for note: Variant in chat_item.InjectedNotes:
+		if note is String:
+			text_notes.append(note)
+		
+		elif note is Dictionary:
+			image_notes.append(note)
+
+
 	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
 	var image_captions: String
 
 	if not image_captions_array.is_empty():
 		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
 
+
 	var text = """
 		%s
 		%s
 		%s
-	""" % [image_captions, chat_item.InjectedNote, chat_item.Message]
+	""" % [image_captions, "\n".join(text_notes), chat_item.Message]
 
 	text = text.strip_edges()
 
-	return {
+	var output = {
 		"role": role,
 		"parts": [
-			{
-				"text": text
-			}
+			{ "text": text }
 		]
 	}
+
+	output["parts"].append_array(image_notes)
+	return output
 
 func estimate_tokens(input) -> int:
 	return roundi(input.get_slice_count(" ") * 1.335)
