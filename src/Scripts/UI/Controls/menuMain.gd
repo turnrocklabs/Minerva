@@ -12,7 +12,7 @@ extends MenuBar
 func _on_file_index_pressed(index):
 	match index:
 		1:
-			%fdgOpenFile.popup_centered(Vector2i(800, 600))
+			%fdgOpenFile.popup_centered()
 		2: # this match is for the save button
 				# get current editor tab
 			var tabs = SingletonObject.editor_container.editor_pane.Tabs
@@ -32,9 +32,9 @@ func _on_file_index_pressed(index):
 				current_editor_tab.prompt_close(true)
 		4:
 			## Set a target size, have a border, and display the preferences popup.
-			var target_size = %VBoxRoot.size / 2
-			%PreferencesPopup.borderless = false
-			%PreferencesPopup.size = target_size
+			#var target_size = %VBoxRoot.size / 2
+			#%PreferencesPopup.borderless = false
+			#%PreferencesPopup.size = target_size
 			%PreferencesPopup.popup_centered()
 
 # Handle new file creation
@@ -53,13 +53,29 @@ func _on_file_submenu_index_pressed(index):
 		1:
 			handle_new_graphics()
 
+
+func _on_package_submenu_id_pressed(id: int):
+	match id:
+		0: SingletonObject.PackageProject.emit()
+		1: SingletonObject.UnpackageProject.emit()
+
 func _ready():
 	# Create the new submenu
 	file_submenu.name = "file_submenu"
 	file_submenu.add_item("New File")
 	file_submenu.add_item("New Graphics")
 	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
+
+	# Create package project submenu
+	var package_submenu: = PopupMenu.new()
+	package_submenu.name = "Package Project"
+	package_submenu.add_item("Create", 0)
+	package_submenu.add_item("Unpack", 1)
+	package_submenu.id_pressed.connect(_on_package_submenu_id_pressed)
 	
+	%Project.add_child(package_submenu)
+	%Project.add_submenu_item("Package Project", package_submenu.name, 0)
+
 	# Add the "New" submenu to the top of the "File" menu
 	%File.add_child(file_submenu)
 	%File.add_submenu_item("New", "file_submenu", 0)  # Note the index 0 here
@@ -69,12 +85,7 @@ func _ready():
 	%File.add_item("Save", 2)
 	%File.add_item("Save As", 3)
 	%File.add_item("Preferences", 4)
-	
-	# Make appropriate connections
-	%File.index_pressed.connect(_on_file_index_pressed)
-	%File.about_to_popup.connect(_on_file_about_to_popup)
-	
-	# Other existing code...
+
 
 func _on_project_index_pressed(index):
 	match index:
@@ -159,7 +170,7 @@ var timer
 var active: bool = true
 func _on_mouse_entered() -> void:
 	if active:
-		load_recent_projects()
+		call_deferred("load_recent_projects")# load_recent_projects()
 		active = false
 		
 		#add submenu fro button new edit

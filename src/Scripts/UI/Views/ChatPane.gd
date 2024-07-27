@@ -14,7 +14,6 @@ var container: TabContainer  # Store the TabContainer
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
 
-
 ## add new chat 
 func _on_new_chat():
 	var tab_name: = "Chat %s" % (get_tab_count()+1)
@@ -125,7 +124,7 @@ func regenerate_response(chi: ChatHistoryItem):
 		existing_response.Role = ChatHistoryItem.ChatRole.MODEL
 		existing_response.provider = SingletonObject.ChatList[current_tab].provider
 		history.HistoryItemList.append(existing_response)
-		await history.VBox.add_history_item(existing_response)
+		history.VBox.add_history_item(existing_response)
 
 	# We format items until we get to the user response
 	var predicate = func(item: ChatHistoryItem) -> Array:
@@ -167,7 +166,7 @@ func execute_chat():
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
-	var last_msg = history.HistoryItemList.back()
+	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
 
 	## prepare an append item for the history
@@ -180,7 +179,7 @@ func execute_chat():
 	# make a chat request
 	var history_list: = create_prompt(user_history_item)
 
-	var user_msg_node: = await history.VBox.add_history_item(user_history_item)
+	var user_msg_node: = history.VBox.add_history_item(user_history_item)
 
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
@@ -194,7 +193,7 @@ func execute_chat():
 	dummy_item.Role = ChatHistoryItem.ChatRole.MODEL
 	dummy_item.provider = history.provider
 	
-	var model_msg_node = await history.VBox.add_history_item(dummy_item)
+	var model_msg_node = history.VBox.add_history_item(dummy_item)
 	model_msg_node.loading = true
 
 	# This function can be awaited for the request to finish
@@ -269,7 +268,7 @@ func render_single_chat(item: ChatHistoryItem):
 
 	# Ask the Vbox to add the message
 	# and save the rendered node to the chat history item, si we can delete it if needed
-	item.rendered_node = await SingletonObject.ChatList[current_tab].VBox.add_history_item(item)
+	item.rendered_node = SingletonObject.ChatList[current_tab].VBox.add_history_item(item)
 	
 
 
@@ -409,11 +408,11 @@ func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
 		var data = SingletonObject.undo.deleted_tabs[tab_name]
 		var tab = data["tab"]
-		var control = data["control"]
+		var control_ = data["control"]
 		var history = data["history"]
 		data["timer"].stop()
 		#Add the control back to the TabContainer
-		%tcChats.add_child(control)
+		%tcChats.add_child(control_)
 		
 		# Set the tab index and restore the history
 		set_current_tab(tab)

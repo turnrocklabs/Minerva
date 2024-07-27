@@ -5,10 +5,10 @@ const _scene = preload("res://Scenes/Layer.tscn")
 var image: Image
 
 
-static func create(image_: Image,name:String) -> Layer:
+static func create(image_: Image, name_:String) -> Layer:
 	var layer: Layer = _scene.instantiate()
 	layer.image = image_
-	layer.name = name
+	layer.name = name_
 	return layer
 
 

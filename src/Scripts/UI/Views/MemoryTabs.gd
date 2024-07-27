@@ -7,8 +7,8 @@ extends TabContainer
 # var ActiveThreadIndex: int:
 
 var _drag_active := false
-var _hovered_tab := -1
-var _hover_timer
+# var _hovered_tab := -1
+# var _hover_timer
 
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
@@ -58,13 +58,13 @@ func disable_notes_in_tab():
 			item.Enabled = false
 
 
-func open_threads_popup(name: String = "", tab = null):
+func open_threads_popup(tab_name: String = "", tab = null):
 	var target_size = %VBoxRoot.size / 5 #- Vector2(100, 100)
 	%NewThreadPopup.borderless = false
 	%NewThreadPopup.size = target_size
 	
 	# %NewThreadPopup/VBoxContainer/HBoxTopRow/txtNewTabName
-	%txtNewTabName.text = name
+	%txtNewTabName.text = tab_name
 
 	var update = tab != null
 
@@ -122,24 +122,10 @@ func render_threads():
 
 	# we must delete existing noted so creating new project works
 	for c in %tcThreads.get_children():
-		c.free()
+		c.queue_free()
 	
-	# Iterate through the SingletonObject.ThreadList and its corresponding tabs:
-	for i in range(SingletonObject.ThreadList.size()):
-		var thread = SingletonObject.ThreadList[i];
-		var tab = %tcThreads.get_child(i)
-
-		# If the tab exists, update its content:
-		if tab:
-			var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread.ThreadId, thread.MemoryItemList)
-			tab.remove_child(tab.get_child(0))
-			tab.add_child(vboxMemoryList)
-			tab.name = thread.ThreadName
-			tab.set_meta("thread", thread)
-
-		# If the tab doesn't exist, create a new one:
-		else:
-			render_thread(thread)
+	for thread in SingletonObject.ThreadList:
+		render_thread(thread)
 
 	# Restore the last active thread:
 	if self.get_child_count():
@@ -147,7 +133,7 @@ func render_threads():
 	
 
 #region Add notes methods
-func add_note(user_title:String, user_content: String, _source: String = ""):
+func add_note(user_title:String, user_content: String, _source: String = "") -> MemoryItem:
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -169,6 +155,8 @@ func add_note(user_title:String, user_content: String, _source: String = ""):
 	active_thread.MemoryItemList.append(new_memory)
 
 	render_threads()
+
+	return new_memory
 
 
 func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
@@ -230,6 +218,10 @@ func delete_note(memory_item: MemoryItem):
 	active_thread.MemoryItemList.remove_at(idx)
 
 func render_thread(thread_item: MemoryThread):
+	
+	var any_visible = thread_item.MemoryItemList.any(func(item: MemoryItem): return item.Visible)
+	if not any_visible: return # if we have no visible notes don't render anything right now
+
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -242,11 +234,9 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.add_child(vboxMemoryList)
 
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
-	var foo: String = thread_item.ThreadName
-	scroll_container.name = foo  # Set the tab title
+	scroll_container.name = thread_item.ThreadName
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
 	%tcThreads.add_child(scroll_container)
-	pass
 
 
 func _on_close_tab(tab: int, container: TabContainer):
@@ -258,8 +248,9 @@ func _on_close_tab(tab: int, container: TabContainer):
 		# Remove the thread from the list
 		SingletonObject.ThreadList.remove_at(thread_idx)
 
+		# this will crash the program by freeing the `control` object
 		# Update the UI with the remaining threads
-		render_threads()
+		# render_threads()
 
 		# Store deleted tab for potential undo
 		SingletonObject.undo.store_deleted_tab_right(tab, control, "right")
@@ -270,7 +261,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
 		var data = SingletonObject.undo.deleted_tabs[tab_name]
-		var tab = data["tab"]
+		
 		var control = data["control"]
 		data["timer"].stop()
 		# Get the MemoryThread associated with the tab.
@@ -305,6 +296,7 @@ func attach_file(the_file: String):
 
 	# Determine the file type
 	var file_ext = the_file.get_extension().to_lower()
+	@warning_ignore("unused_variable")
 	var file_type = ""
 	var content = ""
 	var content_type = ""
@@ -362,7 +354,6 @@ func attach_file(the_file: String):
 		return
 	
 	# Create a new memory item
-	#var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.Enabled = true
 	new_memory.Title = title
 	new_memory.Content = content
@@ -443,7 +434,7 @@ func _on_thread_list_changed():
 	_needs_update = true
 
 # This function is called every frame
-func _process(delta):
+func _process(_delta):
 	if _needs_update:
 		render_threads()
 		_needs_update = false
