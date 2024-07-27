@@ -1,8 +1,12 @@
 extends Node
 
-#region global variables?
+#region global variables
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
-
+var supported_text_fortmats: PackedStringArray = ["rs", "toml", "txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]
+var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
+var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]#, "flac"]
+var is_graph:bool
+var is_masking:bool
 
 #endregion global variables
 
@@ -111,8 +115,8 @@ func _ready():
 	
 	
 	var theme_enum = get_theme()
-	if theme_enum > -1: pass
-		# set_theme(theme_enum)
+	if theme_enum > -1:
+		set_theme(theme_enum)
 	
 	var mic_selected = get_microphone()
 	if mic_selected:
@@ -260,17 +264,17 @@ func get_theme() -> int:
 	return config_file.get_value("theme", "theme_enum",0)
 
 
-# func set_theme(themeID: int) -> void:
-# 	match themeID:
-# 		theme.LIGHT_MODE:
-# 			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
-# 			root_control.theme = light_theme
-# 			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
-# 		theme.DARK_MODE:
-# 			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
-# 			root_control.theme = dark_theme
-# 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
-# 	theme_changed.emit(themeID)
+func set_theme(themeID: int) -> void:
+	match themeID:
+		theme.LIGHT_MODE:
+			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
+			root_control.theme = light_theme
+			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
+		theme.DARK_MODE:
+			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
+			root_control.theme = dark_theme
+			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
+	theme_changed.emit(themeID)
 
 #endregion Theme change
 
