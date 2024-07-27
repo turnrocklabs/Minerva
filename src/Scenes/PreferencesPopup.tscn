@@ -1,17 +1,22 @@
 [gd_scene load_steps=2 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
-[ext_resource type="Theme" uid="uid://dlec7d3t4v0nd" path="res://assets/themes/PreferencesPopup_checkbutton_darkmode.tres" id="2_ynj3k"]
 
 [node name="PreferencesPopup" type="Window"]
 initial_position = 4
-size = Vector2i(520, 500)
+size = Vector2i(570, 490)
+unresizable = true
+min_size = Vector2i(570, 490)
 script = ExtResource("1_snp1b")
 
 [node name="v" type="VBoxContainer" parent="."]
-offset_left = 10.0
-offset_right = 522.0
-offset_bottom = 420.0
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -256.0
+offset_right = 256.0
+offset_bottom = 490.0
+grow_horizontal = 2
 
 [node name="SectionsContainer" type="VBoxContainer" parent="v"]
 custom_minimum_size = Vector2(512, 0)
@@ -181,6 +186,7 @@ layout_mode = 2
 [node name="btnSavePrefs" type="Button" parent="v"]
 layout_mode = 2
 size_flags_horizontal = 0
+size_flags_vertical = 6
 text = "Save"
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
