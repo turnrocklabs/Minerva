@@ -1,6 +1,6 @@
 [gd_scene load_steps=30 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_66w4a"]
+[ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_d0avd"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
@@ -44,7 +44,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("1_66w4a")
+theme = ExtResource("1_d0avd")
 script = ExtResource("2_65hnk")
 terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
@@ -98,7 +98,6 @@ clip_text = true
 [node name="PreferencesPopup" parent="." instance=ExtResource("3_3hcc1")]
 unique_name_in_owner = true
 initial_position = 2
-size = Vector2i(522, 320)
 visible = false
 
 [node name="NewThreadPopup" type="Window" parent="."]
@@ -120,6 +119,7 @@ offset_right = -6.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 0
 alignment = 1
 
 [node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
@@ -173,9 +173,12 @@ offset_right = -16.0
 offset_bottom = -12.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 20
 
-[node name="menuMain" type="MenuBar" parent="VBoxRoot"]
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot"]
+layout_mode = 2
+
+[node name="menuMain" type="MenuBar" parent="VBoxRoot/HBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 0
 theme_override_constants/h_separation = 6
@@ -183,20 +186,20 @@ theme_override_font_sizes/font_size = 18
 prefer_global_menu = false
 script = ExtResource("1_oipdw")
 
-[node name="ProjectManagement" parent="VBoxRoot/menuMain" instance=ExtResource("2_amibn")]
+[node name="ProjectManagement" parent="VBoxRoot/HBoxContainer/menuMain" instance=ExtResource("2_amibn")]
 layout_mode = 1
 
-[node name="fdgOpenFile" type="FileDialog" parent="VBoxRoot/menuMain"]
+[node name="fdgOpenFile" type="FileDialog" parent="VBoxRoot/HBoxContainer/menuMain"]
 unique_name_in_owner = true
 title = "Open a File"
 initial_position = 4
-size = Vector2i(465, 163)
+size = Vector2i(800, 600)
 popup_window = true
 ok_button_text = "Open"
 file_mode = 0
 access = 2
 
-[node name="Project" type="PopupMenu" parent="VBoxRoot/menuMain"]
+[node name="Project" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 unique_name_in_owner = true
 title = "Project"
 size = Vector2i(150, 166)
@@ -212,12 +215,12 @@ item_3/text = "Save As..."
 item_3/id = 3
 item_3/disabled = true
 
-[node name="File" type="PopupMenu" parent="VBoxRoot/menuMain"]
+[node name="File" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 unique_name_in_owner = true
 title = "File"
 size = Vector2i(123, 143)
 
-[node name="View" type="PopupMenu" parent="VBoxRoot/menuMain"]
+[node name="View" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 title = "View"
 size = Vector2i(211, 255)
 hide_on_checkable_item_selection = false
@@ -255,6 +258,23 @@ item_9/id = 8
 item_10/text = "Show All Notes"
 item_10/icon = ExtResource("7_rdia2")
 item_10/id = 9
+
+[node name="MenuBar" type="MenuBar" parent="VBoxRoot/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 10
+
+[node name="Button" type="Button" parent="VBoxRoot/HBoxContainer/MenuBar"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -95.0
+offset_bottom = 40.0
+grow_horizontal = 0
+focus_mode = 0
+text = "Preferences
+"
+flat = true
 
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxRoot"]
 unique_name_in_owner = true
@@ -663,17 +683,18 @@ bus = &"Rec"
 [connection signal="about_to_popup" from="NewThreadPopup" to="." method="_on_new_thread_popup_about_to_popup"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
-[connection signal="focus_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_focus_entered"]
-[connection signal="mouse_entered" from="VBoxRoot/menuMain" to="VBoxRoot/menuMain" method="_on_mouse_entered"]
-[connection signal="file_selected" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
-[connection signal="tree_entered" from="VBoxRoot/menuMain/fdgOpenFile" to="VBoxRoot/menuMain/ProjectManagement" method="_on_fdg_open_file_tree_entered"]
-[connection signal="about_to_popup" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_about_to_popup"]
-[connection signal="index_pressed" from="VBoxRoot/menuMain/Project" to="VBoxRoot/menuMain" method="_on_project_index_pressed"]
-[connection signal="about_to_popup" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_about_to_popup"]
-[connection signal="index_pressed" from="VBoxRoot/menuMain/File" to="VBoxRoot/menuMain" method="_on_file_index_pressed"]
-[connection signal="about_to_popup" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_about_to_popup"]
-[connection signal="id_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_id_pressed"]
-[connection signal="index_pressed" from="VBoxRoot/menuMain/View" to="VBoxRoot/menuMain" method="_on_view_index_pressed"]
+[connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
+[connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
+[connection signal="file_selected" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
+[connection signal="tree_entered" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/HBoxContainer/menuMain/ProjectManagement" method="_on_fdg_open_file_tree_entered"]
+[connection signal="about_to_popup" from="VBoxRoot/HBoxContainer/menuMain/Project" to="VBoxRoot/HBoxContainer/menuMain" method="_on_project_about_to_popup"]
+[connection signal="index_pressed" from="VBoxRoot/HBoxContainer/menuMain/Project" to="VBoxRoot/HBoxContainer/menuMain" method="_on_project_index_pressed"]
+[connection signal="about_to_popup" from="VBoxRoot/HBoxContainer/menuMain/File" to="VBoxRoot/HBoxContainer/menuMain" method="_on_file_about_to_popup"]
+[connection signal="index_pressed" from="VBoxRoot/HBoxContainer/menuMain/File" to="VBoxRoot/HBoxContainer/menuMain" method="_on_file_index_pressed"]
+[connection signal="about_to_popup" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_about_to_popup"]
+[connection signal="id_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_id_pressed"]
+[connection signal="index_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_index_pressed"]
+[connection signal="pressed" from="VBoxRoot/HBoxContainer/MenuBar/Button" to="." method="_on_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/ClearButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_clear_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/UndoButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_undo_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/BackSpaceButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_back_space_button_pressed"]

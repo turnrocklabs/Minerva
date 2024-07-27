@@ -206,7 +206,6 @@ func delete_chars() -> void:
 	code_edit.grab_focus()
 
 
-
 func add_new_line() -> void:
 	if TYPE.Text != type:
 		return

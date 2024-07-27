@@ -21,7 +21,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 12
+theme_override_constants/separation = 10
 
 [node name="GraphicsEditor" parent="VBoxContainer" instance=ExtResource("3_rd38o")]
 unique_name_in_owner = true
@@ -53,7 +53,12 @@ layout_mode = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
+theme_override_constants/separation = 14
 alignment = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 4
 
 [node name="CheckButton" type="CheckButton" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
@@ -75,6 +80,14 @@ text = "Save"
 layout_mode = 2
 tooltip_text = "Creates note from editor tab content"
 icon = ExtResource("6_now0o")
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 4
+
+[node name="Label" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 4
 
 [node name="CloseDialog" type="ConfirmationDialog" parent="."]
 title = "You have unsaved open editor "

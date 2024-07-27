@@ -278,7 +278,7 @@ func set_theme(themeID: int) -> void:
 			root_control.theme = light_theme
 			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
 		theme.DARK_MODE:
-			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
+			var dark_theme = ResourceLoader.load("res://assets/themes/blue_dark_mode.theme")
 			root_control.theme = dark_theme
 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 	theme_changed.emit(themeID)
