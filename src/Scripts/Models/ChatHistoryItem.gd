@@ -203,7 +203,7 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 					chi.Images[i].set_meta("caption", value[i])
 			
 			"InjectedNotes":
-				var b64_notes = data.get("InjectedNotes")
+				var b64_notes = data.get("InjectedNotes", "")
 
 				# Condition "len < 4" is true. Returning: ERR_INVALID_DATA
 				# base64 string is invalid if it's less than 4 characters
