@@ -223,7 +223,7 @@ func execute_chat():
 	model_msg_node.history_item = chi
 	history.HistoryItemList.append(chi)
 
-	## Inform the user history item that the response has arrived
+	## Inform the user history item that the responsew has arrived
 	user_history_item.response_arrived.emit(chi)
 
 	history.VBox.scroll_to_bottom()
