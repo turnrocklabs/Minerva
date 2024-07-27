@@ -83,6 +83,11 @@ func toggle_all_notes(notes_enabled: bool):
 	if !notes_enabled:
 		NotesTab.enable_all()
 
+## Returns `MemoryThread` with the given `ThreadId` or null if none are found
+func get_thread(thread_id: String) -> MemoryThread:
+	var r_arr = ThreadList.filter(func(thread: MemoryThread): return thread.ThreadId == thread_id)
+	return r_arr.pop_front()
+
 #endregion Notes
 
 #region Chats
@@ -208,6 +213,8 @@ signal OpenProject
 signal OpenRecentProject(recent_project_name: String)
 signal SaveProject
 signal SaveProjectAs
+signal PackageProject
+signal UnpackageProject
 signal CloseProject
 signal RedrawAll
 
@@ -271,7 +278,7 @@ func set_theme(themeID: int) -> void:
 			root_control.theme = light_theme
 			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
 		theme.DARK_MODE:
-			var dark_theme = ResourceLoader.load("res://assets/themes/dark_mode.theme")
+			var dark_theme = ResourceLoader.load("res://assets/themes/blue_dark_mode.theme")
 			root_control.theme = dark_theme
 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 	theme_changed.emit(themeID)

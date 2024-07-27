@@ -33,6 +33,25 @@ func save_project_as(file=""):
 		save_project()
 
 
+func package_project():
+	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
+	for item_idx in item_list.get_selected_items():
+		var editor = item_list.get_item_metadata(item_idx)
+		await editor.prompt_close(true)
+		editor.queue_free()
+
+	var ppw: PackageProjectWindow = %PackageProjectWindow
+
+	ppw.data = serialize_project()
+	
+	ppw.popup_centered()
+
+
+func unpackage_project():
+	var upw: UnpackageProjectWindow = %UnpackageProjectWindow
+
+	upw.popup_centered()
+
 func save_project():
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
@@ -46,9 +65,10 @@ func save_project():
 	
 	# ask the singleton to serialize all state vars.
 	
-	var serialized: String = serialize_project()
+	var proj_data: = serialize_project()
+
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
-	save_file.store_line(serialized)
+	save_file.store_line(JSON.stringify(proj_data, "\t"))
 	
 	# get the file path and add it to config file
 	SingletonObject.save_recent_project(save_path)
@@ -59,7 +79,7 @@ func save_project():
 ## Function:
 # serialize_project iterates through the notes and chats and creates an array
 # each line in the array is the contents of either the notes or the chats.
-func serialize_project() -> String:
+func serialize_project() -> Dictionary:
 	var notes: Array[Dictionary] = []
 	var chats: Array[Dictionary] = []
 	# var active_notes_index: int = 0 ## which of the notes tabs is selected and active
@@ -78,7 +98,7 @@ func serialize_project() -> String:
 
 	var editors = SingletonObject.editor_container.serialize()
 
-	var save_dict: Dictionary = {
+	return {
 		"ThreadList" : notes,
 		"ChatList" : chats,
 		"Editors": editors,
@@ -87,9 +107,6 @@ func serialize_project() -> String:
 		"active_notes_index": SingletonObject.NotesTab.current_tab,
 		"default_provider": SingletonObject.get_active_provider(),
 	}
-	var stringified_save: String = JSON.stringify(save_dict, "\t")
-	return stringified_save
-
 
 func deserialize_project(data: Dictionary):
 	var threads: Array[MemoryThread] = []
@@ -112,8 +129,15 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.editor_container.deserialize(editor_files)
 	
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
-	SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
-	SingletonObject.NotesTab.current_tab = data.get("active_notes_index", 0)
+
+	var current_notes_tab = data.get("active_notes_index", 0)
+	if SingletonObject.NotesTab.get_tab_count()-1 >= current_notes_tab:
+		SingletonObject.NotesTab.current_tab = current_notes_tab
+	
+	# Set the current tab only if it's within the present tabs
+	var current_chat_tab = data.get("active_chatindex", 0)
+	if SingletonObject.Chats.get_tab_count()-1 >= current_chat_tab:
+		SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 
 
 func close_project():
@@ -130,6 +154,8 @@ func _ready():
 	SingletonObject.NewProject.connect(self._new_project)
 	SingletonObject.SaveProject.connect(self.save_project)
 	SingletonObject.SaveProjectAs.connect(self.save_project_as)
+	SingletonObject.PackageProject.connect(self.package_project)
+	SingletonObject.UnpackageProject.connect(self.unpackage_project)
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)

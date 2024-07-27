@@ -14,8 +14,8 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
-@onready var whiteB = %WhiteBoard
 @onready var graphics_editor = %GraphicsEditor
+@onready var _note_check_button: CheckButton = %CheckButton
 
 enum TYPE {
 	Text,
@@ -56,7 +56,7 @@ func _ready():
 			TYPE.Text: _load_text_file(file)
 			TYPE.Graphics: _load_graphics_file(file)
 	
-	_on_file_dialog_file_selected
+	_note_check_button.disabled = type != TYPE.Text
 
 
 func _load_text_file(filename: String):
@@ -69,10 +69,6 @@ func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	graphics_editor.setup_from_image(image)
 	# %SaveButton.disabled = false
-
-	# var texture_item = ImageTexture.create_from_image(image)
-	# whiteB.get_node("%EditPic").texture = texture_item
-	#texture_rect.texture = texture_item
 
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
@@ -208,17 +204,6 @@ func delete_chars() -> void:
 	code_edit.backspace()
 	
 	code_edit.grab_focus()
-	
-	#if code_edit.get_selected_text().length()  < 1:
-		#var caret_col = code_edit.get_caret_column()
-		#var caret_line = code_edit.get_caret_line()
-		#var first_half = code_edit.text.substr(0, caret_pos)
-		#var snd_half = code_edit.text.substr(caret_pos, code_edit.text.length())
-		#code_edit.text = first_half.erase(first_half.length() - 1, 1) + snd_half
-		#code_edit.set_caret_column(caret_pos - 1)
-		#
-		#code_edit.grab_focus()
-		#return
 
 
 func add_new_line() -> void:
@@ -241,11 +226,56 @@ func clear_text():
 	%CodeEdit.clear()
 	code_edit.grab_focus()
 
-#endregion Editor buttons
-
 
 func _on_audio_btn_pressed():
 	SingletonObject.AtT.FieldForFilling = %CodeEdit
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %AudioBTN
 	%AudioBTN.modulate = Color(Color.LIME_GREEN)
+
+#endregion Editor buttons
+
+
+func create_note() -> MemoryItem:
+	if TYPE.Text == type:
+		return await SingletonObject.NotesTab.add_note("Editor Note", code_edit.text)
+	
+	elif TYPE.Graphics == type:
+		return await SingletonObject.NotesTab.add_image_note("Editor Note", graphics_editor.image, "Sketch")
+
+	elif TYPE.WhiteBoard == type:
+		return await SingletonObject.NotesTab.add_image_note("Editor Note", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+	
+	return null
+
+
+func _on_check_button_toggled(toggled_on: bool):
+	if not type in [TYPE.Text]: return # only works for text editors for now
+
+	# If memory item is somehow deleted from `SingletonObject.ThreadList` this will break
+	# but user can't do that since the note is not visible
+	if not has_meta("memory_item"):
+		set_meta("memory_item", await create_note())
+	
+	var item: MemoryItem = get_meta("memory_item")
+
+	var present = SingletonObject.ThreadList.any(func(thread: MemoryThread): return item in thread.MemoryItemList)
+
+	if not present and toggled_on: # if this item is not present in any thread, create new
+		item = await create_note()
+		set_meta("memory_item", item)
+
+	item.Enabled = toggled_on
+	item.Visible = false
+	item.Locked = true
+	SingletonObject.NotesTab.render_threads() # rerender it since it's not visible now
+
+
+func _exit_tree():
+	if not has_meta("memory_item"): return
+	
+	var item: MemoryItem = get_meta("memory_item")
+
+	var thread: = SingletonObject.get_thread(item.OwningThread)
+
+	thread.MemoryItemList.erase(item)
