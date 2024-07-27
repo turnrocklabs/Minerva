@@ -118,7 +118,7 @@ func render_threads():
 
 	# we must delete existing noted so creating new project works
 	for c in %tcThreads.get_children():
-		c.queue_free()
+		c.free() # Use free instead of queue_free so the node gets deleted immediately
 	
 	for thread in SingletonObject.ThreadList:
 		render_thread(thread)
