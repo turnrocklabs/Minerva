@@ -259,23 +259,6 @@ item_10/text = "Show All Notes"
 item_10/icon = ExtResource("7_rdia2")
 item_10/id = 9
 
-[node name="MenuBar" type="MenuBar" parent="VBoxRoot/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 10
-
-[node name="Button" type="Button" parent="VBoxRoot/HBoxContainer/MenuBar"]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -95.0
-offset_bottom = 40.0
-grow_horizontal = 0
-focus_mode = 0
-text = "Preferences
-"
-flat = true
-
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxRoot"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -694,7 +677,6 @@ bus = &"Rec"
 [connection signal="about_to_popup" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_about_to_popup"]
 [connection signal="id_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_id_pressed"]
 [connection signal="index_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_index_pressed"]
-[connection signal="pressed" from="VBoxRoot/HBoxContainer/MenuBar/Button" to="." method="_on_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/ClearButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_clear_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/UndoButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_undo_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/BackSpaceButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_back_space_button_pressed"]
