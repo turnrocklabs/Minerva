@@ -50,13 +50,19 @@ static func create(type_: TYPE, file_ = null) -> Editor:
 	
 func _ready():
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
-	
 	if file:
 		match type:
 			TYPE.Text: _load_text_file(file)
 			TYPE.Graphics: _load_graphics_file(file)
 	
 	_note_check_button.disabled = type != TYPE.Text
+	
+	#set the text formats that are supported
+	$FileDialog.filters = SingletonObject.supported_text_fortmats
+	#this is for overriding the separation in the open file dialog
+	#this seems to be the only way I can access it
+	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
+	hbox.set("theme_override_constants/separation", 12)
 
 
 func _load_text_file(filename: String):
@@ -73,7 +79,7 @@ func _load_graphics_file(filename: String):
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straing away
-func prompt_close(show_save_file_dialog := false) -> bool:
+func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 	var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 
 	match type:
@@ -99,7 +105,15 @@ func prompt_close(show_save_file_dialog := false) -> bool:
 		await ($FileDialog as FileDialog).visibility_changed
 		($FileDialog as FileDialog).filters = dialog_filters
 	else:
-		_on_file_dialog_file_selected(file)
+		if new_entry:# this is used for the save as.. feature
+			($FileDialog as FileDialog).title = "Save \"%s\" editor" % name
+			
+			$FileDialog.popup_centered(Vector2i(700, 500))
+			
+			await ($FileDialog as FileDialog).visibility_changed
+			($FileDialog as FileDialog).filters = dialog_filters
+		else:
+			_on_file_dialog_file_selected(file)
 	
 	# _file_saved is set when user select a save file in `_on_file_dialog_file_selected`
 	# if we saved the file close the editor, and revert the _file_saved
