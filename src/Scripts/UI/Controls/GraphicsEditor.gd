@@ -4,6 +4,8 @@ extends PanelContainer
 
 signal masking_ended()
 
+var Buble = preload("res://Scenes/BoubleDialogCloud.tscn")
+
 @onready var _layers_container: Control = %LayersContainer
 @onready var _brush_slider: HSlider = %BrushHSlider
 
@@ -76,7 +78,7 @@ func _ready():
 	setup(Vector2i(1000, 1000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
-
+	%LayersContainer.get_node("Layer1").add_child(Buble.instantiate())
 func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) -> Vector2:
 	var aspect_ratio = original_size.x / original_size.y
 	var target_width = original_size.x
@@ -264,3 +266,13 @@ func _on_pick_layers_item_selected(index):
 	selectedLayer = %PickLayers.get_item_text(index)
 	selectedIndex = index
 	_draw_layer = %LayersContainer.get_node(selectedLayer)
+	
+	
+func _on_layers_pressed():
+	%PopupPanel.visible = true
+	var bPos = %Layers.global_position + Vector2(0,100)
+	%PopupPanel.position = bPos
+
+
+func _on_dialog_cloud_pressed():
+	pass # Replace with function body.

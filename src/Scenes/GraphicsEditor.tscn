@@ -36,7 +36,6 @@ theme_override_constants/separation = 10
 unique_name_in_owner = true
 editor_description = "Brush sizes
 "
-visible = false
 custom_minimum_size = Vector2(250, 0)
 layout_mode = 2
 size_flags_vertical = 1
@@ -48,7 +47,6 @@ rounded = true
 [node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Brush color"
-visible = false
 layout_mode = 2
 text = "Color"
 color = Color(0.447059, 0.447059, 0.67451, 1)
@@ -68,14 +66,12 @@ text = "Apply Mask"
 [node name="Erasing" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Eraser for drawn lines"
-visible = false
 layout_mode = 2
 icon = ExtResource("2_tkvqr")
 
 [node name="PickLayers" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Layers"
-visible = false
 layout_mode = 2
 item_count = 1
 selected = 0
@@ -85,19 +81,57 @@ popup/item_0/id = 0
 [node name="addlayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Add new layer"
-visible = false
 layout_mode = 2
 icon = ExtResource("3_aanik")
 
 [node name="removeLayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Remove selected layer"
-visible = false
 layout_mode = 2
 icon = ExtResource("4_l7xrh")
 
 [node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2
+
+[node name="Layers" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Layers"
+
+[node name="PopupPanel" type="PopupPanel" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers"]
+unique_name_in_owner = true
+size = Vector2i(201, 109)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel"]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 197.0
+offset_bottom = 105.0
+theme_override_constants/separation = 5
+
+[node name="HBoxContaineraa" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="Label" type="Label" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer/HBoxContaineraa"]
+layout_mode = 2
+text = "Layer 1"
+
+[node name="CheckBox" type="CheckBox" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer/HBoxContaineraa"]
+layout_mode = 2
+
+[node name="Button2" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer/HBoxContaineraa"]
+layout_mode = 2
+text = "aaaaaaaa"
+
+[node name="Button" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer"]
+layout_mode = 2
+text = "Add layer"
+
+[node name="DialogCloud" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+layout_mode = 2
+text = "Cloud"
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -116,3 +150,5 @@ size_flags_vertical = 3
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/PickLayers" to="." method="_on_pick_layers_item_selected"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/addlayer" to="." method="_on_addlayer_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/removeLayer" to="." method="_on_remove_layer_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/DialogCloud" to="." method="_on_dialog_cloud_pressed"]

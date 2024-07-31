@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3 uid="uid://m71hobwmqkdx"]
+
+[ext_resource type="Texture2D" uid="uid://rss2osbiuu7x" path="res://assets/icons/BoubleDialogCloud.png" id="1_auvyk"]
+
+[node name="Sprite2D" type="Sprite2D"]
+texture = ExtResource("1_auvyk")
+
+[node name="TextEdit" type="TextEdit" parent="."]
+offset_left = -166.0
+offset_top = -173.0
+offset_right = 197.0
+offset_bottom = 13.0
