@@ -27,7 +27,7 @@ enum TYPE {
 var file: String
 var type: TYPE
 var _file_saved := false
-
+var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
 
@@ -47,7 +47,7 @@ static func create(type_: TYPE, file_ = null) -> Editor:
 			editor.get_node("%GraphicsEditor").visible = true
 
 	return editor
-	
+
 func _ready():
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
 	if file:
@@ -57,8 +57,12 @@ func _ready():
 	
 	_note_check_button.disabled = type != TYPE.Text
 	
-	#set the text formats that are supported
-	$FileDialog.filters = SingletonObject.supported_text_fortmats
+	#set the text formats that are supported we add a "*" to the start of every ext
+	for ext in SingletonObject.supported_text_fortmats:
+		ext = "*." +ext 
+		supported_text_exts.append(ext)
+	$FileDialog.filters = supported_text_exts
+	
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
@@ -80,7 +84,7 @@ func _load_graphics_file(filename: String):
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straing away
 func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
-	var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
+	#var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 
 	match type:
 		TYPE.Graphics:
@@ -103,7 +107,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
 		await ($FileDialog as FileDialog).visibility_changed
-		($FileDialog as FileDialog).filters = dialog_filters
+		#($FileDialog as FileDialog).filters = dialog_filters
 	else:
 		if new_entry:# this is used for the save as.. feature
 			($FileDialog as FileDialog).title = "Save \"%s\" editor" % name
@@ -111,7 +115,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 			$FileDialog.popup_centered(Vector2i(700, 500))
 			
 			await ($FileDialog as FileDialog).visibility_changed
-			($FileDialog as FileDialog).filters = dialog_filters
+			#($FileDialog as FileDialog).filters = dialog_filters
 		else:
 			_on_file_dialog_file_selected(file)
 	
