@@ -324,9 +324,5 @@ func _on_new_thread_popup_about_to_popup() -> void:
 
 #endregion new tab popup
 
-
-
-
-
 func _on_button_pressed() -> void:
 	%PreferencesPopup.popup_centered()
