@@ -32,6 +32,13 @@ var memory_item: MemoryItem:
 			image_caption_line_edit.text = value.ImageCaption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.Audio
+		
+		# If we create a note, open a editor associated with it and then rerender the memory_item
+		# that will create completly new Note node and break the connection between note and the editor.
+		# So here we check if there's editor associated with memory_item this note is rendering.
+		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
+			if editor.has_meta("associated_object") and editor.get_meta("associated_object") == memory_item:
+				associate_editor(editor)
 
 func new_text_note():
 	%NoteTextBody.visible = true
@@ -224,33 +231,55 @@ func _on_remove_button_pressed():
 
 	note_deleted.emit()
 
+## Connects this note and the given [parameter editor]
+## by making editor save button update the memory_item and
+## reflecting note title chage into the tab title.
+func associate_editor(editor: Editor):
+	editor.override_save(
+		func():
+			if editor.type == Editor.TYPE.Text:
+				memory_item.Content = editor.code_edit.text
+			elif editor.type == Editor.TYPE.Graphics:
+				memory_item.MemoryImage = editor.graphics_editor.image
+			
+			memory_item = memory_item
+	)
+
+	label_node.text_changed.connect(
+		func(text):
+			editor.name = text
+	)
+
+	editor.set_meta("associated_object", memory_item)
+
 
 func _on_edit_button_pressed():
-	var ep: EditorPane = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane"
+	var ep: EditorPane = SingletonObject.editor_container.editor_pane
 
+	# show the editor if it's hidden
+	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+	# Try to find editor that's already assiciated with memory_item
+	# this note is rendering so we don't end up duplicating them.
 	for i in range(ep.Tabs.get_tab_count()):
 		var tab_control = ep.Tabs.get_tab_control(i)
 
 		if tab_control.get_meta("associated_object"):
 			if tab_control.get_meta("associated_object") == memory_item:
-				ep.Tabs.current_tab = i
+				ep.Tabs.current_tab = i # change the current tab to that editor
 				return
 
-	var note_editor = NoteEditor.create(memory_item)
+	var editor: Editor
 
-	note_editor.on_memory_item_changed.connect(func(): memory_item = note_editor.memory_item)
+	if memory_item.MemoryImage:
+		SingletonObject.is_graph = true
+		editor = ep.add(Editor.TYPE.Graphics, null, memory_item.Title)
+		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
+	else:
+		editor = ep.add(Editor.TYPE.Text, null, memory_item.Title)
+		editor.code_edit.text = memory_item.Content
 
-	var container = ep.add_control(note_editor, memory_item.Title)
-
-	container.set_meta("associated_object", memory_item)
-
-	# also change tab title if title has changed
-	label_node.text_changed.connect(
-		func(text):
-			container.name = text
-	) 
-	# show the editor if it's hidden
-	SingletonObject.main_ui.set_editor_pane_visible(true)
+	associate_editor(editor)
 
 
 func _on_hide_button_pressed():
