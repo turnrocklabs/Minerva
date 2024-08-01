@@ -14,7 +14,7 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
-@onready var graphics_editor = %GraphicsEditor
+@onready var graphics_editor: GraphicsEditor = %GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
 enum TYPE {
@@ -23,6 +23,9 @@ enum TYPE {
 	WhiteBoard,
 	NOTE_EDITOR
 }
+
+## Callable that overrides what happens when user clicks the editor "save" button.
+var _save_override: Callable
 
 var file: String
 var type: TYPE
@@ -79,6 +82,14 @@ func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	graphics_editor.setup_from_image(image)
 	# %SaveButton.disabled = false
+
+## Changes the function that runs when user clicks the "save" button
+## from the [method prompt_close] to [parameter save_function].[br]
+## To revert back pass the empty [parameter save_function]:[br]
+## [code]override_save(Callable.new())[/code]
+func override_save(save_function: Callable) -> void:
+	_save_override = save_function
+
 
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
@@ -190,7 +201,10 @@ func get_file_name(path: String) -> String:
 
 #region bottom of the pane buttons
 func _on_save_button_pressed():
-	prompt_close(true)
+	if _save_override.is_valid():
+		_save_override.call()
+	else:
+		prompt_close(true)
 
 
 func _on_create_note_button_pressed() -> void:
