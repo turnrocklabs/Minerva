@@ -25,6 +25,10 @@ func serialize() -> Array[String]:
 	return files
 
 func deserialize(files: Array[String]):
+	# first clear all open editors
+	for editor in editor_pane.open_editors():
+		editor.queue_free()
+
 	for file in files:
 		open_file(file)
 

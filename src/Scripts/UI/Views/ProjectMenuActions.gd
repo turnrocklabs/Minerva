@@ -12,6 +12,7 @@ var save_path: String
 func _new_project():
 	SingletonObject.initialize_notes()
 	SingletonObject.initialize_chats(SingletonObject.Chats)
+	SingletonObject.editor_container.deserialize([]) # deserialize empty files list, so it clears everything
 	save_path = ""
 	pass
 
