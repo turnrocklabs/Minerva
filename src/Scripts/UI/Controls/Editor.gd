@@ -60,7 +60,7 @@ func _ready():
 			TYPE.Text: _load_text_file(file)
 			TYPE.Graphics: _load_graphics_file(file)
 	
-	_note_check_button.disabled = type != TYPE.Text
+	_note_check_button.disabled = type != TYPE.Text and type != TYPE.Graphics
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_fortmats:
@@ -295,7 +295,9 @@ func _on_check_button_toggled(toggled_on: bool):
 	if not has_meta("memory_item"):
 		item = _create_note()
 		if not item:
-			push_error("ALOOOOOOAA")
+			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the editor.")
+			_note_check_button.button_pressed = false
+			return
 		
 		item.toggled.connect(
 			func(on: bool):
