@@ -270,46 +270,45 @@ func _on_audio_btn_pressed():
 #endregion Editor buttons
 
 
-func create_note() -> MemoryItem:
-	if TYPE.Text == type:
-		return await SingletonObject.NotesTab.add_note("Editor Note", code_edit.text)
+## Creates a Note from this Editor.[br]
+## If [member type] of this editor is not supported `null` is returned.
+func _create_note() -> MemoryItem:
+	var memory_item: = SingletonObject.NotesTab.create_note("Editor Note")
 	
-	elif TYPE.Graphics == type:
-		return await SingletonObject.NotesTab.add_image_note("Editor Note", graphics_editor.image, "Sketch")
+	if type == TYPE.Text:
+		memory_item.Type = SingletonObject.note_type.TEXT
+		memory_item.Content = code_edit.text
+	
+	elif type == TYPE.Graphics:
+		memory_item.Type = SingletonObject.note_type.IMAGE
+		memory_item.MemoryImage = graphics_editor.image
 
-	elif TYPE.WhiteBoard == type:
-		return await SingletonObject.NotesTab.add_image_note("Editor Note", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+	else:
+		return null # type not supported
 	
-	return null
+	return memory_item
 
 
 func _on_check_button_toggled(toggled_on: bool):
-	if not type in [TYPE.Text]: return # only works for text editors for now
+	var item: MemoryItem
 
-	# If memory item is somehow deleted from `SingletonObject.ThreadList` this will break
-	# but user can't do that since the note is not visible
 	if not has_meta("memory_item"):
-		set_meta("memory_item", await create_note())
-	
-	var item: MemoryItem = get_meta("memory_item")
+		item = _create_note()
+		if not item:
+			push_error("ALOOOOOOAA")
+		
+		item.toggled.connect(
+			func(on: bool):
+				_note_check_button.button_pressed = on
+		)
 
-	var present = SingletonObject.ThreadList.any(func(thread: MemoryThread): return item in thread.MemoryItemList)
-
-	if not present and toggled_on: # if this item is not present in any thread, create new
-		item = await create_note()
 		set_meta("memory_item", item)
+		SingletonObject.DetachedNotes.append(item)
+	else:
+		item = get_meta("memory_item")
+		var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
+
+		if not present:
+			SingletonObject.DetachedNotes.append(item)
 
 	item.Enabled = toggled_on
-	item.Visible = false
-	item.Locked = true
-	SingletonObject.NotesTab.render_threads() # rerender it since it's not visible now
-
-
-func _exit_tree():
-	if not has_meta("memory_item"): return
-	
-	var item: MemoryItem = get_meta("memory_item")
-
-	var thread: = SingletonObject.get_thread(item.OwningThread)
-
-	thread.MemoryItemList.erase(item)

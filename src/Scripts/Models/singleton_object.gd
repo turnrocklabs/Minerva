@@ -66,6 +66,9 @@ var ThreadList: Array[MemoryThread]:
 		# save_state(false)
 		ThreadList = value
 
+## Notes that don't reside inside any thread. eg. Editor and terminal notes
+var DetachedNotes: Array[MemoryItem]
+
 var NotesTab: MemoryTabs
 ##reorder array
 func initialize_notes(threads: Array[MemoryThread] = []):
