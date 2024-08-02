@@ -152,6 +152,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.rendered_node.render()
 
 	existing_response.rendered_node.loading = false
+	SingletonObject.NotesTab.Disable_All()
 
 
 func _on_chat_pressed():
