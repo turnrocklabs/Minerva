@@ -37,9 +37,11 @@ var prompt_save:= true
  # checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
-static func create(type_: TYPE, file_ = null) -> Editor:
+static func create(type_: TYPE, file_ = null, name = null) -> Editor:
 	var editor = scene.instantiate()
 	editor.type = type_
+	if name:
+		editor.name = name
 	if file_: 
 		editor.file = file_
 

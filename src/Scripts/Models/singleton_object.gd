@@ -113,6 +113,7 @@ func _ready():
 	add_child(AtT)
 	add_child(undo)
 	
+	editor_pane = editor_container.get_child(0)
 	
 	var err = config_file.load(config_file_name)
 	if err != OK:
@@ -144,7 +145,7 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 #region Editor
 
 @onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
-
+var editor_pane: EditorPane
 #endregion
 
 #region Common UI Tasks

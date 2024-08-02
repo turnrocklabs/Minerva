@@ -64,7 +64,8 @@ func _process(_delta):
 				SingletonObject.Chats.restore_deleted_tab(last_deleted_tab)
 			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "right":
 				SingletonObject.NotesTab.restore_deleted_tab(last_deleted_tab)
-			
+
+
 func add_control(item: Node, name_: String) -> Node:
 	var scrollable = ScrollContainer.new()
 	scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
