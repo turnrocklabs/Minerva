@@ -12,7 +12,7 @@ var save_path: String
 func _new_project():
 	SingletonObject.initialize_notes()
 	SingletonObject.initialize_chats(SingletonObject.Chats)
-	SingletonObject.editor_container.deserialize([]) # deserialize empty files list, so it clears everything
+	SingletonObject.editor_container.clear_editor_tabs() # deserialize empty files list, so it clears everything
 	save_path = ""
 	pass
 
@@ -106,6 +106,7 @@ func serialize_project() -> Dictionary:
 		"last_tab_index": SingletonObject.last_tab_index,
 		"active_chatindex": SingletonObject.Chats.current_tab,
 		"active_notes_index": SingletonObject.NotesTab.current_tab,
+		"active_editor_index": SingletonObject.editor_pane.Tabs.current_tab,
 		"default_provider": SingletonObject.get_active_provider(),
 	}
 
@@ -125,9 +126,15 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.initialize_chats(SingletonObject.Chats, chats)
 
 	# We need to cast Array to Array[String] because deserialize expects that type
-	var editor_files: Array[String] = []
-	editor_files.assign(data.get("Editors", []))
-	SingletonObject.editor_container.deserialize(editor_files)
+	#var editor_files: Array[String] = []
+	#editor_files.assign(data.get("Editors", []))
+	#SingletonObject.editor_container.deserialize(editor_files)
+	
+	var editor_nodes: Array = EditorContainer.deserialize(data.get("Editors", []))
+	#for editor in data.get("Editors", []):
+		#editor_nodes.append()
+	for editor in editor_nodes:
+		SingletonObject.editor_pane.Tabs.add_child(editor)
 	
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 
@@ -205,24 +212,27 @@ func open_project_given_path(project_path: String):
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		
-		var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
+		save_editorpanes()
 
+
+# this function checks if there are unsaved editor panes and saves them
+func save_editorpanes():
+	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
 		# if the state is unsaved or we have unsaved editors open
-		if not SingletonObject.saved_state or unsaved_editors:
-			# user want to quit
-			# ask the user which unsaved editors he wants saved
-			var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
-			item_list.clear()
-			for editor in unsaved_editors:
-				var item_idx = item_list.add_item(editor.name)
-				item_list.set_item_metadata(item_idx, editor)
-			
-			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+	if not SingletonObject.saved_state or unsaved_editors:
+		# user want to quit
+		# ask the user which unsaved editors he wants saved
+		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
+		item_list.clear()
+		for editor in unsaved_editors:
+			var item_idx = item_list.add_item(editor.name)
+			item_list.set_item_metadata(item_idx, editor)
+		
+		%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+		%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
+	else:
+		get_tree().quit()
 
-			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
-		else:
-			get_tree().quit()
 
 func _on_exit_confirmation_dialog_canceled():
 	%ExitConfirmationDialog.hide()
