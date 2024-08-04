@@ -17,23 +17,24 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 
 
 func serialize() -> Dictionary:
-	#var files: Array[String] = []
-	
 	var editors_serialized: Array[Dictionary] = []
 	
 	for editor in editor_pane.open_editors():
 		var content
 		match editor.type:
-			editor.TYPE.WhiteBoard:
-				content = editor.graphics_editor.image.save_png_to_buffer()
-				content = Marshalls.raw_to_base64(content)
 			editor.TYPE.Text:
 				content = editor.code_edit.text
 			editor.TYPE.NOTE_EDITOR:
 				content = editor.code_edit.text
 			editor.TYPE.Graphics:
-				content = editor.texture_rect.texture.get_image().save_png_to_buffer()
-				content = Marshalls.raw_to_base64(content)
+				var layers: Array[Dictionary] = []
+				for layer in editor.graphics_editor._layers_container.get_children():
+					if layer:
+						var layer_dic = {
+							"layer_img": Marshalls.raw_to_base64(layer.texture.get_image().save_png_to_buffer())
+						}
+						layers.append(layer_dic)
+				content = layers
 		
 		var editor_string = {
 			"name": editor.name,
@@ -42,30 +43,38 @@ func serialize() -> Dictionary:
 			"content": content
 		}
 		editors_serialized.append(editor_string)
-		
 	
 	var dic: Dictionary = {
 		"editors_array": editors_serialized
 	}
 	
-	
 	return dic
-	#return files
 
 static func deserialize(editors_array_dic: Dictionary) -> Array[Editor]:
 	# first clear all open editors
 	var data: Array = editors_array_dic.get("editors_array")
 	var editor_insts: Array[Editor] = []
 	for editor_ser in data:
-		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"),)
+		var editor_inst = await Editor.create(editor_ser.get("type"), editor_ser.get("file"))
 		editor_inst.name = editor_ser.get("name")
 		
 		if editor_inst.type == Editor.TYPE.Text:
 			editor_inst.get_node("%CodeEdit").text = editor_ser.get("content")
+		elif editor_inst.type == Editor.TYPE.Graphics:
+			var graphics_editor: GraphicsEditor = editor_inst.get_node("%GraphicsEditor")
+			var counter = 1
+			for layer_img in editor_ser.get("content"):
+				
+				var buffer = Marshalls.base64_to_raw(layer_img.get("layer_img"))
+				var image = Image.new()
+				image.load_png_from_buffer(buffer)
+				var texture = ImageTexture.create_from_image(image)
+				var layer = Layer.create(image, "layer " + str(counter))
+				#layer.texture = texture
+				graphics_editor.loaded_layers.append(layer)
+				counter +=1
 		
 		editor_insts.append(editor_inst)
-	#for editor in editor_pane.open_editors():
-		#editor.queue_free()
 	
 	return editor_insts
 

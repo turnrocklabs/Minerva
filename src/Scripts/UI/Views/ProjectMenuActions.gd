@@ -130,9 +130,7 @@ func deserialize_project(data: Dictionary):
 	#editor_files.assign(data.get("Editors", []))
 	#SingletonObject.editor_container.deserialize(editor_files)
 	
-	## FIXME: Old project can't be opened.
-	## Invalid type in function 'deserialize' in base 'GDScript'. Cannot convert argument 1 from Array to Dictionary.
-	var editor_nodes: Array = EditorContainer.deserialize(data.get("Editors", []))
+	var editor_nodes: Array = await EditorContainer.deserialize(data.get("Editors", []))
 	#for editor in data.get("Editors", []):
 		#editor_nodes.append()
 	for editor in editor_nodes:
