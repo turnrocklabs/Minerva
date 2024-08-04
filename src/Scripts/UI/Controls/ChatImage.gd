@@ -68,7 +68,7 @@ func _on_save_file_dialog_file_selected(path: String):
 
 func _on_edit_button_pressed():
 	SingletonObject.is_masking = true
-	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Graphics, null, "Chat Image")
+	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, null, "Chat Image")
 	editor.graphics_editor.setup_from_image(image)
 	
 

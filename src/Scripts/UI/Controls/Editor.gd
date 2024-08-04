@@ -5,27 +5,31 @@ extends Control
 ## depending if it handles text or graphics file.
 ## A file path can be associated with it to save the conent of the node to it
 
-## @tutorial Editor.create(Editor.TYPE.Text)
+## @tutorial Editor.create(Editor.Type.TEXT)
 
 static var scene = preload("res://Scenes/Editor.tscn")
 
+signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
 enum DIALOG_RESULT { Save, Cancel, Close }
 
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
-@onready var graphics_editor = %GraphicsEditor
+@onready var graphics_editor: GraphicsEditor = %GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
-enum TYPE {
-	Text,
-	Graphics,
-	WhiteBoard,
-	NOTE_EDITOR
+enum Type {
+	TEXT,
+	GRAPHICS,
+	WhiteBoard, # TODO: To be removed
+	NOTE_EDITOR,
 }
 
+## Callable that overrides what happens when user clicks the editor "save" button.
+var _save_override: Callable
+
 var file: String
-var type: TYPE
+var type: Type
 var _file_saved := false
 var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
@@ -34,17 +38,22 @@ var prompt_save:= true
  # checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
-static func create(type_: TYPE, file_ = null) -> Editor:
+static func create(type_: Type, file_ = null, name_ = null) -> Editor:
 	var editor = scene.instantiate()
 	editor.type = type_
+	if name_:
+		editor.name = name_
 	if file_: 
 		editor.file = file_
 
 	match type_:
-		Editor.TYPE.Text:
+		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
 			editor.get_node("%CodeEdit").visible = true
-		Editor.TYPE.Graphics:
+			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
+		Editor.Type.GRAPHICS:
 			editor.get_node("%GraphicsEditor").visible = true
+			## TODO: Implement changed signal for graphics editor
+			# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
 
 	return editor
 
@@ -52,10 +61,10 @@ func _ready():
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
 	if file:
 		match type:
-			TYPE.Text: _load_text_file(file)
-			TYPE.Graphics: _load_graphics_file(file)
+			Type.TEXT: _load_text_file(file)
+			Type.GRAPHICS: _load_graphics_file(file)
 	
-	_note_check_button.disabled = type != TYPE.Text
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_fortmats:
@@ -72,6 +81,7 @@ func _ready():
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	code_edit.text = fa_object.get_as_text()
+	code_edit.saved_content = code_edit.text
 	# %SaveButton.disabled = false
 
 
@@ -80,6 +90,14 @@ func _load_graphics_file(filename: String):
 	graphics_editor.setup_from_image(image)
 	# %SaveButton.disabled = false
 
+## Changes the function that runs when user clicks the "save" button
+## from the [method prompt_close] to [parameter save_function].[br]
+## To revert back pass the empty [parameter save_function]:[br]
+## [code]override_save(Callable.new())[/code]
+func override_save(save_function: Callable) -> void:
+	_save_override = save_function
+
+
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straing away
@@ -87,7 +105,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 	#var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 
 	match type:
-		TYPE.Graphics:
+		Type.GRAPHICS:
 			$FileDialog.filters = PackedStringArray(["*.png"])
 			
 	if not prompt_save: return true
@@ -130,15 +148,20 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 
 func is_content_saved() -> bool:
 	match type:
-		TYPE.Text:
-			# cuauh changed this line go back if necesary
-			return code_edit.starting_version == code_edit.get_saved_version()
-			# return code_edit.get_version() == code_edit.get_saved_version()
-		TYPE.Graphics:
-			return true
+		Type.TEXT:
+			return code_edit.text == code_edit.saved_content
+		Type.NOTE_EDITOR:
+			# Note.gd adds a `associated_object` meta for memory item the note is rendering
+			var memory_item: MemoryItem = get_meta('associated_object')
+			return code_edit.text == memory_item.Content
+		Type.GRAPHICS:
+			return true ## TODO: Implement checking if graphics file is saved
 	
 	return false
 
+
+func _on_editor_changed():
+	content_changed.emit()
 
 func _on_save_dialog_canceled():
 	save_dialog.emit(DIALOG_RESULT.Cancel)
@@ -163,11 +186,13 @@ func _on_file_dialog_file_selected(path: String):
 func save_file_to_disc(path: String):
 	file = path
 	match type:
-		TYPE.Text:
+		Type.TEXT:
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			save_file.store_string(code_edit.text)
+			code_edit.tag_saved_version()
+			code_edit.saved_content = code_edit.text # update the saved content
 			
-		TYPE.Graphics:
+		Type.GRAPHICS:
 			var dialog = ($FileDialog as FileDialog)
 			var _filters = dialog.filters
 			dialog.filters = [".png"]
@@ -190,23 +215,33 @@ func get_file_name(path: String) -> String:
 
 #region bottom of the pane buttons
 func _on_save_button_pressed():
-	prompt_close(true)
+	if _save_override.is_valid():
+		_save_override.call()
+	else:
+		await prompt_close(true)
+	
+	# Post save emit the signals to update the saved state icon
+	match type:
+		Type.TEXT, Type.NOTE_EDITOR:
+			code_edit.text_changed.emit()
+		Type.GRAPHICS:
+			pass # TODO: implement for graphics files
 
 
 func _on_create_note_button_pressed() -> void:
-	if TYPE.Text == type:
+	if Type.TEXT == type:
 		if file:
 			SingletonObject.NotesTab.add_note(get_file_name(file), code_edit.text)
 		else:
 			SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 		return
-	if TYPE.Graphics == type:
+	if Type.GRAPHICS == type:
 		if file:
 			SingletonObject.NotesTab.add_image_note(get_file_name(file), graphics_editor.image, "Sketch")
 		else:
 			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 		return
-	if TYPE.WhiteBoard == type:
+	if Type.WhiteBoard == type:
 		if file:
 			SingletonObject.NotesTab.add_image_note(get_file_name(file), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 		else:
@@ -216,7 +251,7 @@ func _on_create_note_button_pressed() -> void:
 
 #region Editor buttons
 func delete_chars() -> void:
-	if TYPE.Text != type:
+	if Type.TEXT != type:
 		return
 	
 	code_edit.backspace()
@@ -225,21 +260,21 @@ func delete_chars() -> void:
 
 
 func add_new_line() -> void:
-	if TYPE.Text != type:
+	if Type.TEXT != type:
 		return
 	code_edit.insert_text_at_caret("\n")
 	code_edit.grab_focus()
 
 
 func undo_action():
-	if TYPE.Text != type:
+	if Type.TEXT != type:
 		return
 	code_edit.undo()
 	code_edit.grab_focus()
 
 
 func clear_text():
-	if TYPE.Text != type:
+	if Type.TEXT != type:
 		return
 	%CodeEdit.clear()
 	code_edit.grab_focus()
@@ -254,46 +289,47 @@ func _on_audio_btn_pressed():
 #endregion Editor buttons
 
 
-func create_note() -> MemoryItem:
-	if TYPE.Text == type:
-		return await SingletonObject.NotesTab.add_note("Editor Note", code_edit.text)
+## Creates a Note from this Editor.[br]
+## If [member type] of this editor is not supported `null` is returned.
+func _create_note() -> MemoryItem:
+	var memory_item: = SingletonObject.NotesTab.create_note("Editor Note")
 	
-	elif TYPE.Graphics == type:
-		return await SingletonObject.NotesTab.add_image_note("Editor Note", graphics_editor.image, "Sketch")
+	if type == Type.TEXT:
+		memory_item.Type = SingletonObject.note_type.TEXT
+		memory_item.Content = code_edit.text
+	
+	elif type == Type.GRAPHICS:
+		memory_item.Type = SingletonObject.note_type.IMAGE
+		memory_item.MemoryImage = graphics_editor.image
 
-	elif TYPE.WhiteBoard == type:
-		return await SingletonObject.NotesTab.add_image_note("Editor Note", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+	else:
+		return null # type not supported
 	
-	return null
+	return memory_item
 
 
 func _on_check_button_toggled(toggled_on: bool):
-	if not type in [TYPE.Text]: return # only works for text editors for now
+	var item: MemoryItem
 
-	# If memory item is somehow deleted from `SingletonObject.ThreadList` this will break
-	# but user can't do that since the note is not visible
 	if not has_meta("memory_item"):
-		set_meta("memory_item", await create_note())
-	
-	var item: MemoryItem = get_meta("memory_item")
+		item = _create_note()
+		if not item:
+			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the editor.")
+			_note_check_button.button_pressed = false
+			return
+		
+		item.toggled.connect(
+			func(on: bool):
+				_note_check_button.button_pressed = on
+		)
 
-	var present = SingletonObject.ThreadList.any(func(thread: MemoryThread): return item in thread.MemoryItemList)
-
-	if not present and toggled_on: # if this item is not present in any thread, create new
-		item = await create_note()
 		set_meta("memory_item", item)
+		SingletonObject.DetachedNotes.append(item)
+	else:
+		item = get_meta("memory_item")
+		var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
+
+		if not present:
+			SingletonObject.DetachedNotes.append(item)
 
 	item.Enabled = toggled_on
-	item.Visible = false
-	item.Locked = true
-	SingletonObject.NotesTab.render_threads() # rerender it since it's not visible now
-
-
-func _exit_tree():
-	if not has_meta("memory_item"): return
-	
-	var item: MemoryItem = get_meta("memory_item")
-
-	var thread: = SingletonObject.get_thread(item.OwningThread)
-
-	thread.MemoryItemList.erase(item)
