@@ -6,6 +6,8 @@ extends Control
 
 enum LAYOUT {HORIZONTAL, VERTICAL}
 
+static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
+
 var current_layout: LAYOUT
 
 @onready var Tabs: TabContainer = $"./VBoxContainer/HBoxContainer/LeftControl/TabContainer"
@@ -110,6 +112,8 @@ func add(type: Editor.TYPE, file = null, name_ = null) -> Editor:
 			Editor.TYPE.WhiteBoard:
 				editor_node.name = "drawing " + str(Tabs.get_tab_count() + 1)
 	
+	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
+
 	self.Tabs.add_child(editor_node)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
 	
@@ -169,7 +173,12 @@ func toggle_vertical_split() -> void:
 	BottomControl.visible = not BottomControl.visible
 
 
-
+func _on_editor_content_changed(editor: Editor):
+	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
+	if not editor.is_content_saved():
+		Tabs.set_tab_icon(tab_idx, _unsaved_changes_icon)
+	else:
+		Tabs.set_tab_icon(tab_idx, null)
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)

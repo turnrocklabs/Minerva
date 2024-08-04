@@ -9,6 +9,7 @@ extends Control
 
 static var scene = preload("res://Scenes/Editor.tscn")
 
+signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
 enum DIALOG_RESULT { Save, Cancel, Close }
 
@@ -37,19 +38,22 @@ var prompt_save:= true
  # checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
-static func create(type_: TYPE, file_ = null, name = null) -> Editor:
+static func create(type_: TYPE, file_ = null, name_ = null) -> Editor:
 	var editor = scene.instantiate()
 	editor.type = type_
-	if name:
-		editor.name = name
+	if name_:
+		editor.name = name_
 	if file_: 
 		editor.file = file_
 
 	match type_:
 		Editor.TYPE.Text:
 			editor.get_node("%CodeEdit").visible = true
+			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
 		Editor.TYPE.Graphics:
 			editor.get_node("%GraphicsEditor").visible = true
+			## TODO: Implement changed signal for graphics editor
+			# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
 
 	return editor
 
@@ -144,14 +148,15 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 func is_content_saved() -> bool:
 	match type:
 		TYPE.Text:
-			# cuauh changed this line go back if necesary
-			return code_edit.starting_version == code_edit.get_saved_version()
-			# return code_edit.get_version() == code_edit.get_saved_version()
+			return code_edit.text == code_edit.saved_content
 		TYPE.Graphics:
-			return true
+			return true ## TODO: Implement checking if graphics file is saved
 	
 	return false
 
+
+func _on_editor_changed():
+	content_changed.emit()
 
 func _on_save_dialog_canceled():
 	save_dialog.emit(DIALOG_RESULT.Cancel)
@@ -179,6 +184,9 @@ func save_file_to_disc(path: String):
 		TYPE.Text:
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			save_file.store_string(code_edit.text)
+			code_edit.tag_saved_version()
+			code_edit.saved_content = code_edit.text
+			code_edit.text_changed.emit()
 			
 		TYPE.Graphics:
 			var dialog = ($FileDialog as FileDialog)

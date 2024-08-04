@@ -22,9 +22,6 @@ func serialize() -> Dictionary:
 	var editors_serialized: Array[Dictionary] = []
 	
 	for editor in editor_pane.open_editors():
-		editor.name
-		editor.file
-		editor.type
 		var content
 		match editor.type:
 			editor.TYPE.WhiteBoard:
