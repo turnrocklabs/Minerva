@@ -6,7 +6,7 @@
 texture = ExtResource("1_auvyk")
 
 [node name="TextEdit" type="TextEdit" parent="."]
-offset_left = -166.0
-offset_top = -173.0
-offset_right = 197.0
-offset_bottom = 13.0
+offset_left = -163.0
+offset_top = -172.0
+offset_right = 200.0
+offset_bottom = 14.0
