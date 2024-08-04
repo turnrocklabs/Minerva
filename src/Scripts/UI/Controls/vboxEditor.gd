@@ -16,7 +16,7 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 				button.disabled = !enable
 
 
-func serialize() -> Dictionary:
+func serialize() -> Array:
 	var editors_serialized: Array[Dictionary] = []
 	
 	for editor in editor_pane.open_editors():
@@ -44,18 +44,15 @@ func serialize() -> Dictionary:
 		}
 		editors_serialized.append(editor_string)
 	
-	var dic: Dictionary = {
-		"editors_array": editors_serialized
-	}
-	
-	return dic
+	return editors_serialized
 
-static func deserialize(editors_array_dic: Dictionary) -> Array[Editor]:
+
+static func deserialize(editors_array: Array) -> Array[Editor]:
 	# first clear all open editors
-	var data: Array = editors_array_dic.get("editors_array")
+	#var data: Array = editors_array_dic.get("editors_array")
 	var editor_insts: Array[Editor] = []
-	for editor_ser in data:
-		var editor_inst = await Editor.create(editor_ser.get("type"), editor_ser.get("file"))
+	for editor_ser in editors_array:
+		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
 		editor_inst.name = editor_ser.get("name")
 		
 		if editor_inst.type == Editor.TYPE.Text:
