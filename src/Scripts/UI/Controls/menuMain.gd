@@ -40,12 +40,12 @@ func _on_file_index_pressed(index):
 
 # Handle new file creation
 func handle_new_file():
-	SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Text)
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.TEXT)
 
 # Handle new graphics creation
 func handle_new_graphics():
 	SingletonObject.is_graph = true
-	SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Graphics)
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)
 
 func _on_file_submenu_index_pressed(index):
 	match index:
