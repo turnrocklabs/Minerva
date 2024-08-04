@@ -1,16 +1,12 @@
 class_name EditorCodeEdit
 extends CodeEdit
 
-var starting_version: int
-#var current_version: int
-
-func _ready():
-	starting_version = get_saved_version()
-	#current_version = get_saved_version()
-
-func _on_text_changed():
-	tag_saved_version()
+## Content of the saved version of this code edit.[br]
+## Everytime the editor content is saved, this should be updated.
+var saved_content: String
 
 
+# func _on_text_changed():
+# 	get_version()
 
 
