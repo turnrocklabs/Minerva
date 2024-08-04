@@ -2,7 +2,7 @@ class_name EditorContainer
 extends VBoxContainer
 
 @export var editor_pane: EditorPane
-
+@export var editor_scene: PackedScene
 
 func _ready() -> void:
 	editor_pane.enable_editor_action_buttons.connect(_toggle_enable_action_buttons)
@@ -16,17 +16,70 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 				button.disabled = !enable
 
 
-func serialize() -> Array[String]:
-	var files: Array[String] = []
-	# first get all open editors
-	for editor in editor_pane.open_editors():
-		if editor.file: files.append(editor.file)
+func serialize() -> Array:
+	var editors_serialized: Array[Dictionary] = []
 	
-	return files
+	for editor in editor_pane.open_editors():
+		var content
+		match editor.type:
+			editor.Type.TEXT:
+				content = editor.code_edit.text
+			editor.Type.NOTE_EDITOR:
+				content = editor.code_edit.text
+			editor.Type.GRAPHICS:
+				var layers: Array[Dictionary] = []
+				for layer in editor.graphics_editor._layers_container.get_children():
+					if layer:
+						var layer_dic = {
+							"layer_img": Marshalls.raw_to_base64(layer.texture.get_image().save_png_to_buffer())
+						}
+						layers.append(layer_dic)
+				content = layers
+		
+		var editor_string = {
+			"name": editor.name,
+			"file": editor.file,
+			"type": editor.type,
+			"content": content
+		}
+		editors_serialized.append(editor_string)
+	
+	return editors_serialized
 
-func deserialize(files: Array[String]):
-	for file in files:
-		open_file(file)
+
+static func deserialize(editors_array: Array) -> Array[Editor]:
+	# first clear all open editors
+	#var data: Array = editors_array_dic.get("editors_array")
+	var editor_insts: Array[Editor] = []
+	for editor_ser in editors_array:
+		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
+		editor_inst.name = editor_ser.get("name")
+		
+		if editor_inst.type == Editor.Type.TEXT:
+			editor_inst.get_node("%CodeEdit").text = editor_ser.get("content")
+		elif editor_inst.type == Editor.Type.GRAPHICS:
+			var graphics_editor: GraphicsEditor = editor_inst.get_node("%GraphicsEditor")
+			var counter = 1
+			for layer_img in editor_ser.get("content"):
+				
+				var buffer = Marshalls.base64_to_raw(layer_img.get("layer_img"))
+				var image = Image.new()
+				image.load_png_from_buffer(buffer)
+				var texture = ImageTexture.create_from_image(image)
+				var layer = Layer.create(image, "layer " + str(counter))
+				#layer.texture = texture
+				graphics_editor.loaded_layers.append(layer)
+				counter +=1
+		
+		editor_insts.append(editor_inst)
+	
+	return editor_insts
+
+
+
+func clear_editor_tabs():
+	for editor in editor_pane.open_editors():
+		editor.queue_free()
 
 
 func _is_graphics_file(filename: String) -> bool:
@@ -61,7 +114,7 @@ func open_file(filename: String):
 	## Determine file type
 	if _is_graphics_file(filename):
 		SingletonObject.is_graph = true
-		editor_pane.add(Editor.TYPE.Graphics, filename)
+		editor_pane.add(Editor.Type.GRAPHICS, filename)
 		# new_control = TextureRect.new()
 		# new_control.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED # keep the image at center
 
@@ -70,7 +123,7 @@ func open_file(filename: String):
 		# new_control.texture = texture_item
 
 	else:
-		editor_pane.add(Editor.TYPE.Text, filename)
+		editor_pane.add(Editor.Type.TEXT, filename)
 		# new_control = CodeEdit.new()
 		# ## Open the file and read the content into one giant string
 		# var fa_object = FileAccess.open(filename, FileAccess.READ)
@@ -79,7 +132,7 @@ func open_file(filename: String):
 	# new_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# new_control.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	# editor_pane.add(Editor.TYPE.Text, filename)
+	# editor_pane.add(Editor.Type.TEXT, filename)
 
 
 func _on_h_button_pressed():

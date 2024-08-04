@@ -28,8 +28,9 @@ func _on_file_index_pressed(index):
 		3: #this match if for the save as... button
 			var tabs = SingletonObject.editor_container.editor_pane.Tabs
 			var current_editor_tab = tabs.get_current_tab_control()
+			#current_editor_tab.save_file_to_disc(current_editor_tab.file, true)
 			if current_editor_tab:
-				current_editor_tab.prompt_close(true)
+				current_editor_tab.prompt_close(true, true)
 		4:
 			## Set a target size, have a border, and display the preferences popup.
 			#var target_size = %VBoxRoot.size / 2
@@ -39,12 +40,12 @@ func _on_file_index_pressed(index):
 
 # Handle new file creation
 func handle_new_file():
-	SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Text)
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.TEXT)
 
 # Handle new graphics creation
 func handle_new_graphics():
 	SingletonObject.is_graph = true
-	SingletonObject.editor_container.editor_pane.add(Editor.TYPE.Graphics)
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)
 
 func _on_file_submenu_index_pressed(index):
 	match index:

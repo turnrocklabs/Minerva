@@ -2,7 +2,7 @@ extends Node
 
 #region global variables
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
-var supported_text_fortmats: PackedStringArray = ["rs", "toml", "txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]
+var supported_text_fortmats: PackedStringArray = ["rs", "toml", "txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]#, "flac"]
 var is_graph:bool
@@ -66,6 +66,9 @@ var ThreadList: Array[MemoryThread]:
 		# save_state(false)
 		ThreadList = value
 
+## Notes that don't reside inside any thread. eg. Editor and terminal notes
+var DetachedNotes: Array[MemoryItem]
+
 var NotesTab: MemoryTabs
 ##reorder array
 func initialize_notes(threads: Array[MemoryThread] = []):
@@ -113,6 +116,7 @@ func _ready():
 	add_child(AtT)
 	add_child(undo)
 	
+	editor_pane = editor_container.get_child(0)
 	
 	var err = config_file.load(config_file_name)
 	if err != OK:
@@ -144,7 +148,8 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 #region Editor
 
 @onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
-
+var editor_pane: EditorPane
+var editors: Array[Editor]
 #endregion
 
 #region Common UI Tasks

@@ -72,24 +72,33 @@ func display_output(output: String) -> void:
 	outputs_container.add_child(output_container)
 
 
-func _on_output_check_button_toggled(on: bool, output: String, btn: CheckButton):
-	# If memory item is somehow deleted from `SingletonObject.ThreadList` this will break
-	# but user can't do that since the note is not visible
-	if not btn.has_meta("memory_item"):
-		btn.set_meta("memory_item", await SingletonObject.NotesTab.add_note("Terminal Note", output))
-	
-	var item: MemoryItem = btn.get_meta("memory_item")
+func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
+	var item: MemoryItem
 
-	var present = SingletonObject.ThreadList.any(func(thread: MemoryThread): return item in thread.MemoryItemList)
+	if not has_meta("memory_item"):
+		item = SingletonObject.NotesTab.create_note("Terminal Note")
+		item.Content = output
+		
+		if not item:
+			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the terminal.")
+			btn.button_pressed = false
+			return
+		
+		item.toggled.connect(
+			func(on: bool):
+				btn.button_pressed = on
+		)
 
-	if not present and on: # if this item is not present in any thread, create new
-		item = await SingletonObject.NotesTab.add_note("Terminal Note", output)
-		btn.set_meta("memory_item", item)
+		set_meta("memory_item", item)
+		SingletonObject.DetachedNotes.append(item)
+	else:
+		item = get_meta("memory_item")
+		var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
 
-	item.Enabled = on
-	item.Visible = false
-	item.Locked = true
-	SingletonObject.NotesTab.render_threads() # rerender it since it's not visible now
+		if not present:
+			SingletonObject.DetachedNotes.append(item)
+
+	item.Enabled = toggled_on
 
 
 func _on_output_check_button_tree_exiting(btn: CheckButton):

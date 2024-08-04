@@ -16,11 +16,16 @@ var _needs_update := false
 ## return a single large string of all active memories
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
-
+	
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
 				output.append(provider.wrap_memory(item))
+	
+	# loop through detached notes also
+	for item in SingletonObject.DetachedNotes:
+		if item.Enabled:
+			output.append(provider.wrap_memory(item))
 	
 	return output
 
@@ -29,6 +34,10 @@ func Disable_All():
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
 				item.Enabled = false
+	
+	for item:MemoryItem in SingletonObject.DetachedNotes:
+		item.Enabled = false
+
 	self.render_threads()
 	pass
 
@@ -37,6 +46,10 @@ func enable_all():
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if !item.Enabled:
 				item.Enabled = true
+	
+	for item:MemoryItem in SingletonObject.DetachedNotes:
+		item.Enabled = true
+
 	self.render_threads()
 
 
@@ -200,7 +213,15 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	render_threads()
 
 
+## Creates a note without adding it to any thread.
+func create_note(title: String, type: SingletonObject.note_type = SingletonObject.note_type.TEXT) -> MemoryItem:
+	var new_memory: MemoryItem = MemoryItem.new()
+	new_memory.Enabled = false
+	new_memory.Type = type
+	new_memory.Title = title
+	new_memory.Visible = true
 
+	return new_memory
 
 #endregion Add notes methods
 

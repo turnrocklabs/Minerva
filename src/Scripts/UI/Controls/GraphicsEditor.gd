@@ -14,6 +14,9 @@ var Buble = preload("res://Scenes/BoubleDialogCloud.tscn")
 @export var _apply_mask_button: Button
 @export var masking_color: Color
 
+var selectedLayer: String
+var selectedIndex: int
+var loaded_layers: Array[Layer]
 static var layer_Number = 0
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
@@ -75,21 +78,42 @@ func _ready():
 	newLayer.add_child(VisibleButton)
 	_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
-		#only drawing
-		%ColorPickerButton.visible = SingletonObject.is_graph
-		%Erasing.visible = SingletonObject.is_graph
-		%BrushHSlider.visible = SingletonObject.is_graph
+		toggle_controls(SingletonObject.is_graph)
 	elif SingletonObject.is_masking == true:
 		#editing and drawing
-		%MaskCheckButton.visible = SingletonObject.is_masking
-		%BrushHSlider.visible = SingletonObject.is_masking
-		%Erasing.visible = SingletonObject.is_masking 
+		toggle_masking(SingletonObject.is_masking)
 	layer_Number += 1
 	setup(Vector2i(1000, 1000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
-	selectButton(LayerButton, Hbox) 
 	
+	for layer in loaded_layers:
+		_layers_container.add_child(layer)
+		%PickLayers.add_item(layer.name)#get_item_text(index)
+	
+	if loaded_layers.size() > 0:
+		layer_Number = loaded_layers.size()
+		SingletonObject.is_graph = true
+		toggle_controls(true)
+	
+
+func toggle_controls(toggle: bool):
+	#only drawing
+	%ColorPickerButton.visible = toggle
+	%Erasing.visible = toggle
+	%PickLayers.visible = toggle
+	%addlayer.visible = toggle
+	%removeLayer.visible = toggle
+	%BrushHSlider.visible = toggle
+
+
+func toggle_masking(toggle: bool):
+	#editing and drawing
+	%MaskCheckButton.visible = toggle
+	%BrushHSlider.visible = toggle
+	%Erasing.visible = toggle
+
+
 func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) -> Vector2:
 	var aspect_ratio = original_size.x / original_size.y
 	var target_width = original_size.x
@@ -159,7 +183,7 @@ func create_image():
 	setup_from_created_image(img)
 
 func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
-	var layer = Layer.create(from, "Layer" + str(layer_Number)) 
+	var layer = Layer.create(from, "Layer " + str(layer_Number)) 
 	_layers_container.add_child(layer, false, internal)
 	return layer
 
