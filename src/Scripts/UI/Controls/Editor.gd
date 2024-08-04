@@ -81,6 +81,7 @@ func _ready():
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	code_edit.text = fa_object.get_as_text()
+	code_edit.saved_content = code_edit.text
 	# %SaveButton.disabled = false
 
 
