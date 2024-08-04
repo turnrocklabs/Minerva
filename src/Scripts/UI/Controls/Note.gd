@@ -237,9 +237,9 @@ func _on_remove_button_pressed():
 func associate_editor(editor: Editor):
 	editor.override_save(
 		func():
-			if editor.type == Editor.TYPE.Text:
+			if editor.type == Editor.Type.NOTE_EDITOR:
 				memory_item.Content = editor.code_edit.text
-			elif editor.type == Editor.TYPE.Graphics:
+			elif editor.type == Editor.Type.GRAPHICS:
 				memory_item.MemoryImage = editor.graphics_editor.image
 			
 			memory_item = memory_item
@@ -273,10 +273,10 @@ func _on_edit_button_pressed():
 
 	if memory_item.MemoryImage:
 		SingletonObject.is_graph = true
-		editor = ep.add(Editor.TYPE.Graphics, null, memory_item.Title)
+		editor = ep.add(Editor.Type.GRAPHICS, null, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:
-		editor = ep.add(Editor.TYPE.Text, null, memory_item.Title)
+		editor = ep.add(Editor.Type.NOTE_EDITOR, null, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
 
 	associate_editor(editor)

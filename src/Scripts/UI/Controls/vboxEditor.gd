@@ -22,11 +22,11 @@ func serialize() -> Array:
 	for editor in editor_pane.open_editors():
 		var content
 		match editor.type:
-			editor.TYPE.Text:
+			editor.Type.TEXT:
 				content = editor.code_edit.text
-			editor.TYPE.NOTE_EDITOR:
+			editor.Type.NOTE_EDITOR:
 				content = editor.code_edit.text
-			editor.TYPE.Graphics:
+			editor.Type.GRAPHICS:
 				var layers: Array[Dictionary] = []
 				for layer in editor.graphics_editor._layers_container.get_children():
 					if layer:
@@ -55,9 +55,9 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
 		editor_inst.name = editor_ser.get("name")
 		
-		if editor_inst.type == Editor.TYPE.Text:
+		if editor_inst.type == Editor.Type.TEXT:
 			editor_inst.get_node("%CodeEdit").text = editor_ser.get("content")
-		elif editor_inst.type == Editor.TYPE.Graphics:
+		elif editor_inst.type == Editor.Type.GRAPHICS:
 			var graphics_editor: GraphicsEditor = editor_inst.get_node("%GraphicsEditor")
 			var counter = 1
 			for layer_img in editor_ser.get("content"):
@@ -114,7 +114,7 @@ func open_file(filename: String):
 	## Determine file type
 	if _is_graphics_file(filename):
 		SingletonObject.is_graph = true
-		editor_pane.add(Editor.TYPE.Graphics, filename)
+		editor_pane.add(Editor.Type.GRAPHICS, filename)
 		# new_control = TextureRect.new()
 		# new_control.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED # keep the image at center
 
@@ -123,7 +123,7 @@ func open_file(filename: String):
 		# new_control.texture = texture_item
 
 	else:
-		editor_pane.add(Editor.TYPE.Text, filename)
+		editor_pane.add(Editor.Type.TEXT, filename)
 		# new_control = CodeEdit.new()
 		# ## Open the file and read the content into one giant string
 		# var fa_object = FileAccess.open(filename, FileAccess.READ)
@@ -132,7 +132,7 @@ func open_file(filename: String):
 	# new_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	# new_control.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	# editor_pane.add(Editor.TYPE.Text, filename)
+	# editor_pane.add(Editor.Type.TEXT, filename)
 
 
 func _on_h_button_pressed():
