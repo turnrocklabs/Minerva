@@ -6,6 +6,8 @@ extends Control
 
 enum LAYOUT {HORIZONTAL, VERTICAL}
 
+static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
+
 var current_layout: LAYOUT
 
 @onready var Tabs: TabContainer = $"./VBoxContainer/HBoxContainer/LeftControl/TabContainer"
@@ -21,7 +23,7 @@ func _ready():
 
 
 func _on_close_tab(tab: int, container: TabContainer):
-	if Editor.TYPE.WhiteBoard:
+	if Editor.Type.WhiteBoard:
 		GraphicsEditor.layer_Number = 0
 	var control = container.get_tab_control(tab)
 	if control is Editor:
@@ -64,7 +66,8 @@ func _process(_delta):
 				SingletonObject.Chats.restore_deleted_tab(last_deleted_tab)
 			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "right":
 				SingletonObject.NotesTab.restore_deleted_tab(last_deleted_tab)
-			
+
+
 func add_control(item: Node, name_: String) -> Node:
 	var scrollable = ScrollContainer.new()
 	scrollable.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -82,8 +85,17 @@ func add_control(item: Node, name_: String) -> Node:
 
 
 
-func add(type: Editor.TYPE, file = null, name_ = null) -> Editor:
+func add(type: Editor.Type, file = null, name_ = null) -> Editor:
 	#Add a scroll container to the tabs and put the item in there.
+
+	# check if we're opining a file that's already open
+	# if so jsut switch to that editor
+	for editor: Editor in self.Tabs.get_children():
+		if not editor is Editor: continue
+
+		if editor.file == file:
+			Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
+			return
 
 	var editor_node = Editor.create(type, file)
 	
@@ -93,13 +105,15 @@ func add(type: Editor.TYPE, file = null, name_ = null) -> Editor:
 		editor_node.name = get_file_name(file)
 	else:
 		match type:
-			Editor.TYPE.Text:
+			Editor.Type.TEXT:
 				editor_node.name = "tab " + str(Tabs.get_tab_count() + 1)
-			Editor.TYPE.Graphics:
+			Editor.Type.GRAPHICS:
 				editor_node.name = "Graphics " + str(Tabs.get_tab_count() + 1)
-			Editor.TYPE.WhiteBoard:
+			Editor.Type.WhiteBoard:
 				editor_node.name = "drawing " + str(Tabs.get_tab_count() + 1)
 	
+	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
+
 	self.Tabs.add_child(editor_node)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
 	
@@ -159,7 +173,12 @@ func toggle_vertical_split() -> void:
 	BottomControl.visible = not BottomControl.visible
 
 
-
+func _on_editor_content_changed(editor: Editor):
+	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
+	if not editor.is_content_saved():
+		Tabs.set_tab_icon(tab_idx, _unsaved_changes_icon)
+	else:
+		Tabs.set_tab_icon(tab_idx, null)
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
@@ -168,7 +187,7 @@ func _on_tab_container_tab_selected(_tab: int) -> void:
 	var current_control = Tabs.get_current_tab_control()
 	if not current_control:
 		return
-	if current_control is Editor and current_control.type == Editor.TYPE.Text:
+	if current_control is Editor and current_control.type == Editor.Type.TEXT:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
@@ -184,7 +203,7 @@ func _on_tab_container_child_exiting_tree(_node: Node) -> void:
 	if current_tab.get_class() == "ScrollContainer":
 		enable_editor_action_buttons.emit(true)
 		return
-	elif current_tab.type == Editor.TYPE.Text:
+	elif current_tab.type == Editor.Type.TEXT:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
@@ -203,7 +222,7 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 	if current_tab.get_class() == "ScrollContainer":
 		enable_editor_action_buttons.emit(true)
 		return
-	elif current_tab.type == Editor.TYPE.Text:
+	elif current_tab.type == Editor.Type.TEXT:
 		enable_editor_action_buttons.emit(true)
 	else: 
 		enable_editor_action_buttons.emit(false)
