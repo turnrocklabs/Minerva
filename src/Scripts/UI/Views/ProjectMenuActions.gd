@@ -130,9 +130,7 @@ func deserialize_project(data: Dictionary):
 	#editor_files.assign(data.get("Editors", []))
 	#SingletonObject.editor_container.deserialize(editor_files)
 	
-	var editor_nodes: Array = await EditorContainer.deserialize(data.get("Editors", []))
-	#for editor in data.get("Editors", []):
-		#editor_nodes.append()
+	var editor_nodes: Array = EditorContainer.deserialize(data.get("Editors"))
 	for editor in editor_nodes:
 		SingletonObject.editor_pane.Tabs.add_child(editor)
 	
