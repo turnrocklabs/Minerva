@@ -14,9 +14,6 @@ var Buble = preload("res://Scenes/BoubleDialogCloud.tscn")
 @export var _apply_mask_button: Button
 @export var masking_color: Color
 
-var selectedLayer: String
-var selectedIndex: int
-
 static var layer_Number = 0
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
@@ -61,13 +58,26 @@ var _masking: bool:
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	var Hbox = HBoxContainer.new()
+	Hbox.name = str("Layer" + str(layer_Number))
+	
+	var LayerButton = Button.new()
+	LayerButton.text = "Layer"+str(layer_Number)
+	LayerButton.connect("pressed", self.selectButton.bind(LayerButton, Hbox))
+	
+	var VisibleButton = Button.new()
+	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
+	
+	%LayersList.add_child(Hbox)
+	
+	var newLayer = %LayersList.get_node("Layer"+str(layer_Number))
+	newLayer.add_child(LayerButton)
+	newLayer.add_child(VisibleButton)
+	_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
 		#only drawing
 		%ColorPickerButton.visible = SingletonObject.is_graph
 		%Erasing.visible = SingletonObject.is_graph
-		%PickLayers.visible = SingletonObject.is_graph
-		%addlayer.visible = SingletonObject.is_graph
-		%removeLayer.visible = SingletonObject.is_graph
 		%BrushHSlider.visible = SingletonObject.is_graph
 	elif SingletonObject.is_masking == true:
 		#editing and drawing
@@ -78,7 +88,8 @@ func _ready():
 	setup(Vector2i(1000, 1000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
-	%LayersContainer.get_node("Layer1").add_child(Buble.instantiate())
+	selectButton(LayerButton, Hbox) 
+	
 func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) -> Vector2:
 	var aspect_ratio = original_size.x / original_size.y
 	var target_width = original_size.x
@@ -118,6 +129,23 @@ func setup_from_image(image_: Image):
 
 	image = image_
 
+func setup_from_created_image(image_: Image):
+	# Create a new image with the same properties as in create_image
+	var img = image_
+
+	# Resize the image to fit within the canvas boundaries
+	var new_size = _calculate_resized_dimensions(img.get_size(), Vector2(1000, 800))
+	img.resize(new_size.x, new_size.y)
+
+	# Create a new layer from the scratch image
+	_draw_layer = _create_layer(img)
+
+	# Store the initial background image for the layer
+	_background_images[_draw_layer.name] = img.duplicate()
+	
+	# Assign the created image to the editor's image property
+	image = img
+
 func setup(canvas_size: Vector2i, background_color: Color):
 	var img = Image.create(canvas_size.x, canvas_size.y, false, Image.FORMAT_RGBA8)
 	img.fill(background_color)
@@ -125,9 +153,10 @@ func setup(canvas_size: Vector2i, background_color: Color):
 
 func create_image():
 	var img = Image.create(1000, 1000, false, Image.FORMAT_RGBA8)
-	img.fill(Color(255, 255, 255, 0))
-	_draw_layer = _create_layer(img)
-	_background_images[_draw_layer.name] = img.duplicate()  # Store the initial background
+	img.fill(Color(255,255,255,0))
+	#_draw_layer = _create_layer(img)
+	_background_images[_draw_layer.name] = img.duplicate()  # Store the initial background	
+	setup_from_created_image(img)
 
 func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
 	var layer = Layer.create(from, "Layer" + str(layer_Number)) 
@@ -136,7 +165,7 @@ func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED)
 
 func get_circle_pixels(center: Vector2, radius: int) -> PackedVector2Array:
 	var pixels = PackedVector2Array()
-	for x in range(center.x - radius, center.x + radius + 1):
+	for x in range(center.x - radius, center. x + radius + 1):
 		for y in range(center.y - radius, center.y + radius + 1):
 			if (x - center.x) * (x - center.x) + (y - center.y) * (y - center.y) <= radius * radius:
 				pixels.append(Vector2(x, y))
@@ -247,32 +276,84 @@ func _on_erasing_pressed():
 	else:
 		%Erasing.modulate = Color.WHITE
 	
-
-func _on_addlayer_pressed():
-	layer_Number += 1
-	%PickLayers.add_item("Layer" + str(layer_Number))
-	%PickLayers.select(%PickLayers.selected + 1)
-	create_image()
-
-func _on_remove_layer_pressed():
-	if selectedIndex > 0:
-		%LayersContainer.remove_child(%LayersContainer.get_node(selectedLayer))
-		%PickLayers.remove_item(selectedIndex)
-		%PickLayers.select(selectedIndex - 1)
-		layer_Number -= 1
-
-# Selecting layer
-func _on_pick_layers_item_selected(index):
-	selectedLayer = %PickLayers.get_item_text(index)
-	selectedIndex = index
-	_draw_layer = %LayersContainer.get_node(selectedLayer)
-	
-	
 func _on_layers_pressed():
-	%PopupPanel.visible = true
-	var bPos = %Layers.global_position + Vector2(0,100)
-	%PopupPanel.position = bPos
-
-
+	%PopupPanel.visible = not %PopupPanel.visible
+	var bPos = %Layers.position
+	%LayersMenu.position = Vector2(bPos.x - 30, bPos.y + 80)
+	%LayerBG.position = Vector2(bPos.x - 30, bPos.y + 80)
+	
 func _on_dialog_cloud_pressed():
 	pass # Replace with function body.
+	
+
+func _on_add_layer_pressed():
+	var Hbox = HBoxContainer.new()
+	Hbox.name = str("Layer" + str(layer_Number))
+	
+	var LayerButton = Button.new()
+	LayerButton.text = "Layer"+str(layer_Number)
+	LayerButton.connect("pressed", self.selectButton.bind(LayerButton,Hbox))
+	
+	var VisibleButton = Button.new()
+	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
+	
+	var RemoveButton = Button.new()
+	RemoveButton.connect("pressed", self.RemoveLayer.bind(Hbox, layer_Number))
+	
+	RemoveButton.icon = preload("res://assets/icons/remove.svg")
+	
+	%LayersList.add_child(Hbox)
+	
+	Hbox.add_child(LayerButton)
+	Hbox.add_child(VisibleButton)
+	Hbox.add_child(RemoveButton)
+	
+	create_image()
+	
+	layer_Number += 1
+
+	# Automatically select the newly created layer
+	selectButton(LayerButton, Hbox) 
+
+func RemoveLayer(Hbox:HBoxContainer, index:int):
+	# Find the index of the HBoxContainer within LayersList
+	var hbox_index = %LayersList.get_children().find(Hbox)
+	
+	# Remove the layer container (visual)
+	Hbox.queue_free()
+
+	# Get the layer to remove directly from the HBox's index 
+	var layer_to_remove = _layers_container.get_child(hbox_index)
+	layer_to_remove.queue_free()
+
+	layer_Number -= 1
+	
+	# If there are no layers left, reset the editor
+	if layer_Number <= 0:
+		layer_Number = 0
+		return # Nothing to select
+
+	# Select the previous layer 
+	var new_index = max(0, hbox_index - 1) # Clamp to 0 
+	if new_index < %LayersList.get_child_count():
+		var new_hbox = %LayersList.get_child(new_index)
+		var new_button = new_hbox.get_child(0) # Assuming button is the first child
+		selectButton(new_button, new_hbox)
+
+func selectButton(btn: Button, Hbox: HBoxContainer):
+	# Set the selected button to green
+	btn.modulate = Color.LIME_GREEN
+
+	# Find the index of the HBoxContainer within LayersList
+	var hbox_index = %LayersList.get_children().find(Hbox)
+
+	# Ensure a valid index was found
+	if hbox_index != -1:
+		# Assuming layers in _layers_container directly correspond to 
+		# the order in LayersList, use the hbox_index
+		_draw_layer = _layers_container.get_child(hbox_index)
+	# Reset other buttons' color
+	for child in %LayersList.get_children():
+		if child is HBoxContainer and child != Hbox:
+			for button in child.get_children():
+				button.modulate = Color.WHITE

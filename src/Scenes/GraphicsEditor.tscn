@@ -1,9 +1,8 @@
-[gd_scene load_steps=5 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=4 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
+[ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="2_pyo5i"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
-[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="3_aanik"]
-[ext_resource type="Texture2D" uid="uid://cnvsja4y7kp1m" path="res://assets/icons/remove_minus.png" id="4_l7xrh"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_mask_check_button", "_apply_mask_button")]
 anchors_preset = 15
@@ -32,11 +31,21 @@ custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 theme_override_constants/separation = 10
 
+[node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = ""
+popup/item_0/icon = ExtResource("2_pyo5i")
+popup/item_0/id = 0
+popup/item_1/text = ""
+popup/item_1/icon = ExtResource("2_pyo5i")
+popup/item_1/id = 1
+
 [node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Brush sizes
 "
-custom_minimum_size = Vector2(250, 0)
+custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 size_flags_vertical = 1
 tooltip_text = "Brush Size"
@@ -69,27 +78,6 @@ editor_description = "Eraser for drawn lines"
 layout_mode = 2
 icon = ExtResource("2_tkvqr")
 
-[node name="PickLayers" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "Layers"
-layout_mode = 2
-item_count = 1
-selected = 0
-popup/item_0/text = "Layer1"
-popup/item_0/id = 0
-
-[node name="addlayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "Add new layer"
-layout_mode = 2
-icon = ExtResource("3_aanik")
-
-[node name="removeLayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "Remove selected layer"
-layout_mode = 2
-icon = ExtResource("4_l7xrh")
-
 [node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2
 
@@ -97,37 +85,6 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 text = "Layers"
-
-[node name="PopupPanel" type="PopupPanel" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers"]
-unique_name_in_owner = true
-size = Vector2i(201, 109)
-
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel"]
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 197.0
-offset_bottom = 105.0
-theme_override_constants/separation = 5
-
-[node name="HBoxContaineraa" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 15
-
-[node name="Label" type="Label" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer/HBoxContaineraa"]
-layout_mode = 2
-text = "Layer 1"
-
-[node name="CheckBox" type="CheckBox" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer/HBoxContaineraa"]
-layout_mode = 2
-
-[node name="Button2" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer/HBoxContaineraa"]
-layout_mode = 2
-text = "aaaaaaaa"
-
-[node name="Button" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Layers/PopupPanel/VBoxContainer"]
-layout_mode = 2
-text = "Add layer"
 
 [node name="DialogCloud" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2
@@ -143,12 +100,54 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
+[node name="PopupPanel" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="LayerBG" type="Panel" parent="PopupPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+offset_right = 137.0
+offset_bottom = 146.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="LayersMenu" type="ScrollContainer" parent="PopupPanel"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 136.0
+offset_bottom = 146.0
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="LayersHolder" type="VBoxContainer" parent="PopupPanel/LayersMenu"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+
+[node name="Name" type="Label" parent="PopupPanel/LayersMenu/LayersHolder"]
+layout_mode = 2
+text = "Layers"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="LayersList" type="VBoxContainer" parent="PopupPanel/LayersMenu/LayersHolder"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="AddLayer" type="Button" parent="PopupPanel/LayersMenu/LayersHolder"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
+text = "Add layer"
+
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
 [connection signal="toggled" from="VBoxContainer/MarginContainer/HBoxContainer/MaskCheckButton" to="." method="_on_mask_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Erasing" to="." method="_on_erasing_pressed"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/PickLayers" to="." method="_on_pick_layers_item_selected"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/addlayer" to="." method="_on_addlayer_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/removeLayer" to="." method="_on_remove_layer_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/DialogCloud" to="." method="_on_dialog_cloud_pressed"]
+[connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
