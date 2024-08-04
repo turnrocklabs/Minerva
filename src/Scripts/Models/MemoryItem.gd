@@ -3,12 +3,18 @@ extends RefCounted ## so I get memory management and signals.
 
 ## MemoryItem is my stab at a single memory item that I can then use as I want.
 
+## This signal is emitted when [member Enabled] is changed.
+signal toggled(on: bool)
+
+
 static var SERIALIZER_FIELDS = ["Enabled", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order"]
 
 var Enabled: bool = true:
 	set(value):
+		if Locked: return
+		Enabled = value
+		toggled.emit(value)
 		SingletonObject.save_state(false)
-		if not Locked: Enabled = value
 
 ## If memory item is locked, changing the `Enabled` property is not possible
 var Locked: bool = false:
@@ -44,10 +50,10 @@ var Pinned: bool:
 var Order: int:
 	set(value): SingletonObject.save_state(false); Order = value;
 
-var OwningThread: String
+var OwningThread
 
-## Constructor
-func _init(_OwningThread:String):
+
+func _init(_OwningThread = null):
 	self.OwningThread = _OwningThread
 	self.Enabled = true
 
