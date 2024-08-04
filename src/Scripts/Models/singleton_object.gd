@@ -149,6 +149,7 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 
 @onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
 var editor_pane: EditorPane
+var editors: Array[Editor]
 #endregion
 
 #region Common UI Tasks
