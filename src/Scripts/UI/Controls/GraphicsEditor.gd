@@ -14,7 +14,7 @@ signal masking_ended()
 
 var selectedLayer: String
 var selectedIndex: int
-
+var loaded_layers: Array[Layer]
 static var layer_Number = 0
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
@@ -76,6 +76,9 @@ func _ready():
 	setup(Vector2i(1000, 1000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
+	
+	for layer in loaded_layers:
+		_layers_container.add_child(layer)
 
 func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) -> Vector2:
 	var aspect_ratio = original_size.x / original_size.y
