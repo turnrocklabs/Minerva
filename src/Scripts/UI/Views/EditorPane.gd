@@ -53,7 +53,7 @@ func restore_deleted_tab(tab_name: String):
 		# Remove the data from the deleted_tabs dictionary
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
-func _process(_delta):
+func _input(event):
 	if Tabs.get_tab_count() > 0:
 		pass
 	if Input.is_action_just_pressed("ui_undo"):
