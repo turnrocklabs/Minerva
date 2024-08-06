@@ -99,7 +99,6 @@ access = 2
 
 [node name="Node2D" type="Node2D" parent="."]
 
-[connection signal="text_changed" from="VBoxContainer/CodeEdit" to="VBoxContainer/CodeEdit" method="_on_text_changed"]
 [connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]
