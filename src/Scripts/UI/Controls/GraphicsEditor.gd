@@ -59,17 +59,24 @@ var _masking: bool:
 	get: 
 		return _mask_check_button.button_pressed
 
+var undo_history: Array = []
+
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	var Hbox = HBoxContainer.new()
 	Hbox.name = str("Layer" + str(layer_Number))
 	
+	Hbox.set("theme_override_constants/separation", 12)
+	
 	var LayerButton = Button.new()
 	LayerButton.text = "Layer"+str(layer_Number)
 	LayerButton.connect("pressed", self.selectButton.bind(LayerButton, Hbox))
 	
+	LayerButton.modulate = Color.LIME_GREEN
+	
 	var VisibleButton = Button.new()
 	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
+	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
 	
 	%LayersList.add_child(Hbox)
 	
@@ -89,21 +96,21 @@ func _ready():
 	
 	for layer in loaded_layers:
 		_layers_container.add_child(layer)
-		%PickLayers.add_item(layer.name)#get_item_text(index)
+		#%PickLayers.add_item(layer.name)#get_item_text(index)
 	
 	if loaded_layers.size() > 0:
 		layer_Number = loaded_layers.size()
 		SingletonObject.is_graph = true
 		toggle_controls(true)
-	
+
+	# Initialize undo history
+	undo_history.append(_draw_layer.image.duplicate())
+
 
 func toggle_controls(toggle: bool):
 	#only drawing
 	%ColorPickerButton.visible = toggle
 	%Erasing.visible = toggle
-	%PickLayers.visible = toggle
-	%addlayer.visible = toggle
-	%removeLayer.visible = toggle
 	%BrushHSlider.visible = toggle
 
 
@@ -153,12 +160,36 @@ func setup_from_image(image_: Image):
 
 	image = image_
 
+	# Ensure the undo history contains the initial state
+	undo_history.clear()
+	undo_history.append(_draw_layer.image.duplicate())
+
+# Similar updates to the function setup_from_created_image
 func setup_from_created_image(image_: Image):
 	# Create a new image with the same properties as in create_image
 	var img = image_
 
 	# Resize the image to fit within the canvas boundaries
 	var new_size = _calculate_resized_dimensions(img.get_size(), Vector2(1000, 800))
+	img.resize(new_size.x, new_size.y)
+
+	# Create a new layer from the scratch image
+	_draw_layer = _create_layer(img)
+
+	# Store the initial background image for the layer
+	_background_images[_draw_layer.name] = img.duplicate()
+	
+	# Assign the created image to the editor's image property
+	image = img
+
+	# Ensure the undo history contains the initial state
+	undo_history.clear()
+	undo_history.append(_draw_layer.image.duplicate())
+	# Create a new image with the same properties as in create_image
+	img = image_
+
+	# Resize the image to fit within the canvas boundaries
+	new_size = _calculate_resized_dimensions(img.get_size(), Vector2(1000, 800))
 	img.resize(new_size.x, new_size.y)
 
 	# Create a new layer from the scratch image
@@ -233,35 +264,48 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 
 func _input(event):
+	if Input.is_action_just_pressed("ui_undo"):
+		# Undo last action
+		if undo_history.size() > 1:  # Ensure there's something to undo
+			undo_history.pop_back()  # Remove the current state
+			_draw_layer.image.copy_from(undo_history.back())  # Restore the previous state
+			_draw_layer.update()  # Update the layer to show changes
+		else:
+			# Restore the original image if we reach the initial state
+			_draw_layer.image.copy_from(_background_images[_draw_layer.name])
+			_draw_layer.update()
+		return  # Exit early if undoing to prevent drawing in the same step
+
 	# Handle drawing actions
 	if event is InputEventMouseButton and event.is_action("draw"):
-		drawing = event.pressed
-		_draw_begin = drawing
-	
-	if event is InputEventMouseMotion:
-		if drawing:
-			var mouse_pos = _layers_container.get_local_mouse_position()
+		if event.pressed and not drawing:  # Start drawing
+			drawing = true
+			_draw_begin = true
 
-			var offset_x = (_layers_container.size.x - _draw_layer.image.get_width()) / 2
-			var offset_y = (_layers_container.size.y - _draw_layer.image.get_height()) / 2
-			var current_pos = Vector2(mouse_pos.x - offset_x, mouse_pos.y - offset_y)
+		elif not event.pressed and drawing:  # End drawing
+			drawing = false
 
-			var active_layer = _mask_layer if _masking else _draw_layer
+			# Store the state at the end of the action to capture the final state once done
+			undo_history.append(_draw_layer.image.duplicate())
 
-			if _draw_begin:
-				_last_pos = current_pos
-				image_draw(active_layer.image, current_pos, brush_color, brush_size * event.pressure)
+	if event is InputEventMouseMotion and drawing:
+		var mouse_pos = _layers_container.get_local_mouse_position()
 
-			for line_pixel in bresenham_line(_last_pos, current_pos):
-				image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
+		var offset_x = (_layers_container.size.x - _draw_layer.image.get_width()) / 2
+		var offset_y = (_layers_container.size.y - _draw_layer.image.get_height()) / 2
+		var current_pos = Vector2(mouse_pos.x - offset_x, mouse_pos.y - offset_y)
+		var active_layer = _mask_layer if _masking else _draw_layer
 
+		if _draw_begin:
 			_last_pos = current_pos
+			image_draw(active_layer.image, current_pos, brush_color, brush_size * event.pressure)
 			_draw_begin = false
-			active_layer.update()
 
-		else:
-			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+		for line_pixel in bresenham_line(_last_pos, current_pos):
+			image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
 
+		_last_pos = current_pos
+		active_layer.update()
 func _on_h_slider_value_changed(value):
 	brush_size = value
 
@@ -309,10 +353,11 @@ func _on_layers_pressed():
 func _on_dialog_cloud_pressed():
 	pass # Replace with function body.
 	
-
 func _on_add_layer_pressed():
 	var Hbox = HBoxContainer.new()
 	Hbox.name = str("Layer" + str(layer_Number))
+	
+	Hbox.set("theme_override_constants/separation", 12)
 	
 	var LayerButton = Button.new()
 	LayerButton.text = "Layer"+str(layer_Number)
@@ -320,6 +365,7 @@ func _on_add_layer_pressed():
 	
 	var VisibleButton = Button.new()
 	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
+	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
 	
 	var RemoveButton = Button.new()
 	RemoveButton.connect("pressed", self.RemoveLayer.bind(Hbox, layer_Number))
@@ -345,32 +391,32 @@ func RemoveLayer(Hbox:HBoxContainer, index:int):
 	
 	# Remove the layer container (visual)
 	Hbox.queue_free()
-
+	
 	# Get the layer to remove directly from the HBox's index 
 	var layer_to_remove = _layers_container.get_child(hbox_index)
 	layer_to_remove.queue_free()
-
+	
 	layer_Number -= 1
 	
 	# If there are no layers left, reset the editor
 	if layer_Number <= 0:
 		layer_Number = 0
 		return # Nothing to select
-
+		
 	# Select the previous layer 
 	var new_index = max(0, hbox_index - 1) # Clamp to 0 
 	if new_index < %LayersList.get_child_count():
 		var new_hbox = %LayersList.get_child(new_index)
 		var new_button = new_hbox.get_child(0) # Assuming button is the first child
 		selectButton(new_button, new_hbox)
-
+		
 func selectButton(btn: Button, Hbox: HBoxContainer):
 	# Set the selected button to green
 	btn.modulate = Color.LIME_GREEN
-
+	
 	# Find the index of the HBoxContainer within LayersList
 	var hbox_index = %LayersList.get_children().find(Hbox)
-
+	
 	# Ensure a valid index was found
 	if hbox_index != -1:
 		# Assuming layers in _layers_container directly correspond to 
@@ -381,3 +427,8 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 		if child is HBoxContainer and child != Hbox:
 			for button in child.get_children():
 				button.modulate = Color.WHITE
+
+func LayerVisible(Hbox: HBoxContainer):
+	var hbox_index = %LayersList.get_children().find(Hbox)
+	var VisibleOfBox = _layers_container.get_child(hbox_index)
+	VisibleOfBox.visible = !VisibleOfBox.visible
