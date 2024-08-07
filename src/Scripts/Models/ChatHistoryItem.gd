@@ -133,7 +133,10 @@ func Serialize() -> Dictionary:
 
 	var captions_ = Images.map(
 		func(img: Image):
-			return img.get_meta("caption")
+			if img.has_meta("caption"):
+				return img.get_meta("caption")
+			else: 
+				return ""
 	)
 
 	var save_dict: Dictionary = {

@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3 uid="uid://dqedarkllyoxl"]
+[gd_scene load_steps=7 format=3 uid="uid://bxmpb31w1mmhm"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PackageProjectWindow.gd" id="1_0sxx4"]
 [ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/visibility_not_visible.png" id="2_23fol"]
@@ -48,6 +48,7 @@ theme_override_constants/margin_bottom = 15
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_constants/separation = 12
 
 [node name="InfoLabel" type="Label" parent="MarginContainer/v"]
 layout_mode = 2

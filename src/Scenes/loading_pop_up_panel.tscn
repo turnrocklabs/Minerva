@@ -1,28 +1,120 @@
-[gd_scene format=3 uid="uid://b1tux4e3yql3g"]
+[gd_scene load_steps=8 format=3 uid="uid://b1tux4e3yql3g"]
 
-[node name="LoadingPopUpPanel" type="PopupPanel"]
-initial_position = 2
-size = Vector2i(300, 200)
-visible = true
-wrap_controls = false
-always_on_top = true
+[ext_resource type="Texture2D" uid="uid://5yds4y6se4e0" path="res://assets/icons/black_loading_circle.png" id="1_5oyar"]
+[ext_resource type="Script" path="res://Scripts/loading_pop_up_panel.gd" id="1_ibjjt"]
+[ext_resource type="Texture2D" uid="uid://jla8nxu2jw3p" path="res://assets/icons/white_loading_circle.png" id="2_rfof7"]
 
-[node name="VBoxContainer" type="CenterContainer" parent="."]
+[sub_resource type="CanvasTexture" id="CanvasTexture_ullnw"]
+
+[sub_resource type="Animation" id="Animation_n04mb"]
+resource_name = "new_animation"
+length = 2.0
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("VBoxContainer/VBoxContainer/ProgressBar:radial_initial_angle")
+tracks/0/interp = 1
+tracks/0/loop_wrap = false
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 2),
+"transitions": PackedFloat32Array(1, 0.287174),
+"update": 0,
+"values": [0.0, 360.0]
+}
+
+[sub_resource type="Animation" id="Animation_k6vjg"]
+length = 0.001
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath("VBoxContainer/VBoxContainer/ProgressBar:radial_initial_angle")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_5q2jw"]
+_data = {
+"RESET": SubResource("Animation_k6vjg"),
+"new_animation": SubResource("Animation_n04mb")
+}
+
+[node name="LoadingPopUpPanel" type="Control"]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_ibjjt")
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="RichTextLabel" type="RichTextLabel" parent="VBoxContainer"]
+[node name="TextureRect" type="TextureRect" parent="Control"]
+modulate = Color(0.784314, 0.784314, 0.784314, 0.184314)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = SubResource("CanvasTexture_ullnw")
+
+[node name="VBoxContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -169.0
+offset_right = 150.0
+offset_bottom = 169.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="Panel" parent="VBoxContainer"]
+custom_minimum_size = Vector2(400, 400)
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="MessageRichTextLabel" type="RichTextLabel" parent="VBoxContainer/VBoxContainer"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_font_sizes/normal_font_size = 24
 bbcode_enabled = true
 text = "[wave amp=1 freq=-4 connected=1]Loading Project...[/wave]"
 fit_content = true
 threaded = true
+
+[node name="ProgressBar" type="TextureProgressBar" parent="VBoxContainer/VBoxContainer"]
+layout_mode = 2
+value = 20.0
+fill_mode = 4
+texture_under = ExtResource("1_5oyar")
+texture_progress = ExtResource("2_rfof7")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+unique_name_in_owner = true
+libraries = {
+"": SubResource("AnimationLibrary_5q2jw")
+}
+autoplay = "new_animation"
+
+[connection signal="visibility_changed" from="." to="." method="_on_visibility_changed"]

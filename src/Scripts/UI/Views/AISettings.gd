@@ -34,6 +34,7 @@ func _on_accept_button_pressed() -> void:
 	var system_prompt_text = %SystemPromptTextEdit.text
 	create_system_prompt_message.emit(system_prompt_text)
 	hide()
+	%SystemPromptTextEdit.text = ""
 
 
 func _on_cancel_button_pressed() -> void:
@@ -71,3 +72,7 @@ func _on_freq_h_slider_value_changed(value: float) -> void:
 
 func _on_presence_h_slider_value_changed(value: float) -> void:
 	%PresPenSliderValueLabel.text = str(value)
+
+
+func _on_close_requested() -> void:
+	_on_cancel_button_pressed()
