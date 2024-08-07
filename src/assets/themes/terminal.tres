@@ -13,9 +13,9 @@ bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
 bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
 
 [resource]
-LineEdit/colors/caret_color = Color(0.94902, 0.94902, 0.94902, 0.45098)
+LineEdit/colors/caret_color = Color(0.941176, 0.941176, 0.941176, 0.403922)
 LineEdit/colors/selection_color = Color(0.215686, 0.215686, 0.843137, 1)
-LineEdit/constants/caret_width = 10
+LineEdit/constants/caret_width = 12
 LineEdit/styles/focus = SubResource("StyleBoxFlat_lxph6")
 LineEdit/styles/normal = SubResource("StyleBoxFlat_ra2aq")
 Panel/styles/panel = SubResource("StyleBoxFlat_3i5ud")

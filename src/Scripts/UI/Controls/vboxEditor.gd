@@ -65,7 +65,6 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				var buffer = Marshalls.base64_to_raw(layer_img.get("layer_img"))
 				var image = Image.new()
 				image.load_png_from_buffer(buffer)
-				var texture = ImageTexture.create_from_image(image)
 				var layer = Layer.create(image, "layer " + str(counter))
 				#layer.texture = texture
 				graphics_editor.loaded_layers.append(layer)

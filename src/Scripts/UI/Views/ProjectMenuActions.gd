@@ -54,6 +54,7 @@ func unpackage_project():
 	upw.popup_centered()
 
 func save_project():
+	SingletonObject.show_loading_screen("saving project...")
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
 		var editor = item_list.get_item_metadata(item_idx)
@@ -75,6 +76,8 @@ func save_project():
 	SingletonObject.save_recent_project(save_path)
 	
 	SingletonObject.save_state(true)
+	
+	SingletonObject.hide_loading_screen()
 
 
 ## Function:
@@ -183,6 +186,7 @@ func _on_open_recent_project_selected(project_name: String):
 
 
 func open_project_given_path(project_path: String):
+	SingletonObject.show_loading_screen("loading project...")
 	var proj_file = FileAccess.open(project_path, FileAccess.READ)
 	
 	if proj_file == null:
@@ -206,6 +210,8 @@ func open_project_given_path(project_path: String):
 	SingletonObject.call_deferred("save_state", true)
 	
 	self.save_path = project_path
+	
+	SingletonObject.hide_loading_screen()
 # end of open_project_given_path function
 
 func _notification(what):

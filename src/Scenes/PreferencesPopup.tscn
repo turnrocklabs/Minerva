@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://booxo77json0y"]
+[gd_scene load_steps=3 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
+[ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save-24-white.png" id="2_kl0rj"]
 
 [node name="PreferencesPopup" type="Window"]
 initial_position = 4
@@ -10,21 +11,28 @@ min_size = Vector2i(570, 490)
 script = ExtResource("1_snp1b")
 
 [node name="v" type="VBoxContainer" parent="."]
-anchors_preset = 5
+anchors_preset = 8
 anchor_left = 0.5
+anchor_top = 0.5
 anchor_right = 0.5
+anchor_bottom = 0.5
 offset_left = -256.0
+offset_top = -245.0
 offset_right = 256.0
-offset_bottom = 490.0
+offset_bottom = 245.0
 grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 4
 
 [node name="SectionsContainer" type="VBoxContainer" parent="v"]
 custom_minimum_size = Vector2(512, 0)
 layout_mode = 2
+size_flags_horizontal = 4
 theme_override_constants/separation = 15
 
 [node name="APIKeysVBoxContainer" type="VBoxContainer" parent="v/SectionsContainer"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="Label" type="Label" parent="v/SectionsContainer/APIKeysVBoxContainer"]
 layout_mode = 2
@@ -96,6 +104,7 @@ layout_mode = 2
 
 [node name="UserVBoxContainer" type="VBoxContainer" parent="v/SectionsContainer"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="UserLabel" type="Label" parent="v/SectionsContainer/UserVBoxContainer"]
 layout_mode = 2
@@ -187,7 +196,8 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 6
-text = "Save"
+tooltip_text = "save settings"
+icon = ExtResource("2_kl0rj")
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="toggled" from="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer/GoogleVertexCheckBox" to="." method="_on_google_vertex_check_box_toggled"]

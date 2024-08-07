@@ -191,6 +191,7 @@ layout_mode = 2
 text = "Close"
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]
 [connection signal="item_selected" from="MarginContainer/MainVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
 [connection signal="value_changed" from="MarginContainer/MainVBox/TemperatureHBoxContainer/TempHSlider" to="." method="_on_temp_h_slider_value_changed"]
 [connection signal="value_changed" from="MarginContainer/MainVBox/TopPHBoxContainer/TopPHSlider" to="." method="_on_top_ph_slider_value_changed"]
