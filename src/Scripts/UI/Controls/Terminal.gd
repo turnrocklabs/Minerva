@@ -65,6 +65,7 @@ func display_output(output: String) -> void:
 
 	var label = RichTextLabel.new()
 	label.fit_content = true
+	label.selection_enabled = true
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.text = output
 	output_container.add_child(label)
