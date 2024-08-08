@@ -48,7 +48,7 @@ func _wrap_windows_command(user_input: String) -> PackedStringArray:
 func _wrap_linux_command(user_input: String) -> PackedStringArray:
 	var full_cmd = [
 		"-c",
-		"cd %s; '%s'; echo '%s'$PWD" % [cwd, user_input, cwd_delimiter]
+		'cd %s && %s; echo "%s$(pwd)"' % [cwd, user_input, cwd_delimiter]
 	]
 
 	return full_cmd
