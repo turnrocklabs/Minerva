@@ -1,8 +1,10 @@
-[gd_scene load_steps=4 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=6 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
-[ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="2_pyo5i"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
+[ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="2_xgklw"]
+[ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="4_7duu7"]
+[ext_resource type="Texture2D" uid="uid://t5p60xjpb1cm" path="res://assets/icons/Masking.png" id="5_1sn6c"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_mask_check_button", "_apply_mask_button")]
 anchors_preset = 15
@@ -12,7 +14,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
 _color_picker = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ColorPickerButton")
-_mask_check_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/MaskCheckButton")
+_mask_check_button = NodePath("")
 _apply_mask_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton")
 masking_color = Color(0.251, 0.227, 0.243, 0.6)
 
@@ -32,14 +34,22 @@ layout_mode = 2
 theme_override_constants/separation = 14
 
 [node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-item_count = 2
+item_count = 4
+selected = 0
 popup/item_0/text = ""
-popup/item_0/icon = ExtResource("2_pyo5i")
-popup/item_0/id = 0
+popup/item_0/icon = ExtResource("2_xgklw")
+popup/item_0/id = 1
 popup/item_1/text = ""
-popup/item_1/icon = ExtResource("2_pyo5i")
+popup/item_1/icon = ExtResource("2_tkvqr")
 popup/item_1/id = 1
+popup/item_2/text = ""
+popup/item_2/icon = ExtResource("4_7duu7")
+popup/item_2/id = 2
+popup/item_3/text = ""
+popup/item_3/icon = ExtResource("5_1sn6c")
+popup/item_3/id = 3
 
 [node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
@@ -59,12 +69,6 @@ editor_description = "Brush color"
 layout_mode = 2
 text = "Color"
 color = Color(0.447059, 0.447059, 0.67451, 1)
-
-[node name="MaskCheckButton" type="CheckButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "AI zone,when enabled"
-visible = false
-layout_mode = 2
 
 [node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 visible = false
@@ -144,8 +148,8 @@ size_flags_horizontal = 3
 size_flags_vertical = 8
 text = "Add layer"
 
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/Brushes" to="." method="_on_brushes_item_selected"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
-[connection signal="toggled" from="VBoxContainer/MarginContainer/HBoxContainer/MaskCheckButton" to="." method="_on_mask_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Erasing" to="." method="_on_erasing_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
