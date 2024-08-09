@@ -24,6 +24,8 @@ const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 		if tt.length() > 60: tt = tt.left(57) + "..."
 		%TextureRect.tooltip_text = tt
 
+		image.set_meta("rendered_node", self)
+
 func _resize_image_to_fit(max_width: int, max_height: int):
 	# Get the original size of the image
 	var original_size = Vector2(image.get_width(), image.get_height())
@@ -53,7 +55,6 @@ static func create(image_: Image) -> ChatImage:
 	node._resize_image_to_fit(1000, 800)  # Use the same dimensions here
 	return node
 
-
 func _on_save_button_pressed():
 	_save_dialog.popup_centered()
 
@@ -75,7 +76,6 @@ func _on_edit_button_pressed():
 func _on_check_button_toggled(toggled_on: bool):
 	image.set_meta("active", toggled_on)
 	image_active_state_changed.emit(toggled_on)
-	print(image.get_data())
 
 
 func _on_note_button_pressed():
