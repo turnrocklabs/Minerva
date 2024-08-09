@@ -30,6 +30,7 @@ theme_override_constants/separation = 8
 [node name="OutputsContainer" type="VBoxContainer" parent="VBoxContainer/ScrollContainer/v"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
 
 [node name="h" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2

@@ -5,6 +5,7 @@ signal execution_finished()
 
 @export var _send_button: BaseButton
 
+@onready var scroll_container = %ScrollContainer
 @onready var command_line_edit: LineEdit = %CommandLineEdit
 @onready var outputs_container: VBoxContainer = %OutputsContainer
 @onready var cwd_label: Label = %CwdLabel
@@ -48,7 +49,7 @@ func _wrap_windows_command(user_input: String) -> PackedStringArray:
 func _wrap_linux_command(user_input: String) -> PackedStringArray:
 	var full_cmd = [
 		"-c",
-		"cd %s; '%s'; echo '%s'$PWD" % [cwd, user_input, cwd_delimiter]
+		'cd %s && %s -c "%s; echo \\"%s$(pwd)\\""' % [cwd, shell, user_input, cwd_delimiter]
 	]
 
 	return full_cmd
@@ -69,8 +70,9 @@ func display_output(output: String) -> void:
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.text = output
 	output_container.add_child(label)
-
+	
 	outputs_container.add_child(output_container)
+	outputs_container.grab_focus()
 
 
 func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
@@ -212,7 +214,6 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 
 
 func _on_text_edit_text_set():
-	var scroll_container: ScrollContainer = %ScrollContainer
 	await scroll_container.get_v_scroll_bar().changed
 
 	# scroll to bottom
