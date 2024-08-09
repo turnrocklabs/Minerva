@@ -44,7 +44,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	var active_image: Image
 	var edit: = false # if this is a image edit for the active image, otherwise image variation
 
-	# FIXME: this is dirry and should be handled by 'wrap_memory' somehow
+	# FIXME: this is dirty and should be handled by 'wrap_memory' somehow
 	# relies on notes not being disable before calling this function
 	for thread: MemoryThread in SingletonObject.ThreadList:
 		for mem_item: MemoryItem in thread.MemoryItemList:
@@ -55,7 +55,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		for image in formatted_data["images"]:
 			if image.get_meta("active", false):
 				active_image = image
-				edit = true
+				edit = active_image.has_meta("mask")
 
 	# Just take the last prompt
 	var request_body = {
@@ -98,7 +98,10 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 					"Authorization: Bearer %s" % API_KEY
 				],
 			)
-	
+
+		# ChangImage sets the `rendered_node` for the image
+		if active_image.has_meta("rendered_node"):
+			active_image.get_meta("rendered_node").active = false
 
 	else:
 		request_body["model"] = "dall-e-3" # we can use dall-e-3 for generating images
