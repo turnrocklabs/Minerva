@@ -72,7 +72,10 @@ func display_output(output: String) -> void:
 	output_container.add_child(label)
 	
 	outputs_container.add_child(output_container)
-	outputs_container.grab_focus()
+	
+	#this 2 lines are for auto scrollling all the way down
+	await get_tree().process_frame
+	%ScrollContainer.ensure_control_visible(%CwdLabel)
 
 
 func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
