@@ -25,7 +25,11 @@ var image: Image:
 	get: return _draw_layer.image if _draw_layer else null
 
 var drawing = false
-var erasing = false 
+var erasing = false
+var clouding = false
+
+var view_tool_active: bool = false
+var prev_mouse_position: Vector2
 
 var brush_size: int = 5:
 	set(value):
@@ -33,7 +37,7 @@ var brush_size: int = 5:
 		_brush_slider.value = value
 
 var brush_color: Color:
-	get: 
+	get:
 		if _masking:
 			return Color.TRANSPARENT 
 		elif erasing:
@@ -52,14 +56,11 @@ var _background_images = {}  # Store the background images for each layer
 var _masking: bool:
 	set(value):
 		_masking = value
-		_mask_check_button.button_pressed = value
 		_apply_mask_button.visible = value
 		if not value: 
 			masking_ended.emit()
-	get: 
-		return _mask_check_button.button_pressed
 
-var undo_history: Array = []
+var layer_undo_histories = {} # Dictionary to store undo histories for each layer
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
@@ -96,6 +97,8 @@ func _ready():
 	
 	for layer in loaded_layers:
 		_layers_container.add_child(layer)
+		layer_undo_histories[layer.name] = [] # Initialize undo history for each layer
+		layer_undo_histories[layer.name].append(layer.image.duplicate()) # Add the initial state to the undo history
 		#%PickLayers.add_item(layer.name)#get_item_text(index)
 	
 	if loaded_layers.size() > 0:
@@ -104,7 +107,7 @@ func _ready():
 		toggle_controls(true)
 
 	# Initialize undo history
-	undo_history.append(_draw_layer.image.duplicate())
+	#undo_history.append(_draw_layer.image.duplicate())
 
 
 func toggle_controls(toggle: bool):
@@ -116,7 +119,6 @@ func toggle_controls(toggle: bool):
 
 func toggle_masking(toggle: bool):
 	#editing and drawing
-	%MaskCheckButton.visible = toggle
 	%BrushHSlider.visible = toggle
 	%Erasing.visible = toggle
 
@@ -161,8 +163,8 @@ func setup_from_image(image_: Image):
 	image = image_
 
 	# Ensure the undo history contains the initial state
-	undo_history.clear()
-	undo_history.append(_draw_layer.image.duplicate())
+	layer_undo_histories[_draw_layer.name] = []
+	layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
 # Similar updates to the function setup_from_created_image
 func setup_from_created_image(image_: Image):
@@ -183,8 +185,8 @@ func setup_from_created_image(image_: Image):
 	image = img
 
 	# Ensure the undo history contains the initial state
-	undo_history.clear()
-	undo_history.append(_draw_layer.image.duplicate())
+	layer_undo_histories[_draw_layer.name] = []
+	layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 	# Create a new image with the same properties as in create_image
 	img = image_
 
@@ -220,7 +222,7 @@ func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED)
 
 func get_circle_pixels(center: Vector2, radius: int) -> PackedVector2Array:
 	var pixels = PackedVector2Array()
-	for x in range(center.x - radius, center. x + radius + 1):
+	for x in range(center.x - radius, center.x + radius + 1):
 		for y in range(center.y - radius, center.y + radius + 1):
 			if (x - center.x) * (x - center.x) + (y - center.y) * (y - center.y) <= radius * radius:
 				pixels.append(Vector2(x, y))
@@ -264,17 +266,41 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 
 func _input(event):
+	if event is InputEventMouseButton and clouding == true:
+		print("asdsad")
+	# Handle Undo for all layers
 	if Input.is_action_just_pressed("ui_undo"):
-		# Undo last action
-		if undo_history.size() > 1:  # Ensure there's something to undo
-			undo_history.pop_back()  # Remove the current state
-			_draw_layer.image.copy_from(undo_history.back())  # Restore the previous state
-			_draw_layer.update()  # Update the layer to show changes
-		else:
-			# Restore the original image if we reach the initial state
-			_draw_layer.image.copy_from(_background_images[_draw_layer.name])
-			_draw_layer.update()
+		# Find the layer with the most recent action in its history
+		var most_recent_layer = null
+		var most_recent_index = -1
+		for layer_name in layer_undo_histories.keys():
+			var history = layer_undo_histories[layer_name]
+			if history.size() > most_recent_index:
+				most_recent_index = history.size()
+				most_recent_layer = layer_name
+
+		if most_recent_layer != null:
+			var layer = _layers_container.get_node(most_recent_layer)
+			if layer != null and layer_undo_histories[most_recent_layer].size() > 1:
+				layer_undo_histories[most_recent_layer].pop_back()
+				layer.image.copy_from(layer_undo_histories[most_recent_layer].back())
+				layer.update()
+
 		return  # Exit early if undoing to prevent drawing in the same step
+
+	# Early exit if view tool is active
+	if view_tool_active:
+		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
+			var current_mouse_position = event.position
+			var delta = current_mouse_position - prev_mouse_position
+			_layers_container.position += delta
+			prev_mouse_position = current_mouse_position
+			return
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				prev_mouse_position = event.position
+
+			return
 
 	# Handle drawing actions
 	if event is InputEventMouseButton and event.is_action("draw"):
@@ -286,7 +312,7 @@ func _input(event):
 			drawing = false
 
 			# Store the state at the end of the action to capture the final state once done
-			undo_history.append(_draw_layer.image.duplicate())
+			layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
 	if event is InputEventMouseMotion and drawing:
 		var mouse_pos = _layers_container.get_local_mouse_position()
@@ -306,36 +332,49 @@ func _input(event):
 
 		_last_pos = current_pos
 		active_layer.update()
+		
 func _on_h_slider_value_changed(value):
 	brush_size = value
 
-func _on_mask_check_button_toggled(toggled_on: bool):
+func _on_mask(toggled_on: bool):
 	_masking = toggled_on
 	_draw_layer.visible = not _masking
 
 	if toggled_on:
-		
+		# Create a temporary mask for background and foreground
 		var bgd_img = Image.new()
+		bgd_img.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8)
 		bgd_img.fill(masking_color)
-
-		var background_mask_layer = _create_layer(bgd_img, INTERNAL_MODE_FRONT)
+		var background_mask_layer = _create_layer(bgd_img, INTERNAL_MODE_BACK)
+		background_mask_layer.name = "BackgroundMaskLayer"
 
 		var img = Image.new()
 		img.copy_from(_draw_layer.image)
 		img.convert(Image.FORMAT_RGBA8)
-		_mask_layer = _create_layer(img, INTERNAL_MODE_BACK)
+		_mask_layer = _create_layer(img, INTERNAL_MODE_FRONT)
+		_mask_layer.name = "MaskLayer"
 
 		await masking_ended
-
 		background_mask_layer.queue_free()
 		_mask_layer.queue_free()
 	else:
-		
 		_mask_layer = null
+		_draw_layer.visible = true
 
 func _on_apply_mask_button_pressed():
-	image.set_meta("mask", _mask_layer.image)
+	if _mask_layer and _draw_layer:
+		# Use the mask layer image to mask the draw layer image
+		for x in range(_draw_layer.image.get_width()):
+			for y in range(_draw_layer.image.get_height()):
+				var mask_pixel = _mask_layer.image.get_pixel(x, y)
+				if mask_pixel.a > 0:  # If the mask pixel has some opacity
+					_draw_layer.image.set_pixel(x, y, mask_pixel)  # Apply mask color
+
+		_draw_layer.update()  # Update the draw layer to reflect the applied mask
+
+		image.set_meta("mask", _mask_layer.image)
 	_masking = false
+	_draw_layer.visible = true  # Ensure the layer is visible after applying the mask
 
 func _on_erasing_pressed():
 	erasing = not erasing  # Toggle erasing on/off
@@ -349,9 +388,6 @@ func _on_layers_pressed():
 	var bPos = %Layers.position
 	%LayersMenu.position = Vector2(bPos.x - 30, bPos.y + 80)
 	%LayerBG.position = Vector2(bPos.x - 30, bPos.y + 80)
-	
-func _on_dialog_cloud_pressed():
-	pass # Replace with function body.
 	
 func _on_add_layer_pressed():
 	var Hbox = HBoxContainer.new()
@@ -398,9 +434,13 @@ func RemoveLayer(Hbox:HBoxContainer, index:int):
 	
 	layer_Number -= 1
 	
+	# Synchronize undo history to ensure consistency
+	layer_undo_histories.erase(layer_to_remove.name) 
+	
 	# If there are no layers left, reset the editor
 	if layer_Number <= 0:
 		layer_Number = 0
+		create_image()
 		return # Nothing to select
 		
 	# Select the previous layer 
@@ -409,7 +449,7 @@ func RemoveLayer(Hbox:HBoxContainer, index:int):
 		var new_hbox = %LayersList.get_child(new_index)
 		var new_button = new_hbox.get_child(0) # Assuming button is the first child
 		selectButton(new_button, new_hbox)
-		
+
 func selectButton(btn: Button, Hbox: HBoxContainer):
 	# Set the selected button to green
 	btn.modulate = Color.LIME_GREEN
@@ -422,6 +462,10 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 		# Assuming layers in _layers_container directly correspond to 
 		# the order in LayersList, use the hbox_index
 		_draw_layer = _layers_container.get_child(hbox_index)
+		
+		# Update undo history for the previously selected layer
+		if _draw_layer != null:
+			layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 	# Reset other buttons' color
 	for child in %LayersList.get_children():
 		if child is HBoxContainer and child != Hbox:
@@ -432,3 +476,32 @@ func LayerVisible(Hbox: HBoxContainer):
 	var hbox_index = %LayersList.get_children().find(Hbox)
 	var VisibleOfBox = _layers_container.get_child(hbox_index)
 	VisibleOfBox.visible = !VisibleOfBox.visible
+
+
+func _on_brushes_item_selected(index):
+	match index:
+		0:
+			erasing = false
+			view_tool_active = false
+			_on_mask(false)
+			clouding = false
+		1:
+			erasing = true
+			view_tool_active = false
+			_on_mask(false)
+			clouding = false
+		2:
+			erasing = false
+			view_tool_active = true
+			_on_mask(false)
+			clouding = false
+		3:
+			erasing = false
+			view_tool_active = false
+			_on_mask(true)
+			clouding = false
+
+
+
+func _on_dialog_cloud_pressed():
+	clouding = true
