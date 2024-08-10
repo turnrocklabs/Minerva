@@ -90,6 +90,14 @@ func _load_graphics_file(filename: String):
 	graphics_editor.setup_from_image(image)
 	# %SaveButton.disabled = false
 
+# func _gui_input(event: InputEvent):
+# 	print(event)
+# 	if not event is InputEventKey: return
+
+# 	if event.is_action_pressed("save"):
+# 		print("SAVEE SAVEEEE ", get_viewport().gui_get_focus_owner())
+# 		get_viewport().set_input_as_handled()
+
 ## Changes the function that runs when user clicks the "save" button
 ## from the [method prompt_close] to [parameter save_function].[br]
 ## To revert back pass the empty [parameter save_function]:[br]
@@ -145,6 +153,22 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 	# if user canceled the file select dialog, just return to the edtior
 	else:
 		return false
+
+## Calls the save implementation that could be altered by [method override_save],[br]
+## and then updates the unsaved changes icon.
+func save():
+	if _save_override.is_valid():
+		_save_override.call()
+	else:
+		await prompt_close(true)
+	
+	# Post save emit the signals to update the saved state icon
+	match type:
+		Type.TEXT, Type.NOTE_EDITOR:
+			code_edit.text_changed.emit()
+		Type.GRAPHICS:
+			pass # TODO: implement for graphics files
+
 
 func is_content_saved() -> bool:
 	match type:
@@ -215,17 +239,7 @@ func get_file_name(path: String) -> String:
 
 #region bottom of the pane buttons
 func _on_save_button_pressed():
-	if _save_override.is_valid():
-		_save_override.call()
-	else:
-		await prompt_close(true)
-	
-	# Post save emit the signals to update the saved state icon
-	match type:
-		Type.TEXT, Type.NOTE_EDITOR:
-			code_edit.text_changed.emit()
-		Type.GRAPHICS:
-			pass # TODO: implement for graphics files
+	save()
 
 
 func _on_create_note_button_pressed() -> void:
