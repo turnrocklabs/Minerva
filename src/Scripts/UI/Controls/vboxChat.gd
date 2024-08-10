@@ -126,7 +126,7 @@ func _input(event):
 
 	if not event is InputEventMouseMotion: return
 
-	# Check if is *probably* being currently selected
+	# Check if is text *probably* being currently selected
 	# by checking if mouse is currently pressed
 	# and that mouse is outside of the chat tab control
 
