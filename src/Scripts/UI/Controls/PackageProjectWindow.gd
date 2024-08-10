@@ -20,6 +20,15 @@ var save_path: String:
 		save_path = value
 		destination_label.text = "Save Path: %s" % save_path
 
+func _ready() -> void:
+	#var hbox_dialog: HBoxContainer = $Dialog.get_vbox().get_child(0)
+	#hbox_dialog.set("theme_override_constants/separation", 12)
+	
+	var hbox_file_dialog: HBoxContainer = $FileDialog.get_vbox().get_child(0)
+	hbox_file_dialog.set("theme_override_constants/separation", 14)
+	
+
+
 
 ## Shows a simple [class AcceptDialog]
 func show_message(title_: String, message: String) -> void:

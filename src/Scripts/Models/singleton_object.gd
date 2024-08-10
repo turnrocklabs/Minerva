@@ -308,5 +308,17 @@ func set_microphone(mic: String) -> void:
 	save_to_config_file("AudioSettings", "SelectedMic", mic)
 	mic_changed.emit(mic)
 
-
 #endregion Audio Settings
+
+
+#region Loading screen stuff
+signal Loading(state, label_text)
+
+func show_loading_screen(_label_text: String = ""):
+	Loading.emit(true, _label_text)
+
+func hide_loading_screen():
+	Loading.emit(false, "")
+
+#endregion Loading screen stuff
+

@@ -140,6 +140,7 @@ print(\"Hello Worldgg\")
 dddddddgdghh
 gd	fdgjjg[/code]"
 fit_content = true
+context_menu_enabled = true
 selection_enabled = true
 script = ExtResource("2_t10nn")
 markdown_text = "```python

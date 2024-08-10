@@ -5,6 +5,7 @@ signal execution_finished()
 
 @export var _send_button: BaseButton
 
+@onready var scroll_container = %ScrollContainer
 @onready var command_line_edit: LineEdit = %CommandLineEdit
 @onready var outputs_container: VBoxContainer = %OutputsContainer
 @onready var cwd_label: Label = %CwdLabel
@@ -48,7 +49,7 @@ func _wrap_windows_command(user_input: String) -> PackedStringArray:
 func _wrap_linux_command(user_input: String) -> PackedStringArray:
 	var full_cmd = [
 		"-c",
-		"cd %s; '%s'; echo '%s'$PWD" % [cwd, user_input, cwd_delimiter]
+		"cd '%s' && %s; echo '%s'\\$PWD" % [cwd, user_input, cwd_delimiter]
 	]
 
 	return full_cmd
@@ -65,11 +66,16 @@ func display_output(output: String) -> void:
 
 	var label = RichTextLabel.new()
 	label.fit_content = true
+	label.selection_enabled = true
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.text = output
 	output_container.add_child(label)
-
+	
 	outputs_container.add_child(output_container)
+	
+	#this 2 lines are for auto scrollling all the way down
+	await get_tree().process_frame
+	%ScrollContainer.ensure_control_visible(%CwdLabel)
 
 
 func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
@@ -142,8 +148,18 @@ func _execute_command(input: String) -> Array:
 	print("Running: %s %s" % [shell, " ".join(args)])
 
 	OS.execute(shell, args, output, true)
+
+	printraw("Raw Output: %s" % str(output))  # Debugging print
+
 	return output
 
+func _clear_screen_sequence_idx(output: String) -> int:
+	# List more sequences if needed
+	var clear_sequences = ["\\033[H\\033[2J", "\\u001b[2J", "\f"]
+	for sequence in clear_sequences:
+		if sequence in output:
+			return output.rfind(sequence)
+	return -1
 
 func execute_thread_command(input: String):
 	_thread = Thread.new()
@@ -157,22 +173,26 @@ func execute_thread_command(input: String):
 		
 		var cwd_index_start = cmd_result.rfind(cwd_delimiter)
 
-		cwd = cmd_result.substr(cwd_index_start+cwd_delimiter.length()).strip_edges()
+		var new_cwd = cmd_result.substr(cwd_index_start+cwd_delimiter.length()).strip_edges()
 
 		cmd_result = cmd_result.substr(0, cwd_index_start)
-
 		
-		# If theres \f clear the textedit
-		# eg. clear/cls command will just output \f
-		if "\f" in cmd_result:
-			var idx = cmd_result.rfind("\f")
+		var idx = _clear_screen_sequence_idx(cmd_result)
 
+		if idx != -1:
 			cmd_result = cmd_result.substr(idx)
-			# output_label.text = cmd_result
-			display_output(cmd_result)
+
+			# clear the previous outputs since we cleared the terminal
+			for child in outputs_container.get_children():
+				child.queue_free()
+
+			# check if there's anything to display
+			if not cmd_result.strip_edges().is_empty():
+				display_output(cmd_result)
 		else:
 			display_output("%s>%s\n%s" % [cwd, input, cmd_result])
-			# output_label.text += "%s>%s\n%s" % [cwd, input, cmd_result]
+
+		cwd = new_cwd
 
 		_history.insert(0, input)
 		_history_idx = -1
@@ -211,7 +231,6 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 
 
 func _on_text_edit_text_set():
-	var scroll_container: ScrollContainer = %ScrollContainer
 	await scroll_container.get_v_scroll_bar().changed
 
 	# scroll to bottom

@@ -22,6 +22,29 @@ func _ready():
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
 
 
+func _save_current_tab():
+	if Tabs.get_tab_count() == 0: return
+
+	var editor: Editor = Tabs.get_tab_control(Tabs.current_tab)
+
+	editor.save()
+
+func _close_current_tab():
+	if Tabs.get_tab_count() == 0: return
+
+	Tabs.get_tab_bar().tab_close_pressed.emit(Tabs.current_tab)
+
+func _shortcut_input(event: InputEvent):
+	
+	if event.is_action_pressed("save"):
+		_save_current_tab()
+		get_viewport().set_input_as_handled()
+	
+	elif event.is_action_pressed("close"):
+		_close_current_tab()
+		get_viewport().set_input_as_handled()
+
+	
 func _on_close_tab(tab: int, container: TabContainer):
 	if Editor.Type.WhiteBoard:
 		GraphicsEditor.layer_Number = 0
