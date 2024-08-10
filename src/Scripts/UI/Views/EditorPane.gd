@@ -17,6 +17,7 @@ var current_layout: LAYOUT
 @onready var BottomControl: Control = $"VBoxContainer/BottomControl"
 
 
+
 func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
@@ -123,7 +124,8 @@ func add(type: Editor.Type, file = null, name_ = null) -> Editor:
 	var editor_node = Editor.create(type, file)
 	
 	if name_: 
-		editor_node.name = name_
+		
+		editor_node.name = editor_name_to_use(name_)
 	elif file:
 		editor_node.name = get_file_name(file)
 	else:
@@ -149,6 +151,18 @@ func open_editors() -> Array[Editor]:
 		editors.append(child)
 	
 	return editors
+
+
+func editor_name_to_use(proposed_name: String) -> String:
+	var coliisions = 0
+	for i in range(Tabs.get_tab_count()):
+		if Tabs.get_tab_title(i) == proposed_name:
+			coliisions+=1
+	if coliisions == 0:
+		return proposed_name
+	else:
+		return proposed_name + " " + str(coliisions)
+
 
 func get_file_name(path: String) -> String:
 	if path.length() <= 1:

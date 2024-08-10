@@ -68,9 +68,7 @@ func disable_notes_in_tab():
 
 
 func open_threads_popup(tab_name: String = "", tab = null):
-	var target_size = %VBoxRoot.size / 5 #- Vector2(100, 100)
-	%NewThreadPopup.borderless = false
-	%NewThreadPopup.size = target_size
+	
 	
 	# %NewThreadPopup/VBoxContainer/HBoxTopRow/txtNewTabName
 	%txtNewTabName.text = tab_name
@@ -82,7 +80,7 @@ func open_threads_popup(tab_name: String = "", tab = null):
 	else: %NewThreadPopup.remove_meta("associated_tab")
 	
 	var btn_text = "Update" if update else "Create"
-	%NewThreadPopup/VBoxContainer/HBoxContainer2/btnCreateThread.text = btn_text
+	%btnCreateThread.text = btn_text
 	
 	%NewThreadPopup.popup_centered()
 

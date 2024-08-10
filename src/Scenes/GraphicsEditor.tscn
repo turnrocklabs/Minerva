@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
-[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="3_aanik"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/add.svg" id="3_aanik"]
 [ext_resource type="Texture2D" uid="uid://cnvsja4y7kp1m" path="res://assets/icons/remove_minus.png" id="4_l7xrh"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_mask_check_button", "_apply_mask_button")]
