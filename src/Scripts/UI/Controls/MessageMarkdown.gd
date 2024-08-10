@@ -320,6 +320,7 @@ func _create_code_labels():
 			node.selection_enabled = true
 			node.text = ts.content
 			node.context_menu_enabled = true
+			node.mouse_filter = Control.MOUSE_FILTER_PASS
 
 			# set the color for model message
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
