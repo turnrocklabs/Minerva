@@ -60,6 +60,7 @@ func display_output(output: String) -> void:
 	
 	var check_button = CheckButton.new()
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	check_button.size_flags_vertical = Control.SIZE_SHRINK_END
 	check_button.toggled.connect(_on_output_check_button_toggled.bind(output, check_button))
 	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
 	output_container.add_child(check_button)
