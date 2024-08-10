@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="4_7duu7"]
 [ext_resource type="Texture2D" uid="uid://t5p60xjpb1cm" path="res://assets/icons/Masking.png" id="5_1sn6c"]
 
-[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_mask_check_button", "_apply_mask_button")]
+[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -14,7 +14,6 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
 _color_picker = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ColorPickerButton")
-_mask_check_button = NodePath("")
 _apply_mask_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton")
 masking_color = Color(0.251, 0.227, 0.243, 0.6)
 
@@ -51,6 +50,21 @@ popup/item_3/text = ""
 popup/item_3/icon = ExtResource("5_1sn6c")
 popup/item_3/id = 3
 
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+layout_mode = 2
+item_count = 3
+popup/item_0/text = "Buble"
+popup/item_0/id = 0
+popup/item_1/text = "Clound"
+popup/item_1/id = 1
+popup/item_2/text = "TextBox"
+popup/item_2/id = 2
+
+[node name="Layers" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Layers"
+
 [node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Brush sizes
@@ -84,15 +98,6 @@ icon = ExtResource("2_tkvqr")
 
 [node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2
-
-[node name="Layers" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Layers"
-
-[node name="DialogCloud" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-layout_mode = 2
-text = "Cloud"
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -149,9 +154,9 @@ size_flags_vertical = 8
 text = "Add layer"
 
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/Brushes" to="." method="_on_brushes_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/OptionButton" to="." method="_on_option_button_item_selected"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Erasing" to="." method="_on_erasing_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/DialogCloud" to="." method="_on_dialog_cloud_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
