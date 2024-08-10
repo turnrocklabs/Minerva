@@ -112,6 +112,8 @@ var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
+var CloudType
+
 func _ready():
 	add_child(AtT)
 	add_child(undo)

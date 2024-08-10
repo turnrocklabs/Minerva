@@ -264,10 +264,32 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))  # Restore from the layer's bg
 			elif not erasing:
 				target_image.set_pixelv(pixel, color)
-
+var bubble
 func _input(event):
-	if event is InputEventMouseButton and clouding == true:
-		print("asdsad")
+	if clouding:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				# Spawn a new Buble instance
+				bubble = Buble.instantiate()
+				%LayersContainer.add_child(bubble)
+				bubble.global_position = get_global_mouse_position()
+				
+				# Store initial mouse position for resizing
+				prev_mouse_position = bubble.global_position
+			else:
+				# Stop resizing
+				clouding = false
+		elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
+			# Calculate resizing factor based on mouse movement
+			var delta = (get_global_mouse_position() - prev_mouse_position) * 0.1  # Adjust 0.5 for sensitivity
+
+			# Apply proportional resizing to the bubble
+			var new_scale = bubble.scale + Vector2(delta.x, delta.x)
+			bubble.scale = Vector2(max(0.1, new_scale.x), max(0.1, new_scale.x))  # Minimum scale of 0.1
+
+			# Update previous mouse position
+			prev_mouse_position = get_global_mouse_position()
+	
 	# Handle Undo for all layers
 	if Input.is_action_just_pressed("ui_undo"):
 		# Find the layer with the most recent action in its history
@@ -464,8 +486,13 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 		_draw_layer = _layers_container.get_child(hbox_index)
 		
 		# Update undo history for the previously selected layer
-		if _draw_layer != null:
-			layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
+	if _draw_layer != null:
+		# Initialize the undo history if it doesn't exist for this layer
+		if not layer_undo_histories.find_key(_draw_layer.name):
+			layer_undo_histories[_draw_layer.name] = []
+
+		# Append the current state to the undo history
+		layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 	# Reset other buttons' color
 	for child in %LayersList.get_children():
 		if child is HBoxContainer and child != Hbox:
@@ -501,7 +528,24 @@ func _on_brushes_item_selected(index):
 			_on_mask(true)
 			clouding = false
 
-
-
-func _on_dialog_cloud_pressed():
-	clouding = true
+func _on_option_button_item_selected(index):
+	match index:
+		0:
+			erasing = false
+			view_tool_active = false
+			_on_mask(false)
+			clouding = true
+			SingletonObject.CloudType = "Bubble"
+			
+		1:
+			erasing = false
+			view_tool_active = false
+			_on_mask(false)
+			clouding = true
+			SingletonObject.CloudType = "Straight"
+		2:
+			erasing = false
+			view_tool_active = false
+			_on_mask(false)
+			clouding = true
+			SingletonObject.CloudType = "TextBox"
