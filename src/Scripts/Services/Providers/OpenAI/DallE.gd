@@ -35,36 +35,16 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 	else:
 		push_error("Invalid result. Response: %s", response.response_code)
 		bot_response.error = "Unexpected error occured with HTTP Client. Code %s" % response.http_request_result
-		return
+		return 
 
 	return bot_response
-
-
-## Creates dummy mask in lower right quarter of the image
-func _dummy_mask(image: Image) -> Image:
-	
-	var mask = Image.new()
-	mask.copy_from(image)
-	
-	mask.convert(Image.FORMAT_RGBA8)
-
-	var half_width = 0#with here
-	var half_height = 0#height here
-
-	for x in range(half_width, mask.get_width()):
-		for y in range(half_height, mask.get_height()):
-			mask.set_pixel(x, y, Color.TRANSPARENT)
-
-	return mask
-
-
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 	# if we have active image this will be a edit request
 	var active_image: Image
 	var edit: = false # if this is a image edit for the active image, otherwise image variation
 
-	# FIXME: this is dirry and should be handled by 'wrap_memory' somehow
+	# FIXME: this is dirty and should be handled by 'wrap_memory' somehow
 	# relies on notes not being disable before calling this function
 	for thread: MemoryThread in SingletonObject.ThreadList:
 		for mem_item: MemoryItem in thread.MemoryItemList:
@@ -75,7 +55,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		for image in formatted_data["images"]:
 			if image.get_meta("active", false):
 				active_image = image
-				edit = true
+				edit = active_image.has_meta("mask")
 
 	# Just take the last prompt
 	var request_body = {
@@ -89,6 +69,9 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	var response: RequestResults
 
 	if active_image:
+		# dall-e-3 has a 1000 characters prompt limit
+		request_body["prompt"].left(1000)
+
 		if edit:
 			var boundary: = _generate_form_data_boundary()
 
@@ -115,10 +98,14 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 					"Authorization: Bearer %s" % API_KEY
 				],
 			)
-	
+
+		# ChangImage sets the `rendered_node` for the image
+		if active_image.has_meta("rendered_node"):
+			active_image.get_meta("rendered_node").active = false
 
 	else:
 		request_body["model"] = "dall-e-3" # we can use dall-e-3 for generating images
+		request_body["prompt"].left(4000) # dall-e-3 has a 4000 characters prompt limit
 		response = await make_request(
 			"%s/generations" % BASE_URL,
 			HTTPClient.METHOD_POST,

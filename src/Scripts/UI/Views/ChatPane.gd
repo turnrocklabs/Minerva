@@ -365,7 +365,6 @@ func render_history(chat_history: ChatHistory):
 	var scroll_container = ScrollContainer.new()
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll_container.follow_focus = true
 
 	# create a derived VBoxContainer for chats and add to the scroll container
 	var vboxChat: VBoxChat = VBoxChat.new(self)
