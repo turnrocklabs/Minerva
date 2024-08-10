@@ -32,7 +32,7 @@ func _ready() -> void:
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
-	hbox.set("theme_override_constants/separation", 12)
+	hbox.set("theme_override_constants/separation", 14)
 
 func zoom_ui(factor: int):
 	if theme.has_default_font_size():
@@ -165,16 +165,19 @@ func change_note_type(button: CheckBox):
 		%TextNoteControl.visible = true
 		%AudioControl.visible = false
 		%ImageControl.visible = false
+		%btnVoice.visible = true
 	if button.text == "Audio Note":
 		note_enum = SingletonObject.note_type.AUDIO
 		%TextNoteControl.visible = false
 		%AudioControl.visible = true
 		%ImageControl.visible = false
+		%btnVoice.visible = false
 	if button.text == "Image Note":
 		note_enum = SingletonObject.note_type.IMAGE
 		%TextNoteControl.visible = false
 		%AudioControl.visible = false
 		%ImageControl.visible = true
+		%btnVoice.visible = false
 
 
 #region Image Note region
@@ -303,9 +306,11 @@ func _on_record_audio_button_pressed() -> void:
 		%RecordAudioButton.text = "Press To Record Note"
 		effect.set_recording_active(false)
 		%PlayAudioButton.disabled = false
+		
 	else:
 		effect.set_recording_active(true)
 		%PlayAudioButton.disabled = true
+		%AddNotePopUp.disabled = true
 		%RecordAudioButton.text = "recording audio..."
 	
 
@@ -330,3 +335,6 @@ func _on_new_thread_popup_about_to_popup() -> void:
 
 func _on_button_pressed() -> void:
 	%PreferencesPopup.popup_centered()
+
+
+

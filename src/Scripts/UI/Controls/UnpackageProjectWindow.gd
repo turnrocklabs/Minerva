@@ -47,6 +47,22 @@ var package: ProjectPackage:
 		package = value
 		_export_button_update()
 
+var separation_in_pixels: = 14
+
+func _ready() -> void:
+	#var hbox_dialog: HBoxContainer = %Dialog.get_vbox().get_child(0)
+	#hbox_dialog.set("theme_override_constants/separation", 12)
+	
+	var hbox_load_pack_dialog: HBoxContainer = %LoadPackageFileDialog.get_vbox().get_child(0)
+	hbox_load_pack_dialog.set("theme_override_constants/separation", separation_in_pixels)
+	
+	var hbox_files_path_dialog: HBoxContainer = %FilesPathFileDialog.get_vbox().get_child(0)
+	hbox_files_path_dialog.set("theme_override_constants/separation", separation_in_pixels)
+	
+	var hbox_project_path_dialog: HBoxContainer = %ProjectPathFileDialog.get_vbox().get_child(0)
+	hbox_project_path_dialog.set("theme_override_constants/separation", separation_in_pixels)
+
+
 
 ## Updates the export button disabled state.
 ## Export button is enabled if project and files paths are valid and there is a loaded package
