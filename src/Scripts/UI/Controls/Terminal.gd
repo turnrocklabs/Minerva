@@ -149,10 +149,17 @@ func _execute_command(input: String) -> Array:
 
 	OS.execute(shell, args, output, true)
 
-	print("Raw Output: %s" % str(output))  # Debugging print
+	printraw("Raw Output: %s" % str(output))  # Debugging print
 
 	return output
 
+func _clear_screen_sequence_idx(output: String) -> int:
+	# List more sequences if needed
+	var clear_sequences = ["\\033[H\\033[2J", "\\u001b[2J", "\f"]
+	for sequence in clear_sequences:
+		if sequence in output:
+			return output.rfind(sequence)
+	return -1
 
 func execute_thread_command(input: String):
 	_thread = Thread.new()
@@ -170,10 +177,9 @@ func execute_thread_command(input: String):
 
 		cmd_result = cmd_result.substr(0, cwd_index_start)
 		
-		# If theres \f clear the textedit
-		# eg. clear/cls command will just output \f
-		if "\f" in cmd_result:
-			var idx = cmd_result.rfind("\f")
+		var idx = _clear_screen_sequence_idx(cmd_result)
+
+		if idx != -1:
 			cmd_result = cmd_result.substr(idx)
 
 			# clear the previous outputs since we cleared the terminal
@@ -185,7 +191,6 @@ func execute_thread_command(input: String):
 				display_output(cmd_result)
 		else:
 			display_output("%s>%s\n%s" % [cwd, input, cmd_result])
-			# output_label.text += "%s>%s\n%s" % [cwd, input, cmd_result]
 
 		cwd = new_cwd
 
