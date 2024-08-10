@@ -1,13 +1,13 @@
-[gd_scene load_steps=30 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=29 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://epir2qpijxoc" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_p2uud"]
+[ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/content_copy.svg" id="4_3sl4b"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="4_qpk4n"]
-[ext_resource type="Texture2D" uid="uid://1qda4os658si" path="res://assets/icons/clipboard_icon_white_no_bg.png" id="4_tp7wr"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
@@ -42,9 +42,6 @@ corner_radius_top_left = 20
 corner_radius_top_right = 20
 corner_radius_bottom_right = 20
 corner_radius_bottom_left = 20
-
-[sub_resource type="CanvasTexture" id="CanvasTexture_vtaaj"]
-diffuse_texture = ExtResource("4_tp7wr")
 
 [sub_resource type="LabelSettings" id="LabelSettings_3dxq6"]
 font_size = 10
@@ -184,7 +181,7 @@ icon = ExtResource("10_h3jau")
 [node name="ClipButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 layout_mode = 2
 tooltip_text = "Copy Message Contents"
-icon = SubResource("CanvasTexture_vtaaj")
+icon = ExtResource("4_3sl4b")
 
 [node name="NoteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 layout_mode = 2

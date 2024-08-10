@@ -47,13 +47,18 @@ func _on_replace_all_pressed():
 
 	print("Replacing all text in the text editor.")
 	
+	if ep.Tabs.get_tab_count() < 1:
+		ep.add(Editor.Type.TEXT, null ,%SyntaxLabel.text)
+	
 	# Get the currently active tab
-	var current_tab = ep.Tabs.get_current_tab()
-
+	var current_tab: = ep.Tabs.get_current_tab()
+	
+	
 	# Check if the active tab is an Editor and is a Text editor
-	if ep.Tabs.get_child(current_tab) is Editor:
-		var editor = ep.Tabs.get_child(current_tab)
+	if ep.Tabs.get_tab_control(current_tab) is Editor:
+		var editor = ep.Tabs.get_tab_control(current_tab)
 		if editor.type != Editor.Type.GRAPHICS:
+			editor.name = %SyntaxLabel.text
 			var code_edit_node = editor.get_node("%CodeEdit")
 			if code_edit_node:
 				code_edit_node.text = text_without_tags

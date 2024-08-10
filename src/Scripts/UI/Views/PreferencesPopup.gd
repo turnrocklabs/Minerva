@@ -55,15 +55,16 @@ func set_field_values():
 
 
 func _on_btn_save_prefs_pressed():
-	print("hahahahh")
 	config_file.set_value("USER", "first_name", _fields["first_name"].text)
 	config_file.set_value("USER", "last_name", _fields["last_name"].text)
 
 	config_file.set_value("API KEYS", "google_vertex", _fields["google_vertex"].text)
 	config_file.set_value("API KEYS", "anthropic", _fields["anthropic"].text)
 	config_file.set_value("API KEYS", "openai", _fields["openai"].text)
-
+	
 	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
+	
+	hide()
 
 func _on_about_to_popup():
 	set_field_values()

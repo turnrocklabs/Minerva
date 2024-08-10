@@ -172,6 +172,10 @@ func change_note_type(button: CheckBox):
 		%AudioControl.visible = true
 		%ImageControl.visible = false
 		%btnVoice.visible = false
+		if audio_recording == null:
+			%AddNotePopUp.disabled = true
+		else: 
+			%AddNotePopUp.disabled = false
 	if button.text == "Image Note":
 		note_enum = SingletonObject.note_type.IMAGE
 		%TextNoteControl.visible = false
@@ -306,7 +310,7 @@ func _on_record_audio_button_pressed() -> void:
 		%RecordAudioButton.text = "Press To Record Note"
 		effect.set_recording_active(false)
 		%PlayAudioButton.disabled = false
-		
+		%AddNotePopUp.disabled = false
 	else:
 		effect.set_recording_active(true)
 		%PlayAudioButton.disabled = true

@@ -244,13 +244,17 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 	if Type.TEXT == type:
-		if file:
+		if name:
+			SingletonObject.NotesTab.add_note(name, code_edit.text)
+		elif file:
 			SingletonObject.NotesTab.add_note(get_file_name(file), code_edit.text)
 		else:
 			SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 		return
 	if Type.GRAPHICS == type:
-		if file:
+		if name:
+			SingletonObject.NotesTab.add_image_note(name, graphics_editor.image, "Sketch")
+		elif file:
 			SingletonObject.NotesTab.add_image_note(get_file_name(file), graphics_editor.image, "Sketch")
 		else:
 			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
