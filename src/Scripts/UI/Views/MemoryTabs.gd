@@ -191,9 +191,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
 
 
 func add_image_note(note_title: String, note_image: Image, imageCaption: String = ""):
-	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
-		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
-		#return
+	if SingletonObject.ThreadList.is_empty():
 		await create_new_notes_tab()
 	
 	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]

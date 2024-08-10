@@ -37,7 +37,7 @@ func _on_new_chat():
 
 ## Opens a chat tab if one isn't open yet
 func ensure_chat_open() -> void:
-	if len(SingletonObject.ChatList) <= current_tab:
+	if SingletonObject.ChatList.is_empty():
 		_on_new_chat()
 
 ## Generates the full turn prompt using the history of the active chat and the selected provider.
@@ -45,7 +45,7 @@ func ensure_chat_open() -> void:
 ## Check `History.To_Prompt` for explanation on `predicate`.
 func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Callable()) -> Array[Variant]:
 	# get history of the active chat tab if there is one
-	if len(SingletonObject.ChatList) <= current_tab:
+	if SingletonObject.ChatList.is_empty():
 		return []
 	
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
