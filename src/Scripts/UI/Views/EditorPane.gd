@@ -252,7 +252,7 @@ func _on_tab_container_tree_exited() -> void:
 
 func _on_tab_container_tab_changed(_tab: int) -> void:
 	var current_tab = Tabs.get_current_tab_control()
-	if Tabs == null:
+	if Tabs == null or current_tab == null:
 		return
 	if Tabs.get_tab_count() < 1:
 		enable_editor_action_buttons.emit(false)
