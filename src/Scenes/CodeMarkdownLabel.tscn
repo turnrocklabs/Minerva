@@ -84,6 +84,7 @@ anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 134.0
 grow_horizontal = 2
+mouse_filter = 1
 theme_override_styles/panel = SubResource("StyleBoxFlat_p6ce6")
 script = ExtResource("1_6nlsm")
 
@@ -127,12 +128,14 @@ text = "Copy"
 
 [node name="p2" type="PanelContainer" parent="v"]
 layout_mode = 2
+mouse_filter = 1
 theme_override_styles/panel = SubResource("StyleBoxFlat_m7865")
 
 [node name="CodeLabel" type="RichTextLabel" parent="v/p2"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 2
+mouse_filter = 1
 theme_override_fonts/mono_font = ExtResource("1_wraaf")
 bbcode_enabled = true
 text = "[code syntax=python]
