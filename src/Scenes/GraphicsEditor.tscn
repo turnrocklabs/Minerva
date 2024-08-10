@@ -35,18 +35,14 @@ theme_override_constants/separation = 14
 [node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-item_count = 4
 selected = 0
-popup/item_0/text = ""
+item_count = 4
 popup/item_0/icon = ExtResource("2_xgklw")
 popup/item_0/id = 1
-popup/item_1/text = ""
 popup/item_1/icon = ExtResource("2_tkvqr")
 popup/item_1/id = 1
-popup/item_2/text = ""
 popup/item_2/icon = ExtResource("4_7duu7")
 popup/item_2/id = 2
-popup/item_3/text = ""
 popup/item_3/icon = ExtResource("5_1sn6c")
 popup/item_3/id = 3
 
@@ -54,7 +50,6 @@ popup/item_3/id = 3
 layout_mode = 2
 item_count = 3
 popup/item_0/text = "Buble"
-popup/item_0/id = 0
 popup/item_1/text = "Clound"
 popup/item_1/id = 1
 popup/item_2/text = "TextBox"
