@@ -319,8 +319,7 @@ func _create_code_labels():
 			node.bbcode_enabled = true
 			node.selection_enabled = true
 			node.text = ts.content
-			node.focus_mode = Control.FOCUS_NONE # disable auto scroll to bottom on focus
-			node.mouse_filter = Control.MOUSE_FILTER_PASS
+			node.context_menu_enabled = true
 
 			# set the color for model message
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)

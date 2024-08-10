@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://cwhswjsdlmgfa"]
+[gd_scene load_steps=4 format=3 uid="uid://dkq6u46fmhw60"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/UnpackageProjectWindow.gd" id="1_f7ydb"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/FileTree.gd" id="2_5sr6y"]
@@ -49,12 +49,14 @@ theme_override_constants/margin_bottom = 15
 
 [node name="v" type="VBoxContainer" parent="MarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="MarginContainer" type="MarginContainer" parent="MarginContainer/v"]
 layout_mode = 2
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/v/MarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="h" type="HBoxContainer" parent="MarginContainer/v/MarginContainer/v"]
 layout_mode = 2
@@ -85,6 +87,7 @@ size_flags_vertical = 3
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/v/MarginContainer2"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="FilesTree" type="Tree" parent="MarginContainer/v/MarginContainer2/v"]
 unique_name_in_owner = true
@@ -95,9 +98,11 @@ script = ExtResource("2_5sr6y")
 
 [node name="h" type="HBoxContainer" parent="MarginContainer/v/MarginContainer2/v"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/v/MarginContainer2/v/h"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="ProjectPathLabel" type="Label" parent="MarginContainer/v/MarginContainer2/v/h/v"]
 layout_mode = 2
@@ -110,9 +115,11 @@ text = "Files export path:     "
 [node name="v2" type="VBoxContainer" parent="MarginContainer/v/MarginContainer2/v/h"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 12
 
 [node name="h" type="HBoxContainer" parent="MarginContainer/v/MarginContainer2/v/h/v2"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="ProjectPathLineEdit" type="LineEdit" parent="MarginContainer/v/MarginContainer2/v/h/v2/h"]
 unique_name_in_owner = true
@@ -125,6 +132,7 @@ icon = ExtResource("3_bh03k")
 
 [node name="h2" type="HBoxContainer" parent="MarginContainer/v/MarginContainer2/v/h/v2"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="FilesPathLineEdit" type="LineEdit" parent="MarginContainer/v/MarginContainer2/v/h/v2/h2"]
 unique_name_in_owner = true

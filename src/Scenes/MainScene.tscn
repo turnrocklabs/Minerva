@@ -1,4 +1,4 @@
-[gd_scene load_steps=30 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=31 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_d0avd"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -26,6 +26,7 @@
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
 [ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="22_285lg"]
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
+[ext_resource type="PackedScene" uid="uid://b1tux4e3yql3g" path="res://Scenes/loading_pop_up_panel.tscn" id="27_f1wok"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -119,7 +120,7 @@ offset_right = -6.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 0
+theme_override_constants/separation = 12
 alignment = 1
 
 [node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
@@ -431,14 +432,16 @@ filters = PackedStringArray("*.png", "*.jpg", "*.webp", "*.jpeg", "*.svg", "*.bm
 unique_name_in_owner = true
 title = "Create New Note"
 initial_position = 2
-size = Vector2i(400, 700)
+size = Vector2i(420, 700)
 visible = false
 transient = true
 exclusive = true
+unresizable = true
 min_size = Vector2i(144, 0)
 script = ExtResource("3_w58y5")
 
 [node name="Panel" type="Panel" parent="CreateNewNote"]
+custom_minimum_size = Vector2(425, 0)
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -448,18 +451,26 @@ offset_right = -1.0
 offset_bottom = 4.0
 grow_horizontal = 2
 grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 
 [node name="VBoxContainer" type="VBoxContainer" parent="CreateNewNote/Panel"]
+custom_minimum_size = Vector2(400, 0)
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 2.0
-offset_right = -8.0
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -64.0
+offset_top = -339.5
+offset_right = 64.0
+offset_bottom = 339.5
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 16
+alignment = 1
 
 [node name="CreateNewNoteLabel" type="Label" parent="CreateNewNote/Panel/VBoxContainer"]
 layout_mode = 2
@@ -479,10 +490,12 @@ caret_blink = true
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
+tooltip_text = "record note title"
 icon = ExtResource("22_285lg")
 
 [node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="CreateNewNote/Panel/VBoxContainer"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="PickNoteLabel" type="Label" parent="CreateNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
 layout_mode = 2
@@ -528,15 +541,6 @@ size_flags_vertical = 3
 size_flags_stretch_ratio = 8.11
 placeholder_text = "Type a Note Description or press the mic button for a trancription"
 wrap_mode = 1
-
-[node name="btnVoice" type="Button" parent="CreateNewNote/Panel/VBoxContainer/TextNoteControl"]
-unique_name_in_owner = true
-layout_mode = 2
-offset_left = 330.0
-offset_top = 310.0
-offset_right = 366.0
-offset_bottom = 336.0
-icon = ExtResource("22_285lg")
 
 [node name="AudioControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer"]
 unique_name_in_owner = true
@@ -647,13 +651,25 @@ offset_bottom = 60.0
 text = "Open File Dialog"
 icon = ExtResource("18_mitgl")
 
-[node name="AddNotePopUp" type="Button" parent="CreateNewNote/Panel/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="CreateNewNote/Panel/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_constants/separation = 16
+
+[node name="btnVoice" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "record audio to text for note description"
+icon = ExtResource("22_285lg")
+
+[node name="AddNotePopUp" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 size_flags_vertical = 8
+tooltip_text = "Add note"
 disabled = true
-text = "Add note"
+icon = ExtResource("12_w08x7")
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
@@ -662,6 +678,11 @@ script = ExtResource("14_rrnyx")
 stream = SubResource("AudioStreamMicrophone_i6lnv")
 autoplay = true
 bus = &"Rec"
+
+[node name="LoadingPopUpPanel" parent="." instance=ExtResource("27_f1wok")]
+visible = false
+z_index = 100
+layout_mode = 1
 
 [connection signal="about_to_popup" from="NewThreadPopup" to="." method="_on_new_thread_popup_about_to_popup"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxContainer2/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
@@ -696,10 +717,10 @@ bus = &"Rec"
 [connection signal="close_requested" from="CreateNewNote" to="." method="_on_creat_new_note_close_requested"]
 [connection signal="text_changed" from="CreateNewNote/Panel/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/TextNoteControl/btnVoice" to="." method="_on_btn_voice_pressed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AudioControl/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AudioControl/PlayAudioButton" to="." method="_on_play_audio_button_pressed"]
 [connection signal="gui_input" from="CreateNewNote/Panel/VBoxContainer/ImageControl" to="." method="_on_drop_image_control_gui_input"]
 [connection signal="gui_input" from="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl" to="." method="_on_drop_image_control_gui_input"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/ImageControl/OpenImageFileButton" to="." method="_on_open_image_file_button_pressed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AddNotePopUp" to="." method="_on_add_note_pressed"]
+[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
+[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer/AddNotePopUp" to="." method="_on_add_note_pressed"]
