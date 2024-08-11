@@ -339,6 +339,3 @@ func _on_new_thread_popup_about_to_popup() -> void:
 
 func _on_button_pressed() -> void:
 	%PreferencesPopup.popup_centered()
-
-
-

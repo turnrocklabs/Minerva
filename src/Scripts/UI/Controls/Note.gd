@@ -358,4 +358,3 @@ func get_file_format(path: String) -> String:
 
 
 #endregion Paste image 
-
