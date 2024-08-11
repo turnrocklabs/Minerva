@@ -326,5 +326,3 @@ func _create_code_labels():
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
 		
 		%MessageLabelsContainer.add_child(node)
-
-

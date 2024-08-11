@@ -319,4 +319,3 @@ func hide_loading_screen():
 	Loading.emit(false, "")
 
 #endregion Loading screen stuff
-
