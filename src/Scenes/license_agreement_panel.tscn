@@ -68,7 +68,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="RichTextLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer2/PanelContainer"]
+[node name="LicenseScriptRichTextLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer2/PanelContainer"]
 layout_mode = 2
 bbcode_enabled = true
 text = "Lorem ipsum odor amet, consectetuer adipiscing elit. Sagittis leo neque integer blandit ultrices placerat urna dolor duis. Ac euismod cubilia vestibulum porta molestie nisl. Posuere urna vehicula non primis orci class nisl pretium. Convallis sit ante tincidunt tortor integer ultricies convallis. At vivamus pharetra class, et maximus diam. Suspendisse dui varius netus tortor lacus blandit.

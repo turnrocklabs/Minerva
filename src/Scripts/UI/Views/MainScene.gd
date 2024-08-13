@@ -336,9 +336,6 @@ func _on_new_thread_popup_about_to_popup() -> void:
 #endregion new tab popup
 
 
-
-
-
 func _on_button_pressed() -> void:
 	%PreferencesPopup.popup_centered()
 
@@ -348,7 +345,6 @@ func _on_button_pressed() -> void:
 var license_agreement_status = ResourceLoader.load_threaded_request("res://Scenes/license_agreement_panel.tscn")
 var license_scene = ResourceLoader.load_threaded_get("res://Scenes/license_agreement_panel.tscn")
 func _on_help_id_pressed(id: int) -> void:
-	print(id)
 	match id:
 		0:# id for the help About
 			#TODO implement about 
@@ -357,6 +353,5 @@ func _on_help_id_pressed(id: int) -> void:
 		1:# id for the license Agreement
 			var license_scene_inst = license_scene.instantiate()
 			add_child(license_scene_inst)
-
 
 #endregion help menu
