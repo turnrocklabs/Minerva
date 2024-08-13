@@ -17,6 +17,8 @@ var effect: AudioEffect
 var audio_recording: AudioStreamWAV
 var image_original_res: Image
 
+
+
 func _ready() -> void:
 	# we connect the signals when the project runs
 	text_note_check_box.button_group.pressed.connect(change_note_type)# signal for the note type checkbtn group
@@ -339,3 +341,22 @@ func _on_new_thread_popup_about_to_popup() -> void:
 
 func _on_button_pressed() -> void:
 	%PreferencesPopup.popup_centered()
+
+
+#region help menu
+
+var license_agreement_status = ResourceLoader.load_threaded_request("res://Scenes/license_agreement_panel.tscn")
+var license_scene = ResourceLoader.load_threaded_get("res://Scenes/license_agreement_panel.tscn")
+func _on_help_id_pressed(id: int) -> void:
+	print(id)
+	match id:
+		0:# id for the help About
+			#TODO implement about 
+			pass
+			
+		1:# id for the license Agreement
+			var license_scene_inst = license_scene.instantiate()
+			add_child(license_scene_inst)
+
+
+#endregion help menu
