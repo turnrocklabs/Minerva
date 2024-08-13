@@ -1,9 +1,12 @@
 extends Window
 
 
-# Called when the node enters the scene tree for the first time.
-func _ready() -> void:
-	pass # Replace with function body.
+var license_agreement_script: String
+
+func _ready():
+	var file = FileAccess.open("res://license_agreement.md", FileAccess.READ)
+	license_agreement_script = file.get_as_text()
+	%LicenseScriptRichTextLabel.text = license_agreement_script
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
