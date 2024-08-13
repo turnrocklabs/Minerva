@@ -2,7 +2,6 @@ class_name MemoryTabs
 extends TabContainer
 
 
-
 # just use current_tab
 # var ActiveThreadIndex: int:
 
@@ -142,12 +141,12 @@ func render_threads():
 #region Add notes methods
 func add_note(user_title:String, user_content: String, _source: String = "") -> MemoryItem:
 	# get the active thread.
-	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
+	if (SingletonObject.ThreadList == null) or current_tab < 0:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		#return
 		await create_new_notes_tab()
 	
-	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
+	var active_thread : MemoryThread = SingletonObject.ThreadList[current_tab]
 	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
@@ -167,7 +166,7 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 
 
 func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
-	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) <  self.current_tab:
+	if (SingletonObject.ThreadList == null) or current_tab < 1:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		#return
 		await create_new_notes_tab()

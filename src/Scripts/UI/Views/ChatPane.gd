@@ -580,11 +580,3 @@ func get_first_chat_item() -> ChatHistoryItem:
 	return history.HistoryItemList.front()
 
 #endregion Add New HistoryItem
-
-
-
-
-
-
-
-
