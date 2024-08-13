@@ -118,8 +118,6 @@ func _ready():
 	add_child(AtT)
 	add_child(undo)
 	
-	editor_pane = editor_container.get_child(0)
-	
 	var err = config_file.load(config_file_name)
 	if err != OK:
 		return
@@ -150,7 +148,7 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 #region Editor
 
 @onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
-var editor_pane: EditorPane
+@onready var editor_pane: EditorPane = editor_container.editor_pane if editor_container else null
 var editors: Array[Editor]
 #endregion
 
@@ -284,11 +282,11 @@ func set_theme(themeID: int) -> void:
 	match themeID:
 		theme.LIGHT_MODE:
 			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
-			root_control.theme = light_theme
+			if root_control: root_control.theme = light_theme
 			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
 		theme.DARK_MODE:
 			var dark_theme = ResourceLoader.load("res://assets/themes/blue_dark_mode.theme")
-			root_control.theme = dark_theme
+			if root_control: root_control.theme = dark_theme
 			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 	theme_changed.emit(themeID)
 
