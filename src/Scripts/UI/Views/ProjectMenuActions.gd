@@ -54,7 +54,7 @@ func unpackage_project():
 	upw.popup_centered()
 
 func save_project():
-	SingletonObject.show_loading_screen("saving project...")
+	
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
 		var editor = item_list.get_item_metadata(item_idx)
@@ -66,7 +66,6 @@ func save_project():
 		return
 	
 	# ask the singleton to serialize all state vars.
-	
 	var proj_data: = serialize_project()
 
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
@@ -76,8 +75,6 @@ func save_project():
 	SingletonObject.save_recent_project(save_path)
 	
 	SingletonObject.save_state(true)
-	
-	SingletonObject.hide_loading_screen()
 
 
 ## Function:
@@ -159,7 +156,13 @@ func _ready():
 	get_tree().set_auto_accept_quit(false)
 	# We want additional exit button, so we have 'Save', 'Cancel' and 'Exit'
 	(%ExitConfirmationDialog as ConfirmationDialog).add_button("Exit", true, "exit")
-
+	
+	var hbox_save_as: HBoxContainer = %fdgSaveAs.get_vbox().get_child(0)
+	hbox_save_as.set("theme_override_constants/separation", 14)
+	
+	var hbox_open_proj: HBoxContainer = %fdgOpenProject.get_vbox().get_child(0)
+	hbox_open_proj.set("theme_override_constants/separation", 14)
+	
 	SingletonObject.NewProject.connect(self._new_project)
 	SingletonObject.SaveProject.connect(self.save_project)
 	SingletonObject.SaveProjectAs.connect(self.save_project_as)
@@ -186,7 +189,7 @@ func _on_open_recent_project_selected(project_name: String):
 
 
 func open_project_given_path(project_path: String):
-	SingletonObject.show_loading_screen("loading project...")
+	#SingletonObject.show_loading_screen("loading project...")
 	var proj_file = FileAccess.open(project_path, FileAccess.READ)
 	
 	if proj_file == null:
@@ -211,7 +214,7 @@ func open_project_given_path(project_path: String):
 	
 	self.save_path = project_path
 	
-	SingletonObject.hide_loading_screen()
+	#SingletonObject.hide_loading_screen()
 # end of open_project_given_path function
 
 func _notification(what):
