@@ -10,12 +10,17 @@ signal execution_finished()
 @onready var outputs_container: VBoxContainer = %OutputsContainer
 @onready var cwd_label: Label = %CwdLabel
 
+
+var stdio: FileAccess
+var stderr: FileAccess
+var pid: int
+
+var _stdio_thread: Thread
+var _stderr_thread: Thread
+
+
 const cwd_delimiter = "##cwd##"
 
-var _thread: Thread:
-	set(value):
-		_thread = value
-		_send_button.disabled = _thread != null
 
 ## History of used commands
 var _history: = PackedStringArray()
@@ -124,22 +129,55 @@ func _ready():
 	match OS.get_name():
 		"Windows":
 			shell = OS.get_environment("COMSPEC")
-			wrap_command = _wrap_windows_command
 
 		"Linux", "macOS", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
 			shell = OS.get_environment("SHELL")
-			wrap_command = _wrap_linux_command
+	
+	var process = OS.execute_with_pipe(shell, [])
+	if not process.is_empty():
+		stdio = process.get("stdio")
+		stderr = process.get("stderr")
+		pid = process.get("pid")
+
+		_stdio_thread = Thread.new()
+		_stdio_thread.start(_stdio_thread_loop)
+		
+		_stderr_thread = Thread.new()
+		_stderr_thread.start(_stderr_thread_loop)
+
+		get_window().close_requested.connect(_clean)
+
+		print("Started the shell process with pid %s" % pid)
 
 
-func _process(_delta):
-	if not _thread or not _thread.is_started(): return
+func _clean() -> void:
+	if pid: OS.kill(pid)
 
-	if not _thread.is_alive():
-		_thread.set_meta("output", _thread.wait_to_finish())
-		if _thread.get_meta("callback", null) is Callable:
-			_thread.get_meta("callback").call()
-			_thread = null
+	stdio.close()
+	stderr.close()
 
+	_stdio_thread.wait_to_finish()
+	_stderr_thread.wait_to_finish()
+
+	print("Cleaned up shell pipes and threads.")
+
+
+func _stdio_thread_loop():
+	while stdio.is_open() and stdio.get_error() == OK:
+		_new_text.call_deferred(char(stdio.get_8()))
+	
+	prints(stdio.is_open(), error_string(stdio.get_error()))
+
+
+func _stderr_thread_loop():
+	while stderr.is_open() and stderr.get_error() == OK:
+		_new_text.call_deferred(char(stderr.get_8()))
+	
+	prints(stderr.is_open(), error_string(stderr.get_error()))
+
+
+func _new_text(text: String) -> void:
+	%RichTextLabel.text += text
 
 func _execute_command(input: String) -> Array:
 	var output = []
@@ -163,42 +201,8 @@ func _clear_screen_sequence_idx(output: String) -> int:
 	return -1
 
 func execute_thread_command(input: String):
-	_thread = Thread.new()
-	_thread.start(_execute_command.bind(input), Thread.PRIORITY_LOW)
-
-	var callback = func():
-		var output = _thread.get_meta("output")
-
-		# last line is current working directory, so we just extarct that
-		var cmd_result: String = output.back()
-		
-		var cwd_index_start = cmd_result.rfind(cwd_delimiter)
-
-		var new_cwd = cmd_result.substr(cwd_index_start+cwd_delimiter.length()).strip_edges()
-
-		cmd_result = cmd_result.substr(0, cwd_index_start)
-		
-		var idx = _clear_screen_sequence_idx(cmd_result)
-
-		if idx != -1:
-			cmd_result = cmd_result.substr(idx)
-
-			# clear the previous outputs since we cleared the terminal
-			for child in outputs_container.get_children():
-				child.queue_free()
-
-			# check if there's anything to display
-			if not cmd_result.strip_edges().is_empty():
-				display_output(cmd_result)
-		else:
-			display_output("%s>%s\n%s" % [cwd, input, cmd_result])
-
-		cwd = new_cwd
-
-		_history.insert(0, input)
-		_history_idx = -1
-	
-	_thread.set_meta("callback", callback)
+	var command_buffer: = (input + "\n").to_utf8_buffer()
+	stdio.store_buffer(command_buffer)
 
 
 func _on_button_pressed():
@@ -208,7 +212,7 @@ func _on_button_pressed():
 
 
 func _on_command_line_edit_text_submitted(new_text):
-	if not command_line_edit.text.is_empty() and not _thread:
+	if not command_line_edit.text.is_empty():
 		execute_thread_command(new_text)
 		command_line_edit.text = ""
 
