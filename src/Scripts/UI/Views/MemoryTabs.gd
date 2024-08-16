@@ -2,6 +2,7 @@ class_name MemoryTabs
 extends TabContainer
 
 
+@onready var tcThreads = %tcThreads
 # just use current_tab
 # var ActiveThreadIndex: int:
 
@@ -92,7 +93,7 @@ func _on_btn_create_thread_pressed():
 	var tab_name:String = %txtNewTabName.text
 	#added a check for the tab name, if no name gives a default name
 	if !tab_name:
-		tab_name = "notes " + str(len(SingletonObject.ThreadList) + 1)
+		tab_name = "notes " + str(%tcThreads.get_tab_count() + 1)
 	
 	if %NewThreadPopup.has_meta("associated_tab"):
 		var at = %NewThreadPopup.get_meta("associated_tab")
@@ -106,12 +107,23 @@ func _on_btn_create_thread_pressed():
 ## add indexxing system here
 func create_new_notes_tab(tab_name: String = "notes 1"):
 	var thread = MemoryThread.new()
-	thread.ThreadName = tab_name
+	thread.ThreadName = tab_name_to_use(tab_name)
 	var thread_memories: Array[MemoryItem] = []
 	thread.MemoryItemList = thread_memories
 
 	SingletonObject.ThreadList.append(thread)
 	render_thread(thread)
+
+
+func tab_name_to_use(proposed_name: String) -> String:
+	var collisions = 0
+	for i in range(tcThreads.get_tab_count()):
+		if tcThreads.get_tab_title(i).split(" ")[0] == proposed_name:
+			collisions+=1
+	if collisions == 0:
+		return proposed_name
+	else:
+		return proposed_name + "(" + str(tcThreads.get_tab_count() + 1) + ")"
 
 
 func clear_all_tabs():
@@ -144,7 +156,7 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 	if (SingletonObject.ThreadList == null) or current_tab < 0:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		#return
-		await create_new_notes_tab()
+		create_new_notes_tab()
 	
 	var active_thread : MemoryThread = SingletonObject.ThreadList[current_tab]
 	
@@ -242,9 +254,12 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.add_child(vboxMemoryList)
 
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
-	scroll_container.name = thread_item.ThreadName
+	#scroll_container.name = thread_item.ThreadName
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
 	%tcThreads.add_child(scroll_container)
+	var tab_idx = %tcThreads.get_tab_idx_from_control(scroll_container)
+	%tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
+	
 
 
 func _on_close_tab(tab: int, container: TabContainer):
@@ -309,12 +324,13 @@ func attach_file(the_file: String):
 	var content = ""
 	var content_type = ""
 	var type
-	var title = the_file.get_file().get_basename()
+	var title = the_file.get_file()#.get_basename()
 	
 	# Get the active thread
-	if (SingletonObject.ThreadList == null) or (len(SingletonObject.ThreadList) - 1) < self.current_tab:
-		SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
-		return
+	if (SingletonObject.ThreadList == null) or current_tab < 0:
+		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
+		#return
+		create_new_notes_tab()
 	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
 	
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
