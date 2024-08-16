@@ -415,7 +415,7 @@ func restore_deleted_tab(tab_name: String):
 		var history = data["history"]
 		data["timer"].stop()
 		#Add the control back to the TabContainer
-		%tcChats.add_child(control_)
+		%tcChats.call_deferred("add_child", control_)#add_child(control_)
 		
 		# Set the tab index and restore the history
 		set_current_tab(tab)
@@ -441,9 +441,11 @@ func _on_btn_test_pressed():
 	self.render_single_chat(item)
 	pass # Replace with function body.
 
+
 func clear_all_chats():
 	for child in get_children():
-		remove_child(child)
+		call_deferred("remove_child", child)#remove_child(child)
+
 
 func update_token_estimation():
 	if SingletonObject.ChatList.is_empty(): return
@@ -463,13 +465,16 @@ func update_token_estimation():
 func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
 	%LineEdit.text = get_tab_title(tab)
+	%LineEdit.call_deferred("grab_focus")
 	%EditTitleDialog.popup_centered()
+
 
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
-	set_tab_title(tab, %EditTitleDialog/LineEdit.text)
+	set_tab_title(tab, %LineEdit.text)
 
-func _on_line_edit_text_submitted(new_text: String) -> void:
+
+func _on_line_edit_text_submitted(_new_text: String) -> void:
 	_on_edit_title_dialog_confirmed()
 	%EditTitleDialog.hide()
 

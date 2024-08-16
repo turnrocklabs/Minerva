@@ -205,3 +205,7 @@ func _on_files_tree_button_clicked(item: TreeItem, _column: int, _id: int, mouse
 	set_item_ignored_state(item, ignored)
 
 	_update_info_label()
+
+
+func _on_close_requested() -> void:
+	call_deferred("hide")

@@ -85,6 +85,7 @@ layout_mode = 2
 text = "Package"
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]
 [connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]
 [connection signal="button_clicked" from="MarginContainer/v/v2/FilesTree" to="." method="_on_files_tree_button_clicked"]
 [connection signal="pressed" from="MarginContainer/v/h/ChangeDestionationButton" to="." method="_on_change_destionation_button_pressed"]

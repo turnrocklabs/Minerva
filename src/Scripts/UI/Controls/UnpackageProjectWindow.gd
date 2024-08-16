@@ -179,3 +179,8 @@ func show_message(title_: String, message: String) -> void:
 	_dialog.title = title_
 	_dialog.dialog_text = message
 	_dialog.popup_centered()
+
+
+func _on_close_requested() -> void:
+	call_deferred("hide")
+	

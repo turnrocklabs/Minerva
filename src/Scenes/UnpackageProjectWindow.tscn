@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="3_bh03k"]
 
 [node name="UnpackageProjectWindow" type="Window"]
-position = Vector2i(0, 36)
+initial_position = 2
 size = Vector2i(800, 600)
 script = ExtResource("1_f7ydb")
 
@@ -149,6 +149,7 @@ layout_mode = 2
 size_flags_horizontal = 4
 text = "Export"
 
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]
 [connection signal="file_selected" from="LoadPackageFileDialog" to="." method="_on_load_package_file_dialog_file_selected"]
 [connection signal="dir_selected" from="FilesPathFileDialog" to="." method="_on_files_path_file_dialog_dir_selected"]
 [connection signal="file_selected" from="ProjectPathFileDialog" to="." method="_on_project_path_file_dialog_file_selected"]
