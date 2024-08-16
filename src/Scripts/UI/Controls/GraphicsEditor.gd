@@ -4,8 +4,7 @@ extends PanelContainer
 
 signal masking_ended()
 
-var Buble = preload("res://Scenes/BoubleDialogCloud.tscn")
-
+var Buble = preload("res://Scenes/CloudControl.tscn")
 @onready var _layers_container: Control = %LayersContainer
 @onready var _brush_slider: HSlider = %BrushHSlider
 
@@ -47,7 +46,7 @@ var brush_color: Color:
 
 var _last_pos: Vector2
 var _draw_begin: bool = false
-
+var bubble = Buble.instantiate()
 var _draw_layer: Layer
 var _mask_layer: Layer
 var _background_images = {}  # Store the background images for each layer
@@ -61,9 +60,10 @@ var _masking: bool:
 			masking_ended.emit()
 
 var layer_undo_histories = {} # Dictionary to store undo histories for each layer
-
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	bubble = Buble.instantiate()
+	
 	var Hbox = HBoxContainer.new()
 	Hbox.name = str("Layer" + str(layer_Number))
 	
@@ -80,7 +80,6 @@ func _ready():
 	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
 	
 	%LayersList.add_child(Hbox)
-	
 	var newLayer = %LayersList.get_node("Layer"+str(layer_Number))
 	newLayer.add_child(LayerButton)
 	newLayer.add_child(VisibleButton)
@@ -264,35 +263,16 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))  # Restore from the layer's bg
 			elif not erasing:
 				target_image.set_pixelv(pixel, color)
-var bubble
-func _input(event):
-	if clouding:
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
-				# Spawn a new Buble instance
-				bubble = Buble.instantiate()
-				%LayersContainer.add_child(bubble)
-				bubble.global_position = get_global_mouse_position()
 				
-				# Store initial mouse position for resizing
-				prev_mouse_position = bubble.global_position
-			else:
-				# Stop resizing
-				clouding = false
-		elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
-			# Calculate resizing factor based on mouse movement
-			var delta = (get_global_mouse_position() - prev_mouse_position) * 0.1  # Adjust 0.5 for sensitivity
-
-			# Apply proportional resizing to the bubble
-			var new_scale = bubble.scale + Vector2(delta.x, delta.x)
-			bubble.scale = Vector2(max(0.1, new_scale.x), max(0.1, new_scale.x))  # Minimum scale of 0.1
-
-			# Update previous mouse position
-			prev_mouse_position = get_global_mouse_position()
-	
+func _input(event):
+	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		var local_mouse_pos = _layers_container.get_local_mouse_position()  # Get the local position of the mouse relative to the container
+		bubble.position = local_mouse_pos  # Set the bubble's position to the mouse's local position
+		_layers_container.add_child(bubble)  # Add the bubble as a child to the container
+		clouding = false  # Disable clouding after adding the bubble
 	# Handle Undo for all layers
 	if Input.is_action_just_pressed("ui_undo"):
-		# Find the layer with the most recent action in its history
+		# Find the layer with the most recent action in its history 
 		var most_recent_layer = null
 		var most_recent_index = -1
 		for layer_name in layer_undo_histories.keys():

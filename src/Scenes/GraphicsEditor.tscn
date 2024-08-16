@@ -2,8 +2,9 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
-[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/add.svg" id="3_aanik"]
-[ext_resource type="Texture2D" uid="uid://cnvsja4y7kp1m" path="res://assets/icons/remove_minus.png" id="4_l7xrh"]
+[ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="2_xgklw"]
+[ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="4_7duu7"]
+[ext_resource type="Texture2D" uid="uid://t5p60xjpb1cm" path="res://assets/icons/Masking.png" id="5_1sn6c"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15

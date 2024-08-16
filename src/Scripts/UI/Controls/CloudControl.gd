@@ -210,37 +210,41 @@ func _draw_editing_tail() -> void:
 ## Index of point inside the [member Tail.points] that the user is currently dragging
 var _drag_point_idx: = -1
 
-func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
-		# if the mouse is not pressed, disable the resizer and unset the `_drag_point_idx`
-		if not event.is_pressed():
-			_active_resizer = null
-			_drag_point_idx = -1
-		
-		# if the mouse is pressed
-		else:
-			# Check if we pressed on existing tail point
-			var points_arr: = tail.get_points_vector_array()
+func _input(event: InputEvent) -> void:
+	if editing:
+		if event is InputEventMouseButton:
+			if event.pressed:
+				_active_resizer = null
+				if event.button_index == MOUSE_BUTTON_LEFT:
+					var local_mouse_pos = get_local_mouse_position()
+					var points_arr: = tail.get_points_vector_array()
+					
+					# Detect if clicking on existing point
+					for i in range(points_arr.size()):
+						var point: = points_arr[i]
+						if event.position.distance_to(point) < POINT_RADIUS:
+							_drag_point_idx = i 
+							break
+					
+					if _drag_point_idx == -1:
+						var idx = get_closest_ellipse_line(event.position)
+						if event.position.distance_to(ellipse[idx]) < 60:
+							tail.points.append(idx)
+						else:
+							tail.points.append(event.position)
 
-			for i in points_arr.size():
-				var point: = points_arr[i]
-
-				# if yes start dragging it
-				if event.position.distance_to(point) < POINT_RADIUS:
-					_drag_point_idx = i 
+				queue_redraw()
+			else:
+				_active_resizer = null
+				_drag_point_idx = -1
+		elif event is InputEventMouseMotion and _drag_point_idx >= 0:
+			var idx = get_closest_ellipse_line(event.position)
+			if event.position.distance_to(ellipse[idx]) < 60:
+				tail.points[_drag_point_idx] = idx
+			else:
+				tail.points[_drag_point_idx] = event.position
 			
-			# if we didn't click on any points, add a new one
-			if _drag_point_idx == -1:
-				var idx = get_closest_ellipse_line(event.position)
-
-				var closest_point = ellipse[idx]
-
-				if event.position.distance_to(closest_point) < 60:
-					tail.points.append(idx)
-				else:
-					tail.points.append(event.position)
-
-			queue_redraw() 
+			queue_redraw()
 
 	if event is InputEventMouseMotion:
 		# if we're dragging the resizer, move it to the mouse position
@@ -260,14 +264,12 @@ func _gui_input(event: InputEvent) -> void:
 				tail.points[_drag_point_idx] = event.position
 			
 		queue_redraw()
-
-## If we press enter, switch between editing states
-func _input(event: InputEvent) -> void:
+		
 	if event is InputEventKey and not _active_resizer:
 		if event.keycode == KEY_ENTER and event.is_pressed():
-			editing = not editing
-			queue_redraw()
-
+				editing = not editing
+				queue_redraw()
+				
 func _on_lower_bottom_resizer_button_down() -> void:
 	_active_resizer = _lower_resizer
 	get_viewport().set_input_as_handled()
