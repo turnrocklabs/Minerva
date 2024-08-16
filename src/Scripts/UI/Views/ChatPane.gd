@@ -100,11 +100,11 @@ func regenerate_response(chi: ChatHistoryItem):
 		return
 
 	var history: ChatHistory
-	if not history:
-		for h in SingletonObject.ChatList:
-			if h.HistoryItemList.has(chi):
-				history = h
-				break
+	
+	for h in SingletonObject.ChatList:
+		if h.HistoryItemList.has(chi):
+			history = h
+			break
 
 	if not history:
 		push_warning("Trying to regenerate response for history item %s not present in any history item list" % chi)
@@ -375,9 +375,12 @@ func render_history(chat_history: ChatHistory):
 
 	# set the scroll container name and add it to the pane.
 	var _name = chat_history.HistoryName
-	scroll_container.name = _name
+	#scroll_container.name = _name
 	%tcChats.add_child(scroll_container)
-
+	var tab_idx = %tcChats.get_tab_idx_from_control(scroll_container)
+	%tcChats.set_tab_title(tab_idx, _name)
+	
+	
 	for item in chat_history.HistoryItemList:
 		vboxChat.add_history_item(item)
 
@@ -459,13 +462,16 @@ func update_token_estimation():
 
 func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
-	%EditTitleDialog/LineEdit.text = get_tab_title(tab)
+	%LineEdit.text = get_tab_title(tab)
 	%EditTitleDialog.popup_centered()
 
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
-
 	set_tab_title(tab, %EditTitleDialog/LineEdit.text)
+
+func _on_line_edit_text_submitted(new_text: String) -> void:
+	_on_edit_title_dialog_confirmed()
+	%EditTitleDialog.hide()
 
 
 # Detect the double click and open the title edit popup

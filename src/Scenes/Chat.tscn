@@ -71,17 +71,37 @@ visible = false
 [node name="EditTitleDialog" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
 title = "Change Chat Title"
+initial_position = 2
+unresizable = true
+ok_button_text = "Update"
 
-[node name="LineEdit" type="LineEdit" parent="EditTitleDialog"]
+[node name="VBoxContainer" type="VBoxContainer" parent="EditTitleDialog"]
 offset_left = 8.0
 offset_top = 8.0
 offset_right = 192.0
 offset_bottom = 51.0
 
+[node name="Control2" type="Control" parent="EditTitleDialog/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="LineEdit" type="LineEdit" parent="EditTitleDialog/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+caret_blink = true
+
+[node name="Control" type="Control" parent="EditTitleDialog/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
 [node name="AttachFileDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
 title = "Open File(s)"
-size = Vector2i(392, 175)
+size = Vector2i(507, 180)
 ok_button_text = "Open"
 file_mode = 1
 access = 2
@@ -204,6 +224,7 @@ layout_mode = 2
 size_flags_horizontal = 8
 
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
+[connection signal="text_submitted" from="EditTitleDialog/VBoxContainer/LineEdit" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_line_edit_text_submitted"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
 [connection signal="child_order_changed" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_child_order_changed"]

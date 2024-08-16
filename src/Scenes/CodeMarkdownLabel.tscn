@@ -123,7 +123,6 @@ editor_description = "Replacing all in active tab"
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "takes the content into the currently selected tab (creates one if there isn't one)"
-text = "Replace All"
 icon = ExtResource("3_iq8ce")
 
 [node name="CopyButton" type="Button" parent="v/p/h/HBoxContainer"]

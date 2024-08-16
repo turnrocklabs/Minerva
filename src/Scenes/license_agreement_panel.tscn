@@ -69,7 +69,9 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="LicenseScriptRichTextLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer2/PanelContainer"]
+unique_name_in_owner = true
 layout_mode = 2
+focus_mode = 2
 bbcode_enabled = true
 text = "Lorem ipsum odor amet, consectetuer adipiscing elit. Sagittis leo neque integer blandit ultrices placerat urna dolor duis. Ac euismod cubilia vestibulum porta molestie nisl. Posuere urna vehicula non primis orci class nisl pretium. Convallis sit ante tincidunt tortor integer ultricies convallis. At vivamus pharetra class, et maximus diam. Suspendisse dui varius netus tortor lacus blandit.
 
@@ -80,6 +82,9 @@ Curae sollicitudin feugiat finibus semper; enim cubilia sit curae. Rutrum elit v
 Ultricies conubia ligula viverra; at odio dictum duis. Molestie quisque suspendisse diam erat at proin nullam integer gravida. Nunc fames ac laoreet finibus quam felis. Etiam imperdiet orci porta nostra maximus a. Habitant per eget nulla aliquam eros litora pharetra dignissim. Massa scelerisque in dapibus tellus imperdiet interdum phasellus primis fusce.
 
 Odio convallis eget bibendum nascetur finibus fusce dis. Sagittis habitasse platea iaculis ullamcorper habitant netus commodo elementum erat. Lectus aliquam fusce natoque accumsan ullamcorper odio platea commodo. Odio fusce aliquet vestibulum fermentum nostra. Ornare facilisis in mus odio tellus turpis nostra lacinia quisque. Nostra dapibus lectus fames a tempor."
+scroll_following = true
+threaded = true
+selection_enabled = true
 
 [node name="Control2" type="Control" parent="VBoxContainer/HBoxContainer2"]
 custom_minimum_size = Vector2(10, 0)

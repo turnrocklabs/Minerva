@@ -28,6 +28,7 @@ enum Type {
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
+var tab_title: String = ""
 var file: String
 var type: Type
 var _file_saved := false

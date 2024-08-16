@@ -44,6 +44,8 @@ func new_text_note():
 	%NoteTextBody.visible = true
 	%ImageVBoxContainer.visible = false
 	%AudioHBoxContainer.visible = false
+	%ImageVBoxContainer.call_deferred("queue_free")
+	%AudioHBoxContainer.call_deferred("queue_free")
 	return self
 
 
@@ -51,6 +53,9 @@ func new_image_note():
 	%ImageVBoxContainer.visible = true
 	%AudioHBoxContainer.visible = false
 	%NoteTextBody.visible = false
+	%EditButton.visible = false
+	%AudioHBoxContainer.call_deferred("queue_free")
+	%NoteTextBody.call_deferred("queue_free")
 	return self
 
 # FIXME maybe we could move this function to Singleton so all images 
@@ -71,7 +76,7 @@ func set_note_image(image: Image) -> void:
 	# create a copy of a image so we don't downscale the original
 	downscaled_image = Image.new()
 	downscaled_image.copy_from(image)
-
+	
 	downscaled_image = downscale_image(downscaled_image)
 	
 	var image_texture = ImageTexture.new()
@@ -82,7 +87,10 @@ func set_note_image(image: Image) -> void:
 func new_audio_note():
 	%AudioHBoxContainer.visible = true
 	%NoteTextBody.visible = false
+	%EditButton.visible = false
 	%ImageVBoxContainer.visible = false
+	%NoteTextBody.call_deferred("queue_free")
+	%ImageVBoxContainer.call_deferred("queue_free")
 	return self
 
 
@@ -96,6 +104,8 @@ func _ready():
 		func(text):
 			if memory_item: memory_item.Title = text
 	)
+	
+	%ProgressBar.value = audio_progress
 
 #method for changing the dots texture when the main theme changes
 func change_modulate_for_texture(theme_enum: int):
@@ -113,13 +123,17 @@ func _to_string():
 # if yes that means we were dragging the note above this note
 # but if the mouse is not above this note anymore, hide the separators
 func _process(_delta):
+	if memory_item.Type == SingletonObject.note_type.AUDIO:
+		if audio_stream_player.is_playing():
+			update_progress_bar()
+	
 	if not _upper_separator.visible and not _lower_separator.visible: return
-
+	
 	if not get_global_rect().has_point(get_global_mouse_position()):
 		_upper_separator.visible = false
 		_lower_separator.visible = false
 	
-	
+
 
 func _notification(notification_type):
 	match notification_type:
@@ -307,13 +321,39 @@ func _on_image_caption_line_edit_text_changed(new_text: String) -> void:
 	if memory_item: memory_item.ImageCaption = new_text
 
 
-func _on_play_pause_button_pressed() -> void:
-	if audio_stream_player.playing:
-		audio_stream_player.stop()
-	else: 
+#region Audio controls
+var audio_progress: = 0.0
+
+func _on_play_button_pressed() -> void:
+	%ProgressBar.max_value = audio_stream_player.stream.get_length()
+	
+	if audio_stream_player.stream_paused:
+		audio_stream_player.play(audio_progress)
+	else:
 		audio_stream_player.play()
 
 
+func _on_stop_button_pressed() -> void:
+	audio_stream_player.stop()
+	audio_progress = 0.0
+	%ProgressBar.value = audio_progress
+
+
+func _on_pause_button_pressed() -> void:
+	audio_progress = %AudioStreamPlayer.get_playback_position()
+	audio_stream_player.stream_paused = true
+
+
+func _on_audio_stream_player_finished() -> void:
+	pass
+	#audio_progress = 0.0
+	#%ProgressBar.value = audio_progress
+
+
+func update_progress_bar() -> void:
+	%ProgressBar.value = audio_stream_player.get_playback_position()
+
+#endregion Audio controls
 
 #region Paste image 
 
