@@ -9,6 +9,8 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_right = -1065.0
+offset_bottom = -599.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_ha15r")
@@ -16,10 +18,10 @@ script = ExtResource("1_ha15r")
 [node name="LowerBottomResizer" type="TextureButton" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 1449.0
-offset_top = 703.0
-offset_right = 1484.0
-offset_bottom = 738.0
+offset_left = 814.0
+offset_top = 434.0
+offset_right = 849.0
+offset_bottom = 469.0
 pivot_offset = Vector2(17, 17)
 focus_mode = 0
 mouse_filter = 1
@@ -44,5 +46,7 @@ offset_right = 8.0
 offset_bottom = 8.0
 wrap_mode = 1
 
+[connection signal="mouse_entered" from="." to="." method="_on_mouse_entered"]
+[connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
 [connection signal="button_down" from="LowerBottomResizer" to="." method="_on_lower_bottom_resizer_button_down"]
 [connection signal="button_down" from="UpperLeftResizer" to="." method="_on_upper_left_resizer_button_down"]

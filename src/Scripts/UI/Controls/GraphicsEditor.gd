@@ -266,10 +266,11 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				
 func _input(event):
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var local_mouse_pos = _layers_container.get_local_mouse_position()  # Get the local position of the mouse relative to the container
-		bubble.position = local_mouse_pos  # Set the bubble's position to the mouse's local position
+		var local_mouse_pos = _layers_container.get_local_mouse_position()  # Get the local mouse position
 		_layers_container.add_child(bubble)  # Add the bubble as a child to the container
-		clouding = false  # Disable clouding after adding the bubble
+		bubble.call_deferred("set_position", local_mouse_pos)  # Set position deferred 
+		clouding = false  # Disable clouding after adding the bubble 
+
 	# Handle Undo for all layers
 	if Input.is_action_just_pressed("ui_undo"):
 		# Find the layer with the most recent action in its history 
@@ -333,7 +334,7 @@ func _input(event):
 			image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
 
 		_last_pos = current_pos
-		active_layer.update()
+		active_layer.update() 
 		
 func _on_h_slider_value_changed(value):
 	brush_size = value
