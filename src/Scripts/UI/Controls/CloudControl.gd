@@ -213,7 +213,6 @@ func _draw_editing_tail() -> void:
 var _drag_point_idx: = -1
 
 func _gui_input(event: InputEvent) -> void:
-	print("aaaaaaaaaaaaaaa")
 	if event is InputEventMouseButton:
 		# if the mouse is not pressed, disable the resizer and unset the `_drag_point_idx`
 		if not event.is_pressed():
@@ -233,15 +232,15 @@ func _gui_input(event: InputEvent) -> void:
 					_drag_point_idx = i 
 			
 			# if we didn't click on any points, add a new one
-			#if _drag_point_idx == -1:
-				#var idx = get_closest_ellipse_line(event.position)
-#
-				#var closest_point = ellipse[idx]
-#
-				#if event.position.distance_to(closest_point) < 60:
-					#tail.points.append(idx)
-				#else:
-					#tail.points.append(event.position)
+			if _drag_point_idx == -1:
+				var idx = get_closest_ellipse_line(event.position)
+
+				var closest_point = ellipse[idx]
+
+				if event.position.distance_to(closest_point) < 60:
+					tail.points.append(idx)
+				else:
+					tail.points.append(event.position)
 
 			queue_redraw() 
 
