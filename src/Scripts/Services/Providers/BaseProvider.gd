@@ -140,5 +140,3 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	var results = RequestResults.from_request_response(request_results, http_request, url)
 
 	return results
-
-
