@@ -342,16 +342,18 @@ func _on_button_pressed() -> void:
 
 #region help menu
 
-var license_agreement_status = ResourceLoader.load_threaded_request("res://Scenes/license_agreement_panel.tscn")
-var license_scene = ResourceLoader.load_threaded_get("res://Scenes/license_agreement_panel.tscn")
+var license_agreement_status: = ResourceLoader.load_threaded_request("res://Scenes/license_agreement_panel.tscn")
+var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/license_agreement_panel.tscn")
+
+var about_status: = ResourceLoader.load_threaded_request("res://Scenes/about_popup.tscn")
+var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/about_popup.tscn")
 func _on_help_id_pressed(id: int) -> void:
 	match id:
-		0:# id for the help About
-			#TODO implement about 
-			pass
-			
-		1:# id for the license Agreement
+		0:# id for the About option
+			var about_scene_inst = about_scene.instantiate()
+			call_deferred("add_child", about_scene_inst)
+		1:# id for the license Agreement 
 			var license_scene_inst = license_scene.instantiate()
-			add_child(license_scene_inst)
+			call_deferred("add_child", license_scene_inst)
 
 #endregion help menu
