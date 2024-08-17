@@ -1,10 +1,12 @@
-[gd_scene load_steps=6 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=8 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="2_xgklw"]
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="4_7duu7"]
 [ext_resource type="Texture2D" uid="uid://t5p60xjpb1cm" path="res://assets/icons/Masking.png" id="5_1sn6c"]
+[ext_resource type="Texture2D" uid="uid://bliwqrb268u66" path="res://assets/icons/zoom_more.svg" id="6_4tqp6"]
+[ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_less.svg" id="7_hti8r"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
@@ -36,7 +38,7 @@ theme_override_constants/separation = 14
 unique_name_in_owner = true
 layout_mode = 2
 selected = 0
-item_count = 4
+item_count = 6
 popup/item_0/icon = ExtResource("2_xgklw")
 popup/item_0/id = 1
 popup/item_1/icon = ExtResource("2_tkvqr")
@@ -45,6 +47,10 @@ popup/item_2/icon = ExtResource("4_7duu7")
 popup/item_2/id = 2
 popup/item_3/icon = ExtResource("5_1sn6c")
 popup/item_3/id = 3
+popup/item_4/icon = ExtResource("6_4tqp6")
+popup/item_4/id = 4
+popup/item_5/icon = ExtResource("7_hti8r")
+popup/item_5/id = 5
 
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2

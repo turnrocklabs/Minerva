@@ -23,9 +23,11 @@ var _transparency_texture: CompressedTexture2D = preload("res://assets/generated
 var image: Image:
 	get: return _draw_layer.image if _draw_layer else null
 
-var drawing = false
-var erasing = false
-var clouding = false
+var drawing:bool = false
+var erasing:bool = false
+var clouding:bool = false
+var zoomIn:bool = false
+var zoomOut:bool = false
 
 var view_tool_active: bool = false
 var prev_mouse_position: Vector2
@@ -213,7 +215,7 @@ func create_image():
 	#_draw_layer = _create_layer(img)
 	_background_images[_draw_layer.name] = img.duplicate()  # Store the initial background	
 	setup_from_created_image(img)
-
+	
 func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
 	var layer = Layer.create(from, "Layer " + str(layer_Number)) 
 	_layers_container.add_child(layer, false, internal)
@@ -265,6 +267,19 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _input(event):
+	
+	if zoomIn or zoomOut:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var zoom_factor = 1.1 if zoomIn else 0.9 
+			var zoom_center = _layers_container.get_local_mouse_position() # Get zoom center
+
+			# Calculate the new zoom offset to keep the point under the mouse in the same position
+			var zoom_offset = zoom_center * (1 - zoom_factor)
+
+			# Apply zoom and offset to the LayersContainer
+			_layers_container.scale *= Vector2.ONE * zoom_factor
+			_layers_container.position += zoom_offset
+			
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var local_mouse_pos = _layers_container.get_local_mouse_position()  # Get the local mouse position
 		_layers_container.add_child(bubble)  # Add the bubble as a child to the container
@@ -420,7 +435,7 @@ func _on_add_layer_pressed():
 	create_image()
 	
 	layer_Number += 1
-
+	
 	# Automatically select the newly created layer
 	selectButton(LayerButton, Hbox) 
 
@@ -493,21 +508,43 @@ func _on_brushes_item_selected(index):
 			view_tool_active = false
 			_on_mask(false)
 			clouding = false
+			zoomIn =false
+			zoomOut = false
 		1:
 			erasing = true
 			view_tool_active = false
 			_on_mask(false)
 			clouding = false
+			zoomIn =false
+			zoomOut = false
 		2:
 			erasing = false
 			view_tool_active = true
 			_on_mask(false)
 			clouding = false
+			zoomIn =false
+			zoomOut = false
 		3:
 			erasing = false
 			view_tool_active = false
 			_on_mask(true)
 			clouding = false
+			zoomIn =false
+			zoomOut = false
+		4:
+			erasing = false
+			view_tool_active = false
+			_on_mask(false)
+			clouding = false
+			zoomIn = true
+			zoomOut = false
+		5:
+			erasing = false
+			view_tool_active = false
+			_on_mask(false)
+			clouding = false
+			zoomIn =false
+			zoomOut = true
 
 func _on_option_button_item_selected(index):
 	match index:
