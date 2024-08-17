@@ -48,7 +48,7 @@ var brush_color: Color:
 
 var _last_pos: Vector2
 var _draw_begin: bool = false
-var bubble = Buble.instantiate()
+var bubble: CloudControl = Buble.instantiate()
 var _draw_layer: Layer
 var _mask_layer: Layer
 var _background_images = {}  # Store the background images for each layer
@@ -273,7 +273,7 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 			elif not erasing:
 				target_image.set_pixelv(pixel, color)
 				
-func _input(event):
+func _gui_input(event: InputEvent):
 	
 	if zoomIn or zoomOut:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -290,7 +290,15 @@ func _input(event):
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var local_mouse_pos = _layers_container.get_local_mouse_position()  # Get the local mouse position
 		_layers_container.add_child(bubble)  # Add the bubble as a child to the container
-		bubble.call_deferred("set_position", local_mouse_pos)  # Set position deferred 
+
+		bubble.set_deferred("position", _layers_container.position)
+		bubble.set_deferred("size", _layers_container.size)
+
+		bubble.set_bounding_rect(Rect2(local_mouse_pos, local_mouse_pos + Vector2(100, 100)))
+
+		bubble.grab_focus.call_deferred()
+
+		
 		clouding = false  # Disable clouding after adding the bubble 
 
 	# Handle Undo for all layers
