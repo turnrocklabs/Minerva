@@ -505,46 +505,28 @@ func _on_brushes_item_selected(index):
 	match index:
 		0:
 			erasing = false
-			view_tool_active = false
 			_on_mask(false)
 			clouding = false
 			zoomIn =false
 			zoomOut = false
 		1:
 			erasing = true
-			view_tool_active = false
 			_on_mask(false)
 			clouding = false
 			zoomIn =false
 			zoomOut = false
 		2:
 			erasing = false
-			view_tool_active = true
 			_on_mask(false)
 			clouding = false
 			zoomIn =false
 			zoomOut = false
 		3:
 			erasing = false
-			view_tool_active = false
 			_on_mask(true)
 			clouding = false
 			zoomIn =false
 			zoomOut = false
-		4:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = false
-			zoomIn = true
-			zoomOut = false
-		5:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = false
-			zoomIn =false
-			zoomOut = true
 
 func _on_option_button_item_selected(index):
 	match index:
@@ -567,3 +549,29 @@ func _on_option_button_item_selected(index):
 			_on_mask(false)
 			clouding = true
 			SingletonObject.CloudType = "TextBox"
+
+
+func _on_hand_pressed() -> void:
+	erasing = false
+	_on_mask(false)
+	view_tool_active = true
+	clouding = false
+	zoomIn = false
+	zoomOut = true
+
+
+func _on_zoom_in_pressed() -> void:
+	erasing = false
+	_on_mask(false)
+	view_tool_active = false
+	clouding = false
+	zoomIn = true
+	zoomOut = false
+	
+func _on_zoom_out_pressed() -> void:
+	erasing = false
+	_on_mask(false)
+	view_tool_active = false
+	clouding = false
+	zoomIn = false
+	zoomOut = true
