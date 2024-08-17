@@ -1,12 +1,12 @@
 [gd_scene load_steps=11 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
-[ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_24px_no_bg.png" id="2_vvcoi"]
-[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_x4kas"]
+[ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_icons/drag_24px_no_bg.png" id="2_vvcoi"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_x4kas"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
-[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="4_vm57c"]
-[ext_resource type="Texture2D" uid="uid://bi2d1wriixcyu" path="res://assets/icons/play-24.png" id="6_5up1e"]
-[ext_resource type="Texture2D" uid="uid://cb0sgp25gcypd" path="res://assets/icons/pause-24.png" id="7_05yub"]
+[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="4_vm57c"]
+[ext_resource type="Texture2D" uid="uid://bi2d1wriixcyu" path="res://assets/icons/play_icons/play-24.png" id="6_5up1e"]
+[ext_resource type="Texture2D" uid="uid://cb0sgp25gcypd" path="res://assets/icons/pause_icons/pause-24.png" id="7_05yub"]
 [ext_resource type="Texture2D" uid="uid://bmuiehgqdu6ac" path="res://assets/icons/stop-circled-24.png" id="8_xj7sk"]
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_fc11w"]
