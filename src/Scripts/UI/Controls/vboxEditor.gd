@@ -18,7 +18,7 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 
 func serialize() -> Array:
 	var editors_serialized: Array[Dictionary] = []
-	
+	var tab_idx:= 0
 	for editor in editor_pane.open_editors():
 		var content
 		match editor.type:
@@ -37,12 +37,13 @@ func serialize() -> Array:
 				content = layers
 		
 		var editor_string = {
-			"name": editor.name,
+			"name": editor_pane.Tabs.get_tab_title(tab_idx),#editor.name,
 			"file": editor.file,
 			"type": editor.type,
 			"content": content
 		}
 		editors_serialized.append(editor_string)
+		tab_idx += 1
 	
 	return editors_serialized
 
@@ -53,7 +54,7 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 	var editor_insts: Array[Editor] = []
 	for editor_ser in editors_array:
 		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
-		editor_inst.name = editor_ser.get("name")
+		editor_inst.tab_title = editor_ser.get("name")
 		
 		if editor_inst.type == Editor.Type.TEXT:
 			editor_inst.get_node("%CodeEdit").text = editor_ser.get("content")
