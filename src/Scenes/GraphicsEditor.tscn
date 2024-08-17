@@ -201,5 +201,6 @@ text = "Add layer"
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]

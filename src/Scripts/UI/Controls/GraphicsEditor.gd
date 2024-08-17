@@ -598,3 +598,7 @@ func _on_mg_pressed() -> void:
 	# Optionally, reset the zoom and position of the LayersContainer 
 	_layers_container.scale = Vector2.ONE
 	_layers_container.position = Vector2.ZERO
+
+
+func _on_arrow_right_pressed() -> void:
+	pass
