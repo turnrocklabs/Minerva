@@ -18,6 +18,8 @@ var pid: int
 var _stdio_thread: Thread
 var _stderr_thread: Thread
 
+# label where the output of the current running command should go to
+var _output_label: RichTextLabel
 
 const cwd_delimiter = "##cwd##"
 
@@ -27,13 +29,8 @@ var _history: = PackedStringArray()
 
 var _history_idx = 0
 
-## Holds the current working directory
-var cwd: String:
-	set(value):
-		cwd = value
-		cwd_label.text = "%s>" % cwd
-
 var wrap_command: Callable
+var delimiter: String = "---$$$---"
 var shell: String
 
 
@@ -42,25 +39,30 @@ static func create() -> Terminal:
 	return terminal
 
 
-func _wrap_windows_command(user_input: String) -> PackedStringArray:
-	var full_cmd = [
-		"/V:ON",
-		"/C",
-		"cd /d %s && %s & echo %s!cd!" % [cwd, user_input, cwd_delimiter],
-	]
-
-	return full_cmd
+func _wrap_windows_command(user_input: String) -> String:
+	return "{cmd} & echo {delimiter}".format({
+		"cmd": user_input,
+		"delimiter": delimiter,
+	})
 
 func _wrap_linux_command(user_input: String) -> PackedStringArray:
 	var full_cmd = [
 		"-c",
-		"cd '%s' && %s; echo '%s'\\$PWD" % [cwd, user_input, cwd_delimiter]
+		# "cd '%s' && %s; echo '%s'\\$PWD" % [cwd, user_input, cwd_delimiter]
 	]
 
 	return full_cmd
 
 
 func display_output(output: String) -> void:
+	# if _output_label:
+	# 	var lines = _output_label.text.split("\n")
+		
+	# 	output = lines[-1] + output
+
+	# 	lines.resize(lines.size()-1)
+	# 	_output_label.text = "".join(lines)
+
 	var output_container = HBoxContainer.new()
 	
 	var check_button = CheckButton.new()
@@ -70,12 +72,12 @@ func display_output(output: String) -> void:
 	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
 	output_container.add_child(check_button)
 
-	var label = RichTextLabel.new()
-	label.fit_content = true
-	label.selection_enabled = true
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.text = output
-	output_container.add_child(label)
+	_output_label = RichTextLabel.new()
+	_output_label.fit_content = true
+	_output_label.selection_enabled = true
+	_output_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_output_label.text = output
+	output_container.add_child(_output_label)
 	
 	outputs_container.add_child(output_container)
 	
@@ -124,11 +126,11 @@ func _on_output_check_button_tree_exiting(btn: CheckButton):
 
 
 func _ready():
-	cwd = OS.get_data_dir()
 
 	match OS.get_name():
 		"Windows":
 			shell = OS.get_environment("COMSPEC")
+			wrap_command = _wrap_windows_command
 
 		"Linux", "macOS", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
 			shell = OS.get_environment("SHELL")
@@ -165,55 +167,75 @@ func _clean() -> void:
 func _stdio_thread_loop():
 	while stdio.is_open() and stdio.get_error() == OK:
 		_new_text.call_deferred(char(stdio.get_8()))
-	
-	prints(stdio.is_open(), error_string(stdio.get_error()))
 
 
 func _stderr_thread_loop():
 	while stderr.is_open() and stderr.get_error() == OK:
 		_new_text.call_deferred(char(stderr.get_8()))
-	
-	prints(stderr.is_open(), error_string(stderr.get_error()))
 
 
 func _new_text(text: String) -> void:
-	%RichTextLabel.text += text
+	if not _output_label:
+		display_output("")
+	
+	var output: String = _output_label.text
+	_output_label.set_meta("raw_output", _output_label.get_meta("raw_output", output) + text)
+	output += text
 
-func _execute_command(input: String) -> Array:
-	var output = []
+	var wrapped_command: String = wrap_command.call("")
 
-	var args = wrap_command.call(input)
+	# delimiter should be present twice, once in the echo command and once as the output of that command
+	if output.contains(wrapped_command):
+		output = output.replace(wrapped_command, "")
 
-	print("Running: %s %s" % [shell, " ".join(args)])
+	output = output.replace(delimiter, "")
 
-	OS.execute(shell, args, output, true)
+	_output_label.text = output
 
-	printraw("Raw Output: %s" % str(output))  # Debugging print
 
-	return output
+func execute_command(input: String):
 
-func _clear_screen_sequence_idx(output: String) -> int:
-	# List more sequences if needed
-	var clear_sequences = ["\\033[H\\033[2J", "\\u001b[2J", "\f"]
-	for sequence in clear_sequences:
-		if sequence in output:
-			return output.rfind(sequence)
-	return -1
+	var command_buffer: PackedByteArray
 
-func execute_thread_command(input: String):
-	var command_buffer: = (input + "\n").to_utf8_buffer()
+	var new_cmd: = _is_new_shell_command()
+
+	if new_cmd:
+		command_buffer = (str(wrap_command.call(input)) + "\n").to_utf8_buffer()
+		_history.append(input)
+		display_output("")
+	else:
+		command_buffer = (input + "\n").to_utf8_buffer()
+
 	stdio.store_buffer(command_buffer)
 
 
+
+func _is_new_shell_command() -> bool:
+	if _history.is_empty(): return true
+
+	var found_delimiter: = false
+
+	var lines: PackedStringArray = _output_label.get_meta("raw_output", _output_label.text).strip_edges().split("\n")
+	lines.reverse()
+	for line in lines:
+		
+		if line.contains(wrap_command.call(_history[-1])):
+			return found_delimiter
+
+		if line.strip_edges() == delimiter:
+			found_delimiter = true
+
+	return false
+
 func _on_button_pressed():
 	if not command_line_edit.text.is_empty():
-		execute_thread_command(command_line_edit.text)
+		execute_command(command_line_edit.text)
 		command_line_edit.text = ""
 
 
 func _on_command_line_edit_text_submitted(new_text):
 	if not command_line_edit.text.is_empty():
-		execute_thread_command(new_text)
+		execute_command(new_text)
 		command_line_edit.text = ""
 
 
