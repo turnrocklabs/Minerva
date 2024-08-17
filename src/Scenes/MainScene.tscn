@@ -436,6 +436,14 @@ layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.3
 
+[node name="TerminalTabVbox" type="VBoxContainer" parent="VBoxRoot/VSplitContainer"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="HSeparator" type="HSeparator" parent="VBoxRoot/VSplitContainer/TerminalTabVbox"]
+layout_mode = 2
+
 [node name="ImageNoteFileDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
 title = "Open a File"
