@@ -20,6 +20,8 @@ var editing: = true:
 	set(value):
 		editing = value
 		_text_edit.visible = editing
+		_lower_resizer.visible = editing
+		_upper_resizer.visible = editing
 
 
 ## There are two control nodes that are used for resizing the speech bubble react.[br]
@@ -36,6 +38,11 @@ var _bubble_rect: Rect2
 ## Polygon that defines the speech bubble
 var ellipse: PackedVector2Array
 
+
+func set_bounding_rect(rect: Rect2) -> void:
+	_upper_resizer.position = rect.position
+	_lower_resizer.position = rect.end
+	queue_redraw()
 
 class Tail:
 	## Base class for all Tail types
@@ -85,6 +92,8 @@ class TriangleTail:
 	func draw() -> void:
 
 		var points_: = get_points_vector_array()
+
+		if points_.size() < 3: return
 
 		# To create a border effect we offset the polygon by negative delta
 		# which will make it smaller and draw it on top of the original one
@@ -155,7 +164,6 @@ func _draw() -> void:
 	
 	tail.draw()
 
-
 	# Get the rectangle thats completly within the speech bubble ellipse
 	# and defines the area there text can be in
 	var text_rect: = get_rectangle_in_ellipse(_bubble_rect)
@@ -213,14 +221,20 @@ func _draw_editing_tail() -> void:
 var _drag_point_idx: = -1
 
 func _gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
+	if not editing: return
+
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		# if the mouse is not pressed, disable the resizer and unset the `_drag_point_idx`
 		if not event.is_pressed():
 			_active_resizer = null
 			_drag_point_idx = -1
-		
-		# if the mouse is pressed
-		else:
+
+
+		# if the mouse is pressed outside of the resizers
+		elif not (
+			_upper_resizer.get_rect().has_point(event.position) or
+			_lower_resizer.get_rect().has_point(event.position)
+		):
 			# Check if we pressed on existing tail point
 			var points_arr: = tail.get_points_vector_array()
 
@@ -233,6 +247,7 @@ func _gui_input(event: InputEvent) -> void:
 			
 			# if we didn't click on any points, add a new one
 			if _drag_point_idx == -1:
+				# var local_ev: = make_input_local(event)
 				var idx = get_closest_ellipse_line(event.position)
 
 				var closest_point = ellipse[idx]
@@ -242,7 +257,8 @@ func _gui_input(event: InputEvent) -> void:
 				else:
 					tail.points.append(event.position)
 
-			queue_redraw() 
+			queue_redraw()
+			accept_event()
 
 	if event is InputEventMouseMotion:
 		# if we're dragging the resizer, move it to the mouse position
@@ -262,9 +278,10 @@ func _gui_input(event: InputEvent) -> void:
 				tail.points[_drag_point_idx] = event.position
 			
 		queue_redraw()
+		accept_event()
 
 ## If we press enter, switch between editing states
-func _input(event: InputEvent) -> void:
+func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and not _active_resizer:
 		if event.keycode == KEY_ENTER and event.is_pressed():
 			editing = not editing

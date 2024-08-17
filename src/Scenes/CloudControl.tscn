@@ -1,18 +1,18 @@
-[gd_scene load_steps=4 format=3 uid="uid://bmleitbrhx0io"]
+[gd_scene load_steps=4 format=3 uid="uid://b1di2h7ew44a2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/CloudControl.gd" id="1_ha15r"]
 [ext_resource type="Texture2D" uid="uid://bwn1v2wcbaegc" path="res://assets/icons/resizer_se.svg" id="2_jl5my"]
 [ext_resource type="Texture2D" uid="uid://bfbaum4y6o8qn" path="res://assets/icons/resizer_nw.svg" id="3_xkjvb"]
 
-[node name="CloudControl" type="Control"]
-layout_mode = 3
+[node name="CloudControl" type="ColorRect"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_right = -1527.0
-offset_bottom = -859.0
 grow_horizontal = 2
 grow_vertical = 2
+focus_mode = 2
+mouse_filter = 1
+color = Color(1, 1, 1, 0)
 script = ExtResource("1_ha15r")
 
 [node name="LowerBottomResizer" type="TextureButton" parent="."]
@@ -46,7 +46,5 @@ offset_right = 8.0
 offset_bottom = 8.0
 wrap_mode = 1
 
-[connection signal="mouse_entered" from="." to="." method="_on_mouse_entered"]
-[connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
 [connection signal="button_down" from="LowerBottomResizer" to="." method="_on_lower_bottom_resizer_button_down"]
 [connection signal="button_down" from="UpperLeftResizer" to="." method="_on_upper_left_resizer_button_down"]
