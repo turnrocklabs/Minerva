@@ -220,7 +220,6 @@ func _on_open_recent_project(index: int):
 	if projects_size + 1 == index: # check if the index is for the clear recent projects button
 		SingletonObject.clear_recent_projects()
 		project.remove_item(project.item_count - 1)
-		print("clear recent projects")
 	else:
 		var selected_project_name = submenu.get_item_text(index)
 		SingletonObject.OpenRecentProject.emit(selected_project_name)

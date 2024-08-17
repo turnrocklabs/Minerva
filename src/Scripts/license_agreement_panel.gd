@@ -1,13 +1,14 @@
-extends Window
-
+extends PersistentWindow
+class_name LicensePopup
 
 func _ready():
-	var file = FileAccess.open("res://license_agreement.md", FileAccess.READ)
-	%LicenseScriptRichTextLabel.text = file.get_as_text()
+	var file = FileAccess.open("res://LICENSE.md", FileAccess.READ)
+	%LicenseScriptMarkdownLabel._set_markdown_text(file.get_as_text())
+	%LicenseScriptMarkdownLabel.call_deferred("scroll_to_line", 0)
 
 
 func _on_close_requested() -> void:
-	hide()
+	call_deferred("hide")
 	call_deferred("queue_free")
 
 

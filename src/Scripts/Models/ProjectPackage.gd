@@ -301,5 +301,3 @@ static func package_project() -> Dictionary:
 	)
 
 	return groups
-
-

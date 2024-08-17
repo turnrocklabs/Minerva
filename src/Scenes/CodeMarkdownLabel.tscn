@@ -1,12 +1,12 @@
 [gd_scene load_steps=22 format=3 uid="uid://bsn5f2nlc2ari"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/CodeMarkdownLabel.gd" id="1_6nlsm"]
-[ext_resource type="FontFile" uid="uid://epir2qpijxoc" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="1_wraaf"]
-[ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/content_copy.svg" id="2_lkwot"]
+[ext_resource type="FontFile" uid="uid://by7y1xd78nqmu" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="1_wraaf"]
+[ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/clipboard_icons/content_copy.svg" id="2_lkwot"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="2_mf858"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_t10nn"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_15kna"]
-[ext_resource type="Texture2D" uid="uid://uoecrgwhfrqq" path="res://assets/icons/replace_icon_white.png" id="3_iq8ce"]
+[ext_resource type="Texture2D" uid="uid://uoecrgwhfrqq" path="res://assets/icons/replace_icons/replace_icon_white.png" id="3_iq8ce"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_8j4jt"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_0ndy7"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_2d88d"]
@@ -150,6 +150,7 @@ dddddddgdghh
 gd	fdgjjg[/code]"
 fit_content = true
 context_menu_enabled = true
+threaded = true
 selection_enabled = true
 script = ExtResource("2_t10nn")
 markdown_text = "```python

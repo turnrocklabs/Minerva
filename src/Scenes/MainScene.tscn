@@ -11,15 +11,15 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
-[ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow.png" id="6_vobga"]
-[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="7_rdia2"]
+[ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow_icons/create_arrow.png" id="6_vobga"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="7_rdia2"]
 [ext_resource type="Texture2D" uid="uid://cukfnot0gnafc" path="res://assets/icons/Horizontal_split.png" id="8_oxf75"]
 [ext_resource type="Texture2D" uid="uid://juldbjk5u4wl" path="res://assets/icons/Vertical_split.png" id="9_fr5ee"]
 [ext_resource type="Texture2D" uid="uid://beeolxl52ig6y" path="res://assets/generated/handshake_logo-_green24px.png" id="10_nl4h3"]
-[ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icon.png" id="11_p11dv"]
-[ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_arrow.png" id="11_srtkx"]
-[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/add.svg" id="12_6jk4t"]
-[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icon.png" id="12_j6ukv"]
+[ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icons/new_line_icon.png" id="11_p11dv"]
+[ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_icons/undo_arrow.png" id="11_srtkx"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="12_6jk4t"]
+[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icons/backspace_icon.png" id="12_j6ukv"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="12_w08x7"]
 [ext_resource type="Texture2D" uid="uid://b53y87xjob8ri" path="res://assets/generated/paperclip_icon_24-removebg-preview.png" id="13_sb4aw"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
@@ -362,6 +362,7 @@ tooltip_text = "splits the editor in 2 horizontal panes"
 icon = SubResource("CanvasTexture_o30k1")
 
 [node name="VButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+visible = false
 layout_mode = 2
 tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
@@ -435,6 +436,14 @@ visible = false
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.3
+
+[node name="TerminalTabVbox" type="VBoxContainer" parent="VBoxRoot/VSplitContainer"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="HSeparator" type="HSeparator" parent="VBoxRoot/VSplitContainer/TerminalTabVbox"]
+layout_mode = 2
 
 [node name="ImageNoteFileDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
