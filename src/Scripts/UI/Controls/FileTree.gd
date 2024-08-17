@@ -45,8 +45,3 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 			target_item.add_child(data)
 		1:
 			data.move_after(target_item)
-
-
-
-
-

@@ -112,7 +112,13 @@ var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
+# file to load the license aggreement and have it in memory all the time
+#var license_agreement_script: String
+
 func _ready():
+	#var file = FileAccess.open("res://license_agreement.md", FileAccess.READ)
+	#license_agreement_script = file.get_as_text()
+	
 	add_child(AtT)
 	add_child(undo)
 	
@@ -319,4 +325,3 @@ func hide_loading_screen():
 	Loading.emit(false, "")
 
 #endregion Loading screen stuff
-
