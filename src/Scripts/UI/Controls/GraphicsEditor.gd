@@ -81,10 +81,19 @@ func _ready():
 	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
 	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
 	
+	var Translate = Button.new()
+	Translate.text = "T"
+	
+	var Rotate = Button.new()
+	Rotate.text = "R"
+	
+	
 	%LayersList.add_child(Hbox)
 	var newLayer = %LayersList.get_node("Layer"+str(layer_Number))
 	newLayer.add_child(LayerButton)
 	newLayer.add_child(VisibleButton)
+	newLayer.add_child(Translate)
+	newLayer.add_child(Rotate)
 	_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
 		toggle_controls(SingletonObject.is_graph)
@@ -114,14 +123,12 @@ func _ready():
 func toggle_controls(toggle: bool):
 	#only drawing
 	%ColorPickerButton.visible = toggle
-	%Erasing.visible = toggle
 	%BrushHSlider.visible = toggle
 
 
 func toggle_masking(toggle: bool):
 	#editing and drawing
 	%BrushHSlider.visible = toggle
-	%Erasing.visible = toggle
 
 
 func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) -> Vector2:
@@ -393,19 +400,12 @@ func _on_apply_mask_button_pressed():
 		image.set_meta("mask", _mask_layer.image)
 	_masking = false
 	_draw_layer.visible = true  # Ensure the layer is visible after applying the mask
-
-func _on_erasing_pressed():
-	erasing = not erasing  # Toggle erasing on/off
-	if erasing:
-		%Erasing.modulate = Color.LIME_GREEN
-	else:
-		%Erasing.modulate = Color.WHITE
 	
 func _on_layers_pressed():
 	%PopupPanel.visible = not %PopupPanel.visible
 	var bPos = %Layers.position
-	%LayersMenu.position = Vector2(bPos.x - 30, bPos.y + 80)
-	%LayerBG.position = Vector2(bPos.x - 30, bPos.y + 80)
+	%LayersMenu.position = Vector2(bPos.x - 60, bPos.y + 105)
+	%LayerBG.position = Vector2(bPos.x - 60, bPos.y + 105)
 	
 func _on_add_layer_pressed():
 	var Hbox = HBoxContainer.new()
@@ -428,8 +428,16 @@ func _on_add_layer_pressed():
 	
 	%LayersList.add_child(Hbox)
 	
+	var Translate = Button.new()
+	Translate.text = "T"
+	
+	var Rotate = Button.new()
+	Rotate.text = "R"
+	
 	Hbox.add_child(LayerButton)
 	Hbox.add_child(VisibleButton)
+	Hbox.add_child(Translate)
+	Hbox.add_child(Rotate)
 	Hbox.add_child(RemoveButton)
 	
 	create_image()
@@ -505,24 +513,21 @@ func _on_brushes_item_selected(index):
 	match index:
 		0:
 			erasing = false
+			view_tool_active = false
 			_on_mask(false)
 			clouding = false
 			zoomIn =false
 			zoomOut = false
 		1:
 			erasing = true
+			view_tool_active = false
 			_on_mask(false)
 			clouding = false
 			zoomIn =false
 			zoomOut = false
 		2:
 			erasing = false
-			_on_mask(false)
-			clouding = false
-			zoomIn =false
-			zoomOut = false
-		3:
-			erasing = false
+			view_tool_active = false
 			_on_mask(true)
 			clouding = false
 			zoomIn =false
@@ -557,7 +562,7 @@ func _on_hand_pressed() -> void:
 	view_tool_active = true
 	clouding = false
 	zoomIn = false
-	zoomOut = true
+	zoomOut = false
 
 
 func _on_zoom_in_pressed() -> void:
@@ -575,3 +580,21 @@ func _on_zoom_out_pressed() -> void:
 	clouding = false
 	zoomIn = false
 	zoomOut = true
+
+
+func _on_mg_pressed() -> void:
+	# Define your default size here 
+	var default_size := Vector2(1000, 1000) 
+
+	# Iterate through each layer in the container
+	for layer in _layers_container.get_children():
+		if layer is Layer:
+			# Resize the layer's image 
+			layer.image.resize(default_size.x, default_size.y, Image.INTERPOLATE_BILINEAR)
+
+			# Update the layer to reflect the changes
+			layer.update()
+
+	# Optionally, reset the zoom and position of the LayersContainer 
+	_layers_container.scale = Vector2.ONE
+	_layers_container.position = Vector2.ZERO
