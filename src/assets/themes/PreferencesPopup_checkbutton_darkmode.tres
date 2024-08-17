@@ -1,7 +1,7 @@
 [gd_resource type="Theme" load_steps=8 format=3 uid="uid://7jpd5cf0v2l3"]
 
-[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="1_l1yw8"]
-[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/visibility_not_visible.png" id="2_3jl8q"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="1_l1yw8"]
+[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="2_3jl8q"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_jc7wp"]
 bg_color = Color(0.141176, 0.286275, 0.388235, 1)
