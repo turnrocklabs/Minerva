@@ -31,6 +31,9 @@ var zoomOut:bool = false
 
 var view_tool_active: bool = false
 var prev_mouse_position: Vector2
+var transfering:bool = false
+var layer_being_transfered: Layer = null  # Store the layer being transferred
+var active_transfer_button: Button = null  # Store the active butto
 
 var brush_size: int = 5:
 	set(value):
@@ -83,9 +86,12 @@ func _ready():
 	
 	var Translate = Button.new()
 	Translate.text = "T"
+	Translate.connect("pressed", self._transfer.bind(Hbox))
 	
 	var Rotate = Button.new()
 	Rotate.text = "R"
+	Rotate.connect("pressed", self._rotate.bind(Hbox))
+	
 	
 	
 	%LayersList.add_child(Hbox)
@@ -218,10 +224,16 @@ func setup(canvas_size: Vector2i, background_color: Color):
 
 func create_image():
 	var img = Image.create(1000, 1000, false, Image.FORMAT_RGBA8)
-	img.fill(Color(255,255,255,0))
-	#_draw_layer = _create_layer(img)
-	_background_images[_draw_layer.name] = img.duplicate()  # Store the initial background	
-	setup_from_created_image(img)
+	img.fill(Color(255, 255, 255, 0)) 
+	
+	# Create new layer and assign the new image
+	_draw_layer = _create_layer(img)
+	  
+	# Store the initial background image for the layer
+	_background_images[_draw_layer.name] = img.duplicate() 
+
+	   # This line is unnecessary and might be causing issues - remove it:
+	   # setup_from_created_image(img) 
 	
 func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
 	var layer = Layer.create(from, "Layer " + str(layer_Number)) 
@@ -274,7 +286,19 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
-	
+	if layer_being_transfered: 
+		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
+			var current_mouse_position = _layers_container.get_local_mouse_position()
+			layer_being_transfered.position = current_mouse_position - prev_mouse_position
+			return
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				prev_mouse_position = _layers_container.get_local_mouse_position() - layer_being_transfered.position 
+			else: 
+					layer_being_transfered = null 
+			return
+			
+			
 	if zoomIn or zoomOut:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			var zoom_factor = 1.1 if zoomIn else 0.9 
@@ -432,15 +456,18 @@ func _on_add_layer_pressed():
 	var RemoveButton = Button.new()
 	RemoveButton.connect("pressed", self.RemoveLayer.bind(Hbox, layer_Number))
 	
+	
 	RemoveButton.icon = preload("res://assets/icons/remove.svg")
 	
 	%LayersList.add_child(Hbox)
 	
 	var Translate = Button.new()
 	Translate.text = "T"
+	Translate.connect("pressed", self._transfer.bind(Hbox))
 	
 	var Rotate = Button.new()
 	Rotate.text = "R"
+	Rotate.connect("pressed", self._rotate.bind(Hbox))
 	
 	Hbox.add_child(LayerButton)
 	Hbox.add_child(VisibleButton)
@@ -610,3 +637,29 @@ func _on_mg_pressed() -> void:
 
 func _on_arrow_right_pressed() -> void:
 	pass
+	
+func _transfer(Hbox: HBoxContainer) -> void:
+	var hbox_index = %LayersList.get_children().find(Hbox)
+	var transfer_button = Hbox.get_child(2)
+
+	# Toggle Logic
+	if transfer_button == active_transfer_button: 
+		# Deactivate if the same button is pressed again
+		active_transfer_button.modulate = Color.WHITE
+		active_transfer_button = null
+		layer_being_transfered = null 
+	else:
+		# Deactivate the previous button
+		if active_transfer_button:
+			active_transfer_button.modulate = Color.WHITE
+
+		# Activate the new button
+		active_transfer_button = transfer_button
+		active_transfer_button.modulate = Color.LIME_GREEN
+		layer_being_transfered = _layers_container.get_child(hbox_index)
+		prev_mouse_position = _layers_container.get_local_mouse_position()
+		
+		
+func _rotate(Hbox:HBoxContainer) -> void:
+	var hbox_index = %LayersList.get_children().find(Hbox)
+	print("rotate")
