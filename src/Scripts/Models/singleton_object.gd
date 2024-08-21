@@ -112,12 +112,19 @@ var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
-# file to load the license aggreement and have it in memory all the time
-#var license_agreement_script: String
 
 func _ready():
-	#var file = FileAccess.open("res://license_agreement.md", FileAccess.READ)
-	#license_agreement_script = file.get_as_text()
+	var screen_size = DisplayServer.screen_get_size()
+	var dpi = DisplayServer.screen_get_dpi()
+	print("screen size: " + str(screen_size))
+	print("dpi: "+ str(dpi))
+	var new_scale: float = screen_size.y / 1080
+	#new_scale += -0.4
+	print("scale: " + str(new_scale))
+	if dpi > 140:
+		get_window().content_scale_factor = new_scale
+	
+	
 	
 	add_child(AtT)
 	add_child(undo)
@@ -129,7 +136,7 @@ func _ready():
 		return
 	
 	
-	var theme_enum = get_theme()
+	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
 		set_theme(theme_enum)
 	
@@ -280,21 +287,26 @@ func all_project_features_open() -> bool:
 enum theme {LIGHT_MODE, DARK_MODE}
 signal theme_changed(theme_enum)
 
-func get_theme() -> int:
+
+func get_theme_enum() -> int:
 	return config_file.get_value("theme", "theme_enum",0)
 
 
 func set_theme(themeID: int) -> void:
-	match themeID:
-		theme.LIGHT_MODE:
-			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
-			root_control.theme = light_theme
-			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
-		theme.DARK_MODE:
-			var dark_theme = ResourceLoader.load("res://assets/themes/blue_dark_mode.theme")
-			root_control.theme = dark_theme
-			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
-	theme_changed.emit(themeID)
+	if get_theme_enum() != themeID:
+		print("theme enum:" + str(themeID))
+		match themeID:
+			theme.LIGHT_MODE:
+				var _light_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/light_mode.theme")
+				var light_theme = ResourceLoader.load_threaded_get("res://assets/themes/light_mode.theme")
+				root_control.theme = light_theme
+				save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
+			theme.DARK_MODE:
+				var _dark_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/blue_dark_mode.theme")
+				var dark_theme = ResourceLoader.load_threaded_get("res://assets/themes/blue_dark_mode.theme")
+				root_control.theme = dark_theme
+				save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
+		theme_changed.emit(themeID)
 
 #endregion Theme change
 

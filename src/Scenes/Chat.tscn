@@ -4,9 +4,9 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_bjp7m"]
-[ext_resource type="Texture2D" uid="uid://8qaewgqcvy18" path="res://assets/generated/gears_icon_24-removebg-preview.png" id="5_igkcl"]
-[ext_resource type="Texture2D" uid="uid://dfai1lvbg10ka" path="res://assets/generated/search_icon_24_no_bg.png" id="6_5wjht"]
+[ext_resource type="Texture2D" uid="uid://jdgspalgxo3u" path="res://assets/icons/gear_icons/gears_icon_24_no_bg.png" id="6_u4707"]
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
+[ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="7_pery3"]
 [ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="8_tl5be"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="9_4ngla"]
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
@@ -22,7 +22,6 @@ key_label = 4194309
 events = [SubResource("InputEventKey_rh3fk")]
 
 [node name="Chats" type="Control"]
-custom_minimum_size = Vector2(540, 0)
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -175,12 +174,12 @@ size_flags_horizontal = 0
 [node name="btnChatSettings" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "AI Settings"
-icon = ExtResource("5_igkcl")
+icon = ExtResource("6_u4707")
 
 [node name="btnInspect" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Inspect Turn"
-icon = ExtResource("6_5wjht")
+icon = ExtResource("7_pery3")
 
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 visible = false

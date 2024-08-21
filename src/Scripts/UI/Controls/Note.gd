@@ -41,7 +41,7 @@ var memory_item: MemoryItem:
 				associate_editor(editor)
 
 func new_text_note():
-	%NoteTextBody.visible = true
+	%NoteTextBody.set_deferred("visible", true)#.visible = true
 	%ImageVBoxContainer.visible = false
 	%AudioHBoxContainer.visible = false
 	%ImageVBoxContainer.call_deferred("queue_free")
@@ -53,7 +53,6 @@ func new_image_note():
 	%ImageVBoxContainer.visible = true
 	%AudioHBoxContainer.visible = false
 	%NoteTextBody.visible = false
-	%EditButton.visible = false
 	%AudioHBoxContainer.call_deferred("queue_free")
 	%NoteTextBody.call_deferred("queue_free")
 	return self
@@ -97,7 +96,7 @@ func new_audio_note():
 func _ready():
 	# connecting signal for changing the dots texture when the main theme changes
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
-	change_modulate_for_texture(SingletonObject.get_theme())
+	change_modulate_for_texture(SingletonObject.get_theme_enum())
 	# var new_size: Vector2 = size * 0.15
 	# set_size(new_size)
 	label_node.text_changed.connect(
