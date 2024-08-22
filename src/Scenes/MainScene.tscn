@@ -64,7 +64,6 @@ unique_name_in_owner = true
 initial_position = 2
 size = Vector2i(200, 250)
 visible = false
-unresizable = true
 min_size = Vector2i(200, 250)
 script = ExtResource("3_w58y5")
 
@@ -102,6 +101,7 @@ clip_text = true
 unique_name_in_owner = true
 initial_position = 2
 visible = false
+unresizable = false
 
 [node name="NewThreadPopup" type="Window" parent="."]
 unique_name_in_owner = true
@@ -333,13 +333,29 @@ theme_override_constants/separation = 16
 
 [node name="EditorLabel" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 24
 text = "Editor"
 
+[node name="AddFileEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "create new text editor tab"
+icon = ExtResource("18_mitgl")
+
+[node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "create new graphics editor tab"
+icon = ExtResource("12_6jk4t")
+
+[node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
 [node name="ClearButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
-text = "Clear "
+size_flags_horizontal = 10
+text = "Clear"
 
 [node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
@@ -362,10 +378,12 @@ tooltip_text = "splits the editor in 2 horizontal panes"
 icon = SubResource("CanvasTexture_o30k1")
 
 [node name="VButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
-visible = false
 layout_mode = 2
 tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
+
+[node name="Control2" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
 
 [node name="vboxEditorMain" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer" node_paths=PackedStringArray("editor_pane")]
 layout_mode = 2
@@ -397,7 +415,7 @@ text = "Notes"
 [node name="DisableNotesButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 8
+size_flags_horizontal = 10
 tooltip_text = "Disable all notes in all current tabs"
 text = "Disable All"
 
@@ -464,7 +482,6 @@ size = Vector2i(420, 700)
 visible = false
 transient = true
 exclusive = true
-unresizable = true
 min_size = Vector2i(144, 0)
 script = ExtResource("3_w58y5")
 
@@ -727,6 +744,8 @@ layout_mode = 1
 [connection signal="id_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_id_pressed"]
 [connection signal="index_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_index_pressed"]
 [connection signal="id_pressed" from="VBoxRoot/HBoxContainer/menuMain/Help" to="." method="_on_help_id_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddFileEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_file_editor_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_graphics_editor_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/ClearButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_clear_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/UndoButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_undo_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/BackSpaceButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_back_space_button_pressed"]
