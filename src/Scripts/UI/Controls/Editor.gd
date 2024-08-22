@@ -43,7 +43,7 @@ static func create(type_: Type, file_ = null, name_ = null) -> Editor:
 	var editor = scene.instantiate()
 	editor.type = type_
 	if name_:
-		editor.name = name_
+		editor.tab_title = name_
 	if file_: 
 		editor.file = file_
 
@@ -130,7 +130,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 			return true
 	
 	if not file:
-		($FileDialog as FileDialog).title = "Save \"%s\" editor" % name
+		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
@@ -197,7 +197,6 @@ func _on_save_dialog_confirmed():
 	save_dialog.emit(DIALOG_RESULT.Save)
 
 
-
 func _on_close_dialog_custom_action(action: StringName):
 	if action == "close":
 		save_dialog.emit(DIALOG_RESULT.Close)
@@ -246,18 +245,18 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 	if Type.TEXT == type:
-		if name:
-			SingletonObject.NotesTab.add_note(name, code_edit.text)
-		elif file:
+		if file:
 			SingletonObject.NotesTab.add_note(get_file_name(file), code_edit.text)
+		elif tab_title:
+			SingletonObject.NotesTab.add_note( tab_title, code_edit.text)
 		else:
 			SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 		return
 	if Type.GRAPHICS == type:
-		if name:
-			SingletonObject.NotesTab.add_image_note(name, graphics_editor.image, "Sketch")
-		elif file:
+		if file:
 			SingletonObject.NotesTab.add_image_note(get_file_name(file), graphics_editor.image, "Sketch")
+		elif tab_title:
+			SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
 		else:
 			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 		return

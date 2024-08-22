@@ -181,3 +181,12 @@ func _on_undo_button_pressed():
 			current_tab.get_node("NoteEditor").undo_action()
 		else:
 			current_tab.undo_action()
+
+
+func _on_add_file_editor_pressed() -> void:
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.TEXT)
+
+
+func _on_add_graphics_editor_pressed() -> void:
+	SingletonObject.is_graph = true
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)

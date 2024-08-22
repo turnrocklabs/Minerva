@@ -119,11 +119,18 @@ func _ready():
 	print("screen size: " + str(screen_size))
 	print("dpi: "+ str(dpi))
 	var new_scale: float = screen_size.y / 1080
-	#new_scale += -0.4
+	
 	print("scale: " + str(new_scale))
 	if dpi > 140:
 		get_window().content_scale_factor = new_scale
+		print("dpi is above 140, new scale factor is now: " + str(new_scale))
 	
+	if screen_size.y > 1200:
+		get_window().content_scale_factor = 1.3
+		print("scale factor: 1.3")
+	if screen_size.y < 900:
+		get_window().content_scale_factor = 0.7
+		print("scale factor: 0.7")
 	
 	
 	add_child(AtT)
