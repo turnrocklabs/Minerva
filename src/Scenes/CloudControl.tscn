@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3 uid="uid://b1di2h7ew44a2"]
+[gd_scene load_steps=5 format=3 uid="uid://b1di2h7ew44a2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/CloudControl.gd" id="1_ha15r"]
 [ext_resource type="Texture2D" uid="uid://bwn1v2wcbaegc" path="res://assets/icons/resizer_se.svg" id="2_jl5my"]
 [ext_resource type="Texture2D" uid="uid://bfbaum4y6o8qn" path="res://assets/icons/resizer_nw.svg" id="3_xkjvb"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/BezierCurve.gd" id="4_63mbq"]
 
 [node name="CloudControl" type="ColorRect"]
 anchors_preset = 15
@@ -14,6 +15,18 @@ focus_mode = 2
 mouse_filter = 1
 color = Color(1, 1, 1, 0)
 script = ExtResource("1_ha15r")
+
+[node name="BezierCurve" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("4_63mbq")
+allow_gui_add = false
 
 [node name="LowerBottomResizer" type="TextureButton" parent="."]
 unique_name_in_owner = true

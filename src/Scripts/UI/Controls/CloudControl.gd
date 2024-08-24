@@ -7,6 +7,7 @@ const POINT_RADIUS: = 10
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
 @onready var _text_edit: TextEdit = %TextEdit
+@onready var _bezier_curve: BezierCurve = %BezierCurve
 
 ## Font used to display text
 var font: = ThemeDB.fallback_font
@@ -22,6 +23,7 @@ var editing: = true:
 		_text_edit.visible = editing
 		_lower_resizer.visible = editing
 		_upper_resizer.visible = editing
+		_bezier_curve.visible = editing
 
 
 ## There are two control nodes that are used for resizing the speech bubble react.[br]
@@ -59,10 +61,16 @@ class Tail:
 
 	func _init(control_: CloudControl) -> void:
 		control = control_
+	
+	func add_point(point) -> void:
+		points.append(point)
 
 	## Draws the final form of the tail.
 	func draw() -> void:
 		push_error("NotImplemented: method draw of object %s is not implemented" % get_script().resource_path.get_file())
+
+	func get_polygon() -> PackedVector2Array:
+		return get_points_vector_array()
 
 	## Draws the tail in the editing form.
 	func draw_editing() -> void:
@@ -112,6 +120,46 @@ class TriangleTail:
 			if points_[0] != points_[-1]: points_.append(points_[0])
 			control.draw_polyline(points_, Color.BLACK)
 
+class CurvedTriangleTail:
+	extends TriangleTail
+
+	func add_point(point):
+		super(point)
+		
+		var position = point if point is Vector2 else control.ellipse[point]
+		control._bezier_curve.create_point(position)
+	
+	func get_polygon():
+		var poly: = PackedVector2Array()
+
+		for p in control._bezier_curve.calculate_polygons():
+			poly.append_array(p)
+
+		return poly
+	
+	func draw():
+		var points_: Array[Vector2] = control._bezier_curve.points.map(func(p: BezierCurve.Point): return p.position)
+
+		control.draw_colored_polygon(points_, Color.WHITE)
+
+	func draw_editing() -> void:
+		var points_ = get_points_vector_array()
+
+		var bc_points: = control._bezier_curve.points
+
+		for i in range(points_.size()):
+			# TODO: control point should also move
+			bc_points[i].position = points_[i]
+			control._bezier_curve.queue_redraw()
+
+		for point in points_:
+			control.draw_circle(point, 10, Color.BLACK)
+			control.draw_circle(point, 10, Color.DARK_ORANGE, false, 3)
+
+		# if points_.size() >= 5:
+		# 	control.draw_polyline(control.get_bezier_curve(points_[0], points_[2], [points_[3], points_[4]], 100), Color.NAVAJO_WHITE)
+		# 	control.draw_polyline(control.get_bezier_curve(points_[1], points_[2], [points_[3], points_[4]], 100), Color.NAVAJO_WHITE)
+
 class BubbleTail:
 	extends Tail
 
@@ -141,7 +189,7 @@ class BubbleTail:
 
 # Request redraw in response to changes
 func _ready():
-	tail = TriangleTail.new(self)
+	tail = CurvedTriangleTail.new(self)
 	queue_redraw()
 
 
@@ -159,10 +207,15 @@ func _draw() -> void:
 	# Create a ellipse thats contained within the given rectangle
 	ellipse = create_ellipse(_bubble_rect)
 
-	draw_colored_polygon(Geometry2D.convex_hull(ellipse), Color.WHITE)
-	draw_polyline(ellipse, Color.BLACK, 7, true)
+	var polys := Geometry2D.merge_polygons(ellipse, tail.get_polygon())
 	
-	tail.draw()
+	for poly in polys:
+		draw_colored_polygon(Geometry2D.offset_polygon(poly, 3)[0], Color.BLACK)
+		draw_colored_polygon(poly, Color.WHITE)
+		
+	# draw_polyline(ellipse, Color.BLACK, 7, true)
+	
+	# tail.draw()
 
 	# Get the rectangle thats completly within the speech bubble ellipse
 	# and defines the area there text can be in
@@ -253,9 +306,9 @@ func _gui_input(event: InputEvent) -> void:
 				var closest_point = ellipse[idx]
 
 				if event.position.distance_to(closest_point) < 60:
-					tail.points.append(idx)
+					tail.add_point(idx)
 				else:
-					tail.points.append(event.position)
+					tail.add_point(event.position)
 
 			queue_redraw()
 			accept_event()
@@ -316,6 +369,26 @@ func create_ellipse(rect: Rect2, num_segments: int = 360) -> PackedVector2Array:
 	ellipse_points.append(ellipse_points[0])
 
 	return ellipse_points
+
+# Function to generate a Bézier curve with variable control points
+func get_bezier_curve(p1: Vector2, p2: Vector2, control_points: Array, steps: int) -> PackedVector2Array:
+	var bezier_curve = PackedVector2Array()
+	
+	for i in range(steps + 1):
+		var t = i / float(steps)
+		var current_points = [p1] + control_points + [p2]
+		
+		# De Casteljau's algorithm to recursively calculate the Bézier curve
+		while current_points.size() > 1:
+			var next_points = []
+			for j in range(current_points.size() - 1):
+				next_points.append(current_points[j].lerp(current_points[j + 1], t))
+			current_points = next_points
+		
+		bezier_curve.append(current_points[0])
+	
+	return bezier_curve
+
 
 ## Gets biggest possible rectangle thats completly contained withing the ellipse.[br]
 ## Ellipse is defined by the smallest rectange that containes it. 
