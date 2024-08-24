@@ -13,8 +13,11 @@ static func create(image_: Image, name_:String) -> Layer:
 
 
 func _ready():
-	stretch_mode = TextureRect.STRETCH_TILE
-	expand_mode = TextureRect.EXPAND_FIT_WIDTH
+	#comented for now need aditional testing to find if we still nedd this two lines of code
+	#for now it's bothering for inctiasing height of layers
+	 
+	#stretch_mode = TextureRect.STRETCH_TILE
+	#expand_mode = TextureRect.EXPAND_FIT_WIDTH
 	custom_minimum_size = image.get_size()
 	update()
 

@@ -110,7 +110,7 @@ func _ready():
 		#editing and drawing
 		toggle_masking(SingletonObject.is_masking)
 	layer_Number += 1
-	setup(Vector2i(1000, 1000), Color.WHITE)
+	setup(Vector2i(2000, 2000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
 	
@@ -164,7 +164,7 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 	return Vector2(target_width, target_height)
 	
 func setup_from_image(image_: Image):
-	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(1000, 800))
+	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(800, 800))
 	image_.resize(new_size.x, new_size.y)
 	for ch in _layers_container.get_children(true): 
 		ch.queue_free()
@@ -189,7 +189,7 @@ func setup_from_created_image(image_: Image):
 	var img = image_
 
 	# Resize the image to fit within the canvas boundaries
-	var new_size = _calculate_resized_dimensions(img.get_size(), Vector2(1000, 800))
+	var new_size = _calculate_resized_dimensions(img.get_size(), Vector2(800, 800))
 	img.resize(new_size.x, new_size.y)
 
 	# Create a new layer from the scratch image
@@ -208,7 +208,7 @@ func setup_from_created_image(image_: Image):
 	img = image_
 
 	# Resize the image to fit within the canvas boundaries
-	new_size = _calculate_resized_dimensions(img.get_size(), Vector2(1000, 800))
+	new_size = _calculate_resized_dimensions(img.get_size(), Vector2(800, 800))
 	img.resize(new_size.x, new_size.y)
 
 	# Create a new layer from the scratch image
@@ -225,8 +225,8 @@ func setup(canvas_size: Vector2i, background_color: Color):
 	img.fill(background_color)
 	setup_from_image(img)
 
-func create_image():
-	var img = Image.create(1000, 1000, false, Image.FORMAT_RGBA8)
+func create_image(vec:Vector2):
+	var img = Image.create(vec.x, vec.y, false, Image.FORMAT_RGBA8)
 	img.fill(Color(255, 255, 255, 0)) 
 	
 	# Create new layer and assign the new image
@@ -289,6 +289,20 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
+	# Early exit if view tool is active
+	if view_tool_active:
+		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
+			var current_mouse_position = event.position
+			var delta = current_mouse_position - prev_mouse_position
+			_layers_container.position += delta
+			prev_mouse_position = current_mouse_position
+			return
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				prev_mouse_position = event.position
+
+			return
+		
 	if _rotating:
 		var hbox_index = %LayersList.get_children().find(active_transfer_button.get_parent())
 		var layer = _layers_container.get_child(hbox_index)
@@ -458,7 +472,7 @@ func _on_add_layer_pressed():
 	Hbox.add_child(Rotate)
 	Hbox.add_child(RemoveButton)
 	
-	create_image()
+	create_image(Vector2(800,800))
 	
 	layer_Number += 1
 	
@@ -484,7 +498,7 @@ func RemoveLayer(Hbox:HBoxContainer, index:int):
 	# If there are no layers left, reset the editor
 	if layer_Number <= 0:
 		layer_Number = 0
-		create_image()
+		create_image(Vector2(800,800))
 		return # Nothing to select
 		
 	# Select the previous layer 
@@ -602,7 +616,7 @@ func _on_zoom_out_pressed() -> void:
 
 func _on_mg_pressed() -> void:
 	# Define your default size here 
-	var default_size := Vector2(1000, 1000) 
+	var default_size := Vector2(800, 800) 
 
 	# Iterate through each layer in the container
 	for layer in _layers_container.get_children():
@@ -618,8 +632,7 @@ func _on_mg_pressed() -> void:
 	_layers_container.position = Vector2.ZERO
 
 
-func _on_arrow_right_pressed() -> void:
-	pass
+
 	
 func _transfer(Hbox: HBoxContainer) -> void:
 	var hbox_index = %LayersList.get_children().find(Hbox)
@@ -663,3 +676,39 @@ func _rotate(Hbox: HBoxContainer) -> void:
 		active_transfer_button.modulate = Color.LIME_GREEN
 		_rotating = true
 		_rotation_pivot = _layers_container.get_local_mouse_position()
+		
+func _on_arrow_left_pressed() -> void:
+	_resize_layers(1.1, 0.0)  # Increase width by 10%, center horizontally
+
+func _on_arrow_right_pressed() -> void:
+	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
+
+func _on_arrow_top_pressed() -> void:
+	_resize_layers(1.1, 0.5, false) # Increase height by 10%, center vertically 
+
+func _on_arrow_bottom_pressed() -> void:
+	_resize_layers(1.1, 0.5, false) # Increase height by 10%, center vertically 
+
+func _resize_layers(size_factor: float, anchor: float, resize_width: bool = true) -> void:
+	for layer in _layers_container.get_children():
+		if layer is Layer:
+			var old_size = layer.image.get_size()
+			var new_size: Vector2
+
+			if resize_width:
+				new_size = Vector2i(old_size.x * size_factor, old_size.y)
+			else:
+				new_size = Vector2i(old_size.x, old_size.y * size_factor)
+
+			# Store the original content of the layer
+			var temp_image := Image.new()
+			temp_image.copy_from(layer.image)
+
+			# Resize the layer's image
+			layer.image.resize(new_size.x, new_size.y, Image.INTERPOLATE_BILINEAR)
+			layer.size = new_size
+
+			# Redraw the original content onto the resized image
+			layer.image.blit_rect(temp_image, Rect2(Vector2.ZERO, old_size), Vector2.ZERO)
+
+			layer.update()
