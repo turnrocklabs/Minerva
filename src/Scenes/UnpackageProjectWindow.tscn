@@ -9,6 +9,14 @@ initial_position = 2
 size = Vector2i(800, 600)
 script = ExtResource("1_f7ydb")
 
+[node name="Panel" type="Panel" parent="."]
+z_index = -10
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
 [node name="Dialog" type="AcceptDialog" parent="."]
 unique_name_in_owner = true
 

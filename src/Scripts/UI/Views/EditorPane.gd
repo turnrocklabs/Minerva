@@ -182,7 +182,7 @@ func unsaved_editors() -> Array[Editor]:
 
 
 func _copy_children_to(from: Node, to: Node):
-	for child in from.get_children(true):
+	for child in from.get_children():
 		var dup = child.duplicate(DUPLICATE_USE_INSTANTIATION)
 		
 		if dup is TabContainer:
@@ -190,7 +190,7 @@ func _copy_children_to(from: Node, to: Node):
 			dup.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 			dup.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(dup))
 		
-		to.add_child(dup)
+		to.call_deferred("add_child", dup)#.add_child(dup)
 
 func toggle_horizontal_split() -> void:
 	BottomControl.visible = false
