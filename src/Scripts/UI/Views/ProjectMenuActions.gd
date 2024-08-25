@@ -200,7 +200,7 @@ func open_project_given_path(project_path: String) -> int:
 	var proj_file = FileAccess.open(project_path, FileAccess.READ)
 	
 	if proj_file == null:
-		push_error("Couldn't parse the proj	ect file at %s. Error code: %s" % [project_path, FileAccess.get_open_error()])
+		push_error("Couldn't parse the project file at %s. Error code: %s" % [project_path, FileAccess.get_open_error()])
 		return 0
 	
 	var json = JSON.parse_string(proj_file.get_as_text())
