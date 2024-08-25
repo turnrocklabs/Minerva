@@ -357,3 +357,7 @@ func _on_help_id_pressed(id: int) -> void:
 			call_deferred("add_child", license_scene_inst)
 
 #endregion help menu
+
+
+func _on_save_open_editor_tabs_button_pressed() -> void:
+	SingletonObject.SaveOpenEditorTabs.emit()

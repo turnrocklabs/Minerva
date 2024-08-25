@@ -28,7 +28,8 @@ var memory_item: MemoryItem:
 		if memory_item.Type == SingletonObject.note_type.TEXT:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
-			set_note_image(value.MemoryImage)
+			if value.MemoryImage:
+				set_note_image(value.MemoryImage)
 			image_caption_line_edit.text = value.ImageCaption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.Audio
@@ -41,7 +42,7 @@ var memory_item: MemoryItem:
 				associate_editor(editor)
 
 func new_text_note():
-	%NoteTextBody.visible = true
+	%NoteTextBody.set_deferred("visible", true)#.visible = true
 	%ImageVBoxContainer.visible = false
 	%AudioHBoxContainer.visible = false
 	%ImageVBoxContainer.call_deferred("queue_free")
@@ -53,7 +54,6 @@ func new_image_note():
 	%ImageVBoxContainer.visible = true
 	%AudioHBoxContainer.visible = false
 	%NoteTextBody.visible = false
-	%EditButton.visible = false
 	%AudioHBoxContainer.call_deferred("queue_free")
 	%NoteTextBody.call_deferred("queue_free")
 	return self
@@ -62,6 +62,7 @@ func new_image_note():
 # can be resized and add another paremeter to place the 200 constant
 #  this method resizes the image so the texture rec doesn't render images at full res
 func downscale_image(image: Image) -> Image:
+	if image == null: return
 	var image_size = image.get_size()
 	if image_size.y > 200:
 		var image_ratio = image_size.y/ 200.0
@@ -74,6 +75,7 @@ func downscale_image(image: Image) -> Image:
 # set the image of the note to the given image
 func set_note_image(image: Image) -> void:
 	# create a copy of a image so we don't downscale the original
+	if image == null: return
 	downscaled_image = Image.new()
 	downscaled_image.copy_from(image)
 	
@@ -97,7 +99,7 @@ func new_audio_note():
 func _ready():
 	# connecting signal for changing the dots texture when the main theme changes
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
-	change_modulate_for_texture(SingletonObject.get_theme())
+	change_modulate_for_texture(SingletonObject.get_theme_enum())
 	# var new_size: Vector2 = size * 0.15
 	# set_size(new_size)
 	label_node.text_changed.connect(

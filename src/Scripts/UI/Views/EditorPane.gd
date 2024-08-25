@@ -129,17 +129,24 @@ func add(type: Editor.Type, file = null, name_ = null) -> Editor:
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
 	
 	if name_: 
-		Tabs.set_tab_title(Tabs.current_tab, editor_name_to_use(name_))
+		var tab_name = editor_name_to_use(name_)
+		Tabs.set_tab_title(Tabs.current_tab, tab_name)
+		editor_node.tab_title = tab_name
 	elif file:
-		Tabs.set_tab_title(Tabs.current_tab, editor_name_to_use(file.get_file()))
+		var tab_name = editor_name_to_use(file.get_file())
+		Tabs.set_tab_title(Tabs.current_tab, tab_name)
+		editor_node.tab_title = tab_name
 	else:
 		match type:
 			Editor.Type.TEXT:
-				Tabs.set_tab_title(Tabs.current_tab, "tab " + str(Tabs.get_tab_count() ))
-				#editor_node.name = "tab " + str(Tabs.get_tab_count() + 1)
+				var tab_name = "tab " + str(Tabs.get_tab_count() )
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+				
 			Editor.Type.GRAPHICS:
-				Tabs.set_tab_title(Tabs.current_tab, "graphics " + str(Tabs.get_tab_count() ))
-				#editor_node.name = "Graphics " + str(Tabs.get_tab_count() + 1)
+				var tab_name = "graphics " + str(Tabs.get_tab_count() )
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
 	
 	return editor_node
 
@@ -163,13 +170,6 @@ func editor_name_to_use(proposed_name: String) -> String:
 		return proposed_name + "(" + str(Tabs.get_tab_count() + 1) + ")"
 
 
-#func get_file_name(path: String) -> String:
-	#if path.length() <= 1:
-		#return path
-	#var split_path = path.split("/")
-	#return split_path[split_path.size() -1].split(".")[0]
-
-
 func unsaved_editors() -> Array[Editor]:
 	var editors: Array[Editor] = []
 	for child in self.Tabs.get_children():
@@ -182,7 +182,7 @@ func unsaved_editors() -> Array[Editor]:
 
 
 func _copy_children_to(from: Node, to: Node):
-	for child in from.get_children(true):
+	for child in from.get_children():
 		var dup = child.duplicate(DUPLICATE_USE_INSTANTIATION)
 		
 		if dup is TabContainer:
@@ -190,7 +190,7 @@ func _copy_children_to(from: Node, to: Node):
 			dup.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 			dup.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(dup))
 		
-		to.add_child(dup)
+		to.call_deferred("add_child", dup)#.add_child(dup)
 
 func toggle_horizontal_split() -> void:
 	BottomControl.visible = false

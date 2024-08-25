@@ -28,7 +28,7 @@ filters = PackedStringArray("*.minproj")
 [node name="fdgSaveAs" type="FileDialog" parent="."]
 unique_name_in_owner = true
 title = "Save the project"
-size = Vector2i(454, 175)
+size = Vector2i(454, 180)
 access = 2
 filters = PackedStringArray("*.minproj")
 
