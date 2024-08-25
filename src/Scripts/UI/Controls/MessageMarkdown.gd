@@ -175,7 +175,11 @@ func _on_clip_button_pressed():
 
 func _on_note_button_pressed():
 	if history_item.Images.size() > 0:
-		SingletonObject.NotesTab.add_image_note("Image note", history_item.Images[0], history_item.Images[0].get_meta("caption", ""))
+		var caption_title: String = history_item.Images[0].get_meta("caption", "")
+		if caption_title.length() > 15:
+			caption_title = caption_title.substr(0, 15) + "..."
+		
+		SingletonObject.NotesTab.add_image_note(caption_title, history_item.Images[0], history_item.Images[0].get_meta("caption", ""))
 	else:
 		SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text)
 	SingletonObject.main_ui.set_notes_pane_visible(true)
