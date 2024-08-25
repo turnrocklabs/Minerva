@@ -21,6 +21,14 @@ icon_ignore_false = ExtResource("2_ayi6r")
 directory_icon = ExtResource("2_wnlyi")
 file_icon = ExtResource("3_kmt8e")
 
+[node name="Panel" type="Panel" parent="."]
+z_index = -10
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
 [node name="Dialog" type="AcceptDialog" parent="."]
 title = "Success"
 size = Vector2i(300, 100)
