@@ -289,6 +289,9 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
+	if event is InputEventMouseMotion and drawing:
+		print("Pressure: ", event.pressure) # Debug output
+		
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -303,7 +306,7 @@ func _gui_input(event: InputEvent):
 
 			return
 		
-	if _rotating:
+	if _rotating and not null:
 		var hbox_index = %LayersList.get_children().find(active_transfer_button.get_parent())
 		var layer = _layers_container.get_child(hbox_index)
 
@@ -495,6 +498,14 @@ func RemoveLayer(Hbox:HBoxContainer, index:int):
 	# Synchronize undo history to ensure consistency
 	layer_undo_histories.erase(layer_to_remove.name) 
 	
+	erasing = false
+	view_tool_active = false
+	_on_mask(false)
+	clouding = false
+	zoomIn =false
+	zoomOut = false
+	_rotating = false
+	
 	# If there are no layers left, reset the editor
 	if layer_Number <= 0:
 		layer_Number = 0
@@ -647,7 +658,10 @@ func _transfer(Hbox: HBoxContainer) -> void:
 	else:
 		# Deactivate the previous button
 		if active_transfer_button:
-			active_transfer_button.modulate = Color.WHITE
+			# Check if active_transfer_button is still a valid node
+			if is_instance_valid(active_transfer_button): 
+				active_transfer_button.modulate = Color.WHITE
+			active_transfer_button = null
 
 		# Activate the new button
 		active_transfer_button = transfer_button
@@ -669,7 +683,10 @@ func _rotate(Hbox: HBoxContainer) -> void:
 	else:
 		# Deactivate the previous button
 		if active_transfer_button:
-			active_transfer_button.modulate = Color.WHITE
+			# Check if active_transfer_button is still a valid node
+			if is_instance_valid(active_transfer_button): 
+				active_transfer_button.modulate = Color.WHITE
+			active_transfer_button = null
 
 		# Activate the new button
 		active_transfer_button = rotate_button
