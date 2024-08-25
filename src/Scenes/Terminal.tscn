@@ -44,8 +44,13 @@ caret_blink = true
 
 [node name="Button" type="Button" parent="ScrollContainer/v/h"]
 layout_mode = 2
+tooltip_text = "button for executing the typed command"
+focus_mode = 0
 text = "Enter"
 flat = true
+
+[node name="Control" type="Control" parent="ScrollContainer/v/h"]
+layout_mode = 2
 
 [connection signal="gui_input" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_gui_input"]
 [connection signal="text_submitted" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_text_submitted"]
