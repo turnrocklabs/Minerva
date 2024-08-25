@@ -677,19 +677,19 @@ func _rotate(Hbox: HBoxContainer) -> void:
 		_rotating = true
 		_rotation_pivot = _layers_container.get_local_mouse_position()
 		
-func _on_arrow_left_pressed() -> void:
-	_resize_layers(1.1, 0.0)  # Increase width by 10%, center horizontally
+func _on_arrowleft_pressed() -> void:
+	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
 
 func _on_arrow_right_pressed() -> void:
 	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
 
 func _on_arrow_top_pressed() -> void:
-	_resize_layers(1.1, 0.5, false) # Increase height by 10%, center vertically 
+	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
 
 func _on_arrow_bottom_pressed() -> void:
-	_resize_layers(1.1, 0.5, false) # Increase height by 10%, center vertically 
+	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
 
-func _resize_layers(size_factor: float, anchor: float, resize_width: bool = true) -> void:
+func _resize_layers(size_factor: float, resize_width: bool = true) -> void:
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			var old_size = layer.image.get_size()
@@ -703,12 +703,11 @@ func _resize_layers(size_factor: float, anchor: float, resize_width: bool = true
 			# Store the original content of the layer
 			var temp_image := Image.new()
 			temp_image.copy_from(layer.image)
-
 			# Resize the layer's image
 			layer.image.resize(new_size.x, new_size.y, Image.INTERPOLATE_BILINEAR)
 			layer.size = new_size
 
 			# Redraw the original content onto the resized image
 			layer.image.blit_rect(temp_image, Rect2(Vector2.ZERO, old_size), Vector2.ZERO)
-
 			layer.update()
+#aaa
