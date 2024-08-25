@@ -4,10 +4,19 @@ extends Control
 ## Radius of circles visualizing points in draw mode
 const POINT_RADIUS: = 10
 
+enum Type {
+	ELLIPSE,
+	CLOUD,
+	RECTANGLE,
+}
+
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
 @onready var _text_edit: TextEdit = %TextEdit
 @onready var _bezier_curve: BezierCurve = %BezierCurve
+
+
+var type: = Type.ELLIPSE
 
 ## Font used to display text
 var font: = ThemeDB.fallback_font
@@ -38,13 +47,40 @@ var tail: Tail
 var _bubble_rect: Rect2
 
 ## Polygon that defines the speech bubble
-var ellipse: PackedVector2Array
+var bubble_poly: PackedVector2Array
 
 
 func set_bounding_rect(rect: Rect2) -> void:
 	_upper_resizer.position = rect.position
 	_lower_resizer.position = rect.end
 	queue_redraw()
+
+# region Tails
+
+func _create_tail() -> PackedVector2Array:
+
+	# Take the resizer control positions to create the rectange that will contain the speech bubble
+	var rect_start: = _upper_resizer.position + _upper_resizer.pivot_offset
+	var rect_size: = _lower_resizer.position + _lower_resizer.pivot_offset - rect_start
+
+	_bubble_rect = Rect2(rect_start, rect_size)
+
+	if type == Type.ELLIPSE:
+			return create_ellipse(_bubble_rect)
+	elif type == Type.CLOUD:
+			return cloud_bubble(_bubble_rect)
+	elif type == Type.RECTANGLE:
+			return PackedVector2Array([
+				_bubble_rect.position,
+				_bubble_rect.position + Vector2(0, _bubble_rect.size.y),
+				_bubble_rect.end,
+				_bubble_rect.position + Vector2(_bubble_rect.size.x, 0),
+			])
+	
+	else:
+		push_error("Speech Bubble of type %s has no implementation inside the _create_tail method." % type)
+
+	return PackedVector2Array()
 
 class Tail:
 	## Base class for all Tail types
@@ -77,7 +113,7 @@ class Tail:
 		push_error("NotImplemented: method draw_editing of object %s is not implemented" % get_script().resource_path.get_file())
 
 	## Returns [memeber Tail.points] where Vector2's are untouched
-	## and integers are convertes to Vector2 in the context of the [member CloudControl.ellipse].
+	## and integers are convertes to Vector2 in the context of the [member CloudControl.bubble_poly].
 	func get_points_vector_array() -> PackedVector2Array:
 		var points_: = PackedVector2Array()
 		
@@ -86,7 +122,7 @@ class Tail:
 				points_.append(p)
 			
 			elif p is int:
-				points_.append(control.ellipse[p])
+				points_.append(control.bubble_poly[p])
 			
 			else:
 				push_error("Unexpected type %s.", type_string(p))
@@ -126,7 +162,7 @@ class CurvedTriangleTail:
 	func add_point(point):
 		super(point)
 		
-		var position = point if point is Vector2 else control.ellipse[point]
+		var position = point if point is Vector2 else control.bubble_poly[point]
 		control._bezier_curve.create_point(position)
 	
 	func get_polygon():
@@ -185,7 +221,7 @@ class BubbleTail:
 		if points_.size() >= 2:
 			control.draw_polyline(points_, Color.GREEN_YELLOW)
 
-
+# endregion
 
 # Request redraw in response to changes
 func _ready():
@@ -197,17 +233,11 @@ func _draw() -> void:
 	if editing:
 		_draw_editing()
 		return
-	
-	# Take the resizer control positions to create the rectange that will contain the speech bubble
-	var rect_start: = _upper_resizer.position + _upper_resizer.pivot_offset
-	var rect_size: = _lower_resizer.position + _lower_resizer.pivot_offset - rect_start
-
-	_bubble_rect = Rect2(rect_start, rect_size)
 
 	# Create a ellipse thats contained within the given rectangle
-	ellipse = create_ellipse(_bubble_rect)
+	bubble_poly = _create_tail()
 
-	var polys := Geometry2D.merge_polygons(ellipse, tail.get_polygon())
+	var polys := Geometry2D.merge_polygons(bubble_poly, tail.get_polygon())
 	
 	for poly in polys:
 		draw_colored_polygon(Geometry2D.offset_polygon(poly, 3)[0], Color.BLACK)
@@ -236,14 +266,10 @@ func _draw() -> void:
 
 
 func _draw_editing() -> void:
-	var rect_start: = _upper_resizer.position + _upper_resizer.pivot_offset
-	var rect_size: = _lower_resizer.position + _lower_resizer.pivot_offset - rect_start
-	
-	_bubble_rect = Rect2(rect_start, rect_size)
+	bubble_poly = _create_tail()
 
-	ellipse = create_ellipse(_bubble_rect)
-
-	draw_polyline(ellipse, Color.BLACK, 1)
+	# what type of bubble
+	draw_polyline(bubble_poly, Color.BLACK, 1)
 
 	tail.draw_editing()
 
@@ -261,13 +287,15 @@ func _draw_editing() -> void:
 ## will become attached to it, and add a int instead of fixed Vector2 position.
 func _draw_editing_tail() -> void:
 	# Get the mouse position relative to the CloudControl node
-	var local_mouse_pos = get_local_mouse_position()  
+	var local_mouse_pos = get_local_mouse_position()
 	
-	var closest_point := ellipse[get_closest_ellipse_line(local_mouse_pos)]
+	var closest_point := bubble_poly[get_closest_ellipse_line(local_mouse_pos)]
 	if local_mouse_pos.distance_to(closest_point) < 60:
 		draw_circle(closest_point, 4, Color.DEEP_PINK)
 	else:
-		draw_circle(local_mouse_pos, 4, Color.DEEP_PINK) 
+		draw_circle(local_mouse_pos, 4, Color.DEEP_PINK)
+
+
 # region Input Handling
 
 ## Index of point inside the [member Tail.points] that the user is currently dragging
@@ -303,7 +331,7 @@ func _gui_input(event: InputEvent) -> void:
 				# var local_ev: = make_input_local(event)
 				var idx = get_closest_ellipse_line(event.position)
 
-				var closest_point = ellipse[idx]
+				var closest_point = bubble_poly[idx]
 
 				if event.position.distance_to(closest_point) < 60:
 					tail.add_point(idx)
@@ -323,7 +351,7 @@ func _gui_input(event: InputEvent) -> void:
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _drag_point_idx != -1:
 			var idx = get_closest_ellipse_line(event.position)
 
-			var closest_point = ellipse[idx]
+			var closest_point = bubble_poly[idx]
 
 			if event.position.distance_to(closest_point) < 60:
 				tail.points[_drag_point_idx] = idx
@@ -350,6 +378,43 @@ func _on_upper_left_resizer_button_down() -> void:
 
 # endregion
 
+
+# region Speech Bubble
+
+func cloud_bubble(rect: Rect2) -> PackedVector2Array:
+	var ellipse_poly: = create_ellipse(rect)
+
+	var cloud: = ellipse_poly.duplicate()
+
+	var circle_radius: = 50
+	
+	var last_point: = -1
+	for i in ellipse_poly.size():
+		var point: = ellipse_poly[i]
+
+		if last_point == -1:
+			var circle: = create_circle(point, circle_radius)
+			cloud = Geometry2D.merge_polygons(cloud, circle).front()
+			last_point = i
+			continue
+		
+		elif ellipse_poly[last_point].distance_to(point) > circle_radius * 0.8:
+			var prev_point: = ellipse_poly[last_point-1]
+			var circle: = create_circle(prev_point, circle_radius)
+			cloud = Geometry2D.merge_polygons(cloud, circle).front()
+			last_point = i
+			continue
+		
+		elif i == ellipse_poly.size()-1:
+			if point.distance_squared_to(ellipse_poly[0]) > circle_radius * 0.8:
+				var circle: = create_circle(ellipse_poly[0], circle_radius)
+				cloud = Geometry2D.merge_polygons(cloud, circle).front()
+
+	return cloud
+
+# endregion
+
+
 # Function to create an ellipse inside a rectangle defined by Rect2
 func create_ellipse(rect: Rect2, num_segments: int = 360) -> PackedVector2Array:
 	var ellipse_points = PackedVector2Array()
@@ -369,6 +434,17 @@ func create_ellipse(rect: Rect2, num_segments: int = 360) -> PackedVector2Array:
 	ellipse_points.append(ellipse_points[0])
 
 	return ellipse_points
+
+func create_circle(center: Vector2, radius: float, resolution: int = 32) -> PackedVector2Array:
+	var circle: = PackedVector2Array()
+
+	for i in range(resolution):
+		var angle = TAU * i / resolution # TAU is 2π
+		var x = radius * cos(angle)
+		var y = radius * sin(angle)
+		circle.append(center + Vector2(x, y))
+
+	return circle
 
 # Function to generate a Bézier curve with variable control points
 func get_bezier_curve(p1: Vector2, p2: Vector2, control_points: Array, steps: int) -> PackedVector2Array:
@@ -446,15 +522,15 @@ func get_rectangles_in_ellipse(rect: Rect2, num_slices: int = 4) -> Array:
 
 ## Given the [parameter mouse_position] returnes the closest point to it on the ellipse.
 func get_closest_ellipse_line(mouse_position: Vector2) -> int:
-	if ellipse.is_empty(): return -1
+	if bubble_poly.is_empty(): return -1
 
 	var idx = -1
 
-	for i in ellipse.size():
-		var a = ellipse[i]
+	for i in bubble_poly.size():
+		var a = bubble_poly[i]
 		# var b = ellipse[i+1]
 
-		if idx == -1 or mouse_position.distance_squared_to(a) < mouse_position.distance_squared_to(ellipse[idx]):
+		if idx == -1 or mouse_position.distance_squared_to(a) < mouse_position.distance_squared_to(bubble_poly[idx]):
 			idx = i
 
 	return idx
