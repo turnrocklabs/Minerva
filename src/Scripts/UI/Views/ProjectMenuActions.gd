@@ -127,10 +127,12 @@ func deserialize_project(data: Dictionary):
 
 	# We need to cast Array to Array[String] because deserialize expects that type
 	#var editor_files: Array[String] = []
+	
 	#editor_files.assign(data.get("Editors", []))
 	#SingletonObject.editor_container.deserialize(editor_files)
-	
-	var editor_nodes: Array = EditorContainer.deserialize(data.get("Editors"))
+	var editor_nodes: Array = []
+	if data.get("Editors"):
+		editor_nodes = EditorContainer.deserialize(data.get("Editors", []))
 	for editor in editor_nodes:
 		SingletonObject.editor_pane.Tabs.add_child(editor)
 		var tab_idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
@@ -173,6 +175,7 @@ func _ready():
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)
+	SingletonObject.SaveOpenEditorTabs.connect(save_editorpanes)
 
 
 func _on_fdg_save_as_file_selected(path):
@@ -236,7 +239,9 @@ func save_editorpanes():
 		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 		item_list.clear()
 		for editor in unsaved_editors:
-			var item_idx = item_list.add_item(editor.name)
+			var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
+			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(indx)
+			var item_idx = item_list.add_item(tab_title)
 			item_list.set_item_metadata(item_idx, editor)
 		
 		%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0

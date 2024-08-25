@@ -42,7 +42,7 @@ static func create(code_text: String, syntax: String = "Plain Text") -> CodeMark
 
 func _on_replace_all_pressed():
 	# Get the reference to the EditorPane
-	var ep: EditorPane = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane"
+	var ep: EditorPane =  SingletonObject.editor_pane
 	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
 
 	print("Replacing all text in the text editor.")
@@ -58,7 +58,7 @@ func _on_replace_all_pressed():
 	if ep.Tabs.get_tab_control(current_tab) is Editor:
 		var editor = ep.Tabs.get_tab_control(current_tab)
 		if editor.type != Editor.Type.GRAPHICS:
-			editor.name = %SyntaxLabel.text
+			ep.Tabs.set_tab_title(current_tab,  %SyntaxLabel.text)
 			var code_edit_node = editor.get_node("%CodeEdit")
 			if code_edit_node:
 				code_edit_node.text = text_without_tags

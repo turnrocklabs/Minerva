@@ -244,6 +244,7 @@ signal PackageProject
 signal UnpackageProject
 signal CloseProject
 signal RedrawAll
+signal SaveOpenEditorTabs
 
 var saved_state = true
 

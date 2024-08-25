@@ -28,7 +28,8 @@ var memory_item: MemoryItem:
 		if memory_item.Type == SingletonObject.note_type.TEXT:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
-			set_note_image(value.MemoryImage)
+			if value.MemoryImage:
+				set_note_image(value.MemoryImage)
 			image_caption_line_edit.text = value.ImageCaption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.Audio
@@ -61,6 +62,7 @@ func new_image_note():
 # can be resized and add another paremeter to place the 200 constant
 #  this method resizes the image so the texture rec doesn't render images at full res
 func downscale_image(image: Image) -> Image:
+	if image == null: return
 	var image_size = image.get_size()
 	if image_size.y > 200:
 		var image_ratio = image_size.y/ 200.0
@@ -73,6 +75,7 @@ func downscale_image(image: Image) -> Image:
 # set the image of the note to the given image
 func set_note_image(image: Image) -> void:
 	# create a copy of a image so we don't downscale the original
+	if image == null: return
 	downscaled_image = Image.new()
 	downscaled_image.copy_from(image)
 	
