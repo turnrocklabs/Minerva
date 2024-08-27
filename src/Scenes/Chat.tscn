@@ -13,6 +13,7 @@
 [ext_resource type="PackedScene" uid="uid://celpfkr7c745u" path="res://Scenes/ProviderOptionButton.tscn" id="9_xd60x"]
 
 [sub_resource type="InputEventKey" id="InputEventKey_rh3fk"]
+ctrl_pressed = true
 pressed = true
 keycode = 4194309
 physical_keycode = 4194309
