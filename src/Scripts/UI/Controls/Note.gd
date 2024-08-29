@@ -41,6 +41,8 @@ var memory_item: MemoryItem:
 			if editor.has_meta("associated_object") and editor.get_meta("associated_object") == memory_item:
 				associate_editor(editor)
 
+#region New notes methods
+
 func new_text_note():
 	%NoteTextBody.set_deferred("visible", true)#.visible = true
 	%ImageVBoxContainer.visible = false
@@ -57,6 +59,18 @@ func new_image_note():
 	%AudioHBoxContainer.call_deferred("queue_free")
 	%NoteTextBody.call_deferred("queue_free")
 	return self
+
+
+func new_audio_note():
+	%AudioHBoxContainer.visible = true
+	%NoteTextBody.visible = false
+	%EditButton.visible = false
+	%ImageVBoxContainer.visible = false
+	%NoteTextBody.call_deferred("queue_free")
+	%ImageVBoxContainer.call_deferred("queue_free")
+	return self
+
+#endregion New notes methods
 
 # FIXME maybe we could move this function to Singleton so all images 
 # can be resized and add another paremeter to place the 200 constant
@@ -85,15 +99,6 @@ func set_note_image(image: Image) -> void:
 	image_texture.set_image(downscaled_image)
 	note_image.texture = image_texture
 
-
-func new_audio_note():
-	%AudioHBoxContainer.visible = true
-	%NoteTextBody.visible = false
-	%EditButton.visible = false
-	%ImageVBoxContainer.visible = false
-	%NoteTextBody.call_deferred("queue_free")
-	%ImageVBoxContainer.call_deferred("queue_free")
-	return self
 
 
 func _ready():
@@ -125,9 +130,10 @@ func _to_string():
 # if yes that means we were dragging the note above this note
 # but if the mouse is not above this note anymore, hide the separators
 func _process(_delta):
-	if memory_item.Type == SingletonObject.note_type.AUDIO:
-		if audio_stream_player.is_playing():
-			update_progress_bar()
+	if memory_item:
+		if memory_item.Type == SingletonObject.note_type.AUDIO:
+			if audio_stream_player.is_playing():
+				update_progress_bar()
 	
 	if not _upper_separator.visible and not _lower_separator.visible: return
 	
