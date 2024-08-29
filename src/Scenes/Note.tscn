@@ -85,7 +85,6 @@ mouse_filter = 1
 
 [node name="NoteTextBody" type="RichTextLabel" parent="PanelContainer/v"]
 unique_name_in_owner = true
-visible = false
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 focus_mode = 2
@@ -125,6 +124,7 @@ caret_blink = true
 
 [node name="AudioHBoxContainer" type="HBoxContainer" parent="PanelContainer/v"]
 unique_name_in_owner = true
+visible = false
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 size_flags_vertical = 4
