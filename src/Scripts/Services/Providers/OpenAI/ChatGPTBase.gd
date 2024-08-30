@@ -2,6 +2,12 @@ class_name ChatGPTBase
 extends BaseProvider
 
 
+# this params are only used in chatGPT
+var temperature: float = 1
+var topP: float = 1
+var frecuencyPenalty: float = 0
+var presencePenalty: float = 0
+
 # Change the `model_name` and `short_name` in _ready function
 
 func _init():

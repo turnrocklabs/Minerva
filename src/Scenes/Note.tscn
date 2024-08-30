@@ -7,7 +7,7 @@
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="4_vm57c"]
 [ext_resource type="Texture2D" uid="uid://bi2d1wriixcyu" path="res://assets/icons/play_icons/play-24.png" id="6_5up1e"]
 [ext_resource type="Texture2D" uid="uid://cb0sgp25gcypd" path="res://assets/icons/pause_icons/pause-24.png" id="7_05yub"]
-[ext_resource type="Texture2D" uid="uid://bmuiehgqdu6ac" path="res://assets/icons/stop-circled-24.png" id="8_xj7sk"]
+[ext_resource type="Texture2D" uid="uid://bat0uh67ipveo" path="res://assets/icons/stop_icons/stop_icon_24.png" id="8_8hl8j"]
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_fc11w"]
 color = Color(0.164706, 0.345098, 0.831373, 1)
@@ -124,7 +124,6 @@ caret_blink = true
 
 [node name="AudioHBoxContainer" type="HBoxContainer" parent="PanelContainer/v"]
 unique_name_in_owner = true
-visible = false
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 size_flags_vertical = 4
@@ -156,7 +155,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 focus_mode = 1
-icon = ExtResource("8_xj7sk")
+icon = ExtResource("8_8hl8j")
 flat = true
 
 [node name="Label" type="Label" parent="PanelContainer/v/AudioHBoxContainer"]

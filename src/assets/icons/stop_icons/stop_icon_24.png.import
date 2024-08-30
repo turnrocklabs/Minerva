@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://4k4lyjarsreb"
-path="res://.godot/imported/stop-circled-50.png-8eab6d807495a89c666589e8f01f784f.ctex"
+uid="uid://bat0uh67ipveo"
+path="res://.godot/imported/stop_icon_24.png-717cf4da0a63d342d65c2480c3a2a323.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/stop-circled-50.png"
-dest_files=["res://.godot/imported/stop-circled-50.png-8eab6d807495a89c666589e8f01f784f.ctex"]
+source_file="res://assets/icons/stop_icons/stop_icon_24.png"
+dest_files=["res://.godot/imported/stop_icon_24.png-717cf4da0a63d342d65c2480c3a2a323.ctex"]
 
 [params]
 

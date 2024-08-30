@@ -57,7 +57,6 @@ size_flags_horizontal = 3
 text = "Temperature"
 
 [node name="TempHSlider" type="HSlider" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
-unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 size_flags_horizontal = 10
@@ -82,7 +81,6 @@ size_flags_horizontal = 3
 text = "Top P:"
 
 [node name="TopPHSlider" type="HSlider" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
-unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 size_flags_horizontal = 10
@@ -108,7 +106,6 @@ size_flags_horizontal = 3
 text = "Frecuency Penalty:"
 
 [node name="FreqHSlider" type="HSlider" parent="MarginContainer/MainVBox/FrecuencyBoxContainer"]
-unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 size_flags_horizontal = 10
@@ -134,7 +131,6 @@ size_flags_horizontal = 3
 text = "Presence Penalty:"
 
 [node name="PresenceHSlider" type="HSlider" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
-unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 size_flags_horizontal = 10
