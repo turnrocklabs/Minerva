@@ -631,29 +631,29 @@ func _rotate(Hbox: HBoxContainer) -> void:
 
 func _scale(Hbox: HBoxContainer) -> void:
 	var hbox_index = %LayersList.get_children().find(Hbox)
-	var scale_button = Hbox.get_child(4) # Assuming the Scale button is the 5th child
+	var scale_button = Hbox.get_child(4) 
 
-	# Toggle Logic
+	# Toggle visibility of child nodes in the layer FIRST
+	var layer = _layers_container.get_child(hbox_index)
+	for child in layer.get_children():
+		child.visible = !child.visible 
+
+	# --- Toggle Logic (Fixed) ---
 	if scale_button == active_transfer_button:
 		# Deactivate if the same button is pressed again
 		active_transfer_button.modulate = Color.WHITE
 		active_transfer_button = null 
 	else:
-		# Deactivate the previous button 
+		# Deactivate the previous button
 		if active_transfer_button:
 			if is_instance_valid(active_transfer_button):
 				active_transfer_button.modulate = Color.WHITE
 			active_transfer_button = null
 
-		# Activate the new button 
+		# Activate the new button
 		active_transfer_button = scale_button
-		active_transfer_button.modulate = Color.LIME_GREEN
+		active_transfer_button.modulate = Color.LIME_GREEN 
 		
-		# Toggle visibility of child nodes in the layer
-		var layer = _layers_container.get_child(hbox_index)
-		for child in layer.get_children():
-			child.visible = !child.visible 
-	
 func _on_arrowleft_pressed() -> void:
 	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
 
