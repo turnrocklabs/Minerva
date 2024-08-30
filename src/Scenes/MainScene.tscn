@@ -430,11 +430,24 @@ layout_mode = 2
 [node name="vboxEditorMain" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer" node_paths=PackedStringArray("editor_pane")]
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/separation = 12
 script = ExtResource("3_welkk")
 editor_pane = NodePath("EditorPane")
 
 [node name="EditorPane" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" instance=ExtResource("4_826g6")]
 unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"]
+visible = false
+layout_mode = 2
+
+[node name="Button" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/HBoxContainer"]
+layout_mode = 2
+text = "button"
+
+[node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"]
+visible = false
 layout_mode = 2
 
 [node name="RightPane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer"]
