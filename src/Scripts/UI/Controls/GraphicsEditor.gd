@@ -4,7 +4,7 @@ extends PanelContainer
 
 signal masking_ended()
 
-var Buble = preload("res://Scenes/CloudControl.tscn")
+#var Buble = preload("res://Scenes/CloudControl.tscn")
 @onready var _layers_container: Control = %LayersContainer
 @onready var _brush_slider: HSlider = %BrushHSlider
 
@@ -54,7 +54,7 @@ var brush_color: Color:
 
 var _last_pos: Vector2
 var _draw_begin: bool = false
-var bubble: CloudControl = Buble.instantiate()
+#var bubble: CloudControl = Buble.instantiate()
 var _draw_layer: Layer
 var _mask_layer: Layer
 var _background_images = {}  # Store the background images for each layer
@@ -321,22 +321,22 @@ func _gui_input(event: InputEvent):
 	
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var local_mouse_pos = _layers_container.get_local_mouse_position() 
-		_layers_container.add_child(bubble) 
+		#_layers_container.add_child(bubble) 
 
-		bubble.set_deferred("position", _layers_container.position)
-		bubble.set_deferred("size", _layers_container.size)
+		#bubble.set_deferred("position", _layers_container.position)
+		#bubble.set_deferred("size", _layers_container.size)
 
-		bubble.set_bounding_rect(Rect2(local_mouse_pos, local_mouse_pos + Vector2(100, 100)))
-		bubble.grab_focus.call_deferred()
+		#bubble.set_bounding_rect(Rect2(local_mouse_pos, local_mouse_pos + Vector2(100, 100)))
+		#bubble.grab_focus.call_deferred()
 		clouding = false  
 
 	# Handle drawing actions
-	if event is InputEventMouseButton and event.is_action("draw"): 
-		if event.pressed and not drawing: 
+	if event is InputEventMouseMotion: 
+		if not drawing and event.pressure > 0.01: 
 			drawing = true
 			_draw_begin = true
 
-		elif not event.pressed and drawing:  
+		elif event.pressure <= 0 and drawing:  
 			drawing = false
 			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
