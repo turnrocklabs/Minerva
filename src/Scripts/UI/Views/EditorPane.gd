@@ -21,7 +21,7 @@ var current_layout: LAYOUT
 func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
-
+	
 
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
