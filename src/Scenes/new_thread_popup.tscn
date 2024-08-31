@@ -8,7 +8,6 @@
 auto_translate_mode = 1
 initial_position = 4
 size = Vector2i(450, 80)
-visible = false
 transient = true
 exclusive = true
 min_size = Vector2i(350, 0)

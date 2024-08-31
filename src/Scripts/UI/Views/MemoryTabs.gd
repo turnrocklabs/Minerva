@@ -69,26 +69,13 @@ func disable_notes_in_tab():
 
 func open_threads_popup(tab_name: String = "", tab = null):
 	
-	
-	# %NewThreadPopup/VBoxContainer/HBoxTopRow/txtNewTabName
-	#%txtNewTabName.text = tab_name
-
 	var update = tab != null
-
+	
 	# set metadata so we can determine should we create new or update existing and which tab, when we click the button in the popup
 	if update:
-		#%NewThreadPopup.set_meta("associated_tab", %tcThreads.get_child(tab))
 		SingletonObject.associated_notes_tab.emit(tab_name, get_child(tab))
 	else: 
-		#%NewThreadPopup.remove_meta("associated_tab")
 		SingletonObject.pop_up_new_tab.emit()
-	
-	#var btn_text = "Update" if update else "Create"
-	#%btnCreateThread.text = btn_text
-	
-	#SingletonObject.associated_notes_tab.emit(tab_name, get_child(tab))
-	
-	#%NewThreadPopup.popup_centered()
 
 
 func _on_new_pressed():
@@ -96,7 +83,6 @@ func _on_new_pressed():
 
 
 func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
-	#var tab_name:String = %txtNewTabName.text
 	#added a check for the tab name, if no name gives a default name
 	
 	if tab_name == "":
@@ -105,15 +91,8 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 	if tab_ref:
 		tab_ref.get_meta("thread").ThreadName = tab_name
 		render_threads()
-	
-	#if %NewThreadPopup.has_meta("associated_tab"):
-		#var at = %NewThreadPopup.get_meta("associated_tab")
-		#at.get_meta("thread").ThreadName = tab_name
-		#render_threads()
 	else:
 		create_new_notes_tab(tab_name)
-	
-	#%NewThreadPopup.hide()
 
 ## add indexxing system here
 func create_new_notes_tab(tab_name: String = "notes 1"):
