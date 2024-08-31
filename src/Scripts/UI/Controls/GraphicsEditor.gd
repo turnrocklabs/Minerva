@@ -260,6 +260,8 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
+	if event is InputEventMouseMotion: 
+		print(event.pressure)
 		
 	# Early exit if view tool is active
 	if view_tool_active:
@@ -499,12 +501,14 @@ func LayerVisible(Hbox: HBoxContainer):
 func _on_brushes_item_selected(index):
 	match index:
 		0:
+			#off other tools not drawing
 			erasing = false
 			view_tool_active = false
 			_on_mask(false)
 			clouding = false
 			zoomIn =false
 			zoomOut = false
+			
 		1:
 			erasing = true
 			view_tool_active = false
@@ -737,10 +741,6 @@ func layers_buttons():
 		Hbox.add_child(RemoveButton)
 	
 	selectButton(LayerButton, Hbox) 
-	
-	
-func _on_add_image_pressed() -> void:
-	%AddNewPic.visible = true
 
 
 func _on_add_new_pic_file_selected(path: String) -> void:
@@ -771,3 +771,7 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 	else:
 		print("Unsupported file type:", extension)
 	%AddNewPic.visible = false  # Close the file dialog
+
+
+func _on_add_imagelayer_pressed() -> void:
+	%AddNewPic.visible = true

@@ -51,6 +51,10 @@ popup/item_2/id = 2
 popup/item_3/text = "TextBox"
 popup/item_3/id = 3
 
+[node name="AdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2
 item_count = 3
@@ -138,10 +142,6 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Layers"
 
-[node name="AddImage" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-layout_mode = 2
-text = "Image"
-
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -161,7 +161,7 @@ size_flags_vertical = 0
 [node name="LayerBG" type="Panel" parent="PopupPanel"]
 unique_name_in_owner = true
 layout_mode = 2
-offset_right = 186.0
+offset_right = 218.0
 offset_bottom = 146.0
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -169,7 +169,7 @@ size_flags_vertical = 3
 [node name="LayersMenu" type="ScrollContainer" parent="PopupPanel"]
 unique_name_in_owner = true
 layout_mode = 0
-offset_right = 195.0
+offset_right = 222.0
 offset_bottom = 146.0
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 2
@@ -196,6 +196,10 @@ size_flags_horizontal = 3
 size_flags_vertical = 8
 text = "Add layer"
 
+[node name="AddImagelayer" type="Button" parent="PopupPanel/LayersMenu/LayersHolder"]
+layout_mode = 2
+text = "Add image layer"
+
 [node name="AddNewPic" type="FileDialog" parent="."]
 unique_name_in_owner = true
 auto_translate_mode = 1
@@ -220,6 +224,6 @@ access = 2
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/AddImage" to="." method="_on_add_image_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
+[connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
 [connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]
