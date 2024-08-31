@@ -4,7 +4,7 @@ extends PanelContainer
 
 signal masking_ended()
 
-var Buble = preload("res://Scenes/CloudControl.tscn")
+#var Buble = preload("res://Scenes/CloudControl.tscn")
 @onready var _layers_container: Control = %LayersContainer
 @onready var _brush_slider: HSlider = %BrushHSlider
 
@@ -31,6 +31,12 @@ var zoomOut:bool = false
 
 var view_tool_active: bool = false
 var prev_mouse_position: Vector2
+var transfering:bool = false
+var layer_being_transfered: Layer = null  # Store the layer being transferred
+var active_transfer_button: Button = null  # Store the active butto
+
+var _rotating: bool = false
+var _rotation_pivot: Vector2 = Vector2.ZERO
 
 var brush_size: int = 5:
 	set(value):
@@ -48,7 +54,7 @@ var brush_color: Color:
 
 var _last_pos: Vector2
 var _draw_begin: bool = false
-var bubble: CloudControl = Buble.instantiate()
+#var bubble: CloudControl = Buble.instantiate()
 var _draw_layer: Layer
 var _mask_layer: Layer
 var _background_images = {}  # Store the background images for each layer
@@ -64,44 +70,18 @@ var _masking: bool:
 var layer_undo_histories = {} # Dictionary to store undo histories for each layer
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	bubble = Buble.instantiate()
 	
-	var Hbox = HBoxContainer.new()
-	Hbox.name = str("Layer" + str(layer_Number))
+	layers_buttons()
 	
-	Hbox.set("theme_override_constants/separation", 12)
-	
-	var LayerButton = Button.new()
-	LayerButton.text = "Layer"+str(layer_Number)
-	LayerButton.connect("pressed", self.selectButton.bind(LayerButton, Hbox))
-	
-	LayerButton.modulate = Color.LIME_GREEN
-	
-	var VisibleButton = Button.new()
-	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
-	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
-	
-	var Translate = Button.new()
-	Translate.text = "T"
-	
-	var Rotate = Button.new()
-	Rotate.text = "R"
-	
-	
-	%LayersList.add_child(Hbox)
-	var newLayer = %LayersList.get_node("Layer"+str(layer_Number))
-	newLayer.add_child(LayerButton)
-	newLayer.add_child(VisibleButton)
-	newLayer.add_child(Translate)
-	newLayer.add_child(Rotate)
 	_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
 		toggle_controls(SingletonObject.is_graph)
 	elif SingletonObject.is_masking == true:
 		#editing and drawing
 		toggle_masking(SingletonObject.is_masking)
+		
 	layer_Number += 1
-	setup(Vector2i(1000, 1000), Color.WHITE)
+	setup(Vector2i(2000, 2000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
 	
@@ -155,7 +135,7 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 	return Vector2(target_width, target_height)
 	
 func setup_from_image(image_: Image):
-	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(1000, 800))
+	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(800, 800))
 	image_.resize(new_size.x, new_size.y)
 	for ch in _layers_container.get_children(true): 
 		ch.queue_free()
@@ -180,7 +160,7 @@ func setup_from_created_image(image_: Image):
 	var img = image_
 
 	# Resize the image to fit within the canvas boundaries
-	var new_size = _calculate_resized_dimensions(img.get_size(), Vector2(1000, 800))
+	var new_size = _calculate_resized_dimensions(img.get_size(), Vector2(800, 800))
 	img.resize(new_size.x, new_size.y)
 
 	# Create a new layer from the scratch image
@@ -199,7 +179,7 @@ func setup_from_created_image(image_: Image):
 	img = image_
 
 	# Resize the image to fit within the canvas boundaries
-	new_size = _calculate_resized_dimensions(img.get_size(), Vector2(1000, 800))
+	new_size = _calculate_resized_dimensions(img.get_size(), Vector2(800, 800))
 	img.resize(new_size.x, new_size.y)
 
 	# Create a new layer from the scratch image
@@ -216,12 +196,18 @@ func setup(canvas_size: Vector2i, background_color: Color):
 	img.fill(background_color)
 	setup_from_image(img)
 
-func create_image():
-	var img = Image.create(1000, 1000, false, Image.FORMAT_RGBA8)
-	img.fill(Color(255,255,255,0))
-	#_draw_layer = _create_layer(img)
-	_background_images[_draw_layer.name] = img.duplicate()  # Store the initial background	
-	setup_from_created_image(img)
+func create_image(vec:Vector2):
+	var img = Image.create(vec.x, vec.y, false, Image.FORMAT_RGBA8)
+	img.fill(Color(255, 255, 255, 0)) 
+	
+	# Create new layer and assign the new image
+	_draw_layer = _create_layer(img)
+	  
+	# Store the initial background image for the layer
+	_background_images[_draw_layer.name] = img.duplicate() 
+
+	   # This line is unnecessary and might be causing issues - remove it:
+	   # setup_from_created_image(img) 
 	
 func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
 	var layer = Layer.create(from, "Layer " + str(layer_Number)) 
@@ -274,53 +260,7 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
-	
-	if zoomIn or zoomOut:
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			var zoom_factor = 1.1 if zoomIn else 0.9 
-			var zoom_center = _layers_container.get_local_mouse_position() # Get zoom center
-
-			# Calculate the new zoom offset to keep the point under the mouse in the same position
-			var zoom_offset = zoom_center * (1 - zoom_factor)
-
-			# Apply zoom and offset to the LayersContainer
-			_layers_container.scale *= Vector2.ONE * zoom_factor
-			_layers_container.position += zoom_offset
-			
-	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var local_mouse_pos = _layers_container.get_local_mouse_position()  # Get the local mouse position
-		_layers_container.add_child(bubble)  # Add the bubble as a child to the container
-
-		bubble.set_deferred("position", _layers_container.position)
-		bubble.set_deferred("size", _layers_container.size)
-
-		bubble.set_bounding_rect(Rect2(local_mouse_pos, local_mouse_pos + Vector2(100, 100)))
-
-		bubble.grab_focus.call_deferred()
-
 		
-		clouding = false  # Disable clouding after adding the bubble 
-
-	# Handle Undo for all layers
-	if Input.is_action_just_pressed("ui_undo"):
-		# Find the layer with the most recent action in its history 
-		var most_recent_layer = null
-		var most_recent_index = -1
-		for layer_name in layer_undo_histories.keys():
-			var history = layer_undo_histories[layer_name]
-			if history.size() > most_recent_index:
-				most_recent_index = history.size()
-				most_recent_layer = layer_name
-
-		if most_recent_layer != null:
-			var layer = _layers_container.get_node(most_recent_layer)
-			if layer != null and layer_undo_histories[most_recent_layer].size() > 1:
-				layer_undo_histories[most_recent_layer].pop_back()
-				layer.image.copy_from(layer_undo_histories[most_recent_layer].back())
-				layer.update()
-
-		return  # Exit early if undoing to prevent drawing in the same step
-
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -334,36 +274,89 @@ func _gui_input(event: InputEvent):
 				prev_mouse_position = event.position
 
 			return
+		
+	if _rotating and not null:
+		var hbox_index = %LayersList.get_children().find(active_transfer_button.get_parent())
+		var layer = _layers_container.get_child(hbox_index)
+
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:  
+				_rotation_pivot = _layers_container.get_local_mouse_position()
+				layer.pivot_offset = _rotation_pivot - layer.position
+
+		elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT: 
+			var angle = (_layers_container.get_local_mouse_position() - _rotation_pivot).angle()
+			layer.rotation = angle
+
+		elif event is InputEventKey and event.pressed and event.keycode == KEY_ENTER:
+			_rotating = false
+			active_transfer_button.modulate = Color.WHITE
+			active_transfer_button = null
+			layer.pivot_offset = Vector2.ZERO
+		return
+
+	if layer_being_transfered: 
+		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
+			var current_mouse_position = _layers_container.get_local_mouse_position()
+			layer_being_transfered.position = current_mouse_position - prev_mouse_position
+			return
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				prev_mouse_position = _layers_container.get_local_mouse_position() - layer_being_transfered.position 
+			else: 
+				layer_being_transfered = null 
+			return
+
+	if zoomIn or zoomOut:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var zoom_factor = 1.1 if zoomIn else 0.9 
+			var zoom_center = _layers_container.get_local_mouse_position() 
+
+			var zoom_offset = zoom_center * (1 - zoom_factor)
+
+			_layers_container.scale *= Vector2.ONE * zoom_factor
+			_layers_container.position += zoom_offset
+	
+	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		var local_mouse_pos = _layers_container.get_local_mouse_position() 
+		#_layers_container.add_child(bubble) 
+
+		#bubble.set_deferred("position", _layers_container.position)
+		#bubble.set_deferred("size", _layers_container.size)
+
+		#bubble.set_bounding_rect(Rect2(local_mouse_pos, local_mouse_pos + Vector2(100, 100)))
+		#bubble.grab_focus.call_deferred()
+		clouding = false  
 
 	# Handle drawing actions
-	if event is InputEventMouseButton and event.is_action("draw"):
-		if event.pressed and not drawing:  # Start drawing
+	if event is InputEventMouseMotion: 
+		if not drawing and event.pressure > 0.01: 
 			drawing = true
 			_draw_begin = true
 
-		elif not event.pressed and drawing:  # End drawing
+		elif event.pressure <= 0 and drawing:  
 			drawing = false
-
-			# Store the state at the end of the action to capture the final state once done
-			layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
+			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
 	if event is InputEventMouseMotion and drawing:
-		var mouse_pos = _layers_container.get_local_mouse_position()
+		# Get mouse position relative to _layers_container
+		var container_local_pos = _layers_container.get_local_mouse_position() 
 
-		var offset_x = (_layers_container.size.x - _draw_layer.image.get_width()) / 2
-		var offset_y = (_layers_container.size.y - _draw_layer.image.get_height()) / 2
-		var current_pos = Vector2(mouse_pos.x - offset_x, mouse_pos.y - offset_y)
+		# Get mouse position relative to the active layer
 		var active_layer = _mask_layer if _masking else _draw_layer
+		var layer_local_pos = active_layer.get_local_mouse_position()
 
-		if _draw_begin:
-			_last_pos = current_pos
-			image_draw(active_layer.image, current_pos, brush_color, brush_size * event.pressure)
-			_draw_begin = false
+		# --- No manual offset calculation needed here ---
+		if %LayersList.get_child_count() > 0:
+			if _draw_begin:
+				_last_pos = layer_local_pos 
+				image_draw(active_layer.image, layer_local_pos, brush_color, brush_size * event.pressure)
+				_draw_begin = false
 
-		for line_pixel in bresenham_line(_last_pos, current_pos):
-			image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
+			for line_pixel in bresenham_line(_last_pos, layer_local_pos): 
+				image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
 
-		_last_pos = current_pos
+		_last_pos = layer_local_pos 
 		active_layer.update() 
 		
 func _on_h_slider_value_changed(value):
@@ -416,44 +409,13 @@ func _on_layers_pressed():
 	%LayerBG.position = Vector2(bPos.x - 60, bPos.y + 105)
 	
 func _on_add_layer_pressed():
-	var Hbox = HBoxContainer.new()
-	Hbox.name = str("Layer" + str(layer_Number))
+	layers_buttons()
 	
-	Hbox.set("theme_override_constants/separation", 12)
-	
-	var LayerButton = Button.new()
-	LayerButton.text = "Layer"+str(layer_Number)
-	LayerButton.connect("pressed", self.selectButton.bind(LayerButton,Hbox))
-	
-	var VisibleButton = Button.new()
-	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
-	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
-	
-	var RemoveButton = Button.new()
-	RemoveButton.connect("pressed", self.RemoveLayer.bind(Hbox, layer_Number))
-	
-	RemoveButton.icon = preload("res://assets/icons/remove.svg")
-	
-	%LayersList.add_child(Hbox)
-	
-	var Translate = Button.new()
-	Translate.text = "T"
-	
-	var Rotate = Button.new()
-	Rotate.text = "R"
-	
-	Hbox.add_child(LayerButton)
-	Hbox.add_child(VisibleButton)
-	Hbox.add_child(Translate)
-	Hbox.add_child(Rotate)
-	Hbox.add_child(RemoveButton)
-	
-	create_image()
+	create_image(Vector2(800,800))
 	
 	layer_Number += 1
 	
 	# Automatically select the newly created layer
-	selectButton(LayerButton, Hbox) 
 
 func RemoveLayer(Hbox:HBoxContainer, index:int):
 	# Find the index of the HBoxContainer within LayersList
@@ -471,10 +433,18 @@ func RemoveLayer(Hbox:HBoxContainer, index:int):
 	# Synchronize undo history to ensure consistency
 	layer_undo_histories.erase(layer_to_remove.name) 
 	
+	erasing = false
+	view_tool_active = false
+	_on_mask(false)
+	clouding = false
+	zoomIn =false
+	zoomOut = false
+	_rotating = false
+	
 	# If there are no layers left, reset the editor
 	if layer_Number <= 0:
 		layer_Number = 0
-		create_image()
+		create_image(Vector2(800,800))
 		return # Nothing to select
 		
 	# Select the previous layer 
@@ -515,6 +485,15 @@ func LayerVisible(Hbox: HBoxContainer):
 	var hbox_index = %LayersList.get_children().find(Hbox)
 	var VisibleOfBox = _layers_container.get_child(hbox_index)
 	VisibleOfBox.visible = !VisibleOfBox.visible
+
+	# Get the VisibleButton from the HBoxContainer
+	var VisibleButton = Hbox.get_child(1)  # Assuming it's the second child
+
+	# Toggle the icon based on visibility
+	if VisibleOfBox.visible:
+		VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")  # Replace with your visible icon path
+	else:
+		VisibleButton.icon = preload("res://assets/icons/visibility_not_visible.png")   # Replace with your hidden icon path
 
 
 func _on_brushes_item_selected(index):
@@ -592,7 +571,7 @@ func _on_zoom_out_pressed() -> void:
 
 func _on_mg_pressed() -> void:
 	# Define your default size here 
-	var default_size := Vector2(1000, 1000) 
+	var default_size := Vector2(800, 800) 
 
 	# Iterate through each layer in the container
 	for layer in _layers_container.get_children():
@@ -606,3 +585,189 @@ func _on_mg_pressed() -> void:
 	# Optionally, reset the zoom and position of the LayersContainer 
 	_layers_container.scale = Vector2.ONE
 	_layers_container.position = Vector2.ZERO
+	
+	
+func _transfer(Hbox: HBoxContainer) -> void:
+	var hbox_index = %LayersList.get_children().find(Hbox)
+	var transfer_button = Hbox.get_child(2)
+
+	# Toggle Logic
+	if transfer_button == active_transfer_button: 
+		# Deactivate if the same button is pressed again
+		active_transfer_button.modulate = Color.WHITE
+		active_transfer_button = null
+		layer_being_transfered = null 
+	else:
+		# Deactivate the previous button
+		if active_transfer_button:
+			# Check if active_transfer_button is still a valid node
+			if is_instance_valid(active_transfer_button): 
+				active_transfer_button.modulate = Color.WHITE
+			active_transfer_button = null
+
+		# Activate the new button
+		active_transfer_button = transfer_button
+		active_transfer_button.modulate = Color.LIME_GREEN
+		layer_being_transfered = _layers_container.get_child(hbox_index)
+		prev_mouse_position = _layers_container.get_local_mouse_position()
+		
+		
+func _rotate(Hbox: HBoxContainer) -> void:
+	var hbox_index = %LayersList.get_children().find(Hbox)
+	var rotate_button = Hbox.get_child(3)  # Assuming the Rotate button is the 4th child
+
+	# Toggle Logic
+	if rotate_button == active_transfer_button:
+		# Deactivate if the same button is pressed again
+		active_transfer_button.modulate = Color.WHITE
+		active_transfer_button = null
+		_rotating = false
+	else:
+		# Deactivate the previous button
+		if active_transfer_button:
+			# Check if active_transfer_button is still a valid node
+			if is_instance_valid(active_transfer_button): 
+				active_transfer_button.modulate = Color.WHITE
+			active_transfer_button = null
+
+		# Activate the new button
+		active_transfer_button = rotate_button
+		active_transfer_button.modulate = Color.LIME_GREEN
+		_rotating = true
+		_rotation_pivot = _layers_container.get_local_mouse_position()
+
+func _scale(Hbox: HBoxContainer) -> void:
+	var hbox_index = %LayersList.get_children().find(Hbox)
+	var scale_button = Hbox.get_child(4) 
+
+	# Toggle visibility of child nodes in the layer FIRST
+	var layer = _layers_container.get_child(hbox_index)
+	for child in layer.get_children():
+		child.visible = !child.visible 
+
+	# --- Toggle Logic (Fixed) ---
+	if scale_button == active_transfer_button:
+		# Deactivate if the same button is pressed again
+		active_transfer_button.modulate = Color.WHITE
+		active_transfer_button = null 
+	else:
+		# Deactivate the previous button
+		if active_transfer_button:
+			if is_instance_valid(active_transfer_button):
+				active_transfer_button.modulate = Color.WHITE
+			active_transfer_button = null
+
+		# Activate the new button
+		active_transfer_button = scale_button
+		active_transfer_button.modulate = Color.LIME_GREEN 
+		
+func _on_arrowleft_pressed() -> void:
+	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
+
+func _on_arrow_right_pressed() -> void:
+	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
+
+func _on_arrow_top_pressed() -> void:
+	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
+
+func _on_arrow_bottom_pressed() -> void:
+	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
+
+func _resize_layers(size_factor: float, resize_width: bool = true) -> void:
+	for layer in _layers_container.get_children():
+		if layer is Layer:
+			var old_size = layer.image.get_size()
+			var new_size: Vector2
+
+			if resize_width:
+				new_size = Vector2i(old_size.x * size_factor, old_size.y)
+			else:
+				new_size = Vector2i(old_size.x, old_size.y * size_factor)
+
+			# Store the original content of the layer
+			var temp_image := Image.new()
+			temp_image.copy_from(layer.image)
+			# Resize the layer's image
+			layer.image.resize(new_size.x, new_size.y, Image.INTERPOLATE_BILINEAR)
+			layer.size = new_size
+
+			# Redraw the original content onto the resized image
+			layer.image.blit_rect(temp_image, Rect2(Vector2.ZERO, old_size), Vector2.ZERO)
+			layer.update()
+
+func layers_buttons():
+	var Hbox = HBoxContainer.new()
+	Hbox.name = str("Layer" + str(layer_Number))
+	
+	Hbox.set("theme_override_constants/separation", 12)
+	
+	var LayerButton = Button.new()
+	LayerButton.text = "Layer"+str(layer_Number)
+	LayerButton.connect("pressed", self.selectButton.bind(LayerButton,Hbox))
+	
+	var VisibleButton = Button.new()
+	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
+	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
+	
+	var RemoveButton = Button.new()
+	RemoveButton.connect("pressed", self.RemoveLayer.bind(Hbox, layer_Number))
+	RemoveButton.icon = preload("res://assets/icons/remove.svg")
+	
+	%LayersList.add_child(Hbox)
+	
+	var Translate = Button.new()
+	Translate.text = "T"
+	Translate.connect("pressed", self._transfer.bind(Hbox))
+	
+	var Rotate = Button.new()
+	Rotate.text = "R"
+	Rotate.connect("pressed", self._rotate.bind(Hbox))
+	
+	var Scale = Button.new()
+	Scale.text = "S"
+	Scale.connect("pressed", self._scale.bind(Hbox))
+	
+	Hbox.add_child(LayerButton)
+	Hbox.add_child(VisibleButton)
+	Hbox.add_child(Translate)
+	Hbox.add_child(Rotate) 
+	Hbox.add_child(Scale)
+	
+	if %LayersList.get_child_count() != 1:
+		Hbox.add_child(RemoveButton)
+	
+	selectButton(LayerButton, Hbox) 
+	
+	
+func _on_add_image_pressed() -> void:
+	%AddNewPic.visible = true
+
+
+func _on_add_new_pic_file_selected(path: String) -> void:
+	# Check if the file extension is a supported image type
+	var extension = path.get_extension().to_lower()
+	if extension in ["png", "jpg", "jpeg"]:
+		# Load the image
+		var image = Image.new()
+		var err = image.load(path)
+		if err != OK:
+			print("Error loading image:", err)
+			return
+
+		# Create a new layer from the loaded image
+		var new_layer = _create_layer(image)
+
+		# Store the loaded image as the background for this layer
+		_background_images[new_layer.name] = image.duplicate()
+
+		# Increment the layer counter
+		layer_Number += 1
+
+		# Add layer button to the UI
+		layers_buttons()
+
+		# Optionally select the newly added layer
+		# selectButton(new_layer_button, new_layer_hbox) 
+	else:
+		print("Unsupported file type:", extension)
+	%AddNewPic.visible = false  # Close the file dialog

@@ -42,7 +42,6 @@ theme_override_constants/separation = 14
 [node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-selected = 0
 item_count = 4
 popup/item_0/icon = ExtResource("2_xgklw")
 popup/item_1/icon = ExtResource("2_tkvqr")
@@ -139,6 +138,10 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Layers"
 
+[node name="AddImage" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+layout_mode = 2
+text = "Image"
+
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -193,6 +196,17 @@ size_flags_horizontal = 3
 size_flags_vertical = 8
 text = "Add layer"
 
+[node name="AddNewPic" type="FileDialog" parent="."]
+unique_name_in_owner = true
+auto_translate_mode = 1
+title = "Open a File"
+initial_position = 4
+size = Vector2i(800, 600)
+popup_window = true
+ok_button_text = "Open"
+file_mode = 0
+access = 2
+
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/Brushes" to="." method="_on_brushes_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/OptionButton" to="." method="_on_option_button_item_selected"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
@@ -201,5 +215,11 @@ text = "Add layer"
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/Arrowleft" to="." method="_on_arrowleft_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer/ArrowTop" to="." method="_on_arrow_top_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/AddImage" to="." method="_on_add_image_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
+[connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]
