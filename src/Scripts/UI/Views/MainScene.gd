@@ -329,12 +329,6 @@ func _on_play_audio_button_pressed() -> void:
 #endregion Create New note Window
 
 
-#region new tab popup
-func _on_new_thread_popup_about_to_popup() -> void:
-	%txtNewTabName.grab_focus()
-
-#endregion new tab popup
-
 
 func _on_button_pressed() -> void:
 	%PreferencesPopup.popup_centered()

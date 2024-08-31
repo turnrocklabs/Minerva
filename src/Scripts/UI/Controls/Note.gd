@@ -47,8 +47,8 @@ func new_text_note():
 	%NoteTextBody.set_deferred("visible", true)#.visible = true
 	%ImageVBoxContainer.visible = false
 	%AudioHBoxContainer.visible = false
-	%ImageVBoxContainer.call_deferred("queue_free")
-	%AudioHBoxContainer.call_deferred("queue_free")
+	#%ImageVBoxContainer.call_deferred("queue_free")
+	#%AudioHBoxContainer.call_deferred("queue_free")
 	return self
 
 
@@ -56,8 +56,8 @@ func new_image_note():
 	%ImageVBoxContainer.visible = true
 	%AudioHBoxContainer.visible = false
 	%NoteTextBody.visible = false
-	%AudioHBoxContainer.call_deferred("queue_free")
-	%NoteTextBody.call_deferred("queue_free")
+	#%AudioHBoxContainer.call_deferred("queue_free")
+	#%NoteTextBody.call_deferred("queue_free")
 	return self
 
 
@@ -66,8 +66,8 @@ func new_audio_note():
 	%NoteTextBody.visible = false
 	%EditButton.visible = false
 	%ImageVBoxContainer.visible = false
-	%NoteTextBody.call_deferred("queue_free")
-	%ImageVBoxContainer.call_deferred("queue_free")
+	#%NoteTextBody.call_deferred("queue_free")
+	#%ImageVBoxContainer.call_deferred("queue_free")
 	return self
 
 #endregion New notes methods
