@@ -16,7 +16,7 @@ enum Type {
 @onready var _bezier_curve: BezierCurve = %BezierCurve
 
 
-var type: = Type.ELLIPSE
+var type: = Type.CLOUD
 
 ## Font used to display text
 var font: = ThemeDB.fallback_font
@@ -124,6 +124,23 @@ class Tail:
 			elif p is int:
 				points_.append(control.bubble_poly[p])
 			
+			elif p is float:
+				var total_distance: = control.get_point_distance(control.bubble_poly, control.bubble_poly.size()-1)
+				var target_distance: float = total_distance / 100 * p
+				var traveled: =  0.
+
+				for i in control.bubble_poly.size():
+					var a = control.bubble_poly[i]
+					var b = control.bubble_poly[i+1 if i < control.bubble_poly.size()-1 else 0]
+
+					var d = a.distance_to(b)
+
+					if traveled + d > target_distance:
+						points_.append(a)
+						break
+
+					traveled += d
+			
 			else:
 				push_error("Unexpected type %s.", type_string(p))
 		
@@ -192,9 +209,6 @@ class CurvedTriangleTail:
 			control.draw_circle(point, 10, Color.BLACK)
 			control.draw_circle(point, 10, Color.DARK_ORANGE, false, 3)
 
-		# if points_.size() >= 5:
-		# 	control.draw_polyline(control.get_bezier_curve(points_[0], points_[2], [points_[3], points_[4]], 100), Color.NAVAJO_WHITE)
-		# 	control.draw_polyline(control.get_bezier_curve(points_[1], points_[2], [points_[3], points_[4]], 100), Color.NAVAJO_WHITE)
 
 class BubbleTail:
 	extends Tail
@@ -289,7 +303,8 @@ func _draw_editing_tail() -> void:
 	# Get the mouse position relative to the CloudControl node
 	var local_mouse_pos = get_local_mouse_position()
 	
-	var closest_point := bubble_poly[get_closest_ellipse_line(local_mouse_pos)]
+	var closest_point: = get_closest_polyline_position(bubble_poly, local_mouse_pos)
+
 	if local_mouse_pos.distance_to(closest_point) < 60:
 		draw_circle(closest_point, 4, Color.DEEP_PINK)
 	else:
@@ -328,12 +343,14 @@ func _gui_input(event: InputEvent) -> void:
 			
 			# if we didn't click on any points, add a new one
 			if _drag_point_idx == -1:
-				# var local_ev: = make_input_local(event)
-				var idx = get_closest_ellipse_line(event.position)
+				# var closest_point: = get_closest_polyline_position(bubble_poly, event.position)
+
+				var idx: = get_closest_ellipse_line(event.position)
 
 				var closest_point = bubble_poly[idx]
 
 				if event.position.distance_to(closest_point) < 60:
+					# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
 					tail.add_point(idx)
 				else:
 					tail.add_point(event.position)
@@ -349,11 +366,14 @@ func _gui_input(event: InputEvent) -> void:
 		# if we're moving the mouse, pressing the mouse button and dragging the point
 		# update that points position.
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _drag_point_idx != -1:
-			var idx = get_closest_ellipse_line(event.position)
+			# var closest_point: = get_closest_polyline_position(bubble_poly, event.position)
+
+			var idx: = get_closest_ellipse_line(event.position)
 
 			var closest_point = bubble_poly[idx]
 
 			if event.position.distance_to(closest_point) < 60:
+				# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
 				tail.points[_drag_point_idx] = idx
 			else:
 				tail.points[_drag_point_idx] = event.position
@@ -510,7 +530,7 @@ func get_rectangles_in_ellipse(rect: Rect2, num_slices: int = 4) -> Array:
 		# Calculate the x-radius at the current y-position
 		var current_radius_x = radius_x * sqrt(1 - pow(y_distance_from_center / radius_y, 2))
 		
-		var rect_width = 2 * current_radius_x 
+		var rect_width = 2 * current_radius_x	
 		
 		# Calculate the top-left corner of the rectangle for this slice
 		var top_left = Vector2(center.x - current_radius_x, y_center - slice_height / 2)
@@ -534,3 +554,76 @@ func get_closest_ellipse_line(mouse_position: Vector2) -> int:
 			idx = i
 
 	return idx
+
+
+func get_closest_point_distance_ratio(polygon: PackedVector2Array, pos: Vector2) -> float:
+	var total_length: = 0.0
+	var length: = -1.
+
+	for i in polygon.size():
+		var a = polygon[i]
+		var b = polygon[i+1 if i < polygon.size()-1 else 0]
+
+		total_length += a.distance_to(b)
+
+		if length > -1: continue
+
+		prints(a, b, pos)
+		if is_point_between(a, b, pos):
+			
+			length = total_length + a.distance_to(pos)
+	
+	prints(total_length, 100,  length)
+
+	return total_length / 100 * length
+
+
+func get_closest_polyline_position(polygon: PackedVector2Array, pos: Vector2) -> Vector2:
+	var closest: Vector2
+
+	for i in polygon.size():
+		var a = polygon[i]
+		var b = polygon[i+1 if i < polygon.size()-1 else 0]
+
+		var cpts: = Geometry2D.get_closest_point_to_segment(pos, a, b)
+		if pos.distance_squared_to(cpts) < pos.distance_squared_to(closest):
+			closest = cpts
+	
+	return closest
+
+	
+
+
+func get_point_distance(polygon: PackedVector2Array, to: int, from: int = 0) -> float:
+	var distance: = 0.0
+
+	for i in range(from, polygon.size()):
+		var point_a: = polygon[i]
+		var point_b: = polygon[i+1 if i < polygon.size()-1 else 0]
+
+		distance += point_a.distance_to(point_b)
+		
+		if i == to: break
+	
+	return distance
+
+
+func is_point_between(A: Vector2, B: Vector2, C: Vector2) -> bool:
+	# Calculate vectors AB and AC
+	var AB = B - A
+	var AC = C - A
+	
+	# Check if the points are collinear by using the cross product
+	# If the cross product is zero, then the points are collinear
+	if AB.cross(AC) != 0:
+		return false
+	
+	# Check if point C is within the bounds of A and B
+	# For collinear points, C should satisfy:
+	# min(A.x, B.x) <= C.x <= max(A.x, B.x)
+	# min(A.y, B.y) <= C.y <= max(A.y, B.y)
+	return (
+		min(A.x, B.x) <= C.x <= max(A.x, B.x) and
+		min(A.y, B.y) <= C.y <= max(A.y, B.y)
+	)
+
