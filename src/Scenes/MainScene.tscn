@@ -11,7 +11,7 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
-[ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow_icons/create_arrow.png" id="6_vobga"]
+[ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/new_thread_popup.tscn" id="5_gujhn"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="7_rdia2"]
 [ext_resource type="Texture2D" uid="uid://cukfnot0gnafc" path="res://assets/icons/Horizontal_split.png" id="8_oxf75"]
 [ext_resource type="Texture2D" uid="uid://juldbjk5u4wl" path="res://assets/icons/Vertical_split.png" id="9_fr5ee"]
@@ -106,82 +106,8 @@ initial_position = 2
 visible = false
 unresizable = false
 
-[node name="NewThreadPopup" type="Window" parent="."]
+[node name="NewThreadPopup" parent="." instance=ExtResource("5_gujhn")]
 unique_name_in_owner = true
-initial_position = 4
-size = Vector2i(450, 80)
-visible = false
-transient = true
-exclusive = true
-min_size = Vector2i(350, 0)
-max_size = Vector2i(500, 100)
-script = ExtResource("3_w58y5")
-
-[node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 12
-alignment = 1
-
-[node name="Control" type="Control" parent="NewThreadPopup/VBoxContainer"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
-custom_minimum_size = Vector2(0, 35)
-layout_mode = 2
-theme_override_constants/separation = 14
-
-[node name="Control3" type="Control" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="Label" type="Label" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-layout_mode = 2
-size_flags_horizontal = 0
-text = "Name"
-
-[node name="txtNewTabName" type="TextEdit" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(200, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-placeholder_text = "Tab Name"
-caret_blink = true
-
-[node name="btnVoiceForNoteTab" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-unique_name_in_owner = true
-layout_mode = 2
-icon = ExtResource("22_285lg")
-
-[node name="btnCreateThread" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 4
-size_flags_vertical = 4
-tooltip_text = "Create Notes Tab"
-text = "Create"
-icon = ExtResource("6_vobga")
-
-[node name="Control2" type="Control" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
-visible = false
-layout_mode = 2
-size_flags_horizontal = 8
-size_flags_vertical = 4
-theme_override_constants/separation = 16
-
-[node name="Label" type="Label" parent="NewThreadPopup/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
 
 [node name="VBoxRoot" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
@@ -501,6 +427,7 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 drag_to_rearrange_enabled = true
+tab_focus_mode = 1
 script = ExtResource("1_gunt8")
 
 [node name="TerminalTabContainer" parent="VBoxRoot/VSplitContainer" instance=ExtResource("23_ejoiu")]
@@ -784,9 +711,6 @@ visible = false
 z_index = 100
 layout_mode = 1
 
-[connection signal="about_to_popup" from="NewThreadPopup" to="." method="_on_new_thread_popup_about_to_popup"]
-[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxTopRow/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
-[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxTopRow/btnCreateThread" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
 [connection signal="file_selected" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]

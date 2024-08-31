@@ -61,6 +61,13 @@ enum note_type {
 	VIDEO
 }
 
+# this signals get used in memoryTabs.gd and new_thread_popup.gd 
+# for creating and updating notes tabs names
+signal create_notes_tab(name: String)
+signal associated_notes_tab(tab_name, tab: Control)
+signal pop_up_new_tab
+
+
 var ThreadList: Array[MemoryThread]:
 	set(value):
 		# save_state(false)
