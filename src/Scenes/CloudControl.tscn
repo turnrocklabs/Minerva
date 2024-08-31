@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://b1di2h7ew44a2"]
+[gd_scene load_steps=5 format=3 uid="uid://dmb0k4rdw2p8y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/CloudControl.gd" id="1_ha15r"]
 [ext_resource type="Texture2D" uid="uid://bwn1v2wcbaegc" path="res://assets/icons/resizer_se.svg" id="2_jl5my"]
@@ -38,6 +38,7 @@ offset_bottom = 218.0
 pivot_offset = Vector2(17, 17)
 focus_mode = 0
 mouse_filter = 1
+mouse_default_cursor_shape = 13
 texture_normal = ExtResource("2_jl5my")
 stretch_mode = 5
 
@@ -49,6 +50,7 @@ offset_bottom = 35.0
 pivot_offset = Vector2(17, 17)
 focus_mode = 0
 mouse_filter = 1
+mouse_default_cursor_shape = 13
 texture_normal = ExtResource("3_xkjvb")
 stretch_mode = 5
 
