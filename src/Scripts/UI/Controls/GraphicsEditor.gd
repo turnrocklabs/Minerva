@@ -486,6 +486,15 @@ func LayerVisible(Hbox: HBoxContainer):
 	var VisibleOfBox = _layers_container.get_child(hbox_index)
 	VisibleOfBox.visible = !VisibleOfBox.visible
 
+	# Get the VisibleButton from the HBoxContainer
+	var VisibleButton = Hbox.get_child(1)  # Assuming it's the second child
+
+	# Toggle the icon based on visibility
+	if VisibleOfBox.visible:
+		VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")  # Replace with your visible icon path
+	else:
+		VisibleButton.icon = preload("res://assets/icons/visibility_not_visible.png")   # Replace with your hidden icon path
+
 
 func _on_brushes_item_selected(index):
 	match index:
