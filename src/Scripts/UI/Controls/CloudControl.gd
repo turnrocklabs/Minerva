@@ -626,4 +626,3 @@ func is_point_between(A: Vector2, B: Vector2, C: Vector2) -> bool:
 		min(A.x, B.x) <= C.x <= max(A.x, B.x) and
 		min(A.y, B.y) <= C.y <= max(A.y, B.y)
 	)
-
