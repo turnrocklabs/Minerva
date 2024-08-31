@@ -260,8 +260,6 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
-	if event is InputEventMouseMotion and drawing:
-		print("Pressure: ", event.pressure) # Debug output
 		
 	# Early exit if view tool is active
 	if view_tool_active:
@@ -723,12 +721,44 @@ func layers_buttons():
 	Hbox.add_child(LayerButton)
 	Hbox.add_child(VisibleButton)
 	Hbox.add_child(Translate)
-	Hbox.add_child(Rotate)
+	Hbox.add_child(Rotate) 
 	Hbox.add_child(Scale)
 	
 	if %LayersList.get_child_count() != 1:
 		Hbox.add_child(RemoveButton)
 	
 	selectButton(LayerButton, Hbox) 
+	
+	
+func _on_add_image_pressed() -> void:
+	%AddNewPic.visible = true
 
-#aaa
+
+func _on_add_new_pic_file_selected(path: String) -> void:
+	# Check if the file extension is a supported image type
+	var extension = path.get_extension().to_lower()
+	if extension in ["png", "jpg", "jpeg"]:
+		# Load the image
+		var image = Image.new()
+		var err = image.load(path)
+		if err != OK:
+			print("Error loading image:", err)
+			return
+
+		# Create a new layer from the loaded image
+		var new_layer = _create_layer(image)
+
+		# Store the loaded image as the background for this layer
+		_background_images[new_layer.name] = image.duplicate()
+
+		# Increment the layer counter
+		layer_Number += 1
+
+		# Add layer button to the UI
+		layers_buttons()
+
+		# Optionally select the newly added layer
+		# selectButton(new_layer_button, new_layer_hbox) 
+	else:
+		print("Unsupported file type:", extension)
+	%AddNewPic.visible = false  # Close the file dialog
