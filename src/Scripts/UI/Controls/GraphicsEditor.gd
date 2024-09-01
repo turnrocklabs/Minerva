@@ -16,6 +16,7 @@ var Buble = preload("res://Scenes/CloudControl.tscn")
 var selectedLayer: String
 var selectedIndex: int
 var loaded_layers: Array[Layer]
+var _WhichAdditonlTools
 static var layer_Number = 0
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
@@ -260,9 +261,6 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
-	if event is InputEventMouseMotion: 
-		print(event.pressure)
-		
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -318,26 +316,22 @@ func _gui_input(event: InputEvent):
 			_layers_container.scale *= Vector2.ONE * zoom_factor
 			_layers_container.position += zoom_offset
 	
+
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var local_mouse_pos = _layers_container.get_local_mouse_position() 
-		_layers_container.add_child(bubble) 
+		var new_bubble = Buble.instantiate() 
+		_layers_container.add_child(new_bubble)
 
-		bubble.set_deferred("position", _layers_container.position)
-		bubble.set_deferred("size", _layers_container.size)
-
-		bubble.set_bounding_rect(Rect2(local_mouse_pos, local_mouse_pos + Vector2(100, 100)))
-		bubble.grab_focus.call_deferred()
-		clouding = false  
+		clouding = false
 
 	# Handle drawing actions
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed: 
+			if event.pressed:
 				drawing = true
 				_draw_begin = true
-
-		else:  
-			drawing = false
+			else:
+				drawing = false
+				
 			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
 	if event is InputEventMouseMotion and drawing:
@@ -350,7 +344,7 @@ func _gui_input(event: InputEvent):
 
 		# --- No manual offset calculation needed here ---
 		if %LayersList.get_child_count() > 0:
-			if _draw_begin:
+			if _draw_begin:  
 				_last_pos = layer_local_pos 
 				image_draw(active_layer.image, layer_local_pos, brush_color, brush_size * event.pressure)
 				_draw_begin = false
@@ -509,6 +503,16 @@ func _on_brushes_item_selected(index):
 			zoomIn =false
 			zoomOut = false
 			
+			%AdditionalTools.clear() 
+			
+			
+			# Add your new items
+			%AdditionalTools.add_item("haha1") 
+			%AdditionalTools.add_item("haha2")
+			%AdditionalTools.add_item("haha3")
+			
+			_WhichAdditonlTools = "Pen"
+			
 		1:
 			erasing = true
 			view_tool_active = false
@@ -531,19 +535,21 @@ func _on_option_button_item_selected(index):
 			view_tool_active = false
 			_on_mask(false)
 			clouding = true
+			SingletonObject.CloudType = CloudControl.Type.ELLIPSE
+			
 			
 		1:
 			erasing = false
 			view_tool_active = false
 			_on_mask(false)
 			clouding = true
-			CloudControl.Type.ELLIPSE
+			SingletonObject.CloudType = CloudControl.Type.CLOUD
 		2:
 			erasing = false
 			view_tool_active = false
 			_on_mask(false)
 			clouding = true
-			CloudControl.Type.RECTANGLE
+			SingletonObject.CloudType = CloudControl.Type.RECTANGLE
 
 
 func _on_hand_pressed() -> void:
@@ -666,6 +672,11 @@ func _scale(Hbox: HBoxContainer) -> void:
 		
 func _on_arrowleft_pressed() -> void:
 	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
+	
+	for layer in _layers_container.get_children():
+		var move_amount = position.x * 0.1 
+		# Move the control to the left
+		layer.position.x -= 1000
 
 func _on_arrow_right_pressed() -> void:
 	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally

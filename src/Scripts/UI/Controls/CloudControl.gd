@@ -9,14 +9,13 @@ enum Type {
 	CLOUD,
 	RECTANGLE,
 }
+var type
 
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
 @onready var _text_edit: TextEdit = %TextEdit
 @onready var _bezier_curve: BezierCurve = %BezierCurve
 
-
-var type: = Type.CLOUD
 
 ## Font used to display text
 var font: = ThemeDB.fallback_font
@@ -239,6 +238,13 @@ class BubbleTail:
 
 # Request redraw in response to changes
 func _ready():
+	if SingletonObject.CloudType == Type.CLOUD:
+		type = Type.CLOUD
+	elif SingletonObject.CloudType == Type.ELLIPSE:
+		type = Type.ELLIPSE
+	elif SingletonObject.CloudType == Type.RECTANGLE:
+		type = Type.RECTANGLE
+		
 	tail = CurvedTriangleTail.new(self)
 	queue_redraw()
 
