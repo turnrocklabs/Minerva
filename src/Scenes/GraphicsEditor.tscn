@@ -12,6 +12,7 @@
 [ext_resource type="Texture2D" uid="uid://fuennqeu6spg" path="res://assets/icons/ArrowTop.png" id="10_iiyn1"]
 [ext_resource type="Texture2D" uid="uid://cyjad26s5xekh" path="res://assets/icons/ArrowBottom.png" id="11_ugcir"]
 [ext_resource type="Texture2D" uid="uid://cy6rnqiqqe58r" path="res://assets/icons/ArrowRight.png" id="12_hevcs"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="3_aanik"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
@@ -124,7 +125,11 @@ icon = ExtResource("6_4tqp6")
 
 [node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
 layout_mode = 2
+item_count = 1
 icon = ExtResource("7_hti8r")
+selected = 0
+popup/item_0/text = "Layer1"
+popup/item_0/id = 0
 
 [node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 layout_mode = 2

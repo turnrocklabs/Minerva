@@ -7,6 +7,7 @@ signal image_active_state_changed(active: bool)
 
 const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 @onready var _save_dialog = %SaveFileDialog as FileDialog
+@onready var _mask_button = %MaskButton as Button
 
 @export var image: Image:
 	set(value):
@@ -26,6 +27,15 @@ const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 
 		image.set_meta("rendered_node", self)
 
+		# define the signal that's emitted when mask is changed
+		if not image.has_user_signal("mask_changed"):
+			image.add_user_signal("mask_changed")
+			image.connect(
+				"mask_changed",
+				func():
+					_mask_button.visible = image.has_meta("mask")
+			)
+
 func _resize_image_to_fit(max_width: int, max_height: int):
 	# Get the original size of the image
 	var original_size = Vector2(image.get_width(), image.get_height())
@@ -39,14 +49,6 @@ func _resize_image_to_fit(max_width: int, max_height: int):
 		image.resize(new_size.x, new_size.y)
 		# Update the texture
 		%TextureRect.texture = ImageTexture.create_from_image(image)
-
-## Proxy for this nodes `CheckButton.button_pressed` property.
-## Setting this property will result in use of `BaseButton.set_pressed_no_signal`.
-var active: = false:
-	set(value):
-		active = value
-		(%CheckButton as CheckButton).set_pressed_no_signal(value)
-	get: return %CheckButton.button_pressed
 
 
 static func create(image_: Image) -> ChatImage:
@@ -68,15 +70,18 @@ func _on_save_file_dialog_file_selected(path: String):
 		)
 
 func _on_edit_button_pressed():
+	var caption_title: String = image.get_meta("caption", "")
+	if caption_title.length() > 15:
+		caption_title = caption_title.substr(0, 15) + "..."
 	SingletonObject.is_masking = true
-	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, null, "Chat Image")
+	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, null, caption_title, self)
 	editor.graphics_editor.setup_from_image(image)
 	
 
-func _on_check_button_toggled(toggled_on: bool):
-	image.set_meta("active", toggled_on)
-	image_active_state_changed.emit(toggled_on)
 
 
 func _on_note_button_pressed():
-	SingletonObject.NotesTab.add_image_note("Image note", image, image.get_meta("caption", ""))
+	var caption_title: String = image.get_meta("caption", "")
+	#if caption_title.length() > 25:
+		#caption_title = caption_title.substr(0, 25) + "..."
+	SingletonObject.NotesTab.add_image_note(caption_title, image, image.get_meta("caption", ""))

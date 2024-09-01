@@ -101,4 +101,3 @@ static func Deserialize(data: Dictionary) -> ChatHistory:
 		ch.HistoryItemList.append(chi)
 
 	return ch
-

@@ -101,46 +101,52 @@ func add_control(item: Node, name_: String) -> Node:
 	item.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# scrollable.add_child(item)
-	item.name = name_
-	self.Tabs.add_child(item)
+	#item.name = name_
+	self.Tabs.call_deferred("add_child")#add_child(item)
 	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
 	enable_editor_action_buttons.emit(true)
 	return item
 
 
 
-func add(type: Editor.Type, file = null, name_ = null) -> Editor:
+func add(type: Editor.Type, file = null, name_ = null, associated_object = null) -> Editor:
 	#Add a scroll container to the tabs and put the item in there.
 
-	# check if we're opining a file that's already open
-	# if so jsut switch to that editor
+	# check if we're opening a file that's already open or for the same associated_object (except null)
+	# if so just switch to that editor
 	for editor: Editor in self.Tabs.get_children():
-		if not editor is Editor: continue
-
-		if editor.file == file:
+		if not editor is Editor: 
+			continue
+		if editor.file == file or (associated_object != null and editor.associated_object == associated_object):
 			Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
-			return
-
-	var editor_node = Editor.create(type, file)
+			return editor
+	
+	var editor_node = Editor.create(type, file, name_, associated_object)
+	
+	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
+	
+	self.Tabs.add_child(editor_node)
+	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
 	
 	if name_: 
-		
-		editor_node.name = editor_name_to_use(name_)
+		var tab_name = editor_name_to_use(name_)
+		Tabs.set_tab_title(Tabs.current_tab, tab_name)
+		editor_node.tab_title = tab_name
 	elif file:
-		editor_node.name = get_file_name(file)
+		var tab_name = editor_name_to_use(file.get_file())
+		Tabs.set_tab_title(Tabs.current_tab, tab_name)
+		editor_node.tab_title = tab_name
 	else:
 		match type:
 			Editor.Type.TEXT:
-				editor_node.name = "tab " + str(Tabs.get_tab_count() + 1)
+				var tab_name = "tab " + str(Tabs.get_tab_count() )
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+				
 			Editor.Type.GRAPHICS:
-				editor_node.name = "Graphics " + str(Tabs.get_tab_count() + 1)
-			Editor.Type.WhiteBoard:
-				editor_node.name = "drawing " + str(Tabs.get_tab_count() + 1)
-	
-	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
-
-	self.Tabs.add_child(editor_node)
-	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
+				var tab_name = "graphics " + str(Tabs.get_tab_count() )
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
 	
 	return editor_node
 
@@ -154,21 +160,14 @@ func open_editors() -> Array[Editor]:
 
 
 func editor_name_to_use(proposed_name: String) -> String:
-	var coliisions = 0
+	var collisions = 0
 	for i in range(Tabs.get_tab_count()):
-		if Tabs.get_tab_title(i) == proposed_name:
-			coliisions+=1
-	if coliisions == 0:
+		if Tabs.get_tab_title(i).split(" ")[0] == proposed_name:
+			collisions+=1
+	if collisions == 0:
 		return proposed_name
 	else:
-		return proposed_name + " " + str(coliisions)
-
-
-func get_file_name(path: String) -> String:
-	if path.length() <= 1:
-		return path
-	var split_path = path.split("/")
-	return split_path[split_path.size() -1].split(".")[0]
+		return proposed_name + "(" + str(Tabs.get_tab_count() + 1) + ")"
 
 
 func unsaved_editors() -> Array[Editor]:
@@ -183,7 +182,7 @@ func unsaved_editors() -> Array[Editor]:
 
 
 func _copy_children_to(from: Node, to: Node):
-	for child in from.get_children(true):
+	for child in from.get_children():
 		var dup = child.duplicate(DUPLICATE_USE_INSTANTIATION)
 		
 		if dup is TabContainer:
@@ -191,7 +190,7 @@ func _copy_children_to(from: Node, to: Node):
 			dup.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 			dup.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(dup))
 		
-		to.add_child(dup)
+		to.call_deferred("add_child", dup)#.add_child(dup)
 
 func toggle_horizontal_split() -> void:
 	BottomControl.visible = false

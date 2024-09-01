@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
-[ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save-24-white.png" id="2_kl0rj"]
+[ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
 
 [node name="PreferencesPopup" type="Window"]
 title = "Preferences"
