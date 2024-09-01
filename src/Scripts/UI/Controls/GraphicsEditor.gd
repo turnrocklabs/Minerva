@@ -394,6 +394,11 @@ func _on_apply_mask_button_pressed():
 		_draw_layer.update()  # Update the draw layer to reflect the applied mask
 
 		image.set_meta("mask", _mask_layer.image)
+
+	# if the image has the signal defined call it
+	if image.has_user_signal("mask_changed"):
+		image.emit_signal("mask_changed")
+	
 	_masking = false
 	_draw_layer.visible = true  # Ensure the layer is visible after applying the mask
 	

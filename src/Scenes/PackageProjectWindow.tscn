@@ -1,8 +1,8 @@
 [gd_scene load_steps=7 format=3 uid="uid://bxmpb31w1mmhm"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PackageProjectWindow.gd" id="1_0sxx4"]
-[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/visibility_not_visible.png" id="2_23fol"]
-[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="2_ayi6r"]
+[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="2_23fol"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="2_ayi6r"]
 [ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="2_wnlyi"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="3_kmt8e"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/FileTree.gd" id="4_8s7vc"]
@@ -20,6 +20,14 @@ icon_ignore_true = ExtResource("2_23fol")
 icon_ignore_false = ExtResource("2_ayi6r")
 directory_icon = ExtResource("2_wnlyi")
 file_icon = ExtResource("3_kmt8e")
+
+[node name="Panel" type="Panel" parent="."]
+z_index = -10
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="Dialog" type="AcceptDialog" parent="."]
 title = "Success"
@@ -85,6 +93,7 @@ layout_mode = 2
 text = "Package"
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]
 [connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]
 [connection signal="button_clicked" from="MarginContainer/v/v2/FilesTree" to="." method="_on_files_tree_button_clicked"]
 [connection signal="pressed" from="MarginContainer/v/h/ChangeDestionationButton" to="." method="_on_change_destionation_button_pressed"]

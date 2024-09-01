@@ -1,10 +1,13 @@
-[gd_scene load_steps=8 format=3 uid="uid://fr1vfchpwjq2"]
+[gd_scene load_steps=11 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
-[ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_24px_no_bg.png" id="2_vvcoi"]
-[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_x4kas"]
+[ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_icons/drag_24px_no_bg.png" id="2_vvcoi"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_x4kas"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
-[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="4_vm57c"]
+[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="4_vm57c"]
+[ext_resource type="Texture2D" uid="uid://bi2d1wriixcyu" path="res://assets/icons/play_icons/play-24.png" id="6_5up1e"]
+[ext_resource type="Texture2D" uid="uid://cb0sgp25gcypd" path="res://assets/icons/pause_icons/pause-24.png" id="7_05yub"]
+[ext_resource type="Texture2D" uid="uid://bmuiehgqdu6ac" path="res://assets/icons/stop-circled-24.png" id="8_xj7sk"]
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_fc11w"]
 color = Color(0.164706, 0.345098, 0.831373, 1)
@@ -69,6 +72,7 @@ tooltip_text = "Hide this note"
 icon = ExtResource("3_x4kas")
 
 [node name="EditButton" type="Button" parent="PanelContainer/v/headHBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("4_vm57c")
 
@@ -82,6 +86,7 @@ mouse_filter = 1
 
 [node name="NoteTextBody" type="RichTextLabel" parent="PanelContainer/v"]
 unique_name_in_owner = true
+visible = false
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 focus_mode = 2
@@ -121,27 +126,65 @@ caret_blink = true
 
 [node name="AudioHBoxContainer" type="HBoxContainer" parent="PanelContainer/v"]
 unique_name_in_owner = true
-visible = false
 custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
 size_flags_vertical = 4
+theme_override_constants/separation = 16
 
-[node name="PlayPauseButton" type="Button" parent="PanelContainer/v/AudioHBoxContainer"]
+[node name="Control" type="Control" parent="PanelContainer/v/AudioHBoxContainer"]
+layout_mode = 2
+
+[node name="PlayButton" type="Button" parent="PanelContainer/v/AudioHBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
-text = "Play
+focus_mode = 1
+text = "
 "
+icon = ExtResource("6_5up1e")
+flat = true
+
+[node name="PauseButton" type="Button" parent="PanelContainer/v/AudioHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 1
+icon = ExtResource("7_05yub")
+flat = true
+
+[node name="StopButton" type="Button" parent="PanelContainer/v/AudioHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 1
+icon = ExtResource("8_xj7sk")
+flat = true
+
+[node name="Label" type="Label" parent="PanelContainer/v/AudioHBoxContainer"]
+visible = false
+layout_mode = 2
+text = "0.0"
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="PanelContainer/v/AudioHBoxContainer"]
 unique_name_in_owner = true
 volume_db = 1.0
 
 [node name="ProgressBar" type="ProgressBar" parent="PanelContainer/v/AudioHBoxContainer"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
+value = 50.0
 show_percentage = false
+
+[node name="Label2" type="Label" parent="PanelContainer/v/AudioHBoxContainer"]
+visible = false
+layout_mode = 2
+text = "0.0"
+
+[node name="Control2" type="Control" parent="PanelContainer/v/AudioHBoxContainer"]
+layout_mode = 2
 
 [node name="LowerSeparator" type="HSeparator" parent="."]
 unique_name_in_owner = true
@@ -157,4 +200,7 @@ theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 [connection signal="gui_input" from="PanelContainer/v/ImageVBoxContainer" to="." method="_on_image_v_box_container_gui_input"]
 [connection signal="text_changed" from="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_changed"]
 [connection signal="text_submitted" from="PanelContainer/v/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_submitted"]
-[connection signal="pressed" from="PanelContainer/v/AudioHBoxContainer/PlayPauseButton" to="." method="_on_play_pause_button_pressed"]
+[connection signal="pressed" from="PanelContainer/v/AudioHBoxContainer/PlayButton" to="." method="_on_play_button_pressed"]
+[connection signal="pressed" from="PanelContainer/v/AudioHBoxContainer/PauseButton" to="." method="_on_pause_button_pressed"]
+[connection signal="pressed" from="PanelContainer/v/AudioHBoxContainer/StopButton" to="." method="_on_stop_button_pressed"]
+[connection signal="finished" from="PanelContainer/v/AudioHBoxContainer/AudioStreamPlayer" to="." method="_on_audio_stream_player_finished"]

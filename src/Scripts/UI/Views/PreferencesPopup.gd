@@ -39,7 +39,7 @@ func _ready():
 	set_field_values()
 	
 	SingletonObject.theme_changed.connect(set_theme_option_menu)
-	theme_option_button.selected = SingletonObject.get_theme()
+	theme_option_button.selected = SingletonObject.get_theme_enum()
 	
 	SingletonObject.mic_changed.connect(set_microphone_option_menu)
 	set_microphone_option_menu(SingletonObject.get_microphone())

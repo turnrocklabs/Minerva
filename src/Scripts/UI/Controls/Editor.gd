@@ -1,6 +1,5 @@
 class_name Editor
 extends Control
-
 ## Editor node is responsible for acting as a CodeEdit or TextureRect
 ## depending if it handles text or graphics file.
 ## A file path can be associated with it to save the conent of the node to it
@@ -25,9 +24,16 @@ enum Type {
 	NOTE_EDITOR,
 }
 
+## May contain the object that is being edited by this editor.[br]
+## Eg. ChatImage, Note, etc..[br]
+## Allows switching to existing editor intead of
+## opening a new one for same associated object.
+var associated_object
+
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
+var tab_title: String = ""
 var file: String
 var type: Type
 var _file_saved := false
@@ -38,11 +44,13 @@ var prompt_save:= true
  # checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
-static func create(type_: Type, file_ = null, name_ = null) -> Editor:
+static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null) -> Editor:
 	var editor = scene.instantiate()
 	editor.type = type_
+	editor.associated_object = associated_object_
+	
 	if name_:
-		editor.name = name_
+		editor.tab_title = name_
 	if file_: 
 		editor.file = file_
 
@@ -80,8 +88,9 @@ func _ready():
 
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
-	code_edit.text = fa_object.get_as_text()
-	code_edit.saved_content = code_edit.text
+	if fa_object:
+		code_edit.text = fa_object.get_as_text()
+		code_edit.saved_content = code_edit.text
 	# %SaveButton.disabled = false
 
 
@@ -128,7 +137,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 			return true
 	
 	if not file:
-		($FileDialog as FileDialog).title = "Save \"%s\" editor" % name
+		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
@@ -136,7 +145,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 		#($FileDialog as FileDialog).filters = dialog_filters
 	else:
 		if new_entry:# this is used for the save as.. feature
-			($FileDialog as FileDialog).title = "Save \"%s\" editor" % name
+			($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 			
 			$FileDialog.popup_centered(Vector2i(700, 500))
 			
@@ -195,7 +204,6 @@ func _on_save_dialog_confirmed():
 	save_dialog.emit(DIALOG_RESULT.Save)
 
 
-
 func _on_close_dialog_custom_action(action: StringName):
 	if action == "close":
 		save_dialog.emit(DIALOG_RESULT.Close)
@@ -227,47 +235,53 @@ func save_file_to_disc(path: String):
 			
 	_file_saved = true
 	file_saved_in_disc = true
-	name = get_file_name(path)
-
-
-func get_file_name(path: String) -> String:
-	if path.length() <= 1:
-		return path
-	var split_path = path.split("/")
-	return split_path[split_path.size() -1].split(".")[0]
+	tab_title = path.get_file()
+	var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
+	SingletonObject.editor_pane.Tabs.set_tab_title(indx, tab_title)
 
 
 #region bottom of the pane buttons
+
 func _on_save_button_pressed():
 	save()
 
 
 func _on_create_note_button_pressed() -> void:
 	if Type.TEXT == type:
-		if name:
-			SingletonObject.NotesTab.add_note(name, code_edit.text)
+		if tab_title:
+			SingletonObject.NotesTab.add_note( tab_title, code_edit.text)
 		elif file:
-			SingletonObject.NotesTab.add_note(get_file_name(file), code_edit.text)
+			SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
 		else:
 			SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 		return
 	if Type.GRAPHICS == type:
-		if name:
-			SingletonObject.NotesTab.add_image_note(name, graphics_editor.image, "Sketch")
+		if tab_title:
+			SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
 		elif file:
-			SingletonObject.NotesTab.add_image_note(get_file_name(file), graphics_editor.image, "Sketch")
+			SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
 		else:
 			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 		return
 	if Type.WhiteBoard == type:
 		if file:
-			SingletonObject.NotesTab.add_image_note(get_file_name(file), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+			SingletonObject.NotesTab.add_image_note(file.get_file(), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 		else:
 			SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 
+
+#this functions calls the file linked to the editor to be loaded again into memory
+func _on_reload_button_pressed() -> void:
+	_load_text_file(file)
+
+
+#this emits a signal that gets picked by the projectMenuActions to save open editor tabs
+func _on_save_open_editor_tabs_button_pressed() -> void:
+	SingletonObject.SaveOpenEditorTabs.emit()
+
 #endregion bottom of the pane buttons
 
-#region Editor buttons
+#region Top Editor buttons
 func delete_chars() -> void:
 	if Type.TEXT != type:
 		return
@@ -304,7 +318,7 @@ func _on_audio_btn_pressed():
 	SingletonObject.AtT.btn = %AudioBTN
 	%AudioBTN.modulate = Color(Color.LIME_GREEN)
 
-#endregion Editor buttons
+#endregion Top Editor buttons
 
 
 ## Creates a Note from this Editor.[br]
