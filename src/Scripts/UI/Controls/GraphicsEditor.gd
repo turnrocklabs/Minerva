@@ -16,7 +16,6 @@ var Buble = preload("res://Scenes/CloudControl.tscn")
 var selectedLayer: String
 var selectedIndex: int
 var loaded_layers: Array[Layer]
-var _WhichAdditonlTools
 static var layer_Number = 0
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
@@ -64,7 +63,6 @@ var _background_images = {}  # Store the background images for each layer
 var _masking: bool:
 	set(value):
 		_masking = value
-		_apply_mask_button.visible = value
 		if not value: 
 			masking_ended.emit()
 
@@ -383,6 +381,7 @@ func _on_mask(toggled_on: bool):
 		_mask_layer = null
 		_draw_layer.visible = true
 
+#make it like signal,probably through SingeltonObject
 func _on_apply_mask_button_pressed():
 	if _mask_layer and _draw_layer:
 		# Use the mask layer image to mask the draw layer image
@@ -511,7 +510,9 @@ func _on_brushes_item_selected(index):
 			%AdditionalTools.add_item("haha2")
 			%AdditionalTools.add_item("haha3")
 			
-			_WhichAdditonlTools = "Pen"
+			%OptionButton.visible = false
+			
+			%ApplyMaskButton.visible = false
 			
 		1:
 			erasing = true
@@ -520,6 +521,8 @@ func _on_brushes_item_selected(index):
 			clouding = false
 			zoomIn =false
 			zoomOut = false
+			%OptionButton.visible = false
+			%ApplyMaskButton.visible = false
 		2:
 			erasing = false
 			view_tool_active = false
@@ -527,6 +530,11 @@ func _on_brushes_item_selected(index):
 			clouding = false
 			zoomIn =false
 			zoomOut = false
+			%OptionButton.visible = false
+			%ApplyMaskButton.visible = true
+		3:
+			%OptionButton.visible = true
+			%ApplyMaskButton.visible = false
 
 func _on_option_button_item_selected(index):
 	match index:
@@ -559,7 +567,7 @@ func _on_hand_pressed() -> void:
 	clouding = false
 	zoomIn = false
 	zoomOut = false
-
+	%OptionButton.visible = false
 
 func _on_zoom_in_pressed() -> void:
 	erasing = false
@@ -568,6 +576,7 @@ func _on_zoom_in_pressed() -> void:
 	clouding = false
 	zoomIn = true
 	zoomOut = false
+	%OptionButton.visible = false
 	
 func _on_zoom_out_pressed() -> void:
 	erasing = false
@@ -576,6 +585,7 @@ func _on_zoom_out_pressed() -> void:
 	clouding = false
 	zoomIn = false
 	zoomOut = true
+	%OptionButton.visible = false
 
 
 func _on_mg_pressed() -> void:
