@@ -27,6 +27,7 @@ theme_override_constants/separation = 10
 [node name="GraphicsEditor" parent="VBoxContainer" instance=ExtResource("3_rd38o")]
 unique_name_in_owner = true
 visible = false
+custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
 size_flags_vertical = 3
 masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
