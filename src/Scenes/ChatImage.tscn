@@ -1,7 +1,8 @@
-[gd_scene load_steps=7 format=3 uid="uid://r5b4cwe432qh"]
+[gd_scene load_steps=8 format=3 uid="uid://r5b4cwe432qh"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/ChatImage.gd" id="1_6oqm2"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="2_0hlvg"]
+[ext_resource type="Texture2D" uid="uid://c3dh20fijyn88" path="res://assets/icons/grid_minimap.svg" id="2_3432p"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="3_ix1p3"]
 [ext_resource type="Texture2D" uid="uid://puwjyorobokk" path="res://assets/icons/download_icons/download_white.png" id="4_8rp1f"]
 
@@ -42,13 +43,17 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_2gddn")
 [node name="h" type="HBoxContainer" parent="v/p"]
 layout_mode = 2
 
+[node name="MaskButton" type="Button" parent="v/p/h"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "Edit Mask Applied"
+icon = ExtResource("2_3432p")
+flat = true
+
 [node name="Label" type="Label" parent="v/p/h"]
 layout_mode = 2
 text = "Image"
-
-[node name="CheckButton" type="CheckButton" parent="v/p/h"]
-unique_name_in_owner = true
-layout_mode = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="v/p/h"]
 layout_mode = 2
@@ -77,7 +82,6 @@ size_flags_vertical = 3
 expand_mode = 5
 
 [connection signal="file_selected" from="SaveFileDialog" to="." method="_on_save_file_dialog_file_selected"]
-[connection signal="toggled" from="v/p/h/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="pressed" from="v/p/h/HBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="v/p/h/HBoxContainer/NoteButton" to="." method="_on_note_button_pressed"]
 [connection signal="pressed" from="v/p/h/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]

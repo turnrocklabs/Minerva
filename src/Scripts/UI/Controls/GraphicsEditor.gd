@@ -255,6 +255,11 @@ func _on_mask_check_button_toggled(toggled_on: bool):
 
 func _on_apply_mask_button_pressed():
 	image.set_meta("mask", _mask_layer.image)
+
+	# if the image has the signal defined call it
+	if image.has_user_signal("mask_changed"):
+		image.emit_signal("mask_changed")
+	
 	_masking = false
 
 func _on_erasing_pressed():
