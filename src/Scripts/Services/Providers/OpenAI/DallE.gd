@@ -184,7 +184,7 @@ func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
-
+	
 #region Form Data
 
 ## Generate boundary string for form data.
