@@ -109,19 +109,19 @@ func add_control(item: Node, name_: String) -> Node:
 
 
 
-func add(type: Editor.Type, file = null, name_ = null) -> Editor:
+func add(type: Editor.Type, file = null, name_ = null, associated_object = null) -> Editor:
 	#Add a scroll container to the tabs and put the item in there.
 
-	# check if we're opining a file that's already open
-	# if so jsut switch to that editor
+	# check if we're opening a file that's already open or for the same associated_object (except null)
+	# if so just switch to that editor
 	for editor: Editor in self.Tabs.get_children():
 		if not editor is Editor: 
 			continue
-		if editor.file == file:
+		if editor.file == file or (associated_object != null and editor.associated_object == associated_object):
 			Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
-			return
+			return editor
 	
-	var editor_node = Editor.create(type, file)
+	var editor_node = Editor.create(type, file, name_, associated_object)
 	
 	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
 	
