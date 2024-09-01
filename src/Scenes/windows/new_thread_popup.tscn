@@ -49,12 +49,13 @@ layout_mode = 2
 size_flags_horizontal = 0
 text = "Name"
 
-[node name="txtNewTabName" type="TextEdit" parent="VBoxContainer/HBoxTopRow"]
+[node name="txtNewTabName" type="LineEdit" parent="VBoxContainer/HBoxTopRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Tab Name"
+max_length = 25
 caret_blink = true
 
 [node name="btnVoiceForNoteTab" type="Button" parent="VBoxContainer/HBoxTopRow"]
@@ -86,5 +87,7 @@ layout_mode = 2
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
+[connection signal="window_input" from="." to="." method="_on_window_input"]
+[connection signal="text_submitted" from="VBoxContainer/HBoxTopRow/txtNewTabName" to="." method="_on_txt_new_tab_name_text_submitted"]
 [connection signal="pressed" from="VBoxContainer/HBoxTopRow/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxTopRow/btnCreateThread" to="." method="_on_btn_create_thread_pressed"]

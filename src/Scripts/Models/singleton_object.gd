@@ -68,10 +68,10 @@ signal associated_notes_tab(tab_name, tab: Control)
 signal pop_up_new_tab
 
 
-var ThreadList: Array[MemoryThread]:
-	set(value):
-		# save_state(false)
-		ThreadList = value
+var ThreadList: Array[MemoryThread]#:  =[]
+	#set(value):
+		## save_state(false)
+		#ThreadList = value
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
 var DetachedNotes: Array[MemoryItem]
