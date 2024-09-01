@@ -261,100 +261,108 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
-	# Early exit if view tool is active
+	print("Received input event: ", event)
+
+	# Handle view tool
 	if view_tool_active:
-		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
-			var current_mouse_position = event.position
-			var delta = current_mouse_position - prev_mouse_position
-			_layers_container.position += delta
-			prev_mouse_position = current_mouse_position
-			return
-		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
-				prev_mouse_position = event.position
-			return
-		
-	if _rotating and not null:
-		var hbox_index = %LayersList.get_children().find(active_transfer_button.get_parent())
-		var layer = _layers_container.get_child(hbox_index)
-
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:  
-				_rotation_pivot = _layers_container.get_local_mouse_position()
-				layer.pivot_offset = _rotation_pivot - layer.position
-
-		elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT: 
-			var angle = (_layers_container.get_local_mouse_position() - _rotation_pivot).angle()
-			layer.rotation = angle
-
-		elif event is InputEventKey and event.pressed and event.keycode == KEY_ENTER:
-			_rotating = false
-			active_transfer_button.modulate = Color.WHITE
-			active_transfer_button = null
-			layer.pivot_offset = Vector2.ZERO
+		_handle_view_tool(event)
 		return
 
-	if layer_being_transfered: 
-		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
-			var current_mouse_position = _layers_container.get_local_mouse_position()
-			layer_being_transfered.position = current_mouse_position - prev_mouse_position
-			return
-		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
-				prev_mouse_position = _layers_container.get_local_mouse_position() - layer_being_transfered.position 
-			else: 
-				layer_being_transfered = null 
-			return
+	# Handle rotation
+	if _rotating:
+		_handle_rotation(event)
+		return
 
+	# Handle layer transfer
+	if layer_being_transfered:
+		_handle_layer_transfer(event)
+		return
+
+	# Handle zooming
 	if zoomIn or zoomOut:
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-			var zoom_factor = 1.1 if zoomIn else 0.9 
-			var zoom_center = _layers_container.get_local_mouse_position() 
+		_handle_zoom(event)
+		return
 
-			var zoom_offset = zoom_center * (1 - zoom_factor)
-
-			_layers_container.scale *= Vector2.ONE * zoom_factor
-			_layers_container.position += zoom_offset
-	
-
-	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var new_bubble = Buble.instantiate() 
-		_layers_container.add_child(new_bubble)
-
-		clouding = false
+	# Handle clouding
+	if clouding:
+		_handle_clouding(event)
+		return
 
 	# Handle drawing actions
-	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
-				drawing = true
-				_draw_begin = true
-			else:
-				drawing = false
-				
-			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
+	if event is InputEventMouseButton or event is InputEventScreenTouch:
+		if event.pressed:
+			drawing = true
+			_draw_begin = true
+			_last_pos = _get_layer_local_pos(event.position)
+		else:
+			drawing = false
+			_draw_begin = false
 
-	if event is InputEventMouseMotion and drawing:
-		# Get mouse position relative to _layers_container
-		var container_local_pos = _layers_container.get_local_mouse_position() 
-
-		# Get mouse position relative to the active layer
+	elif (event is InputEventMouseMotion or event is InputEventScreenDrag) and drawing:
+		var layer_local_pos = _get_layer_local_pos(event.position)
 		var active_layer = _mask_layer if _masking else _draw_layer
-		var layer_local_pos = active_layer.get_local_mouse_position()
 
-		# --- No manual offset calculation needed here ---
-		if %LayersList.get_child_count() > 0:
-			if _draw_begin:  
-				_last_pos = layer_local_pos 
-				image_draw(active_layer.image, layer_local_pos, brush_color, brush_size * event.pressure)
-				_draw_begin = false
-
-			for line_pixel in bresenham_line(_last_pos, layer_local_pos): 
+		if _draw_begin:
+			image_draw(active_layer.image, layer_local_pos, brush_color, brush_size * event.pressure)
+			_draw_begin = false
+		else:
+			for line_pixel in bresenham_line(_last_pos, layer_local_pos):
 				image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
 
-		_last_pos = layer_local_pos 
-		active_layer.update() 
-		
+		_last_pos = layer_local_pos
+		active_layer.update()
+
+func _get_layer_local_pos(global_pos: Vector2) -> Vector2:
+	var active_layer = _mask_layer if _masking else _draw_layer
+	return active_layer.get_local_mouse_position()
+
+func _handle_view_tool(event: InputEvent):
+	if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
+		var delta = event.position - prev_mouse_position
+		_layers_container.position += delta
+		prev_mouse_position = event.position
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			prev_mouse_position = event.position
+
+func _handle_rotation(event: InputEvent):
+	var layer = _layers_container.get_child(_layers_container.get_children().find(active_transfer_button.get_parent()))
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			_rotation_pivot = _layers_container.get_local_mouse_position()
+			layer.pivot_offset = _rotation_pivot - layer.position
+	elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
+		var angle = (_layers_container.get_local_mouse_position() - _rotation_pivot).angle()
+		layer.rotation = angle
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_ENTER:
+		_rotating = false
+		active_transfer_button.modulate = Color.WHITE
+		active_transfer_button = null
+		layer.pivot_offset = Vector2.ZERO
+
+func _handle_layer_transfer(event: InputEvent):
+	if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
+		var current_mouse_position = _layers_container.get_local_mouse_position()
+		layer_being_transfered.position = current_mouse_position - prev_mouse_position
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			prev_mouse_position = _layers_container.get_local_mouse_position() - layer_being_transfered.position
+		else:
+			layer_being_transfered = null
+
+func _handle_zoom(event: InputEvent):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		var zoom_factor = 1.1 if zoomIn else 0.9
+		var zoom_center = _layers_container.get_local_mouse_position()
+		var zoom_offset = zoom_center * (1 - zoom_factor)
+		_layers_container.scale *= Vector2.ONE * zoom_factor
+		_layers_container.position += zoom_offset
+
+func _handle_clouding(event: InputEvent):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		var new_bubble = Buble.instantiate()
+		_layers_container.add_child(new_bubble)
+		clouding = false
 func _on_h_slider_value_changed(value):
 	brush_size = value
 
