@@ -159,10 +159,9 @@ vertical_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-item_count = 2
 allow_reselect = true
+item_count = 2
 popup/item_0/text = "Light Mode"
-popup/item_0/id = 0
 popup/item_1/text = "Dark Mode"
 popup/item_1/id = 1
 

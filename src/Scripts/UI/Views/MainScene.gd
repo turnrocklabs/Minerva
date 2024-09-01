@@ -6,8 +6,7 @@ extends Control
 
 @export  var terminal_container: TerminalTabContainer
 
-var icActive = preload("res://assets/icons/Microphone_active.png")
-
+#var icActive = preload("res://assets/icons/Microphone_active.png")
 
 func _ready() -> void:
 	#this is for overriding the separation in the open file dialog
@@ -67,16 +66,13 @@ func _on_disable_notes_button_pressed() -> void:
 	
 	notes_enabled = !notes_enabled
 
-
-
-
 #region help menu
 
-var license_agreement_status: = ResourceLoader.load_threaded_request("res://Scenes/license_agreement_panel.tscn")
-var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/license_agreement_panel.tscn")
+var license_agreement_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
+var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 
-var about_status: = ResourceLoader.load_threaded_request("res://Scenes/about_popup.tscn")
-var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/about_popup.tscn")
+var about_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
+var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
 func _on_help_id_pressed(id: int) -> void:
 	match id:
 		0:# id for the About option

@@ -29,6 +29,8 @@ func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	
 	return output
 
+#region Methods for toggling notes
+
 func Disable_All():
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
 		for item:MemoryItem in this_thread.MemoryItemList:
@@ -66,6 +68,7 @@ func disable_notes_in_tab():
 		if item.Enabled:
 			item.Enabled = false
 
+#endregion Methods for toggling notes
 
 func open_threads_popup(tab_name: String = "", tab = null):
 	
@@ -86,7 +89,7 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
 	
 	if tab_name == "":
-		tab_name = "notes " + str(%tcThreads.get_tab_idx_from_control(tab_ref) + 1)
+		tab_name = "notes " + str(%tcThreads.get_tab_count() + 1)
 	
 	if tab_ref:
 		tab_ref.get_meta("thread").ThreadName = tab_name
@@ -140,6 +143,7 @@ func render_threads():
 	
 
 #region Add notes methods
+
 func add_note(user_title:String, user_content: String, _source: String = "") -> MemoryItem:
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or current_tab < 0:
@@ -241,7 +245,8 @@ func render_thread(thread_item: MemoryThread):
 
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vboxMemoryList)
-
+	scroll_container.follow_focus = true
+	
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
 	#scroll_container.name = thread_item.ThreadName
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
@@ -324,7 +329,7 @@ func attach_file(the_file: String):
 	
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	
-	if file_ext in SingletonObject.supported_text_fortmats:# ["txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "go"]:
+	if file_ext in SingletonObject.supported_text_fortmats:
 		file_type = "text"
 		content = file.get_as_text()
 		content_type = "text/plain"
@@ -426,22 +431,43 @@ func _notification(what):
 		NOTIFICATION_DRAG_BEGIN: _drag_active = true
 		NOTIFICATION_DRAG_END: _drag_active = false
 
+#region Tab signal methods
 
 var clicked: = -1
+var temp_current_tab: = -1
 func _on_tab_clicked(tab: int):
-	
-	if clicked != -1:
+	print("tab clicked: " + str(tab))
+	#current_tab = tab
+	if clicked > -1:
 		var tab_title = get_tab_bar().get_tab_title(tab)
 		open_threads_popup(tab_title, tab)
 		return
-
+	print("current tab: " + str(current_tab))
 	clicked = tab
+	temp_current_tab = tab
+	#clicked = current_tab
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = -1)
 
 
-func _on_tab_hovered(tab: int):
-	if _drag_active:
-		current_tab = tab
+# I dont think we need this function, and it causes an stacOverflow when the notes tabs is a bit big
+#func _on_tab_hovered(tab: int):
+	#if _drag_active:
+		#current_tab = tab
+
+
+func _on_active_tab_rearranged(idx_to: int) -> void:
+	print("temp_current_tab tab: " + str(temp_current_tab))
+	print("current tab: " + str(current_tab))
+	print("rearranged to:" + str(idx_to))
+	var temp_threadList = SingletonObject.ThreadList
+	var chat_history_to_move: MemoryThread = SingletonObject.ThreadList[temp_current_tab]
+	temp_threadList.pop_at(temp_current_tab)
+	SingletonObject.ThreadList.insert(idx_to, chat_history_to_move)
+	temp_current_tab = current_tab
+
+
+#endregion Tab signal methods
+
 
 # This function is called when the ThreadList is modified
 func _on_thread_list_changed():

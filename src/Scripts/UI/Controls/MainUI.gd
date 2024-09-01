@@ -34,4 +34,3 @@ func set_notes_pane_visible(visible_: bool = true):
 
 func set_terminal_pane_visible(visible_: bool = true):
 	terminal_pane.visible = visible_
-

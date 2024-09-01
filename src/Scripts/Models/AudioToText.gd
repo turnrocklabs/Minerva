@@ -12,7 +12,7 @@ var btn:Button
 
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
 
-var FieldForFilling:TextEdit
+var FieldForFilling#:TextEdit # needed to remove the type because this is getting used in lineEdits too
 
 func _ready():
 	var idx = AudioServer.get_bus_index("Rec")

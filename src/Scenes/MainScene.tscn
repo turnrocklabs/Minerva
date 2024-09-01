@@ -7,11 +7,11 @@
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
-[ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/PreferencesPopup.tscn" id="3_3hcc1"]
+[ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/windows/PreferencesPopup.tscn" id="3_3hcc1"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
-[ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/new_thread_popup.tscn" id="5_gujhn"]
+[ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/windows/new_thread_popup.tscn" id="5_gujhn"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="7_rdia2"]
 [ext_resource type="Texture2D" uid="uid://cukfnot0gnafc" path="res://assets/icons/Horizontal_split.png" id="8_oxf75"]
 [ext_resource type="Texture2D" uid="uid://juldbjk5u4wl" path="res://assets/icons/Vertical_split.png" id="9_fr5ee"]
@@ -28,7 +28,7 @@
 [ext_resource type="Texture2D" uid="uid://deboh0lwmv7f7" path="res://assets/icons/paperclip_icons/paperclip_icon_24_no_bg.png" id="21_0ds70"]
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
 [ext_resource type="PackedScene" uid="uid://b1tux4e3yql3g" path="res://Scenes/loading_pop_up_panel.tscn" id="27_f1wok"]
-[ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/create_new_note.tscn" id="27_hlu33"]
+[ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="27_hlu33"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -105,6 +105,10 @@ visible = false
 unresizable = false
 
 [node name="NewThreadPopup" parent="." instance=ExtResource("5_gujhn")]
+unique_name_in_owner = true
+visible = false
+
+[node name="CreateNewNote" parent="." instance=ExtResource("27_hlu33")]
 unique_name_in_owner = true
 visible = false
 
@@ -443,10 +447,6 @@ theme_override_constants/separation = 12
 [node name="HSeparator" type="HSeparator" parent="VBoxRoot/VSplitContainer/TerminalTabVbox"]
 layout_mode = 2
 
-[node name="CreateNewNote" parent="." instance=ExtResource("27_hlu33")]
-unique_name_in_owner = true
-visible = false
-
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
 
@@ -487,6 +487,6 @@ layout_mode = 1
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
-[connection signal="child_order_changed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_child_order_changed"]
+[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
 [connection signal="tab_hovered" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
