@@ -7,7 +7,7 @@ var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "w
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]#, "flac"]
 var is_graph:bool
 var is_masking:bool
-
+var CloudType
 #endregion global variables
 
 #region Config File
@@ -136,8 +136,6 @@ func _ready():
 	add_child(AtT)
 	add_child(undo)
 	
-	editor_pane = editor_container.get_child(0)
-	
 	var err = config_file.load(config_file_name)
 	if err != OK:
 		return
@@ -168,7 +166,7 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 #region Editor
 
 @onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
-var editor_pane: EditorPane
+@onready var editor_pane: EditorPane = editor_container.editor_pane if editor_container else null
 var editors: Array[Editor]
 #endregion
 
