@@ -20,8 +20,8 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
-_color_picker = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ColorPickerButton")
-_apply_mask_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton")
+_color_picker = NodePath("VBoxContainer/MarginContainer/HScrollBar/ColorPickerButton")
+_apply_mask_button = NodePath("VBoxContainer/MarginContainer/HScrollBar/ApplyMaskButton")
 masking_color = Color(0.251, 0.227, 0.243, 0.6)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
@@ -34,14 +34,15 @@ theme_override_constants/margin_top = 25
 theme_override_constants/margin_right = 5
 theme_override_constants/margin_bottom = 5
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/MarginContainer"]
-custom_minimum_size = Vector2(0, 30)
+[node name="HScrollBar" type="HScrollBar" parent="VBoxContainer/MarginContainer"]
 layout_mode = 2
-theme_override_constants/separation = 14
 
-[node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HScrollBar"]
 unique_name_in_owner = true
 layout_mode = 2
+offset_left = 22.0
+offset_right = 117.0
+offset_bottom = 76.0
 item_count = 4
 popup/item_0/icon = ExtResource("2_xgklw")
 popup/item_1/icon = ExtResource("2_tkvqr")
@@ -51,9 +52,13 @@ popup/item_2/id = 2
 popup/item_3/text = "TextBox"
 popup/item_3/id = 3
 
-[node name="AdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="AdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HScrollBar"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
+offset_left = 109.0
+offset_right = 151.0
+offset_bottom = 76.0
 item_count = 3
 popup/item_0/text = "1"
 popup/item_1/text = "2"
@@ -61,8 +66,11 @@ popup/item_1/id = 1
 popup/item_2/text = "3"
 popup/item_2/id = 2
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/MarginContainer/HScrollBar"]
 layout_mode = 2
+offset_left = 131.0
+offset_right = 228.0
+offset_bottom = 76.0
 item_count = 3
 popup/item_0/text = "Plain"
 popup/item_1/text = "Speech"
@@ -70,82 +78,106 @@ popup/item_1/id = 1
 popup/item_2/text = "Thought"
 popup/item_2/id = 2
 
-[node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HScrollBar"]
 unique_name_in_owner = true
 editor_description = "Brush sizes
 "
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
+offset_left = 242.0
+offset_right = 392.0
+offset_bottom = 76.0
 size_flags_vertical = 1
 tooltip_text = "Brush Size"
 max_value = 15.0
 value = 5.0
 rounded = true
 
-[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HScrollBar"]
 unique_name_in_owner = true
 editor_description = "Brush color"
 layout_mode = 2
+offset_left = 406.0
+offset_right = 456.0
+offset_bottom = 76.0
 text = "Color"
 color = Color(0.447059, 0.447059, 0.67451, 1)
 
-[node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar"]
 visible = false
 layout_mode = 2
+offset_right = 97.0
+offset_bottom = 31.0
 tooltip_text = "Apply created mask"
 text = "Apply Mask"
 
-[node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HScrollBar"]
 layout_mode = 2
+anchors_preset = 0
+offset_left = 470.0
+offset_right = 470.0
+offset_bottom = 76.0
 
-[node name="Hand" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="Hand" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar"]
 layout_mode = 2
+offset_left = 484.0
+offset_right = 527.0
+offset_bottom = 76.0
 icon = ExtResource("4_7duu7")
 
-[node name="Zoom" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="Zoom" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HScrollBar"]
 layout_mode = 2
+offset_left = 541.0
+offset_right = 612.0
+offset_bottom = 76.0
 theme_override_constants/separation = 15
 
-[node name="Mg" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Zoom"]
+[node name="Mg" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar/Zoom"]
 layout_mode = 2
 icon = ExtResource("6_aik7h")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer/Zoom"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HScrollBar/Zoom"]
 layout_mode = 2
 
-[node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer"]
+[node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar/Zoom/VBoxContainer"]
 layout_mode = 2
 icon = ExtResource("6_4tqp6")
 
-[node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer"]
+[node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar/Zoom/VBoxContainer"]
 layout_mode = 2
 icon = ExtResource("7_hti8r")
 
-[node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HScrollBar"]
 layout_mode = 2
+offset_left = 626.0
+offset_right = 738.0
+offset_bottom = 76.0
 
-[node name="Arrowleft" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease"]
+[node name="Arrowleft" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar/layersIncrease"]
 layout_mode = 2
 icon = ExtResource("9_i3ic6")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HScrollBar/layersIncrease"]
 layout_mode = 2
 
-[node name="ArrowTop" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer"]
+[node name="ArrowTop" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar/layersIncrease/VBoxContainer"]
 layout_mode = 2
 icon = ExtResource("10_iiyn1")
 
-[node name="ArrowBottom" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer"]
+[node name="ArrowBottom" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar/layersIncrease/VBoxContainer"]
 layout_mode = 2
 icon = ExtResource("11_ugcir")
 
-[node name="ArrowRight" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease"]
+[node name="ArrowRight" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar/layersIncrease"]
 layout_mode = 2
 icon = ExtResource("12_hevcs")
 
-[node name="Layers" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="Layers" type="Button" parent="VBoxContainer/MarginContainer/HScrollBar"]
 unique_name_in_owner = true
 layout_mode = 2
+offset_left = 752.0
+offset_right = 811.0
+offset_bottom = 76.0
 text = "Layers"
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
@@ -217,19 +249,19 @@ ok_button_text = "Open"
 file_mode = 0
 access = 2
 
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/Brushes" to="." method="_on_brushes_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/OptionButton" to="." method="_on_option_button_item_selected"]
-[connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Hand" to="." method="_on_hand_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/Arrowleft" to="." method="_on_arrowleft_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer/ArrowTop" to="." method="_on_arrow_top_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HScrollBar/Brushes" to="." method="_on_brushes_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HScrollBar/OptionButton" to="." method="_on_option_button_item_selected"]
+[connection signal="value_changed" from="VBoxContainer/MarginContainer/HScrollBar/BrushHSlider" to="." method="_on_h_slider_value_changed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/Hand" to="." method="_on_hand_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/Zoom/Mg" to="." method="_on_mg_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/layersIncrease/Arrowleft" to="." method="_on_arrowleft_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/layersIncrease/VBoxContainer/ArrowTop" to="." method="_on_arrow_top_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HScrollBar/Layers" to="." method="_on_layers_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
 [connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]

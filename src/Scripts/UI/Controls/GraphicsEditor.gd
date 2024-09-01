@@ -613,7 +613,8 @@ func _transfer(Hbox: HBoxContainer) -> void:
 			if is_instance_valid(active_transfer_button): 
 				active_transfer_button.modulate = Color.WHITE
 			active_transfer_button = null
-
+			
+			
 		# Activate the new button
 		active_transfer_button = transfer_button
 		active_transfer_button.modulate = Color.LIME_GREEN
@@ -671,18 +672,22 @@ func _scale(Hbox: HBoxContainer) -> void:
 		active_transfer_button.modulate = Color.LIME_GREEN 
 		
 func _on_arrowleft_pressed() -> void:
-	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
+	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontallyc
 	
+	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
-		var move_amount = position.x * 0.1 
-		# Move the control to the left
-		layer.position.x -= 1000
-
+		if layer is Layer:
+			layer.position.x -= layer.size.x * 0.09 # Move right by 5% of the new width 
+			
 func _on_arrow_right_pressed() -> void:
 	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
 
 func _on_arrow_top_pressed() -> void:
 	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
+	# --- Move layers after resizing ---
+	for layer in _layers_container.get_children():
+		if layer is Layer:
+			layer.position.y -= layer.size.y * 0.09 # Move right by 5% of the new width 
 
 func _on_arrow_bottom_pressed() -> void:
 	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
