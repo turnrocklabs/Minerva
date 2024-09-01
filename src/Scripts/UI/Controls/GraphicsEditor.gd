@@ -491,9 +491,9 @@ func LayerVisible(Hbox: HBoxContainer):
 
 	# Toggle the icon based on visibility
 	if VisibleOfBox.visible:
-		VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")  # Replace with your visible icon path
+		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")  # Replace with your visible icon path
 	else:
-		VisibleButton.icon = preload("res://assets/icons/visibility_not_visible.png")   # Replace with your hidden icon path
+		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_not_visible.png")   # Replace with your hidden icon path
 
 
 func _on_brushes_item_selected(index):
@@ -740,7 +740,7 @@ func layers_buttons():
 	LayerButton.connect("pressed", self.selectButton.bind(LayerButton,Hbox))
 	
 	var VisibleButton = Button.new()
-	VisibleButton.icon = preload("res://assets/icons/visibility_visible.svg")
+	VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")
 	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
 	
 	var RemoveButton = Button.new()
