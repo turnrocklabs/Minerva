@@ -24,6 +24,12 @@ enum Type {
 	NOTE_EDITOR,
 }
 
+## May contain the object that is being edited by this editor.[br]
+## Eg. ChatImage, Note, etc..[br]
+## Allows switching to existing editor intead of
+## opening a new one for same associated object.
+var associated_object
+
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
@@ -38,9 +44,11 @@ var prompt_save:= true
  # checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
-static func create(type_: Type, file_ = null, name_ = null) -> Editor:
+static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null) -> Editor:
 	var editor = scene.instantiate()
 	editor.type = type_
+	editor.associated_object = associated_object_
+	
 	if name_:
 		editor.tab_title = name_
 	if file_: 
