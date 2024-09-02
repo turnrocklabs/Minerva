@@ -196,7 +196,7 @@ func setup(canvas_size: Vector2i, background_color: Color):
 	setup_from_image(img)
 
 func create_image(vec:Vector2):
-	var img = Image.create(vec.x, vec.y, false, Image.FORMAT_RGBA8)
+	var img = Image.create(int(vec.x), int(vec.y), false, Image.FORMAT_RGBA8)
 	img.fill(Color(255, 255, 255, 0)) 
 	
 	# Create new layer and assign the new image
@@ -417,7 +417,7 @@ func _on_add_layer_pressed():
 	
 	# Automatically select the newly created layer
 
-func RemoveLayer(Hbox:HBoxContainer, index:int):
+func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	# Find the index of the HBoxContainer within LayersList
 	var hbox_index = %LayersList.get_children().find(Hbox)
 	

@@ -424,7 +424,7 @@ func _drop_data(at_position: Vector2, data):
 	var vbox_memory_list = control.get_child(0)
 
 	vbox_memory_list._drop_data(at_position, data)
-
+	current_tab = tab_idx
 
 func _notification(what):
 	match what:
@@ -433,11 +433,10 @@ func _notification(what):
 
 #region Tab signal methods
 
-var clicked: = -1
-var temp_current_tab: = -1
+var clicked: = -1 # this is used to tack double click to cahnge the tab nama
+var temp_current_tab: = -1 # this is used to track the clicked tab when rearranged
 func _on_tab_clicked(tab: int):
 	print("tab clicked: " + str(tab))
-	#current_tab = tab
 	if clicked > -1:
 		var tab_title = get_tab_bar().get_tab_title(tab)
 		open_threads_popup(tab_title, tab)
@@ -445,14 +444,7 @@ func _on_tab_clicked(tab: int):
 	print("current tab: " + str(current_tab))
 	clicked = tab
 	temp_current_tab = tab
-	#clicked = current_tab
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = -1)
-
-
-# I dont think we need this function, and it causes an stacOverflow when the notes tabs is a bit big
-#func _on_tab_hovered(tab: int):
-	#if _drag_active:
-		#current_tab = tab
 
 
 func _on_active_tab_rearranged(idx_to: int) -> void:
@@ -464,7 +456,6 @@ func _on_active_tab_rearranged(idx_to: int) -> void:
 	temp_threadList.pop_at(temp_current_tab)
 	SingletonObject.ThreadList.insert(idx_to, chat_history_to_move)
 	temp_current_tab = current_tab
-
 
 #endregion Tab signal methods
 

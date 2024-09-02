@@ -3,6 +3,7 @@
 class_name ChatImage
 extends PanelContainer
 
+@warning_ignore("unused_signal")
 signal image_active_state_changed(active: bool)
 
 const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
