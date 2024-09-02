@@ -8,5 +8,120 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-stretch_mode = 3
+expand_mode = 1
 script = ExtResource("1_b4wdj")
+
+[node name="EditButton1" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+offset_right = 44.0
+offset_bottom = 44.0
+
+[node name="EditButton2" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -17.5
+offset_right = 26.5
+offset_bottom = 44.0
+grow_horizontal = 2
+pivot_offset = Vector2(17, 17)
+focus_mode = 0
+mouse_filter = 1
+
+[node name="EditButton3" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -31.0
+offset_right = 13.0
+offset_bottom = 44.0
+grow_horizontal = 0
+
+[node name="EditButton4" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_top = -15.5
+offset_right = 44.0
+offset_bottom = 28.5
+grow_vertical = 2
+
+[node name="EditButton5" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_top = -44.0
+offset_right = 44.0
+grow_vertical = 0
+
+[node name="EditButton6" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -15.5
+offset_top = -31.0
+offset_right = 28.5
+offset_bottom = 13.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="EditButton7" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -31.0
+offset_top = -31.0
+offset_right = 13.0
+offset_bottom = 13.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="EditButton8" type="Button" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -44.0
+offset_top = -22.0
+offset_bottom = 22.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[connection signal="button_down" from="EditButton1" to="." method="_on_edit_button_1_button_down"]
+[connection signal="button_up" from="EditButton1" to="." method="_on_edit_button_1_button_up"]
+[connection signal="button_down" from="EditButton2" to="." method="_on_edit_button_2_button_down"]
+[connection signal="button_up" from="EditButton2" to="." method="_on_edit_button_2_button_up"]
+[connection signal="button_down" from="EditButton3" to="." method="_on_edit_button_3_button_down"]
+[connection signal="button_down" from="EditButton4" to="." method="_on_edit_button_4_button_down"]
+[connection signal="button_down" from="EditButton5" to="." method="_on_edit_button_5_button_down"]
+[connection signal="button_down" from="EditButton6" to="." method="_on_edit_button_6_button_down"]
+[connection signal="button_down" from="EditButton7" to="." method="_on_edit_button_7_button_down"]
+[connection signal="button_down" from="EditButton8" to="." method="_on_edit_button_8_button_down"]

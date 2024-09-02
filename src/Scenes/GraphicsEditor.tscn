@@ -1,20 +1,28 @@
-[gd_scene load_steps=5 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=13 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
+[ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="2_xgklw"]
+[ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="4_7duu7"]
+[ext_resource type="Texture2D" uid="uid://c6xtrs6ldfl71" path="res://assets/icons/Mask34.png" id="4_8046s"]
+[ext_resource type="Texture2D" uid="uid://bliwqrb268u66" path="res://assets/icons/zoom_more.svg" id="6_4tqp6"]
+[ext_resource type="Texture2D" uid="uid://b4mldxp8undi7" path="res://assets/icons/MgGlass.png" id="6_aik7h"]
+[ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_less.svg" id="7_hti8r"]
+[ext_resource type="Texture2D" uid="uid://dxjr3bduj88w1" path="res://assets/icons/Arrowleft.png" id="9_i3ic6"]
+[ext_resource type="Texture2D" uid="uid://fuennqeu6spg" path="res://assets/icons/ArrowTop.png" id="10_iiyn1"]
+[ext_resource type="Texture2D" uid="uid://cyjad26s5xekh" path="res://assets/icons/ArrowBottom.png" id="11_ugcir"]
+[ext_resource type="Texture2D" uid="uid://cy6rnqiqqe58r" path="res://assets/icons/ArrowRight.png" id="12_hevcs"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="3_aanik"]
-[ext_resource type="Texture2D" uid="uid://cnvsja4y7kp1m" path="res://assets/icons/remove_minus.png" id="4_l7xrh"]
 
-[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_mask_check_button", "_apply_mask_button")]
+[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
-_color_picker = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ColorPickerButton")
-_mask_check_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/MaskCheckButton")
-_apply_mask_button = NodePath("VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton")
+_color_picker = NodePath("VBoxContainer/MarginContainer/HFlowContainer/ColorPickerButton")
+_apply_mask_button = NodePath("VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton")
 masking_color = Color(0.251, 0.227, 0.243, 0.6)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
@@ -27,17 +35,58 @@ theme_override_constants/margin_top = 25
 theme_override_constants/margin_right = 5
 theme_override_constants/margin_bottom = 5
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/MarginContainer"]
-custom_minimum_size = Vector2(0, 30)
+[node name="HFlowContainer" type="HFlowContainer" parent="VBoxContainer/MarginContainer"]
 layout_mode = 2
-theme_override_constants/separation = 14
+theme_override_constants/h_separation = 25
 
-[node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+selected = 0
+item_count = 4
+popup/item_0/icon = ExtResource("2_xgklw")
+popup/item_1/icon = ExtResource("2_tkvqr")
+popup/item_1/id = 1
+popup/item_2/icon = ExtResource("4_8046s")
+popup/item_2/id = 2
+popup/item_3/text = "TextBox"
+popup/item_3/id = 3
+
+[node name="AdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+item_count = 3
+popup/item_0/text = "1"
+popup/item_1/text = "2"
+popup/item_1/id = 1
+popup/item_2/text = "3"
+popup/item_2/id = 2
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+selected = 0
+item_count = 3
+popup/item_0/text = "Plain"
+popup/item_1/text = "Speech"
+popup/item_1/id = 1
+popup/item_2/text = "Thought"
+popup/item_2/id = 2
+
+[node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "Apply created mask"
+text = "Apply Mask"
+
+[node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 editor_description = "Brush sizes
 "
-visible = false
-custom_minimum_size = Vector2(250, 0)
+custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 size_flags_vertical = 1
 tooltip_text = "Brush Size"
@@ -45,59 +94,69 @@ max_value = 15.0
 value = 5.0
 rounded = true
 
-[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 editor_description = "Brush color"
-visible = false
 layout_mode = 2
 text = "Color"
 color = Color(0.447059, 0.447059, 0.67451, 1)
 
-[node name="MaskCheckButton" type="CheckButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "AI zone,when enabled"
-visible = false
+[node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 layout_mode = 2
 
-[node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-visible = false
+[node name="Hand" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 layout_mode = 2
-tooltip_text = "Apply created mask"
-text = "Apply Mask"
+icon = ExtResource("4_7duu7")
 
-[node name="Erasing" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "Eraser for drawn lines"
-visible = false
+[node name="Zoom" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 layout_mode = 2
-icon = ExtResource("2_tkvqr")
+theme_override_constants/separation = 15
 
-[node name="PickLayers" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "Layers"
-visible = false
+[node name="Mg" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom"]
+layout_mode = 2
+icon = ExtResource("6_aik7h")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom"]
+layout_mode = 2
+
+[node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+layout_mode = 2
+icon = ExtResource("6_4tqp6")
+
+[node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
 layout_mode = 2
 item_count = 1
+icon = ExtResource("7_hti8r")
 selected = 0
 popup/item_0/text = "Layer1"
 popup/item_0/id = 0
 
-[node name="addlayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "Add new layer"
-visible = false
+[node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 layout_mode = 2
-icon = ExtResource("3_aanik")
 
-[node name="removeLayer" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
-unique_name_in_owner = true
-editor_description = "Remove selected layer"
-visible = false
+[node name="Arrowleft" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
 layout_mode = 2
-icon = ExtResource("4_l7xrh")
+icon = ExtResource("9_i3ic6")
 
-[node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
 layout_mode = 2
+
+[node name="ArrowTop" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer"]
+layout_mode = 2
+icon = ExtResource("10_iiyn1")
+
+[node name="ArrowBottom" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer"]
+layout_mode = 2
+icon = ExtResource("11_ugcir")
+
+[node name="ArrowRight" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
+layout_mode = 2
+icon = ExtResource("12_hevcs")
+
+[node name="Layers" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Layers"
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -109,10 +168,78 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
-[connection signal="toggled" from="VBoxContainer/MarginContainer/HBoxContainer/MaskCheckButton" to="." method="_on_mask_check_button_toggled"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Erasing" to="." method="_on_erasing_pressed"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/PickLayers" to="." method="_on_pick_layers_item_selected"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/addlayer" to="." method="_on_addlayer_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/removeLayer" to="." method="_on_remove_layer_pressed"]
+[node name="PopupPanel" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="LayerBG" type="Panel" parent="PopupPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+offset_right = 218.0
+offset_bottom = 146.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="LayersMenu" type="ScrollContainer" parent="PopupPanel"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 222.0
+offset_bottom = 146.0
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="LayersHolder" type="VBoxContainer" parent="PopupPanel/LayersMenu"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+
+[node name="Name" type="Label" parent="PopupPanel/LayersMenu/LayersHolder"]
+layout_mode = 2
+text = "Layers"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="LayersList" type="VBoxContainer" parent="PopupPanel/LayersMenu/LayersHolder"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="AddLayer" type="Button" parent="PopupPanel/LayersMenu/LayersHolder"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
+text = "Add layer"
+
+[node name="AddImagelayer" type="Button" parent="PopupPanel/LayersMenu/LayersHolder"]
+layout_mode = 2
+text = "Add image layer"
+
+[node name="AddNewPic" type="FileDialog" parent="."]
+unique_name_in_owner = true
+auto_translate_mode = 1
+title = "Open a File"
+initial_position = 4
+size = Vector2i(800, 600)
+popup_window = true
+ok_button_text = "Open"
+file_mode = 0
+access = 2
+
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/OptionButton" to="." method="_on_option_button_item_selected"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
+[connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Hand" to="." method="_on_hand_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/Arrowleft" to="." method="_on_arrowleft_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowTop" to="." method="_on_arrow_top_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
+[connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
+[connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]
