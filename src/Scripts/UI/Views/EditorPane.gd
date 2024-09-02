@@ -21,7 +21,7 @@ var current_layout: LAYOUT
 func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
-
+	
 
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
@@ -77,7 +77,7 @@ func restore_deleted_tab(tab_name: String):
 		# Remove the data from the deleted_tabs dictionary
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
-func _process(_delta):
+func _input(event):
 	if Tabs.get_tab_count() > 0:
 		pass
 	if Input.is_action_just_pressed("ui_undo"):
@@ -109,19 +109,19 @@ func add_control(item: Node, name_: String) -> Node:
 
 
 
-func add(type: Editor.Type, file = null, name_ = null) -> Editor:
+func add(type: Editor.Type, file = null, name_ = null, associated_object = null) -> Editor:
 	#Add a scroll container to the tabs and put the item in there.
 
-	# check if we're opining a file that's already open
-	# if so jsut switch to that editor
+	# check if we're opening a file that's already open or for the same associated_object (except null)
+	# if so just switch to that editor
 	for editor: Editor in self.Tabs.get_children():
 		if not editor is Editor: 
 			continue
-		if editor.file == file:
+		if editor.file == file or (associated_object != null and editor.associated_object == associated_object):
 			Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
-			return
+			return editor
 	
-	var editor_node = Editor.create(type, file)
+	var editor_node = Editor.create(type, file, name_, associated_object)
 	
 	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
 	
