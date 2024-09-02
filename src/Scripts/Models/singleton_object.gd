@@ -4,7 +4,7 @@ extends Node
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
 var supported_text_fortmats: PackedStringArray = ["rs", "toml", "txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
-var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]#, "flac"]
+var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var is_graph:bool
 var is_masking:bool
 var CloudType
@@ -63,8 +63,11 @@ enum note_type {
 
 # this signals get used in memoryTabs.gd and new_thread_popup.gd 
 # for creating and updating notes tabs names
+@warning_ignore("unused_signal")
 signal create_notes_tab(name: String)
+@warning_ignore("unused_signal")
 signal associated_notes_tab(tab_name, tab: Control)
+@warning_ignore("unused_signal")
 signal pop_up_new_tab
 
 
@@ -84,6 +87,7 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 	NotesTab.render_threads()
 	pass
 
+@warning_ignore("unused_signal")
 signal AttachNoteFile(file_path:String)
 
 
@@ -101,7 +105,7 @@ func get_thread(thread_id: String) -> MemoryThread:
 #endregion Notes
 
 #region Chats
-
+@warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)
 
 var ChatList: Array[ChatHistory]:
@@ -240,15 +244,25 @@ func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MO
 #endregion API Consumer
 
 #region Project Management
+@warning_ignore("unused_signal")
 signal NewProject
+@warning_ignore("unused_signal")
 signal OpenProject
+@warning_ignore("unused_signal")
 signal OpenRecentProject(recent_project_name: String)
+@warning_ignore("unused_signal")
 signal SaveProject
+@warning_ignore("unused_signal")
 signal SaveProjectAs
+@warning_ignore("unused_signal")
 signal PackageProject
+@warning_ignore("unused_signal")
 signal UnpackageProject
+@warning_ignore("unused_signal")
 signal CloseProject
+@warning_ignore("unused_signal")
 signal RedrawAll
+@warning_ignore("unused_signal")
 signal SaveOpenEditorTabs
 
 var saved_state = true
@@ -298,6 +312,7 @@ func all_project_features_open() -> bool:
 
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
+@warning_ignore("unused_signal")
 signal theme_changed(theme_enum)
 
 
@@ -325,7 +340,7 @@ func set_theme(themeID: int) -> void:
 
 
 #region Audio Settings
-
+@warning_ignore("unused_signal")
 signal mic_changed(micrphone)
 
 func get_microphone():
@@ -341,6 +356,7 @@ func set_microphone(mic: String) -> void:
 
 
 #region Loading screen stuff
+@warning_ignore("unused_signal")
 signal Loading(state, label_text)
 
 func show_loading_screen(_label_text: String = ""):
