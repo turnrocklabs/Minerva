@@ -465,6 +465,7 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 	if hbox_index != -1:
 		# Assuming layers in _layers_container directly correspond to 
 		# the order in LayersList, use the hbox_index
+		
 		_draw_layer = _layers_container.get_child(hbox_index)
 		
 		# Update undo history for the previously selected layer
@@ -638,6 +639,7 @@ func _transfer(Hbox: HBoxContainer) -> void:
 		
 		
 func _rotate(Hbox: HBoxContainer) -> void:
+	#this is declaring a new variable hbox_index, should the 'var' be removed
 	var hbox_index = %LayersList.get_children().find(Hbox)
 	var rotate_button = Hbox.get_child(3)  # Assuming the Rotate button is the 4th child
 
