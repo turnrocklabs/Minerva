@@ -15,7 +15,7 @@
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="10_6uibh"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="10_h3jau"]
 [ext_resource type="Texture2D" uid="uid://dr5q0d4id5wst" path="res://assets/icons/arrow_right.svg" id="12_tbvqb"]
-[ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload.svg" id="13_rtrrm"]
+[ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="16_rwt48"]
 
 [sub_resource type="Theme" id="Theme_ca11y"]
 RichTextLabel/colors/font_selected_color = Color(0, 0, 0, 0)
@@ -309,7 +309,7 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 tooltip_text = "Regenerate response for this prompt"
-icon = ExtResource("13_rtrrm")
+icon = ExtResource("16_rwt48")
 
 [node name="RichTextLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2

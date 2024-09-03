@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=8 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/EditorCodeEdit.gd" id="2_g3oqj"]
 [ext_resource type="PackedScene" uid="uid://1snj5jsurqrt" path="res://Scenes/GraphicsEditor.tscn" id="3_rd38o"]
+[ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_1qp3n"]
-[ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload.svg" id="4_umevd"]
+[ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 
 [node name="Editor" type="Control"]
@@ -75,12 +76,12 @@ size_flags_horizontal = 3
 [node name="reloadButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "reload file from disc"
-icon = ExtResource("4_umevd")
+icon = ExtResource("4_0is2e")
 
 [node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "save all unsaved and open editor tabs"
-icon = ExtResource("4_1qp3n")
+icon = ExtResource("5_oex5t")
 
 [node name="SaveButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
