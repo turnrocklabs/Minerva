@@ -10,8 +10,9 @@ var is_masking:bool
 
 var CloudType
 
-var is_spray
-var is_wavy
+var is_Brush
+var is_square
+
 #endregion global variables
 
 #region Config File
