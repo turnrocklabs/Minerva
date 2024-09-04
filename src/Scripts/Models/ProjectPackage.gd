@@ -95,12 +95,19 @@ func save_package(
 		writer.close_file()
 		
 		# replace project original path with the package path
-		var editors = (data["Editors"] as Array[String])
-		var idx: = editors.find(fa.get_path())
-		if idx == -1:
+		var editor_file: Dictionary
+
+		for j in range(data["Editors"].size()):
+			var e_data = data["Editors"][j]
+			if e_data["file"] == fa.get_path():
+				editor_file = e_data
+		
+		if not editor_file:
 			_error = "Project data editors doesn't contain editor with path: %s" % fa.get_path()
 			return ERR_INVALID_DATA
-		editors[idx] = package_path
+		
+		editor_file["file"] = package_path
+
 
 	writer.start_file(project_fp)
 	writer.write_file(JSON.stringify(data).to_utf8_buffer())
@@ -162,7 +169,7 @@ func unpack(files_destination: String, project_destination: String) -> int:
 	var editors: Array = project_data[editor_files_key]
 
 	for i in range(editors.size()):
-		var pkg_path: = str(editors[i])
+		var pkg_path: = str(editors[i]["file"])
 		var buffer: = reader.read_file("%s/%s" % [pkg_base_dir, pkg_path])
 
 		var write_path: = "%s/%s" % [files_destination, pkg_path]
@@ -183,7 +190,7 @@ func unpack(files_destination: String, project_destination: String) -> int:
 		fa.store_buffer(buffer)
 		written_files.append(fa.get_path_absolute())
 
-		editors[i] = write_path
+		editors[i]["file"] = write_path
 
 	var proj_fa: = FileAccess.open(project_destination, FileAccess.WRITE)
 	if not proj_fa:

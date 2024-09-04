@@ -39,7 +39,9 @@ func show_message(title_: String, message: String) -> void:
 
 func _on_about_to_popup():
 	save_path = "D:/package.minpackage"
-	var common_parents = ProjectPackage.generate_path_groups(data["Editors"])
+	var file_paths_array = data["Editors"].map(func(f_data: Dictionary): return f_data["file"])
+
+	var common_parents = ProjectPackage.generate_path_groups(file_paths_array)
 	
 	populate_package_files_tree(common_parents)
 
