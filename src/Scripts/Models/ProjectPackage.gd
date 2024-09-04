@@ -296,15 +296,3 @@ static func generate_path_groups(open_files: Array) -> Dictionary:
 			})
 	
 	return result
-
-
-
-static func package_project() -> Dictionary:
-	var groups = generate_path_groups(
-		[
-			"D:/shared_proj/main.py",
-			"D:/shared_proj/data/obj.py",
-		]
-	)
-
-	return groups
