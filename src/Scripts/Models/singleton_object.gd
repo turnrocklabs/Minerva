@@ -12,6 +12,7 @@ var CloudType
 
 var is_Brush
 var is_square
+var is_cryon
 
 #endregion global variables
 

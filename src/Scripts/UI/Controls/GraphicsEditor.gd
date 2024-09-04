@@ -58,7 +58,8 @@ var bubble: CloudControl = Buble.instantiate()
 var _draw_layer: Layer
 var _mask_layer: Layer
 var _background_images = {}  # Store the background images for each layer
-var va 
+var fill_tool
+
 ## Is masking active. Active masking prevents any color, except for transparency to be active
 var _masking: bool:
 	set(value):
@@ -98,6 +99,7 @@ func _ready():
 	#undo_history.append(_draw_layer.image.duplicate())
 	SingletonObject.is_Brush = false
 	SingletonObject.is_square = false
+	SingletonObject.is_cryon = false
 
 func toggle_controls(toggle: bool):
 	#only drawing
@@ -261,6 +263,8 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 			square_eraser(target_image, pos, point_size)
 		else:
 			draw_square(target_image, pos, color, point_size)
+	elif SingletonObject.is_cryon:
+		Crayon_draw(target_image, pos, color, point_size)
 	else:
 		for pixel in get_circle_pixels(pos, point_size):
 			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
@@ -270,12 +274,23 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 					target_image.set_pixelv(pixel, color) 
 				
 func _gui_input(event: InputEvent):
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and va:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		var active_layer = _mask_layer if _masking else _draw_layer
+		var layer_local_pos = active_layer.get_local_mouse_position()
+		# Get color at clicked position
+		var picked_color = active_layer.image.get_pixelv(layer_local_pos)
+		
+		# Update the ColorPickerButton
+		_color_picker.color = picked_color
+		
+		
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
 		var active_layer = _mask_layer if _masking else _draw_layer
 		var layer_local_pos = active_layer.get_local_mouse_position()
 		flood_fill(active_layer.image, layer_local_pos, brush_color) 
 		active_layer.update()
-		va = false
+		fill_tool = false
+		%Brushes.select(0)
 		
 	# Early exit if view tool is active
 	if view_tool_active:
@@ -565,7 +580,7 @@ func _on_brushes_item_selected(index):
 			zoomIn =false
 			zoomOut = false
 			
-			va = true
+			fill_tool = true
 
 func _on_option_button_item_selected(index):
 	match index:
@@ -836,13 +851,20 @@ func _on_add_imagelayer_pressed() -> void:
 func _on_additional_tools_item_selected(index: int) -> void:
 	match index:
 		0:
+			SingletonObject.is_cryon = false
 			SingletonObject.is_Brush = false
 			SingletonObject.is_square = false
 		1:
+			SingletonObject.is_cryon = false
 			SingletonObject.is_Brush = true
 			SingletonObject.is_square = false
 		2:
+			SingletonObject.is_cryon = false
 			SingletonObject.is_square = true
+			SingletonObject.is_Brush = false
+		3:
+			SingletonObject.is_cryon = true
+			SingletonObject.is_square = false
 			SingletonObject.is_Brush = false
 
 func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
@@ -920,3 +942,26 @@ func flood_fill(target_image: Image, start_pos: Vector2, fill_color: Color):
 			stack.append(Vector2(x - 1, y))
 			stack.append(Vector2(x, y + 1))
 			stack.append(Vector2(x, y - 1))
+
+func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
+	var rand = RandomNumberGenerator.new()
+	rand.seed = Time.get_ticks_msec() 
+
+	var jitter_amount = radius * 0.5  # Adjust jitter intensity
+	var opacity_falloff = 0.7 # Adjust opacity falloff for crayon look
+
+	for _i in range(radius * 2): # More iterations for denseWr crayon effect
+		var offset_x = rand.randf_range(-jitter_amount, jitter_amount)
+		var offset_y = rand.randf_range(-jitter_amount, jitter_amount)
+		var draw_pos = pos + Vector2(offset_x, offset_y)
+
+		# Calculate distance from center for opacity falloff
+		var distance_from_center = pos.distance_to(draw_pos) 
+		var opacity = 1.0 - (distance_from_center / radius) * opacity_falloff
+		opacity = clamp(opacity, 0.0, 1.0) # Ensure opacity is within 0-1
+
+		var final_color = color 
+		final_color.a = opacity 
+
+		if draw_pos.x >= 0 and draw_pos.x < target_image.get_width() and draw_pos.y >= 0 and draw_pos.y < target_image.get_height():
+			target_image.set_pixelv(draw_pos, final_color)

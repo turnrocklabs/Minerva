@@ -58,12 +58,14 @@ unique_name_in_owner = true
 layout_mode = 2
 selected = 0
 fit_to_longest_item = false
-item_count = 3
+item_count = 4
 popup/item_0/text = "default"
 popup/item_1/text = "Brush"
 popup/item_1/id = 1
 popup/item_2/text = "square brush"
 popup/item_2/id = 2
+popup/item_3/text = "Cryon"
+popup/item_3/id = 3
 
 [node name="DialogClouds" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
