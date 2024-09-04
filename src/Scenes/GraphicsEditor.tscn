@@ -42,7 +42,7 @@ theme_override_constants/h_separation = 25
 unique_name_in_owner = true
 layout_mode = 2
 selected = 0
-item_count = 4
+item_count = 5
 popup/item_0/icon = ExtResource("2_xgklw")
 popup/item_1/icon = ExtResource("2_tkvqr")
 popup/item_1/id = 1
@@ -50,8 +50,10 @@ popup/item_2/icon = ExtResource("4_8046s")
 popup/item_2/id = 2
 popup/item_3/text = "TextBox"
 popup/item_3/id = 3
+popup/item_4/text = "fill"
+popup/item_4/id = 4
 
-[node name="AdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 selected = 0
@@ -60,7 +62,7 @@ item_count = 3
 popup/item_0/text = "default"
 popup/item_1/text = "Brush"
 popup/item_1/id = 1
-popup/item_2/text = "wavy"
+popup/item_2/text = "square brush"
 popup/item_2/id = 2
 
 [node name="DialogClouds" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
@@ -197,6 +199,11 @@ text = "Layers"
 horizontal_alignment = 1
 vertical_alignment = 1
 
+[node name="LayersList" type="VBoxContainer" parent="PopupPanel/LayersMenu/LayersHolder"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
 [node name="AddLayer" type="Button" parent="PopupPanel/LayersMenu/LayersHolder"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -206,11 +213,6 @@ text = "Add layer"
 [node name="AddImagelayer" type="Button" parent="PopupPanel/LayersMenu/LayersHolder"]
 layout_mode = 2
 text = "Add image layer"
-
-[node name="LayersList" type="VBoxContainer" parent="PopupPanel/LayersMenu/LayersHolder/AddImagelayer"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 10
 
 [node name="AddNewPic" type="FileDialog" parent="."]
 unique_name_in_owner = true
@@ -224,7 +226,7 @@ file_mode = 0
 access = 2
 
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/AdditionalTools" to="." method="_on_additional_tools_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
