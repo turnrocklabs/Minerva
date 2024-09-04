@@ -21,7 +21,7 @@ var current_layout: LAYOUT
 func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
-
+	
 
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
@@ -77,7 +77,7 @@ func restore_deleted_tab(tab_name: String):
 		# Remove the data from the deleted_tabs dictionary
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
-func _process(_delta):
+func _input(event):
 	if Tabs.get_tab_count() > 0:
 		pass
 	if Input.is_action_just_pressed("ui_undo"):
