@@ -7,7 +7,11 @@ var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "w
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]#, "flac"]
 var is_graph:bool
 var is_masking:bool
+
 var CloudType
+
+var is_spray
+var is_wavy
 #endregion global variables
 
 #region Config File

@@ -69,7 +69,7 @@ var _masking: bool:
 var layer_undo_histories = {} # Dictionary to store undo histories for each layer
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	
+	SingletonObject.is_wavy = false
 	layers_buttons()
 	
 	_draw_layer = _layers_container.get_child(0)
@@ -97,7 +97,7 @@ func _ready():
 
 	# Initialize undo history
 	#undo_history.append(_draw_layer.image.duplicate())
-
+	SingletonObject.is_spray = false
 
 func toggle_controls(toggle: bool):
 	#only drawing
@@ -251,12 +251,17 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 
 ## Checks if given pixel is within the image and draws it using `set_pixelv`
 func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int):
-	for pixel in get_circle_pixels(pos, point_size):
-		if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
-			if erasing and target_image.get_pixelv(pixel).a > 0.1: 
-				target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))  # Restore from the layer's bg
-			elif not erasing:
-				target_image.set_pixelv(pixel, color)
+	if SingletonObject.is_spray:
+		spray_draw(target_image, pos, color, point_size)
+	elif SingletonObject.is_wavy:  # Check for wavy brush mode
+		wavy_draw(target_image, pos, color, point_size)
+	else:
+		for pixel in get_circle_pixels(pos, point_size):
+			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
+				if erasing and target_image.get_pixelv(pixel).a > 0.1: 
+					target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))  # Restore from the layer's bg
+				elif not erasing:
+					target_image.set_pixelv(pixel, color)
 				
 func _gui_input(event: InputEvent):
 	# Early exit if view tool is active
@@ -380,7 +385,7 @@ func _on_mask(toggled_on: bool):
 	else:
 		_mask_layer = null
 		_draw_layer.visible = true
-
+		
 #make it like signal,probably through SingeltonObject
 func _on_apply_mask_button_pressed():
 	if _mask_layer and _draw_layer:
@@ -507,26 +512,18 @@ func _on_brushes_item_selected(index):
 			zoomIn =false
 			zoomOut = false
 			
-			%AdditionalTools.clear() 
-			
-			
-			# Add your new items
-			%AdditionalTools.add_item("haha1") 
-			%AdditionalTools.add_item("haha2")
-			%AdditionalTools.add_item("haha3")
-			
-			%OptionButton.visible = false
-			
+			%DialogClouds.visible = false
+			%AdditionalTools.visible = true
 			%ApplyMaskButton.visible = false
-			
 		1:
+			SingletonObject.is_spray = false
 			erasing = true
 			view_tool_active = false
 			_on_mask(false)
 			clouding = false
 			zoomIn =false
 			zoomOut = false
-			%OptionButton.visible = false
+			%DialogClouds.visible = false
 			%ApplyMaskButton.visible = false
 		2:
 			erasing = false
@@ -535,10 +532,10 @@ func _on_brushes_item_selected(index):
 			clouding = false
 			zoomIn =false
 			zoomOut = false
-			%OptionButton.visible = false
+			%DialogClouds.visible = false
 			%ApplyMaskButton.visible = true
 		3:
-			%OptionButton.visible = true
+			%DialogClouds.visible = true
 			%ApplyMaskButton.visible = false
 
 func _on_option_button_item_selected(index):
@@ -572,7 +569,7 @@ func _on_hand_pressed() -> void:
 	clouding = false
 	zoomIn = false
 	zoomOut = false
-	%OptionButton.visible = false
+	%DialogClouds.visible = false
 
 func _on_zoom_in_pressed() -> void:
 	erasing = false
@@ -581,7 +578,7 @@ func _on_zoom_in_pressed() -> void:
 	clouding = false
 	zoomIn = true
 	zoomOut = false
-	%OptionButton.visible = false
+	%DialogClouds.visible = false
 	
 func _on_zoom_out_pressed() -> void:
 	erasing = false
@@ -590,7 +587,7 @@ func _on_zoom_out_pressed() -> void:
 	clouding = false
 	zoomIn = false
 	zoomOut = true
-	%OptionButton.visible = false
+	%DialogClouds.visible = false
 
 
 func _on_mg_pressed() -> void:
@@ -805,3 +802,47 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 
 func _on_add_imagelayer_pressed() -> void:
 	%AddNewPic.visible = true
+
+
+func _on_additional_tools_item_selected(index: int) -> void:
+	match index:
+		0:
+			SingletonObject.is_spray = false
+		1:
+			SingletonObject.is_spray = !SingletonObject.is_spray
+		3:
+			SingletonObject.is_wavy = true
+
+func spray_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
+	var rand = RandomNumberGenerator.new()
+	rand.seed = Time.get_ticks_msec()  # Use a time-based seed for more randomness
+
+	var scatter_amount = radius * 0.7  # Adjust for desired scatter effect
+	var density = 15  # Number of dots to spray (adjust for intensity)
+
+	for _i in range(density):
+		var offset_x = rand.randf_range(-scatter_amount, scatter_amount)
+		var offset_y = rand.randf_range(-scatter_amount, scatter_amount)
+		var spray_pos = pos + Vector2(offset_x, offset_y)
+
+		# Draw a single pixel for the spray dot
+		if spray_pos.x >= 0 and spray_pos.x < target_image.get_width() and spray_pos.y >= 0 and spray_pos.y < target_image.get_height():
+			target_image.set_pixelv(spray_pos, color)
+
+
+func wavy_draw(target_image: Image, pos: Vector2, color: Color, radius: int, frequency: float = 5.0, amplitude: float = 5.0):
+	var rand = RandomNumberGenerator.new()
+	rand.seed = Time.get_ticks_msec()  # Use a time-based seed for more randomness
+
+	var density = 15  # Number of points to draw in the wave pattern
+
+	for i in range(density):
+		var angle = float(i) / frequency
+		var offset_x = radius * cos(angle)
+		var offset_y = amplitude * sin(angle * frequency)
+
+		var wavy_pos = pos + Vector2(offset_x, offset_y)
+
+		# Draw a single pixel for the wave pattern
+		if wavy_pos.x >= 0 and wavy_pos.x < target_image.get_width() and wavy_pos.y >= 0 and wavy_pos.y < target_image.get_height():
+			target_image.set_pixelv(wavy_pos, color)
