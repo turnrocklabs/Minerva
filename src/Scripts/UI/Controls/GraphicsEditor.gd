@@ -363,7 +363,7 @@ func _on_mask(toggled_on: bool):
 	if toggled_on:
 		# Create a temporary mask for background and foreground
 		var bgd_img = Image.new()
-		bgd_img.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8)
+		Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8)
 		bgd_img.fill(masking_color)
 		var background_mask_layer = _create_layer(bgd_img, INTERNAL_MODE_BACK)
 		background_mask_layer.name = "BackgroundMaskLayer"

@@ -123,8 +123,46 @@ var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
+##region Buttons/Icons scaling
+#var buttons_array: Array = []
+#
+#func get_all_children(in_node, array := []) -> Array:
+	#array.push_back(in_node)
+	#for child in in_node.get_children():
+		#array = get_all_children(child, array)
+	#return array
+#
+#
+#func fill_buttons_array() -> void:
+	#for element in get_all_children(get_tree().get_root()):
+		#if element is BaseButton:
+			#buttons_array.append(element)
+#
+#var buttons_scale: float = 1.0
+#var max_buttons_scale: float = 3.0
+#var min_buttons_scale: float = 1.0
+#
+#func change_buttons_zoom(factor: float) -> void:
+	#for button: Button in buttons_array:
+		#if button.icon:
+			#if factor == 0.5:
+				#button.custom_minimum_size.x = button.size.x + 24
+			#else:
+				#button.custom_minimum_size.x = button.size.x - 24
+			##buttons_scale += factor
+			##button.scale = Vector2(buttons_scale, buttons_scale)
+#
+##endregion Buttons/Icons scaling
 
 func _ready():
+	#we call this function to get all the buttons in the scene tree
+	#fill_buttons_array()
+	#change_buttons_zoom(0.5)
+	#print(buttons_array.size())
+	#for button in buttons_array:
+		#print(button.name)
+	
+	
 	#var screen_size = DisplayServer.screen_get_size()
 	#var dpi = DisplayServer.screen_get_dpi()
 	#print("screen size: " + str(screen_size))

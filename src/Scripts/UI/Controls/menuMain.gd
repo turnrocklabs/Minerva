@@ -110,12 +110,13 @@ func _on_project_index_pressed(index):
 func _on_view_id_pressed(id: int):
 	# if zoom items are selected
 	match id:
-		4: SingletonObject.main_scene.zoom_ui(5); return
-		5: SingletonObject.main_scene.zoom_ui(-5); return
+		4: SingletonObject.main_scene.zoom_ui(2); return
+		5: SingletonObject.main_scene.zoom_ui(-2); return
 		6: SingletonObject.main_scene.reset_zoom(); return
 		8: _unhide_notes()
 		9: _unhide_messages()
-	
+		11: SingletonObject.change_buttons_zoom(0.5); return
+		12: SingletonObject.change_buttons_zoom(-0.5); return
 	var index = view.get_item_index(id)
 	
 	if view.is_item_checkable(index):
