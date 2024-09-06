@@ -1,24 +1,43 @@
 extends Control
 
+@export  var terminal_container: TerminalTabContainer
 #varibles where weadding out notes Head and descriptionn
 
-@onready var _default_zoom = theme.default_font_size
-
-@export  var terminal_container: TerminalTabContainer
-
-#var icActive = preload("res://assets/icons/Microphone_active.png")
+#these varables are for changing only the font size of the UI
+var _default_zoom = theme.default_font_size
+var min_font_size:int 
+var max_font_size: int
+var current_font_size: int
+# these are for setting upper and lower limits to the font size
+var min_diff_font_size: = 4
+var max_diff_font_size: = 8
 
 func _ready() -> void:
+	if theme.has_default_font_size():
+		min_font_size = theme.default_font_size - min_diff_font_size
+		max_font_size = theme.default_font_size + max_diff_font_size
+		current_font_size = theme.default_font_size
+	else:
+		min_font_size = ThemeDB.fallback_font_size - min_diff_font_size
+		max_font_size = ThemeDB.fallback_font_size + max_diff_font_size
+		current_font_size =ThemeDB.fallback_font_size
+	
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
 
 func zoom_ui(factor: int):
-	if theme.has_default_font_size():
-		theme.default_font_size += factor
-	else:
-		theme.default_font_size = ThemeDB.fallback_font_size + factor
+	print("min_fontsize: " + str(min_font_size))
+	print("max_fontsize: " + str(max_font_size))
+	print("current_fontsize: " + str(current_font_size))
+	if current_font_size + factor >= min_font_size and current_font_size + factor <= max_font_size:
+		if theme.has_default_font_size():
+			theme.default_font_size += factor
+			current_font_size = theme.default_font_size
+		else:
+			theme.default_font_size = ThemeDB.fallback_font_size + factor
+			current_font_size = theme.default_font_size
 
 func reset_zoom():
 	theme.default_font_size = _default_zoom
