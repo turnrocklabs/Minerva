@@ -254,17 +254,14 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 ## Checks if given pixel is within the image and draws it using `set_pixelv`
 func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int):
 	if SingletonObject.is_Brush:
-		if erasing: 
-			Brush_eraser(target_image, pos, point_size)
-		else:
-			Brush_draw(target_image, pos, color, point_size)
+		Brush_draw(target_image, pos, color, point_size)
+		
 	elif SingletonObject.is_square:
-		if erasing:
-			square_eraser(target_image, pos, point_size)
-		else:
-			draw_square(target_image, pos, color, point_size)
+		draw_square(target_image, pos, color, point_size)
+		
 	elif SingletonObject.is_cryon:
 		Crayon_draw(target_image, pos, color, point_size)
+		
 	else:
 		for pixel in get_circle_pixels(pos, point_size):
 			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
@@ -881,7 +878,10 @@ func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 
 		# Draw a single pixel for the spray dot
 		if spray_pos.x >= 0 and spray_pos.x < target_image.get_width() and spray_pos.y >= 0 and spray_pos.y < target_image.get_height():
-			target_image.set_pixelv(spray_pos, color)
+			if erasing:
+				target_image.set_pixelv(spray_pos, _background_images[_draw_layer.name].get_pixelv(spray_pos))
+			else:
+				target_image.set_pixelv(spray_pos, color)
 
 func draw_square(target_image: Image, pos: Vector2, color: Color, size: int):
 	var half_size = size / 2
@@ -889,30 +889,10 @@ func draw_square(target_image: Image, pos: Vector2, color: Color, size: int):
 		for y in range(int(pos.y - half_size), int(pos.y + half_size + 1)):
 			var pixel = Vector2(x, y)
 			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
-				target_image.set_pixelv(pixel, color)
-
-func Brush_eraser(target_image: Image, pos: Vector2, radius: int): # No need for color parameter
-	var rand = RandomNumberGenerator.new()
-	rand.seed = Time.get_ticks_msec() 
-	
-	var scatter_amount = radius * 0.7  
-	var density = 15  
-
-	for _i in range(density):
-		var offset_x = rand.randf_range(-scatter_amount, scatter_amount)
-		var offset_y = rand.randf_range(-scatter_amount, scatter_amount)
-		var spray_pos = pos + Vector2(offset_x, offset_y)
-
-		if spray_pos.x >= 0 and spray_pos.x < target_image.get_width() and spray_pos.y >= 0 and spray_pos.y < target_image.get_height():
-			target_image.set_pixelv(spray_pos, _background_images[_draw_layer.name].get_pixelv(spray_pos)) 
-
-func square_eraser(target_image: Image, pos: Vector2, size: int): # No need for color parameter
-	var half_size = size / 2
-	for x in range(int(pos.x - half_size), int(pos.x + half_size + 1)):
-		for y in range(int(pos.y - half_size), int(pos.y + half_size + 1)):
-			var pixel = Vector2(x, y)
-			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
-				target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))
+				if erasing:
+					target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))
+				else:
+					target_image.set_pixelv(pixel, color)
 
 
 func flood_fill(target_image: Image, start_pos: Vector2, fill_color: Color):
@@ -935,7 +915,7 @@ func flood_fill(target_image: Image, start_pos: Vector2, fill_color: Color):
 			continue
 
 		if target_image.get_pixelv(current_pos) == target_color:
-			target_image.set_pixelv(current_pos, fill_color) 
+			target_image.set_pixelv(current_pos, fill_color)          
 
 			# Add neighboring pixels to the stack
 			stack.append(Vector2(x + 1, y))
@@ -945,23 +925,34 @@ func flood_fill(target_image: Image, start_pos: Vector2, fill_color: Color):
 
 func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 	var rand = RandomNumberGenerator.new()
-	rand.seed = Time.get_ticks_msec() 
+	rand.seed = Time.get_ticks_msec()
 
-	var jitter_amount = radius * 0.5  # Adjust jitter intensity
-	var opacity_falloff = 0.7 # Adjust opacity falloff for crayon look
+	var jitter_amount = radius * 0.5
+	var opacity_falloff = 0.7
 
-	for _i in range(radius * 2): # More iterations for denseWr crayon effect
+	for _i in range(radius * 2):
 		var offset_x = rand.randf_range(-jitter_amount, jitter_amount)
 		var offset_y = rand.randf_range(-jitter_amount, jitter_amount)
 		var draw_pos = pos + Vector2(offset_x, offset_y)
 
-		# Calculate distance from center for opacity falloff
-		var distance_from_center = pos.distance_to(draw_pos) 
+		var distance_from_center = pos.distance_to(draw_pos)
 		var opacity = 1.0 - (distance_from_center / radius) * opacity_falloff
-		opacity = clamp(opacity, 0.0, 1.0) # Ensure opacity is within 0-1
-
-		var final_color = color 
-		final_color.a = opacity 
+		opacity = clamp(opacity, 0.0, 1.0)
 
 		if draw_pos.x >= 0 and draw_pos.x < target_image.get_width() and draw_pos.y >= 0 and draw_pos.y < target_image.get_height():
-			target_image.set_pixelv(draw_pos, final_color)
+			if erasing:
+				# Erase by blending with the background image
+				target_image.set_pixelv(draw_pos, _background_images[_draw_layer.name].get_pixelv(draw_pos))
+			else:
+				var bg_color = target_image.get_pixelv(draw_pos)
+
+				# Calculate the premultiplied crayon color 
+				var crayon_color_premultiplied = Color(color.r * color.a, color.g * color.a, color.b * color.a, color.a)
+
+				# Apply the 40% transparency reduction to the opacity
+				opacity *= 0.6 
+
+				# Blend with the adjusted opacity
+				var final_color = crayon_color_premultiplied * opacity + bg_color * (1.0 - opacity)
+
+				target_image.set_pixelv(draw_pos, final_color) 
