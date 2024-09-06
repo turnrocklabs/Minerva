@@ -520,6 +520,8 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
+	%AudioStop1.visible = true
+	SingletonObject.AtT.btnStop = %AudioStop1
 
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
@@ -590,3 +592,7 @@ func get_first_chat_item() -> ChatHistoryItem:
 	return history.HistoryItemList.front()
 
 #endregion Add New HistoryItem
+
+
+func _on_audio_stop_1_pressed() -> void:
+	SingletonObject.AtT._StopConverting()
