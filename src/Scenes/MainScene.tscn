@@ -109,11 +109,11 @@ unresizable = false
 [node name="NewThreadPopup" type="Window" parent="."]
 unique_name_in_owner = true
 initial_position = 4
-size = Vector2i(450, 80)
+size = Vector2i(570, 80)
 visible = false
 transient = true
 exclusive = true
-min_size = Vector2i(350, 0)
+min_size = Vector2i(570, 0)
 max_size = Vector2i(500, 100)
 script = ExtResource("3_w58y5")
 
@@ -121,6 +121,8 @@ script = ExtResource("3_w58y5")
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = -16.0
+offset_right = -2.08502
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -157,6 +159,12 @@ caret_blink = true
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("22_285lg")
+
+[node name="AudioStopButton2" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "STOP"
 
 [node name="btnCreateThread" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
 unique_name_in_owner = true
@@ -573,12 +581,23 @@ size_flags_stretch_ratio = 1.5
 placeholder_text = "Note Title"
 caret_blink = true
 
-[node name="btnVoiceForHeader" type="Button" parent="CreateNewNote/Panel/VBoxContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="CreateNewNote/Panel/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 15
+alignment = 2
+
+[node name="btnVoiceForHeader" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "record note title"
 icon = ExtResource("22_285lg")
+
+[node name="StopButton3" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "STOP"
 
 [node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="CreateNewNote/Panel/VBoxContainer"]
 layout_mode = 2
@@ -749,6 +768,12 @@ layout_mode = 2
 tooltip_text = "record audio to text for note description"
 icon = ExtResource("22_285lg")
 
+[node name="StopButton4" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "STOP"
+
 [node name="AddNotePopUp" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -773,6 +798,7 @@ layout_mode = 1
 
 [connection signal="about_to_popup" from="NewThreadPopup" to="." method="_on_new_thread_popup_about_to_popup"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxTopRow/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
+[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxTopRow/AudioStopButton2" to="." method="_on_audio_stop_button_2_pressed"]
 [connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxTopRow/btnCreateThread" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
@@ -809,11 +835,13 @@ layout_mode = 1
 [connection signal="about_to_popup" from="CreateNewNote" to="." method="_on_create_new_note_about_to_popup"]
 [connection signal="close_requested" from="CreateNewNote" to="." method="_on_creat_new_note_close_requested"]
 [connection signal="text_changed" from="CreateNewNote/Panel/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
+[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer2/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
+[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer2/StopButton3" to="." method="_on_stop_button_3_pressed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AudioControl/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AudioControl/PlayAudioButton" to="." method="_on_play_audio_button_pressed"]
 [connection signal="gui_input" from="CreateNewNote/Panel/VBoxContainer/ImageControl" to="." method="_on_drop_image_control_gui_input"]
 [connection signal="gui_input" from="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl" to="." method="_on_drop_image_control_gui_input"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/ImageControl/OpenImageFileButton" to="." method="_on_open_image_file_button_pressed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
+[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer/StopButton4" to="." method="_on_stop_button_4_pressed"]
 [connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer/AddNotePopUp" to="." method="_on_add_note_pressed"]
