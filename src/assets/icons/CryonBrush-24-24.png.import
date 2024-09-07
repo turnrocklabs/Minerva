@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cggcrhr6ww8y"
-path="res://.godot/imported/ArrowBottom.png-f0efa8b1d551bf56d864774d5e95e6a3.ctex"
+uid="uid://xek338m84w7"
+path="res://.godot/imported/CryonBrush-24-24.png-4d5b14338f76364190641a4dcd268cb3.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/ArrowBottom.png"
-dest_files=["res://.godot/imported/ArrowBottom.png-f0efa8b1d551bf56d864774d5e95e6a3.ctex"]
+source_file="res://assets/icons/CryonBrush-24-24.png"
+dest_files=["res://.godot/imported/CryonBrush-24-24.png-4d5b14338f76364190641a4dcd268cb3.ctex"]
 
 [params]
 
