@@ -1,17 +1,24 @@
-[gd_scene load_steps=13 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=19 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
 [ext_resource type="Texture2D" uid="uid://d0wpfuhdwaiej" path="res://assets/generated/pencil_icon_24.webp" id="2_xgklw"]
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="4_7duu7"]
-[ext_resource type="Texture2D" uid="uid://c6xtrs6ldfl71" path="res://assets/icons/Mask34.png" id="4_8046s"]
+[ext_resource type="Texture2D" uid="uid://coj8ug8ba8d1k" path="res://assets/icons/Mask-24-24.png" id="4_82rro"]
+[ext_resource type="Texture2D" uid="uid://3bwyhwh5bral" path="res://assets/icons/Text-24-24.png" id="5_a37t7"]
+[ext_resource type="Texture2D" uid="uid://xek338m84w7" path="res://assets/icons/CryonBrush-24-24.png" id="5_f2f1e"]
+[ext_resource type="Texture2D" uid="uid://dhe0l4a86grmp" path="res://assets/icons/RoundBrush.png" id="5_nifhk"]
+[ext_resource type="Texture2D" uid="uid://bcau4lpt5d7nr" path="res://assets/icons/Brush-24-24.png" id="5_qs5mm"]
 [ext_resource type="Texture2D" uid="uid://bliwqrb268u66" path="res://assets/icons/zoom_icons/zoom_more.svg" id="6_4tqp6"]
 [ext_resource type="Texture2D" uid="uid://b4mldxp8undi7" path="res://assets/icons/MgGlass.png" id="6_aik7h"]
+[ext_resource type="Texture2D" uid="uid://c1reekco0o8uq" path="res://assets/icons/FillTool-24-24.png" id="6_qek5f"]
+[ext_resource type="Texture2D" uid="uid://b7jdoc3mrdcs6" path="res://assets/icons/SquareBrush.png" id="7_e5qpb"]
 [ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_icons/zoom_less.svg" id="7_hti8r"]
 [ext_resource type="Texture2D" uid="uid://dxjr3bduj88w1" path="res://assets/icons/Arrowleft.png" id="9_i3ic6"]
-[ext_resource type="Texture2D" uid="uid://fuennqeu6spg" path="res://assets/icons/ArrowTop.png" id="10_iiyn1"]
-[ext_resource type="Texture2D" uid="uid://cyjad26s5xekh" path="res://assets/icons/ArrowBottom.png" id="11_ugcir"]
 [ext_resource type="Texture2D" uid="uid://cy6rnqiqqe58r" path="res://assets/icons/ArrowRight.png" id="12_hevcs"]
+[ext_resource type="Texture2D" uid="uid://oo6obg1u8sjd" path="res://assets/icons/ArrowTop.png" id="16_ix5ao"]
+[ext_resource type="Texture2D" uid="uid://cggcrhr6ww8y" path="res://assets/icons/ArrowBottom.png" id="17_dt0nj"]
+
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
@@ -42,27 +49,32 @@ theme_override_constants/h_separation = 25
 unique_name_in_owner = true
 layout_mode = 2
 selected = 0
-item_count = 4
+item_count = 5
 popup/item_0/icon = ExtResource("2_xgklw")
 popup/item_1/icon = ExtResource("2_tkvqr")
 popup/item_1/id = 1
-popup/item_2/icon = ExtResource("4_8046s")
+popup/item_2/icon = ExtResource("4_82rro")
 popup/item_2/id = 2
-popup/item_3/text = "TextBox"
+popup/item_3/icon = ExtResource("5_a37t7")
+popup/item_3/id = 3
+popup/item_4/icon = ExtResource("6_qek5f")
+popup/item_4/id = 4
+
+[node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+selected = 0
+fit_to_longest_item = false
+item_count = 4
+popup/item_0/icon = ExtResource("5_nifhk")
+popup/item_1/icon = ExtResource("5_qs5mm")
+popup/item_1/id = 1
+popup/item_2/icon = ExtResource("7_e5qpb")
+popup/item_2/id = 2
+popup/item_3/icon = ExtResource("5_f2f1e")
 popup/item_3/id = 3
 
-[node name="AdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-item_count = 3
-popup/item_0/text = "1"
-popup/item_1/text = "2"
-popup/item_1/id = 1
-popup/item_2/text = "3"
-popup/item_2/id = 2
-
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="DialogClouds" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -104,6 +116,7 @@ color = Color(0.447059, 0.447059, 0.67451, 1)
 layout_mode = 2
 
 [node name="Hand" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("4_7duu7")
 
@@ -117,17 +130,21 @@ icon = ExtResource("6_aik7h")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom"]
 layout_mode = 2
+theme_override_constants/separation = 8
 
 [node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("6_4tqp6")
 
 [node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("7_hti8r")
 
 [node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 layout_mode = 2
+theme_override_constants/separation = 12
 
 [node name="Arrowleft" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
 layout_mode = 2
@@ -135,14 +152,15 @@ icon = ExtResource("9_i3ic6")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
 layout_mode = 2
+theme_override_constants/separation = 6
 
 [node name="ArrowTop" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer"]
 layout_mode = 2
-icon = ExtResource("10_iiyn1")
+icon = ExtResource("16_ix5ao")
 
 [node name="ArrowBottom" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer"]
 layout_mode = 2
-icon = ExtResource("11_ugcir")
+icon = ExtResource("17_dt0nj")
 
 [node name="ArrowRight" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
 layout_mode = 2
@@ -223,7 +241,8 @@ file_mode = 0
 access = 2
 
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/OptionButton" to="." method="_on_option_button_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Hand" to="." method="_on_hand_pressed"]
