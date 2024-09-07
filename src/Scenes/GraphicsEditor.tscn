@@ -3,7 +3,6 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="2_yagwo"]
-[ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="4_7duu7"]
 [ext_resource type="Texture2D" uid="uid://coj8ug8ba8d1k" path="res://assets/icons/Mask-24-24.png" id="4_82rro"]
 [ext_resource type="Texture2D" uid="uid://3bwyhwh5bral" path="res://assets/icons/Text-24-24.png" id="5_a37t7"]
 [ext_resource type="Texture2D" uid="uid://xek338m84w7" path="res://assets/icons/CryonBrush-24-24.png" id="5_f2f1e"]
@@ -11,13 +10,14 @@
 [ext_resource type="Texture2D" uid="uid://bcau4lpt5d7nr" path="res://assets/icons/Brush-24-24.png" id="5_qs5mm"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="6_1v5g6"]
 [ext_resource type="Texture2D" uid="uid://bliwqrb268u66" path="res://assets/icons/zoom_icons/zoom_more.svg" id="6_4tqp6"]
-[ext_resource type="Texture2D" uid="uid://c1reekco0o8uq" path="res://assets/icons/FillTool-24-24.png" id="6_qek5f"]
 [ext_resource type="Texture2D" uid="uid://b7jdoc3mrdcs6" path="res://assets/icons/SquareBrush.png" id="7_e5qpb"]
 [ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_icons/zoom_less.svg" id="7_hti8r"]
 [ext_resource type="Texture2D" uid="uid://ceq7itsittuax" path="res://assets/icons/editor_arrows/editor_arrow_left.png" id="9_t3u88"]
+[ext_resource type="Texture2D" uid="uid://cpwp72armnubv" path="res://assets/icons/white_hand_24.png" id="10_ax45b"]
 [ext_resource type="Texture2D" uid="uid://bq7obdp4qb1qm" path="res://assets/icons/editor_arrows/editor_arrow_up.png" id="10_tpp25"]
 [ext_resource type="Texture2D" uid="uid://dmkhqqoc15i8a" path="res://assets/icons/editor_arrows/editor_arrow_down.png" id="11_cph1y"]
 [ext_resource type="Texture2D" uid="uid://ws8ig4iufap5" path="res://assets/icons/editor_arrows/editor_arrow_right.png" id="12_hpuv1"]
+[ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
@@ -60,15 +60,13 @@ popup/item_2/icon = ExtResource("4_82rro")
 popup/item_2/id = 2
 popup/item_3/icon = ExtResource("5_a37t7")
 popup/item_3/id = 3
-popup/item_4/icon = ExtResource("6_qek5f")
-popup/item_4/id = 4
 
 [node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 4
 selected = 0
 fit_to_longest_item = false
-size_flags_vertical = 4
 item_count = 4
 popup/item_0/icon = ExtResource("5_nifhk")
 popup/item_1/icon = ExtResource("5_qs5mm")
@@ -130,7 +128,7 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
-icon = ExtResource("4_7duu7")
+icon = ExtResource("10_ax45b")
 
 [node name="Zoom" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 layout_mode = 2
@@ -143,8 +141,8 @@ icon = ExtResource("6_1v5g6")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom"]
 layout_mode = 2
-alignment = 1
 theme_override_constants/separation = 8
+alignment = 1
 
 [node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
 unique_name_in_owner = true
@@ -188,7 +186,7 @@ icon = ExtResource("12_hpuv1")
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
-text = "Layers"
+icon = ExtResource("18_yov21")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
