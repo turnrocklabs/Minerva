@@ -79,7 +79,6 @@ func _ready():
 		ext = "*." +ext 
 		supported_text_exts.append(ext)
 	$FileDialog.filters = supported_text_exts
-	
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
@@ -118,9 +117,11 @@ func override_save(save_function: Callable) -> void:
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straing away
-func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
+func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_this_path: String = "") -> bool:
 	#var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
-
+	if open_in_this_path != "":
+		$FileDialog.current_path = open_in_this_path
+	
 	match type:
 		Type.GRAPHICS:
 			$FileDialog.filters = PackedStringArray(["*.png"])
@@ -138,7 +139,8 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 	
 	if not file:
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
-
+		var line_edit: LineEdit = $FileDialog.get_line_edit()
+		line_edit.text = tab_title + "." + SingletonObject.supported_text_fortmats[0]
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
 		await ($FileDialog as FileDialog).visibility_changed
@@ -146,6 +148,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false) -> bool:
 	else:
 		if new_entry:# this is used for the save as.. feature
 			($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
+			
 			
 			$FileDialog.popup_centered(Vector2i(700, 500))
 			
@@ -193,7 +196,43 @@ func is_content_saved() -> bool:
 	return false
 
 
+func _on_gui_input(event: InputEvent) -> void:
+	check_jump_to_line(event)
+
+
+func _on_code_edit_gui_input(event: InputEvent) -> void:
+	check_jump_to_line(event)
+
+
+func check_jump_to_line(event: InputEvent) -> void:
+	if event.is_action_pressed("jump_to_line")and !%JumpToLinePanel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
+		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to"
+		var column = code_edit.get_caret_column()
+		if column < 1:
+			column = 1
+		var line = code_edit.get_caret_line()
+		if line < 1:
+			line = 1
+		var line_count = code_edit.get_line_count()
+		if line_count < 1:
+			line_count = 1
+		
+		var new_text = string_format % [line, column, 1, line_count]
+		%JumpToLineLabel.text = new_text
+		%JumpToLineEdit.call_deferred("grab_focus")
+		%JumpToLinePanel.call_deferred("show")
+
+
+func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
+	%JumpToLinePanel.call_deferred("hide")
+	var line_to_jump_to: = 0
+	if new_text.is_valid_int():
+		line_to_jump_to = new_text.to_int()
+		code_edit.set_caret_line(line_to_jump_to -1)
+
+
 func _on_editor_changed():
+	%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
 	content_changed.emit()
 
 func _on_save_dialog_canceled():
@@ -212,7 +251,6 @@ func _on_close_dialog_custom_action(action: StringName):
 
 func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
-	# %SaveButton.disabled = false
 
 
 func save_file_to_disc(path: String):
@@ -235,6 +273,7 @@ func save_file_to_disc(path: String):
 			
 	_file_saved = true
 	file_saved_in_disc = true
+	SingletonObject.UpdateLastSavePath.emit(path.get_base_dir())
 	tab_title = path.get_file()
 	var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
 	SingletonObject.editor_pane.Tabs.set_tab_title(indx, tab_title)

@@ -1,15 +1,16 @@
-[gd_scene load_steps=4 format=3 uid="uid://btl6syvc2tem1"]
+[gd_scene load_steps=4 format=3 uid="uid://glhetvuf7rmf"]
 
-[ext_resource type="Script" path="res://Scripts/about_popup.gd" id="1_t6b0p"]
-[ext_resource type="Texture2D" uid="uid://dbpw1psm65yd2" path="res://handshake_logo-_green.png" id="2_frimr"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/MarkdownLabelEx.gd" id="3_2ej5l"]
+[ext_resource type="Texture2D" uid="uid://dbpw1psm65yd2" path="res://handshake_logo-_green.png" id="1_8e08g"]
+[ext_resource type="Script" path="res://Scripts/license_agreement_panel.gd" id="1_50kvl"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/MarkdownLabelEx.gd" id="3_l6njv"]
 
-[node name="About_popup" type="Window"]
-title = "About"
+[node name="LicenseAgreementPanel" type="Window"]
+auto_translate_mode = 1
+title = "License Agreement"
 initial_position = 2
-size = Vector2i(600, 500)
+size = Vector2i(600, 550)
 popup_window = true
-script = ExtResource("1_t6b0p")
+script = ExtResource("1_50kvl")
 
 [node name="Panel" type="Panel" parent="."]
 anchors_preset = 15
@@ -40,7 +41,7 @@ layout_mode = 2
 
 [node name="TextureRect" type="TextureRect" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
-texture = ExtResource("2_frimr")
+texture = ExtResource("1_8e08g")
 expand_mode = 3
 
 [node name="RichTextLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer"]
@@ -66,16 +67,14 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="AboutScriptMarkdownLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer2/PanelContainer"]
+[node name="LicenseScriptMarkdownLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer2/PanelContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 2
 bbcode_enabled = true
-text = "thid id text"
 threaded = true
 selection_enabled = true
-script = ExtResource("3_2ej5l")
-markdown_text = "this is "
+script = ExtResource("3_l6njv")
 
 [node name="Control2" type="Control" parent="VBoxContainer/HBoxContainer2"]
 custom_minimum_size = Vector2(10, 0)
@@ -85,24 +84,16 @@ layout_mode = 2
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="VBoxContainer"]
+[node name="CenterContainer" type="CenterContainer" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="Control2" type="Control" parent="VBoxContainer/HBoxContainer3"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Button" type="Button" parent="VBoxContainer/HBoxContainer3"]
+[node name="Button" type="Button" parent="VBoxContainer/CenterContainer"]
 layout_mode = 2
 text = "Ok"
 
-[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer3"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Control3" type="Control" parent="VBoxContainer"]
-custom_minimum_size = Vector2(0, 10)
+[node name="Control4" type="Control" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 20)
 layout_mode = 2
 
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer3/Button" to="." method="_on_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/CenterContainer/Button" to="." method="_on_button_pressed"]

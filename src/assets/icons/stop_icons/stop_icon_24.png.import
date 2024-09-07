@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://q1x8ifk0h8gp"
-path="res://.godot/imported/save-50=-white.png-d9403856db65685a1707cdf79326f930.ctex"
+uid="uid://bat0uh67ipveo"
+path="res://.godot/imported/stop_icon_24.png-717cf4da0a63d342d65c2480c3a2a323.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/save_icons/save-50=-white.png"
-dest_files=["res://.godot/imported/save-50=-white.png-d9403856db65685a1707cdf79326f930.ctex"]
+source_file="res://assets/icons/stop_icons/stop_icon_24.png"
+dest_files=["res://.godot/imported/stop_icon_24.png-717cf4da0a63d342d65c2480c3a2a323.ctex"]
 
 [params]
 

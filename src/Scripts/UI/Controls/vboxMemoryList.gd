@@ -6,7 +6,7 @@ var MainThreadId
 var disable_notes_button
 ## initilize the box
 func _init(_parent, _threadId, _mem = null):
-	# we add separateionh for the chidren of the HBoxContainer
+	# we add separation between the chidren of the HBoxContainer
 	add_theme_constant_override("Separation", 12)
 	
 	#we add a disable notes button
