@@ -122,7 +122,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		)
 
 	var item = _parse_request_results(response)
-	
+
 	SingletonObject.chat_completed.emit(item)
 
 	return item

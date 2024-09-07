@@ -204,9 +204,9 @@ func execute_chat():
 		"presence_penalty": history.PresencePenalty,
 		"frequency_penalty": history.FrecuencyPenalty,
 	}
-	# This function can be awaited for the request to finish
+
 	var bot_response
-	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI:
+	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is DallE:
 		bot_response = await history.provider.generate_content(history_list, optional_params)
 	else:
 		bot_response = await history.provider.generate_content(history_list)
@@ -216,7 +216,8 @@ func execute_chat():
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
-	if bot_response != null and bot_response.id: 
+	
+	if bot_response != null: 
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
 		chi.Message = bot_response.text
