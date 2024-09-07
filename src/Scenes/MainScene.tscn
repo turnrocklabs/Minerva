@@ -22,7 +22,7 @@
 [ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icons/new_line_icon.png" id="11_p11dv"]
 [ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_icons/undo_arrow.png" id="11_srtkx"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="12_6jk4t"]
-[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icons/backspace_icon.png" id="12_j6ukv"]
+[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="12_j6ukv"]
 [ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload-icons/reload-16.svg" id="13_xhsmd"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="14_sknqf"]
