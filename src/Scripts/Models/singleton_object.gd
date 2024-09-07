@@ -234,7 +234,7 @@ func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MO
 
 #region Project Management
 signal NewProject
-signal OpenProject
+signal OpenProject(path: String)
 signal OpenRecentProject(recent_project_name: String)
 signal SaveProject
 signal SaveProjectAs
