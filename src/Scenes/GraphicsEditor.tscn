@@ -19,6 +19,7 @@
 [ext_resource type="Texture2D" uid="uid://oo6obg1u8sjd" path="res://assets/icons/ArrowTop.png" id="16_ix5ao"]
 [ext_resource type="Texture2D" uid="uid://cggcrhr6ww8y" path="res://assets/icons/ArrowBottom.png" id="17_dt0nj"]
 
+
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
 anchor_right = 1.0

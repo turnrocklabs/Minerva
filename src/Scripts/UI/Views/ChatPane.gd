@@ -205,32 +205,31 @@ func execute_chat():
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
-	if bot_response.id: chi.Id = bot_response.id
-	chi.Role = ChatHistoryItem.ChatRole.MODEL
-	chi.Message = bot_response.text
-	chi.Error = bot_response.error
-	chi.provider = history.provider
-	chi.Complete = bot_response.complete
-	chi.TokenCost = bot_response.completion_tokens
-	if bot_response.image:
-		chi.Images = ([bot_response.image] as Array[Image])
+	if bot_response != null and bot_response.id: 
+		chi.Id = bot_response.id
+		chi.Role = ChatHistoryItem.ChatRole.MODEL
+		chi.Message = bot_response.text
+		chi.Error = bot_response.error
+		chi.provider = history.provider
+		chi.Complete = bot_response.complete
+		chi.TokenCost = bot_response.completion_tokens
+		if bot_response.image:
+			chi.Images = ([bot_response.image] as Array[Image])
 
-	# Update user message node
-	user_history_item.TokenCost = bot_response.prompt_tokens
-	user_msg_node.render()
+		# Update user message node
+		user_history_item.TokenCost = bot_response.prompt_tokens
+		user_msg_node.render()
 
-	# Change the history item and the mesasge node will update itself
-	model_msg_node.history_item = chi
-	history.HistoryItemList.append(chi)
+		# Change the history item and the mesasge node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
 
-	## Inform the user history item that the responsew has arrived
-	user_history_item.response_arrived.emit(chi)
+		## Inform the user history item that the responsew has arrived
+		user_history_item.response_arrived.emit(chi)
 
-	history.VBox.scroll_to_bottom()
+		history.VBox.scroll_to_bottom()
 
-	model_msg_node.loading = false
-
-
+		model_msg_node.loading = false
 
 # TODO: check if changing the active tab during the request causes any trouble
 
@@ -521,6 +520,7 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
+	SingletonObject.AtT.btnStop = %AudioStop1
 
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
@@ -591,3 +591,7 @@ func get_first_chat_item() -> ChatHistoryItem:
 	return history.HistoryItemList.front()
 
 #endregion Add New HistoryItem
+
+
+func _on_audio_stop_1_pressed() -> void:
+	SingletonObject.AtT._StopConverting()
