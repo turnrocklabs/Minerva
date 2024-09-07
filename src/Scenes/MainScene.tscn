@@ -162,8 +162,8 @@ icon = ExtResource("22_285lg")
 
 [node name="AudioStopButton2" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
+disabled = true
 text = "STOP"
 
 [node name="btnCreateThread" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
@@ -595,8 +595,8 @@ icon = ExtResource("22_285lg")
 
 [node name="StopButton3" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer2"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
+disabled = true
 text = "STOP"
 
 [node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="CreateNewNote/Panel/VBoxContainer"]
@@ -770,8 +770,8 @@ icon = ExtResource("22_285lg")
 
 [node name="StopButton4" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
+disabled = true
 text = "STOP"
 
 [node name="AddNotePopUp" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer"]
