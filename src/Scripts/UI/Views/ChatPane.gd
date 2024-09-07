@@ -520,7 +520,6 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
-	%AudioStop1.visible = true
 	SingletonObject.AtT.btnStop = %AudioStop1
 
 func _on_child_order_changed():

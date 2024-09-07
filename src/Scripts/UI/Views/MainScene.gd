@@ -100,7 +100,6 @@ func _on_btn_voice_pressed():
 	%btnVoice.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
 	SingletonObject.AtT.btnStop = %StopButton4
-	%StopButton4.visible = true
 	
 func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteHead
@@ -110,7 +109,6 @@ func _on_btn_voice_for_header_pressed():
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
 	SingletonObject.AtT.btnStop = %StopButton3
-	%StopButton3.visible = true
 
 func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName

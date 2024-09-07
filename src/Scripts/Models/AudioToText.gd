@@ -84,6 +84,7 @@ func _StartConverting():
 				http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
 				btn.disabled = true
 				btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
+				btnStop.disabled = false
 			else:
 				print("Invalid file format. Header: ", header_str)
 		else:
@@ -110,7 +111,7 @@ func _StopConverting():
 	btn.disabled = false
 	btn.modulate = Color.WHITE
 	btn.icon = ResourceLoader.load("res://assets/icons/icons8-microphone-24.png")
-	btnStop.visible = false
+	btnStop.disabled = true
 
 
 func _on_request_completed(_result, response_code, _headers, body):
@@ -124,7 +125,6 @@ func _on_request_completed(_result, response_code, _headers, body):
 			btn.disabled = false
 			btn.modulate = Color.WHITE
 			btn.icon = ResourceLoader.load("res://assets/icons/icons8-microphone-24.png")
-			btnStop.visible = false
 		else:
 			print("Unexpected response format:", response_json)
 	else:

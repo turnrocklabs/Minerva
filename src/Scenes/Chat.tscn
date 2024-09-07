@@ -207,8 +207,8 @@ icon = ExtResource("8_tl5be")
 
 [node name="AudioStop1" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
+disabled = true
 text = "STOP"
 
 [node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" node_paths=PackedStringArray("shortcut_context")]
