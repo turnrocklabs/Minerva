@@ -174,6 +174,8 @@ func _on_export_button_pressed():
 		CONNECT_ONE_SHOT
 	)
 
+	SingletonObject.OpenProject.emit(_project_path_line_edit.text)
+
 
 func show_message(title_: String, message: String) -> void:
 	_dialog.title = title_
