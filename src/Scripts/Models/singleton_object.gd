@@ -285,7 +285,7 @@ func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MO
 @warning_ignore("unused_signal")
 signal NewProject
 @warning_ignore("unused_signal")
-signal OpenProject
+signal OpenProject(path: String)
 @warning_ignore("unused_signal")
 signal OpenRecentProject(recent_project_name: String)
 @warning_ignore("unused_signal")
