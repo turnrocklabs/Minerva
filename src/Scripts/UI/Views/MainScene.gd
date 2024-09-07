@@ -73,6 +73,32 @@ func _on_btn_add_attachement_pressed():
 	SingletonObject.Chats._on_btn_attach_file_pressed()
 
 
+func _on_btn_voice_pressed():
+	SingletonObject.AtT.FieldForFilling = %NoteDescription
+	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %btnVoice
+	%btnVoice.modulate = Color.LIME_GREEN
+	%AddNotePopUp.disabled = false
+	SingletonObject.AtT.btnStop = %StopButton4
+	
+func _on_btn_voice_for_header_pressed():
+	SingletonObject.AtT.FieldForFilling = %NoteHead
+	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %btnVoiceForHeader
+	#%btnVoiceForHeader.icon = icActive
+	%btnVoiceForHeader.modulate = Color.LIME_GREEN
+	%AddNotePopUp.disabled = false
+	SingletonObject.AtT.btnStop = %StopButton3
+
+func _on_btn_voice_for_note_tab_pressed():
+	SingletonObject.AtT.FieldForFilling = %txtNewTabName
+	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = %btnVoiceForNoteTab
+	#%btnVoiceForNoteTab.icon = icActive
+	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
+	%AudioStopButton2.visible = true
+	SingletonObject.AtT.btnStop = %AudioStopButton2
+
 # this method calls the singleton object to toggle the enable/disable all notes in all tabs
 var notes_enabled = true
 func _on_disable_notes_button_pressed() -> void:
@@ -106,3 +132,15 @@ func _on_help_id_pressed(id: int) -> void:
 
 func _on_save_open_editor_tabs_button_pressed() -> void:
 	SingletonObject.SaveOpenEditorTabs.emit()
+
+
+func _on_audio_stop_button_2_pressed() -> void:
+	SingletonObject.AtT._StopConverting()
+
+
+func _on_stop_button_3_pressed() -> void:
+	SingletonObject.AtT._StopConverting()
+
+
+func _on_stop_button_4_pressed() -> void:
+	SingletonObject.AtT._StopConverting()
