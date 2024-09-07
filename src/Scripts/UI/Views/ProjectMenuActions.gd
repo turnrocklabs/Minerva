@@ -60,8 +60,9 @@ func unpackage_project():
 
 	upw.popup_centered()
 
-func save_project():
-	
+
+func save_unsaved_editors() -> void:
+	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
 		var editor: Editor = item_list.get_item_metadata(item_idx)
@@ -69,7 +70,13 @@ func save_project():
 			await editor.prompt_close(true, false, last_save_path)
 		else:
 			await editor.prompt_close(true, true, last_save_path)
-		#editor.queue_free()
+	
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+
+
+func save_project():
+	
+	save_unsaved_editors()
 
 	if save_path == null or save_path == "":
 		await save_project_as()
@@ -85,6 +92,38 @@ func save_project():
 	SingletonObject.save_recent_project(save_path)
 	
 	SingletonObject.save_state(true)
+
+
+# this function checks if there are unsaved editor panes and saves them
+func save_editorpanes(skip_selecting_items: bool = false):
+	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
+		# if the state is unsaved or we have unsaved editors open
+	if not SingletonObject.saved_state or unsaved_editors:
+		# user want to quit
+		# ask the user which unsaved editors he wants saved
+		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
+		item_list.clear()
+		for editor in unsaved_editors:
+			var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
+			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(indx)
+			var item_idx = item_list.add_item(tab_title)
+			item_list.set_item_metadata(item_idx, editor)
+		
+		if skip_selecting_items:
+			var items: = item_list.item_count
+			var counter: = 0
+			while counter < items:
+				item_list.select(counter, false)
+				counter += 1
+			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+			save_unsaved_editors()
+			
+		else:
+			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
+	else:
+		get_tree().quit()
+
 
 #region Serialize/Deserialize Project
 ## Function:
@@ -186,7 +225,7 @@ func _ready():
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)
-	SingletonObject.SaveOpenEditorTabs.connect(save_editorpanes.bind(true))
+	SingletonObject.SaveOpenEditorTabs.connect( save_editorpanes.bind(true))
 	SingletonObject.UpdateLastSavePath.connect(update_last_save_path)
 
 #region FDG Dialog
@@ -241,44 +280,15 @@ func open_project_given_path(project_path: String) -> int:
 	#SingletonObject.hide_loading_screen()
 # end of open_project_given_path function
 
+
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		save_editorpanes()
 
 
-# this function checks if there are unsaved editor panes and saves them
-func save_editorpanes(skip_selecting_items: bool = false):
-	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
-		# if the state is unsaved or we have unsaved editors open
-	if not SingletonObject.saved_state or unsaved_editors:
-		# user want to quit
-		# ask the user which unsaved editors he wants saved
-		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
-		item_list.clear()
-		for editor in unsaved_editors:
-			var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
-			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(indx)
-			var item_idx = item_list.add_item(tab_title)
-			item_list.set_item_metadata(item_idx, editor)
-		
-		if skip_selecting_items:
-			var items: = item_list.item_count
-			var counter: = 0
-			while counter < items:
-				item_list.select(counter, false)
-				counter += 1
-			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
-			save_project()
-			
-		else:
-			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
-			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
-	else:
-		get_tree().quit()
-
-
 func _on_exit_confirmation_dialog_canceled():
 	%ExitConfirmationDialog.hide()
+
 
 func _on_exit_confirmation_dialog_confirmed():
 	await self.save_project()
