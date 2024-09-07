@@ -91,7 +91,7 @@ func _on_package_line_edit_text_changed(new_text: String):
 		_package_file_info_label.text = "%s: %s" % [error_string(err), package.get_last_error()]
 		return
 
-	var editor_files = package.data["Editors"]
+	var editor_files = package.data["Editors"].map(func(f_data: Dictionary): return f_data["file"])
 
 	if editor_files:
 		_populate_files_tree(editor_files)
@@ -136,7 +136,7 @@ func _on_project_path_change_button_pressed():
 
 func _on_project_path_file_dialog_file_selected(path: String):
 	_project_path_line_edit.text = path
-	_project_path_line_edit.text_changed.emit()
+	_project_path_line_edit.text_changed.emit(path)
 
 ## when path changes validate it's correct
 func _on_project_path_line_edit_text_changed(new_text: String):
@@ -154,7 +154,7 @@ func _on_files_path_change_button_pressed():
 
 func _on_files_path_file_dialog_dir_selected(dir: String):
 	_files_path_line_edit.text = dir
-	_files_path_line_edit.text_changed.emit()
+	_files_path_line_edit.text_changed.emit(dir)
 
 func _on_files_path_line_edit_text_changed(new_text: String):
 	_files_export_path_valid = true
@@ -173,6 +173,8 @@ func _on_export_button_pressed():
 		func(): if not _dialog.visible: hide(),
 		CONNECT_ONE_SHOT
 	)
+
+	SingletonObject.OpenProject.emit(_project_path_line_edit.text)
 
 
 func show_message(title_: String, message: String) -> void:
