@@ -16,12 +16,33 @@ var HistoryItemList: Array[ChatHistoryItem]:
 var HasUsedSystemPrompt: bool = false:
 	set(value): SingletonObject.save_state(false); HasUsedSystemPrompt = value
 
+var Temperature: float = 1:
+	set(value): SingletonObject.save_state(false); Temperature = value
+
+var TopP: float = 1:
+	set(value): SingletonObject.save_state(false); TopP = value
+
+var FrecuencyPenalty: float = 0:
+	set(value): SingletonObject.save_state(false); FrecuencyPenalty = value
+
+var PresencePenalty: float = 0:
+	set(value): SingletonObject.save_state(false); PresencePenalty = value
+
 var VBox: VBoxChat
 var provider: BaseProvider
 
 
 
-static var SERIALIZER_FIELDS = ["HistoryId", "HistoryName", "HistoryItemList", "Provider"]
+static var SERIALIZER_FIELDS = [
+	"HistoryId", 
+	"HistoryName", 
+	"HistoryItemList", 
+	"Provider", 
+	"Temperature", 
+	"TopP",
+	"FrecuencyPenalty",
+	"PresencePenalty"
+	]
 
 
 ## initialize with a new HistoryId
@@ -82,7 +103,11 @@ func Serialize() -> Dictionary:
 		"HistoryId" : HistoryId,
 		"HistoryName" : HistoryName,
 		"Provider": SingletonObject.get_active_provider(SingletonObject.ChatList.find(self)),
-		"HistoryItemList" : serialized_items
+		"HistoryItemList" : serialized_items,
+		"Temperature": Temperature,
+		"TopP": TopP,
+		"FrecuencyPenalty": FrecuencyPenalty,
+		"PresencePenalty": PresencePenalty
 	}
 	return save_dict
 
@@ -99,5 +124,15 @@ static func Deserialize(data: Dictionary) -> ChatHistory:
 		var chi = ChatHistoryItem.Deserialize(chi_data)
 		chi.provider = ch.provider
 		ch.HistoryItemList.append(chi)
-
+	
+	# we need to check if this params exists in the project because they got added after a lot of projects were created
+	if data.get("Temperature"):
+		ch.Temperature = data.get("Temperature")
+	if data.get("TopP"):
+		ch.TopP = data.get("TopP")
+	if data.get("FrecuencyPenalty"):
+		ch.FrecuencyPenalty = data.get("FrecuencyPenalty")
+	if data.get("PresencePenalty"):
+		ch.PresencePenalty = data.get("PresencePenalty")
+	
 	return ch

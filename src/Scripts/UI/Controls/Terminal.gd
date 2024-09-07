@@ -1,6 +1,7 @@
 class_name Terminal
 extends PanelContainer
 
+@warning_ignore("unused_signal")
 signal execution_finished()
 
 @export var _send_button: BaseButton

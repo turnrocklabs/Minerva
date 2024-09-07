@@ -197,8 +197,19 @@ func execute_chat():
 	var model_msg_node = history.VBox.add_history_item(dummy_item)
 	model_msg_node.loading = true
 
+	
+	var optional_params = {
+		"temperature": history.Temperature,
+		"top_p": history.TopP,
+		"presence_penalty": history.PresencePenalty,
+		"frequency_penalty": history.FrecuencyPenalty,
+	}
 	# This function can be awaited for the request to finish
-	var bot_response = await history.provider.generate_content(history_list)
+	var bot_response
+	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI:
+		bot_response = await history.provider.generate_content(history_list, optional_params)
+	else:
+		bot_response = await history.provider.generate_content(history_list)
 
 	# we made the prompt, disable the notes now
 	SingletonObject.NotesTab.Disable_All()
@@ -456,7 +467,7 @@ func update_token_estimation():
 
 	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi))
 
-	%EstimatedTokensLabel.text = "%s (%s$)" % [token_count, provider.token_cost * token_count]
+	%EstimatedTokensLabel.text = "%s: %s$" % [token_count, (provider.token_cost * token_count) *10]
 
 
 # region Edit provider Title

@@ -15,7 +15,7 @@ var http_request
 
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
 
-var FieldForFilling:TextEdit
+var FieldForFilling#:TextEdit # needed to remove the type because this is getting used in lineEdits too
 
 # Store the stop signal
 var stop_signal:bool = false

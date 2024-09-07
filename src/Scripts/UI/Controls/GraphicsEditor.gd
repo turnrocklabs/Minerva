@@ -198,7 +198,7 @@ func setup(canvas_size: Vector2i, background_color: Color):
 	setup_from_image(img)
 
 func create_image(vec:Vector2):
-	var img = Image.create(vec.x, vec.y, false, Image.FORMAT_RGBA8)
+	var img = Image.create(int(vec.x), int(vec.y), false, Image.FORMAT_RGBA8)
 	img.fill(Color(255, 255, 255, 0)) 
 	
 	# Create new layer and assign the new image
@@ -393,7 +393,7 @@ func _on_mask(toggled_on: bool):
 	if toggled_on:
 		# Create a temporary mask for background and foreground
 		var bgd_img = Image.new()
-		bgd_img.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8)
+		Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8)
 		bgd_img.fill(masking_color)
 		var background_mask_layer = _create_layer(bgd_img, INTERNAL_MODE_BACK)
 		background_mask_layer.name = "BackgroundMaskLayer"
@@ -447,7 +447,7 @@ func _on_add_layer_pressed():
 	
 	# Automatically select the newly created layer
 
-func RemoveLayer(Hbox:HBoxContainer, index:int):
+func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	# Find the index of the HBoxContainer within LayersList
 	var hbox_index = %LayersList.get_children().find(Hbox)
 	
@@ -495,6 +495,7 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 	if hbox_index != -1:
 		# Assuming layers in _layers_container directly correspond to 
 		# the order in LayersList, use the hbox_index
+		
 		_draw_layer = _layers_container.get_child(hbox_index)
 		
 		# Update undo history for the previously selected layer
@@ -664,6 +665,7 @@ func _transfer(Hbox: HBoxContainer) -> void:
 		
 		
 func _rotate(Hbox: HBoxContainer) -> void:
+	#this is declaring a new variable hbox_index, should the 'var' be removed
 	var hbox_index = %LayersList.get_children().find(Hbox)
 	var rotate_button = Hbox.get_child(3)  # Assuming the Rotate button is the 4th child
 

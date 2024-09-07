@@ -1,0 +1,208 @@
+[gd_scene load_steps=3 format=3 uid="uid://bdgef0ru6o5ux"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Views/AISettings.gd" id="1_2377q"]
+[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="2_bhryf"]
+
+[node name="AISettings" type="Window"]
+initial_position = 4
+size = Vector2i(648, 520)
+unresizable = true
+script = ExtResource("1_2377q")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 644.0
+offset_bottom = 476.0
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 15
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 15
+
+[node name="MainVBox" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="SettingTitleLabel" type="Label" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Settings"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+
+[node name="ProviderHBox" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/MainVBox/ProviderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Default Provider:"
+vertical_alignment = 1
+
+[node name="ProviderOptionButton" type="OptionButton" parent="MarginContainer/MainVBox/ProviderHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TemperatureHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 16
+
+[node name="TempLabel" type="Label" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Temperature"
+
+[node name="TempHSlider" type="HSlider" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+min_value = 0.1
+max_value = 2.0
+step = 0.1
+value = 1.0
+
+[node name="TempSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+text = "1.0"
+
+[node name="TopPHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="TopPLabel" type="Label" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Top P:"
+
+[node name="TopPHSlider" type="HSlider" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+min_value = 0.1
+max_value = 1.0
+step = 0.1
+value = 1.0
+
+[node name="TopPValueLabel" type="Label" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+text = "1"
+
+[node name="FrecuencyBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 16
+
+[node name="FreqPenLabel" type="Label" parent="MarginContainer/MainVBox/FrecuencyBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Frecuency Penalty:"
+
+[node name="FreqHSlider" type="HSlider" parent="MarginContainer/MainVBox/FrecuencyBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+min_value = -2.0
+max_value = 2.0
+step = 0.1
+
+[node name="FreqPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/FrecuencyBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+text = "0
+"
+
+[node name="PresenceHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 16
+
+[node name="PresPenLabel" type="Label" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Presence Penalty:"
+
+[node name="PresenceHSlider" type="HSlider" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+min_value = -2.0
+max_value = 2.0
+step = 0.1
+
+[node name="PresPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+text = "0
+"
+
+[node name="SystemPromptVBoxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="systemPromptLabel" type="Label" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "System prompts are special messages used to steer 
+the behavior of the LLM Model if the model supports
+ them.  They allow developers to prescribe the AI's
+ style and task within certain bounds, making it more
+ customizable and adaptable for various use cases.
+(At the moment Only ChatGPT Supports System Prompts)"
+mouse_filter = 0
+text = "Type System Prompt Message: "
+
+[node name="RecordSytemPromptButton" type="Button" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("2_bhryf")
+
+[node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 180)
+layout_mode = 2
+placeholder_text = "Type System Prompt here"
+wrap_mode = 1
+caret_blink = true
+
+[node name="HFlowContainer" type="HFlowContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+theme_override_constants/h_separation = 16
+
+[node name="AcceptButton" type="Button" parent="MarginContainer/MainVBox/HFlowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Accept"
+
+[node name="CancelButton" type="Button" parent="MarginContainer/MainVBox/HFlowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Close"
+
+[connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]
+[connection signal="item_selected" from="MarginContainer/MainVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TemperatureHBoxContainer/TempHSlider" to="." method="_on_temp_h_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TopPHBoxContainer/TopPHSlider" to="." method="_on_top_ph_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/FrecuencyBoxContainer/FreqHSlider" to="." method="_on_freq_h_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/PresenceHBoxContainer/PresenceHSlider" to="." method="_on_presence_h_slider_value_changed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer/RecordSytemPromptButton" to="." method="_on_record_sytem_prompt_button_pressed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/AcceptButton" to="." method="_on_accept_button_pressed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/CancelButton" to="." method="_on_cancel_button_pressed"]

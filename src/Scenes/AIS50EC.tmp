@@ -109,6 +109,7 @@ text = "Frecuency Penalty:"
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 size_flags_horizontal = 10
+min_value = -2.0
 max_value = 2.0
 step = 0.1
 
@@ -133,6 +134,7 @@ text = "Presence Penalty:"
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
 size_flags_horizontal = 10
+min_value = -2.0
 max_value = 2.0
 step = 0.1
 

@@ -77,7 +77,7 @@ func restore_deleted_tab(tab_name: String):
 		# Remove the data from the deleted_tabs dictionary
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
-func _input(event):
+func _input(_event):
 	if Tabs.get_tab_count() > 0:
 		pass
 	if Input.is_action_just_pressed("ui_undo"):
@@ -225,6 +225,7 @@ func _on_tab_container_tab_selected(_tab: int) -> void:
 		return
 	if current_control is Editor and current_control.type == Editor.Type.TEXT:
 		enable_editor_action_buttons.emit(true)
+		current_control.code_edit.grab_focus()
 	else: 
 		enable_editor_action_buttons.emit(false)
 
