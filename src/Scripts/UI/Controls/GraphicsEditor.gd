@@ -288,7 +288,7 @@ func _gui_input(event: InputEvent):
 		active_layer.update()
 		fill_tool = false
 		%Brushes.select(0)
-		
+		%PenAdditionalTools.visible = true
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -336,6 +336,7 @@ func _gui_input(event: InputEvent):
 
 	if zoomIn or zoomOut:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			drawing = false
 			var zoom_factor = 1.1 if zoomIn else 0.9 
 			var zoom_center = _layers_container.get_local_mouse_position() 
 
@@ -600,7 +601,8 @@ func _on_zoom_in_pressed() -> void:
 	# Toggle zoom in and its visual indicator
 	zoomIn = !zoomIn
 	if zoomIn:
-		%ZoomIn.modulate = Color.LIME_GREEN 
+		%ZoomIn.modulate = Color.LIME_GREEN
+		%ZoomOut.modulate = Color.WHITE
 	else:
 		%ZoomIn.modulate = Color.WHITE 
 	
@@ -617,6 +619,7 @@ func _on_zoom_out_pressed() -> void:
 	zoomOut = !zoomOut
 	if zoomOut:
 		%ZoomOut.modulate = Color.LIME_GREEN 
+		%ZoomIn.modulate = Color.WHITE
 	else:
 		%ZoomOut.modulate = Color.WHITE 
 
