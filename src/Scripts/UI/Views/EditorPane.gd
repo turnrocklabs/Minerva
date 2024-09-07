@@ -4,6 +4,8 @@
 class_name EditorPane
 extends Control
 
+
+
 enum LAYOUT {HORIZONTAL, VERTICAL}
 
 static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
@@ -21,6 +23,7 @@ var current_layout: LAYOUT
 func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
+	SingletonObject.UpdateUnsavedTabIcon.connect(update_tabs_icon)
 	
 
 func _save_current_tab():
@@ -207,6 +210,19 @@ func toggle_vertical_split() -> void:
 	_copy_children_to(LeftControl, BottomControl)
 
 	BottomControl.visible = not BottomControl.visible
+
+
+func update_tabs_icon() -> void:
+	var tab_count: = Tabs.get_tab_count()
+	var counter:= 0
+	while counter < tab_count:
+		var editor = Tabs.get_tab_control(counter)
+		if not editor.is_content_saved():
+			Tabs.set_tab_icon(counter, _unsaved_changes_icon)
+		else:
+			Tabs.set_tab_icon(counter, null)
+		
+		counter += 1
 
 
 func _on_editor_content_changed(editor: Editor):
