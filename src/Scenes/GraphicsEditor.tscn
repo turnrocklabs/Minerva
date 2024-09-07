@@ -52,7 +52,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 selected = 0
-item_count = 4
+item_count = 5
 popup/item_0/icon = ExtResource("2_yagwo")
 popup/item_1/icon = ExtResource("2_tkvqr")
 popup/item_1/id = 1
@@ -66,9 +66,9 @@ popup/item_4/id = 4
 [node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 4
 selected = 0
 fit_to_longest_item = false
-size_flags_vertical = 4
 item_count = 4
 popup/item_0/icon = ExtResource("5_nifhk")
 popup/item_1/icon = ExtResource("5_qs5mm")
@@ -143,8 +143,8 @@ icon = ExtResource("6_1v5g6")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom"]
 layout_mode = 2
-alignment = 1
 theme_override_constants/separation = 8
+alignment = 1
 
 [node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
 unique_name_in_owner = true
