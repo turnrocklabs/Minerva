@@ -527,109 +527,97 @@ func LayerVisible(Hbox: HBoxContainer):
 
 
 func _on_brushes_item_selected(index):
+	#off other tools not drawing
+	erasing = false
+	view_tool_active = false
+	_on_mask(false)
+	clouding = false
+	zoomIn = false
+	zoomOut = false
+	%ZoomIn.modulate = Color.WHITE
+	%ZoomOut.modulate = Color.WHITE
+	
+	%DialogClouds.visible = false
+	%PenAdditionalTools.visible = false
+	%ApplyMaskButton.visible = false
+	
 	match index:
 		0:
-			#off other tools not drawing
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = false
-			zoomIn =false
-			zoomOut = false
-			
-			%DialogClouds.visible = false
 			%PenAdditionalTools.visible = true
-			%ApplyMaskButton.visible = false
 		1:
-			SingletonObject.is_Brush = false
 			erasing = true
-			view_tool_active = false
-			_on_mask(false)
-			clouding = false
-			zoomIn =false
-			zoomOut = false
-			%DialogClouds.visible = false
-			%ApplyMaskButton.visible = false
-			
 			%PenAdditionalTools.visible = true
 		2:
-			erasing = false
-			view_tool_active = false
 			_on_mask(true)
-			clouding = false
-			zoomIn =false
-			zoomOut = false
-			%DialogClouds.visible = false
 			%ApplyMaskButton.visible = true
-			
-			%PenAdditionalTools.visible = false
 		3:
 			%DialogClouds.visible = true
-			%ApplyMaskButton.visible = false
-			
-			%PenAdditionalTools.visible = false
-		
 		4:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = false
-			zoomIn =false
-			zoomOut = false
-			
 			fill_tool = true
 
 func _on_option_button_item_selected(index):
+	drawing = false
+	erasing = false
+	view_tool_active = false
+	_on_mask(false)
+	clouding = true
+	
 	match index:
 		0:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = true
 			SingletonObject.CloudType = CloudControl.Type.ELLIPSE
-			
-			
 		1:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = true
 			SingletonObject.CloudType = CloudControl.Type.CLOUD
 		2:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = true
 			SingletonObject.CloudType = CloudControl.Type.RECTANGLE
 
 
 func _on_hand_pressed() -> void:
+	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
-	view_tool_active = true
 	clouding = false
 	zoomIn = false
 	zoomOut = false
 	%DialogClouds.visible = false
+
+	# Toggle hand tool and its visual indicator
+	view_tool_active = !view_tool_active 
+	if view_tool_active:
+		%Hand.modulate = Color.LIME_GREEN 
+	else:
+		%Hand.modulate = Color.WHITE  # Reset color when deactivated
 
 func _on_zoom_in_pressed() -> void:
+	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
 	view_tool_active = false
 	clouding = false
-	zoomIn = true
-	zoomOut = false
-	%DialogClouds.visible = false
-	
-func _on_zoom_out_pressed() -> void:
-	erasing = false
-	_on_mask(false)
-	view_tool_active = false
-	clouding = false
-	zoomIn = false
-	zoomOut = true
+	zoomOut = false 
 	%DialogClouds.visible = false
 
+	# Toggle zoom in and its visual indicator
+	zoomIn = !zoomIn
+	if zoomIn:
+		%ZoomIn.modulate = Color.LIME_GREEN 
+	else:
+		%ZoomIn.modulate = Color.WHITE 
+	
+func _on_zoom_out_pressed() -> void:
+	# Toggle other tools off
+	erasing = false
+	_on_mask(false)
+	view_tool_active = false
+	clouding = false
+	zoomIn = false 
+	%DialogClouds.visible = false
+
+	# Toggle zoom out and its visual indicator
+	zoomOut = !zoomOut
+	if zoomOut:
+		%ZoomOut.modulate = Color.LIME_GREEN 
+	else:
+		%ZoomOut.modulate = Color.WHITE 
 
 func _on_mg_pressed() -> void:
 	# Define your default size here 
@@ -846,23 +834,16 @@ func _on_add_imagelayer_pressed() -> void:
 
 
 func _on_additional_tools_item_selected(index: int) -> void:
+	SingletonObject.is_cryon = false
+	SingletonObject.is_Brush = false
+	SingletonObject.is_square = false
 	match index:
-		0:
-			SingletonObject.is_cryon = false
-			SingletonObject.is_Brush = false
-			SingletonObject.is_square = false
 		1:
-			SingletonObject.is_cryon = false
 			SingletonObject.is_Brush = true
-			SingletonObject.is_square = false
 		2:
-			SingletonObject.is_cryon = false
 			SingletonObject.is_square = true
-			SingletonObject.is_Brush = false
 		3:
 			SingletonObject.is_cryon = true
-			SingletonObject.is_square = false
-			SingletonObject.is_Brush = false
 
 func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 	var rand = RandomNumberGenerator.new()
