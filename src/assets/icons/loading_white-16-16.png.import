@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c571amjfpoyui"
-path="res://.godot/imported/Mask24.png-7a176ff7d220023dd6b461ccd2459d9a.ctex"
+uid="uid://bw62s5hfv20x1"
+path="res://.godot/imported/loading_white-16-16.png-167cb8cc72e5f0a1c9b7377a877ed6d6.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/Mask24.png"
-dest_files=["res://.godot/imported/Mask24.png-7a176ff7d220023dd6b461ccd2459d9a.ctex"]
+source_file="res://assets/icons/loading_white-16-16.png"
+dest_files=["res://.godot/imported/loading_white-16-16.png-167cb8cc72e5f0a1c9b7377a877ed6d6.ctex"]
 
 [params]
 

@@ -22,8 +22,12 @@ func _new_project():
 	pass
 
 
-func open_project():
-	%fdgOpenProject.popup_centered(Vector2i(800, 600))
+func open_project(path: = ""):
+	if path.is_empty():
+		%fdgOpenProject.popup_centered(Vector2i(800, 600))
+		return
+	
+	open_project_given_path(path)
 
 # This function can be awaited, which will resolve when the dialog is exited on 'file_selected' or 'canceled'
 func save_project_as(file=""):
