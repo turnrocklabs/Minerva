@@ -110,14 +110,82 @@ theme_override_font_sizes/font_size = 4
 
 [node name="CloseDialog" type="ConfirmationDialog" parent="."]
 title = "You have unsaved open editor "
+exclusive = false
 ok_button_text = "Save"
 
 [node name="FileDialog" type="FileDialog" parent="."]
-size = Vector2i(454, 175)
+size = Vector2i(700, 500)
+exclusive = false
+mode_overrides_title = false
 access = 2
 
-[node name="Node2D" type="Node2D" parent="."]
+[node name="JumpToLinePanel" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+initial_position = 2
+size = Vector2i(400, 125)
+max_size = Vector2i(32768, 125)
 
+[node name="Panel" type="Panel" parent="JumpToLinePanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = -4.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"bgPanel"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="JumpToLinePanel"]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 396.0
+offset_bottom = 121.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="JumpToLineEdit" type="LineEdit" parent="JumpToLinePanel/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 2
+placeholder_text = "line number"
+virtual_keyboard_type = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="JumpToLinePanel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = -4.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 6
+theme_override_constants/separation = 14
+
+[node name="Control" type="Control" parent="JumpToLinePanel/HBoxContainer"]
+layout_mode = 2
+
+[node name="JumpToLineLabel" type="RichTextLabel" parent="JumpToLinePanel/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+bbcode_enabled = true
+text = "you are currently on line, 9 character 4, type a line number to jump to"
+fit_content = true
+threaded = true
+
+[node name="Control2" type="Control" parent="JumpToLinePanel/HBoxContainer"]
+layout_mode = 2
+
+[connection signal="gui_input" from="." to="." method="_on_gui_input"]
+[connection signal="gui_input" from="VBoxContainer/CodeEdit" to="." method="_on_code_edit_gui_input"]
 [connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
@@ -127,3 +195,4 @@ access = 2
 [connection signal="confirmed" from="CloseDialog" to="." method="_on_save_dialog_confirmed"]
 [connection signal="custom_action" from="CloseDialog" to="." method="_on_close_dialog_custom_action"]
 [connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]
+[connection signal="text_submitted" from="JumpToLinePanel/VBoxContainer/JumpToLineEdit" to="." method="_on_jump_to_line_edit_text_submitted"]

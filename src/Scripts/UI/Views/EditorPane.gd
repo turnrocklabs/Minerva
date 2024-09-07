@@ -225,6 +225,7 @@ func _on_tab_container_tab_selected(_tab: int) -> void:
 		return
 	if current_control is Editor and current_control.type == Editor.Type.TEXT:
 		enable_editor_action_buttons.emit(true)
+		current_control.code_edit.grab_focus()
 	else: 
 		enable_editor_action_buttons.emit(false)
 
