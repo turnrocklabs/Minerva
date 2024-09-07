@@ -58,6 +58,7 @@ var bubble: CloudControl = Buble.instantiate()
 var _draw_layer: Layer
 var _mask_layer: Layer
 var _background_images = {}  # Store the background images for each layer
+var fill_tool
 
 ## Is masking active. Active masking prevents any color, except for transparency to be active
 var _masking: bool:
@@ -69,7 +70,6 @@ var _masking: bool:
 var layer_undo_histories = {} # Dictionary to store undo histories for each layer
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	
 	layers_buttons()
 	
 	_draw_layer = _layers_container.get_child(0)
@@ -97,7 +97,9 @@ func _ready():
 
 	# Initialize undo history
 	#undo_history.append(_draw_layer.image.duplicate())
-
+	SingletonObject.is_Brush = false
+	SingletonObject.is_square = false
+	SingletonObject.is_cryon = false
 
 func toggle_controls(toggle: bool):
 	#only drawing
@@ -251,14 +253,42 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 
 ## Checks if given pixel is within the image and draws it using `set_pixelv`
 func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int):
-	for pixel in get_circle_pixels(pos, point_size):
-		if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
-			if erasing and target_image.get_pixelv(pixel).a > 0.1: 
-				target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))  # Restore from the layer's bg
-			elif not erasing:
-				target_image.set_pixelv(pixel, color)
+	if SingletonObject.is_Brush:
+		Brush_draw(target_image, pos, color, point_size)
+		
+	elif SingletonObject.is_square:
+		draw_square(target_image, pos, color, point_size)
+		
+	elif SingletonObject.is_cryon:
+		Crayon_draw(target_image, pos, color, point_size)
+		
+	else:
+		for pixel in get_circle_pixels(pos, point_size):
+			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
+				if erasing and target_image.get_pixelv(pixel).a > 0.1: 
+					target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))  
+				elif not erasing:
+					target_image.set_pixelv(pixel, color) 
 				
 func _gui_input(event: InputEvent):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		var active_layer = _mask_layer if _masking else _draw_layer
+		var layer_local_pos = active_layer.get_local_mouse_position()
+		# Get color at clicked position
+		var picked_color = active_layer.image.get_pixelv(layer_local_pos)
+		
+		# Update the ColorPickerButton
+		_color_picker.color = picked_color
+		
+		
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
+		var active_layer = _mask_layer if _masking else _draw_layer
+		var layer_local_pos = active_layer.get_local_mouse_position()
+		flood_fill(active_layer.image, layer_local_pos, brush_color) 
+		active_layer.update()
+		fill_tool = false
+		%Brushes.select(0)
+		
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -380,7 +410,7 @@ func _on_mask(toggled_on: bool):
 	else:
 		_mask_layer = null
 		_draw_layer.visible = true
-
+		
 #make it like signal,probably through SingeltonObject
 func _on_apply_mask_button_pressed():
 	if _mask_layer and _draw_layer:
@@ -498,101 +528,97 @@ func LayerVisible(Hbox: HBoxContainer):
 
 
 func _on_brushes_item_selected(index):
+	#off other tools not drawing
+	erasing = false
+	view_tool_active = false
+	_on_mask(false)
+	clouding = false
+	zoomIn = false
+	zoomOut = false
+	%ZoomIn.modulate = Color.WHITE
+	%ZoomOut.modulate = Color.WHITE
+	
+	%DialogClouds.visible = false
+	%PenAdditionalTools.visible = false
+	%ApplyMaskButton.visible = false
+	
 	match index:
 		0:
-			#off other tools not drawing
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = false
-			zoomIn =false
-			zoomOut = false
-			
-			%AdditionalTools.clear() 
-			
-			
-			# Add your new items
-			%AdditionalTools.add_item("haha1") 
-			%AdditionalTools.add_item("haha2")
-			%AdditionalTools.add_item("haha3")
-			
-			%OptionButton.visible = false
-			
-			%ApplyMaskButton.visible = false
-			
+			%PenAdditionalTools.visible = true
 		1:
 			erasing = true
-			view_tool_active = false
-			_on_mask(false)
-			clouding = false
-			zoomIn =false
-			zoomOut = false
-			%OptionButton.visible = false
-			%ApplyMaskButton.visible = false
+			%PenAdditionalTools.visible = true
 		2:
-			erasing = false
-			view_tool_active = false
 			_on_mask(true)
-			clouding = false
-			zoomIn =false
-			zoomOut = false
-			%OptionButton.visible = false
 			%ApplyMaskButton.visible = true
 		3:
-			%OptionButton.visible = true
-			%ApplyMaskButton.visible = false
+			%DialogClouds.visible = true
+		4:
+			fill_tool = true
 
 func _on_option_button_item_selected(index):
+	drawing = false
+	erasing = false
+	view_tool_active = false
+	_on_mask(false)
+	clouding = true
+	
 	match index:
 		0:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = true
 			SingletonObject.CloudType = CloudControl.Type.ELLIPSE
-			
-			
 		1:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = true
 			SingletonObject.CloudType = CloudControl.Type.CLOUD
 		2:
-			erasing = false
-			view_tool_active = false
-			_on_mask(false)
-			clouding = true
 			SingletonObject.CloudType = CloudControl.Type.RECTANGLE
 
 
 func _on_hand_pressed() -> void:
+	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
-	view_tool_active = true
 	clouding = false
 	zoomIn = false
 	zoomOut = false
-	%OptionButton.visible = false
+	%DialogClouds.visible = false
+
+	# Toggle hand tool and its visual indicator
+	view_tool_active = !view_tool_active 
+	if view_tool_active:
+		%Hand.modulate = Color.LIME_GREEN 
+	else:
+		%Hand.modulate = Color.WHITE  # Reset color when deactivated
 
 func _on_zoom_in_pressed() -> void:
+	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
 	view_tool_active = false
 	clouding = false
-	zoomIn = true
-	zoomOut = false
-	%OptionButton.visible = false
+	zoomOut = false 
+	%DialogClouds.visible = false
+
+	# Toggle zoom in and its visual indicator
+	zoomIn = !zoomIn
+	if zoomIn:
+		%ZoomIn.modulate = Color.LIME_GREEN 
+	else:
+		%ZoomIn.modulate = Color.WHITE 
 	
 func _on_zoom_out_pressed() -> void:
+	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
 	view_tool_active = false
 	clouding = false
-	zoomIn = false
-	zoomOut = true
-	%OptionButton.visible = false
+	zoomIn = false 
+	%DialogClouds.visible = false
 
+	# Toggle zoom out and its visual indicator
+	zoomOut = !zoomOut
+	if zoomOut:
+		%ZoomOut.modulate = Color.LIME_GREEN 
+	else:
+		%ZoomOut.modulate = Color.WHITE 
 
 func _on_mg_pressed() -> void:
 	# Define your default size here 
@@ -797,7 +823,7 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 
 		# Add layer button to the UI
 		layers_buttons()
-
+ 
 		# Optionally select the newly added layer
 		# selectButton(new_layer_button, new_layer_hbox) 
 	else:
@@ -807,3 +833,109 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 
 func _on_add_imagelayer_pressed() -> void:
 	%AddNewPic.visible = true
+
+
+func _on_additional_tools_item_selected(index: int) -> void:
+	SingletonObject.is_cryon = false
+	SingletonObject.is_Brush = false
+	SingletonObject.is_square = false
+	match index:
+		1:
+			SingletonObject.is_Brush = true
+		2:
+			SingletonObject.is_square = true
+		3:
+			SingletonObject.is_cryon = true
+
+func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
+	var rand = RandomNumberGenerator.new()
+	rand.seed = Time.get_ticks_msec()  # Use a time-based seed for more randomness
+
+	var scatter_amount = radius * 0.7  # Adjust for desired scatter effect
+	var density = 15  # Number of dots to spray (adjust for intensity)
+
+	for _i in range(density):
+		var offset_x = rand.randf_range(-scatter_amount, scatter_amount)
+		var offset_y = rand.randf_range(-scatter_amount, scatter_amount)
+		var spray_pos = pos + Vector2(offset_x, offset_y)
+
+		# Draw a single pixel for the spray dot
+		if spray_pos.x >= 0 and spray_pos.x < target_image.get_width() and spray_pos.y >= 0 and spray_pos.y < target_image.get_height():
+			if erasing:
+				target_image.set_pixelv(spray_pos, _background_images[_draw_layer.name].get_pixelv(spray_pos))
+			else:
+				target_image.set_pixelv(spray_pos, color)
+
+func draw_square(target_image: Image, pos: Vector2, color: Color, size: int):
+	var half_size = size / 2
+	for x in range(int(pos.x - half_size), int(pos.x + half_size + 1)):
+		for y in range(int(pos.y - half_size), int(pos.y + half_size + 1)):
+			var pixel = Vector2(x, y)
+			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
+				if erasing:
+					target_image.set_pixelv(pixel, _background_images[_draw_layer.name].get_pixelv(pixel))
+				else:
+					target_image.set_pixelv(pixel, color)
+
+
+func flood_fill(target_image: Image, start_pos: Vector2, fill_color: Color):
+	var target_color = target_image.get_pixelv(start_pos)
+	
+	# If the starting pixel is already the fill color, do nothing
+	if target_color == fill_color:
+		return
+
+	var width = target_image.get_width()
+	var height = target_image.get_height()
+	var stack = [start_pos] 
+	
+	while stack.size() > 0:
+		var current_pos = stack.pop_back()
+		var x = int(current_pos.x)
+		var y = int(current_pos.y)
+
+		if x < 0 or x >= width or y < 0 or y >= height:
+			continue
+
+		if target_image.get_pixelv(current_pos) == target_color:
+			target_image.set_pixelv(current_pos, fill_color)          
+
+			# Add neighboring pixels to the stack
+			stack.append(Vector2(x + 1, y))
+			stack.append(Vector2(x - 1, y))
+			stack.append(Vector2(x, y + 1))
+			stack.append(Vector2(x, y - 1))
+
+func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
+	var rand = RandomNumberGenerator.new()
+	rand.seed = Time.get_ticks_msec()
+
+	var jitter_amount = radius * 0.5
+	var opacity_falloff = 0.7
+
+	for _i in range(radius * 2):
+		var offset_x = rand.randf_range(-jitter_amount, jitter_amount)
+		var offset_y = rand.randf_range(-jitter_amount, jitter_amount)
+		var draw_pos = pos + Vector2(offset_x, offset_y)
+
+		var distance_from_center = pos.distance_to(draw_pos)
+		var opacity = 1.0 - (distance_from_center / radius) * opacity_falloff
+		opacity = clamp(opacity, 0.0, 1.0)
+
+		if draw_pos.x >= 0 and draw_pos.x < target_image.get_width() and draw_pos.y >= 0 and draw_pos.y < target_image.get_height():
+			if erasing:
+				# Erase by blending with the background image
+				target_image.set_pixelv(draw_pos, _background_images[_draw_layer.name].get_pixelv(draw_pos))
+			else:
+				var bg_color = target_image.get_pixelv(draw_pos)
+
+				# Calculate the premultiplied crayon color 
+				var crayon_color_premultiplied = Color(color.r * color.a, color.g * color.a, color.b * color.a, color.a)
+
+				# Apply the 40% transparency reduction to the opacity
+				opacity *= 0.6 
+
+				# Blend with the adjusted opacity
+				var final_color = crayon_color_premultiplied * opacity + bg_color * (1.0 - opacity)
+
+				target_image.set_pixelv(draw_pos, final_color) 
