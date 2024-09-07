@@ -288,7 +288,7 @@ func _gui_input(event: InputEvent):
 		active_layer.update()
 		fill_tool = false
 		%Brushes.select(0)
-		
+		%PenAdditionalTools.visible = true
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -343,7 +343,16 @@ func _gui_input(event: InputEvent):
 
 			_layers_container.scale *= Vector2.ONE * zoom_factor
 			_layers_container.position += zoom_offset
-	
+			
+		if event is InputEventMouseMotion and %MgIcon.visible == true:
+			# Correctly calculate the position relative to the zoom level and container position
+			var local_position = _layers_container.get_local_mouse_position()
+			var global_position = _layers_container.position + local_position * _layers_container.scale
+			%MgIcon.offset = Vector2(-20,20)
+			%MgIcon.position = global_position
+			drawing = false
+			
+			
 
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var new_bubble = Buble.instantiate() 
@@ -424,6 +433,13 @@ func _on_apply_mask_button_pressed():
 		_draw_layer.update()  # Update the draw layer to reflect the applied mask
 
 		image.set_meta("mask", _mask_layer.image)
+		
+	%MgIcon.visible = false
+	zoomIn = false
+	zoomOut = false
+	
+	%ZoomIn.modulate = Color.WHITE
+	%ZoomOut.modulate = Color.WHITE 
 
 	# if the image has the signal defined call it
 	if image.has_user_signal("mask_changed"):
@@ -437,6 +453,13 @@ func _on_layers_pressed():
 	var bPos = %Layers.position
 	%LayersMenu.position = Vector2(bPos.x - 60, bPos.y + 105)
 	%LayerBG.position = Vector2(bPos.x - 60, bPos.y + 105)
+	
+	%MgIcon.visible = false
+	zoomIn = false
+	zoomOut = false
+	
+	%ZoomIn.modulate = Color.WHITE
+	%ZoomOut.modulate = Color.WHITE 
 	
 func _on_add_layer_pressed():
 	layers_buttons()
@@ -529,6 +552,7 @@ func LayerVisible(Hbox: HBoxContainer):
 
 func _on_brushes_item_selected(index):
 	#off other tools not drawing
+	%MgIcon.visible = false
 	erasing = false
 	view_tool_active = false
 	_on_mask(false)
@@ -563,6 +587,13 @@ func _on_option_button_item_selected(index):
 	_on_mask(false)
 	clouding = true
 	
+	%MgIcon.visible = false
+	zoomIn = false
+	zoomOut = false
+	
+	%ZoomIn.modulate = Color.WHITE
+	%ZoomOut.modulate = Color.WHITE 
+	
 	match index:
 		0:
 			SingletonObject.CloudType = CloudControl.Type.ELLIPSE
@@ -580,13 +611,16 @@ func _on_hand_pressed() -> void:
 	zoomIn = false
 	zoomOut = false
 	%DialogClouds.visible = false
+	%MgIcon.visible = false
 
 	# Toggle hand tool and its visual indicator
 	view_tool_active = !view_tool_active 
 	if view_tool_active:
-		%Hand.modulate = Color.LIME_GREEN 
+		%Hand.modulate = Color.LIME_GREEN
+		%MgIcon.visible = true 
 	else:
 		%Hand.modulate = Color.WHITE  # Reset color when deactivated
+		%MgIcon.visible = false
 
 func _on_zoom_in_pressed() -> void:
 	# Toggle other tools off
@@ -600,9 +634,12 @@ func _on_zoom_in_pressed() -> void:
 	# Toggle zoom in and its visual indicator
 	zoomIn = !zoomIn
 	if zoomIn:
-		%ZoomIn.modulate = Color.LIME_GREEN 
+		%ZoomIn.modulate = Color.LIME_GREEN
+		%ZoomOut.modulate = Color.WHITE
+		%MgIcon.visible = true
 	else:
 		%ZoomIn.modulate = Color.WHITE 
+		%MgIcon.visible = false
 	
 func _on_zoom_out_pressed() -> void:
 	# Toggle other tools off
@@ -617,8 +654,11 @@ func _on_zoom_out_pressed() -> void:
 	zoomOut = !zoomOut
 	if zoomOut:
 		%ZoomOut.modulate = Color.LIME_GREEN 
+		%ZoomIn.modulate = Color.WHITE
+		%MgIcon.visible = true
 	else:
 		%ZoomOut.modulate = Color.WHITE 
+		%MgIcon.visible = false
 
 func _on_mg_pressed() -> void:
 	# Define your default size here 
@@ -632,6 +672,13 @@ func _on_mg_pressed() -> void:
 
 			# Update the layer to reflect the changes
 			layer.update()
+			
+	%MgIcon.visible = false
+	zoomIn = false
+	zoomOut = false
+	
+	%ZoomIn.modulate = Color.WHITE
+	%ZoomOut.modulate = Color.WHITE 
 
 	# Optionally, reset the zoom and position of the LayersContainer 
 	_layers_container.scale = Vector2.ONE
@@ -736,6 +783,14 @@ func _on_arrow_bottom_pressed() -> void:
 	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
 
 func _resize_layers(size_factor: float, resize_width: bool = true) -> void:
+	
+	%MgIcon.visible = false
+	zoomIn = false
+	zoomOut = false
+	
+	%ZoomIn.modulate = Color.WHITE
+	%ZoomOut.modulate = Color.WHITE 
+	
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			var old_size = layer.image.get_size()
