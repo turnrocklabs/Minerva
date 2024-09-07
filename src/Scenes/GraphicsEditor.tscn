@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=20 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
@@ -18,6 +18,7 @@
 [ext_resource type="Texture2D" uid="uid://bq7obdp4qb1qm" path="res://assets/icons/editor_arrows/editor_arrow_up.png" id="10_tpp25"]
 [ext_resource type="Texture2D" uid="uid://dmkhqqoc15i8a" path="res://assets/icons/editor_arrows/editor_arrow_down.png" id="11_cph1y"]
 [ext_resource type="Texture2D" uid="uid://ws8ig4iufap5" path="res://assets/icons/editor_arrows/editor_arrow_right.png" id="12_hpuv1"]
+[ext_resource type="Texture2D" uid="uid://b4mldxp8undi7" path="res://assets/icons/MgGlass.png" id="19_mrqsj"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
@@ -199,6 +200,12 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+
+[node name="MgIcon" type="Sprite2D" parent="VBoxContainer/ScrollContainer"]
+unique_name_in_owner = true
+visible = false
+position = Vector2(0, -124)
+texture = ExtResource("19_mrqsj")
 
 [node name="PopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
