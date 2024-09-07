@@ -6,6 +6,11 @@ signal save_as_dialog_exited()
 
 var save_path: String
 
+var last_save_path: String
+
+func update_last_save_path(new_path: String) -> void:
+	last_save_path = new_path + "/"
+
 ## Function:
 # _new_project empties all the tabs and lists currently stored as notes or chats.
 # it also blanks out the save file variable to force a save_as
@@ -23,6 +28,8 @@ func open_project():
 # This function can be awaited, which will resolve when the dialog is exited on 'file_selected' or 'canceled'
 func save_project_as(file=""):
 	if file == "":
+		if last_save_path != "":
+			%fdgSaveAs.current_path = last_save_path
 		%fdgSaveAs.popup_centered(Vector2i(800, 600))
 
 		(%fdgSaveAs as FileDialog).file_selected.connect(func(_p): save_as_dialog_exited.emit())
@@ -57,9 +64,12 @@ func save_project():
 	
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
-		var editor = item_list.get_item_metadata(item_idx)
-		await editor.prompt_close(true)
-		editor.queue_free()
+		var editor: Editor = item_list.get_item_metadata(item_idx)
+		if editor.file:
+			await editor.prompt_close(true, false, last_save_path)
+		else:
+			await editor.prompt_close(true, true, last_save_path)
+		#editor.queue_free()
 
 	if save_path == null or save_path == "":
 		await save_project_as()
@@ -76,7 +86,7 @@ func save_project():
 	
 	SingletonObject.save_state(true)
 
-
+#region Serialize/Deserialize Project
 ## Function:
 # serialize_project iterates through the notes and chats and creates an array
 # each line in the array is the contents of either the notes or the chats.
@@ -149,6 +159,7 @@ func deserialize_project(data: Dictionary):
 	if SingletonObject.Chats.get_tab_count()-1 >= current_chat_tab:
 		SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 
+#endregion Serialize/Deserialize Project
 
 func close_project():
 	save_project()
@@ -175,18 +186,24 @@ func _ready():
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)
-	SingletonObject.SaveOpenEditorTabs.connect(save_editorpanes)
+	SingletonObject.SaveOpenEditorTabs.connect(save_editorpanes.bind(true))
+	SingletonObject.UpdateLastSavePath.connect(update_last_save_path)
 
+#region FDG Dialog
 
 func _on_fdg_save_as_file_selected(path):
 	self.save_path = path
 	self.save_project()
-	pass # Replace with function body.
 
 
 func _on_fdg_open_project_file_selected(path):
 	open_project_given_path(path)
 
+func _on_fdg_open_file_tree_entered():
+	var openProjectHbox: HBoxContainer = %fdgOpenProject.get_vbox().get_child(0)
+	openProjectHbox.set("theme_override_constants/separation", 12)
+
+#endregion FDG Dialog
 
 func _on_open_recent_project_selected(project_name: String):
 	var project_path = SingletonObject.get_project_path(project_name)
@@ -230,7 +247,7 @@ func _notification(what):
 
 
 # this function checks if there are unsaved editor panes and saves them
-func save_editorpanes():
+func save_editorpanes(skip_selecting_items: bool = false):
 	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
 		# if the state is unsaved or we have unsaved editors open
 	if not SingletonObject.saved_state or unsaved_editors:
@@ -244,8 +261,18 @@ func save_editorpanes():
 			var item_idx = item_list.add_item(tab_title)
 			item_list.set_item_metadata(item_idx, editor)
 		
-		%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
-		%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
+		if skip_selecting_items:
+			var items: = item_list.item_count
+			var counter: = 0
+			while counter < items:
+				item_list.select(counter, false)
+				counter += 1
+			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+			save_project()
+			
+		else:
+			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
 	else:
 		get_tree().quit()
 
@@ -261,8 +288,3 @@ func _on_exit_confirmation_dialog_confirmed():
 func _on_exit_confirmation_dialog_custom_action(action: StringName):
 	if action == "exit":
 		get_tree().quit()
-
-
-func _on_fdg_open_file_tree_entered():
-	var openProjectHbox: HBoxContainer = %fdgOpenProject.get_vbox().get_child(0)
-	openProjectHbox.set("theme_override_constants/separation", 12)
