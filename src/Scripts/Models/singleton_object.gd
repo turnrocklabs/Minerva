@@ -304,6 +304,8 @@ signal RedrawAll
 signal SaveOpenEditorTabs
 @warning_ignore("unused_signal")
 signal UpdateLastSavePath(new_path: String)
+@warning_ignore("unused_signal")
+signal UpdateUnsavedTabIcon
 
 var saved_state = true
 
