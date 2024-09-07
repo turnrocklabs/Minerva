@@ -204,7 +204,6 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 visible = false
 position = Vector2(0, -124)
-texture = ExtResource("19_mrqsj")
 
 [node name="PopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
