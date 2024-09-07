@@ -206,6 +206,12 @@ layout_mode = 2
 tooltip_text = "record message"
 icon = ExtResource("8_tl5be")
 
+[node name="AudioStop1" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "STOP"
+
 [node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" node_paths=PackedStringArray("shortcut_context")]
 layout_mode = 2
 tooltip_text = "Send Message"
@@ -241,4 +247,5 @@ theme_override_font_sizes/font_size = 14
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_test_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnClear" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_clear_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_microphone_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/AudioStop1" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_audio_stop_1_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
