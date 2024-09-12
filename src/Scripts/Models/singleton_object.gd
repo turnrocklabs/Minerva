@@ -8,6 +8,10 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var is_graph:bool
 var is_masking:bool
 
+#this is where we save the last path used to save a file or project
+var last_saved_path: String
+
+
 var CloudType
 
 var is_Brush
@@ -26,6 +30,17 @@ func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
+
+func config_has_saved_section(section: String) -> bool:
+	if !section: return false
+	return config_file.has_section(section)
+
+
+func config_clear_section(section: String)-> void:
+	if !section: return
+	config_file.erase_section(section)
+	config_file.save(config_file_name)
+
 
 #method for checking if the user has saved files
 func has_recent_projects() -> bool:
@@ -196,6 +211,8 @@ func _ready():
 	if err != OK:
 		return
 	
+	if config_has_saved_section("LastSavedPath"):
+		last_saved_path = config_file.get_section_keys("LastSavedPath")[0]
 	
 	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
