@@ -88,7 +88,7 @@ func _ready():
 
 
 func update_last_path(new_path: String) -> void:
-	SingletonObject.last_save_path = new_path + "/"
+	SingletonObject.last_saved_path = new_path + "/"
 
 
 func _load_text_file(filename: String):
@@ -96,6 +96,8 @@ func _load_text_file(filename: String):
 	if fa_object:
 		code_edit.text = fa_object.get_as_text()
 		code_edit.saved_content = code_edit.text
+	else:
+		code_edit.text = "Could not retrive file"
 	# %SaveButton.disabled = false
 
 
@@ -182,7 +184,7 @@ func save():
 		_save_override.call()
 	else:
 		if SingletonObject.last_saved_path:
-			await prompt_close(true, false, SingletonObject.last_save_path)
+			await prompt_close(true, false, SingletonObject.last_saved_path)
 		else:
 			await prompt_close(true)
 	
@@ -245,6 +247,9 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 
 func _on_editor_changed():
 	%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+	_file_saved = true
+	file_saved_in_disc = true
 	content_changed.emit()
 
 func _on_save_dialog_canceled():

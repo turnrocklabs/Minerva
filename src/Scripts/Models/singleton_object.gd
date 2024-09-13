@@ -213,6 +213,8 @@ func _ready():
 	
 	if config_has_saved_section("LastSavedPath"):
 		last_saved_path = config_file.get_section_keys("LastSavedPath")[0]
+	else:
+		last_saved_path = "/"
 	
 	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
