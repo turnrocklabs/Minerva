@@ -9,7 +9,7 @@ var save_path: String
 var last_save_path: String
 
 func update_last_save_path(new_path: String) -> void:
-	SingletonObject.last_save_path = new_path + "/"
+	SingletonObject.last_saved_path = new_path + "/"
 
 ## Function:
 # _new_project empties all the tabs and lists currently stored as notes or chats.
@@ -32,8 +32,8 @@ func open_project(path: = ""):
 # This function can be awaited, which will resolve when the dialog is exited on 'file_selected' or 'canceled'
 func save_project_as(file=""):
 	if file == "":
-		if SingletonObject.last_save_path != "":
-			%fdgSaveAs.current_path = SingletonObject.last_save_path
+		if SingletonObject.last_saved_path != "":
+			%fdgSaveAs.current_path = SingletonObject.last_saved_path
 		%fdgSaveAs.popup_centered(Vector2i(800, 600))
 
 		(%fdgSaveAs as FileDialog).file_selected.connect(func(_p): save_as_dialog_exited.emit())
@@ -71,9 +71,9 @@ func save_unsaved_editors() -> void:
 	for item_idx in item_list.get_selected_items():
 		var editor: Editor = item_list.get_item_metadata(item_idx)
 		if editor.file:
-			await editor.prompt_close(true, false, SingletonObject.last_save_path)
+			await editor.prompt_close(true, false, SingletonObject.last_saved_path)
 		else:
-			await editor.prompt_close(true, true, SingletonObject.last_save_path)
+			await editor.prompt_close(true, true, SingletonObject.last_saved_path)
 	
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
@@ -183,6 +183,7 @@ func deserialize_project(data: Dictionary):
 	
 	#editor_files.assign(data.get("Editors", []))
 	#SingletonObject.editor_container.deserialize(editor_files)
+	SingletonObject.editor_container.clear_editor_tabs()
 	var editor_nodes: Array = []
 	if data.get("Editors"):
 		editor_nodes = EditorContainer.deserialize(data.get("Editors", []))
