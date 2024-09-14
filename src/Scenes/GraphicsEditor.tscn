@@ -18,15 +18,18 @@
 [ext_resource type="Texture2D" uid="uid://dmkhqqoc15i8a" path="res://assets/icons/editor_arrows/editor_arrow_down.png" id="11_cph1y"]
 [ext_resource type="Texture2D" uid="uid://ws8ig4iufap5" path="res://assets/icons/editor_arrows/editor_arrow_right.png" id="12_hpuv1"]
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
-[ext_resource type="Texture2D" uid="uid://c2g1cdw4axhek" path="res://assets/icons/magnifying-glass-24-24.png" id="19_4t4fj"]
 
-[node name="GraphicsEditor" type="PanelContainer"]
+[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
+
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
+_color_picker = NodePath("VBoxContainer/MarginContainer/HFlowContainer/ColorPickerButton")
+_apply_mask_button = NodePath("VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton")
+masking_color = Color(0.251, 0.227, 0.243, 0.6)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
@@ -116,6 +119,7 @@ size_flags_vertical = 4
 focus_mode = 0
 text = "Color"
 icon_alignment = 1
+color = Color(0.447059, 0.447059, 0.67451, 1)
 
 [node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 visible = false
@@ -188,8 +192,6 @@ icon = ExtResource("18_yov21")
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-horizontal_scroll_mode = 0
-vertical_scroll_mode = 0
 
 [node name="LayersContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer"]
 unique_name_in_owner = true
@@ -201,7 +203,6 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 visible = false
 position = Vector2(0, -124)
-texture = ExtResource("19_4t4fj")
 
 [node name="PopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
@@ -262,7 +263,6 @@ ok_button_text = "Open"
 file_mode = 0
 access = 2
 
-[connection signal="resized" from="." to="." method="_on_resized"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
