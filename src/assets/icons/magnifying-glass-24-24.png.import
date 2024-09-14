@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c8nhgdc85kv1o"
-path="res://.godot/imported/StraightDialogCloud.png-a86aaeea9ec9de620f8a6b81854fb18a.ctex"
+uid="uid://c2g1cdw4axhek"
+path="res://.godot/imported/magnifying-glass-24-24.png-11253fa1073f319f1b7a81736b3960b6.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/StraightDialogCloud.png"
-dest_files=["res://.godot/imported/StraightDialogCloud.png-a86aaeea9ec9de620f8a6b81854fb18a.ctex"]
+source_file="res://assets/icons/magnifying-glass-24-24.png"
+dest_files=["res://.godot/imported/magnifying-glass-24-24.png-11253fa1073f319f1b7a81736b3960b6.ctex"]
 
 [params]
 
