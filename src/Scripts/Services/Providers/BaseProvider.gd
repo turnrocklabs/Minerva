@@ -25,7 +25,8 @@ var token_cost: float = 0
 var active_request: HTTPRequest
 # var active_bot: BotResponse
 
-# region METHODS TO REIMPLEMENT
+
+#region METHODS TO REIMPLEMENT
 
 # moved chat_response signal to SignletonObject
 
@@ -62,7 +63,7 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
 
 
-# endregion
+#endregion
 
 func _ready():
 	active_request = HTTPRequest.new()
@@ -92,7 +93,7 @@ class RequestResults extends RefCounted:
 		obj.url = url_
 		obj.metadata = metadata_
 		obj.http_request = http_request_
-
+		obj.http_request.use_threads = true
 		return obj
 	
 	func _to_string():
@@ -140,5 +141,3 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	var results = RequestResults.from_request_response(request_results, http_request, url)
 
 	return results
-
-

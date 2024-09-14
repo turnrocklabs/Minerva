@@ -50,12 +50,21 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		for mem_item: MemoryItem in thread.MemoryItemList:
 			if mem_item.Enabled and mem_item.MemoryImage:
 				active_image = mem_item.MemoryImage
+	
+	for item: MemoryItem in SingletonObject.DetachedNotes:
+		if item.Type == SingletonObject.note_type.IMAGE and item.Enabled:
+			active_image = item.MemoryImage
+			edit = active_image.has_meta("mask") # if it has a mask it's a edit, otherwise a variation
+			item.Enabled = false
+			break
 
-	for formatted_data in prompt:
-		for image in formatted_data["images"]:
-			if image.get_meta("active", false):
-				active_image = image
-				edit = active_image.has_meta("mask")
+	# Images can't be enabled in the chat anymore, but in the editor or as notes
+	# Editor images have priority
+	# for formatted_data in prompt:
+	# 	for image in formatted_data["images"]:
+	# 		if image.get_meta("active", false):
+	# 			active_image = image
+	# 			edit = active_image.has_meta("mask")
 
 	# Just take the last prompt
 	var request_body = {
@@ -99,10 +108,6 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 				],
 			)
 
-		# ChangImage sets the `rendered_node` for the image
-		if active_image.has_meta("rendered_node"):
-			active_image.get_meta("rendered_node").active = false
-
 	else:
 		request_body["model"] = "dall-e-3" # we can use dall-e-3 for generating images
 		request_body["prompt"].left(4000) # dall-e-3 has a 4000 characters prompt limit
@@ -117,7 +122,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		)
 
 	var item = _parse_request_results(response)
-	
+
 	SingletonObject.chat_completed.emit(item)
 
 	return item
@@ -179,7 +184,7 @@ func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
-
+	
 #region Form Data
 
 ## Generate boundary string for form data.

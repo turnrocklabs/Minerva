@@ -2,13 +2,16 @@
 class_name VBoxChat
 extends VBoxContainer
 
+@warning_ignore("unused_signal")
 signal memorize_item(text_to_memorize:String)
 
 # emitted when text selection for any of rich text labels start or end
+@warning_ignore("unused_signal")
 signal message_selection(message: MessageMarkdown, active: bool)
 
 ## emitted when user activates a image for editing
 ## MessageMarkdown emits this signal
+@warning_ignore("unused_signal")
 signal image_activated(image: ChatImage, active: bool)
 
 

@@ -41,4 +41,3 @@ func _on_tab_bar_tab_close_pressed(tab: int):
 	var terminal_control: Terminal = _tab_bar.get_tab_metadata(tab)
 	_tab_bar.remove_tab(tab)
 	terminal_control.queue_free()
-

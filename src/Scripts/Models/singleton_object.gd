@@ -2,11 +2,18 @@ extends Node
 
 #region global variables
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
-var supported_text_fortmats: PackedStringArray = ["rs", "toml", "txt", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go"]
+var supported_text_fortmats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
-var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]#, "flac"]
+var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var is_graph:bool
 var is_masking:bool
+
+var CloudType
+
+var is_Brush
+var is_square
+var is_cryon
+var is_marker
 
 #endregion global variables
 
@@ -61,10 +68,20 @@ enum note_type {
 	VIDEO
 }
 
-var ThreadList: Array[MemoryThread]:
-	set(value):
-		# save_state(false)
-		ThreadList = value
+# this signals get used in memoryTabs.gd and new_thread_popup.gd 
+# for creating and updating notes tabs names
+@warning_ignore("unused_signal")
+signal create_notes_tab(name: String)
+@warning_ignore("unused_signal")
+signal associated_notes_tab(tab_name, tab: Control)
+@warning_ignore("unused_signal")
+signal pop_up_new_tab
+
+
+var ThreadList: Array[MemoryThread]#:  =[]
+	#set(value):
+		## save_state(false)
+		#ThreadList = value
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
 var DetachedNotes: Array[MemoryItem]
@@ -77,6 +94,7 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 	NotesTab.render_threads()
 	pass
 
+@warning_ignore("unused_signal")
 signal AttachNoteFile(file_path:String)
 
 
@@ -94,7 +112,7 @@ func get_thread(thread_id: String) -> MemoryThread:
 #endregion Notes
 
 #region Chats
-
+@warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)
 
 var ChatList: Array[ChatHistory]:
@@ -112,7 +130,65 @@ var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
+##region Buttons/Icons scaling
+#var buttons_array: Array = []
+#
+#func get_all_children(in_node, array := []) -> Array:
+	#array.push_back(in_node)
+	#for child in in_node.get_children():
+		#array = get_all_children(child, array)
+	#return array
+#
+#
+#func fill_buttons_array() -> void:
+	#for element in get_all_children(get_tree().get_root()):
+		#if element is BaseButton:
+			#buttons_array.append(element)
+#
+#var buttons_scale: float = 1.0
+#var max_buttons_scale: float = 3.0
+#var min_buttons_scale: float = 1.0
+#
+#func change_buttons_zoom(factor: float) -> void:
+	#for button: Button in buttons_array:
+		#if button.icon:
+			#if factor == 0.5:
+				#button.custom_minimum_size.x = button.size.x + 24
+			#else:
+				#button.custom_minimum_size.x = button.size.x - 24
+			##buttons_scale += factor
+			##button.scale = Vector2(buttons_scale, buttons_scale)
+#
+##endregion Buttons/Icons scaling
+
 func _ready():
+	#we call this function to get all the buttons in the scene tree
+	#fill_buttons_array()
+	#change_buttons_zoom(0.5)
+	#print(buttons_array.size())
+	#for button in buttons_array:
+		#print(button.name)
+	
+	
+	#var screen_size = DisplayServer.screen_get_size()
+	#var dpi = DisplayServer.screen_get_dpi()
+	#print("screen size: " + str(screen_size))
+	#print("dpi: "+ str(dpi))
+	#var new_scale: float = screen_size.y / 1080
+	#
+	#print("scale: " + str(new_scale))
+	#if dpi > 140:
+		#get_window().content_scale_factor = new_scale
+		#print("dpi is above 140, new scale factor is now: " + str(new_scale))
+	#
+	#if screen_size.y > 1200:
+		#get_window().content_scale_factor = 1.3
+		#print("scale factor: 1.3")
+	#if screen_size.y < 900:
+		#get_window().content_scale_factor = 0.7
+		#print("scale factor: 0.7")
+	
+	
 	add_child(AtT)
 	add_child(undo)
 	
@@ -121,7 +197,7 @@ func _ready():
 		return
 	
 	
-	var theme_enum = get_theme()
+	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
 		set_theme(theme_enum)
 	
@@ -213,15 +289,30 @@ func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MO
 #endregion API Consumer
 
 #region Project Management
+@warning_ignore("unused_signal")
 signal NewProject
-signal OpenProject
+@warning_ignore("unused_signal")
+signal OpenProject(path: String)
+@warning_ignore("unused_signal")
 signal OpenRecentProject(recent_project_name: String)
+@warning_ignore("unused_signal")
 signal SaveProject
+@warning_ignore("unused_signal")
 signal SaveProjectAs
+@warning_ignore("unused_signal")
 signal PackageProject
+@warning_ignore("unused_signal")
 signal UnpackageProject
+@warning_ignore("unused_signal")
 signal CloseProject
+@warning_ignore("unused_signal")
 signal RedrawAll
+@warning_ignore("unused_signal")
+signal SaveOpenEditorTabs
+@warning_ignore("unused_signal")
+signal UpdateLastSavePath(new_path: String)
+@warning_ignore("unused_signal")
+signal UpdateUnsavedTabIcon
 
 var saved_state = true
 
@@ -270,29 +361,35 @@ func all_project_features_open() -> bool:
 
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
+@warning_ignore("unused_signal")
 signal theme_changed(theme_enum)
 
-func get_theme() -> int:
+
+func get_theme_enum() -> int:
 	return config_file.get_value("theme", "theme_enum",0)
 
 
 func set_theme(themeID: int) -> void:
-	match themeID:
-		theme.LIGHT_MODE:
-			var light_theme = ResourceLoader.load("res://assets/themes/light_mode.theme")
-			if root_control: root_control.theme = light_theme
-			save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
-		theme.DARK_MODE:
-			var dark_theme = ResourceLoader.load("res://assets/themes/blue_dark_mode.theme")
-			if root_control: root_control.theme = dark_theme
-			save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
-	theme_changed.emit(themeID)
+	if get_theme_enum() != themeID:
+		print("theme enum:" + str(themeID))
+		match themeID:
+			theme.LIGHT_MODE:
+				var _light_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/light_mode.theme")
+				var light_theme = ResourceLoader.load_threaded_get("res://assets/themes/light_mode.theme")
+				root_control.theme = light_theme
+				save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
+			theme.DARK_MODE:
+				var _dark_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/blue_dark_mode.theme")
+				var dark_theme = ResourceLoader.load_threaded_get("res://assets/themes/blue_dark_mode.theme")
+				root_control.theme = dark_theme
+				save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
+		theme_changed.emit(themeID)
 
 #endregion Theme change
 
 
 #region Audio Settings
-
+@warning_ignore("unused_signal")
 signal mic_changed(micrphone)
 
 func get_microphone():
@@ -308,6 +405,7 @@ func set_microphone(mic: String) -> void:
 
 
 #region Loading screen stuff
+@warning_ignore("unused_signal")
 signal Loading(state, label_text)
 
 func show_loading_screen(_label_text: String = ""):
@@ -317,4 +415,3 @@ func hide_loading_screen():
 	Loading.emit(false, "")
 
 #endregion Loading screen stuff
-

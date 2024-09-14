@@ -100,11 +100,11 @@ func regenerate_response(chi: ChatHistoryItem):
 		return
 
 	var history: ChatHistory
-	if not history:
-		for h in SingletonObject.ChatList:
-			if h.HistoryItemList.has(chi):
-				history = h
-				break
+	
+	for h in SingletonObject.ChatList:
+		if h.HistoryItemList.has(chi):
+			history = h
+			break
 
 	if not history:
 		push_warning("Trying to regenerate response for history item %s not present in any history item list" % chi)
@@ -197,40 +197,51 @@ func execute_chat():
 	var model_msg_node = history.VBox.add_history_item(dummy_item)
 	model_msg_node.loading = true
 
-	# This function can be awaited for the request to finish
-	var bot_response = await history.provider.generate_content(history_list)
+	
+	var optional_params = {
+		"temperature": history.Temperature,
+		"top_p": history.TopP,
+		"presence_penalty": history.PresencePenalty,
+		"frequency_penalty": history.FrecuencyPenalty,
+	}
+
+	var bot_response
+	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is DallE:
+		bot_response = await history.provider.generate_content(history_list, optional_params)
+	else:
+		bot_response = await history.provider.generate_content(history_list)
 
 	# we made the prompt, disable the notes now
 	SingletonObject.NotesTab.Disable_All()
 
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
-	if bot_response.id: chi.Id = bot_response.id
-	chi.Role = ChatHistoryItem.ChatRole.MODEL
-	chi.Message = bot_response.text
-	chi.Error = bot_response.error
-	chi.provider = history.provider
-	chi.Complete = bot_response.complete
-	chi.TokenCost = bot_response.completion_tokens
-	if bot_response.image:
-		chi.Images = ([bot_response.image] as Array[Image])
+	
+	if bot_response != null: 
+		chi.Id = bot_response.id
+		chi.Role = ChatHistoryItem.ChatRole.MODEL
+		chi.Message = bot_response.text
+		chi.Error = bot_response.error
+		chi.provider = history.provider
+		chi.Complete = bot_response.complete
+		chi.TokenCost = bot_response.completion_tokens
+		if bot_response.image:
+			chi.Images = ([bot_response.image] as Array[Image])
 
-	# Update user message node
-	user_history_item.TokenCost = bot_response.prompt_tokens
-	user_msg_node.render()
+		# Update user message node
+		user_history_item.TokenCost = bot_response.prompt_tokens
+		user_msg_node.render()
 
-	# Change the history item and the mesasge node will update itself
-	model_msg_node.history_item = chi
-	history.HistoryItemList.append(chi)
+		# Change the history item and the mesasge node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
 
-	## Inform the user history item that the responsew has arrived
-	user_history_item.response_arrived.emit(chi)
+		## Inform the user history item that the responsew has arrived
+		user_history_item.response_arrived.emit(chi)
 
-	history.VBox.scroll_to_bottom()
+		history.VBox.scroll_to_bottom()
 
-	model_msg_node.loading = false
-
-
+		model_msg_node.loading = false
 
 # TODO: check if changing the active tab during the request causes any trouble
 
@@ -375,9 +386,12 @@ func render_history(chat_history: ChatHistory):
 
 	# set the scroll container name and add it to the pane.
 	var _name = chat_history.HistoryName
-	scroll_container.name = _name
+	#scroll_container.name = _name
 	%tcChats.add_child(scroll_container)
-
+	var tab_idx = %tcChats.get_tab_idx_from_control(scroll_container)
+	%tcChats.set_tab_title(tab_idx, _name)
+	
+	
 	for item in chat_history.HistoryItemList:
 		vboxChat.add_history_item(item)
 
@@ -412,7 +426,7 @@ func restore_deleted_tab(tab_name: String):
 		var history = data["history"]
 		data["timer"].stop()
 		#Add the control back to the TabContainer
-		%tcChats.add_child(control_)
+		%tcChats.call_deferred("add_child", control_)#add_child(control_)
 		
 		# Set the tab index and restore the history
 		set_current_tab(tab)
@@ -438,9 +452,11 @@ func _on_btn_test_pressed():
 	self.render_single_chat(item)
 	pass # Replace with function body.
 
+
 func clear_all_chats():
 	for child in get_children():
-		remove_child(child)
+		call_deferred("remove_child", child)#remove_child(child)
+
 
 func update_token_estimation():
 	if SingletonObject.ChatList.is_empty(): return
@@ -452,20 +468,26 @@ func update_token_estimation():
 
 	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi))
 
-	%EstimatedTokensLabel.text = "%s (%s$)" % [token_count, provider.token_cost * token_count]
+	%EstimatedTokensLabel.text = "%s: %s$" % [token_count, (provider.token_cost * token_count) *10]
 
 
 # region Edit provider Title
 
 func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
-	%EditTitleDialog/LineEdit.text = get_tab_title(tab)
+	%LineEdit.text = get_tab_title(tab)
+	%LineEdit.call_deferred("grab_focus")
 	%EditTitleDialog.popup_centered()
+
 
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
+	set_tab_title(tab, %LineEdit.text)
 
-	set_tab_title(tab, %EditTitleDialog/LineEdit.text)
+
+func _on_line_edit_text_submitted(_new_text: String) -> void:
+	_on_edit_title_dialog_confirmed()
+	%EditTitleDialog.hide()
 
 
 # Detect the double click and open the title edit popup
@@ -510,6 +532,7 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
+	SingletonObject.AtT.btnStop = %AudioStop1
 
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
@@ -582,9 +605,5 @@ func get_first_chat_item() -> ChatHistoryItem:
 #endregion Add New HistoryItem
 
 
-
-
-
-
-
-
+func _on_audio_stop_1_pressed() -> void:
+	SingletonObject.AtT._StopConverting()

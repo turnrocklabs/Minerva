@@ -1,4 +1,4 @@
-[gd_scene load_steps=32 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=36 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_d0avd"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -7,27 +7,31 @@
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
-[ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/PreferencesPopup.tscn" id="3_3hcc1"]
+[ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/windows/PreferencesPopup.tscn" id="3_3hcc1"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
-[ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow.png" id="6_vobga"]
-[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="7_rdia2"]
+[ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/windows/new_thread_popup.tscn" id="5_gujhn"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="7_rdia2"]
 [ext_resource type="Texture2D" uid="uid://cukfnot0gnafc" path="res://assets/icons/Horizontal_split.png" id="8_oxf75"]
+[ext_resource type="Texture2D" uid="uid://bliwqrb268u66" path="res://assets/icons/zoom_icons/zoom_more.svg" id="9_6n2ks"]
 [ext_resource type="Texture2D" uid="uid://juldbjk5u4wl" path="res://assets/icons/Vertical_split.png" id="9_fr5ee"]
 [ext_resource type="Texture2D" uid="uid://beeolxl52ig6y" path="res://assets/generated/handshake_logo-_green24px.png" id="10_nl4h3"]
-[ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icon.png" id="11_p11dv"]
-[ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_arrow.png" id="11_srtkx"]
-[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/add.svg" id="12_6jk4t"]
-[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icon.png" id="12_j6ukv"]
-[ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="12_w08x7"]
-[ext_resource type="Texture2D" uid="uid://b53y87xjob8ri" path="res://assets/generated/paperclip_icon_24-removebg-preview.png" id="13_sb4aw"]
+[ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_icons/zoom_less.svg" id="10_wto0r"]
+[ext_resource type="Texture2D" uid="uid://xl40e2ggwr7" path="res://assets/icons/zoom_icons/zoom_reset.svg" id="11_i5ytf"]
+[ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icons/new_line_icon.png" id="11_p11dv"]
+[ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_icons/undo_arrow.png" id="11_srtkx"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="12_6jk4t"]
+[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="12_j6ukv"]
+[ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload-icons/reload-16.svg" id="13_xhsmd"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
-[ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="17_ijkb2"]
+[ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="14_sknqf"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
-[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="22_285lg"]
+[ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="20_n1ygu"]
+[ext_resource type="Texture2D" uid="uid://deboh0lwmv7f7" path="res://assets/icons/paperclip_icons/paperclip_icon_24_no_bg.png" id="21_0ds70"]
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
 [ext_resource type="PackedScene" uid="uid://b1tux4e3yql3g" path="res://Scenes/loading_pop_up_panel.tscn" id="27_f1wok"]
+[ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="27_hlu33"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -51,6 +55,7 @@ script = ExtResource("2_65hnk")
 terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
 [node name="Panel" type="Panel" parent="."]
+z_index = -5
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -63,7 +68,6 @@ unique_name_in_owner = true
 initial_position = 2
 size = Vector2i(200, 250)
 visible = false
-unresizable = true
 min_size = Vector2i(200, 250)
 script = ExtResource("3_w58y5")
 
@@ -101,82 +105,15 @@ clip_text = true
 unique_name_in_owner = true
 initial_position = 2
 visible = false
+unresizable = false
 
-[node name="NewThreadPopup" type="Window" parent="."]
+[node name="NewThreadPopup" parent="." instance=ExtResource("5_gujhn")]
 unique_name_in_owner = true
-initial_position = 4
-size = Vector2i(450, 80)
 visible = false
-transient = true
-exclusive = true
-min_size = Vector2i(350, 0)
-max_size = Vector2i(500, 100)
-script = ExtResource("3_w58y5")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="NewThreadPopup"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 12
-alignment = 1
-
-[node name="Control" type="Control" parent="NewThreadPopup/VBoxContainer"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="HBoxTopRow" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
-custom_minimum_size = Vector2(0, 35)
-layout_mode = 2
-theme_override_constants/separation = 14
-
-[node name="Control3" type="Control" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="Label" type="Label" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-layout_mode = 2
-size_flags_horizontal = 0
-text = "Name"
-
-[node name="txtNewTabName" type="TextEdit" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
+[node name="CreateNewNote" parent="." instance=ExtResource("27_hlu33")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(200, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-placeholder_text = "Tab Name"
-
-[node name="btnVoiceForNoteTab" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-unique_name_in_owner = true
-layout_mode = 2
-icon = ExtResource("22_285lg")
-
-[node name="btnCreateThread" type="Button" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 4
-size_flags_vertical = 4
-tooltip_text = "Create Notes Tab"
-text = "Create"
-icon = ExtResource("6_vobga")
-
-[node name="Control2" type="Control" parent="NewThreadPopup/VBoxContainer/HBoxTopRow"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="NewThreadPopup/VBoxContainer"]
 visible = false
-layout_mode = 2
-size_flags_horizontal = 8
-size_flags_vertical = 4
-theme_override_constants/separation = 16
-
-[node name="Label" type="Label" parent="NewThreadPopup/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
 
 [node name="VBoxRoot" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
@@ -196,9 +133,8 @@ layout_mode = 2
 
 [node name="menuMain" type="MenuBar" parent="VBoxRoot/HBoxContainer"]
 layout_mode = 2
-size_flags_vertical = 0
-theme_override_constants/h_separation = 6
-theme_override_font_sizes/font_size = 18
+size_flags_vertical = 4
+theme_override_constants/h_separation = 12
 flat = true
 prefer_global_menu = false
 script = ExtResource("1_oipdw")
@@ -238,9 +174,9 @@ size = Vector2i(123, 143)
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 title = "View"
-size = Vector2i(211, 255)
+size = Vector2i(211, 363)
 hide_on_checkable_item_selection = false
-item_count = 11
+item_count = 15
 item_0/text = "Chats"
 item_0/checkable = 1
 item_0/checked = true
@@ -257,20 +193,34 @@ item_3/checkable = 1
 item_3/id = 10
 item_4/id = 3
 item_4/separator = true
-item_5/text = "Zoom In"
+item_5/text = "Zoom In Text"
+item_5/icon = ExtResource("9_6n2ks")
 item_5/id = 4
-item_6/text = "Zoom Out"
+item_6/text = "Zoom Out Text"
+item_6/icon = ExtResource("10_wto0r")
 item_6/id = 5
-item_7/text = "Reset Zoom"
+item_7/text = "Reset Text Zoom"
+item_7/icon = ExtResource("11_i5ytf")
 item_7/id = 6
 item_8/id = 7
 item_8/separator = true
-item_9/text = "Show All Messages"
-item_9/icon = ExtResource("7_rdia2")
-item_9/id = 8
-item_10/text = "Show All Notes"
-item_10/icon = ExtResource("7_rdia2")
-item_10/id = 9
+item_9/text = "Zoom In Icons"
+item_9/icon = ExtResource("9_6n2ks")
+item_9/id = 11
+item_10/text = "Zoom Out Icons"
+item_10/icon = ExtResource("10_wto0r")
+item_10/id = 12
+item_11/text = "Reset Icons Zoom"
+item_11/icon = ExtResource("11_i5ytf")
+item_11/id = 13
+item_12/id = 14
+item_12/separator = true
+item_13/text = "Show All Messages"
+item_13/icon = ExtResource("7_rdia2")
+item_13/id = 8
+item_14/text = "Show All Notes"
+item_14/icon = ExtResource("7_rdia2")
+item_14/id = 9
 
 [node name="Help" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 title = "Help"
@@ -279,9 +229,46 @@ hide_on_checkable_item_selection = false
 item_count = 2
 item_0/text = "About"
 item_0/icon = ExtResource("10_nl4h3")
-item_0/id = 0
 item_1/text = "License Agreement ..."
 item_1/id = 1
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxRoot"]
+visible = false
+layout_mode = 2
+
+[node name="Control" type="Control" parent="VBoxRoot/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 16
+
+[node name="AddFileEditor" type="Button" parent="VBoxRoot/HBoxContainer2/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "create new text editor tab"
+icon = ExtResource("18_mitgl")
+
+[node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/HBoxContainer2/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "create new graphics editor tab"
+icon = ExtResource("12_6jk4t")
+
+[node name="Button" type="Button" parent="VBoxRoot/HBoxContainer2/HBoxContainer"]
+layout_mode = 2
+icon = ExtResource("13_xhsmd")
+
+[node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxRoot/HBoxContainer2/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "save all unsaved and open editor tabs"
+icon = ExtResource("14_sknqf")
+
+[node name="Control2" type="Control" parent="VBoxRoot/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxRoot"]
 unique_name_in_owner = true
@@ -310,13 +297,13 @@ split_offset = -100
 
 [node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(540, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Chats" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
-custom_minimum_size = Vector2(630, 0)
+custom_minimum_size = Vector2(550, 0)
 layout_mode = 2
-size_flags_horizontal = 1
 
 [node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
@@ -334,12 +321,28 @@ theme_override_constants/separation = 16
 
 [node name="EditorLabel" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 24
 text = "Editor"
 
+[node name="AddFileEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "create new text editor tab"
+icon = ExtResource("18_mitgl")
+
+[node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "create new graphics editor tab"
+icon = ExtResource("12_6jk4t")
+
+[node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
 [node name="ClearButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
+size_flags_horizontal = 10
 text = "Clear"
 
 [node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
@@ -368,20 +371,34 @@ layout_mode = 2
 tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
 
+[node name="Control2" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+
 [node name="vboxEditorMain" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer" node_paths=PackedStringArray("editor_pane")]
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/separation = 12
 script = ExtResource("3_welkk")
 editor_pane = NodePath("EditorPane")
 
 [node name="EditorPane" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" instance=ExtResource("4_826g6")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"]
+visible = false
+layout_mode = 2
+
+[node name="Button" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/HBoxContainer"]
+layout_mode = 2
+text = "button"
+
+[node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"]
+visible = false
 layout_mode = 2
 
 [node name="RightPane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.5
@@ -389,6 +406,7 @@ theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane"]
 layout_mode = 2
+size_flags_vertical = 0
 theme_override_constants/separation = 16
 
 [node name="NotesLabel" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
@@ -400,7 +418,7 @@ text = "Notes"
 [node name="DisableNotesButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 8
+size_flags_horizontal = 10
 tooltip_text = "Disable all notes in all current tabs"
 text = "Disable All"
 
@@ -409,14 +427,14 @@ layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Creates a new note in current active tab"
 text = "Create Note"
-icon = ExtResource("12_w08x7")
+icon = ExtResource("20_n1ygu")
 
 [node name="btnAddAttachement" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Creates a new note from a given text file"
 text = "Attach File"
-icon = ExtResource("13_sb4aw")
+icon = ExtResource("21_0ds70")
 
 [node name="btnNewTab" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
@@ -431,6 +449,7 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 drag_to_rearrange_enabled = true
+tab_focus_mode = 1
 script = ExtResource("1_gunt8")
 
 [node name="TerminalTabContainer" parent="VBoxRoot/VSplitContainer" instance=ExtResource("23_ejoiu")]
@@ -439,260 +458,13 @@ layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.3
 
-[node name="ImageNoteFileDialog" type="FileDialog" parent="."]
-unique_name_in_owner = true
-title = "Open a File"
-initial_position = 2
-size = Vector2i(500, 500)
-exclusive = false
-ok_button_text = "Open"
-dialog_hide_on_ok = true
-file_mode = 0
-access = 2
-filters = PackedStringArray("*.png", "*.jpg", "*.webp", "*.jpeg", "*.svg", "*.bmp")
-
-[node name="CreateNewNote" type="Window" parent="."]
-unique_name_in_owner = true
-title = "Create New Note"
-initial_position = 2
-size = Vector2i(420, 700)
+[node name="TerminalTabVbox" type="VBoxContainer" parent="VBoxRoot/VSplitContainer"]
 visible = false
-transient = true
-exclusive = true
-unresizable = true
-min_size = Vector2i(144, 0)
-script = ExtResource("3_w58y5")
-
-[node name="Panel" type="Panel" parent="CreateNewNote"]
-custom_minimum_size = Vector2(425, 0)
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = -1.0
-offset_bottom = 4.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="VBoxContainer" type="VBoxContainer" parent="CreateNewNote/Panel"]
-custom_minimum_size = Vector2(400, 0)
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -64.0
-offset_top = -339.5
-offset_right = 64.0
-offset_bottom = 339.5
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 16
-alignment = 1
-
-[node name="CreateNewNoteLabel" type="Label" parent="CreateNewNote/Panel/VBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 0
-text = "Create new note"
-
-[node name="NoteHead" type="TextEdit" parent="CreateNewNote/Panel/VBoxContainer"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 1.5
-placeholder_text = "Note Title"
-caret_blink = true
-
-[node name="btnVoiceForHeader" type="Button" parent="CreateNewNote/Panel/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 8
-tooltip_text = "record note title"
-icon = ExtResource("22_285lg")
-
-[node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="CreateNewNote/Panel/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="PickNoteLabel" type="Label" parent="CreateNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+[node name="HSeparator" type="HSeparator" parent="VBoxRoot/VSplitContainer/TerminalTabVbox"]
 layout_mode = 2
-text = "Pick Note Type:"
-
-[node name="TextNoteCheckBox" type="CheckBox" parent="CreateNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-button_pressed = true
-button_group = ExtResource("17_ijkb2")
-text = "Text Note"
-
-[node name="AudioCheckBox" type="CheckBox" parent="CreateNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-button_group = ExtResource("17_ijkb2")
-text = "Audio Note"
-
-[node name="ImageCheckBox" type="CheckBox" parent="CreateNewNote/Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-button_group = ExtResource("17_ijkb2")
-text = "Image Note"
-
-[node name="TextNoteControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 350)
-layout_mode = 2
-size_flags_vertical = 4
-
-[node name="NoteDescription" type="TextEdit" parent="CreateNewNote/Panel/VBoxContainer/TextNoteControl"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 5.0
-offset_right = -2.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-size_flags_stretch_ratio = 8.11
-placeholder_text = "Type a Note Description or press the mic button for a trancription"
-wrap_mode = 1
-
-[node name="AudioControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer"]
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(0, 350)
-layout_mode = 2
-
-[node name="RecordAudioButton" type="Button" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = 85.0
-offset_top = 150.0
-offset_right = 290.0
-offset_bottom = 190.0
-text = "Press To Record Note"
-
-[node name="PlayAudioButton" type="Button" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_right = 12.0
-offset_bottom = 40.0
-disabled = true
-text = "play audio"
-
-[node name="AudioNoteStreamPlayer" type="AudioStreamPlayer" parent="CreateNewNote/Panel/VBoxContainer/AudioControl"]
-unique_name_in_owner = true
-volume_db = 1.0
-
-[node name="ImageControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer"]
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(0, 350)
-layout_mode = 2
-
-[node name="DropImageControl" type="Control" parent="CreateNewNote/Panel/VBoxContainer/ImageControl"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_default_cursor_shape = 7
-
-[node name="ImagePreview" type="TextureRect" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl"]
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(0, 200)
-layout_mode = 1
-anchors_preset = 14
-anchor_top = 0.5
-anchor_right = 1.0
-anchor_bottom = 0.5
-offset_top = -75.0
-offset_bottom = 125.0
-grow_horizontal = 2
-grow_vertical = 2
-expand_mode = 2
-stretch_mode = 5
-
-[node name="ImageDropPanel" type="Panel" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="DropColorRect" type="ColorRect" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = 100.0
-offset_top = 100.0
-offset_right = 300.0
-offset_bottom = 300.0
-mouse_filter = 2
-mouse_default_cursor_shape = 2
-color = Color(0.0768359, 0.0768358, 0.0768358, 1)
-
-[node name="DropImageLabel" type="Label" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = 118.0
-offset_top = 121.57
-offset_right = 281.0
-offset_bottom = 170.57
-text = "Drop Image File Here"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="FileIconTextureRect" type="TextureRect" parent="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
-texture_filter = 1
-layout_mode = 0
-offset_left = 180.0
-offset_top = 185.0
-offset_right = 220.0
-offset_bottom = 225.0
-texture = ExtResource("18_mitgl")
-
-[node name="OpenImageFileButton" type="Button" parent="CreateNewNote/Panel/VBoxContainer/ImageControl"]
-layout_mode = 0
-offset_left = 10.0
-offset_top = 20.0
-offset_right = 168.0
-offset_bottom = 60.0
-text = "Open File Dialog"
-icon = ExtResource("18_mitgl")
-
-[node name="HBoxContainer" type="HBoxContainer" parent="CreateNewNote/Panel/VBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 8
-theme_override_constants/separation = 16
-
-[node name="btnVoice" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-tooltip_text = "record audio to text for note description"
-icon = ExtResource("22_285lg")
-
-[node name="AddNotePopUp" type="Button" parent="CreateNewNote/Panel/VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 8
-size_flags_vertical = 8
-tooltip_text = "Add note"
-disabled = true
-icon = ExtResource("12_w08x7")
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
@@ -707,9 +479,6 @@ visible = false
 z_index = 100
 layout_mode = 1
 
-[connection signal="about_to_popup" from="NewThreadPopup" to="." method="_on_new_thread_popup_about_to_popup"]
-[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxTopRow/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
-[connection signal="pressed" from="NewThreadPopup/VBoxContainer/HBoxTopRow/btnCreateThread" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_btn_create_thread_pressed"]
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
 [connection signal="file_selected" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
@@ -721,6 +490,12 @@ layout_mode = 1
 [connection signal="about_to_popup" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_about_to_popup"]
 [connection signal="id_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_id_pressed"]
 [connection signal="index_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_index_pressed"]
+[connection signal="id_pressed" from="VBoxRoot/HBoxContainer/menuMain/Help" to="." method="_on_help_id_pressed"]
+[connection signal="pressed" from="VBoxRoot/HBoxContainer2/HBoxContainer/AddFileEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_file_editor_pressed"]
+[connection signal="pressed" from="VBoxRoot/HBoxContainer2/HBoxContainer/AddGraphicsEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_graphics_editor_pressed"]
+[connection signal="pressed" from="VBoxRoot/HBoxContainer2/HBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddFileEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_file_editor_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_graphics_editor_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/ClearButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_clear_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/UndoButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_undo_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/BackSpaceButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_back_space_button_pressed"]
@@ -731,19 +506,5 @@ layout_mode = 1
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
-[connection signal="child_order_changed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_child_order_changed"]
+[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
-[connection signal="tab_hovered" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_hovered"]
-[connection signal="canceled" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_canceled"]
-[connection signal="file_selected" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_file_selected"]
-[connection signal="about_to_popup" from="CreateNewNote" to="." method="_on_create_new_note_about_to_popup"]
-[connection signal="close_requested" from="CreateNewNote" to="." method="_on_creat_new_note_close_requested"]
-[connection signal="text_changed" from="CreateNewNote/Panel/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AudioControl/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/AudioControl/PlayAudioButton" to="." method="_on_play_audio_button_pressed"]
-[connection signal="gui_input" from="CreateNewNote/Panel/VBoxContainer/ImageControl" to="." method="_on_drop_image_control_gui_input"]
-[connection signal="gui_input" from="CreateNewNote/Panel/VBoxContainer/ImageControl/DropImageControl" to="." method="_on_drop_image_control_gui_input"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/ImageControl/OpenImageFileButton" to="." method="_on_open_image_file_button_pressed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
-[connection signal="pressed" from="CreateNewNote/Panel/VBoxContainer/HBoxContainer/AddNotePopUp" to="." method="_on_add_note_pressed"]
