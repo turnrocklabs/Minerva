@@ -35,8 +35,10 @@ var _save_override: Callable
 
 var tab_title: String = ""
 var file: String
+#var file_path: String
 var type: Type
 var _file_saved := false
+
 var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
@@ -83,13 +85,21 @@ func _ready():
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
+	SingletonObject.UpdateLastSavePath.connect(update_last_path)
+
+
+func update_last_path(new_path: String) -> void:
+	SingletonObject.last_saved_path = new_path + "/"
 
 
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	if fa_object:
+		#file_path = file
 		code_edit.text = fa_object.get_as_text()
 		code_edit.saved_content = code_edit.text
+	else:
+		code_edit.text = "Could not retrive file"
 	# %SaveButton.disabled = false
 
 
@@ -140,7 +150,10 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 	if not file:
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
-		line_edit.text = tab_title + "." + SingletonObject.supported_text_fortmats[0]
+		if type == Type.TEXT or type == Type.NOTE_EDITOR:
+			line_edit.text = tab_title + "." + SingletonObject.supported_text_fortmats[0]
+		else:
+			line_edit.text = tab_title
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
 		await ($FileDialog as FileDialog).visibility_changed
@@ -172,7 +185,10 @@ func save():
 	if _save_override.is_valid():
 		_save_override.call()
 	else:
-		await prompt_close(true)
+		if SingletonObject.last_saved_path:
+			await prompt_close(true, false, SingletonObject.last_saved_path)
+		else:
+			await prompt_close(true)
 	
 	# Post save emit the signals to update the saved state icon
 	match type:
@@ -233,6 +249,9 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 
 func _on_editor_changed():
 	%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+	_file_saved = true
+	file_saved_in_disc = true
 	content_changed.emit()
 
 func _on_save_dialog_canceled():
@@ -273,7 +292,11 @@ func save_file_to_disc(path: String):
 			
 	_file_saved = true
 	file_saved_in_disc = true
+	#SingletonObject.last_saved_path = path.get_base_dir() + "/"
 	SingletonObject.UpdateLastSavePath.emit(path.get_base_dir())
+	if SingletonObject.config_has_saved_section("LastSavedPath"):
+		SingletonObject.config_clear_section("LastSavedPath")
+		SingletonObject.save_to_config_file("LastSavedPath", "path", SingletonObject.last_saved_path)
 	tab_title = path.get_file()
 	var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
 	SingletonObject.editor_pane.Tabs.set_tab_title(indx, tab_title)
