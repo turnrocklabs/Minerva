@@ -136,7 +136,13 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
 		editor_node.tab_title = tab_name
 	elif file:
-		var tab_name = editor_name_to_use(file.get_file())
+		var tab_name: String
+		if !is_named_being_used(file.get_file()):
+			tab_name = editor_name_to_use(file.get_file())
+		else:
+			var dir: String = file.get_base_dir().split("/")[file.get_base_dir().split("/").size() -1]
+			tab_name = dir + "/" + file.get_file()
+
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
 		editor_node.tab_title = tab_name
 	else:
@@ -161,6 +167,13 @@ func open_editors() -> Array[Editor]:
 	
 	return editors
 
+
+func is_named_being_used(proposed_name: String) -> bool:
+	for i in range(Tabs.get_tab_count()):
+		if Tabs.get_tab_title(i) == proposed_name:
+			print("tab name baing used already")
+			return true
+	return false
 
 func editor_name_to_use(proposed_name: String) -> String:
 	var collisions = 0
@@ -280,5 +293,6 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 	else: 
 		enable_editor_action_buttons.emit(false)
 
+#endregion  Enable Editor Buttons
 ###
 ### End Reference Information ###

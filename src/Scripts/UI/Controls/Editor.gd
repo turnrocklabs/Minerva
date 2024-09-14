@@ -35,9 +35,10 @@ var _save_override: Callable
 
 var tab_title: String = ""
 var file: String
+#var file_path: String
 var type: Type
 var _file_saved := false
-var last_save_path: String
+
 var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
@@ -94,6 +95,7 @@ func update_last_path(new_path: String) -> void:
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	if fa_object:
+		#file_path = file
 		code_edit.text = fa_object.get_as_text()
 		code_edit.saved_content = code_edit.text
 	else:
