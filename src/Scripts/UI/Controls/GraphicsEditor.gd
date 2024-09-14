@@ -1011,9 +1011,3 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 				var final_color = crayon_color_premultiplied * opacity + bg_color * (1.0 - opacity)
 
 				target_image.set_pixelv(draw_pos, final_color) 
-
-
-func _on_resized() -> void:
-	if _can_resize:
-		_layers_container.size += Vector2(10000,0)
-		print(_layers_container.size)
