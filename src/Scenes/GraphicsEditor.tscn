@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=20 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
@@ -20,9 +20,7 @@
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 [ext_resource type="Texture2D" uid="uid://c2g1cdw4axhek" path="res://assets/icons/magnifying-glass-24-24.png" id="19_4t4fj"]
 
-
-[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
-
+[node name="GraphicsEditor" type="PanelContainer"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -42,12 +40,10 @@ theme_override_constants/margin_top = 25
 theme_override_constants/margin_right = 5
 theme_override_constants/margin_bottom = 5
 
-[node name="HFlowContainer" type="HFlowContainer" parent="VBoxContainer/MarginContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/MarginContainer"]
 layout_mode = 2
-size_flags_vertical = 4
-theme_override_constants/h_separation = 16
 
-[node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="Brushes" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
@@ -62,7 +58,7 @@ popup/item_3/icon = ExtResource("5_a37t7")
 popup/item_3/id = 3
 popup/item_4/id = 4
 
-[node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
@@ -77,7 +73,7 @@ popup/item_2/id = 2
 popup/item_3/icon = ExtResource("5_f2f1e")
 popup/item_3/id = 3
 
-[node name="DialogClouds" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="DialogClouds" type="OptionButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -90,7 +86,7 @@ popup/item_1/id = 1
 popup/item_2/text = "Thought"
 popup/item_2/id = 2
 
-[node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -98,7 +94,7 @@ size_flags_vertical = 4
 tooltip_text = "Apply created mask"
 text = "Apply Mask"
 
-[node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Brush sizes
 "
@@ -110,7 +106,7 @@ max_value = 15.0
 value = 5.0
 rounded = true
 
-[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 editor_description = "Brush color"
 layout_mode = 2
@@ -120,73 +116,76 @@ text = "Color"
 flat = true
 icon_alignment = 1
 
-[node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 visible = false
 layout_mode = 2
 
-[node name="Hand" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="Hand" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 icon = ExtResource("10_ax45b")
 
-[node name="Zoom" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="Zoom" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 14
 
-[node name="Mg" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom"]
+[node name="Mg" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Zoom"]
 layout_mode = 2
 size_flags_vertical = 4
 icon = ExtResource("6_1v5g6")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer/Zoom"]
 layout_mode = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+[node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("6_4tqp6")
 
-[node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+[node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("7_hti8r")
 
-[node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 14
 
-[node name="Arrowleft" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
+[node name="Arrowleft" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease"]
 layout_mode = 2
 size_flags_vertical = 4
 icon = ExtResource("9_t3u88")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease"]
 layout_mode = 2
 theme_override_constants/separation = 14
 
-[node name="ArrowTop" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer"]
+[node name="ArrowTop" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 4
 icon = ExtResource("10_tpp25")
 
-[node name="ArrowBottom" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer"]
+[node name="ArrowBottom" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 4
 icon = ExtResource("11_cph1y")
 
-[node name="ArrowRight" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease"]
+[node name="ArrowRight" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease"]
 layout_mode = 2
 size_flags_vertical = 4
 icon = ExtResource("12_hpuv1")
 
-[node name="Layers" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="Layers" type="Button" parent="VBoxContainer/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 icon = ExtResource("18_yov21")
+
+[node name="HFlowContainer" type="HFlowContainer" parent="VBoxContainer/MarginContainer"]
+layout_mode = 2
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -265,21 +264,20 @@ ok_button_text = "Open"
 file_mode = 0
 access = 2
 
-[connection signal="resized" from="." to="." method="_on_resized"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
-[connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Hand" to="." method="_on_hand_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/Arrowleft" to="." method="_on_arrowleft_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowTop" to="." method="_on_arrow_top_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/Brushes" to="." method="_on_brushes_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HBoxContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
+[connection signal="value_changed" from="VBoxContainer/MarginContainer/HBoxContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Hand" to="." method="_on_hand_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/Arrowleft" to="." method="_on_arrowleft_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer/ArrowTop" to="." method="_on_arrow_top_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxContainer/Layers" to="." method="_on_layers_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
 [connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]
