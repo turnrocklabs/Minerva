@@ -1,6 +1,7 @@
 {
 	"ChatList": [
 		{
+			"FrecuencyPenalty": 0,
 			"HistoryId": "5af1aea51d55f2526a5203a37051b2a6ac33441b6b3752480c461bdce890e320",
 			"HistoryItemList": [
 				{
@@ -9,8 +10,8 @@
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"Message": "Hi",
-					"ModelName": "",
-					"ModelShortName": "",
+					"ModelName": "gpt-4o",
+					"ModelShortName": "O4",
 					"Order": 0,
 					"Role": 0,
 					"TokenCost": 8,
@@ -33,7 +34,10 @@
 				}
 			],
 			"HistoryName": "Chat 1",
-			"Provider": 0
+			"PresencePenalty": 0,
+			"Provider": 0,
+			"Temperature": 1,
+			"TopP": 1
 		}
 	],
 	"Editors": [],
@@ -171,6 +175,21 @@
 					"Title": "Edit and save",
 					"Type": 0,
 					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "Make a text file.\nChange the text file outside app.\nReload text file.\nAsk AI a question about the change.\n\nVerify:\n- AI knows of changed content.\n- Editor doesn't mark file as \"changed\" for saving.\n- Can quit app without getting a \"save changed files\" dialog.",
+					"ContentType": "text",
+					"Enabled": false,
+					"ImageCaption": "",
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 4,
+					"OwningThread": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
+					"Pinned": false,
+					"Title": "Reload text content",
+					"Type": 0,
+					"Visible": true
 				}
 			],
 			"ThreadId": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
@@ -232,7 +251,7 @@
 				{
 					"Audio": null,
 					"Content": "1. Check for sending picture single input and multiple input, try to change the models durnign the proccess\n2. Drawing picture and sending it to Google AI to describe it, for both models\n3.repeat it several time and look how close it's t oour original image \n4. Change providers look how they acting when we changing them during proccess\n5.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"Locked": false,
@@ -490,7 +509,8 @@
 		}
 	],
 	"active_chatindex": 0,
-	"active_notes_index": 0,
+	"active_editor_index": -1,
+	"active_notes_index": 2,
 	"default_provider": 0,
 	"last_tab_index": 0
 }
