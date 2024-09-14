@@ -37,6 +37,7 @@ var active_transfer_button: Button = null  # Store the active butto
 
 var _rotating: bool = false
 var _rotation_pivot: Vector2 = Vector2.ZERO
+var _can_resize:bool = false
 
 var brush_size: int = 5:
 	set(value):
@@ -72,6 +73,8 @@ var layer_undo_histories = {} # Dictionary to store undo histories for each laye
 func _ready():
 	layers_buttons()
 	
+	_color_picker = %ColorPickerButton
+	
 	_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
 		toggle_controls(SingletonObject.is_graph)
@@ -100,6 +103,8 @@ func _ready():
 	SingletonObject.is_Brush = false
 	SingletonObject.is_square = false
 	SingletonObject.is_cryon = false
+	
+	_can_resize = true
 
 func toggle_controls(toggle: bool):
 	#only drawing
@@ -353,10 +358,22 @@ func _gui_input(event: InputEvent):
 			drawing = false
 			
 			
-
+			
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var new_bubble = Buble.instantiate() 
-		_layers_container.add_child(new_bubble)
+		# 1. Create a new layer
+		var new_layer_image = Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8) 
+		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
+		var new_layer = _create_layer(new_layer_image)
+		layer_Number += 1
+		_background_images[new_layer.name] = new_layer_image.duplicate()
+
+		# 2. Add layer button to UI 
+		layers_buttons()
+
+		# 3. Instantiate and add the bubble to the NEW layer
+		var new_bubble = Buble.instantiate()
+		new_layer.add_child(new_bubble)
+		new_bubble.position = new_layer.get_local_mouse_position() # Position bubble
 
 		clouding = false
 
@@ -994,3 +1011,9 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 				var final_color = crayon_color_premultiplied * opacity + bg_color * (1.0 - opacity)
 
 				target_image.set_pixelv(draw_pos, final_color) 
+
+
+func _on_resized() -> void:
+	if _can_resize:
+		_layers_container.size += Vector2(10000,0)
+		print(_layers_container.size)
