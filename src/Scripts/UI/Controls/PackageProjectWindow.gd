@@ -39,7 +39,9 @@ func show_message(title_: String, message: String) -> void:
 
 func _on_about_to_popup():
 	save_path = "D:/package.minpackage"
-	var common_parents = ProjectPackage.generate_path_groups(data["Editors"])
+	var file_paths_array = data["Editors"].map(func(f_data: Dictionary): return f_data["file"])
+
+	var common_parents = ProjectPackage.generate_path_groups(file_paths_array)
 	
 	populate_package_files_tree(common_parents)
 
@@ -205,3 +207,7 @@ func _on_files_tree_button_clicked(item: TreeItem, _column: int, _id: int, mouse
 	set_item_ignored_state(item, ignored)
 
 	_update_info_label()
+
+
+func _on_close_requested() -> void:
+	call_deferred("hide")

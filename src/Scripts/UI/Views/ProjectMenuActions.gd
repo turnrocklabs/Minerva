@@ -6,6 +6,11 @@ signal save_as_dialog_exited()
 
 var save_path: String
 
+var last_save_path: String
+
+func update_last_save_path(new_path: String) -> void:
+	last_save_path = new_path + "/"
+
 ## Function:
 # _new_project empties all the tabs and lists currently stored as notes or chats.
 # it also blanks out the save file variable to force a save_as
@@ -17,12 +22,18 @@ func _new_project():
 	pass
 
 
-func open_project():
-	%fdgOpenProject.popup_centered(Vector2i(800, 600))
+func open_project(path: = ""):
+	if path.is_empty():
+		%fdgOpenProject.popup_centered(Vector2i(800, 600))
+		return
+	
+	open_project_given_path(path)
 
 # This function can be awaited, which will resolve when the dialog is exited on 'file_selected' or 'canceled'
 func save_project_as(file=""):
 	if file == "":
+		if last_save_path != "":
+			%fdgSaveAs.current_path = last_save_path
 		%fdgSaveAs.popup_centered(Vector2i(800, 600))
 
 		(%fdgSaveAs as FileDialog).file_selected.connect(func(_p): save_as_dialog_exited.emit())
@@ -53,13 +64,23 @@ func unpackage_project():
 
 	upw.popup_centered()
 
-func save_project():
-	
+
+func save_unsaved_editors() -> void:
+	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
-		var editor = item_list.get_item_metadata(item_idx)
-		await editor.prompt_close(true)
-		editor.queue_free()
+		var editor: Editor = item_list.get_item_metadata(item_idx)
+		if editor.file:
+			await editor.prompt_close(true, false, last_save_path)
+		else:
+			await editor.prompt_close(true, true, last_save_path)
+	
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+
+
+func save_project():
+	
+	save_unsaved_editors()
 
 	if save_path == null or save_path == "":
 		await save_project_as()
@@ -77,6 +98,38 @@ func save_project():
 	SingletonObject.save_state(true)
 
 
+# this function checks if there are unsaved editor panes and saves them
+func save_editorpanes(skip_selecting_items: bool = false):
+	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
+		# if the state is unsaved or we have unsaved editors open
+	if not SingletonObject.saved_state or unsaved_editors:
+		# user want to quit
+		# ask the user which unsaved editors he wants saved
+		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
+		item_list.clear()
+		for editor in unsaved_editors:
+			var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
+			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(indx)
+			var item_idx = item_list.add_item(tab_title)
+			item_list.set_item_metadata(item_idx, editor)
+		
+		if skip_selecting_items:
+			var items: = item_list.item_count
+			var counter: = 0
+			while counter < items:
+				item_list.select(counter, false)
+				counter += 1
+			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+			save_unsaved_editors()
+			
+		else:
+			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
+			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
+	else:
+		get_tree().quit()
+
+
+#region Serialize/Deserialize Project
 ## Function:
 # serialize_project iterates through the notes and chats and creates an array
 # each line in the array is the contents of either the notes or the chats.
@@ -127,12 +180,16 @@ func deserialize_project(data: Dictionary):
 
 	# We need to cast Array to Array[String] because deserialize expects that type
 	#var editor_files: Array[String] = []
+	
 	#editor_files.assign(data.get("Editors", []))
 	#SingletonObject.editor_container.deserialize(editor_files)
-	
-	var editor_nodes: Array = EditorContainer.deserialize(data.get("Editors"))
+	var editor_nodes: Array = []
+	if data.get("Editors"):
+		editor_nodes = EditorContainer.deserialize(data.get("Editors", []))
 	for editor in editor_nodes:
 		SingletonObject.editor_pane.Tabs.add_child(editor)
+		var tab_idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
+		SingletonObject.editor_pane.Tabs.set_tab_title(tab_idx, editor.tab_title)
 	
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 
@@ -145,6 +202,7 @@ func deserialize_project(data: Dictionary):
 	if SingletonObject.Chats.get_tab_count()-1 >= current_chat_tab:
 		SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
 
+#endregion Serialize/Deserialize Project
 
 func close_project():
 	save_project()
@@ -171,36 +229,45 @@ func _ready():
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)
+	SingletonObject.SaveOpenEditorTabs.connect( save_editorpanes.bind(true))
+	SingletonObject.UpdateLastSavePath.connect(update_last_save_path)
 
+#region FDG Dialog
 
 func _on_fdg_save_as_file_selected(path):
 	self.save_path = path
 	self.save_project()
-	pass # Replace with function body.
 
 
 func _on_fdg_open_project_file_selected(path):
 	open_project_given_path(path)
 
+func _on_fdg_open_file_tree_entered():
+	var openProjectHbox: HBoxContainer = %fdgOpenProject.get_vbox().get_child(0)
+	openProjectHbox.set("theme_override_constants/separation", 12)
+
+#endregion FDG Dialog
 
 func _on_open_recent_project_selected(project_name: String):
 	var project_path = SingletonObject.get_project_path(project_name)
-	open_project_given_path(project_path)
+	var status = open_project_given_path(project_path)
+	if status != OK:
+		SingletonObject.ErrorDisplay("Project file no found", "the project was not found at the path it was saved. \n Maybe it was moved or deleted")
 
 
-func open_project_given_path(project_path: String):
+func open_project_given_path(project_path: String) -> int:
 	#SingletonObject.show_loading_screen("loading project...")
 	var proj_file = FileAccess.open(project_path, FileAccess.READ)
 	
 	if proj_file == null:
-		push_error("Couldn't parse the project file at %s. Error code: %s" % [project_path, FileAccess.get_open_error()])
-		return
+		push_error("Couldn't parse the proj	ect file at %s. Error code: %s" % [project_path, FileAccess.get_open_error()])
+		return ERR_FILE_NOT_FOUND
 	
 	var json = JSON.parse_string(proj_file.get_as_text())
 	
 	if json == null:
 		push_error("Couldn't parse the project file at %s" % project_path)
-		return
+		return ERR_FILE_CORRUPT
 	
 	deserialize_project(json)
 	
@@ -213,36 +280,19 @@ func open_project_given_path(project_path: String):
 	SingletonObject.call_deferred("save_state", true)
 	
 	self.save_path = project_path
-	
+	return OK
 	#SingletonObject.hide_loading_screen()
 # end of open_project_given_path function
+
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		save_editorpanes()
 
 
-# this function checks if there are unsaved editor panes and saves them
-func save_editorpanes():
-	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
-		# if the state is unsaved or we have unsaved editors open
-	if not SingletonObject.saved_state or unsaved_editors:
-		# user want to quit
-		# ask the user which unsaved editors he wants saved
-		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
-		item_list.clear()
-		for editor in unsaved_editors:
-			var item_idx = item_list.add_item(editor.name)
-			item_list.set_item_metadata(item_idx, editor)
-		
-		%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
-		%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
-	else:
-		get_tree().quit()
-
-
 func _on_exit_confirmation_dialog_canceled():
 	%ExitConfirmationDialog.hide()
+
 
 func _on_exit_confirmation_dialog_confirmed():
 	await self.save_project()
@@ -252,8 +302,3 @@ func _on_exit_confirmation_dialog_confirmed():
 func _on_exit_confirmation_dialog_custom_action(action: StringName):
 	if action == "exit":
 		get_tree().quit()
-
-
-func _on_fdg_open_file_tree_entered():
-	var openProjectHbox: HBoxContainer = %fdgOpenProject.get_vbox().get_child(0)
-	openProjectHbox.set("theme_override_constants/separation", 12)

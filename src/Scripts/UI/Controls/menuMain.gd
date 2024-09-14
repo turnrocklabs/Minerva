@@ -110,12 +110,13 @@ func _on_project_index_pressed(index):
 func _on_view_id_pressed(id: int):
 	# if zoom items are selected
 	match id:
-		4: SingletonObject.main_scene.zoom_ui(5); return
-		5: SingletonObject.main_scene.zoom_ui(-5); return
+		4: SingletonObject.main_scene.zoom_ui(2); return
+		5: SingletonObject.main_scene.zoom_ui(-2); return
 		6: SingletonObject.main_scene.reset_zoom(); return
 		8: _unhide_notes()
 		9: _unhide_messages()
-	
+		#11: SingletonObject.change_buttons_zoom(0.5); return
+		#12: SingletonObject.change_buttons_zoom(-0.5); return
 	var index = view.get_item_index(id)
 	
 	if view.is_item_checkable(index):
@@ -217,9 +218,9 @@ func load_recent_projects():
 		project.add_submenu_item("Open Recent", "OpenRecentSubmenu")
 
 func _on_open_recent_project(index: int):
-	if projects_size + 1 == index:
+	if projects_size + 1 == index: # check if the index is for the clear recent projects button
 		SingletonObject.clear_recent_projects()
-		print("clear recent projects")
+		project.remove_item(project.item_count - 1)
 	else:
 		var selected_project_name = submenu.get_item_text(index)
 		SingletonObject.OpenRecentProject.emit(selected_project_name)

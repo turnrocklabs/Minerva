@@ -2,10 +2,10 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://epir2qpijxoc" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://by7y1xd78nqmu" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
-[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/visibility_visible.svg" id="3_p2uud"]
-[ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/content_copy.svg" id="4_3sl4b"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_p2uud"]
+[ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/clipboard_icons/content_copy.svg" id="4_3sl4b"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="4_qpk4n"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
@@ -13,9 +13,9 @@
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="8_ywchm"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="10_6uibh"]
-[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit.svg" id="10_h3jau"]
+[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="10_h3jau"]
 [ext_resource type="Texture2D" uid="uid://dr5q0d4id5wst" path="res://assets/icons/arrow_right.svg" id="12_tbvqb"]
-[ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload.svg" id="13_rtrrm"]
+[ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="16_rwt48"]
 
 [sub_resource type="Theme" id="Theme_ca11y"]
 RichTextLabel/colors/font_selected_color = Color(0, 0, 0, 0)
@@ -232,6 +232,7 @@ This program has two functions:
 
 Feel free to ask if you need another example or if you have specific requirements for your program!"
 fit_content = true
+threaded = true
 selection_enabled = true
 script = ExtResource("2_5cmtk")
 markdown_text = "Certainly! Here's a simple Python program that calculates the factorial of a number provided by the user:
@@ -275,6 +276,7 @@ layout_mode = 2
 size_flags_vertical = 4
 bbcode_enabled = true
 text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
+threaded = true
 
 [node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
@@ -307,10 +309,11 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 tooltip_text = "Regenerate response for this prompt"
-icon = ExtResource("13_rtrrm")
+icon = ExtResource("16_rwt48")
 
 [node name="RichTextLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
+threaded = true
 
 [node name="RightSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
 visible = false

@@ -2,17 +2,18 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
-[ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/AISettings.tscn" id="1_qlmlm"]
-[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/add.svg" id="2_bjp7m"]
-[ext_resource type="Texture2D" uid="uid://8qaewgqcvy18" path="res://assets/generated/gears_icon_24-removebg-preview.png" id="5_igkcl"]
-[ext_resource type="Texture2D" uid="uid://dfai1lvbg10ka" path="res://assets/generated/search_icon_24_no_bg.png" id="6_5wjht"]
+[ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/windows/AISettings.tscn" id="1_qlmlm"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_bjp7m"]
+[ext_resource type="Texture2D" uid="uid://jdgspalgxo3u" path="res://assets/icons/gear_icons/gears_icon_24_no_bg.png" id="6_u4707"]
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
+[ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="7_pery3"]
 [ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="8_tl5be"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="9_4ngla"]
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
 [ext_resource type="PackedScene" uid="uid://celpfkr7c745u" path="res://Scenes/ProviderOptionButton.tscn" id="9_xd60x"]
 
 [sub_resource type="InputEventKey" id="InputEventKey_rh3fk"]
+ctrl_pressed = true
 pressed = true
 keycode = 4194309
 physical_keycode = 4194309
@@ -22,7 +23,6 @@ key_label = 4194309
 events = [SubResource("InputEventKey_rh3fk")]
 
 [node name="Chats" type="Control"]
-custom_minimum_size = Vector2(540, 0)
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -71,17 +71,37 @@ visible = false
 [node name="EditTitleDialog" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
 title = "Change Chat Title"
+initial_position = 2
+unresizable = true
+ok_button_text = "Update"
 
-[node name="LineEdit" type="LineEdit" parent="EditTitleDialog"]
+[node name="VBoxContainer" type="VBoxContainer" parent="EditTitleDialog"]
 offset_left = 8.0
 offset_top = 8.0
 offset_right = 192.0
 offset_bottom = 51.0
 
+[node name="Control2" type="Control" parent="EditTitleDialog/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="LineEdit" type="LineEdit" parent="EditTitleDialog/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+caret_blink = true
+
+[node name="Control" type="Control" parent="EditTitleDialog/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
 [node name="AttachFileDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
 title = "Open File(s)"
-size = Vector2i(392, 159)
+size = Vector2i(507, 180)
 ok_button_text = "Open"
 file_mode = 1
 access = 2
@@ -142,6 +162,7 @@ layout_mode = 2
 size_flags_vertical = 3
 placeholder_text = "Hello there!"
 wrap_mode = 1
+caret_blink = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer"]
 layout_mode = 2
@@ -155,12 +176,12 @@ size_flags_horizontal = 0
 [node name="btnChatSettings" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "AI Settings"
-icon = ExtResource("5_igkcl")
+icon = ExtResource("6_u4707")
 
 [node name="btnInspect" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Inspect Turn"
-icon = ExtResource("6_5wjht")
+icon = ExtResource("7_pery3")
 
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 visible = false
@@ -185,6 +206,12 @@ layout_mode = 2
 tooltip_text = "record message"
 icon = ExtResource("8_tl5be")
 
+[node name="AudioStop1" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "STOP"
+
 [node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" node_paths=PackedStringArray("shortcut_context")]
 layout_mode = 2
 tooltip_text = "Send Message"
@@ -202,8 +229,10 @@ theme_override_constants/separation = 16
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
+theme_override_font_sizes/font_size = 14
 
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
+[connection signal="text_submitted" from="EditTitleDialog/VBoxContainer/LineEdit" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_line_edit_text_submitted"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
 [connection signal="child_order_changed" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_child_order_changed"]
@@ -218,4 +247,5 @@ size_flags_horizontal = 8
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_test_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnClear" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_clear_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_microphone_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/AudioStop1" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_audio_stop_1_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
