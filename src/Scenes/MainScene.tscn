@@ -174,9 +174,10 @@ size = Vector2i(123, 143)
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 title = "View"
-size = Vector2i(211, 363)
+size = Vector2i(211, 425)
+hide_on_item_selection = false
 hide_on_checkable_item_selection = false
-item_count = 15
+item_count = 19
 item_0/text = "Chats"
 item_0/checkable = 1
 item_0/checked = true
@@ -213,14 +214,25 @@ item_10/id = 12
 item_11/text = "Reset Icons Zoom"
 item_11/icon = ExtResource("11_i5ytf")
 item_11/id = 13
-item_12/id = 14
+item_12/id = 15
 item_12/separator = true
-item_13/text = "Show All Messages"
-item_13/icon = ExtResource("7_rdia2")
-item_13/id = 8
-item_14/text = "Show All Notes"
-item_14/icon = ExtResource("7_rdia2")
-item_14/id = 9
+item_13/text = "UI Scale +"
+item_13/icon = ExtResource("9_6n2ks")
+item_13/id = 16
+item_14/text = "UI Scale -"
+item_14/icon = ExtResource("10_wto0r")
+item_14/id = 17
+item_15/text = "UI Scale Reset"
+item_15/icon = ExtResource("11_i5ytf")
+item_15/id = 18
+item_16/id = 14
+item_16/separator = true
+item_17/text = "Show All Messages"
+item_17/icon = ExtResource("7_rdia2")
+item_17/id = 8
+item_18/text = "Show All Notes"
+item_18/icon = ExtResource("7_rdia2")
+item_18/id = 9
 
 [node name="Help" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 title = "Help"
