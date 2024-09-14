@@ -20,7 +20,7 @@ var _stdio_thread: Thread
 var _stderr_thread: Thread
 
 # label where the output of the current running command should go to
-var _output_label: RichTextLabel
+@onready var _output_label: RichTextLabel = %RichTextLabel
 
 const cwd_delimiter = "##cwd##"
 
@@ -176,38 +176,44 @@ func _stderr_thread_loop():
 
 
 func _new_text(text: String) -> void:
-	if not _output_label:
-		display_output("")
+
+	_output_label.text += text
+
+	# if not _output_label:
+	# 	display_output("")
 	
-	var output: String = _output_label.text
-	_output_label.set_meta("raw_output", _output_label.get_meta("raw_output", output) + text)
-	output += text
+	# var output: String = _output_label.text
+	# _output_label.set_meta("raw_output", _output_label.get_meta("raw_output", output) + text)
+	# output += text
 
-	var wrapped_command: String = wrap_command.call("")
+	# var wrapped_command: String = wrap_command.call("")
 
-	# delimiter should be present twice, once in the echo command and once as the output of that command
-	if output.contains(wrapped_command):
-		output = output.replace(wrapped_command, "")
+	# # delimiter should be present twice, once in the echo command and once as the output of that command
+	# if output.contains(wrapped_command):
+	# 	output = output.replace(wrapped_command, "")
 
-	output = output.replace(delimiter, "")
+	# output = output.replace(delimiter, "")
 
-	_output_label.text = output
+	# _output_label.text = output
 
 
 func execute_command(input: String):
+	_history.append(input)
 
-	var command_buffer: PackedByteArray
-
-	var new_cmd: = _is_new_shell_command()
-
-	if new_cmd:
-		command_buffer = (str(wrap_command.call(input)) + "\n").to_utf8_buffer()
-		_history.append(input)
-		display_output("")
-	else:
-		command_buffer = (input + "\n").to_utf8_buffer()
+	var command_buffer = (input + "\n").to_utf8_buffer()
 
 	stdio.store_buffer(command_buffer)
+
+	# var new_cmd: = _is_new_shell_command()
+
+	# if new_cmd:
+	# 	command_buffer = (str(wrap_command.call(input)) + "\n").to_utf8_buffer()
+	# 	_history.append(input)
+	# 	display_output("")
+	# else:
+	# 	command_buffer = (input + "\n").to_utf8_buffer()
+
+	# stdio.store_buffer(command_buffer)
 
 
 
