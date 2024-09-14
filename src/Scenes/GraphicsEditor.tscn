@@ -186,9 +186,6 @@ layout_mode = 2
 size_flags_vertical = 4
 icon = ExtResource("18_yov21")
 
-[node name="GridContainer" type="GridContainer" parent="VBoxContainer/MarginContainer"]
-layout_mode = 2
-
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
