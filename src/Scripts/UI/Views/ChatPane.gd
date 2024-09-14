@@ -468,7 +468,7 @@ func update_token_estimation():
 
 	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi))
 
-	%EstimatedTokensLabel.text = "%s: %s¢" % [token_count, (provider.token_cost * token_count) *1000]
+	%EstimatedTokensLabel.text = "%s¢" % [(provider.token_cost * token_count) *1000]
 
 
 # region Edit provider Title
