@@ -97,6 +97,7 @@ func _load_text_file(filename: String):
 	if fa_object:
 		#file_path = file
 		code_edit.text = fa_object.get_as_text()
+		code_edit.text_changed.emit(code_edit.text) # the signal is not emitted for some reason
 		code_edit.saved_content = code_edit.text
 	else:
 		code_edit.text = "Could not retrive file"
@@ -247,11 +248,17 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 		code_edit.set_caret_line(line_to_jump_to -1)
 
 
-func _on_editor_changed():
+func _on_editor_changed(text: String):
+	print("Editor content changed")
 	%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 	_file_saved = true
 	file_saved_in_disc = true
+
+	if has_meta("memory_item"):
+		var item: MemoryItem = get_meta("memory_item")
+		_update_note(item)
+
 	content_changed.emit()
 
 func _on_save_dialog_canceled():
@@ -400,6 +407,16 @@ func _create_note() -> MemoryItem:
 		return null # type not supported
 	
 	return memory_item
+
+func _update_note(memory_item: MemoryItem) -> void:
+	if type == Type.TEXT:
+		memory_item.Type = SingletonObject.note_type.TEXT
+		memory_item.Content = code_edit.text
+	
+	elif type == Type.GRAPHICS:
+		memory_item.Type = SingletonObject.note_type.IMAGE
+		memory_item.MemoryImage = graphics_editor.image
+
 
 
 func _on_check_button_toggled(toggled_on: bool):
