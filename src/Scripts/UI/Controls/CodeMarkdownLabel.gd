@@ -44,36 +44,40 @@ func _on_replace_all_pressed():
 	# Get the reference to the EditorPane
 	var ep: EditorPane =  SingletonObject.editor_pane
 	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
-
 	print("Replacing all text in the text editor.")
 	
-	if ep.Tabs.get_tab_count() < 1:
-		ep.add(Editor.Type.TEXT, null ,%SyntaxLabel.text)
-	
 	# Get the currently active tab
-	var current_tab: = ep.Tabs.get_current_tab()
+	var active_tab_editor_node: Editor = ep.Tabs.get_current_tab_control()
 	
+	if ep.Tabs.get_tab_count() < 1:
+		active_tab_editor_node = ep.add(Editor.Type.TEXT, null ,%SyntaxLabel.text, null)
+		print("no active tab")
+	elif active_tab_editor_node.type == Editor.Type.GRAPHICS:
+		active_tab_editor_node = ep.add(Editor.Type.TEXT, null ,%SyntaxLabel.text, null)
+		print("active tab not text")
 	
 	# Check if the active tab is an Editor and is a Text editor
-	if ep.Tabs.get_tab_control(current_tab) is Editor:
-		var editor = ep.Tabs.get_tab_control(current_tab)
-		if editor.type != Editor.Type.GRAPHICS:
-			ep.Tabs.set_tab_title(current_tab,  %SyntaxLabel.text)
-			var code_edit_node = editor.get_node("%CodeEdit")
+	
+	if active_tab_editor_node is Editor and (active_tab_editor_node.type != Editor.Type.GRAPHICS):
+		if active_tab_editor_node.type != Editor.Type.GRAPHICS:
+			ep.Tabs.set_tab_title(ep.Tabs.get_current_tab(),  ep.editor_name_to_use(%SyntaxLabel.text))
+			var code_edit_node = active_tab_editor_node.get_node("%CodeEdit")
+			
 			if code_edit_node:
+				#print(text_without_tags)
 				code_edit_node.text = text_without_tags
-				return
+				ep.update_tabs_icon()
 			else:
 				print("Error: CodeEdit node not found in active Text tab.")
 		else: 
 			print("Error: Active tab is not a Text editor.")
-			
-	elif ep.Tabs.get_child(current_tab):
-		var editor = ep.Tabs.get_child(current_tab)
-		var FindCodeEdit = editor.get_child(0)
-		var code_edit_node = FindCodeEdit.get_node("%CodeEdit")
-		if code_edit_node:
-			code_edit_node.text = text_without_tags
-			return
+		
+	#elif ep.Tabs.get_child(current_tab_indx):
+		#var editor = ep.Tabs.get_child(current_tab_indx)
+		#var FindCodeEdit = editor.get_child(0)
+		#var code_edit_node = FindCodeEdit.get_node("%CodeEdit")
+		#if code_edit_node:
+			#code_edit_node.text = text_without_tags
+			#return
 	else:
 		print("Error: Active tab is not an Editor.")
