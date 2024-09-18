@@ -248,7 +248,7 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 		code_edit.set_caret_line(line_to_jump_to -1)
 
 
-func _on_editor_changed(text: String):
+func _on_editor_changed(_text: String):
 	print("Editor content changed")
 	%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
 	SingletonObject.UpdateUnsavedTabIcon.emit()

@@ -1,4 +1,4 @@
-[gd_scene load_steps=20 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=19 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
@@ -19,8 +19,7 @@
 [ext_resource type="Texture2D" uid="uid://ws8ig4iufap5" path="res://assets/icons/editor_arrows/editor_arrow_right.png" id="12_hpuv1"]
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 
-[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
-
+[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -28,7 +27,6 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
 _color_picker = NodePath("VBoxContainer/MarginContainer/HFlowContainer/ColorPickerButton")
-_apply_mask_button = NodePath("VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton")
 masking_color = Color(0.251, 0.227, 0.243, 0.6)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
@@ -201,7 +199,6 @@ size_flags_vertical = 3
 
 [node name="MgIcon" type="Sprite2D" parent="VBoxContainer/ScrollContainer"]
 unique_name_in_owner = true
-visible = false
 position = Vector2(0, -124)
 
 [node name="PopupPanel" type="Control" parent="."]
@@ -223,6 +220,7 @@ unique_name_in_owner = true
 layout_mode = 0
 offset_right = 222.0
 offset_bottom = 146.0
+follow_focus = true
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 2
 
