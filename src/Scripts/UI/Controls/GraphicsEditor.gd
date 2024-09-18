@@ -9,8 +9,8 @@ var Buble = preload("res://Scenes/CloudControl.tscn")
 @onready var _brush_slider: HSlider = %BrushHSlider
 
 @export var _color_picker: ColorPickerButton
-@export var _mask_check_button: CheckButton
-@export var _apply_mask_button: Button
+#@export var _mask_check_button: CheckButton
+#@export var _apply_mask_button: Button
 @export var masking_color: Color
 
 var selectedLayer: String
@@ -75,7 +75,7 @@ func _ready():
 	
 	_color_picker = %ColorPickerButton
 	
-	_draw_layer = _layers_container.get_child(0)
+	#_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
 		toggle_controls(SingletonObject.is_graph)
 	elif SingletonObject.is_masking == true:
@@ -351,12 +351,12 @@ func _gui_input(event: InputEvent):
 			
 		if event is InputEventMouseMotion and %MgIcon.visible == true:
 			# Correctly calculate the position relative to the zoom level and container position
-			var local_position = _layers_container.get_local_mouse_position()
-			var global_position = _layers_container.position + local_position * _layers_container.scale
+			var local_position_temp = _layers_container.get_local_mouse_position()
+			var global_position_temp = _layers_container.position + local_position_temp * _layers_container.scale
 			%MgIcon.offset = Vector2(-20,20)
-			%MgIcon.position = global_position
+			%MgIcon.position = global_position_temp
 			drawing = false
-			
+			Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
 			
 			
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -390,7 +390,7 @@ func _gui_input(event: InputEvent):
 
 	if event is InputEventMouseMotion and drawing:
 		# Get mouse position relative to _layers_container
-		var container_local_pos = _layers_container.get_local_mouse_position() 
+		#var container_local_pos = _layers_container.get_local_mouse_position() 
 
 		# Get mouse position relative to the active layer
 		var active_layer = _mask_layer if _masking else _draw_layer
@@ -535,8 +535,8 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 	if hbox_index != -1:
 		# Assuming layers in _layers_container directly correspond to 
 		# the order in LayersList, use the hbox_index
-		
-		_draw_layer = _layers_container.get_child(hbox_index)
+		pass
+		#_draw_layer = _layers_container.get_child(hbox_index)
 		
 		# Update undo history for the previously selected layer
 	if _draw_layer != null:
@@ -622,6 +622,7 @@ func _on_option_button_item_selected(index):
 
 func _on_hand_pressed() -> void:
 	# Toggle other tools off
+	
 	erasing = false
 	_on_mask(false)
 	clouding = false
@@ -730,7 +731,7 @@ func _transfer(Hbox: HBoxContainer) -> void:
 		
 func _rotate(Hbox: HBoxContainer) -> void:
 	#this is declaring a new variable hbox_index, should the 'var' be removed
-	var hbox_index = %LayersList.get_children().find(Hbox)
+	#var hbox_index = %LayersList.get_children().find(Hbox)
 	var rotate_button = Hbox.get_child(3)  # Assuming the Rotate button is the 4th child
 
 	# Toggle Logic
@@ -878,17 +879,17 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 	var extension = path.get_extension().to_lower()
 	if extension in ["png", "jpg", "jpeg"]:
 		# Load the image
-		var image = Image.new()
-		var err = image.load(path)
+		var image_to_load = Image.new()
+		var err = image_to_load.load(path)
 		if err != OK:
 			print("Error loading image:", err)
 			return
 
 		# Create a new layer from the loaded image
-		var new_layer = _create_layer(image)
+		var new_layer = _create_layer(image_to_load)
 
 		# Store the loaded image as the background for this layer
-		_background_images[new_layer.name] = image.duplicate()
+		_background_images[new_layer.name] = image_to_load.duplicate()
 
 		# Increment the layer counter
 		layer_Number += 1
@@ -938,8 +939,8 @@ func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 			else:
 				target_image.set_pixelv(spray_pos, color)
 
-func draw_square(target_image: Image, pos: Vector2, color: Color, size: int):
-	var half_size = size / 2
+func draw_square(target_image: Image, pos: Vector2, color: Color, square_size: float):
+	var half_size: int = int( square_size / 2)
 	for x in range(int(pos.x - half_size), int(pos.x + half_size + 1)):
 		for y in range(int(pos.y - half_size), int(pos.y + half_size + 1)):
 			var pixel = Vector2(x, y)
