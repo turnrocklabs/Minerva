@@ -104,7 +104,8 @@ func _ready():
 	SingletonObject.is_square = false
 	SingletonObject.is_cryon = false
 	
-	_can_resize = true
+	_can_resize = true 
+	layer_Number = 0
 
 func toggle_controls(toggle: bool):
 	#only drawing

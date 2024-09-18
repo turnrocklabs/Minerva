@@ -247,16 +247,15 @@ func _ready():
 		
 	tail = CurvedTriangleTail.new(self)
 	queue_redraw()
-
-
+	
 func _draw() -> void:
 	if editing:
 		_draw_editing()
 		return
-
+		
 	# Create a ellipse thats contained within the given rectangle
 	bubble_poly = _create_tail()
-
+	
 	var polys := Geometry2D.merge_polygons(bubble_poly, tail.get_polygon())
 	
 	for poly in polys:
@@ -266,11 +265,11 @@ func _draw() -> void:
 	# draw_polyline(ellipse, Color.BLACK, 7, true)
 	
 	# tail.draw()
-
+	
 	# Get the rectangle thats completly within the speech bubble ellipse
 	# and defines the area there text can be in
 	var text_rect: = get_rectangle_in_ellipse(_bubble_rect)
-
+	
 	# Draw the text from the text edit
 	draw_multiline_string(
 		font,
@@ -363,12 +362,21 @@ func _gui_input(event: InputEvent) -> void:
 
 			queue_redraw()
 			accept_event()
-
+						 
 	if event is InputEventMouseMotion:
 		# if we're dragging the resizer, move it to the mouse position
 		if _active_resizer:
 			_active_resizer.position += event.relative
-		
+			var new_width = _lower_resizer.position.x - _upper_resizer.position.x
+			var new_height = _lower_resizer.position.y - _upper_resizer.position.y
+			
+			new_width += _lower_resizer.pivot_offset.x + _upper_resizer.pivot_offset.x + pivot_offset.x
+			new_height += _lower_resizer.pivot_offset.y + _upper_resizer.pivot_offset.y + pivot_offset.y
+			
+			size = Vector2(new_width,new_height)
+
+			
+			
 		# if we're moving the mouse, pressing the mouse button and dragging the point
 		# update that points position.
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _drag_point_idx != -1:
@@ -401,7 +409,6 @@ func _on_lower_bottom_resizer_button_down() -> void:
 func _on_upper_left_resizer_button_down() -> void:
 	_active_resizer = _upper_resizer
 	get_viewport().set_input_as_handled()
-
 # endregion
 
 

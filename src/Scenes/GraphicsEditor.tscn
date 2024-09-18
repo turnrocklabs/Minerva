@@ -1,4 +1,4 @@
-[gd_scene load_steps=20 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=19 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
@@ -20,7 +20,6 @@
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 
 [node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
-
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
