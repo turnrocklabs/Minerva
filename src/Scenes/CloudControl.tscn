@@ -13,7 +13,7 @@ grow_horizontal = 2
 grow_vertical = 2
 focus_mode = 2
 mouse_filter = 1
-color = Color(1, 1, 1, 0)
+color = Color(0, 0, 0, 1)
 script = ExtResource("1_ha15r")
 
 [node name="BezierCurve" type="Control" parent="."]
