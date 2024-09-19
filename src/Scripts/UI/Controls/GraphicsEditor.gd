@@ -24,6 +24,7 @@ var image: Image:
 	get: return _draw_layer.image if _draw_layer else null
 
 var drawing:bool = false
+var drawing_brush_active: bool = true
 var erasing:bool = false
 var clouding:bool = false
 var zoomIn:bool = false
@@ -242,7 +243,7 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 	var sy = 1 if y1 < y2 else -1
 	var err = dx - dy
 
-	while true:
+	while true and drawing_brush_active:
 		pixels.append(Vector2(x1, y1))
 		if x1 == x2 and y1 == y2:
 			break
@@ -388,13 +389,10 @@ func _gui_input(event: InputEvent):
 				
 			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
-	if event is InputEventMouseMotion and drawing:
-		# Get mouse position relative to _layers_container
-		#var container_local_pos = _layers_container.get_local_mouse_position() 
-
+	if event is InputEventMouseMotion and drawing and drawing_brush_active:
 		# Get mouse position relative to the active layer
 		var active_layer = _mask_layer if _masking else _draw_layer
-		var layer_local_pos = active_layer.get_local_mouse_position()
+		var layer_local_pos = active_layer.get_global_transform().affine_inverse() * get_global_transform_with_canvas() * event.position
 
 		# --- No manual offset calculation needed here ---
 		if %LayersList.get_child_count() > 0:
@@ -403,8 +401,9 @@ func _gui_input(event: InputEvent):
 				image_draw(active_layer.image, layer_local_pos, brush_color, brush_size * event.pressure)
 				_draw_begin = false
 
-			for line_pixel in bresenham_line(_last_pos, layer_local_pos): 
-				image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
+			if _last_pos.x != layer_local_pos.x or _last_pos.y != layer_local_pos.y:
+				for line_pixel in bresenham_line(_last_pos, layer_local_pos):
+					image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
 
 		_last_pos = layer_local_pos 
 		active_layer.update() 
@@ -568,6 +567,10 @@ func LayerVisible(Hbox: HBoxContainer):
 
 
 func _on_brushes_item_selected(index):
+	if index != 0:
+		drawing_brush_active = false
+	else:
+		drawing_brush_active = true
 	#off other tools not drawing
 	%MgIcon.visible = false
 	erasing = false
