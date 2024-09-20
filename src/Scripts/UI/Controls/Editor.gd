@@ -6,7 +6,7 @@ extends Control
 
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
-static var scene = preload("res://Scenes/Editor.tscn")
+static var editor_scene = preload("res://Scenes/Editor.tscn")
 
 signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
@@ -47,7 +47,7 @@ var prompt_save:= true
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
 static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null) -> Editor:
-	var editor = scene.instantiate()
+	var editor = editor_scene.instantiate()
 	editor.type = type_
 	editor.associated_object = associated_object_
 	
@@ -341,7 +341,11 @@ func _on_create_note_button_pressed() -> void:
 
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
-	_load_text_file(file)
+	match type:
+		Type.GRAPHICS:
+			_load_graphics_file(file)
+		Type.TEXT:
+			_load_text_file(file)
 
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs

@@ -19,7 +19,7 @@
 [ext_resource type="Texture2D" uid="uid://ws8ig4iufap5" path="res://assets/icons/editor_arrows/editor_arrow_right.png" id="12_hpuv1"]
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 
-[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
+[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -204,6 +204,7 @@ position = Vector2(0, -124)
 [node name="PopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
 visible = false
+z_index = 10
 layout_mode = 2
 size_flags_vertical = 0
 

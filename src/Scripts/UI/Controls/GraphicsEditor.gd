@@ -908,7 +908,7 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 
 
 func _on_add_imagelayer_pressed() -> void:
-	%AddNewPic.visible = true
+	%AddNewPic.show()
 
 
 func _on_additional_tools_item_selected(index: int) -> void:
@@ -941,6 +941,7 @@ func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 				target_image.set_pixelv(spray_pos, _background_images[_draw_layer.name].get_pixelv(spray_pos))
 			else:
 				target_image.set_pixelv(spray_pos, color)
+	
 
 func draw_square(target_image: Image, pos: Vector2, color: Color, square_size: float):
 	var half_size: int = int( square_size / 2)
