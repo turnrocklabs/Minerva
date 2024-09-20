@@ -295,7 +295,7 @@ func _draw_editing() -> void:
 
 	var text_rect: = get_rectangle_in_ellipse(_bubble_rect)
 	
-	draw_rect(text_rect, Color.ORANGE_RED)
+	#draw_rect(text_rect, Color.ORANGE_RED)
 	
 	_text_edit.position = text_rect.position
 	_text_edit.size = text_rect.size
