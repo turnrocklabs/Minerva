@@ -10,7 +10,7 @@ enum Type {
 	RECTANGLE,
 }
 var type
-
+var circle_radius
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
 @onready var _text_edit: TextEdit = %TextEdit
@@ -238,6 +238,7 @@ class BubbleTail:
 
 # Request redraw in response to changes
 func _ready():
+	circle_radius = 50
 	if SingletonObject.CloudType == Type.CLOUD:
 		type = Type.CLOUD
 	elif SingletonObject.CloudType == Type.ELLIPSE:
@@ -367,13 +368,13 @@ func _gui_input(event: InputEvent) -> void:
 		# if we're dragging the resizer, move it to the mouse position
 		if _active_resizer:
 			_active_resizer.position += event.relative
-			var new_width = _lower_resizer.position.x - _upper_resizer.position.x
-			var new_height = _lower_resizer.position.y - _upper_resizer.position.y
-			
-			new_width += _lower_resizer.pivot_offset.x + _upper_resizer.pivot_offset.x + pivot_offset.x
-			new_height += _lower_resizer.pivot_offset.y + _upper_resizer.pivot_offset.y + pivot_offset.y
-			
-			size = Vector2(new_width,new_height)
+			#var new_width = _lower_resizer.position.x - _upper_resizer.position.x
+			#var new_height = _lower_resizer.position.y - _upper_resizer.position.y
+			#
+			#new_width += _lower_resizer.pivot_offset.x + _upper_resizer.pivot_offset.x + pivot_offset.x
+			#new_height += _lower_resizer.pivot_offset.y + _upper_resizer.pivot_offset.y + pivot_offset.y
+			#
+			#size = Vector2(new_width,new_height)
 
 			
 			
@@ -418,8 +419,6 @@ func cloud_bubble(rect: Rect2) -> PackedVector2Array:
 	var ellipse_poly: = create_ellipse(rect)
 
 	var cloud: = ellipse_poly.duplicate()
-
-	var circle_radius: = 50
 	
 	var last_point: = -1
 	for i in ellipse_poly.size():
@@ -639,3 +638,19 @@ func is_point_between(A: Vector2, B: Vector2, C: Vector2) -> bool:
 		min(A.x, B.x) <= C.x <= max(A.x, B.x) and
 		min(A.y, B.y) <= C.y <= max(A.y, B.y)
 	)
+
+# Function to toggle editing state without event input
+func toggle_editing_state() -> void:
+	if not _active_resizer:
+		editing = not editing
+		queue_redraw()
+
+func set_circle_radius(new_radius: float) -> void:
+	circle_radius = new_radius
+	cloud_bubble(_bubble_rect) # Recalculate the cloud shape
+	queue_redraw() # Tell Godot to redraw the CloudControl 
+	
+	
+func CancleEditing():
+	editing = not editing
+	queue_redraw()
