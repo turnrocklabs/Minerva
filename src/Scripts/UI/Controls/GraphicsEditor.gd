@@ -7,8 +7,9 @@ signal masking_ended()
 var Buble = preload("res://Scenes/CloudControl.tscn")
 @onready var _layers_container: Control = %LayersContainer
 @onready var _brush_slider: HSlider = %BrushHSlider
+@onready var color_picker_button: ColorPickerButton = %ColorPickerButton
 
-@export var _color_picker: ColorPickerButton
+#@export var _color_picker: ColorPickerButton
 #@export var _mask_check_button: CheckButton
 #@export var _apply_mask_button: Button
 @export var masking_color: Color
@@ -16,7 +17,8 @@ var Buble = preload("res://Scenes/CloudControl.tscn")
 var selectedLayer: String
 var selectedIndex: int
 var loaded_layers: Array[Layer]
-static var layer_Number = 0
+#static var layer_Number = 0 ## No need to make it static, if its static the value is sharred across instances
+var layer_Number = 0
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
 
@@ -52,7 +54,7 @@ var brush_color: Color:
 		elif erasing:
 			return Color.TRANSPARENT  
 		else:
-			return _color_picker.color
+			return color_picker_button.color
 
 var _last_pos: Vector2
 var _draw_begin: bool = false
@@ -74,7 +76,7 @@ var layer_undo_histories = {} # Dictionary to store undo histories for each laye
 func _ready():
 	layers_buttons()
 	
-	_color_picker = %ColorPickerButton
+	#_color_picker = %ColorPickerButton
 	
 	#_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
@@ -83,7 +85,7 @@ func _ready():
 		#editing and drawing
 		toggle_masking(SingletonObject.is_masking)
 		
-	layer_Number += 1
+	#layer_Number += 1
 	setup(Vector2i(2000, 2000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
@@ -98,7 +100,7 @@ func _ready():
 		layer_Number = loaded_layers.size()
 		SingletonObject.is_graph = true
 		toggle_controls(true)
-
+	
 	# Initialize undo history
 	#undo_history.append(_draw_layer.image.duplicate())
 	SingletonObject.is_Brush = false
@@ -107,9 +109,10 @@ func _ready():
 	
 	_can_resize = true
 
+
 func toggle_controls(toggle: bool):
 	#only drawing
-	%ColorPickerButton.visible = toggle
+	color_picker_button.visible = toggle
 	%BrushHSlider.visible = toggle
 
 
@@ -140,7 +143,8 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 			target_height = target_width / aspect_ratio
 	
 	return Vector2(target_width, target_height)
-	
+
+
 func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(800, 800))
 	image_.resize(new_size.x, new_size.y)
@@ -284,7 +288,7 @@ func _gui_input(event: InputEvent):
 		var picked_color = active_layer.image.get_pixelv(layer_local_pos)
 		
 		# Update the ColorPickerButton
-		_color_picker.color = picked_color
+		color_picker_button.color = picked_color
 		
 		
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
@@ -871,6 +875,7 @@ func layers_buttons():
 	Hbox.add_child(Rotate) 
 	Hbox.add_child(Scale)
 	
+	layer_Number +=1
 	if %LayersList.get_child_count() != 1:
 		Hbox.add_child(RemoveButton)
 	
@@ -1016,3 +1021,7 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 				var final_color = crayon_color_premultiplied * opacity + bg_color * (1.0 - opacity)
 
 				target_image.set_pixelv(draw_pos, final_color) 
+
+
+func _on_popup_panel_focus_exited() -> void:
+	%PopupPanel.hide()
