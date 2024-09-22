@@ -71,6 +71,7 @@ var _masking: bool:
 		if not value: 
 			masking_ended.emit()
 
+var is_image_saved: bool = false
 var layer_undo_histories = {} # Dictionary to store undo histories for each layer
 # Called when the node enters the scene tree for the first time.
 func _ready():
@@ -281,24 +282,22 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 					target_image.set_pixelv(pixel, color) 
 				
 func _gui_input(event: InputEvent):
+	var active_layer = _mask_layer if _masking else _draw_layer
+	var layer_local_pos = active_layer.get_local_mouse_position()
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		var active_layer = _mask_layer if _masking else _draw_layer
-		var layer_local_pos = active_layer.get_local_mouse_position()
-		# Get color at clicked position
-		var picked_color = active_layer.image.get_pixelv(layer_local_pos)
 		
-		# Update the ColorPickerButton
-		color_picker_button.color = picked_color
-		
+		#Get color at clicked position and Update the ColorPickerButton
+		color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
 		
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
-		var active_layer = _mask_layer if _masking else _draw_layer
-		var layer_local_pos = active_layer.get_local_mouse_position()
 		flood_fill(active_layer.image, layer_local_pos, brush_color) 
 		active_layer.update()
 		fill_tool = false
+		is_image_saved = false
+		SingletonObject.UpdateUnsavedTabIcon.emit()
 		%Brushes.select(0)
 		%PenAdditionalTools.visible = true
+		
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -366,6 +365,8 @@ func _gui_input(event: InputEvent):
 			
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		# 1. Create a new layer
+		is_image_saved = false
+		SingletonObject.UpdateUnsavedTabIcon.emit()
 		var new_layer_image = Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8) 
 		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
 		var new_layer = _create_layer(new_layer_image)
@@ -394,9 +395,10 @@ func _gui_input(event: InputEvent):
 			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
 	if event is InputEventMouseMotion and drawing and drawing_brush_active:
+		is_image_saved = false
+		SingletonObject.UpdateUnsavedTabIcon.emit()
 		# Get mouse position relative to the active layer
-		var active_layer = _mask_layer if _masking else _draw_layer
-		var layer_local_pos = active_layer.get_global_transform().affine_inverse() * get_global_transform_with_canvas() * event.position
+		layer_local_pos = active_layer.get_global_transform().affine_inverse() * get_global_transform_with_canvas() * event.position
 
 		# --- No manual offset calculation needed here ---
 		if %LayersList.get_child_count() > 0:
@@ -411,7 +413,10 @@ func _gui_input(event: InputEvent):
 
 		_last_pos = layer_local_pos 
 		active_layer.update() 
-		
+	
+
+
+
 func _on_h_slider_value_changed(value):
 	brush_size = value
 
@@ -987,6 +992,7 @@ func flood_fill(target_image: Image, start_pos: Vector2, fill_color: Color):
 			stack.append(Vector2(x - 1, y))
 			stack.append(Vector2(x, y + 1))
 			stack.append(Vector2(x, y - 1))
+
 
 func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 	var rand = RandomNumberGenerator.new()

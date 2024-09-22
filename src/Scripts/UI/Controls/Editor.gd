@@ -59,7 +59,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	match type_:
 		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
 			editor.get_node("%CodeEdit").visible = true
-			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
+			#editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
 		Editor.Type.GRAPHICS:
 			editor.get_node("%GraphicsEditor").visible = true
 			## TODO: Implement changed signal for graphics editor
@@ -86,6 +86,7 @@ func _ready():
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 	SingletonObject.UpdateLastSavePath.connect(update_last_path)
+	get_node("%CodeEdit").text_changed.connect(_on_editor_changed)
 
 
 func update_last_path(new_path: String) -> void:
@@ -196,6 +197,8 @@ func save():
 		Type.TEXT, Type.NOTE_EDITOR:
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
+			get_node("%GraphicsEditor").is_image_saved = true
+			SingletonObject.UpdateUnsavedTabIcon.emit()
 			pass # TODO: implement for graphics files
 
 
@@ -208,7 +211,10 @@ func is_content_saved() -> bool:
 			var memory_item: MemoryItem = get_meta('associated_object')
 			return code_edit.text == memory_item.Content
 		Type.GRAPHICS:
-			return true ## TODO: Implement checking if graphics file is saved
+			if get_node("%GraphicsEditor"):
+				return get_node("%GraphicsEditor").is_image_saved
+			else:
+				return false
 	
 	return false
 
@@ -248,12 +254,13 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 		code_edit.set_caret_line(line_to_jump_to -1)
 
 
-func _on_editor_changed(_text: String):
+func _on_editor_changed(text: String = ""):
 	print("Editor content changed")
-	%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
-	SingletonObject.UpdateUnsavedTabIcon.emit()
-	_file_saved = true
-	file_saved_in_disc = true
+	if text != "":
+		%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
+		SingletonObject.UpdateUnsavedTabIcon.emit()
+		_file_saved = true
+		file_saved_in_disc = true
 
 	if has_meta("memory_item"):
 		var item: MemoryItem = get_meta("memory_item")
@@ -299,7 +306,7 @@ func save_file_to_disc(path: String):
 			
 	_file_saved = true
 	file_saved_in_disc = true
-	#SingletonObject.last_saved_path = path.get_base_dir() + "/"
+
 	SingletonObject.UpdateLastSavePath.emit(path.get_base_dir())
 	if SingletonObject.config_has_saved_section("LastSavedPath"):
 		SingletonObject.config_clear_section("LastSavedPath")
