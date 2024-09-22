@@ -33,7 +33,7 @@ func _ready():
 	custom_minimum_size = image.get_size()
 	update()
 
-func update():
+func update():# this method get called every time a stroke is done on a layer
 	texture = ImageTexture.create_from_image(image)
 
 func _input(event: InputEvent) -> void:
