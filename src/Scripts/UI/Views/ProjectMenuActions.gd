@@ -66,7 +66,7 @@ func unpackage_project():
 
 
 func save_unsaved_editors() -> void:
-	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
+	#var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
 		var editor: Editor = item_list.get_item_metadata(item_idx)
