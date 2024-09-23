@@ -19,7 +19,8 @@
 [ext_resource type="Texture2D" uid="uid://ws8ig4iufap5" path="res://assets/icons/editor_arrows/editor_arrow_right.png" id="12_hpuv1"]
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 
-[node name="GraphicsEditor" type="PanelContainer"]
+
+[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -87,6 +88,27 @@ popup/item_1/text = "Speech"
 popup/item_1/id = 1
 popup/item_2/text = "Thought"
 popup/item_2/id = 2
+
+[node name="ApplyTail" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Apply created mask"
+text = "Apply tail"
+
+[node name="BubleRadius" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+editor_description = "Clouds bubbles size
+"
+visible = false
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Brush Size"
+max_value = 150.0
+value = 5.0
+rounded = true
 
 [node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
@@ -302,6 +324,8 @@ text = "Add image layer"
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyTail" to="." method="_on_apply_tail_pressed"]
+[connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BubleRadius" to="." method="_on_buble_radius_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Hand" to="." method="_on_hand_pressed"]
