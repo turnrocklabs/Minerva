@@ -144,6 +144,39 @@ var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
+
+#region UI Scaling
+var initial_ui_scale: float = 1
+var min_ui_scale: = 1.0
+var max_ui_scale: = 2.0
+var scaling_factor: = 0.04
+
+func increment_scale_ui() -> void:
+	var ui_scale = get_tree().root.content_scale_factor
+	if ui_scale < max_ui_scale:
+		get_tree().root.content_scale_factor = ui_scale + scaling_factor
+		main_scene.queue_redraw()
+
+
+func decrement_ui_scale() -> void:
+	var ui_scale = get_tree().root.content_scale_factor
+	if ui_scale > min_ui_scale:
+		get_tree().root.content_scale_factor = ui_scale - scaling_factor
+		main_scene.queue_redraw()
+
+
+func reset_ui_scale() -> void:
+	get_tree().root.content_scale_factor = 1.0
+	main_scene.queue_redraw()
+
+
+func set_ui_scale(new_scale: float) -> void:
+	if new_scale > min_ui_scale and new_scale < max_ui_scale:
+		get_tree().root.content_scale_factor = new_scale
+		main_scene.queue_redraw()
+
+#endregion UI Scaling
+
 ##region Buttons/Icons scaling
 #var buttons_array: Array = []
 #
@@ -205,7 +238,7 @@ func _ready():
 	
 	add_child(AtT)
 	add_child(undo)
-	
+	#TODO add ui scale to the config file and retireve it on app load
 	var err = config_file.load(config_file_name)
 	if err != OK:
 		return
