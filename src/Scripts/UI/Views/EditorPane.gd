@@ -51,7 +51,8 @@ func _shortcut_input(event: InputEvent):
 	
 func _on_close_tab(tab: int, container: TabContainer):
 	if Editor.Type.WhiteBoard:
-		GraphicsEditor.layer_Number = 0
+		#GraphicsEditor.layer_Number = 0
+		pass
 	var control = container.get_tab_control(tab)
 	if control is Editor:
 		if not control.is_content_saved():
