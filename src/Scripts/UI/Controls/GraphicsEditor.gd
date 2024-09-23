@@ -108,7 +108,8 @@ func _ready():
 	SingletonObject.is_square = false
 	SingletonObject.is_cryon = false
 	
-	_can_resize = true
+	_can_resize = true 
+	layer_Number = 0
 
 
 func toggle_controls(toggle: bool):
@@ -380,7 +381,7 @@ func _gui_input(event: InputEvent):
 		var new_bubble = Buble.instantiate()
 		new_layer.add_child(new_bubble)
 		new_bubble.position = new_layer.get_local_mouse_position() # Position bubble
-
+		_if_cloud(3,0)
 		clouding = false
 
 	# Handle drawing actions
@@ -551,7 +552,7 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 		# Initialize the undo history if it doesn't exist for this layer
 		if not layer_undo_histories.find_key(_draw_layer.name):
 			layer_undo_histories[_draw_layer.name] = []
-
+							
 		# Append the current state to the undo history
 		layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 	# Reset other buttons' color
@@ -559,6 +560,7 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 		if child is HBoxContainer and child != Hbox:
 			for button in child.get_children():
 				button.modulate = Color.WHITE
+	_if_cloud(3,0)
 
 func LayerVisible(Hbox: HBoxContainer):
 	var hbox_index = %LayersList.get_children().find(Hbox)
@@ -594,7 +596,7 @@ func _on_brushes_item_selected(index):
 	%DialogClouds.visible = false
 	%PenAdditionalTools.visible = false
 	%ApplyMaskButton.visible = false
-	
+	#%ApplyTail.visible = false
 	match index:
 		0:
 			%PenAdditionalTools.visible = true
@@ -606,6 +608,7 @@ func _on_brushes_item_selected(index):
 			%ApplyMaskButton.visible = true
 		3:
 			%DialogClouds.visible = true
+			#%ApplyTail.visible = true
 		4:
 			fill_tool = true
 
@@ -885,7 +888,7 @@ func layers_buttons():
 		Hbox.add_child(RemoveButton)
 	
 	selectButton(LayerButton, Hbox) 
-
+	_if_cloud(0,0)
 
 func _on_add_new_pic_file_selected(path: String) -> void:
 	# Check if the file extension is a supported image type
@@ -915,8 +918,8 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 	else:
 		print("Unsupported file type:", extension)
 	%AddNewPic.visible = false  # Close the file dialog
-
-
+	
+	
 func _on_add_imagelayer_pressed() -> void:
 	%AddNewPic.show()
 
@@ -1029,5 +1032,43 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 				target_image.set_pixelv(draw_pos, final_color) 
 
 
+func _on_apply_tail_pressed() -> void:
+	_if_cloud(2,0)
+	
+func _if_cloud(whatToUse: int, bubles_size: float):
+	if _draw_layer != null:
+		var has_cloud_control := false  # Flag to check if layer has CloudControl
+
+		# Iterate through each child to check for CloudControl instances
+		for child in _draw_layer.get_children():
+			if child is CloudControl:
+				has_cloud_control = true
+				var cloud_control = child as CloudControl
+
+				# Ensure cloud_control is valid before proceeding
+				if cloud_control != null:
+					if whatToUse == 1:
+						cloud_control.circle_radius = bubles_size
+						cloud_control.set_circle_radius(bubles_size)
+					if whatToUse == 2:
+						cloud_control.CancleEditing()
+					if cloud_control.type == CloudControl.Type.CLOUD:
+						%ApplyTail.visible = true
+						%BubleRadius.visible = true
+					else:  # Ellipse or Rectangle
+						%ApplyTail.visible = true
+						%BubleRadius.visible = false
+
+		# If no CloudControl found in the layer, hide the controls 
+		if not has_cloud_control:
+			%ApplyTail.visible = false
+			%BubleRadius.visible = false 
+				
+
+
+func _on_buble_radius_value_changed(value: float) -> void:
+	_if_cloud(1,value)
+
 func _on_popup_panel_focus_exited() -> void:
 	%PopupPanel.hide()
+
