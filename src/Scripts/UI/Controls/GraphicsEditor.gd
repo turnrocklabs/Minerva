@@ -375,7 +375,7 @@ func _gui_input(event: InputEvent):
 		var new_bubble = Buble.instantiate()
 		new_layer.add_child(new_bubble)
 		new_bubble.position = new_layer.get_local_mouse_position() # Position bubble
-
+		_if_cloud(3,0)
 		clouding = false
 
 	# Handle drawing actions
@@ -1018,30 +1018,34 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 func _on_apply_tail_pressed() -> void:
 	_if_cloud(2,0)
 	
-func _if_cloud(whatToUse: int,bubles_size:float):
+func _if_cloud(whatToUse: int, bubles_size: float):
 	if _draw_layer != null:
+		var has_cloud_control := false  # Flag to check if layer has CloudControl
+
 		# Iterate through each child to check for CloudControl instances
 		for child in _draw_layer.get_children():
 			if child is CloudControl:
+				has_cloud_control = true
 				var cloud_control = child as CloudControl
-				
+
 				# Ensure cloud_control is valid before proceeding
 				if cloud_control != null:
-					# Only perform actions if the layer contains a CloudControl
-						if whatToUse == 1:
-							# Perform action with CloudControl
-							cloud_control.circle_radius = bubles_size
-							cloud_control.set_circle_radius(bubles_size)
-						if whatToUse == 2:
-							cloud_control.CancleEditing()
-						if cloud_control.type == CloudControl.Type.CLOUD:
-							%ApplyTail.visible = true
-							%BubleRadius.visible = true
-						if cloud_control.type == CloudControl.Type.ELLIPSE or cloud_control.type == CloudControl.Type.RECTANGLE:
-							%ApplyTail.visible = true
-				else:
-					%ApplyTail.visible = false
-					%BubleRadius.visible = false
+					if whatToUse == 1:
+						cloud_control.circle_radius = bubles_size
+						cloud_control.set_circle_radius(bubles_size)
+					if whatToUse == 2:
+						cloud_control.CancleEditing()
+					if cloud_control.type == CloudControl.Type.CLOUD:
+						%ApplyTail.visible = true
+						%BubleRadius.visible = true
+					else:  # Ellipse or Rectangle
+						%ApplyTail.visible = true
+						%BubleRadius.visible = false
+
+		# If no CloudControl found in the layer, hide the controls 
+		if not has_cloud_control:
+			%ApplyTail.visible = false
+			%BubleRadius.visible = false 
 				
 
 
