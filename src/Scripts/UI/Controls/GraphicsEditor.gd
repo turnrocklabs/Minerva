@@ -7,16 +7,18 @@ signal masking_ended()
 var Buble = preload("res://Scenes/CloudControl.tscn")
 @onready var _layers_container: Control = %LayersContainer
 @onready var _brush_slider: HSlider = %BrushHSlider
+@onready var color_picker_button: ColorPickerButton = %ColorPickerButton
 
-@export var _color_picker: ColorPickerButton
-@export var _mask_check_button: CheckButton
-@export var _apply_mask_button: Button
+#@export var _color_picker: ColorPickerButton
+#@export var _mask_check_button: CheckButton
+#@export var _apply_mask_button: Button
 @export var masking_color: Color
 
 var selectedLayer: String
 var selectedIndex: int
 var loaded_layers: Array[Layer]
-static var layer_Number = 0
+#static var layer_Number = 0 ## No need to make it static, if its static the value is sharred across instances
+var layer_Number = 0
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
 
@@ -52,7 +54,7 @@ var brush_color: Color:
 		elif erasing:
 			return Color.TRANSPARENT  
 		else:
-			return _color_picker.color
+			return color_picker_button.color
 
 var _last_pos: Vector2
 var _draw_begin: bool = false
@@ -69,21 +71,22 @@ var _masking: bool:
 		if not value: 
 			masking_ended.emit()
 
+var is_image_saved: bool = false
 var layer_undo_histories = {} # Dictionary to store undo histories for each layer
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	layers_buttons()
 	
-	_color_picker = %ColorPickerButton
+	#_color_picker = %ColorPickerButton
 	
-	_draw_layer = _layers_container.get_child(0)
+	#_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
 		toggle_controls(SingletonObject.is_graph)
 	elif SingletonObject.is_masking == true:
 		#editing and drawing
 		toggle_masking(SingletonObject.is_masking)
 		
-	layer_Number += 1
+	#layer_Number += 1
 	setup(Vector2i(2000, 2000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
@@ -98,7 +101,7 @@ func _ready():
 		layer_Number = loaded_layers.size()
 		SingletonObject.is_graph = true
 		toggle_controls(true)
-
+	
 	# Initialize undo history
 	#undo_history.append(_draw_layer.image.duplicate())
 	SingletonObject.is_Brush = false
@@ -107,9 +110,10 @@ func _ready():
 	
 	_can_resize = true
 
+
 func toggle_controls(toggle: bool):
 	#only drawing
-	%ColorPickerButton.visible = toggle
+	color_picker_button.visible = toggle
 	%BrushHSlider.visible = toggle
 
 
@@ -140,7 +144,8 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 			target_height = target_width / aspect_ratio
 	
 	return Vector2(target_width, target_height)
-	
+
+
 func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(800, 800))
 	image_.resize(new_size.x, new_size.y)
@@ -277,24 +282,22 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 					target_image.set_pixelv(pixel, color) 
 				
 func _gui_input(event: InputEvent):
+	var active_layer = _mask_layer if _masking else _draw_layer
+	var layer_local_pos = active_layer.get_local_mouse_position()
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		var active_layer = _mask_layer if _masking else _draw_layer
-		var layer_local_pos = active_layer.get_local_mouse_position()
-		# Get color at clicked position
-		var picked_color = active_layer.image.get_pixelv(layer_local_pos)
 		
-		# Update the ColorPickerButton
-		_color_picker.color = picked_color
-		
+		#Get color at clicked position and Update the ColorPickerButton
+		color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
 		
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
-		var active_layer = _mask_layer if _masking else _draw_layer
-		var layer_local_pos = active_layer.get_local_mouse_position()
 		flood_fill(active_layer.image, layer_local_pos, brush_color) 
 		active_layer.update()
 		fill_tool = false
+		is_image_saved = false
+		SingletonObject.UpdateUnsavedTabIcon.emit()
 		%Brushes.select(0)
 		%PenAdditionalTools.visible = true
+		
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -352,16 +355,18 @@ func _gui_input(event: InputEvent):
 			
 		if event is InputEventMouseMotion and %MgIcon.visible == true:
 			# Correctly calculate the position relative to the zoom level and container position
-			var local_position = _layers_container.get_local_mouse_position()
-			var global_position = _layers_container.position + local_position * _layers_container.scale
+			var local_position_temp = _layers_container.get_local_mouse_position()
+			var global_position_temp = _layers_container.position + local_position_temp * _layers_container.scale
 			%MgIcon.offset = Vector2(-20,20)
-			%MgIcon.position = global_position
+			%MgIcon.position = global_position_temp
 			drawing = false
-			
+			Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
 			
 			
 	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		# 1. Create a new layer
+		is_image_saved = false
+		SingletonObject.UpdateUnsavedTabIcon.emit()
 		var new_layer_image = Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8) 
 		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
 		var new_layer = _create_layer(new_layer_image)
@@ -390,9 +395,10 @@ func _gui_input(event: InputEvent):
 			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
 	if event is InputEventMouseMotion and drawing and drawing_brush_active:
+		is_image_saved = false
+		SingletonObject.UpdateUnsavedTabIcon.emit()
 		# Get mouse position relative to the active layer
-		var active_layer = _mask_layer if _masking else _draw_layer
-		var layer_local_pos = active_layer.get_global_transform().affine_inverse() * get_global_transform_with_canvas() * event.position
+		layer_local_pos = active_layer.get_global_transform().affine_inverse() * get_global_transform_with_canvas() * event.position
 
 		# --- No manual offset calculation needed here ---
 		if %LayersList.get_child_count() > 0:
@@ -407,7 +413,10 @@ func _gui_input(event: InputEvent):
 
 		_last_pos = layer_local_pos 
 		active_layer.update() 
-		
+	
+
+
+
 func _on_h_slider_value_changed(value):
 	brush_size = value
 
@@ -534,8 +543,8 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 	if hbox_index != -1:
 		# Assuming layers in _layers_container directly correspond to 
 		# the order in LayersList, use the hbox_index
-		
-		_draw_layer = _layers_container.get_child(hbox_index)
+		pass
+		#_draw_layer = _layers_container.get_child(hbox_index)
 		
 		# Update undo history for the previously selected layer
 	if _draw_layer != null:
@@ -625,6 +634,7 @@ func _on_option_button_item_selected(index):
 
 func _on_hand_pressed() -> void:
 	# Toggle other tools off
+	
 	erasing = false
 	_on_mask(false)
 	clouding = false
@@ -733,7 +743,7 @@ func _transfer(Hbox: HBoxContainer) -> void:
 		
 func _rotate(Hbox: HBoxContainer) -> void:
 	#this is declaring a new variable hbox_index, should the 'var' be removed
-	var hbox_index = %LayersList.get_children().find(Hbox)
+	#var hbox_index = %LayersList.get_children().find(Hbox)
 	var rotate_button = Hbox.get_child(3)  # Assuming the Rotate button is the 4th child
 
 	# Toggle Logic
@@ -870,6 +880,7 @@ func layers_buttons():
 	Hbox.add_child(Rotate) 
 	Hbox.add_child(Scale)
 	
+	layer_Number +=1
 	if %LayersList.get_child_count() != 1:
 		Hbox.add_child(RemoveButton)
 	
@@ -881,17 +892,17 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 	var extension = path.get_extension().to_lower()
 	if extension in ["png", "jpg", "jpeg"]:
 		# Load the image
-		var image = Image.new()
-		var err = image.load(path)
+		var image_to_load = Image.new()
+		var err = image_to_load.load(path)
 		if err != OK:
 			print("Error loading image:", err)
 			return
 
 		# Create a new layer from the loaded image
-		var new_layer = _create_layer(image)
+		var new_layer = _create_layer(image_to_load)
 
 		# Store the loaded image as the background for this layer
-		_background_images[new_layer.name] = image.duplicate()
+		_background_images[new_layer.name] = image_to_load.duplicate()
 
 		# Increment the layer counter
 		layer_Number += 1
@@ -907,7 +918,7 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 
 
 func _on_add_imagelayer_pressed() -> void:
-	%AddNewPic.visible = true
+	%AddNewPic.show()
 
 
 func _on_additional_tools_item_selected(index: int) -> void:
@@ -940,9 +951,10 @@ func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 				target_image.set_pixelv(spray_pos, _background_images[_draw_layer.name].get_pixelv(spray_pos))
 			else:
 				target_image.set_pixelv(spray_pos, color)
+	
 
-func draw_square(target_image: Image, pos: Vector2, color: Color, size: int):
-	var half_size = size / 2
+func draw_square(target_image: Image, pos: Vector2, color: Color, square_size: float):
+	var half_size: int = int( square_size / 2)
 	for x in range(int(pos.x - half_size), int(pos.x + half_size + 1)):
 		for y in range(int(pos.y - half_size), int(pos.y + half_size + 1)):
 			var pixel = Vector2(x, y)
@@ -981,6 +993,7 @@ func flood_fill(target_image: Image, start_pos: Vector2, fill_color: Color):
 			stack.append(Vector2(x, y + 1))
 			stack.append(Vector2(x, y - 1))
 
+
 func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 	var rand = RandomNumberGenerator.new()
 	rand.seed = Time.get_ticks_msec()
@@ -1014,3 +1027,7 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 				var final_color = crayon_color_premultiplied * opacity + bg_color * (1.0 - opacity)
 
 				target_image.set_pixelv(draw_pos, final_color) 
+
+
+func _on_popup_panel_focus_exited() -> void:
+	%PopupPanel.hide()
