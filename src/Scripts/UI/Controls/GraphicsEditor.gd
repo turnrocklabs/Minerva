@@ -79,7 +79,7 @@ func _ready():
 	
 	#_color_picker = %ColorPickerButton
 	
-	#_draw_layer = _layers_container.get_child(0)
+	_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
 		toggle_controls(SingletonObject.is_graph)
 	elif SingletonObject.is_masking == true:
@@ -545,7 +545,7 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 		# Assuming layers in _layers_container directly correspond to 
 		# the order in LayersList, use the hbox_index
 		pass
-		#_draw_layer = _layers_container.get_child(hbox_index)
+		_draw_layer = _layers_container.get_child(hbox_index)
 		
 		# Update undo history for the previously selected layer
 	if _draw_layer != null:
@@ -1071,4 +1071,3 @@ func _on_buble_radius_value_changed(value: float) -> void:
 
 func _on_popup_panel_focus_exited() -> void:
 	%PopupPanel.hide()
-
