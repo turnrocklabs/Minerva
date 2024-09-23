@@ -47,8 +47,8 @@ func new_text_note():
 	%NoteTextBody.set_deferred("visible", true)#.visible = true
 	%ImageVBoxContainer.visible = false
 	%AudioHBoxContainer.visible = false
-	#%ImageVBoxContainer.call_deferred("queue_free")
-	#%AudioHBoxContainer.call_deferred("queue_free")
+	%ImageVBoxContainer.call_deferred("queue_free")
+	%AudioHBoxContainer.call_deferred("queue_free")
 	return self
 
 
