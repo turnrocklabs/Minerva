@@ -4,10 +4,11 @@ extends PanelContainer
 
 signal masking_ended()
 
-var Buble = preload("res://Scenes/CloudControl.tscn")
+var Bubble = preload("res://Scenes/CloudControl.tscn")
 @onready var _layers_container: Control = %LayersContainer
 @onready var _brush_slider: HSlider = %BrushHSlider
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
+@onready var bubble_radius: HSlider = %BubbleRadius
 
 #@export var _color_picker: ColorPickerButton
 #@export var _mask_check_button: CheckButton
@@ -58,7 +59,7 @@ var brush_color: Color:
 
 var _last_pos: Vector2
 var _draw_begin: bool = false
-var bubble: CloudControl = Buble.instantiate()
+var bubble: CloudControl = Bubble.instantiate()
 var _draw_layer: Layer
 var _mask_layer: Layer
 var _background_images = {}  # Store the background images for each layer
@@ -78,8 +79,8 @@ func _ready():
 	layers_buttons()
 	
 	#_color_picker = %ColorPickerButton
-	
-	_draw_layer = _layers_container.get_child(0)
+	if _layers_container.get_child_count() > 0:
+		_draw_layer = _layers_container.get_child(0)
 	if SingletonObject.is_graph == true:
 		toggle_controls(SingletonObject.is_graph)
 	elif SingletonObject.is_masking == true:
@@ -115,12 +116,12 @@ func _ready():
 func toggle_controls(toggle: bool):
 	#only drawing
 	color_picker_button.visible = toggle
-	%BrushHSlider.visible = toggle
+	_brush_slider.visible = toggle
 
 
 func toggle_masking(toggle: bool):
 	#editing and drawing
-	%BrushHSlider.visible = toggle
+	_brush_slider.visible = toggle
 
 
 func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) -> Vector2:
@@ -378,7 +379,7 @@ func _gui_input(event: InputEvent):
 		layers_buttons()
 
 		# 3. Instantiate and add the bubble to the NEW layer
-		var new_bubble = Buble.instantiate()
+		var new_bubble = Bubble.instantiate()
 		new_layer.add_child(new_bubble)
 		new_bubble.position = new_layer.get_local_mouse_position() # Position bubble
 		_if_cloud(3,0)
@@ -445,7 +446,7 @@ func _on_mask(toggled_on: bool):
 	else:
 		_mask_layer = null
 		_draw_layer.visible = true
-		
+
 #make it like signal,probably through SingeltonObject
 func _on_apply_mask_button_pressed():
 	if _mask_layer and _draw_layer:
@@ -473,7 +474,8 @@ func _on_apply_mask_button_pressed():
 	
 	_masking = false
 	_draw_layer.visible = true  # Ensure the layer is visible after applying the mask
-	
+
+
 func _on_layers_pressed():
 	%PopupPanel.visible = not %PopupPanel.visible
 	var bPos = %Layers.position
@@ -486,7 +488,8 @@ func _on_layers_pressed():
 	
 	%ZoomIn.modulate = Color.WHITE
 	%ZoomOut.modulate = Color.WHITE 
-	
+
+
 func _on_add_layer_pressed():
 	layers_buttons()
 	
@@ -543,9 +546,9 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 	# Ensure a valid index was found
 	if hbox_index != -1:
 		# Assuming layers in _layers_container directly correspond to 
-		# the order in LayersList, use the hbox_index
-		pass
-		_draw_layer = _layers_container.get_child(hbox_index)
+		# the order in LayersList, use the hbox_index	
+		if _layers_container.get_child_count() > 0:
+			_draw_layer = _layers_container.get_child(hbox_index)
 		
 		# Update undo history for the previously selected layer
 	if _draw_layer != null:
@@ -890,6 +893,7 @@ func layers_buttons():
 	selectButton(LayerButton, Hbox) 
 	_if_cloud(0,0)
 
+
 func _on_add_new_pic_file_selected(path: String) -> void:
 	# Check if the file extension is a supported image type
 	var extension = path.get_extension().to_lower()
@@ -918,8 +922,8 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 	else:
 		print("Unsupported file type:", extension)
 	%AddNewPic.visible = false  # Close the file dialog
-	
-	
+
+
 func _on_add_imagelayer_pressed() -> void:
 	%AddNewPic.show()
 
@@ -935,6 +939,7 @@ func _on_additional_tools_item_selected(index: int) -> void:
 			SingletonObject.is_square = true
 		3:
 			SingletonObject.is_cryon = true
+
 
 func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 	var rand = RandomNumberGenerator.new()
@@ -954,7 +959,7 @@ func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 				target_image.set_pixelv(spray_pos, _background_images[_draw_layer.name].get_pixelv(spray_pos))
 			else:
 				target_image.set_pixelv(spray_pos, color)
-	
+
 
 func draw_square(target_image: Image, pos: Vector2, color: Color, square_size: float):
 	var half_size: int = int( square_size / 2)
@@ -1035,7 +1040,7 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 func _on_apply_tail_pressed() -> void:
 	_if_cloud(2,0)
 	
-func _if_cloud(whatToUse: int, bubles_size: float):
+func _if_cloud(whatToUse: int, bubble_size: float):
 	if _draw_layer != null:
 		var has_cloud_control := false  # Flag to check if layer has CloudControl
 
@@ -1048,26 +1053,27 @@ func _if_cloud(whatToUse: int, bubles_size: float):
 				# Ensure cloud_control is valid before proceeding
 				if cloud_control != null:
 					if whatToUse == 1:
-						cloud_control.circle_radius = bubles_size
-						cloud_control.set_circle_radius(bubles_size)
+						cloud_control.circle_radius = bubble_size
+						cloud_control.set_circle_radius(bubble_size)
 					if whatToUse == 2:
 						cloud_control.CancleEditing()
 					if cloud_control.type == CloudControl.Type.CLOUD:
 						%ApplyTail.visible = true
-						%BubleRadius.visible = true
+						bubble_radius.visible = true
 					else:  # Ellipse or Rectangle
 						%ApplyTail.visible = true
-						%BubleRadius.visible = false
+						bubble_radius.visible = false
 
 		# If no CloudControl found in the layer, hide the controls 
 		if not has_cloud_control:
 			%ApplyTail.visible = false
-			%BubleRadius.visible = false 
+			bubble_radius.visible = false 
 				
 
 
 func _on_buble_radius_value_changed(value: float) -> void:
 	_if_cloud(1,value)
+
 
 func _on_popup_panel_focus_exited() -> void:
 	%PopupPanel.hide()

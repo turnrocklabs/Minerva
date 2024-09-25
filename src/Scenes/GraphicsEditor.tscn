@@ -20,6 +20,7 @@
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 
 [node name="GraphicsEditor" type="PanelContainer"]
+texture_filter = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -94,9 +95,9 @@ visible = false
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Apply created mask"
-text = "Apply tail"
+text = "Apply"
 
-[node name="BubleRadius" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="BubbleRadius" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 editor_description = "Clouds bubbles size
 "
@@ -115,7 +116,7 @@ visible = false
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Apply created mask"
-text = "Apply Mask"
+text = "Apply"
 
 [node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
@@ -285,46 +286,11 @@ ok_button_text = "Open"
 file_mode = 0
 access = 2
 
-[node name="PopupMenu" type="PopupMenu" parent="."]
-
-[node name="LayersMenu2" type="ScrollContainer" parent="PopupMenu"]
-unique_name_in_owner = true
-offset_right = 1920.0
-offset_bottom = 1080.0
-follow_focus = true
-horizontal_scroll_mode = 0
-vertical_scroll_mode = 2
-
-[node name="LayersHolder" type="VBoxContainer" parent="PopupMenu/LayersMenu2"]
-layout_mode = 2
-size_flags_horizontal = 3
-alignment = 1
-
-[node name="Name" type="Label" parent="PopupMenu/LayersMenu2/LayersHolder"]
-layout_mode = 2
-text = "Layers"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="LayersList" type="VBoxContainer" parent="PopupMenu/LayersMenu2/LayersHolder"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="AddLayer" type="Button" parent="PopupMenu/LayersMenu2/LayersHolder"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 8
-text = "Add layer"
-
-[node name="AddImagelayer" type="Button" parent="PopupMenu/LayersMenu2/LayersHolder"]
-layout_mode = 2
-text = "Add image layer"
-
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyTail" to="." method="_on_apply_tail_pressed"]
-[connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BubleRadius" to="." method="_on_buble_radius_value_changed"]
+[connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BubbleRadius" to="." method="_on_buble_radius_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Hand" to="." method="_on_hand_pressed"]
@@ -340,5 +306,3 @@ text = "Add image layer"
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
 [connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]
-[connection signal="pressed" from="PopupMenu/LayersMenu2/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
-[connection signal="pressed" from="PopupMenu/LayersMenu2/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
