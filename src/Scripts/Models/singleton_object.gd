@@ -148,7 +148,7 @@ var AtT: AudioToTexts = AudioToTexts.new()
 #region UI Scaling
 var initial_ui_scale: float = 1
 var min_ui_scale: = 1.0
-var max_ui_scale: = 2.0
+var max_ui_scale: = 1.5
 var scaling_factor: = 0.04
 
 func increment_scale_ui() -> void:

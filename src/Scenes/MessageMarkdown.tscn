@@ -19,7 +19,7 @@
 
 [sub_resource type="Theme" id="Theme_ca11y"]
 RichTextLabel/colors/font_selected_color = Color(0, 0, 0, 0)
-RichTextLabel/colors/selection_color = Color(0.42, 0.884, 1, 0.8)
+RichTextLabel/colors/selection_color = Color(0.352941, 0.352941, 0.823529, 0.8)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_4tpql"]
 bg_color = Color(0.643137, 0.117647, 0.388235, 1)
@@ -37,7 +37,7 @@ content_margin_left = 15.0
 content_margin_top = 15.0
 content_margin_right = 15.0
 content_margin_bottom = 15.0
-bg_color = Color(0, 0.592157, 0.478431, 1)
+bg_color = Color(0, 0.780392, 0.270588, 1)
 corner_radius_top_left = 20
 corner_radius_top_right = 20
 corner_radius_bottom_right = 20
@@ -107,8 +107,8 @@ script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
 right_control = NodePath("MarginContainer/HBoxContainer/RightSplitter")
 label = NodePath("MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel")
-user_message_color = Color(0.164706, 0.345098, 0.831373, 1)
-bot_message_color = Color(0, 0.592157, 0.470588, 1)
+user_message_color = Color(0.0823529, 0.521569, 0.960784, 1)
+bot_message_color = Color(0, 0.780392, 0.270588, 1)
 error_message_color = Color(0.737255, 0, 0.109804, 1)
 
 [node name="MarginContainer" type="MarginContainer" parent="."]

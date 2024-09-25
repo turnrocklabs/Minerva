@@ -17,6 +17,11 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 @onready var graphics_editor: GraphicsEditor = %GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
+#this are control nodes for the Ctrl+G popup
+@onready var jump_to_line_panel: PopupPanel = %JumpToLinePanel
+@onready var jump_to_line_edit: LineEdit = %JumpToLineEdit
+@onready var jump_to_line_label: RichTextLabel = %JumpToLineLabel
+
 enum Type {
 	TEXT,
 	GRAPHICS,
@@ -86,7 +91,7 @@ func _ready():
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 	SingletonObject.UpdateLastSavePath.connect(update_last_path)
-	get_node("%CodeEdit").text_changed.connect(_on_editor_changed)
+	code_edit.text_changed.connect(_on_editor_changed)
 
 
 func update_last_path(new_path: String) -> void:
@@ -98,7 +103,7 @@ func _load_text_file(filename: String):
 	if fa_object:
 		#file_path = file
 		code_edit.text = fa_object.get_as_text()
-		code_edit.text_changed.emit(code_edit.text) # the signal is not emitted for some reason
+		code_edit.text_changed.emit() # the signal is not emitted for some reason
 		code_edit.saved_content = code_edit.text
 	else:
 		code_edit.text = "Could not retrive file"
@@ -110,13 +115,6 @@ func _load_graphics_file(filename: String):
 	graphics_editor.setup_from_image(image)
 	# %SaveButton.disabled = false
 
-# func _gui_input(event: InputEvent):
-# 	print(event)
-# 	if not event is InputEventKey: return
-
-# 	if event.is_action_pressed("save"):
-# 		print("SAVEE SAVEEEE ", get_viewport().gui_get_focus_owner())
-# 		get_viewport().set_input_as_handled()
 
 ## Changes the function that runs when user clicks the "save" button
 ## from the [method prompt_close] to [parameter save_function].[br]
@@ -197,7 +195,7 @@ func save():
 		Type.TEXT, Type.NOTE_EDITOR:
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
-			get_node("%GraphicsEditor").is_image_saved = true
+			graphics_editor.is_image_saved = true
 			SingletonObject.UpdateUnsavedTabIcon.emit()
 			pass # TODO: implement for graphics files
 
@@ -211,24 +209,23 @@ func is_content_saved() -> bool:
 			var memory_item: MemoryItem = get_meta('associated_object')
 			return code_edit.text == memory_item.Content
 		Type.GRAPHICS:
-			if get_node("%GraphicsEditor"):
-				return get_node("%GraphicsEditor").is_image_saved
+			if graphics_editor:
+				return graphics_editor.is_image_saved
 			else:
 				return false
 	
 	return false
 
 
-func _on_gui_input(event: InputEvent) -> void:
-	check_jump_to_line(event)
-
-
 func _on_code_edit_gui_input(event: InputEvent) -> void:
-	check_jump_to_line(event)
+	if event.is_action_pressed("jump_to_line"):
+		jump_to_line()
+	elif  event.is_action_pressed("find_string"):
+		pass
 
 
-func check_jump_to_line(event: InputEvent) -> void:
-	if event.is_action_pressed("jump_to_line")and !%JumpToLinePanel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
+func jump_to_line() -> void:
+	if !jump_to_line_panel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
 		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to"
 		var column = code_edit.get_caret_column()
 		if column < 1:
@@ -241,26 +238,24 @@ func check_jump_to_line(event: InputEvent) -> void:
 			line_count = 1
 		
 		var new_text = string_format % [line, column, 1, line_count]
-		%JumpToLineLabel.text = new_text
-		%JumpToLineEdit.call_deferred("grab_focus")
-		%JumpToLinePanel.call_deferred("show")
+		jump_to_line_label.text = new_text
+		jump_to_line_edit.call_deferred("grab_focus")
+		jump_to_line_panel.call_deferred("show")
 
 
 func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
-	%JumpToLinePanel.call_deferred("hide")
-	var line_to_jump_to: = 0
+	jump_to_line_panel.call_deferred("hide")
 	if new_text.is_valid_int():
-		line_to_jump_to = new_text.to_int()
-		code_edit.set_caret_line(line_to_jump_to -1)
+		code_edit.set_caret_line(new_text.to_int() -1)
 
 
 func _on_editor_changed(text: String = ""):
-	print("Editor content changed")
 	if text != "":
-		%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
+		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
+		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
 		SingletonObject.UpdateUnsavedTabIcon.emit()
-		_file_saved = true
-		file_saved_in_disc = true
+		_file_saved = false
+		file_saved_in_disc = false
 
 	if has_meta("memory_item"):
 		var item: MemoryItem = get_meta("memory_item")
@@ -388,12 +383,12 @@ func undo_action():
 func clear_text():
 	if Type.TEXT != type:
 		return
-	%CodeEdit.clear()
+	code_edit.clear()
 	code_edit.grab_focus()
 
 
 func _on_audio_btn_pressed():
-	SingletonObject.AtT.FieldForFilling = %CodeEdit
+	SingletonObject.AtT.FieldForFilling = code_edit
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %AudioBTN
 	%AudioBTN.modulate = Color(Color.LIME_GREEN)
