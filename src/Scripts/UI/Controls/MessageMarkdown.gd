@@ -99,9 +99,10 @@ func _toggle_controls(enabled:= true):
 		get_tree().call_group("controls", "set_disabled", not enabled)
 
 func _setup_user_message():
-	right_control.visible = true
-	right_control.get_node("%AvatarName").text = SingletonObject.preferences_popup.get_user_initials()
-	right_control.get_node("%MsgSenderAvatar").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
+	%LeftMarginControl.visible = true
+	#right_control.visible = true
+	#right_control.get_node("%AvatarName").text = SingletonObject.preferences_popup.get_user_initials()
+	#right_control.get_node("%MsgSenderAvatar").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
 	label.markdown_text = history_item.Message
 	label.set("theme_override_colors/default_color", Color.WHITE)
 
@@ -112,10 +113,10 @@ func _setup_user_message():
 
 
 func _setup_model_message():
-	left_control.visible = true
-
-	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
-	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
+	#left_control.visible = true
+	%RightMarginControl.visible = true
+	#left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
+	#left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
 
 	for ch in %ImagesGridContainer.get_children(): ch.free()
 

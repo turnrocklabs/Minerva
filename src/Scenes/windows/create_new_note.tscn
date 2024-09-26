@@ -13,7 +13,8 @@ initial_position = 2
 size = Vector2i(420, 730)
 transient = true
 exclusive = true
-min_size = Vector2i(320, 680)
+min_size = Vector2i(400, 700)
+content_scale_size = Vector2i(2, 2)
 script = ExtResource("1_jtoh0")
 
 [node name="ImageNoteFileDialog" type="FileDialog" parent="."]
@@ -46,14 +47,15 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
 
 [node name="HBoxContainer" type="HBoxContainer" parent="Panel/MarginContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 alignment = 1
-
-[node name="Control" type="Control" parent="Panel/MarginContainer/HBoxContainer"]
-layout_mode = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Panel/MarginContainer/HBoxContainer"]
 layout_mode = 2
@@ -259,9 +261,6 @@ size_flags_vertical = 8
 tooltip_text = "Add note"
 disabled = true
 icon = ExtResource("5_nij35")
-
-[node name="Control2" type="Control" parent="Panel/MarginContainer/HBoxContainer"]
-layout_mode = 2
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
