@@ -19,7 +19,7 @@ var selectedLayer: String
 var selectedIndex: int
 var loaded_layers: Array[Layer]
 #static var layer_Number = 0 ## No need to make it static, if its static the value is sharred across instances
-var layer_Number = 0
+var layer_number = 0
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
 
@@ -74,7 +74,8 @@ var _masking: bool:
 
 var is_image_saved: bool = false
 var layer_undo_histories = {} # Dictionary to store undo histories for each layer
-# Called when the node enters the scene tree for the first time.
+
+
 func _ready():
 	layers_buttons()
 	
@@ -87,7 +88,6 @@ func _ready():
 		#editing and drawing
 		toggle_masking(SingletonObject.is_masking)
 		
-	#layer_Number += 1
 	setup(Vector2i(2000, 2000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
@@ -99,7 +99,7 @@ func _ready():
 		#%PickLayers.add_item(layer.name)#get_item_text(index)
 	
 	if loaded_layers.size() > 0:
-		layer_Number = loaded_layers.size()
+		layer_number = loaded_layers.size()
 		SingletonObject.is_graph = true
 		toggle_controls(true)
 	
@@ -110,7 +110,6 @@ func _ready():
 	SingletonObject.is_cryon = false
 	
 	_can_resize = true 
-	layer_Number = 0
 
 
 func toggle_controls(toggle: bool):
@@ -224,7 +223,8 @@ func create_image(vec:Vector2):
 	   # setup_from_created_image(img) 
 	
 func _create_layer(from: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
-	var layer = Layer.create(from, "Layer " + str(layer_Number)) 
+	layer_number += 1
+	var layer = Layer.create(from, "Layer " + str(layer_number)) 
 	_layers_container.add_child(layer, false, internal)
 	return layer
 
@@ -299,7 +299,8 @@ func _gui_input(event: InputEvent):
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 		%Brushes.select(0)
 		%PenAdditionalTools.visible = true
-		
+	
+	
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -372,7 +373,6 @@ func _gui_input(event: InputEvent):
 		var new_layer_image = Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8) 
 		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
 		var new_layer = _create_layer(new_layer_image)
-		layer_Number += 1
 		_background_images[new_layer.name] = new_layer_image.duplicate()
 
 		# 2. Add layer button to UI 
@@ -494,9 +494,6 @@ func _on_add_layer_pressed():
 	layers_buttons()
 	
 	create_image(Vector2(800,800))
-	
-	layer_Number += 1
-	
 	# Automatically select the newly created layer
 
 func RemoveLayer(Hbox:HBoxContainer, _index:int):
@@ -510,7 +507,7 @@ func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	var layer_to_remove = _layers_container.get_child(hbox_index)
 	layer_to_remove.queue_free()
 	
-	layer_Number -= 1
+	layer_number -= 1
 	
 	# Synchronize undo history to ensure consistency
 	layer_undo_histories.erase(layer_to_remove.name) 
@@ -524,8 +521,8 @@ func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	_rotating = false
 	
 	# If there are no layers left, reset the editor
-	if layer_Number <= 0:
-		layer_Number = 0
+	if layer_number <= 0:
+		#layer_number = 0
 		create_image(Vector2(800,800))
 		return # Nothing to select
 		
@@ -850,12 +847,12 @@ func _resize_layers(size_factor: float, resize_width: bool = true) -> void:
 
 func layers_buttons():
 	var Hbox = HBoxContainer.new()
-	Hbox.name = str("Layer" + str(layer_Number))
+	Hbox.name = str("Layer " + str(layer_number))
 	
 	Hbox.set("theme_override_constants/separation", 12)
 	
 	var LayerButton = Button.new()
-	LayerButton.text = "Layer"+str(layer_Number)
+	LayerButton.text = "Layer "+str(layer_number)
 	LayerButton.connect("pressed", self.selectButton.bind(LayerButton,Hbox))
 	
 	var VisibleButton = Button.new()
@@ -863,7 +860,7 @@ func layers_buttons():
 	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
 	
 	var RemoveButton = Button.new()
-	RemoveButton.connect("pressed", self.RemoveLayer.bind(Hbox, layer_Number))
+	RemoveButton.connect("pressed", self.RemoveLayer.bind(Hbox, layer_number))
 	RemoveButton.icon = preload("res://assets/icons/remove.svg")
 	
 	%LayersList.add_child(Hbox)
@@ -886,7 +883,6 @@ func layers_buttons():
 	Hbox.add_child(Rotate) 
 	Hbox.add_child(Scale)
 	
-	layer_Number +=1
 	if %LayersList.get_child_count() != 1:
 		Hbox.add_child(RemoveButton)
 	
@@ -910,10 +906,6 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 
 		# Store the loaded image as the background for this layer
 		_background_images[new_layer.name] = image_to_load.duplicate()
-
-		# Increment the layer counter
-		layer_Number += 1
-
 		# Add layer button to the UI
 		layers_buttons()
  
