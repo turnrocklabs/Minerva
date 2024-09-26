@@ -654,3 +654,7 @@ func set_circle_radius(new_radius: float) -> void:
 func CancleEditing():
 	editing = not editing
 	queue_redraw()
+
+func ApplyEditing():
+	editing = false
+	queue_redraw()
