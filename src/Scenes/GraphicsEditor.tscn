@@ -20,9 +20,15 @@
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 
 [node name="GraphicsEditor" type="PanelContainer"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
+anchors_preset = -1
+anchor_left = 0.046
+anchor_top = 0.05
+anchor_right = 0.5
+anchor_bottom = 0.432
+offset_left = -88.32
+offset_top = -54.0
+offset_right = 960.0
+offset_bottom = 613.44
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
@@ -82,10 +88,10 @@ layout_mode = 2
 size_flags_vertical = 4
 selected = 0
 item_count = 3
-popup/item_0/text = "Plain"
-popup/item_1/text = "Speech"
+popup/item_0/text = "Speech"
+popup/item_1/text = "Thought"
 popup/item_1/id = 1
-popup/item_2/text = "Thought"
+popup/item_2/text = "Plain"
 popup/item_2/id = 2
 
 [node name="ApplyTail" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
@@ -138,7 +144,6 @@ focus_mode = 0
 theme_override_constants/h_separation = 12
 text = "Color"
 icon_alignment = 1
-color = Color(0.447059, 0.447059, 0.67451, 1)
 
 [node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 visible = false

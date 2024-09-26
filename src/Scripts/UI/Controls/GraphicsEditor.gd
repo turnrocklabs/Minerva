@@ -380,7 +380,8 @@ func _gui_input(event: InputEvent):
 		# 3. Instantiate and add the bubble to the NEW layer
 		var new_bubble = Buble.instantiate()
 		new_layer.add_child(new_bubble)
-		new_bubble.position = new_layer.get_local_mouse_position() # Position bubble
+		new_bubble.size = Vector2(2000,2000)
+		new_bubble.position = new_layer.get_local_mouse_position() + Vector2(-1000,-700)
 		_if_cloud(3,0)
 		clouding = false
 
@@ -534,6 +535,7 @@ func RemoveLayer(Hbox:HBoxContainer, _index:int):
 		selectButton(new_button, new_hbox)
 
 func selectButton(btn: Button, Hbox: HBoxContainer):
+	_if_cloud(4,0)
 	# Set the selected button to green
 	btn.modulate = Color.LIME_GREEN
 	
@@ -1052,6 +1054,8 @@ func _if_cloud(whatToUse: int, bubles_size: float):
 						cloud_control.set_circle_radius(bubles_size)
 					if whatToUse == 2:
 						cloud_control.CancleEditing()
+					if whatToUse == 4:
+						cloud_control.ApplyEditing()
 					if cloud_control.type == CloudControl.Type.CLOUD:
 						%ApplyTail.visible = true
 						%BubleRadius.visible = true
