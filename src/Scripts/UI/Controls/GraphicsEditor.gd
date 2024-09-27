@@ -26,7 +26,6 @@ var image: Image:
 	get: return _draw_layer.image if _draw_layer else null
 
 var drawing:bool = false
-var drawing_brush_active: bool = true
 var erasing:bool = false
 var clouding:bool = false
 var zoomIn:bool = false
@@ -249,7 +248,7 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 	var sy = 1 if y1 < y2 else -1
 	var err = dx - dy
 
-	while true and drawing_brush_active:
+	while true and drawing:
 		pixels.append(Vector2(x1, y1))
 		if x1 == x2 and y1 == y2:
 			break
@@ -396,7 +395,7 @@ func _gui_input(event: InputEvent):
 				
 			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
-	if event is InputEventMouseMotion and drawing and drawing_brush_active:
+	if event is InputEventMouseMotion and drawing:
 		is_image_saved = false
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 		# Get mouse position relative to the active layer
@@ -580,10 +579,6 @@ func LayerVisible(Hbox: HBoxContainer):
 
 
 func _on_brushes_item_selected(index):
-	if index != 0:
-		drawing_brush_active = false
-	else:
-		drawing_brush_active = true
 	#off other tools not drawing
 	%MgIcon.visible = false
 	erasing = false
@@ -598,7 +593,6 @@ func _on_brushes_item_selected(index):
 	%DialogClouds.visible = false
 	%PenAdditionalTools.visible = false
 	%ApplyMaskButton.visible = false
-	#%ApplyTail.visible = false
 	match index:
 		0:
 			%PenAdditionalTools.visible = true
@@ -797,56 +791,57 @@ func _scale(Hbox: HBoxContainer) -> void:
 		active_transfer_button.modulate = Color.LIME_GREEN 
 		
 func _on_arrowleft_pressed() -> void:
-	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontallyc
+	_resize_layers()  # Increase width by 10%, center horizontallyc
 	
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
-			layer.position.x -= layer.size.x * 0.09 # Move right by 5% of the new width 
+			layer.position.x -= 60 # Move right by 5% of the new width 
 			
 func _on_arrow_right_pressed() -> void:
-	_resize_layers(1.1, 1.0)  # Increase width by 10%, center horizontally
+	_resize_layers()  # Increase width by 10%, center horizontally
 
 func _on_arrow_top_pressed() -> void:
-	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
+	_resize_layers(false) # Increase height by 10%, center vertically 
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
-			layer.position.y -= layer.size.y * 0.09 # Move right by 5% of the new width 
+			layer.position.y -= 60
 
 func _on_arrow_bottom_pressed() -> void:
-	_resize_layers(1.1,false) # Increase height by 10%, center vertically 
-
-func _resize_layers(size_factor: float, resize_width: bool = true) -> void:
+	_resize_layers(false)
 	
+func _resize_layers(resize_width: bool = true) -> void:
+	var pixels_to_add = 60
+
 	%MgIcon.visible = false
 	zoomIn = false
 	zoomOut = false
-	
+
 	%ZoomIn.modulate = Color.WHITE
 	%ZoomOut.modulate = Color.WHITE 
-	
+
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			var old_size = layer.image.get_size()
 			var new_size: Vector2
+			var blit_position := Vector2.ZERO  # Default blit position
 
 			if resize_width:
-				new_size = Vector2i(old_size.x * size_factor, old_size.y)
+				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y) 
+				# NO SHIFT NEEDED for expanding to the right 
 			else:
-				new_size = Vector2i(old_size.x, old_size.y * size_factor)
+				new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
+				# NO SHIFT NEEDED for expanding to the bottom
 
-			# Store the original content of the layer
-			var temp_image := Image.new()
-			temp_image.copy_from(layer.image)
-			# Resize the layer's image
-			layer.image.resize(new_size.x, new_size.y, Image.INTERPOLATE_BILINEAR)
+			var resized_image := Image.create(new_size.x, new_size.y, false, Image.FORMAT_RGBA8)
+			resized_image.fill(Color.WHITE)
+			resized_image.blit_rect(layer.image, Rect2(Vector2.ZERO, old_size), blit_position)
+
+			layer.image = resized_image
 			layer.size = new_size
-
-			# Redraw the original content onto the resized image
-			layer.image.blit_rect(temp_image, Rect2(Vector2.ZERO, old_size), Vector2.ZERO)
-			layer.update()
-
+			layer.update() 
+			
 func layers_buttons():
 	var Hbox = HBoxContainer.new()
 	Hbox.name = str("Layer" + str(layer_Number))
