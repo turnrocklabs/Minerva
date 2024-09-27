@@ -3,7 +3,7 @@ extends TextureRect
 
 const _scene = preload("res://Scenes/Layer.tscn")
 var image: Image
-
+var layer_name
 var left
 var right
 var top
@@ -17,7 +17,7 @@ var dragging:bool
 static func create(image_: Image, name_:String) -> Layer:
 	var layer: Layer = _scene.instantiate()
 	layer.image = image_
-	layer.name = name_
+	layer.layer_name = name_
 	return layer
 
 
