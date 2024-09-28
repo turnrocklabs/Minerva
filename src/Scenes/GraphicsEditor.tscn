@@ -55,6 +55,7 @@ theme_override_constants/h_separation = 16
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "tool selection dropdown"
 selected = 0
 item_count = 5
 popup/item_0/icon = ExtResource("2_yagwo")
@@ -70,6 +71,7 @@ popup/item_4/id = 4
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "brush styles"
 selected = 0
 fit_to_longest_item = false
 item_count = 4
@@ -100,9 +102,9 @@ visible = false
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Apply created mask"
-text = "Apply tail"
+text = "Apply"
 
-[node name="BubleRadius" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="BubbleRadius" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 editor_description = "Clouds bubbles size
 "
@@ -121,7 +123,7 @@ visible = false
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Apply created mask"
-text = "Apply Mask"
+text = "Apply"
 
 [node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
@@ -140,6 +142,7 @@ unique_name_in_owner = true
 editor_description = "Brush color"
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "active color for drawing"
 focus_mode = 0
 theme_override_constants/h_separation = 12
 text = "Color"
@@ -153,6 +156,7 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "click to activate dragging"
 icon = ExtResource("10_ax45b")
 
 [node name="Zoom" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
@@ -169,14 +173,16 @@ layout_mode = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+[node name="ZoomInButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+tooltip_text = "zoom out the image"
 icon = ExtResource("6_4tqp6")
 
-[node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+[node name="ZoomOutButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+tooltip_text = "zoom out the image"
 icon = ExtResource("7_hti8r")
 
 [node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
@@ -211,6 +217,7 @@ icon = ExtResource("12_hpuv1")
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "click to see dropdown for adding layers"
 icon = ExtResource("18_yov21")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
@@ -290,60 +297,22 @@ ok_button_text = "Open"
 file_mode = 0
 access = 2
 
-[node name="PopupMenu" type="PopupMenu" parent="."]
-
-[node name="LayersMenu2" type="ScrollContainer" parent="PopupMenu"]
-unique_name_in_owner = true
-offset_right = 1920.0
-offset_bottom = 1080.0
-follow_focus = true
-horizontal_scroll_mode = 0
-vertical_scroll_mode = 2
-
-[node name="LayersHolder" type="VBoxContainer" parent="PopupMenu/LayersMenu2"]
-layout_mode = 2
-size_flags_horizontal = 3
-alignment = 1
-
-[node name="Name" type="Label" parent="PopupMenu/LayersMenu2/LayersHolder"]
-layout_mode = 2
-text = "Layers"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="LayersList" type="VBoxContainer" parent="PopupMenu/LayersMenu2/LayersHolder"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="AddLayer" type="Button" parent="PopupMenu/LayersMenu2/LayersHolder"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 8
-text = "Add layer"
-
-[node name="AddImagelayer" type="Button" parent="PopupMenu/LayersMenu2/LayersHolder"]
-layout_mode = 2
-text = "Add image layer"
-
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyTail" to="." method="_on_apply_tail_pressed"]
-[connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BubleRadius" to="." method="_on_buble_radius_value_changed"]
+[connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BubbleRadius" to="." method="_on_buble_radius_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Hand" to="." method="_on_hand_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomInButton" to="." method="_on_zoom_in_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomOutButton" to="." method="_on_zoom_out_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/Arrowleft" to="." method="_on_arrowleft_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowTop" to="." method="_on_arrow_top_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Layers" to="." method="_on_layers_pressed"]
-[connection signal="focus_exited" from="PopupPanel" to="." method="_on_popup_panel_focus_exited"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
 [connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
 [connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]
-[connection signal="pressed" from="PopupMenu/LayersMenu2/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
-[connection signal="pressed" from="PopupMenu/LayersMenu2/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]

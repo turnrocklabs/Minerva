@@ -1,4 +1,4 @@
-[gd_scene load_steps=29 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=28 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
@@ -19,7 +19,7 @@
 
 [sub_resource type="Theme" id="Theme_ca11y"]
 RichTextLabel/colors/font_selected_color = Color(0, 0, 0, 0)
-RichTextLabel/colors/selection_color = Color(0.42, 0.884, 1, 0.8)
+RichTextLabel/colors/selection_color = Color(0.352941, 0.352941, 0.823529, 0.8)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_4tpql"]
 bg_color = Color(0.643137, 0.117647, 0.388235, 1)
@@ -37,7 +37,7 @@ content_margin_left = 15.0
 content_margin_top = 15.0
 content_margin_right = 15.0
 content_margin_bottom = 15.0
-bg_color = Color(0, 0.592157, 0.478431, 1)
+bg_color = Color(0, 0.780392, 0.270588, 1)
 corner_radius_top_left = 20
 corner_radius_top_right = 20
 corner_radius_bottom_right = 20
@@ -46,8 +46,6 @@ corner_radius_bottom_left = 20
 [sub_resource type="LabelSettings" id="LabelSettings_3dxq6"]
 font_size = 10
 font_color = Color(0.886275, 0.886275, 0.886275, 1)
-
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_2nrlj"]
 
 [sub_resource type="Resource" id="Resource_de4hw"]
 resource_local_to_scene = true
@@ -107,8 +105,8 @@ script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
 right_control = NodePath("MarginContainer/HBoxContainer/RightSplitter")
 label = NodePath("MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel")
-user_message_color = Color(0.164706, 0.345098, 0.831373, 1)
-bot_message_color = Color(0, 0.592157, 0.470588, 1)
+user_message_color = Color(0.0823529, 0.521569, 0.960784, 1)
+bot_message_color = Color(0, 0.780392, 0.270588, 1)
 error_message_color = Color(0.737255, 0, 0.109804, 1)
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
@@ -122,18 +120,26 @@ theme_override_constants/margin_bottom = 5
 [node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
 layout_mode = 2
 
-[node name="LeftSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
+[node name="LeftMarginControl" type="Control" parent="MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+
+[node name="RightSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
 visible = false
 layout_mode = 2
 size_flags_vertical = 8
 
-[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/HBoxContainer/LeftSplitter"]
+[node name="MsgSenderAvatar" type="PanelContainer" parent="MarginContainer/HBoxContainer/RightSplitter"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_styles/panel = SubResource("StyleBoxFlat_4tpql")
 
-[node name="Label" type="Label" parent="MarginContainer/HBoxContainer/LeftSplitter/PanelContainer"]
+[node name="AvatarName" type="Label" parent="MarginContainer/HBoxContainer/RightSplitter/MsgSenderAvatar"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "O4"
 label_settings = SubResource("LabelSettings_l0yj0")
@@ -202,8 +208,8 @@ label_settings = SubResource("LabelSettings_3dxq6")
 [node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
 focus_mode = 2
+theme_type_variation = &"chatRichTextLabel"
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
-theme_override_styles/focus = SubResource("StyleBoxEmpty_2nrlj")
 bbcode_enabled = true
 text = "Certainly! Here's a simple Python program that calculates the factorial of a number provided by the user:
 
@@ -313,26 +319,31 @@ icon = ExtResource("16_rwt48")
 
 [node name="RichTextLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
+theme_type_variation = &"chatRichTextLabel"
 threaded = true
 
-[node name="RightSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
+[node name="LeftSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
 visible = false
 layout_mode = 2
 size_flags_vertical = 8
 
-[node name="MsgSenderAvatar" type="PanelContainer" parent="MarginContainer/HBoxContainer/RightSplitter"]
-unique_name_in_owner = true
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/HBoxContainer/LeftSplitter"]
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_styles/panel = SubResource("StyleBoxFlat_4tpql")
 
-[node name="AvatarName" type="Label" parent="MarginContainer/HBoxContainer/RightSplitter/MsgSenderAvatar"]
-unique_name_in_owner = true
+[node name="Label" type="Label" parent="MarginContainer/HBoxContainer/LeftSplitter/PanelContainer"]
 layout_mode = 2
 text = "O4"
 label_settings = SubResource("LabelSettings_l0yj0")
 horizontal_alignment = 1
+
+[node name="RightMarginControl" type="Control" parent="MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
 
 [connection signal="gui_input" from="." to="." method="_on_gui_input"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/HideButton" to="." method="_on_hide_button_pressed"]

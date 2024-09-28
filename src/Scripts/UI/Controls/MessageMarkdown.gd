@@ -99,6 +99,7 @@ func _toggle_controls(enabled:= true):
 		get_tree().call_group("controls", "set_disabled", not enabled)
 
 func _setup_user_message():
+	#%LeftMarginControl.visible = true
 	right_control.visible = true
 	right_control.get_node("%AvatarName").text = SingletonObject.preferences_popup.get_user_initials()
 	right_control.get_node("%MsgSenderAvatar").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
@@ -112,8 +113,8 @@ func _setup_user_message():
 
 
 func _setup_model_message():
+	%RightMarginControl.visible = true
 	left_control.visible = true
-
 	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
 	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
 
