@@ -457,8 +457,9 @@ func _on_mask(toggled_on: bool):
 		return
 	if toggled_on:
 		# Create a temporary mask for background and foreground
-		var bgd_img = Image.new()
-		Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8)
+		#var bgd_img = Image.new() # no need for creating an image like this we are creating it with create_empty
+		# Image.create() is depricated use Image.create_empty() instead
+		var bgd_img = Image.create_empty(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8)
 		bgd_img.fill(masking_color)
 		var background_mask_layer = _create_layer(bgd_img, INTERNAL_MODE_BACK)
 		background_mask_layer.layer_name = "BackgroundMaskLayer"
@@ -876,6 +877,7 @@ func _resize_layers(size_factor: float, resize_width: bool = true) -> void:
 
 func layers_buttons():
 	var Hbox = HBoxContainer.new()
+	
 	Hbox.name = str("Layer " + str(layer_number))
 	
 	Hbox.set("theme_override_constants/separation", 12)
