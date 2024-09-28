@@ -121,8 +121,9 @@ access = 2
 [node name="JumpToLinePanel" type="PopupPanel" parent="."]
 unique_name_in_owner = true
 initial_position = 2
-size = Vector2i(400, 125)
-max_size = Vector2i(32768, 125)
+size = Vector2i(400, 140)
+max_size = Vector2i(16384, 140)
+content_scale_size = Vector2i(2, 2)
 
 [node name="Panel" type="Panel" parent="JumpToLinePanel"]
 anchors_preset = 15
@@ -131,7 +132,7 @@ anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 396.0
-offset_bottom = 121.0
+offset_bottom = 136.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"bgPanel"
@@ -140,7 +141,7 @@ theme_type_variation = &"bgPanel"
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 396.0
-offset_bottom = 121.0
+offset_bottom = 136.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -161,7 +162,7 @@ anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 396.0
-offset_bottom = 121.0
+offset_bottom = 136.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 6
@@ -183,7 +184,6 @@ threaded = true
 [node name="Control2" type="Control" parent="JumpToLinePanel/HBoxContainer"]
 layout_mode = 2
 
-[connection signal="gui_input" from="." to="." method="_on_gui_input"]
 [connection signal="gui_input" from="VBoxContainer/CodeEdit" to="." method="_on_code_edit_gui_input"]
 [connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]

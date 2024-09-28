@@ -10,10 +10,11 @@
 auto_translate_mode = 1
 title = "Create New Note"
 initial_position = 2
-size = Vector2i(420, 700)
+size = Vector2i(420, 730)
 transient = true
 exclusive = true
-min_size = Vector2i(144, 0)
+min_size = Vector2i(400, 700)
+content_scale_size = Vector2i(2, 2)
 script = ExtResource("1_jtoh0")
 
 [node name="ImageNoteFileDialog" type="FileDialog" parent="."]
@@ -30,43 +31,44 @@ access = 2
 filters = PackedStringArray("*.png", "*.jpg", "*.webp", "*.jpeg", "*.svg", "*.bmp")
 
 [node name="Panel" type="Panel" parent="."]
-custom_minimum_size = Vector2(425, 0)
+custom_minimum_size = Vector2(425, 680)
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = -1.0
-offset_bottom = 4.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Panel"]
-custom_minimum_size = Vector2(400, 0)
+[node name="MarginContainer" type="MarginContainer" parent="Panel"]
 layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -64.0
-offset_top = -339.5
-offset_right = 64.0
-offset_bottom = 339.5
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Panel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel/MarginContainer/HBoxContainer"]
+layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 16
 alignment = 1
 
-[node name="CreateNewNoteLabel" type="Label" parent="Panel/VBoxContainer"]
+[node name="CreateNewNoteLabel" type="Label" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Create new note"
 
-[node name="NoteHead" type="TextEdit" parent="Panel/VBoxContainer"]
+[node name="NoteHead" type="TextEdit" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
@@ -75,47 +77,47 @@ size_flags_stretch_ratio = 1.5
 placeholder_text = "Note Title"
 caret_blink = true
 
-[node name="btnVoiceForHeader" type="Button" parent="Panel/VBoxContainer"]
+[node name="btnVoiceForHeader" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "record note title"
 icon = ExtResource("2_y0meg")
 
-[node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="Panel/VBoxContainer"]
+[node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="PickNoteLabel" type="Label" parent="Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+[node name="PickNoteLabel" type="Label" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/NoteTypeButtonGroupVBox"]
 layout_mode = 2
 text = "Pick Note Type:"
 
-[node name="TextNoteCheckBox" type="CheckBox" parent="Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+[node name="TextNoteCheckBox" type="CheckBox" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/NoteTypeButtonGroupVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 button_pressed = true
 button_group = ExtResource("3_0e5iv")
 text = "Text Note"
 
-[node name="AudioCheckBox" type="CheckBox" parent="Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+[node name="AudioCheckBox" type="CheckBox" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/NoteTypeButtonGroupVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 button_group = ExtResource("3_0e5iv")
 text = "Audio Note"
 
-[node name="ImageCheckBox" type="CheckBox" parent="Panel/VBoxContainer/NoteTypeButtonGroupVBox"]
+[node name="ImageCheckBox" type="CheckBox" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/NoteTypeButtonGroupVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 button_group = ExtResource("3_0e5iv")
 text = "Image Note"
 
-[node name="TextNoteControl" type="Control" parent="Panel/VBoxContainer"]
+[node name="TextNoteControl" type="Control" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 350)
 layout_mode = 2
 size_flags_vertical = 4
 
-[node name="NoteDescription" type="TextEdit" parent="Panel/VBoxContainer/TextNoteControl"]
+[node name="NoteDescription" type="TextEdit" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/TextNoteControl"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -131,13 +133,13 @@ size_flags_stretch_ratio = 8.11
 placeholder_text = "Type a Note Description or press the mic button for a trancription"
 wrap_mode = 1
 
-[node name="AudioControl" type="Control" parent="Panel/VBoxContainer"]
+[node name="AudioControl" type="Control" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(0, 350)
 layout_mode = 2
 
-[node name="RecordAudioButton" type="Button" parent="Panel/VBoxContainer/AudioControl"]
+[node name="RecordAudioButton" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl"]
 unique_name_in_owner = true
 layout_mode = 0
 offset_left = 85.0
@@ -146,7 +148,7 @@ offset_right = 290.0
 offset_bottom = 190.0
 text = "Press To Record Note"
 
-[node name="PlayAudioButton" type="Button" parent="Panel/VBoxContainer/AudioControl"]
+[node name="PlayAudioButton" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl"]
 unique_name_in_owner = true
 layout_mode = 0
 offset_right = 12.0
@@ -154,17 +156,17 @@ offset_bottom = 40.0
 disabled = true
 text = "play audio "
 
-[node name="AudioNoteStreamPlayer" type="AudioStreamPlayer" parent="Panel/VBoxContainer/AudioControl"]
+[node name="AudioNoteStreamPlayer" type="AudioStreamPlayer" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl"]
 unique_name_in_owner = true
 volume_db = 1.0
 
-[node name="ImageControl" type="Control" parent="Panel/VBoxContainer"]
+[node name="ImageControl" type="Control" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(0, 350)
 layout_mode = 2
 
-[node name="DropImageControl" type="Control" parent="Panel/VBoxContainer/ImageControl"]
+[node name="DropImageControl" type="Control" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -174,7 +176,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_default_cursor_shape = 7
 
-[node name="ImagePreview" type="TextureRect" parent="Panel/VBoxContainer/ImageControl/DropImageControl"]
+[node name="ImagePreview" type="TextureRect" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl/DropImageControl"]
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(0, 200)
@@ -190,7 +192,7 @@ grow_vertical = 2
 expand_mode = 2
 stretch_mode = 5
 
-[node name="ImageDropPanel" type="Panel" parent="Panel/VBoxContainer/ImageControl/DropImageControl"]
+[node name="ImageDropPanel" type="Panel" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl/DropImageControl"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -200,7 +202,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="DropColorRect" type="ColorRect" parent="Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
+[node name="DropColorRect" type="ColorRect" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
 unique_name_in_owner = true
 layout_mode = 0
 offset_left = 100.0
@@ -211,7 +213,7 @@ mouse_filter = 2
 mouse_default_cursor_shape = 2
 color = Color(0.0768359, 0.0768358, 0.0768358, 1)
 
-[node name="DropImageLabel" type="Label" parent="Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
+[node name="DropImageLabel" type="Label" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
 unique_name_in_owner = true
 layout_mode = 0
 offset_left = 118.0
@@ -222,7 +224,7 @@ text = "Drop Image File Here"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="FileIconTextureRect" type="TextureRect" parent="Panel/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
+[node name="FileIconTextureRect" type="TextureRect" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl/DropImageControl/ImageDropPanel"]
 texture_filter = 1
 layout_mode = 0
 offset_left = 180.0
@@ -231,7 +233,7 @@ offset_right = 220.0
 offset_bottom = 225.0
 texture = ExtResource("4_46txl")
 
-[node name="OpenImageFileButton" type="Button" parent="Panel/VBoxContainer/ImageControl"]
+[node name="OpenImageFileButton" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl"]
 layout_mode = 0
 offset_left = 10.0
 offset_top = 20.0
@@ -240,18 +242,18 @@ offset_bottom = 60.0
 text = "Open File Dialog"
 icon = ExtResource("4_46txl")
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Panel/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 theme_override_constants/separation = 16
 
-[node name="btnVoice" type="Button" parent="Panel/VBoxContainer/HBoxContainer"]
+[node name="btnVoice" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "record audio to text for note description"
 icon = ExtResource("2_y0meg")
 
-[node name="AddNotePopUp" type="Button" parent="Panel/VBoxContainer/HBoxContainer"]
+[node name="AddNotePopUp" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
@@ -264,11 +266,11 @@ icon = ExtResource("5_nij35")
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
 [connection signal="canceled" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_canceled"]
 [connection signal="file_selected" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_file_selected"]
-[connection signal="text_changed" from="Panel/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
-[connection signal="pressed" from="Panel/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
-[connection signal="text_changed" from="Panel/VBoxContainer/TextNoteControl/NoteDescription" to="." method="_on_note_description_text_changed"]
-[connection signal="pressed" from="Panel/VBoxContainer/AudioControl/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
-[connection signal="pressed" from="Panel/VBoxContainer/AudioControl/PlayAudioButton" to="." method="_on_play_audio_button_pressed"]
-[connection signal="pressed" from="Panel/VBoxContainer/ImageControl/OpenImageFileButton" to="." method="_on_open_image_file_button_pressed"]
-[connection signal="pressed" from="Panel/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
-[connection signal="pressed" from="Panel/VBoxContainer/HBoxContainer/AddNotePopUp" to="." method="_on_add_note_pressed"]
+[connection signal="text_changed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
+[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
+[connection signal="text_changed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/TextNoteControl/NoteDescription" to="." method="_on_note_description_text_changed"]
+[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
+[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/PlayAudioButton" to="." method="_on_play_audio_button_pressed"]
+[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl/OpenImageFileButton" to="." method="_on_open_image_file_button_pressed"]
+[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
+[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer/AddNotePopUp" to="." method="_on_add_note_pressed"]
