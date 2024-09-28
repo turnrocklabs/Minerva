@@ -226,7 +226,7 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 
 func jump_to_line() -> void:
 	if !jump_to_line_panel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
-		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to"
+		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to."
 		var column = code_edit.get_caret_column()
 		if column < 1:
 			column = 1
@@ -244,9 +244,13 @@ func jump_to_line() -> void:
 
 
 func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
-	jump_to_line_panel.call_deferred("hide")
+	
+	jump_to_line_edit.text = ""
 	if new_text.is_valid_int():
 		code_edit.set_caret_line(new_text.to_int() -1)
+		jump_to_line_panel.call_deferred("hide")
+	else:
+		jump_to_line_label.text += "\nINPUT PROVIDED WAS NOT VALID." 
 
 
 func _on_editor_changed(text: String = ""):
