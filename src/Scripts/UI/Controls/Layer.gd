@@ -2,8 +2,11 @@ class_name Layer
 extends TextureRect
 
 const _scene = preload("res://Scenes/Layer.tscn")
-var image: Image
-var layer_name
+var image: Image:
+	set(new_image):
+		image = new_image
+		update()
+var layer_name: String
 var left
 var right
 var top
@@ -21,6 +24,8 @@ static func create(image_: Image, name_:String) -> Layer:
 	return layer
 
 
+
+
 func _ready():
 	%EditButton1.connect("button_up",self.cancleDragging)
 	%EditButton2.connect("button_up",self.cancleDragging)
@@ -31,7 +36,8 @@ func _ready():
 	%EditButton7.connect("button_up",self.cancleDragging)
 	%EditButton8.connect("button_up",self.cancleDragging)
 	custom_minimum_size = image.get_size()
-	update()
+	#if image:
+		#update()
 
 func update():# this method get called every time a stroke is done on a layer
 	texture = ImageTexture.create_from_image(image)

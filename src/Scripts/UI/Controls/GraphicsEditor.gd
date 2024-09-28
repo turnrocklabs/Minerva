@@ -5,13 +5,25 @@ extends PanelContainer
 signal masking_ended()
 
 var Bubble = preload("res://Scenes/CloudControl.tscn")
-@onready var _layers_container: Control = %LayersContainer
+#region onready control declarationss
+@onready var pen_additional_tools: OptionButton = %PenAdditionalTools
+@onready var brushes: OptionButton = %Brushes
+@onready var dialog_clouds: OptionButton = %DialogClouds
+@onready var bubble_radius: HSlider = %BubbleRadius
+@onready var apply_mask_button: Button = %ApplyMaskButton
 @onready var _brush_slider: HSlider = %BrushHSlider
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
-@onready var bubble_radius: HSlider = %BubbleRadius
-@onready var add_new_pic: FileDialog = %AddNewPic
 
-#@export var _color_picker: ColorPickerButton
+@onready var zoom_in_button: Button = %ZoomInButton
+@onready var zoom_out_button: Button = %ZoomOutButton
+
+@onready var popup_panel: Control = %PopupPanel
+@onready var layers_menu: ScrollContainer = %LayersMenu
+@onready var _layers_container: Control = %LayersContainer # this is the scroll container for the layers
+@onready var add_new_pic: FileDialog = %AddNewPic #this is the dialog for adding a png to as a layer
+
+#endregion onready control declarations
+
 #@export var _mask_check_button: CheckButton
 #@export var _apply_mask_button: Button
 @export var masking_color: Color
@@ -19,12 +31,14 @@ var Bubble = preload("res://Scenes/CloudControl.tscn")
 var selectedLayer: String
 var selectedIndex: int
 var loaded_layers: Array[Layer]
-var layer_number = 1
+var layer_number = 1 #we might not need this variable anymore and just use layers.size()
+var layers: Array[Layer] # we put every layer we create here except fot the transpaency layer
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
 
 var image: Image:
 	get: return _draw_layer.image if _draw_layer else null
+
 
 var drawing:bool = false
 var drawing_brush_active: bool = true
@@ -69,7 +83,7 @@ var fill_tool
 var _masking: bool:
 	set(value):
 		_masking = value
-		if not value: 
+		if value != true: 
 			masking_ended.emit()
 
 var is_image_saved: bool = false
@@ -157,7 +171,8 @@ func setup_from_image(image_: Image):
 		ch.queue_free()
 		#RemoveLayer(ch,)
 	_draw_layer = _create_layer(image_)
-	_background_images[_draw_layer.name] = image_.duplicate()  # Store the initial background
+	_draw_layer.image = image_
+	_background_images[_draw_layer.layer_name] = image_.duplicate()  # Store the initial background
 	
 	
 	var transparency_node = TextureRect.new()
@@ -232,6 +247,7 @@ func create_image(vec:Vector2):
 func _create_layer(base_img: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
 	layer_number += 1
 	var layer = Layer.create(base_img, "Layer " + str(layer_number)) 
+	layers.append(layer)
 	_layers_container.add_child(layer, false, internal)
 	return layer
 
@@ -478,29 +494,30 @@ func _on_apply_mask_button_pressed():
 	zoomIn = false
 	zoomOut = false
 	
-	%ZoomIn.modulate = Color.WHITE
-	%ZoomOut.modulate = Color.WHITE 
+	zoom_in_button.modulate = Color.WHITE
+	zoom_out_button.modulate = Color.WHITE 
 
 	# if the image has the signal defined call it
 	if image.has_user_signal("mask_changed"):
 		image.emit_signal("mask_changed")
 	
 	_masking = false
-	_draw_layer.visible = true  # Ensure the layer is visible after applying the mask
+	_draw_layer.show() # Ensure the layer is visible after applying the mask
 
 
 func _on_layers_pressed():
-	%PopupPanel.visible = not %PopupPanel.visible
+	popup_panel.visible = not popup_panel.visible
 	var bPos = %Layers.position
-	%LayersMenu.position = Vector2(bPos.x - 60, bPos.y + 105)
+	popup_panel.position = Vector2(bPos.x - 60, bPos.y + 105)
+	layers_menu.position = Vector2(bPos.x - 60, bPos.y + 105)
 	%LayerBG.position = Vector2(bPos.x - 60, bPos.y + 105)
 	
 	%MgIcon.visible = false
 	zoomIn = false
 	zoomOut = false
 	
-	%ZoomIn.modulate = Color.WHITE
-	%ZoomOut.modulate = Color.WHITE 
+	zoom_in_button.modulate = Color.WHITE
+	zoom_out_button.modulate = Color.WHITE 
 
 
 func _on_add_layer_pressed():
@@ -560,7 +577,7 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 			_draw_layer = _layers_container.get_child(hbox_index)
 		
 		# Update undo history for the previously selected layer
-	if _draw_layer != null:
+	if _draw_layer:
 		# Initialize the undo history if it doesn't exist for this layer
 		if not layer_undo_histories.find_key(_draw_layer.layer_name):
 			layer_undo_histories[_draw_layer.layer_name] = []
@@ -602,10 +619,10 @@ func _on_brushes_item_selected(index):
 	clouding = false
 	zoomIn = false
 	zoomOut = false
-	%ZoomIn.modulate = Color.WHITE
-	%ZoomOut.modulate = Color.WHITE
+	zoom_in_button.modulate = Color.WHITE
+	zoom_out_button.modulate = Color.WHITE
 	
-	%DialogClouds.visible = false
+	dialog_clouds.hide()
 	%PenAdditionalTools.visible = false
 	%ApplyMaskButton.visible = false
 	#%ApplyTail.visible = false
@@ -619,7 +636,7 @@ func _on_brushes_item_selected(index):
 			_on_mask(true)
 			%ApplyMaskButton.visible = true
 		3:
-			%DialogClouds.visible = true
+			dialog_clouds.show()
 			#%ApplyTail.visible = true
 		4:
 			fill_tool = true
@@ -635,8 +652,8 @@ func _on_option_button_item_selected(index):
 	zoomIn = false
 	zoomOut = false
 	
-	%ZoomIn.modulate = Color.WHITE
-	%ZoomOut.modulate = Color.WHITE 
+	zoom_in_button.modulate = Color.WHITE
+	zoom_out_button.modulate = Color.WHITE 
 	
 	match index:
 		0:
@@ -655,7 +672,7 @@ func _on_hand_pressed() -> void:
 	clouding = false
 	zoomIn = false
 	zoomOut = false
-	%DialogClouds.visible = false
+	dialog_clouds.hide()
 	%MgIcon.visible = false
 
 	# Toggle hand tool and its visual indicator
@@ -674,16 +691,16 @@ func _on_zoom_in_pressed() -> void:
 	view_tool_active = false
 	clouding = false
 	zoomOut = false 
-	%DialogClouds.visible = false
+	dialog_clouds.hide()
 
 	# Toggle zoom in and its visual indicator
 	zoomIn = !zoomIn
 	if zoomIn:
-		%ZoomIn.modulate = Color.LIME_GREEN
-		%ZoomOut.modulate = Color.WHITE
+		zoom_in_button.modulate = Color.LIME_GREEN
+		zoom_out_button.modulate = Color.WHITE
 		%MgIcon.visible = true
 	else:
-		%ZoomIn.modulate = Color.WHITE 
+		zoom_in_button.modulate = Color.WHITE 
 		%MgIcon.visible = false
 	
 func _on_zoom_out_pressed() -> void:
@@ -693,16 +710,16 @@ func _on_zoom_out_pressed() -> void:
 	view_tool_active = false
 	clouding = false
 	zoomIn = false 
-	%DialogClouds.visible = false
+	dialog_clouds.hide()
 
 	# Toggle zoom out and its visual indicator
 	zoomOut = !zoomOut
 	if zoomOut:
-		%ZoomOut.modulate = Color.LIME_GREEN 
-		%ZoomIn.modulate = Color.WHITE
+		zoom_out_button.modulate = Color.LIME_GREEN 
+		zoom_in_button.modulate = Color.WHITE
 		%MgIcon.visible = true
 	else:
-		%ZoomOut.modulate = Color.WHITE 
+		zoom_out_button.modulate = Color.WHITE 
 		%MgIcon.visible = false
 
 func _on_mg_pressed() -> void:
@@ -722,8 +739,8 @@ func _on_mg_pressed() -> void:
 	zoomIn = false
 	zoomOut = false
 	
-	%ZoomIn.modulate = Color.WHITE
-	%ZoomOut.modulate = Color.WHITE 
+	zoom_in_button.modulate = Color.WHITE
+	zoom_out_button.modulate = Color.WHITE 
 
 	# Optionally, reset the zoom and position of the LayersContainer 
 	_layers_container.scale = Vector2.ONE
@@ -833,8 +850,8 @@ func _resize_layers(size_factor: float, resize_width: bool = true) -> void:
 	zoomIn = false
 	zoomOut = false
 	
-	%ZoomIn.modulate = Color.WHITE
-	%ZoomOut.modulate = Color.WHITE 
+	zoom_in_button.modulate = Color.WHITE
+	zoom_out_button.modulate = Color.WHITE 
 	
 	for layer in _layers_container.get_children():
 		if layer is Layer:
@@ -910,7 +927,9 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 		var image_to_load = Image.new()
 		var err = image_to_load.load(path)
 		if err != OK:
-			print("Error loading image:", err)
+			var err_str: String = "Error loading image: " % extension
+			SingletonObject.ErrorDisplay("Image NOT Added", err_str)
+			#print("Error loading image:", err)
 			return
 
 		layers_buttons()
@@ -924,7 +943,9 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 		# Optionally select the newly added layer
 		# selectButton(new_layer_button, new_layer_hbox) 
 	else:
-		print("Unsupported file type:", extension)
+		var err_str: String = "Unsupported file type: " % extension
+		SingletonObject.ErrorDisplay("Image NOT Added", err_str)
+		#print("Unsupported file type:", extension)
 	add_new_pic.hide()  # Close the file dialog
 
 
@@ -1043,7 +1064,8 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 
 func _on_apply_tail_pressed() -> void:
 	_if_cloud(2,0)
-	
+
+
 func _if_cloud(whatToUse: int, bubble_size: float):
 	if _draw_layer != null:
 		var has_cloud_control := false  # Flag to check if layer has CloudControl
@@ -1078,6 +1100,10 @@ func _if_cloud(whatToUse: int, bubble_size: float):
 func _on_buble_radius_value_changed(value: float) -> void:
 	_if_cloud(1,value)
 
-
-func _on_popup_panel_focus_exited() -> void:
-	%PopupPanel.hide()
+# this funciton is for hidint the layers pop up when clicking out of it
+func _input(event: InputEvent) -> void:
+	if popup_panel.visible:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			var popup_size_limit = layers_menu.global_position + layers_menu.size
+			if event.global_position < layers_menu.global_position or event.global_position > popup_size_limit:
+				popup_panel.hide()
