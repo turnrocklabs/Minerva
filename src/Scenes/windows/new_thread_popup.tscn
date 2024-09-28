@@ -12,6 +12,7 @@ transient = true
 exclusive = true
 min_size = Vector2i(350, 0)
 max_size = Vector2i(500, 100)
+content_scale_size = Vector2i(2, 2)
 script = ExtResource("1_gxqic")
 
 [node name="Panel" type="Panel" parent="."]

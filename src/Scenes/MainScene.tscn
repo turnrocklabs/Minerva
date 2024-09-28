@@ -314,7 +314,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Chats" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
-custom_minimum_size = Vector2(580, 0)
+custom_minimum_size = Vector2(570, 0)
 layout_mode = 2
 
 [node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
@@ -395,6 +395,7 @@ editor_pane = NodePath("EditorPane")
 
 [node name="EditorPane" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" instance=ExtResource("4_826g6")]
 unique_name_in_owner = true
+texture_filter = 1
 custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 
