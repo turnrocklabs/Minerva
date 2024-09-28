@@ -126,18 +126,20 @@ visible = false
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 
-[node name="LeftSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
+[node name="RightSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
 visible = false
 layout_mode = 2
 size_flags_vertical = 8
 
-[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/HBoxContainer/LeftSplitter"]
+[node name="MsgSenderAvatar" type="PanelContainer" parent="MarginContainer/HBoxContainer/RightSplitter"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_styles/panel = SubResource("StyleBoxFlat_4tpql")
 
-[node name="Label" type="Label" parent="MarginContainer/HBoxContainer/LeftSplitter/PanelContainer"]
+[node name="AvatarName" type="Label" parent="MarginContainer/HBoxContainer/RightSplitter/MsgSenderAvatar"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "O4"
 label_settings = SubResource("LabelSettings_l0yj0")
@@ -320,20 +322,18 @@ layout_mode = 2
 theme_type_variation = &"chatRichTextLabel"
 threaded = true
 
-[node name="RightSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
+[node name="LeftSplitter" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
 visible = false
 layout_mode = 2
 size_flags_vertical = 8
 
-[node name="MsgSenderAvatar" type="PanelContainer" parent="MarginContainer/HBoxContainer/RightSplitter"]
-unique_name_in_owner = true
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/HBoxContainer/LeftSplitter"]
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_styles/panel = SubResource("StyleBoxFlat_4tpql")
 
-[node name="AvatarName" type="Label" parent="MarginContainer/HBoxContainer/RightSplitter/MsgSenderAvatar"]
-unique_name_in_owner = true
+[node name="Label" type="Label" parent="MarginContainer/HBoxContainer/LeftSplitter/PanelContainer"]
 layout_mode = 2
 text = "O4"
 label_settings = SubResource("LabelSettings_l0yj0")
