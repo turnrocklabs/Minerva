@@ -1107,5 +1107,15 @@ func _input(event: InputEvent) -> void:
 	if popup_panel.visible:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			var popup_size_limit = layers_menu.global_position + layers_menu.size
-			if event.global_position < layers_menu.global_position or event.global_position > popup_size_limit:
+			#print("layers menu limit: " + str(popup_size_limit))
+			#print("event global pos: " + str(event.global_position))
+			#print("layer menu global pos: " + str(layers_menu.global_position))
+			#print("layers menu size: " + str(layers_menu.size))
+			
+			# we dont really need to create this variales but the if statement if wvery lng otherwise
+			var event_y: int = event.global_position.y
+			var event_x: int = event.global_position.x
+			var layers_x: int = int(layers_menu.global_position.x)
+			var layers_y: int = int(layers_menu.global_position.y)
+			if (event_x < layers_x or event_x > popup_size_limit.x) or (event_y < layers_y or event_y > popup_size_limit.y):
 				popup_panel.hide()
