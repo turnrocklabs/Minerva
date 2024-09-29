@@ -23,7 +23,7 @@ var stop_signal:bool = false
 func _ready():
 	var idx = AudioServer.get_bus_index("Rec")
 	effect = AudioServer.get_bus_effect(idx, 0)
-	
+	btnStop == null
 func _StartConverting():
 	stop_signal = false
 	if effect.is_recording_active():
@@ -84,7 +84,8 @@ func _StartConverting():
 				http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
 				btn.disabled = true
 				btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
-				btnStop.disabled = false
+				if btnStop != null:
+					btnStop.disabled = false
 			else:
 				print("Invalid file format. Header: ", header_str)
 		else:
@@ -111,7 +112,8 @@ func _StopConverting():
 	btn.disabled = false
 	btn.modulate = Color.WHITE
 	btn.icon = ResourceLoader.load("res://assets/icons/icons8-microphone-24.png")
-	btnStop.disabled = true
+	if btnStop != null:
+		btnStop.disabled = true
 
 
 func _on_request_completed(_result, response_code, _headers, body):
