@@ -327,23 +327,43 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 	if event.is_action_pressed("jump_to_line"):
 		jump_to_line()
 	elif  event.is_action_pressed("find_string"):
-		find_string_in_codeedit()
+		find_string_in_code_edit()
 
 #this is called when the user presses 'Ctrl+F'
-func find_string_in_codeedit() -> void:
+func find_string_in_code_edit() -> void:
 	if !find_string_container.visible:
 		find_string_container.show()
 	
 	if code_edit.get_selected_text() != "":
 		find_string_line_edit.text = code_edit.get_selected_text()
 		find_string_line_edit.select_all()
+		code_edit.set_search_text(code_edit.get_selected_text())
+		code_edit.highlight_all_occurrences = true
+		code_edit.find_next_valid_focus()
+	
+	var occurences: int = 0
+	for line in code_edit.text.split("\n"):
+		occurences += line.countn(find_string_line_edit.text)
+	
+	matches_counter_label.text = "matches: " + str(occurences)
+	
+	var result = code_edit.search(find_string_line_edit.text, CodeEdit.SEARCH_WHOLE_WORDS, code_edit.get_caret_line(), code_edit.get_caret_column())
+	select_match(result.x, result.y)
+	
+	
 	find_string_line_edit.grab_focus()
+
+func select_match(line: int, column: int) -> void:
+	print(line)
+	print(column)
+
 
 
 #close button for the find string UI controls
 func _on_close_buton_pressed() -> void:
+	code_edit.highlight_all_occurrences = false
+	code_edit.set_search_text('')
 	find_string_container.hide()
-
 
 
 #this function is called when the user presses 'Ctrl+G'
