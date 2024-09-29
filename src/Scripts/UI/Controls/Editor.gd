@@ -17,6 +17,14 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 @onready var graphics_editor: GraphicsEditor = %GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
+#this are control noes for the Ctrl+F UI
+@onready var find_string_container: HBoxContainer = %FindStringContainer
+@onready var find_string_line_edit: LineEdit = %FindStringLineEdit
+@onready var matches_counter_label: Label = %MatchesCounterLabel
+@onready var previous_match_button: Button = %PreviousMatchButton
+@onready var next_match_button: Button = %NextMatchButton
+
+
 #this are control nodes for the Ctrl+G popup
 @onready var jump_to_line_panel: PopupPanel = %JumpToLinePanel
 @onready var jump_to_line_edit: LineEdit = %JumpToLineEdit
@@ -217,55 +225,6 @@ func is_content_saved() -> bool:
 	return false
 
 
-func _on_code_edit_gui_input(event: InputEvent) -> void:
-	if event.is_action_pressed("jump_to_line"):
-		jump_to_line()
-	elif  event.is_action_pressed("find_string"):
-		pass
-
-
-func jump_to_line() -> void:
-	if !jump_to_line_panel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
-		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to."
-		var column = code_edit.get_caret_column()
-		if column < 1:
-			column = 1
-		var line = code_edit.get_caret_line()
-		if line < 1:
-			line = 1
-		var line_count = code_edit.get_line_count()
-		if line_count < 1:
-			line_count = 1
-		
-		var new_text = string_format % [line, column, 1, line_count]
-		jump_to_line_label.text = new_text
-		jump_to_line_edit.call_deferred("grab_focus")
-		jump_to_line_panel.call_deferred("show")
-
-
-func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
-	
-	jump_to_line_edit.text = ""
-	if new_text.is_valid_int():
-		code_edit.set_caret_line(new_text.to_int() -1)
-		jump_to_line_panel.call_deferred("hide")
-	else:
-		jump_to_line_label.text += "\nINPUT PROVIDED WAS NOT VALID." 
-
-
-func _on_editor_changed(text: String = ""):
-	if text != "":
-		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
-		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
-		SingletonObject.UpdateUnsavedTabIcon.emit()
-		_file_saved = false
-		file_saved_in_disc = false
-
-	if has_meta("memory_item"):
-		var item: MemoryItem = get_meta("memory_item")
-		_update_note(item)
-
-	content_changed.emit()
 
 func _on_save_dialog_canceled():
 	save_dialog.emit(DIALOG_RESULT.Cancel)
@@ -360,6 +319,74 @@ func _on_save_open_editor_tabs_button_pressed() -> void:
 
 #endregion bottom of the pane buttons
 
+#region Code Editor
+#region code editor action commands
+
+#this function catches input when the code editor is focused
+func _on_code_edit_gui_input(event: InputEvent) -> void:
+	if event.is_action_pressed("jump_to_line"):
+		jump_to_line()
+	elif  event.is_action_pressed("find_string"):
+		find_string_in_codeedit()
+
+#this is called when the user presses 'Ctrl+F'
+func find_string_in_codeedit() -> void:
+	if !find_string_container.visible:
+		find_string_container.show()
+	
+	if code_edit.get_selected_text() != "":
+		find_string_line_edit.text = code_edit.get_selected_text()
+		find_string_line_edit.select_all()
+	find_string_line_edit.grab_focus()
+
+
+#close button for the find string UI controls
+func _on_close_buton_pressed() -> void:
+	find_string_container.hide()
+
+
+
+#this function is called when the user presses 'Ctrl+G'
+func jump_to_line() -> void:
+	if !jump_to_line_panel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
+		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to."
+		
+		#this is a ternary operator equivalent
+		var column: int = code_edit.get_caret_column() if code_edit.get_caret_column() > 1 else 1
+		var line: int = code_edit.get_caret_line() + 1 if code_edit.get_caret_line() > 1 else 1
+		var line_count: int = code_edit.get_line_count() if code_edit.get_line_count() > 1 else 1
+		
+		var new_text = string_format % [line, column, 1, line_count]
+		jump_to_line_label.text = new_text
+		jump_to_line_edit.call_deferred("grab_focus")
+		jump_to_line_panel.call_deferred("show")
+
+
+func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
+	
+	jump_to_line_edit.text = ""
+	if new_text.is_valid_int():
+		code_edit.set_caret_line(new_text.to_int() -1)
+		jump_to_line_panel.call_deferred("hide")
+	else:
+		jump_to_line_label.text += "\nINPUT PROVIDED WAS NOT VALID." 
+
+#endregion code editor action commands
+
+func _on_editor_changed(text: String = ""):
+	if text != "":
+		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
+		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
+		SingletonObject.UpdateUnsavedTabIcon.emit()
+		_file_saved = false
+		file_saved_in_disc = false
+
+	if has_meta("memory_item"):
+		var item: MemoryItem = get_meta("memory_item")
+		_update_note(item)
+
+	content_changed.emit()
+
 #region Top Editor buttons
 func delete_chars() -> void:
 	if Type.TEXT != type:
@@ -398,6 +425,7 @@ func _on_audio_btn_pressed():
 	%AudioBTN.modulate = Color(Color.LIME_GREEN)
 
 #endregion Top Editor buttons
+#endregion Code Editor
 
 
 ## Creates a Note from this Editor.[br]

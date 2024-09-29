@@ -1,12 +1,15 @@
-[gd_scene load_steps=8 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=11 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/EditorCodeEdit.gd" id="2_g3oqj"]
 [ext_resource type="PackedScene" uid="uid://1snj5jsurqrt" path="res://Scenes/GraphicsEditor.tscn" id="3_rd38o"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_1qp3n"]
+[ext_resource type="Texture2D" uid="uid://c48b7t07xvrlk" path="res://assets/icons/folder_up.svg" id="4_ycwhj"]
+[ext_resource type="Texture2D" uid="uid://cgw7e5x25rsxh" path="res://assets/icons/arrow_down.svg" id="5_j20cm"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
+[ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
 
 [node name="Editor" type="Control"]
 layout_mode = 3
@@ -35,7 +38,6 @@ masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 
 [node name="CodeEdit" type="CodeEdit" parent="VBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -54,9 +56,45 @@ size_flags_vertical = 3
 expand_mode = 5
 stretch_mode = 4
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer"]
-visible = false
+[node name="FindStringContainer" type="HBoxContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="FindStringLineEdit" type="LineEdit" parent="VBoxContainer/FindStringContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/FindStringContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_constants/separation = 8
+
+[node name="MatchesCounterLabel" type="Label" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "13 out of 13 matches"
+
+[node name="PreviousMatchButton" type="Button" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+icon = ExtResource("4_ycwhj")
+flat = true
+
+[node name="NextMatchButton" type="Button" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+icon = ExtResource("5_j20cm")
+flat = true
+
+[node name="CloseButon" type="Button" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+icon = ExtResource("6_eqakq")
+flat = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -72,7 +110,7 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Pass editor content to chat"
 
-[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer"]
+[node name="FillerControl2" type="Control" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -99,13 +137,11 @@ layout_mode = 2
 tooltip_text = "Creates note from editor tab content"
 icon = ExtResource("6_15oj3")
 
-[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer"]
+[node name="FillerControl" type="Control" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 4
 
-[node name="Label" type="Label" parent="VBoxContainer"]
+[node name="FillerControl3" type="Control" parent="VBoxContainer"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 4
 
 [node name="CloseDialog" type="ConfirmationDialog" parent="."]
 title = "You have unsaved open editor "
@@ -185,6 +221,7 @@ threaded = true
 layout_mode = 2
 
 [connection signal="gui_input" from="VBoxContainer/CodeEdit" to="." method="_on_code_edit_gui_input"]
+[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_buton_pressed"]
 [connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]

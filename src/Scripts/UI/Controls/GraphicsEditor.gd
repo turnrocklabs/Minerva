@@ -17,6 +17,7 @@ var Bubble = preload("res://Scenes/CloudControl.tscn")
 @onready var zoom_in_button: Button = %ZoomInButton
 @onready var zoom_out_button: Button = %ZoomOutButton
 
+@onready var layers: Button = %Layers
 @onready var popup_panel: Control = %PopupPanel
 @onready var layers_menu: ScrollContainer = %LayersMenu
 @onready var _layers_container: Control = %LayersContainer # this is the scroll container for the layers
@@ -32,7 +33,7 @@ var selectedLayer: String
 var selectedIndex: int
 var loaded_layers: Array[Layer]
 var layer_number = 1 #we might not need this variable anymore and just use layers.size()
-var layers: Array[Layer] # we put every layer we create here except fot the transpaency layer
+var layers_array: Array[Layer] # we put every layer we create here except fot the transpaency layer
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
 
@@ -246,7 +247,7 @@ func create_image(vec:Vector2):
 func _create_layer(base_img: Image, internal: InternalMode = INTERNAL_MODE_DISABLED) -> Layer:
 	layer_number += 1
 	var layer = Layer.create(base_img, "Layer " + str(layer_number)) 
-	layers.append(layer)
+	layers_array.append(layer)
 	_layers_container.add_child(layer, false, internal)
 	return layer
 
@@ -858,13 +859,13 @@ func _resize_layers(resize_width: bool = true) -> void:
 			var blit_position := Vector2.ZERO  # Default blit position
 
 			if resize_width:
-				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y) 
+				new_size = Vector2(old_size.x + pixels_to_add, old_size.y) 
 				# NO SHIFT NEEDED for expanding to the right 
 			else:
-				new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
+				new_size = Vector2(old_size.x, old_size.y + pixels_to_add)
 				# NO SHIFT NEEDED for expanding to the bottom
 
-			var resized_image := Image.create(new_size.x, new_size.y, false, Image.FORMAT_RGBA8)
+			var resized_image := Image.create_empty(int(new_size.x), int(new_size.y), false, Image.FORMAT_RGBA8)
 			resized_image.fill(Color.WHITE)
 			resized_image.blit_rect(layer.image, Rect2(Vector2.ZERO, old_size), blit_position)
 
@@ -894,15 +895,15 @@ func layers_buttons():
 	%LayersList.add_child(Hbox)
 	
 	var Translate = Button.new()
-	Translate.text = "T"
+	Translate.icon = preload("res://assets/icons/layers_icons/move-16.png")
 	Translate.connect("pressed", self._transfer.bind(Hbox))
 	
 	var Rotate = Button.new()
-	Rotate.text = "R"
+	Rotate.icon = preload("res://assets/icons/layers_icons/rotate-16.png")
 	Rotate.connect("pressed", self._rotate.bind(Hbox))
 	
 	var Scale = Button.new()
-	Scale.text = "S"
+	Scale.icon = preload("res://assets/icons/layers_icons/resize-16.png")
 	Scale.connect("pressed", self._scale.bind(Hbox))
 	
 	Hbox.add_child(LayerButton)
@@ -1105,15 +1106,17 @@ func _on_buble_radius_value_changed(value: float) -> void:
 func _input(event: InputEvent) -> void:
 	if popup_panel.visible:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-			var popup_size_limit = layers_menu.global_position + layers_menu.size
-			#print("layers menu limit: " + str(popup_size_limit))
-			#print("event global pos: " + str(event.global_position))
-			#print("layer menu global pos: " + str(layers_menu.global_position))
-			#print("layers menu size: " + str(layers_menu.size))
-			
-			# we dont really need to create this variales but the if statement if wvery lng otherwise
 			var event_y: int = event.global_position.y
 			var event_x: int = event.global_position.x
+			var layers_limit_x = layers.global_position.x + layers.size.x
+			var layers_limit_y = layers.global_position.y + layers.size.y
+			#we check if the click is inside the add layers button and return if so
+			if (event_x > layers.global_position.x and event_x < layers_limit_x) and (event_y > layers.global_position.y and event_y < layers_limit_y):
+				return
+				
+			var popup_size_limit = layers_menu.global_position + layers_menu.size
+			
+			# we dont really need to create this variales but the if statement if wvery lng otherwise
 			var layers_x: int = int(layers_menu.global_position.x)
 			var layers_y: int = int(layers_menu.global_position.y)
 			if (event_x < layers_x or event_x > popup_size_limit.x) or (event_y < layers_y or event_y > popup_size_limit.y):

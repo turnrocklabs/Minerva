@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dbpw1psm65yd2"
-path="res://.godot/imported/handshake_logo-_green.png-fdff483448bbbfc887833c85644a83e7.ctex"
+uid="uid://bslp8wavrrw3q"
+path="res://.godot/imported/resize-16.png-3806782c9dc3be6ba2a94932490e0f25.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://handshake_logo-_green.png"
-dest_files=["res://.godot/imported/handshake_logo-_green.png-fdff483448bbbfc887833c85644a83e7.ctex"]
+source_file="res://assets/icons/layers_icons/resize-16.png"
+dest_files=["res://.godot/imported/resize-16.png-3806782c9dc3be6ba2a94932490e0f25.ctex"]
 
 [params]
 
