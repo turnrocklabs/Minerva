@@ -858,17 +858,9 @@ func _resize_layers(resize_width: bool = true) -> void:
 			var new_size: Vector2i
 
 			if resize_width:
-<<<<<<< HEAD
-				new_size = Vector2(old_size.x + pixels_to_add, old_size.y) 
-				# NO SHIFT NEEDED for expanding to the right 
-			else:
-				new_size = Vector2(old_size.x, old_size.y + pixels_to_add)
-				# NO SHIFT NEEDED for expanding to the bottom
-=======
 				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
 			else:
 				new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
->>>>>>> 12688c6bae626c615cf9dee36c6eaa4760890501
 
 			var resized_image := Image.create_empty(int(new_size.x), int(new_size.y), false, Image.FORMAT_RGBA8)
 			resized_image.fill(Color.WHITE)
