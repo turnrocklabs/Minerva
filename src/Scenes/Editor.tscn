@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_1qp3n"]
 [ext_resource type="Texture2D" uid="uid://c48b7t07xvrlk" path="res://assets/icons/folder_up.svg" id="4_ycwhj"]
-[ext_resource type="Texture2D" uid="uid://cgw7e5x25rsxh" path="res://assets/icons/arrow_down.svg" id="5_j20cm"]
+[ext_resource type="Texture2D" uid="uid://dlwhgven8t3hj" path="res://assets/icons/folder_down.png" id="5_2k2ha"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
@@ -88,7 +88,7 @@ flat = true
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
-icon = ExtResource("5_j20cm")
+icon = ExtResource("5_2k2ha")
 flat = true
 
 [node name="CloseButon" type="Button" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
@@ -168,8 +168,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 396.0
-offset_bottom = 136.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"bgPanel"
@@ -188,27 +188,19 @@ theme_override_constants/separation = 14
 [node name="JumpToLineEdit" type="LineEdit" parent="JumpToLinePanel/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 2
+size_flags_vertical = 8
 placeholder_text = "line number"
 virtual_keyboard_type = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="JumpToLinePanel"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 396.0
-offset_bottom = 136.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_vertical = 6
+[node name="HBoxContainer" type="HBoxContainer" parent="JumpToLinePanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 4
 theme_override_constants/separation = 14
 
-[node name="Control" type="Control" parent="JumpToLinePanel/HBoxContainer"]
+[node name="Control" type="Control" parent="JumpToLinePanel/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 
-[node name="JumpToLineLabel" type="RichTextLabel" parent="JumpToLinePanel/HBoxContainer"]
+[node name="JumpToLineLabel" type="RichTextLabel" parent="JumpToLinePanel/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -218,10 +210,12 @@ text = "you are currently on line, 9 character 4, type a line number to jump to"
 fit_content = true
 threaded = true
 
-[node name="Control2" type="Control" parent="JumpToLinePanel/HBoxContainer"]
+[node name="Control2" type="Control" parent="JumpToLinePanel/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 
 [connection signal="gui_input" from="VBoxContainer/CodeEdit" to="." method="_on_code_edit_gui_input"]
+[connection signal="text_changed" from="VBoxContainer/FindStringContainer/FindStringLineEdit" to="." method="_on_find_string_line_edit_text_changed"]
+[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/NextMatchButton" to="." method="_on_next_match_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_buton_pressed"]
 [connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]

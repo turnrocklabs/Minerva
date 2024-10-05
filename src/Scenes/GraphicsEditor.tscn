@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://1snj5jsurqrt"]
+[gd_scene load_steps=20 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
@@ -10,6 +10,7 @@
 [ext_resource type="Texture2D" uid="uid://bcau4lpt5d7nr" path="res://assets/icons/Brush-24-24.png" id="5_qs5mm"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="6_1v5g6"]
 [ext_resource type="Texture2D" uid="uid://bliwqrb268u66" path="res://assets/icons/zoom_icons/zoom_more.svg" id="6_4tqp6"]
+[ext_resource type="Texture2D" uid="uid://c1reekco0o8uq" path="res://assets/icons/FillTool-24-24.png" id="6_x0pyw"]
 [ext_resource type="Texture2D" uid="uid://b7jdoc3mrdcs6" path="res://assets/icons/SquareBrush.png" id="7_e5qpb"]
 [ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_icons/zoom_less.svg" id="7_hti8r"]
 [ext_resource type="Texture2D" uid="uid://ceq7itsittuax" path="res://assets/icons/editor_arrows/editor_arrow_left.png" id="9_t3u88"]
@@ -65,6 +66,7 @@ popup/item_2/icon = ExtResource("4_82rro")
 popup/item_2/id = 2
 popup/item_3/icon = ExtResource("5_a37t7")
 popup/item_3/id = 3
+popup/item_4/icon = ExtResource("6_x0pyw")
 popup/item_4/id = 4
 
 [node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
