@@ -178,4 +178,3 @@ func to_bot_response(data: Variant) -> BotResponse:
 	response.text = data["content"][0]["text"]
 	
 	return response
-
