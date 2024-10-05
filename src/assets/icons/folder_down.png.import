@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c7luan8sjmf0y"
-path="res://.godot/imported/handshake_logo-removebg-preview_3.png-0afd6f0a9fcc8d00edb372704dd1d2f1.ctex"
+uid="uid://dlwhgven8t3hj"
+path="res://.godot/imported/folder_down.png-c618bf76b607fca94db0ac9e4ed3ff79.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://handshake_logo-removebg-preview_3.png"
-dest_files=["res://.godot/imported/handshake_logo-removebg-preview_3.png-0afd6f0a9fcc8d00edb372704dd1d2f1.ctex"]
+source_file="res://assets/icons/folder_down.png"
+dest_files=["res://.godot/imported/folder_down.png-c618bf76b607fca94db0ac9e4ed3ff79.ctex"]
 
 [params]
 
