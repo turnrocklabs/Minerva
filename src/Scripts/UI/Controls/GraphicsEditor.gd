@@ -850,23 +850,29 @@ func _resize_layers(resize_width: bool = true) -> void:
 	
 	zoom_in_button.modulate = Color.WHITE
 	zoom_out_button.modulate = Color.WHITE 
-	
+
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			var old_size = layer.image.get_size()
-			var new_size: Vector2
-			var blit_position := Vector2.ZERO  # Default blit position
+			var new_size: Vector2i
 
 			if resize_width:
-				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y) 
-				# NO SHIFT NEEDED for expanding to the right 
+				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
 			else:
 				new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
-				# NO SHIFT NEEDED for expanding to the bottom
 
 			var resized_image := Image.create(new_size.x, new_size.y, false, Image.FORMAT_RGBA8)
 			resized_image.fill(Color.WHITE)
-			resized_image.blit_rect(layer.image, Rect2(Vector2.ZERO, old_size), blit_position)
+
+			var offset := Vector2.ZERO # Default offset - no shift
+
+			# Calculate offset ONLY if expanding to the right or bottom
+			if resize_width and pixels_to_add > 0:
+				offset.x = pixels_to_add / 2  # Shift content to keep centered
+			elif not resize_width and pixels_to_add > 0:
+				offset.y = pixels_to_add / 2 
+
+			resized_image.blit_rect(layer.image, Rect2(Vector2.ZERO, old_size), offset)
 
 			layer.image = resized_image
 			layer.size = new_size
