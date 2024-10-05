@@ -1,12 +1,15 @@
-[gd_scene load_steps=8 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=11 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/EditorCodeEdit.gd" id="2_g3oqj"]
 [ext_resource type="PackedScene" uid="uid://1snj5jsurqrt" path="res://Scenes/GraphicsEditor.tscn" id="3_rd38o"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_1qp3n"]
+[ext_resource type="Texture2D" uid="uid://c48b7t07xvrlk" path="res://assets/icons/folder_up.svg" id="4_ycwhj"]
+[ext_resource type="Texture2D" uid="uid://dlwhgven8t3hj" path="res://assets/icons/folder_down.png" id="5_2k2ha"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
+[ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
 
 [node name="Editor" type="Control"]
 layout_mode = 3
@@ -43,7 +46,6 @@ caret_blink = true
 highlight_all_occurrences = true
 highlight_current_line = true
 gutters_draw_line_numbers = true
-gutters_zero_pad_line_numbers = true
 script = ExtResource("2_g3oqj")
 
 [node name="TextureRect" type="TextureRect" parent="VBoxContainer"]
@@ -54,9 +56,46 @@ size_flags_vertical = 3
 expand_mode = 5
 stretch_mode = 4
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer"]
+[node name="FindStringContainer" type="HBoxContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
 visible = false
 layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="FindStringLineEdit" type="LineEdit" parent="VBoxContainer/FindStringContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/FindStringContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+theme_override_constants/separation = 8
+
+[node name="MatchesCounterLabel" type="Label" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "13 out of 13 matches"
+
+[node name="PreviousMatchButton" type="Button" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+icon = ExtResource("4_ycwhj")
+flat = true
+
+[node name="NextMatchButton" type="Button" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+icon = ExtResource("5_2k2ha")
+flat = true
+
+[node name="CloseButon" type="Button" parent="VBoxContainer/FindStringContainer/HBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+icon = ExtResource("6_eqakq")
+flat = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -72,7 +111,7 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Pass editor content to chat"
 
-[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer"]
+[node name="FillerControl2" type="Control" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -99,13 +138,11 @@ layout_mode = 2
 tooltip_text = "Creates note from editor tab content"
 icon = ExtResource("6_15oj3")
 
-[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer"]
+[node name="FillerControl" type="Control" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 4
 
-[node name="Label" type="Label" parent="VBoxContainer"]
+[node name="FillerControl3" type="Control" parent="VBoxContainer"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 4
 
 [node name="CloseDialog" type="ConfirmationDialog" parent="."]
 title = "You have unsaved open editor "
@@ -131,8 +168,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 396.0
-offset_bottom = 136.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"bgPanel"
@@ -151,27 +188,19 @@ theme_override_constants/separation = 14
 [node name="JumpToLineEdit" type="LineEdit" parent="JumpToLinePanel/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 2
+size_flags_vertical = 8
 placeholder_text = "line number"
 virtual_keyboard_type = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="JumpToLinePanel"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 396.0
-offset_bottom = 136.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_vertical = 6
+[node name="HBoxContainer" type="HBoxContainer" parent="JumpToLinePanel/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 4
 theme_override_constants/separation = 14
 
-[node name="Control" type="Control" parent="JumpToLinePanel/HBoxContainer"]
+[node name="Control" type="Control" parent="JumpToLinePanel/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 
-[node name="JumpToLineLabel" type="RichTextLabel" parent="JumpToLinePanel/HBoxContainer"]
+[node name="JumpToLineLabel" type="RichTextLabel" parent="JumpToLinePanel/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -181,10 +210,13 @@ text = "you are currently on line, 9 character 4, type a line number to jump to"
 fit_content = true
 threaded = true
 
-[node name="Control2" type="Control" parent="JumpToLinePanel/HBoxContainer"]
+[node name="Control2" type="Control" parent="JumpToLinePanel/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 
 [connection signal="gui_input" from="VBoxContainer/CodeEdit" to="." method="_on_code_edit_gui_input"]
+[connection signal="text_changed" from="VBoxContainer/FindStringContainer/FindStringLineEdit" to="." method="_on_find_string_line_edit_text_changed"]
+[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/NextMatchButton" to="." method="_on_next_match_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_buton_pressed"]
 [connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
