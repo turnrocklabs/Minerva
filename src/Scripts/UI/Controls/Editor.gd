@@ -165,7 +165,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
 		await ($FileDialog as FileDialog).visibility_changed
-		#($FileDialog as FileDialog).filters = dialog_filters
+		
 	else:
 		if new_entry:# this is used for the save as.. feature
 			($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
@@ -174,7 +174,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 			$FileDialog.popup_centered(Vector2i(700, 500))
 			
 			await ($FileDialog as FileDialog).visibility_changed
-			#($FileDialog as FileDialog).filters = dialog_filters
+			
 		else:
 			_on_file_dialog_file_selected(file)
 	
@@ -223,7 +223,6 @@ func is_content_saved() -> bool:
 				return false
 	
 	return false
-
 
 
 func _on_save_dialog_canceled():
@@ -330,33 +329,62 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 		find_string_in_code_edit()
 
 #this is called when the user presses 'Ctrl+F'
+var occurences_positions: Array[Vector2i]
+var current_caret_pos: Vector2i = Vector2i.ZERO
+var current_search_indx: int = 0
 func find_string_in_code_edit() -> void:
 	if !find_string_container.visible:
 		find_string_container.show()
 	
 	if code_edit.get_selected_text() != "":
+		
+		current_caret_pos.x = code_edit.get_caret_column()
+		current_caret_pos.y = code_edit.get_caret_line()
 		find_string_line_edit.text = code_edit.get_selected_text()
+		code_edit.add_selection_for_next_occurrence()
+		
 		find_string_line_edit.select_all()
-		code_edit.set_search_text(code_edit.get_selected_text())
+		
+		
 		code_edit.highlight_all_occurrences = true
 		code_edit.find_next_valid_focus()
+		
+		var occ: int = 0
+		for i : String in code_edit.text.split("\n"):
+			occ += i.countn(code_edit.get_selected_text(),0,0)
+		print(occ)
 	
-	var occurences: int = 0
-	for line in code_edit.text.split("\n"):
-		occurences += line.countn(find_string_line_edit.text)
+		#var result: Vectorz2i = Vector2i.ZERO
+		#while (result.x != -1):
+			#result = code_edit.search(find_string_line_edit.text, CodeEdit.SEARCH_WHOLE_WORDS, result.x, result.y)
+			#occurences_positions.append(result)
+		
+		
+		for i in occurences_positions:
+			if current_caret_pos == i:
+				break
+				current_search_indx +=1
 	
-	matches_counter_label.text = "matches: " + str(occurences)
+		var occurences: int = occurences_positions.size()
+		
+		update_matches_label(current_search_indx, occurences)
 	
-	var result = code_edit.search(find_string_line_edit.text, CodeEdit.SEARCH_WHOLE_WORDS, code_edit.get_caret_line(), code_edit.get_caret_column())
-	select_match(result.x, result.y)
 	
 	
-	find_string_line_edit.grab_focus()
 
-func select_match(line: int, column: int) -> void:
-	print(line)
-	print(column)
 
+func _on_find_string_line_edit_text_changed(new_text: String) -> void:
+	pass # Replace with function body.
+
+
+func _on_next_match_button_pressed() -> void:
+	current_search_indx += 1
+	code_edit.skip_selection_for_next_occurrence()
+	update_matches_label(current_search_indx, occurences_positions.size())
+
+
+func update_matches_label(current_search, occurrences) -> void:
+	matches_counter_label.text = "%s of  %s matches: " % [current_search, occurrences]
 
 
 #close button for the find string UI controls
@@ -364,6 +392,7 @@ func _on_close_buton_pressed() -> void:
 	code_edit.highlight_all_occurrences = false
 	code_edit.set_search_text('')
 	find_string_container.hide()
+	occurences_positions = []
 
 
 #this function is called when the user presses 'Ctrl+G'
@@ -380,6 +409,9 @@ func jump_to_line() -> void:
 		jump_to_line_label.text = new_text
 		jump_to_line_edit.call_deferred("grab_focus")
 		jump_to_line_panel.call_deferred("show")
+
+
+
 
 
 func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:

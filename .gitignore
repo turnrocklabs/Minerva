@@ -5,7 +5,7 @@
 # docker stuff
 .env
 
-# Minvera Project Save files
+# Minerva Project Save files
 *.minproj
 
 # binary files
