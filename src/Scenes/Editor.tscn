@@ -43,9 +43,11 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 caret_blink = true
+caret_multiple = false
 highlight_all_occurrences = true
 highlight_current_line = true
 gutters_draw_line_numbers = true
+gutters_zero_pad_line_numbers = true
 script = ExtResource("2_g3oqj")
 
 [node name="TextureRect" type="TextureRect" parent="VBoxContainer"]
@@ -168,8 +170,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 396.0
+offset_bottom = 136.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"bgPanel"
@@ -215,6 +217,7 @@ layout_mode = 2
 
 [connection signal="gui_input" from="VBoxContainer/CodeEdit" to="." method="_on_code_edit_gui_input"]
 [connection signal="text_changed" from="VBoxContainer/FindStringContainer/FindStringLineEdit" to="." method="_on_find_string_line_edit_text_changed"]
+[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/PreviousMatchButton" to="." method="_on_previous_match_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/NextMatchButton" to="." method="_on_next_match_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_buton_pressed"]
 [connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
