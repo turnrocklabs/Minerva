@@ -822,25 +822,26 @@ func _scale(Hbox: HBoxContainer) -> void:
 		active_transfer_button.modulate = Color.LIME_GREEN 
 		
 func _on_arrowleft_pressed() -> void:
-	_resize_layers()  # Increase width by 10%, center horizontallyc
+	_resize_layers(true, true)  # Increase width by 10%, center horizontallyc
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			layer.position.x -= 60 # Move right by 5% of the new width 
+
 func _on_arrow_right_pressed() -> void:
-	_resize_layers()  # Increase width by 10%, center horizontally
+	_resize_layers(true, false)  # Increase width by 10%, center horizontally
 
 func _on_arrow_top_pressed() -> void:
-	_resize_layers(false) # Increase height by 10%, center vertically 
+	_resize_layers(false, true) # Increase height by 10%, center vertically 
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			layer.position.y -= 60
 
 func _on_arrow_bottom_pressed() -> void:
-	_resize_layers(false)
+	_resize_layers(false, false)
 	
-func _resize_layers(resize_width: bool = true) -> void:
+func _resize_layers(resize_width: bool = true, origin_changed: = false) -> void:
 	var pixels_to_add = 60
 
 	%MgIcon.visible = false
@@ -866,11 +867,12 @@ func _resize_layers(resize_width: bool = true) -> void:
 
 			var offset := Vector2.ZERO # Default offset - no shift
 
-			# Calculate offset ONLY if expanding to the right or bottom
-			if resize_width and pixels_to_add > 0:
-				offset.x = pixels_to_add / 2  # Shift content to keep centered
-			elif not resize_width and pixels_to_add > 0:
-				offset.y = pixels_to_add / 2 
+			if origin_changed:
+				# Calculate offset ONLY if expanding to the right or bottom
+				if resize_width and pixels_to_add > 0:
+					offset.x = pixels_to_add  # Shift content to keep centered
+				elif not resize_width and pixels_to_add > 0:
+					offset.y = pixels_to_add
 
 			resized_image.blit_rect(layer.image, Rect2(Vector2.ZERO, old_size), offset)
 
