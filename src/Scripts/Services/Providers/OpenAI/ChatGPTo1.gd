@@ -6,4 +6,4 @@ func _init():
 
 	model_name = "o1-preview"
 	short_name = "O1"
-	token_cost = 5.0 / 1000000.0 # https://openai.com/api/pricing/
+	token_cost = 15.00 / 1000000.0 # https://openai.com/api/pricing/
