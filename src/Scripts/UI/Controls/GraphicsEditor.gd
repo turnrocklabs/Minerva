@@ -104,8 +104,9 @@ func _ready():
 	elif SingletonObject.is_masking == true:
 		#editing and drawing
 		toggle_masking(SingletonObject.is_masking)
-		
-	setup(Vector2i(2000,2000), Color.WHITE)
+	
+	await get_tree().process_frame
+	setup(Vector2i(%CenterContainer.size), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
 	
@@ -165,7 +166,7 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 
 
 func setup_from_image(image_: Image):
-	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(800, 800))
+	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	image_.resize(new_size.x, new_size.y)
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
@@ -823,19 +824,13 @@ func _scale(Hbox: HBoxContainer) -> void:
 		
 func _on_arrowleft_pressed() -> void:
 	_resize_layers()  # Increase width by 10%, center horizontallyc
-	# --- Move layers after resizing ---
-	for layer in _layers_container.get_children():
-		if layer is Layer:
-			layer.position.x -= 60 # Move right by 5% of the new width 
+
 func _on_arrow_right_pressed() -> void:
 	_resize_layers()  # Increase width by 10%, center horizontally
 
 func _on_arrow_top_pressed() -> void:
 	_resize_layers(false) # Increase height by 10%, center vertically 
-	# --- Move layers after resizing ---
-	for layer in _layers_container.get_children():
-		if layer is Layer:
-			layer.position.y -= 60
+
 
 func _on_arrow_bottom_pressed() -> void:
 	_resize_layers(false)
