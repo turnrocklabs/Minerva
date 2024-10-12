@@ -72,49 +72,63 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 
 
 func wrap_memory(item: MemoryItem) -> Variant:
-	var output: String = "Given this background information:\n\n"
-	output += "### Reference Information ###\n"
-	output += item.Content
-	output += "### End Reference Information ###\n\n"
-	output += "Respond to the user's message: \n\n"
-	return output
+	if item.MemoryImage:
+		return item.MemoryImage
+	
+	else:
+		var output = "Given this background information:\n\n"
+		output += "### Reference Information ###\n"
+		output += item.Content
+		output += "### End Reference Information ###\n\n"
+		output += "Respond to the user's message: \n\n"
+		return output
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
+
 	var role: String
 
 	match chat_item.Role:
 		ChatHistoryItem.ChatRole.USER:
 			role = "user"
-		ChatHistoryItem.ChatRole.SYSTEM:
-			system_prompt = chat_item.Message # Save as system prompt and return null
-			return null
 		ChatHistoryItem.ChatRole.ASSISTANT:
 			role = "assistant"
+		ChatHistoryItem.ChatRole.SYSTEM:
+			role = "system"
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "assistant"
-	
-	# Get all image captions in array of strings
-	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
-	var image_captions: String
 
-	# if there are images, construct the image captions into one string for prompt
-	if not image_captions_array.is_empty():
-		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
+	# content can be a string, but also an array of dictionaries, to handle different media types
+	# message and each note will be it's own dictionary
+	var content: = [
+		{
+			"type": "text",
+			"text": chat_item.Message
+		},
+	]
 
-	var text_notes = chat_item.InjectedNotes.filter(func(note): return note is String)
-
-	var text = """
-		%s
-		%s
-		%s
-	""" % [image_captions, "\n".join(text_notes), chat_item.Message]
-
-	text = text.strip_edges()
+	# handle text and image notes
+	for note: Variant in chat_item.InjectedNotes:
+		if note is String:
+			content.append({
+				"type": "text",
+				"text": note
+			})
+		
+		# if we have a image, encode it to base64 and send it as a b64 encoded image
+		elif note is Image:
+			content.append({
+				"type": "image",
+				"source": {
+					"type": "base64",
+					"media_type": "image/png",
+					"data": % Marshalls.raw_to_base64(note.save_png_to_buffer()),
+				}
+			})
 
 	return {
 		"role": role,
-		"content": text
+		"content": content
 	}
 
 
