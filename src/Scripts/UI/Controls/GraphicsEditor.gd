@@ -823,30 +823,21 @@ func _scale(Hbox: HBoxContainer) -> void:
 		active_transfer_button.modulate = Color.LIME_GREEN 
 		
 func _on_arrowleft_pressed() -> void:
-<<<<<<< HEAD
-	_resize_layers()  # Increase width by 10%, center horizontallyc
-=======
 	_resize_layers(true, true)  # Increase width by 10%, center horizontallyc
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			layer.position.x -= 60 # Move right by 5% of the new width 
->>>>>>> 5f512f66f744db004b9145ce6cad8109adfd429c
 
 func _on_arrow_right_pressed() -> void:
 	_resize_layers(true, false)  # Increase width by 10%, center horizontally
 
 func _on_arrow_top_pressed() -> void:
-<<<<<<< HEAD
-	_resize_layers(false) # Increase height by 10%, center vertically 
-
-=======
 	_resize_layers(false, true) # Increase height by 10%, center vertically 
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			layer.position.y -= 60
->>>>>>> 5f512f66f744db004b9145ce6cad8109adfd429c
 
 func _on_arrow_bottom_pressed() -> void:
 	_resize_layers(false, false)
