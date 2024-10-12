@@ -58,20 +58,21 @@ func _on_replace_all_pressed():
 	
 	# Check if the active tab is an Editor and is a Text editor
 	
-	if active_tab_editor_node is Editor and (active_tab_editor_node.type != Editor.Type.GRAPHICS):
+	if active_tab_editor_node is Editor: #and (active_tab_editor_node.type != Editor.Type.GRAPHICS):
 		if active_tab_editor_node.type != Editor.Type.GRAPHICS:
-			ep.Tabs.set_tab_title(ep.Tabs.get_current_tab(),  ep.editor_name_to_use(%SyntaxLabel.text))
+			if !active_tab_editor_node.file:
+				ep.Tabs.set_tab_title(ep.Tabs.get_current_tab(),  ep.editor_name_to_use(%SyntaxLabel.text))
 			var code_edit_node = active_tab_editor_node.get_node("%CodeEdit")
 			
 			if code_edit_node:
 				#print(text_without_tags)
 				code_edit_node.text = text_without_tags
-				ep.update_tabs_icon()
+				
 			else:
 				print("Error: CodeEdit node not found in active Text tab.")
 		else: 
 			print("Error: Active tab is not a Text editor.")
-		
+		ep.update_tabs_icon()
 	#elif ep.Tabs.get_child(current_tab_indx):
 		#var editor = ep.Tabs.get_child(current_tab_indx)
 		#var FindCodeEdit = editor.get_child(0)
