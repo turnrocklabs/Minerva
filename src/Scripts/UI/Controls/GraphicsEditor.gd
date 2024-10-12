@@ -526,7 +526,7 @@ func _on_layers_pressed():
 func _on_add_layer_pressed():
 	layers_buttons()
 	
-	create_image(Vector2(800,800))
+	create_image(Vector2i(%CenterContainer.size))
 	# Automatically select the newly created layer
 
 func RemoveLayer(Hbox:HBoxContainer, _index:int):
