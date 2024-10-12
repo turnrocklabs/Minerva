@@ -330,7 +330,7 @@
 				{
 					"Audio": null,
 					"Content": "draw upside down pyramid and expand layer to each directions(other test cases) and add label with some text",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"Locked": false,
@@ -345,7 +345,7 @@
 				{
 					"Audio": null,
 					"Content": "try each brush and it's additional tool for eraser, masking and etc.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"Locked": false,
@@ -360,7 +360,7 @@
 				{
 					"Audio": null,
 					"Content": "add graphicEditor and then add image layer,also try for multiple image layers.\nAlso for Text bubble. Open several graphicEditors tabs and add layers with images and Text bubbles",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"Locked": false,
@@ -375,7 +375,7 @@
 				{
 					"Audio": null,
 					"Content": "try to incert image from dalle and new image file like new layer",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"Locked": false,
@@ -384,6 +384,21 @@
 					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
 					"Pinned": false,
 					"Title": "Incert a Layer with existing graphic",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "Create 2 or more layers in the graphics editor and color their edges in different colors.\nThe colored edges will overlap since layers are on top of each other.\nResize the canvas and confirm that they are still overlapping after the resize.\nDo the same with zoom in/out, etc.",
+					"ContentType": "text",
+					"Enabled": false,
+					"ImageCaption": "",
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 6,
+					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
+					"Pinned": false,
+					"Title": "Test layers resizing",
 					"Type": 0,
 					"Visible": true
 				}
