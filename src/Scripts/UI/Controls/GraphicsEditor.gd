@@ -511,7 +511,7 @@ func _on_layers_pressed():
 	popup_panel.visible = not popup_panel.visible
 	var bPos = %Layers.position
 	popup_panel.position = Vector2(bPos.x - 60, bPos.y + 105)
-	layers_menu.position = Vector2(bPos.x - 60, bPos.y + 105)
+	#layers_menu.position = Vector2(bPos.x - 60, bPos.y + 105)
 	%LayerBG.position = Vector2(bPos.x - 60, bPos.y + 105)
 	
 	%MgIcon.visible = false
