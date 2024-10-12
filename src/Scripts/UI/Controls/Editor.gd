@@ -111,7 +111,7 @@ func _load_text_file(filename: String):
 	if fa_object:
 		#file_path = file
 		code_edit.text = fa_object.get_as_text()
-		code_edit.text_changed.emit() # the signal is not emitted for some reason
+		#code_edit.text_changed.emit() # the signal is not emitted for some reason
 		code_edit.saved_content = code_edit.text
 	else:
 		code_edit.text = "Could not retrive file"
