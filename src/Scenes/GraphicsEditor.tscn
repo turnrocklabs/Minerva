@@ -244,6 +244,7 @@ position = Vector2(0, -124)
 
 [node name="PopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
+visible = false
 z_index = 10
 layout_mode = 2
 size_flags_vertical = 0
