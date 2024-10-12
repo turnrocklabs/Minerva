@@ -226,13 +226,19 @@ icon = ExtResource("18_yov21")
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LayersContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer"]
+[node name="CenterContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="MgIcon" type="Sprite2D" parent="VBoxContainer/ScrollContainer"]
+[node name="LayersContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer/CenterContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MgIcon" type="Sprite2D" parent="VBoxContainer/ScrollContainer/CenterContainer"]
 unique_name_in_owner = true
 position = Vector2(0, -124)
 

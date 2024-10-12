@@ -105,7 +105,7 @@ func _ready():
 		#editing and drawing
 		toggle_masking(SingletonObject.is_masking)
 		
-	setup(Vector2i(2000, 2000), Color.WHITE)
+	setup(Vector2i(2000,2000), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
 	
@@ -823,12 +823,10 @@ func _scale(Hbox: HBoxContainer) -> void:
 		
 func _on_arrowleft_pressed() -> void:
 	_resize_layers()  # Increase width by 10%, center horizontallyc
-	
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			layer.position.x -= 60 # Move right by 5% of the new width 
-			
 func _on_arrow_right_pressed() -> void:
 	_resize_layers()  # Increase width by 10%, center horizontally
 
@@ -850,17 +848,18 @@ func _resize_layers(resize_width: bool = true) -> void:
 	zoomOut = false
 	
 	zoom_in_button.modulate = Color.WHITE
-	zoom_out_button.modulate = Color.WHITE 
-
+	zoom_out_button.modulate = Color.WHITE
+	 
+	var new_size: Vector2i
+	var old_size = _layers_container.get_child(0).image.get_size()
+	if resize_width:
+		new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
+	else:
+		new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
+		
 	for layer in _layers_container.get_children():
 		if layer is Layer:
-			var old_size = layer.image.get_size()
-			var new_size: Vector2i
 
-			if resize_width:
-				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
-			else:
-				new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
 
 			var resized_image := Image.create_empty(int(new_size.x), int(new_size.y), false, Image.FORMAT_RGBA8)
 			resized_image.fill(Color.WHITE)
@@ -878,6 +877,7 @@ func _resize_layers(resize_width: bool = true) -> void:
 			layer.image = resized_image
 			layer.size = new_size
 			layer.update() 
+			
 			
 func layers_buttons():
 	var Hbox = HBoxContainer.new()
