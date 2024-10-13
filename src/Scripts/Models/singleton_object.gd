@@ -334,8 +334,8 @@ func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MO
 		if API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
 			return key
 
-	# fallback value
-	return API_MODEL_PROVIDERS.CHAT_GPT_4O
+	# fallback to first provider shown in the chat dropdown
+	return Chats._provider_option_button.get_item_id(0) as API_MODEL_PROVIDERS
 
 @onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 
