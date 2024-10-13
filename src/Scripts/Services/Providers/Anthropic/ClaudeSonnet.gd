@@ -122,7 +122,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 				"source": {
 					"type": "base64",
 					"media_type": "image/png",
-					"data": % Marshalls.raw_to_base64(note.save_png_to_buffer()),
+					"data": Marshalls.raw_to_base64(note.save_png_to_buffer()),
 				}
 			})
 
