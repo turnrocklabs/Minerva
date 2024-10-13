@@ -153,6 +153,11 @@ func _ready():
 		print("Started the shell process with pid %s" % pid)
 
 
+# colse the threads on node exit
+func _exit_tree() -> void:
+	_clean()
+
+
 func _clean() -> void:
 	if pid: OS.kill(pid)
 
