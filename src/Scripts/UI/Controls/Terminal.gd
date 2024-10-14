@@ -172,34 +172,14 @@ func _clean() -> void:
 
 func _stdio_thread_loop():
 	while stdio.is_open() and stdio.get_error() == OK:
-		_new_text.call_deferred(char(stdio.get_8()))
+
+		_output_label.add_text.call_deferred(char(stdio.get_8()))
 
 
 func _stderr_thread_loop():
 	while stderr.is_open() and stderr.get_error() == OK:
-		_new_text.call_deferred(char(stderr.get_8()))
 
-
-func _new_text(text: String) -> void:
-
-	_output_label.text += text
-
-	# if not _output_label:
-	# 	display_output("")
-	
-	# var output: String = _output_label.text
-	# _output_label.set_meta("raw_output", _output_label.get_meta("raw_output", output) + text)
-	# output += text
-
-	# var wrapped_command: String = wrap_command.call("")
-
-	# # delimiter should be present twice, once in the echo command and once as the output of that command
-	# if output.contains(wrapped_command):
-	# 	output = output.replace(wrapped_command, "")
-
-	# output = output.replace(delimiter, "")
-
-	# _output_label.text = output
+		_output_label.add_text.call_deferred(char(stderr.get_8()))
 
 
 func execute_command(input: String):
@@ -208,18 +188,6 @@ func execute_command(input: String):
 	var command_buffer = (input + "\n").to_utf8_buffer()
 
 	stdio.store_buffer(command_buffer)
-
-	# var new_cmd: = _is_new_shell_command()
-
-	# if new_cmd:
-	# 	command_buffer = (str(wrap_command.call(input)) + "\n").to_utf8_buffer()
-	# 	_history.append(input)
-	# 	display_output("")
-	# else:
-	# 	command_buffer = (input + "\n").to_utf8_buffer()
-
-	# stdio.store_buffer(command_buffer)
-
 
 
 func _is_new_shell_command() -> bool:
@@ -269,7 +237,7 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			command_line_edit.caret_column = command_line_edit.text.length()
 
 
-func _on_text_edit_text_set():
+func _scroll_down():
 	await scroll_container.get_v_scroll_bar().changed
 
 	# scroll to bottom
