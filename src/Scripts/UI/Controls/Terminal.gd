@@ -8,7 +8,7 @@ signal execution_finished()
 
 @onready var scroll_container = %ScrollContainer
 @onready var command_line_edit: LineEdit = %CommandLineEdit
-@onready var outputs_container: VBoxContainer = %OutputsContainer
+@onready var buttons_container: VBoxContainer = %ButtonsContainer
 @onready var cwd_label: Label = %CwdLabel
 
 
@@ -24,6 +24,7 @@ var _stderr_thread: Thread
 
 const cwd_delimiter = "##cwd##"
 
+var _last_enabled_line: int = -1
 
 ## History of used commands
 var _history: = PackedStringArray()
@@ -54,45 +55,73 @@ func _wrap_linux_command(user_input: String) -> PackedStringArray:
 
 	return full_cmd
 
+var _last_content_height: float = 0
 
-func display_output(output: String) -> void:
-	# if _output_label:
-	# 	var lines = _output_label.text.split("\n")
+func _text_updated():
+	return
+	var present_btns: = buttons_container.get_child_count()
+	var lines: = _output_label.get_parsed_text().split("\n").size()
+	
+	# if lines == 1:
+	# 	_line_height = float(_output_label.get_content_height())
+
+	if not _output_label.is_ready():
+		await _output_label.finished
+
+	for i in range(lines - present_btns):
+		var line_num = present_btns+i
 		
-	# 	output = lines[-1] + output
+		var check_button = CheckButton.new()
+		check_button.set_meta("line_num", line_num)
+		check_button.add_theme_constant_override("icon_max_width", 30)
+		check_button.toggled.connect(_on_output_check_button_toggled.bind(line_num, check_button))
+		check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
 
-	# 	lines.resize(lines.size()-1)
-	# 	_output_label.text = "".join(lines)
+		var remaining_height = (_output_label.get_content_height() - _last_content_height) * 0.95
 
-	var output_container = HBoxContainer.new()
-	
-	var check_button = CheckButton.new()
-	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	check_button.size_flags_vertical = Control.SIZE_SHRINK_END
-	check_button.toggled.connect(_on_output_check_button_toggled.bind(output, check_button))
-	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
-	output_container.add_child(check_button)
+		_last_content_height = _output_label.get_content_height()
 
-	_output_label = RichTextLabel.new()
-	_output_label.fit_content = true
-	_output_label.selection_enabled = true
-	_output_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_output_label.text = output
-	output_container.add_child(_output_label)
-	
-	outputs_container.add_child(output_container)
-	
-	#this 2 lines are for auto scrollling all the way down
-	await get_tree().process_frame
-	%ScrollContainer.ensure_control_visible(%CwdLabel)
+		check_button.custom_minimum_size.y = remaining_height
+
+		buttons_container.add_child(check_button)		
+
+		print("Line: ", line_num)
+		prints(_output_label.get_content_height(), _last_content_height, remaining_height)
+
+		_output_label.push_indent(1)
+
+		
 
 
-func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
+func _on_output_check_button_toggled(toggled_on: bool, line_num: int, btn: CheckButton):
+
+	var enabled_lines: = _output_label.get_meta("_enabled") as Dictionary
+
+	if Input.is_key_pressed(KEY_SHIFT) and _last_enabled_line != -1:
+		for i in range(_last_enabled_line, line_num):
+			var check_button: CheckButton = buttons_container.get_child(i)
+			check_button.button_pressed = toggled_on
+			var ln: int = check_button.get_meta("line_num")
+			enabled_lines[ln] = true
+			
+				
+	_last_enabled_line = line_num
+
+	enabled_lines[line_num] = toggled_on
+
+	var content_lines: PackedStringArray
+
+	for ln in enabled_lines.keys():
+		if not enabled_lines[ln]: continue
+
+		
+
+
 	var item: MemoryItem
-
+	
 	if not has_meta("memory_item"):
 		item = SingletonObject.NotesTab.create_note("Terminal Note")
-		item.Content = output
+		item.Content = "line_num"
 		
 		if not item:
 			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the terminal.")
@@ -152,6 +181,7 @@ func _ready():
 
 		print("Started the shell process with pid %s" % pid)
 
+	_output_label.set_meta("_enabled", {})
 
 # colse the threads on node exit
 func _exit_tree() -> void:
@@ -172,20 +202,27 @@ func _clean() -> void:
 
 func _stdio_thread_loop():
 	while stdio.is_open() and stdio.get_error() == OK:
-
-		_output_label.add_text.call_deferred(char(stdio.get_8()))
+		_new_text.call_deferred(char(stdio.get_8()))
 
 
 func _stderr_thread_loop():
 	while stderr.is_open() and stderr.get_error() == OK:
+		_new_text.call_deferred(char(stderr.get_8()))
 
-		_output_label.add_text.call_deferred(char(stderr.get_8()))
+
+var _last_cmd: String
+
+func _new_text(text: String) -> void:
+
+
+	_output_label.add_text(text)
+	_text_updated()
 
 
 func execute_command(input: String):
 	_history.append(input)
 
-	var command_buffer = (input + "\n").to_utf8_buffer()
+	var command_buffer = (wrap_command.call(input) + "\n").to_utf8_buffer()
 
 	stdio.store_buffer(command_buffer)
 
