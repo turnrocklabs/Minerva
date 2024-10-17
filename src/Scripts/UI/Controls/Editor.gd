@@ -397,16 +397,17 @@ func update_matches_label(current_search, occurrences) -> void:
 #region find string buttons
 func _on_previous_match_button_pressed() -> void:
 	code_edit.deselect()
-	if code_edit.get_caret_column() - text_to_search.length() -1  < 0:
+	if code_edit.get_caret_column() - text_to_search.length() -1  <= 0:
 		code_edit.set_caret_column(0)
+		if code_edit.get_caret_line() - 1 >= 0:
+			code_edit.set_caret_line(code_edit.get_caret_line() - 1)
+			code_edit.set_caret_column(code_edit.get_text().split("\n")[code_edit.get_caret_line()].length())
 	else:
 		code_edit.set_caret_column( code_edit.get_caret_column() - text_to_search.length() - 1)
 	
 	var result: = code_edit.search(text_to_search, TextEdit.SearchFlags.SEARCH_BACKWARDS, code_edit.get_caret_line(),code_edit.get_caret_column())
 	if result.x != -1:
-		code_edit.set_caret_column(result.x)
-		code_edit.set_caret_line(result.y)
-		print("result from prev:" + str(result))
+		#print("result from prev:" + str(result))
 		code_edit.select(result.y,result.x , result.y, result.x + text_to_search.length())
 		code_edit.adjust_viewport_to_caret()
 	count_text_occurences()
