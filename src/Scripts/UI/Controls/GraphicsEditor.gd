@@ -104,8 +104,9 @@ func _ready():
 	elif SingletonObject.is_masking == true:
 		#editing and drawing
 		toggle_masking(SingletonObject.is_masking)
-		
-	setup(Vector2i(2000, 2000), Color.WHITE)
+	
+	await get_tree().process_frame
+	setup(Vector2i(%CenterContainer.size), Color.WHITE)
 	SingletonObject.is_graph = false
 	SingletonObject.is_masking = false
 	
@@ -165,7 +166,7 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 
 
 func setup_from_image(image_: Image):
-	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(800, 800))
+	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	image_.resize(new_size.x, new_size.y)
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
@@ -822,27 +823,26 @@ func _scale(Hbox: HBoxContainer) -> void:
 		active_transfer_button.modulate = Color.LIME_GREEN 
 		
 func _on_arrowleft_pressed() -> void:
-	_resize_layers()  # Increase width by 10%, center horizontallyc
-	
+	_resize_layers(true, true)  # Increase width by 10%, center horizontallyc
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			layer.position.x -= 60 # Move right by 5% of the new width 
-			
+
 func _on_arrow_right_pressed() -> void:
-	_resize_layers()  # Increase width by 10%, center horizontally
+	_resize_layers(true, false)  # Increase width by 10%, center horizontally
 
 func _on_arrow_top_pressed() -> void:
-	_resize_layers(false) # Increase height by 10%, center vertically 
+	_resize_layers(false, true) # Increase height by 10%, center vertically 
 	# --- Move layers after resizing ---
 	for layer in _layers_container.get_children():
 		if layer is Layer:
 			layer.position.y -= 60
 
 func _on_arrow_bottom_pressed() -> void:
-	_resize_layers(false)
+	_resize_layers(false, false)
 	
-func _resize_layers(resize_width: bool = true) -> void:
+func _resize_layers(resize_width: bool = true, origin_changed: = false) -> void:
 	var pixels_to_add = 60
 
 	%MgIcon.visible = false
@@ -850,34 +850,37 @@ func _resize_layers(resize_width: bool = true) -> void:
 	zoomOut = false
 	
 	zoom_in_button.modulate = Color.WHITE
-	zoom_out_button.modulate = Color.WHITE 
-
+	zoom_out_button.modulate = Color.WHITE
+	 
+	var new_size: Vector2i
+	var old_size = _layers_container.get_child(0).image.get_size()
+	if resize_width:
+		new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
+	else:
+		new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
+		
 	for layer in _layers_container.get_children():
 		if layer is Layer:
-			var old_size = layer.image.get_size()
-			var new_size: Vector2i
 
-			if resize_width:
-				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
-			else:
-				new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
 
 			var resized_image := Image.create_empty(int(new_size.x), int(new_size.y), false, Image.FORMAT_RGBA8)
 			resized_image.fill(Color.WHITE)
 
 			var offset := Vector2.ZERO # Default offset - no shift
 
-			# Calculate offset ONLY if expanding to the right or bottom
-			if resize_width and pixels_to_add > 0:
-				offset.x = pixels_to_add / 2  # Shift content to keep centered
-			elif not resize_width and pixels_to_add > 0:
-				offset.y = pixels_to_add / 2 
+			if origin_changed:
+				# Calculate offset ONLY if expanding to the right or bottom
+				if resize_width and pixels_to_add > 0:
+					offset.x = pixels_to_add  # Shift content to keep centered
+				elif not resize_width and pixels_to_add > 0:
+					offset.y = pixels_to_add
 
 			resized_image.blit_rect(layer.image, Rect2(Vector2.ZERO, old_size), offset)
 
 			layer.image = resized_image
 			layer.size = new_size
 			layer.update() 
+			
 			
 func layers_buttons():
 	var Hbox = HBoxContainer.new()
