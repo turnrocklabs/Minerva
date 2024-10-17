@@ -261,7 +261,6 @@ size_flags_vertical = 3
 
 [node name="LayersMenu" type="ScrollContainer" parent="PopupPanel/LayerBG"]
 unique_name_in_owner = true
-clip_contents = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -333,6 +332,7 @@ access = 2
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="resized" from="PopupPanel/LayerBG/LayersMenu" to="." method="_on_layers_menu_resized"]
 [connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
 [connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
 [connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]
