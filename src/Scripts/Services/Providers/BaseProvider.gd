@@ -80,6 +80,8 @@ class RequestResults extends RefCounted:
 	var http_request: HTTPRequest
 	var url: String
 	var metadata: Dictionary
+	var message: String
+	var success: bool = true
 
 	## This function will take results of the `HTTPRequest.request_completed` signal and additional data to construct
 	## RequestResults object
@@ -94,6 +96,12 @@ class RequestResults extends RefCounted:
 		obj.metadata = metadata_
 		obj.http_request = http_request_
 		obj.http_request.use_threads = true
+		return obj
+	
+	static func from_error(msg: String):
+		var obj = RequestResults.new()
+		obj.success = false
+		obj.message = msg
 		return obj
 	
 	func _to_string():
@@ -114,7 +122,7 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	else:
 		SingletonObject.ErrorDisplay("No API Access", "API Key is missing or rejected")
 		push_error("Invalid API key")
-		return null
+		return RequestResults.from_error("API Key is missing or rejected")
 
 	if http_request.is_inside_tree():
 		print("HTTPRequest is part of the scene tree.")
@@ -130,8 +138,9 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 
 	
 	if error != OK:
+		SingletonObject.ErrorDisplay("Error", "An error occurred during the HTTP request: %s" % error)
 		push_error("An error occurred during the HTTP request: %s" % error)
-		return null
+		return RequestResults.from_error("Unexpected error occurred")
 	
 
 	# data returned from awaited signal is array of arguments that would
