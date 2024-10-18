@@ -18,6 +18,10 @@ func _init():
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response:= BotResponse.new()
 
+	if not response.success:
+		bot_response.error = response.message
+		return bot_response
+
 	var data: Variant
 	if response.http_request_result == HTTPRequest.RESULT_SUCCESS:
 		# since the request was completed, construct the data
