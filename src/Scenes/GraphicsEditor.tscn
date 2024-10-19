@@ -245,9 +245,9 @@ position = Vector2(0, -124)
 [node name="PopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
 visible = false
-z_index = 10
+z_index = 50
+z_as_relative = false
 layout_mode = 2
-size_flags_vertical = 0
 
 [node name="LayerBG" type="Panel" parent="PopupPanel"]
 unique_name_in_owner = true
@@ -261,13 +261,13 @@ size_flags_vertical = 3
 
 [node name="LayersMenu" type="ScrollContainer" parent="PopupPanel/LayerBG"]
 unique_name_in_owner = true
-clip_contents = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 0
 follow_focus = true
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 2
@@ -283,6 +283,7 @@ theme_override_constants/margin_bottom = 5
 [node name="LayersHolder" type="VBoxContainer" parent="PopupPanel/LayerBG/LayersMenu/MarginContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 0
 alignment = 1
 
 [node name="Name" type="Label" parent="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder"]
@@ -333,6 +334,7 @@ access = 2
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="resized" from="PopupPanel/LayerBG/LayersMenu" to="." method="_on_layers_menu_resized"]
 [connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
 [connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
 [connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]

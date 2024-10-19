@@ -523,6 +523,12 @@ func _on_layers_pressed():
 	zoom_out_button.modulate = Color.WHITE 
 
 
+
+func _on_layers_menu_resized() -> void:
+	if layers_menu and %LayerBG:
+		%LayerBG.size = layers_menu.size
+
+
 func _on_add_layer_pressed():
 	layers_buttons()
 	
