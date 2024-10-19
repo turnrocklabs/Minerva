@@ -51,7 +51,8 @@ func _shortcut_input(event: InputEvent):
 	
 func _on_close_tab(tab: int, container: TabContainer):
 	if Editor.Type.WhiteBoard:
-		GraphicsEditor.layer_Number = 0
+		#GraphicsEditor.layer_Number = 0
+		pass
 	var control = container.get_tab_control(tab)
 	if control is Editor:
 		if not control.is_content_saved():
@@ -117,7 +118,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 
 	# check if we're opening a file that's already open or for the same associated_object (except null)
 	# if so just switch to that editor
-	for editor: Editor in self.Tabs.get_children():
+	for editor: Editor in Tabs.get_children():
 		if not editor is Editor: 
 			continue
 		if editor.file == file or (associated_object != null and editor.associated_object == associated_object):
@@ -128,15 +129,21 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	
 	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
 	
-	self.Tabs.add_child(editor_node)
-	self.Tabs.current_tab = self.Tabs.get_tab_count()-1
+	Tabs.add_child(editor_node)
+	Tabs.current_tab = Tabs.get_tab_count()-1
 	
 	if name_: 
 		var tab_name = editor_name_to_use(name_)
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
 		editor_node.tab_title = tab_name
 	elif file:
-		var tab_name = editor_name_to_use(file.get_file())
+		var tab_name: String
+		if !is_named_being_used(file.get_file()):
+			tab_name = editor_name_to_use(file.get_file())
+		else:
+			var dir: String = file.get_base_dir().split("/")[file.get_base_dir().split("/").size() -1]
+			tab_name = dir + "/" + file.get_file()
+
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
 		editor_node.tab_title = tab_name
 	else:
@@ -162,15 +169,22 @@ func open_editors() -> Array[Editor]:
 	return editors
 
 
+func is_named_being_used(proposed_name: String) -> bool:
+	for i in range(Tabs.get_tab_count()):
+		if Tabs.get_tab_title(i) == proposed_name:
+			print("tab name baing used already")
+			return true
+	return false
+
 func editor_name_to_use(proposed_name: String) -> String:
 	var collisions = 0
 	for i in range(Tabs.get_tab_count()):
-		if Tabs.get_tab_title(i).split(" ")[0] == proposed_name:
+		if Tabs.get_tab_title(i).split(" (")[0] == proposed_name:
 			collisions+=1
 	if collisions == 0:
 		return proposed_name
 	else:
-		return proposed_name + "(" + str(Tabs.get_tab_count() + 1) + ")"
+		return proposed_name + " (" + str(collisions) + ")"
 
 
 func unsaved_editors() -> Array[Editor]:
@@ -280,5 +294,6 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 	else: 
 		enable_editor_action_buttons.emit(false)
 
+#endregion  Enable Editor Buttons
 ###
 ### End Reference Information ###

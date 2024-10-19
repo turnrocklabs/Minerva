@@ -61,11 +61,11 @@ func _on_btn_voice_for_header_pressed():
 
 
 func _on_btn_voice_pressed():
-	SingletonObject.AtT.FieldForFilling = %txtNewTabName
+	SingletonObject.AtT.FieldForFilling = %NoteDescription
 	SingletonObject.AtT._StartConverting()
-	SingletonObject.AtT.btn = %btnVoiceForNoteTab
+	SingletonObject.AtT.btn = %btnVoice
 	#%btnVoiceForNoteTab.icon = icActive
-	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
+	%btnVoice.modulate = Color.LIME_GREEN
 
 #endregion voice buttons signal handler functions
 

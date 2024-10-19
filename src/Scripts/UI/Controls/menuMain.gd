@@ -117,6 +117,9 @@ func _on_view_id_pressed(id: int):
 		9: _unhide_messages()
 		#11: SingletonObject.change_buttons_zoom(0.5); return
 		#12: SingletonObject.change_buttons_zoom(-0.5); return
+		16: SingletonObject.increment_scale_ui()
+		17: SingletonObject.decrement_ui_scale()
+		18: SingletonObject.reset_ui_scale()
 	var index = view.get_item_index(id)
 	
 	if view.is_item_checkable(index):

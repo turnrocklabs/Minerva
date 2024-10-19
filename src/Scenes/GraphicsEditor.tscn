@@ -10,6 +10,7 @@
 [ext_resource type="Texture2D" uid="uid://bcau4lpt5d7nr" path="res://assets/icons/Brush-24-24.png" id="5_qs5mm"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="6_1v5g6"]
 [ext_resource type="Texture2D" uid="uid://bliwqrb268u66" path="res://assets/icons/zoom_icons/zoom_more.svg" id="6_4tqp6"]
+[ext_resource type="Texture2D" uid="uid://c1reekco0o8uq" path="res://assets/icons/FillTool-24-24.png" id="6_x0pyw"]
 [ext_resource type="Texture2D" uid="uid://b7jdoc3mrdcs6" path="res://assets/icons/SquareBrush.png" id="7_e5qpb"]
 [ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_icons/zoom_less.svg" id="7_hti8r"]
 [ext_resource type="Texture2D" uid="uid://ceq7itsittuax" path="res://assets/icons/editor_arrows/editor_arrow_left.png" id="9_t3u88"]
@@ -17,19 +18,21 @@
 [ext_resource type="Texture2D" uid="uid://bq7obdp4qb1qm" path="res://assets/icons/editor_arrows/editor_arrow_up.png" id="10_tpp25"]
 [ext_resource type="Texture2D" uid="uid://dmkhqqoc15i8a" path="res://assets/icons/editor_arrows/editor_arrow_down.png" id="11_cph1y"]
 [ext_resource type="Texture2D" uid="uid://ws8ig4iufap5" path="res://assets/icons/editor_arrows/editor_arrow_right.png" id="12_hpuv1"]
-
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
 
-
-[node name="GraphicsEditor" type="PanelContainer" node_paths=PackedStringArray("_color_picker", "_apply_mask_button")]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
+[node name="GraphicsEditor" type="PanelContainer"]
+anchors_preset = -1
+anchor_left = 0.046
+anchor_top = 0.05
+anchor_right = 0.5
+anchor_bottom = 0.432
+offset_left = -88.32
+offset_top = -54.0
+offset_right = 960.0
+offset_bottom = 613.44
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_dqx0p")
-_color_picker = NodePath("VBoxContainer/MarginContainer/HFlowContainer/ColorPickerButton")
-_apply_mask_button = NodePath("VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton")
 masking_color = Color(0.251, 0.227, 0.243, 0.6)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
@@ -53,6 +56,7 @@ theme_override_constants/h_separation = 16
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "tool selection dropdown"
 selected = 0
 item_count = 5
 popup/item_0/icon = ExtResource("2_yagwo")
@@ -62,11 +66,14 @@ popup/item_2/icon = ExtResource("4_82rro")
 popup/item_2/id = 2
 popup/item_3/icon = ExtResource("5_a37t7")
 popup/item_3/id = 3
+popup/item_4/icon = ExtResource("6_x0pyw")
+popup/item_4/id = 4
 
 [node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "brush styles"
 selected = 0
 fit_to_longest_item = false
 item_count = 4
@@ -85,11 +92,32 @@ layout_mode = 2
 size_flags_vertical = 4
 selected = 0
 item_count = 3
-popup/item_0/text = "Plain"
-popup/item_1/text = "Speech"
+popup/item_0/text = "Speech"
+popup/item_1/text = "Thought"
 popup/item_1/id = 1
-popup/item_2/text = "Thought"
+popup/item_2/text = "Plain"
 popup/item_2/id = 2
+
+[node name="ApplyTail" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Apply created mask"
+text = "Apply"
+
+[node name="BubbleRadius" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+editor_description = "Clouds bubbles size
+"
+visible = false
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Brush Size"
+max_value = 150.0
+value = 5.0
+rounded = true
 
 [node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
@@ -97,7 +125,7 @@ visible = false
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Apply created mask"
-text = "Apply Mask"
+text = "Apply"
 
 [node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
@@ -116,11 +144,11 @@ unique_name_in_owner = true
 editor_description = "Brush color"
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "active color for drawing"
 focus_mode = 0
+theme_override_constants/h_separation = 12
 text = "Color"
-flat = true
 icon_alignment = 1
-color = Color(0.447059, 0.447059, 0.67451, 1)
 
 [node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 visible = false
@@ -130,6 +158,7 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "click to activate dragging"
 icon = ExtResource("10_ax45b")
 
 [node name="Zoom" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
@@ -146,14 +175,16 @@ layout_mode = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="ZoomIn" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+[node name="ZoomInButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+tooltip_text = "zoom out the image"
 icon = ExtResource("6_4tqp6")
 
-[node name="ZoomOut" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
+[node name="ZoomOutButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+tooltip_text = "zoom out the image"
 icon = ExtResource("7_hti8r")
 
 [node name="layersIncrease" type="HBoxContainer" parent="VBoxContainer/MarginContainer/HFlowContainer"]
@@ -188,68 +219,90 @@ icon = ExtResource("12_hpuv1")
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "click to see dropdown for adding layers"
 icon = ExtResource("18_yov21")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LayersContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer"]
+[node name="CenterContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="MgIcon" type="Sprite2D" parent="VBoxContainer/ScrollContainer"]
+[node name="LayersContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer/CenterContainer"]
 unique_name_in_owner = true
-visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MgIcon" type="Sprite2D" parent="VBoxContainer/ScrollContainer/CenterContainer"]
+unique_name_in_owner = true
 position = Vector2(0, -124)
 
 [node name="PopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
 visible = false
+z_index = 10
 layout_mode = 2
 size_flags_vertical = 0
 
 [node name="LayerBG" type="Panel" parent="PopupPanel"]
 unique_name_in_owner = true
-layout_mode = 2
-offset_right = 218.0
+layout_mode = 0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 244.0
 offset_bottom = 146.0
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="LayersMenu" type="ScrollContainer" parent="PopupPanel"]
+[node name="LayersMenu" type="ScrollContainer" parent="PopupPanel/LayerBG"]
 unique_name_in_owner = true
-layout_mode = 0
-offset_right = 222.0
-offset_bottom = 146.0
+clip_contents = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+follow_focus = true
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 2
 
-[node name="LayersHolder" type="VBoxContainer" parent="PopupPanel/LayersMenu"]
+[node name="MarginContainer" type="MarginContainer" parent="PopupPanel/LayerBG/LayersMenu"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 5
+
+[node name="LayersHolder" type="VBoxContainer" parent="PopupPanel/LayerBG/LayersMenu/MarginContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 alignment = 1
 
-[node name="Name" type="Label" parent="PopupPanel/LayersMenu/LayersHolder"]
+[node name="Name" type="Label" parent="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder"]
 layout_mode = 2
 text = "Layers"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="LayersList" type="VBoxContainer" parent="PopupPanel/LayersMenu/LayersHolder"]
+[node name="LayersList" type="VBoxContainer" parent="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="AddLayer" type="Button" parent="PopupPanel/LayersMenu/LayersHolder"]
+[node name="AddLayer" type="Button" parent="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 8
 text = "Add layer"
 
-[node name="AddImagelayer" type="Button" parent="PopupPanel/LayersMenu/LayersHolder"]
+[node name="AddImagelayer" type="Button" parent="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder"]
 layout_mode = 2
 text = "Add image layer"
 
@@ -267,17 +320,19 @@ access = 2
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyTail" to="." method="_on_apply_tail_pressed"]
+[connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BubbleRadius" to="." method="_on_buble_radius_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Hand" to="." method="_on_hand_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomIn" to="." method="_on_zoom_in_pressed"]
-[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomOut" to="." method="_on_zoom_out_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomInButton" to="." method="_on_zoom_in_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomOutButton" to="." method="_on_zoom_out_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/Arrowleft" to="." method="_on_arrowleft_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowTop" to="." method="_on_arrow_top_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Layers" to="." method="_on_layers_pressed"]
-[connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
-[connection signal="pressed" from="PopupPanel/LayersMenu/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
+[connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
+[connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddImagelayer" to="." method="_on_add_imagelayer_pressed"]
 [connection signal="file_selected" from="AddNewPic" to="." method="_on_add_new_pic_file_selected"]

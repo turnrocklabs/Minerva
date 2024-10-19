@@ -8,13 +8,16 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var is_graph:bool
 var is_masking:bool
 
+#this is where we save the last path used to save a file or project
+var last_saved_path: String
+
+
 var CloudType
 
 var is_Brush
 var is_square
 var is_cryon
 var is_marker
-
 #endregion global variables
 
 #region Config File
@@ -26,6 +29,17 @@ func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
+
+func config_has_saved_section(section: String) -> bool:
+	if !section: return false
+	return config_file.has_section(section)
+
+
+func config_clear_section(section: String)-> void:
+	if !section: return
+	config_file.erase_section(section)
+	config_file.save(config_file_name)
+
 
 #method for checking if the user has saved files
 func has_recent_projects() -> bool:
@@ -130,6 +144,39 @@ var undo: undoMain = undoMain.new()
 #Add AtT to use it throught the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
+
+#region UI Scaling
+var initial_ui_scale: float = 1
+var min_ui_scale: = 0.8
+var max_ui_scale: = 1.5
+var scaling_factor: = 0.04
+
+func increment_scale_ui() -> void:
+	var ui_scale = get_tree().root.content_scale_factor
+	if ui_scale < max_ui_scale:
+		get_tree().root.content_scale_factor = ui_scale + scaling_factor
+		main_scene.queue_redraw()
+
+
+func decrement_ui_scale() -> void:
+	var ui_scale = get_tree().root.content_scale_factor
+	if ui_scale > min_ui_scale:
+		get_tree().root.content_scale_factor = ui_scale - scaling_factor
+		main_scene.queue_redraw()
+
+
+func reset_ui_scale() -> void:
+	get_tree().root.content_scale_factor = 1.0
+	main_scene.queue_redraw()
+
+
+func set_ui_scale(new_scale: float) -> void:
+	if new_scale > min_ui_scale and new_scale < max_ui_scale:
+		get_tree().root.content_scale_factor = new_scale
+		main_scene.queue_redraw()
+
+#endregion UI Scaling
+
 ##region Buttons/Icons scaling
 #var buttons_array: Array = []
 #
@@ -191,11 +238,15 @@ func _ready():
 	
 	add_child(AtT)
 	add_child(undo)
-	
+	#TODO add ui scale to the config file and retireve it on app load
 	var err = config_file.load(config_file_name)
 	if err != OK:
 		return
 	
+	if config_has_saved_section("LastSavedPath"):
+		last_saved_path = config_file.get_section_keys("LastSavedPath")[0]
+	else:
+		last_saved_path = "/"
 	
 	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
@@ -253,6 +304,7 @@ enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC }
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
 	CHAT_GPT_4O,
+	CHAT_GPT_O1,
 	CHAT_GPT_35_TURBO,
 	GOOGLE_VERTEX,
 	GOOGLE_VERTEX_PRO,
@@ -263,6 +315,7 @@ enum API_MODEL_PROVIDERS {
 ## Dictionary of all model providers and scripts that implement their functionality
 var API_MODEL_PROVIDER_SCRIPTS = {
 	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
+	API_MODEL_PROVIDERS.CHAT_GPT_O1: ChatGPTo1,
 	API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX: GoogleAi,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
