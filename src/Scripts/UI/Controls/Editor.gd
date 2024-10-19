@@ -280,30 +280,32 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
-	if _save_override.is_valid() or associated_object:
+	if _save_override.is_valid():
 		_save_override.call()
-		return
-	if Type.TEXT == type:
-		if tab_title:
-			SingletonObject.NotesTab.add_note( tab_title, code_edit.text)
-		elif file:
-			SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
-		else:
-			SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
-		return
-	if Type.GRAPHICS == type:
-		if tab_title:
-			SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
-		elif file:
-			SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
-		else:
-			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
-		return
-	#if Type.WhiteBoard == type:
-		#if file:
-			#SingletonObject.NotesTab.add_image_note(file.get_file(), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
-		#else:
-			#SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+	else:
+		var new_memory = null
+		if Type.TEXT == type:
+			if file:
+				new_memory = SingletonObject.NotesTab.add_note( file.get_file(), code_edit.text)
+				set_meta("associated_object", new_memory)
+			elif tab_title:
+				new_memory = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
+				set_meta("associated_object", new_memory)
+			else:
+				new_memory = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+				set_meta("associated_object", new_memory)
+			return
+		if Type.GRAPHICS == type:
+			if tab_title:
+				new_memory = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
+				set_meta("associated_object", new_memory) 
+			elif file:
+				new_memory =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
+				set_meta("associated_object", new_memory) 
+			else:
+				new_memory = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+				set_meta("associated_object", new_memory) 
+		associated_object = new_memory
 
 
 #this functions calls the file linked to the editor to be loaded again into memory
