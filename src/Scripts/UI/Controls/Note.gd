@@ -264,7 +264,9 @@ func associate_editor(editor: Editor):
 				memory_item.Content = editor.code_edit.text
 			elif editor.type == Editor.Type.GRAPHICS:
 				memory_item.MemoryImage = editor.graphics_editor.image
-			
+			else:
+				editor.type = Editor.Type.NOTE_EDITOR
+				memory_item.Content = editor.code_edit.text
 			memory_item = memory_item
 	)
 

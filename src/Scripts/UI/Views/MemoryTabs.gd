@@ -170,7 +170,7 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 	return new_memory
 
 
-func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
+func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryItem:
 	if (SingletonObject.ThreadList == null) or current_tab < 1:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		#return
@@ -190,11 +190,12 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV):
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
+	return new_memory
 
 
-func add_image_note(note_title: String, note_image: Image, imageCaption: String = ""):
+func add_image_note(note_title: String, note_image: Image, imageCaption: String = "") -> MemoryItem:
 	if SingletonObject.ThreadList.is_empty():
-		await create_new_notes_tab()
+		create_new_notes_tab()
 	
 	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
 	
@@ -211,6 +212,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
+	return new_memory
 
 
 ## Creates a note without adding it to any thread.
