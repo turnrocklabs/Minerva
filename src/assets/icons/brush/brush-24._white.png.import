@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://rss2osbiuu7x"
-path="res://.godot/imported/BoubleDialogCloud.png-da0f5d10251eca8da064f8c05c6c1fc6.ctex"
+uid="uid://di5jees70wybf"
+path="res://.godot/imported/brush-24._white.png-58992f22a260d13dcef611031e8c57dc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/BoubleDialogCloud.png"
-dest_files=["res://.godot/imported/BoubleDialogCloud.png-da0f5d10251eca8da064f8c05c6c1fc6.ctex"]
+source_file="res://assets/icons/brush/brush-24._white.png"
+dest_files=["res://.godot/imported/brush-24._white.png-58992f22a260d13dcef611031e8c57dc.ctex"]
 
 [params]
 

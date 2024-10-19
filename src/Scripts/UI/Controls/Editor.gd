@@ -6,7 +6,7 @@ extends Control
 
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
-static var scene = preload("res://Scenes/Editor.tscn")
+static var editor_scene = preload("res://Scenes/Editor.tscn")
 
 signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
@@ -16,6 +16,19 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 @onready var texture_rect: TextureRect = %TextureRect
 @onready var graphics_editor: GraphicsEditor = %GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
+
+#this are control noes for the Ctrl+F UI
+@onready var find_string_container: HBoxContainer = %FindStringContainer
+@onready var find_string_line_edit: LineEdit = %FindStringLineEdit
+@onready var matches_counter_label: Label = %MatchesCounterLabel
+@onready var previous_match_button: Button = %PreviousMatchButton
+@onready var next_match_button: Button = %NextMatchButton
+
+
+#this are control nodes for the Ctrl+G popup
+@onready var jump_to_line_panel: PopupPanel = %JumpToLinePanel
+@onready var jump_to_line_edit: LineEdit = %JumpToLineEdit
+@onready var jump_to_line_label: RichTextLabel = %JumpToLineLabel
 
 enum Type {
 	TEXT,
@@ -35,8 +48,10 @@ var _save_override: Callable
 
 var tab_title: String = ""
 var file: String
+#var file_path: String
 var type: Type
 var _file_saved := false
+
 var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
@@ -45,7 +60,7 @@ var prompt_save:= true
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
 static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null) -> Editor:
-	var editor = scene.instantiate()
+	var editor = editor_scene.instantiate()
 	editor.type = type_
 	editor.associated_object = associated_object_
 	
@@ -57,7 +72,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	match type_:
 		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
 			editor.get_node("%CodeEdit").visible = true
-			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
+			#editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
 		Editor.Type.GRAPHICS:
 			editor.get_node("%GraphicsEditor").visible = true
 			## TODO: Implement changed signal for graphics editor
@@ -83,13 +98,23 @@ func _ready():
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
+	SingletonObject.UpdateLastSavePath.connect(update_last_path)
+	code_edit.text_changed.connect(_on_editor_changed)
+
+
+func update_last_path(new_path: String) -> void:
+	SingletonObject.last_saved_path = new_path + "/"
 
 
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	if fa_object:
+		#file_path = file
 		code_edit.text = fa_object.get_as_text()
+		#code_edit.text_changed.emit() # the signal is not emitted for some reason
 		code_edit.saved_content = code_edit.text
+	else:
+		code_edit.text = "Could not retrive file"
 	# %SaveButton.disabled = false
 
 
@@ -98,13 +123,6 @@ func _load_graphics_file(filename: String):
 	graphics_editor.setup_from_image(image)
 	# %SaveButton.disabled = false
 
-# func _gui_input(event: InputEvent):
-# 	print(event)
-# 	if not event is InputEventKey: return
-
-# 	if event.is_action_pressed("save"):
-# 		print("SAVEE SAVEEEE ", get_viewport().gui_get_focus_owner())
-# 		get_viewport().set_input_as_handled()
 
 ## Changes the function that runs when user clicks the "save" button
 ## from the [method prompt_close] to [parameter save_function].[br]
@@ -140,11 +158,14 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 	if not file:
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
-		line_edit.text = tab_title + "." + SingletonObject.supported_text_fortmats[0]
+		if type == Type.TEXT or type == Type.NOTE_EDITOR:
+			line_edit.text = tab_title + "." + SingletonObject.supported_text_fortmats[0]
+		else:
+			line_edit.text = tab_title
 		$FileDialog.popup_centered(Vector2i(700, 500))
 
 		await ($FileDialog as FileDialog).visibility_changed
-		#($FileDialog as FileDialog).filters = dialog_filters
+		
 	else:
 		if new_entry:# this is used for the save as.. feature
 			($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
@@ -153,7 +174,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 			$FileDialog.popup_centered(Vector2i(700, 500))
 			
 			await ($FileDialog as FileDialog).visibility_changed
-			#($FileDialog as FileDialog).filters = dialog_filters
+			
 		else:
 			_on_file_dialog_file_selected(file)
 	
@@ -172,13 +193,18 @@ func save():
 	if _save_override.is_valid():
 		_save_override.call()
 	else:
-		await prompt_close(true)
+		if SingletonObject.last_saved_path:
+			await prompt_close(true, false, SingletonObject.last_saved_path)
+		else:
+			await prompt_close(true)
 	
 	# Post save emit the signals to update the saved state icon
 	match type:
 		Type.TEXT, Type.NOTE_EDITOR:
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
+			graphics_editor.is_image_saved = true
+			SingletonObject.UpdateUnsavedTabIcon.emit()
 			pass # TODO: implement for graphics files
 
 
@@ -191,49 +217,13 @@ func is_content_saved() -> bool:
 			var memory_item: MemoryItem = get_meta('associated_object')
 			return code_edit.text == memory_item.Content
 		Type.GRAPHICS:
-			return true ## TODO: Implement checking if graphics file is saved
+			if graphics_editor:
+				return graphics_editor.is_image_saved
+			else:
+				return false
 	
 	return false
 
-
-func _on_gui_input(event: InputEvent) -> void:
-	check_jump_to_line(event)
-
-
-func _on_code_edit_gui_input(event: InputEvent) -> void:
-	check_jump_to_line(event)
-
-
-func check_jump_to_line(event: InputEvent) -> void:
-	if event.is_action_pressed("jump_to_line")and !%JumpToLinePanel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
-		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to"
-		var column = code_edit.get_caret_column()
-		if column < 1:
-			column = 1
-		var line = code_edit.get_caret_line()
-		if line < 1:
-			line = 1
-		var line_count = code_edit.get_line_count()
-		if line_count < 1:
-			line_count = 1
-		
-		var new_text = string_format % [line, column, 1, line_count]
-		%JumpToLineLabel.text = new_text
-		%JumpToLineEdit.call_deferred("grab_focus")
-		%JumpToLinePanel.call_deferred("show")
-
-
-func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
-	%JumpToLinePanel.call_deferred("hide")
-	var line_to_jump_to: = 0
-	if new_text.is_valid_int():
-		line_to_jump_to = new_text.to_int()
-		code_edit.set_caret_line(line_to_jump_to -1)
-
-
-func _on_editor_changed():
-	%JumpToLineEdit.max_length = str(%CodeEdit.get_line_count()).length()
-	content_changed.emit()
 
 func _on_save_dialog_canceled():
 	save_dialog.emit(DIALOG_RESULT.Cancel)
@@ -273,7 +263,11 @@ func save_file_to_disc(path: String):
 			
 	_file_saved = true
 	file_saved_in_disc = true
+
 	SingletonObject.UpdateLastSavePath.emit(path.get_base_dir())
+	if SingletonObject.config_has_saved_section("LastSavedPath"):
+		SingletonObject.config_clear_section("LastSavedPath")
+		SingletonObject.save_to_config_file("LastSavedPath", "path", SingletonObject.last_saved_path)
 	tab_title = path.get_file()
 	var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
 	SingletonObject.editor_pane.Tabs.set_tab_title(indx, tab_title)
@@ -311,7 +305,11 @@ func _on_create_note_button_pressed() -> void:
 
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
-	_load_text_file(file)
+	match type:
+		Type.GRAPHICS:
+			_load_graphics_file(file)
+		Type.TEXT:
+			_load_text_file(file)
 
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
@@ -319,6 +317,159 @@ func _on_save_open_editor_tabs_button_pressed() -> void:
 	SingletonObject.SaveOpenEditorTabs.emit()
 
 #endregion bottom of the pane buttons
+
+#region Code Editor
+#region code editor action commands
+
+#this function catches input when the code editor is focused
+func _on_code_edit_gui_input(event: InputEvent) -> void:
+	if event.is_action_pressed("jump_to_line"):
+		jump_to_line()
+	elif  event.is_action_pressed("find_string"):
+		find_string_in_code_edit()
+
+#this are variables for Ctrl+F
+var text_to_search: String = ""
+var results_number: int = 0
+var results_to_current: int = 0
+#this is called when the user presses 'Ctrl+F'
+func find_string_in_code_edit() -> void:
+	if !find_string_container.visible:
+		find_string_container.show()
+	
+	if code_edit.get_selected_text() != "":
+		
+		find_string_line_edit.text = code_edit.get_selected_text()
+		
+		code_edit.add_selection_for_next_occurrence()
+		text_to_search = code_edit.get_selected_text()
+		update_search(code_edit.get_selected_text())
+		find_string_line_edit.select_all()
+
+
+func update_search(new_text: String) -> void:
+	code_edit.set_search_text(new_text)
+	text_to_search = new_text
+	code_edit.highlight_all_occurrences = true
+	count_text_occurences()
+
+
+func _on_find_string_line_edit_text_changed(new_text: String) -> void:
+	update_search(new_text)
+	
+	var result: = code_edit.search(text_to_search, TextEdit.SearchFlags.SEARCH_WHOLE_WORDS, code_edit.get_caret_line(),code_edit.get_caret_column())
+	if result.x != -1:
+		code_edit.set_caret_column(result.x)
+		code_edit.set_caret_line(result.y)
+		code_edit.select(result.y,result.x, result.y, result.x + text_to_search.length())
+	code_edit.add_selection_for_next_occurrence()
+
+
+func count_text_occurences() -> void:
+	results_number = 0
+	results_to_current = 0
+	
+	for line: String in code_edit.text.split("\n"):
+		results_number += line.countn(text_to_search,0,0)
+	
+	var for_indx: = 0
+	for i : String in code_edit.text.split("\n"):
+		if code_edit.get_caret_line() == for_indx:
+			results_to_current += i.countn(text_to_search, 0, code_edit.get_caret_column())
+			break
+		else:
+			results_to_current += i.countn(text_to_search, 0, )
+		
+		for_indx += 1
+	
+	update_matches_label(results_to_current, results_number)
+
+
+func update_matches_label(current_search, occurrences) -> void:
+	if occurrences < 1:
+		matches_counter_label.text = "No matches"
+		matches_counter_label.modulate = Color.RED
+	else:
+		matches_counter_label.text = "%s of  %s matches: " % [current_search, occurrences]
+		matches_counter_label.modulate = Color.WHITE
+
+
+#region find string buttons
+func _on_previous_match_button_pressed() -> void:
+	code_edit.deselect()
+	if code_edit.get_caret_column() - text_to_search.length() -1  < 0:
+		code_edit.set_caret_column(0)
+	else:
+		code_edit.set_caret_column( code_edit.get_caret_column() - text_to_search.length() - 1)
+	
+	var result: = code_edit.search(text_to_search, TextEdit.SearchFlags.SEARCH_BACKWARDS, code_edit.get_caret_line(),code_edit.get_caret_column())
+	if result.x != -1:
+		code_edit.set_caret_column(result.x)
+		code_edit.set_caret_line(result.y)
+		print("result from prev:" + str(result))
+		code_edit.select(result.y,result.x , result.y, result.x + text_to_search.length())
+		code_edit.adjust_viewport_to_caret()
+	count_text_occurences()
+
+
+func _on_next_match_button_pressed() -> void:
+	var result: = code_edit.search(text_to_search, 0, code_edit.get_caret_line(),code_edit.get_caret_column())
+	if result.x != -1:
+		print("result from next:" + str(result))
+		code_edit.set_caret_column(result.x)
+		code_edit.set_caret_line(result.y)
+		code_edit.select(result.y,result.x , result.y, result.x + text_to_search.length())
+		code_edit.adjust_viewport_to_caret()
+	count_text_occurences()
+
+#close button for the find string UI controls
+func _on_close_buton_pressed() -> void:
+	code_edit.highlight_all_occurrences = false
+	code_edit.set_search_text('')
+	find_string_container.hide()
+
+#endregion find string buttons
+
+#this function is called when the user presses 'Ctrl+G'
+func jump_to_line() -> void:
+	if !jump_to_line_panel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
+		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to."
+		
+		#this is a ternary operator equivalent
+		var column: int = code_edit.get_caret_column() if code_edit.get_caret_column() > 1 else 1
+		var line: int = code_edit.get_caret_line() + 1 if code_edit.get_caret_line() > 1 else 1
+		var line_count: int = code_edit.get_line_count() if code_edit.get_line_count() > 1 else 1
+		
+		var new_text = string_format % [line, column, 1, line_count]
+		jump_to_line_label.text = new_text
+		jump_to_line_edit.call_deferred("grab_focus")
+		jump_to_line_panel.call_deferred("show")
+
+
+func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
+	
+	jump_to_line_edit.text = ""
+	if new_text.is_valid_int():
+		code_edit.set_caret_line(new_text.to_int() -1)
+		jump_to_line_panel.call_deferred("hide")
+	else:
+		jump_to_line_label.text += "\nINPUT PROVIDED WAS NOT VALID." 
+
+#endregion code editor action commands
+
+func _on_editor_changed(text: String = ""):
+	if text != "":
+		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
+		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
+		SingletonObject.UpdateUnsavedTabIcon.emit()
+		_file_saved = false
+		file_saved_in_disc = false
+
+	if has_meta("memory_item"):
+		var item: MemoryItem = get_meta("memory_item")
+		_update_note(item)
+
+	content_changed.emit()
 
 #region Top Editor buttons
 func delete_chars() -> void:
@@ -347,17 +498,18 @@ func undo_action():
 func clear_text():
 	if Type.TEXT != type:
 		return
-	%CodeEdit.clear()
+	code_edit.clear()
 	code_edit.grab_focus()
 
 
 func _on_audio_btn_pressed():
-	SingletonObject.AtT.FieldForFilling = %CodeEdit
+	SingletonObject.AtT.FieldForFilling = code_edit
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %AudioBTN
 	%AudioBTN.modulate = Color(Color.LIME_GREEN)
 
 #endregion Top Editor buttons
+#endregion Code Editor
 
 
 ## Creates a Note from this Editor.[br]
@@ -377,6 +529,16 @@ func _create_note() -> MemoryItem:
 		return null # type not supported
 	
 	return memory_item
+
+func _update_note(memory_item: MemoryItem) -> void:
+	if type == Type.TEXT:
+		memory_item.Type = SingletonObject.note_type.TEXT
+		memory_item.Content = code_edit.text
+	
+	elif type == Type.GRAPHICS:
+		memory_item.Type = SingletonObject.note_type.IMAGE
+		memory_item.MemoryImage = graphics_editor.image
+
 
 
 func _on_check_button_toggled(toggled_on: bool):

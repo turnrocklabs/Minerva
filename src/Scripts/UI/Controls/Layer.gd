@@ -2,22 +2,25 @@ class_name Layer
 extends TextureRect
 
 const _scene = preload("res://Scenes/Layer.tscn")
-var image: Image
-
-var left
-var right
-var top
-var bottom
-var topLeft
-var bottomLeft
-var topRight
-var bottomRight
+var image: Image:
+	set(new_image):
+		image = new_image
+		update()
+var layer_name: String
+var left: bool
+var right: bool
+var top: bool
+var bottom: bool
+var topLeft: bool
+var bottomLeft: bool
+var topRight: bool
+var bottomRight: bool
 
 var dragging:bool
 static func create(image_: Image, name_:String) -> Layer:
 	var layer: Layer = _scene.instantiate()
 	layer.image = image_
-	layer.name = name_
+	layer.layer_name = name_
 	return layer
 
 
@@ -31,10 +34,13 @@ func _ready():
 	%EditButton7.connect("button_up",self.cancleDragging)
 	%EditButton8.connect("button_up",self.cancleDragging)
 	custom_minimum_size = image.get_size()
-	update()
 
-func update():
-	texture = ImageTexture.create_from_image(image)
+
+func update(image_: Image = null):# this method get called every time a stroke is done on a layer
+	if image_ != null and !image_.is_empty():
+		texture = ImageTexture.create_from_image(image_)
+	else:
+		texture = ImageTexture.create_from_image(self.image)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and dragging:

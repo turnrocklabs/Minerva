@@ -11,7 +11,7 @@ func _init():
 
 	model_name = "gemini-1.5-flash"
 	short_name = "GV"
-	token_cost = 1.5 / 1_000_000 # https://claude101.com/claude-3-5-sonnet/
+	token_cost = 0
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response := BotResponse.new()

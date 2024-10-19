@@ -1,6 +1,7 @@
 {
 	"ChatList": [
 		{
+			"FrecuencyPenalty": 0,
 			"HistoryId": "5af1aea51d55f2526a5203a37051b2a6ac33441b6b3752480c461bdce890e320",
 			"HistoryItemList": [
 				{
@@ -9,8 +10,8 @@
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"Message": "Hi",
-					"ModelName": "",
-					"ModelShortName": "",
+					"ModelName": "gpt-4o",
+					"ModelShortName": "O4",
 					"Order": 0,
 					"Role": 0,
 					"TokenCost": 8,
@@ -30,10 +31,41 @@
 					"TokenCost": 9,
 					"Type": 0,
 					"Visible": true
+				},
+				{
+					"Captions": [],
+					"EstimatedTokenCost": 11,
+					"Images": [],
+					"InjectedNotes": "HAAAAAAAAAA=",
+					"Message": "hi",
+					"ModelName": "",
+					"ModelShortName": "",
+					"Order": 0,
+					"Role": 0,
+					"TokenCost": 26,
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Captions": [],
+					"EstimatedTokenCost": 0,
+					"Images": [],
+					"InjectedNotes": "HAAAAAAAAAA=",
+					"Message": "Hello! How can I help you today?",
+					"ModelName": "gpt-4o",
+					"ModelShortName": "O4",
+					"Order": 0,
+					"Role": 2,
+					"TokenCost": 9,
+					"Type": 0,
+					"Visible": true
 				}
 			],
 			"HistoryName": "Chat 1",
-			"Provider": 0
+			"PresencePenalty": 0,
+			"Provider": 0,
+			"Temperature": 1,
+			"TopP": 1
 		}
 	],
 	"Editors": [],
@@ -171,6 +203,21 @@
 					"Title": "Edit and save",
 					"Type": 0,
 					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "Make a text file.\nChange the text file outside app.\nReload text file.\nAsk AI a question about the change.\n\nVerify:\n- AI knows of changed content.\n- Editor doesn't mark file as \"changed\" for saving.\n- Can quit app without getting a \"save changed files\" dialog.",
+					"ContentType": "",
+					"Enabled": false,
+					"ImageCaption": "",
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 4,
+					"OwningThread": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
+					"Pinned": false,
+					"Title": "Reload text content",
+					"Type": 0,
+					"Visible": true
 				}
 			],
 			"ThreadId": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
@@ -232,7 +279,7 @@
 				{
 					"Audio": null,
 					"Content": "1. Check for sending picture single input and multiple input, try to change the models durnign the proccess\n2. Drawing picture and sending it to Google AI to describe it, for both models\n3.repeat it several time and look how close it's t oour original image \n4. Change providers look how they acting when we changing them during proccess\n5.",
-					"ContentType": "text",
+					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
 					"Locked": false,
@@ -252,7 +299,7 @@
 			"MemoryItemList": [
 				{
 					"Audio": null,
-					"Content": "Create 1: DallE Prompt and create an image.\nCreate 2: Create 2 different, unrelated Dalle Prompts in the same chat and make different images.",
+					"Content": "Edit 1 DallE Image with a mask.\nEdit 2 unrelated DallE images with multiple masks per image.",
 					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
@@ -261,13 +308,13 @@
 					"Order": 0,
 					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
 					"Pinned": false,
-					"Title": "Dall-E Generation",
+					"Title": "DallE Edit",
 					"Type": 0,
 					"Visible": true
 				},
 				{
 					"Audio": null,
-					"Content": "Edit 1 DallE Image with a mask.\nEdit 2 unrelated DallE images with multiple masks per image.",
+					"Content": "Create 1: DallE Prompt and create an image.\nCreate 2: Create 2 different, unrelated Dalle Prompts in the same chat and make different images.",
 					"ContentType": "",
 					"Enabled": false,
 					"ImageCaption": "",
@@ -276,7 +323,82 @@
 					"Order": 1,
 					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
 					"Pinned": false,
-					"Title": "DallE Edit",
+					"Title": "Dall-E Generation",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "draw upside down pyramid and expand layer to each directions(other test cases) and add label with some text",
+					"ContentType": "",
+					"Enabled": false,
+					"ImageCaption": "",
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 2,
+					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
+					"Pinned": false,
+					"Title": "CanvasExpansion",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "try each brush and it's additional tool for eraser, masking and etc.",
+					"ContentType": "",
+					"Enabled": false,
+					"ImageCaption": "",
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 3,
+					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
+					"Pinned": false,
+					"Title": "Draw with each brushes",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "add graphicEditor and then add image layer,also try for multiple image layers.\nAlso for Text bubble. Open several graphicEditors tabs and add layers with images and Text bubbles",
+					"ContentType": "",
+					"Enabled": false,
+					"ImageCaption": "",
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 4,
+					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
+					"Pinned": false,
+					"Title": "Layers and image layers",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "try to incert image from dalle and new image file like new layer",
+					"ContentType": "",
+					"Enabled": false,
+					"ImageCaption": "",
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 5,
+					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
+					"Pinned": false,
+					"Title": "Incert a Layer with existing graphic",
+					"Type": 0,
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "Create 2 or more layers in the graphics editor and color their edges in different colors.\nThe colored edges will overlap since layers are on top of each other.\nResize the canvas and confirm that they are still overlapping after the resize.\nDo the same with zoom in/out, etc.",
+					"ContentType": "text",
+					"Enabled": false,
+					"ImageCaption": "",
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 6,
+					"OwningThread": "b6c82c07ff72ed94d8c53e9b4adbaa39a1024f5d79dab23a6dcc537e2fa94ce1",
+					"Pinned": false,
+					"Title": "Test layers resizing",
 					"Type": 0,
 					"Visible": true
 				}
@@ -490,7 +612,8 @@
 		}
 	],
 	"active_chatindex": 0,
-	"active_notes_index": 0,
+	"active_editor_index": -1,
+	"active_notes_index": 5,
 	"default_provider": 0,
 	"last_tab_index": 0
 }

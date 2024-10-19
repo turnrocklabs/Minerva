@@ -31,10 +31,10 @@ allow_gui_add = false
 [node name="LowerBottomResizer" type="TextureButton" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 360.0
-offset_top = 183.0
-offset_right = 395.0
-offset_bottom = 218.0
+offset_left = 1100.0
+offset_top = 602.0
+offset_right = 1135.0
+offset_bottom = 637.0
 pivot_offset = Vector2(17, 17)
 focus_mode = 0
 mouse_filter = 1
@@ -45,8 +45,10 @@ stretch_mode = 5
 [node name="UpperLeftResizer" type="TextureButton" parent="."]
 unique_name_in_owner = true
 layout_mode = 0
-offset_right = 35.0
-offset_bottom = 35.0
+offset_left = 740.0
+offset_top = 419.0
+offset_right = 775.0
+offset_bottom = 454.0
 pivot_offset = Vector2(17, 17)
 focus_mode = 0
 mouse_filter = 1
@@ -59,6 +61,7 @@ unique_name_in_owner = true
 layout_mode = 0
 offset_right = 8.0
 offset_bottom = 8.0
+theme_type_variation = &"SpeechBubbleTextEdit"
 wrap_mode = 1
 
 [connection signal="button_down" from="LowerBottomResizer" to="." method="_on_lower_bottom_resizer_button_down"]

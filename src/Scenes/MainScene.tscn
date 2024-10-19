@@ -1,4 +1,4 @@
-[gd_scene load_steps=36 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=37 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_d0avd"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -27,6 +27,7 @@
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="14_sknqf"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
+[ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="20_cqinw"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="20_n1ygu"]
 [ext_resource type="Texture2D" uid="uid://deboh0lwmv7f7" path="res://assets/icons/paperclip_icons/paperclip_icon_24_no_bg.png" id="21_0ds70"]
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
@@ -174,9 +175,10 @@ size = Vector2i(123, 143)
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 title = "View"
-size = Vector2i(211, 363)
+size = Vector2i(211, 425)
+hide_on_item_selection = false
 hide_on_checkable_item_selection = false
-item_count = 15
+item_count = 19
 item_0/text = "Chats"
 item_0/checkable = 1
 item_0/checked = true
@@ -213,14 +215,25 @@ item_10/id = 12
 item_11/text = "Reset Icons Zoom"
 item_11/icon = ExtResource("11_i5ytf")
 item_11/id = 13
-item_12/id = 14
+item_12/id = 15
 item_12/separator = true
-item_13/text = "Show All Messages"
-item_13/icon = ExtResource("7_rdia2")
-item_13/id = 8
-item_14/text = "Show All Notes"
-item_14/icon = ExtResource("7_rdia2")
-item_14/id = 9
+item_13/text = "UI Scale +"
+item_13/icon = ExtResource("9_6n2ks")
+item_13/id = 16
+item_14/text = "UI Scale -"
+item_14/icon = ExtResource("10_wto0r")
+item_14/id = 17
+item_15/text = "UI Scale Reset"
+item_15/icon = ExtResource("11_i5ytf")
+item_15/id = 18
+item_16/id = 14
+item_16/separator = true
+item_17/text = "Show All Messages"
+item_17/icon = ExtResource("7_rdia2")
+item_17/id = 8
+item_18/text = "Show All Notes"
+item_18/icon = ExtResource("7_rdia2")
+item_18/id = 9
 
 [node name="Help" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 title = "Help"
@@ -302,7 +315,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Chats" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
-custom_minimum_size = Vector2(550, 0)
+custom_minimum_size = Vector2(570, 0)
 layout_mode = 2
 
 [node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
@@ -334,7 +347,7 @@ icon = ExtResource("18_mitgl")
 layout_mode = 2
 size_flags_horizontal = 0
 tooltip_text = "create new graphics editor tab"
-icon = ExtResource("12_6jk4t")
+icon = ExtResource("20_cqinw")
 
 [node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -383,6 +396,8 @@ editor_pane = NodePath("EditorPane")
 
 [node name="EditorPane" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" instance=ExtResource("4_826g6")]
 unique_name_in_owner = true
+texture_filter = 1
+custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"]
