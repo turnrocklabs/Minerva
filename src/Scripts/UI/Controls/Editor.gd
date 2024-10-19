@@ -336,9 +336,20 @@ func _on_save_open_editor_tabs_button_pressed() -> void:
 
 #this function catches input when the code editor is focused
 func _on_code_edit_gui_input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		if event.pressed and event.keycode == KEY_CTRL:
+			code_edit.set_process_input(false)
+			code_edit.set_process_unhandled_input(false)
+		else:
+			code_edit.set_process_input(true)
+			code_edit.set_process_unhandled_input(true)
 	if event.is_action_pressed("jump_to_line"):
+		code_edit.set_process_input(false)
+		code_edit.set_process_unhandled_input(false)
 		jump_to_line()
 	elif  event.is_action_pressed("find_string"):
+		code_edit.set_process_input(false)
+		code_edit.set_process_unhandled_input(false)
 		find_string_in_code_edit()
 
 #this are variables for Ctrl+F
