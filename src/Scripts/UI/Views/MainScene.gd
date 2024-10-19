@@ -27,20 +27,70 @@ func _ready() -> void:
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
 
+
+var MAX: = 50
+
+
+func _recrusive_theme_change(node: Control, callback: Callable) -> void:
+	var _to_process: Array[Node] = [node]
+
+	var counter: = 1
+
+	while not _to_process.is_empty():
+
+		for n in _to_process.duplicate():
+			if counter > MAX:
+				print("awaiting next frame")
+				await get_tree().process_frame
+				counter = 0
+			
+			if n is Control:
+				callback.call(n)
+				counter += 1
+			
+			_to_process.erase(n)
+
+			_to_process.append_array(n.get_children())
+
+
+func _set_node_font_size(node: Node, new_size: int) -> void:
+	if node is MarkdownLabel:
+		node.add_theme_font_size_override("bold_italics_font_size", new_size)
+		node.add_theme_font_size_override("italics_font_size", new_size)
+		node.add_theme_font_size_override("mono_font_size", new_size)
+		node.add_theme_font_size_override("normal_font_size", new_size)
+		node.add_theme_font_size_override("bold_font_size", new_size)
+		print("Processed markdownlabel: ", node)
+
+	elif node is Control:
+		node.add_theme_font_size_override("font_size", new_size)
+
+
 func zoom_ui(factor: int):
-	print("min_fontsize: " + str(min_font_size))
-	print("max_fontsize: " + str(max_font_size))
-	print("current_fontsize: " + str(current_font_size))
-	if current_font_size + factor >= min_font_size and current_font_size + factor <= max_font_size:
-		if theme.has_default_font_size():
-			theme.default_font_size += factor
-			current_font_size = theme.default_font_size
-		else:
-			theme.default_font_size = ThemeDB.fallback_font_size + factor
-			current_font_size = theme.default_font_size
+	# print("min_fontsize: " + str(min_font_size))
+	# print("max_fontsize: " + str(max_font_size))
+	# print("current_fontsize: " + str(current_font_size))
+
+	current_font_size = clamp(current_font_size + factor, min_font_size, max_font_size)
+	
+	_recrusive_theme_change(self, _set_node_font_size.bind(current_font_size))
+
+
+	# if current_font_size + factor >= min_font_size and current_font_size + factor <= max_font_size:
+	# 	if theme.has_default_font_size():
+	# 		_recrusive_theme_change(self, "add_theme_font_size_override", ["font_size", current_font_size + factor])
+	# 		# theme.default_font_size += factor
+	# 		current_font_size = current_font_size + factor
+	# 	else:
+	# 		_recrusive_theme_change(self, "add_theme_font_size_override", ["font_size", ThemeDB.fallback_font_size + factor])
+	# 		# theme.default_font_size = ThemeDB.fallback_font_size + factor
+	# 		current_font_size = ThemeDB.fallback_font_size + factor
+
 
 func reset_zoom():
-	theme.default_font_size = _default_zoom
+	current_font_size = _default_zoom
+	_recrusive_theme_change(self, _set_node_font_size.bind(current_font_size))
+
 
 func _gui_input(event):
 
