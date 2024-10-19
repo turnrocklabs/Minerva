@@ -190,13 +190,13 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
 func save():
-	if _save_override.is_valid():
-		_save_override.call()
+	#if _save_override.is_valid(): this got put on the note button github issue #154
+		#_save_override.call()
+	#else:
+	if SingletonObject.last_saved_path:
+		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
-		if SingletonObject.last_saved_path:
-			await prompt_close(true, false, SingletonObject.last_saved_path)
-		else:
-			await prompt_close(true)
+		await prompt_close(true)
 	
 	# Post save emit the signals to update the saved state icon
 	match type:
@@ -280,27 +280,32 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
-	if Type.TEXT == type:
-		if tab_title:
-			SingletonObject.NotesTab.add_note( tab_title, code_edit.text)
-		elif file:
-			SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
-		else:
-			SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
-		return
-	if Type.GRAPHICS == type:
-		if tab_title:
-			SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
-		elif file:
-			SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
-		else:
-			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
-		return
-	if Type.WhiteBoard == type:
-		if file:
-			SingletonObject.NotesTab.add_image_note(file.get_file(), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
-		else:
-			SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+	if _save_override.is_valid():
+		_save_override.call()
+	else:
+		var new_memory = null
+		if Type.TEXT == type:
+			if file:
+				new_memory = SingletonObject.NotesTab.add_note( file.get_file(), code_edit.text)
+				set_meta("associated_object", new_memory)
+			elif tab_title:
+				new_memory = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
+				set_meta("associated_object", new_memory)
+			else:
+				new_memory = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+				set_meta("associated_object", new_memory)
+			return
+		if Type.GRAPHICS == type:
+			if tab_title:
+				new_memory = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
+				set_meta("associated_object", new_memory) 
+			elif file:
+				new_memory =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
+				set_meta("associated_object", new_memory) 
+			else:
+				new_memory = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+				set_meta("associated_object", new_memory) 
+		associated_object = new_memory
 
 
 #this functions calls the file linked to the editor to be loaded again into memory
@@ -397,16 +402,17 @@ func update_matches_label(current_search, occurrences) -> void:
 #region find string buttons
 func _on_previous_match_button_pressed() -> void:
 	code_edit.deselect()
-	if code_edit.get_caret_column() - text_to_search.length() -1  < 0:
+	if code_edit.get_caret_column() - text_to_search.length() -1  <= 0:
 		code_edit.set_caret_column(0)
+		if code_edit.get_caret_line() - 1 >= 0:
+			code_edit.set_caret_line(code_edit.get_caret_line() - 1)
+			code_edit.set_caret_column(code_edit.get_text().split("\n")[code_edit.get_caret_line()].length())
 	else:
 		code_edit.set_caret_column( code_edit.get_caret_column() - text_to_search.length() - 1)
 	
 	var result: = code_edit.search(text_to_search, TextEdit.SearchFlags.SEARCH_BACKWARDS, code_edit.get_caret_line(),code_edit.get_caret_column())
 	if result.x != -1:
-		code_edit.set_caret_column(result.x)
-		code_edit.set_caret_line(result.y)
-		print("result from prev:" + str(result))
+		#print("result from prev:" + str(result))
 		code_edit.select(result.y,result.x , result.y, result.x + text_to_search.length())
 		code_edit.adjust_viewport_to_caret()
 	count_text_occurences()
