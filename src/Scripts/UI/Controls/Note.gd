@@ -257,6 +257,7 @@ func _on_remove_button_pressed():
 ## by making editor save button update the memory_item and
 ## reflecting note title chage into the tab title.
 func associate_editor(editor: Editor):
+	editor.associated_object = self
 	editor.override_save(
 		func():
 			if editor.type == Editor.Type.NOTE_EDITOR:
