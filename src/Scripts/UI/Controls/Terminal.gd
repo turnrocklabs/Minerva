@@ -222,7 +222,7 @@ func _new_text(text: String) -> void:
 func execute_command(input: String):
 	_history.append(input)
 
-	var command_buffer = (wrap_command.call(input) + "\n").to_utf8_buffer()
+	var command_buffer = (input + "\n").to_utf8_buffer()
 
 	stdio.store_buffer(command_buffer)
 
