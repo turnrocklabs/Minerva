@@ -190,13 +190,13 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
 func save():
-	if _save_override.is_valid():
-		_save_override.call()
+	#if _save_override.is_valid(): this got put on the note button github issue #154
+		#_save_override.call()
+	#else:
+	if SingletonObject.last_saved_path:
+		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
-		if SingletonObject.last_saved_path:
-			await prompt_close(true, false, SingletonObject.last_saved_path)
-		else:
-			await prompt_close(true)
+		await prompt_close(true)
 	
 	# Post save emit the signals to update the saved state icon
 	match type:
@@ -280,6 +280,9 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
+	if _save_override.is_valid() or associated_object:
+		_save_override.call()
+		return
 	if Type.TEXT == type:
 		if tab_title:
 			SingletonObject.NotesTab.add_note( tab_title, code_edit.text)
@@ -296,11 +299,11 @@ func _on_create_note_button_pressed() -> void:
 		else:
 			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 		return
-	if Type.WhiteBoard == type:
-		if file:
-			SingletonObject.NotesTab.add_image_note(file.get_file(), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
-		else:
-			SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+	#if Type.WhiteBoard == type:
+		#if file:
+			#SingletonObject.NotesTab.add_image_note(file.get_file(), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+		#else:
+			#SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
 
 
 #this functions calls the file linked to the editor to be loaded again into memory
