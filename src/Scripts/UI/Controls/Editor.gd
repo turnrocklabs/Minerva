@@ -42,12 +42,15 @@ enum Type {
 ## Allows switching to existing editor intead of
 ## opening a new one for same associated object.
 var associated_object
-
+var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
 var tab_title: String = ""
-var file: String
+var file: String:
+	set(value):
+		file = value
+		%reloadButton.disabled = false
 #var file_path: String
 var type: Type
 var _file_saved := false
@@ -280,10 +283,11 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
+	var new_memory = null
 	if _save_override.is_valid():
 		_save_override.call()
 	else:
-		var new_memory = null
+		
 		if Type.TEXT == type:
 			if file:
 				new_memory = SingletonObject.NotesTab.add_note( file.get_file(), code_edit.text)
@@ -294,7 +298,6 @@ func _on_create_note_button_pressed() -> void:
 			else:
 				new_memory = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 				set_meta("associated_object", new_memory)
-			return
 		if Type.GRAPHICS == type:
 			if tab_title:
 				new_memory = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
@@ -305,16 +308,21 @@ func _on_create_note_button_pressed() -> void:
 			else:
 				new_memory = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 				set_meta("associated_object", new_memory) 
-		associated_object = new_memory
+	associated_object = new_memory
+	type = Type.NOTE_EDITOR
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+	
+
 
 
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
-	match type:
-		Type.GRAPHICS:
-			_load_graphics_file(file)
-		Type.TEXT:
-			_load_text_file(file)
+	if file:
+		match type:
+			Type.GRAPHICS:
+				_load_graphics_file(file)
+			Type.TEXT, Type.NOTE_EDITOR:
+				_load_text_file(file)
 
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
