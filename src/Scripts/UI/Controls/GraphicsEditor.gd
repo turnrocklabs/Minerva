@@ -173,7 +173,7 @@ func setup_from_image(image_: Image):
 		#RemoveLayer(ch,)
 	_draw_layer = _create_layer(image_)
 	_draw_layer.image = image_
-	_background_images[_draw_layer.layer_name] = image_.duplicate()  # Store the initial background
+	_background_images[_draw_layer] = image_.duplicate()  # Store the initial background
 	
 	
 	var transparency_node = TextureRect.new()
@@ -203,7 +203,7 @@ func setup_from_created_image(image_: Image):
 	_draw_layer = _create_layer(img)
 
 	# Store the initial background image for the layer
-	_background_images[_draw_layer.name] = img.duplicate()
+	_background_images[_draw_layer] = img.duplicate()
 	
 	# Assign the created image to the editor's image property
 	image = img
@@ -240,7 +240,7 @@ func create_image(vec:Vector2):
 	_draw_layer = _create_layer(img)
 	  
 	# Store the initial background image for the layer
-	_background_images[_draw_layer.name] = img.duplicate() 
+	_background_images[_draw_layer] = img.duplicate() 
 
 	   # This line is unnecessary and might be causing issues - remove it:
 	   # setup_from_created_image(img) 
@@ -303,7 +303,7 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 		for pixel in get_circle_pixels(pos, point_size):
 			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
 				if erasing and target_image.get_pixelv(pixel).a > 0.1: 
-					target_image.set_pixelv(pixel, _background_images[_draw_layer.layer_name].get_pixelv(pixel))  
+					target_image.set_pixelv(pixel, _background_images[_draw_layer].get_pixelv(pixel))  
 				elif not erasing:
 					target_image.set_pixelv(pixel, color) 
 				
@@ -401,7 +401,7 @@ func _gui_input(event: InputEvent):
 		var new_layer_image = Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8) 
 		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
 		var new_layer = _create_layer(new_layer_image)
-		_background_images[new_layer.layer_name] = new_layer_image.duplicate()
+		_background_images[new_layer] = new_layer_image.duplicate()
 
 		# 2. Add layer button to UI 
 		layers_buttons()
@@ -946,7 +946,7 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 		var new_layer = _create_layer(image_to_load)
 
 		# Store the loaded image as the background for this layer
-		_background_images[new_layer.layer_name] = image_to_load.duplicate()
+		_background_images[new_layer] = image_to_load.duplicate()
 		# Add layer button to the UI
  
 		# Optionally select the newly added layer
@@ -990,7 +990,7 @@ func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 		# Draw a single pixel for the spray dot
 		if spray_pos.x >= 0 and spray_pos.x < target_image.get_width() and spray_pos.y >= 0 and spray_pos.y < target_image.get_height():
 			if erasing:
-				target_image.set_pixelv(spray_pos, _background_images[_draw_layer.layer_name].get_pixelv(spray_pos))
+				target_image.set_pixelv(spray_pos, _background_images[_draw_layer].get_pixelv(spray_pos))
 			else:
 				target_image.set_pixelv(spray_pos, color)
 
@@ -1002,7 +1002,7 @@ func draw_square(target_image: Image, pos: Vector2, color: Color, square_size: f
 			var pixel = Vector2(x, y)
 			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
 				if erasing:
-					target_image.set_pixelv(pixel, _background_images[_draw_layer.layer_name].get_pixelv(pixel))
+					target_image.set_pixelv(pixel, _background_images[_draw_layer].get_pixelv(pixel))
 				else:
 					target_image.set_pixelv(pixel, color)
 
@@ -1055,7 +1055,7 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 		if draw_pos.x >= 0 and draw_pos.x < target_image.get_width() and draw_pos.y >= 0 and draw_pos.y < target_image.get_height():
 			if erasing:
 				# Erase by blending with the background image
-				target_image.set_pixelv(draw_pos, _background_images[_draw_layer.layer_name].get_pixelv(draw_pos))
+				target_image.set_pixelv(draw_pos, _background_images[_draw_layer].get_pixelv(draw_pos))
 			else:
 				var bg_color = target_image.get_pixelv(draw_pos)
 
