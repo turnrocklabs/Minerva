@@ -8,28 +8,31 @@ signal execution_finished()
 
 @onready var scroll_container = %ScrollContainer
 @onready var command_line_edit: LineEdit = %CommandLineEdit
-@onready var outputs_container: VBoxContainer = %OutputsContainer
+@onready var buttons_container: VBoxContainer = %ButtonsContainer
 @onready var cwd_label: Label = %CwdLabel
+
+
+var stdio: FileAccess
+var stderr: FileAccess
+var pid: int
+
+var _stdio_thread: Thread
+var _stderr_thread: Thread
+
+# label where the output of the current running command should go to
+@onready var _output_label: RichTextLabel = %RichTextLabel
 
 const cwd_delimiter = "##cwd##"
 
-var _thread: Thread:
-	set(value):
-		_thread = value
-		_send_button.disabled = _thread != null
+var _last_enabled_line: int = -1
 
 ## History of used commands
 var _history: = PackedStringArray()
 
 var _history_idx = 0
 
-## Holds the current working directory
-var cwd: String:
-	set(value):
-		cwd = value
-		cwd_label.text = "%s>" % cwd
-
 var wrap_command: Callable
+var delimiter: String = "---$$$---"
 var shell: String
 
 
@@ -38,54 +41,87 @@ static func create() -> Terminal:
 	return terminal
 
 
-func _wrap_windows_command(user_input: String) -> PackedStringArray:
-	var full_cmd = [
-		"/V:ON",
-		"/C",
-		"cd /d %s && %s & echo %s!cd!" % [cwd, user_input, cwd_delimiter],
-	]
-
-	return full_cmd
+func _wrap_windows_command(user_input: String) -> String:
+	return "{cmd} & echo {delimiter}".format({
+		"cmd": user_input,
+		"delimiter": delimiter,
+	})
 
 func _wrap_linux_command(user_input: String) -> PackedStringArray:
 	var full_cmd = [
 		"-c",
-		"cd '%s' && %s; echo '%s'\\$PWD" % [cwd, user_input, cwd_delimiter]
+		# "cd '%s' && %s; echo '%s'\\$PWD" % [cwd, user_input, cwd_delimiter]
 	]
 
 	return full_cmd
 
+var _last_content_height: float = 0
 
-func display_output(output: String) -> void:
-	var output_container = HBoxContainer.new()
+func _text_updated():
+	return
+	var present_btns: = buttons_container.get_child_count()
+	var lines: = _output_label.get_parsed_text().split("\n").size()
 	
-	var check_button = CheckButton.new()
-	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	check_button.size_flags_vertical = Control.SIZE_SHRINK_END
-	check_button.toggled.connect(_on_output_check_button_toggled.bind(output, check_button))
-	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
-	output_container.add_child(check_button)
+	# if lines == 1:
+	# 	_line_height = float(_output_label.get_content_height())
 
-	var label = RichTextLabel.new()
-	label.fit_content = true
-	label.selection_enabled = true
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.text = output
-	output_container.add_child(label)
-	
-	outputs_container.add_child(output_container)
-	
-	#this 2 lines are for auto scrollling all the way down
-	await get_tree().process_frame
-	%ScrollContainer.ensure_control_visible(%CwdLabel)
+	if not _output_label.is_ready():
+		await _output_label.finished
+
+	for i in range(lines - present_btns):
+		var line_num = present_btns+i
+		
+		var check_button = CheckButton.new()
+		check_button.set_meta("line_num", line_num)
+		check_button.add_theme_constant_override("icon_max_width", 30)
+		check_button.toggled.connect(_on_output_check_button_toggled.bind(line_num, check_button))
+		check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
+
+		var remaining_height = (_output_label.get_content_height() - _last_content_height) * 0.95
+
+		_last_content_height = _output_label.get_content_height()
+
+		check_button.custom_minimum_size.y = remaining_height
+
+		buttons_container.add_child(check_button)		
+
+		print("Line: ", line_num)
+		prints(_output_label.get_content_height(), _last_content_height, remaining_height)
+
+		_output_label.push_indent(1)
+
+		
 
 
-func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
+func _on_output_check_button_toggled(toggled_on: bool, line_num: int, btn: CheckButton):
+
+	var enabled_lines: = _output_label.get_meta("_enabled") as Dictionary
+
+	if Input.is_key_pressed(KEY_SHIFT) and _last_enabled_line != -1:
+		for i in range(_last_enabled_line, line_num):
+			var check_button: CheckButton = buttons_container.get_child(i)
+			check_button.button_pressed = toggled_on
+			var ln: int = check_button.get_meta("line_num")
+			enabled_lines[ln] = true
+			
+				
+	_last_enabled_line = line_num
+
+	enabled_lines[line_num] = toggled_on
+
+	var content_lines: PackedStringArray
+
+	for ln in enabled_lines.keys():
+		if not enabled_lines[ln]: continue
+
+		
+
+
 	var item: MemoryItem
-
+	
 	if not has_meta("memory_item"):
 		item = SingletonObject.NotesTab.create_note("Terminal Note")
-		item.Content = output
+		item.Content = "line_num"
 		
 		if not item:
 			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the terminal.")
@@ -120,7 +156,6 @@ func _on_output_check_button_tree_exiting(btn: CheckButton):
 
 
 func _ready():
-	cwd = OS.get_data_dir()
 
 	match OS.get_name():
 		"Windows":
@@ -129,88 +164,95 @@ func _ready():
 
 		"Linux", "macOS", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
 			shell = OS.get_environment("SHELL")
-			wrap_command = _wrap_linux_command
-
-
-func _process(_delta):
-	if not _thread or not _thread.is_started(): return
-
-	if not _thread.is_alive():
-		_thread.set_meta("output", _thread.wait_to_finish())
-		if _thread.get_meta("callback", null) is Callable:
-			_thread.get_meta("callback").call()
-			_thread = null
-
-
-func _execute_command(input: String) -> Array:
-	var output = []
-
-	var args = wrap_command.call(input)
-
-	print("Running: %s %s" % [shell, " ".join(args)])
-
-	OS.execute(shell, args, output, true)
-
-	printraw("Raw Output: %s" % str(output))  # Debugging print
-
-	return output
-
-func _clear_screen_sequence_idx(output: String) -> int:
-	# List more sequences if needed
-	var clear_sequences = ["\\033[H\\033[2J", "\\u001b[2J", "\f"]
-	for sequence in clear_sequences:
-		if sequence in output:
-			return output.rfind(sequence)
-	return -1
-
-func execute_thread_command(input: String):
-	_thread = Thread.new()
-	_thread.start(_execute_command.bind(input), Thread.PRIORITY_LOW)
-
-	var callback = func():
-		var output = _thread.get_meta("output")
-
-		# last line is current working directory, so we just extarct that
-		var cmd_result: String = output.back()
-		
-		var cwd_index_start = cmd_result.rfind(cwd_delimiter)
-
-		var new_cwd = cmd_result.substr(cwd_index_start+cwd_delimiter.length()).strip_edges()
-
-		cmd_result = cmd_result.substr(0, cwd_index_start)
-		
-		var idx = _clear_screen_sequence_idx(cmd_result)
-
-		if idx != -1:
-			cmd_result = cmd_result.substr(idx)
-
-			# clear the previous outputs since we cleared the terminal
-			for child in outputs_container.get_children():
-				child.queue_free()
-
-			# check if there's anything to display
-			if not cmd_result.strip_edges().is_empty():
-				display_output(cmd_result)
-		else:
-			display_output("%s>%s\n%s" % [cwd, input, cmd_result])
-
-		cwd = new_cwd
-
-		_history.insert(0, input)
-		_history_idx = -1
 	
-	_thread.set_meta("callback", callback)
+	var process = OS.execute_with_pipe(shell, [])
+	if not process.is_empty():
+		stdio = process.get("stdio")
+		stderr = process.get("stderr")
+		pid = process.get("pid")
 
+		_stdio_thread = Thread.new()
+		_stdio_thread.start(_stdio_thread_loop)
+		
+		_stderr_thread = Thread.new()
+		_stderr_thread.start(_stderr_thread_loop)
+
+		get_window().close_requested.connect(_clean)
+
+		print("Started the shell process with pid %s" % pid)
+
+	_output_label.set_meta("_enabled", {})
+
+# colse the threads on node exit
+func _exit_tree() -> void:
+	_clean()
+
+
+func _clean() -> void:
+	if pid: OS.kill(pid)
+
+	stdio.close()
+	stderr.close()
+
+	_stdio_thread.wait_to_finish()
+	_stderr_thread.wait_to_finish()
+
+	print("Cleaned up shell pipes and threads.")
+
+
+func _stdio_thread_loop():
+	while stdio.is_open() and stdio.get_error() == OK:
+		_new_text.call_deferred(char(stdio.get_8()))
+
+
+func _stderr_thread_loop():
+	while stderr.is_open() and stderr.get_error() == OK:
+		_new_text.call_deferred(char(stderr.get_8()))
+
+
+var _last_cmd: String
+
+func _new_text(text: String) -> void:
+
+
+	_output_label.add_text(text)
+	_text_updated()
+
+
+func execute_command(input: String):
+	_history.append(input)
+
+	var command_buffer = (input + "\n").to_utf8_buffer()
+
+	stdio.store_buffer(command_buffer)
+
+
+func _is_new_shell_command() -> bool:
+	if _history.is_empty(): return true
+
+	var found_delimiter: = false
+
+	var lines: PackedStringArray = _output_label.get_meta("raw_output", _output_label.text).strip_edges().split("\n")
+	lines.reverse()
+	for line in lines:
+		
+		if line.contains(wrap_command.call(_history[-1])):
+			return found_delimiter
+
+		if line.strip_edges() == delimiter:
+			found_delimiter = true
+
+	return false
 
 func _on_button_pressed():
 	if not command_line_edit.text.is_empty():
-		execute_thread_command(command_line_edit.text)
+		execute_command(command_line_edit.text)
 		command_line_edit.text = ""
 
 
 func _on_command_line_edit_text_submitted(new_text):
-	if not command_line_edit.text.is_empty() and not _thread:
-		execute_thread_command(new_text)
+	if not command_line_edit.text.is_empty():
+		execute_command(new_text)
 		command_line_edit.text = ""
 
 
@@ -232,7 +274,7 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			command_line_edit.caret_column = command_line_edit.text.length()
 
 
-func _on_text_edit_text_set():
+func _scroll_down():
 	await scroll_container.get_v_scroll_bar().changed
 
 	# scroll to bottom
