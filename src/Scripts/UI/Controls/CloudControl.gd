@@ -9,13 +9,19 @@ enum Type {
 	CLOUD,
 	RECTANGLE,
 }
-var type
+var type: = Type.ELLIPSE
 var circle_radius
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
 @onready var _text_edit: TextEdit = %TextEdit
 @onready var _bezier_curve: BezierCurve = %BezierCurve
 
+
+var _drag_start_position: Vector2
+var _dragging: = false:
+	set(value):
+		_dragging = value
+		_text_edit.mouse_filter = MOUSE_FILTER_IGNORE if _dragging else MOUSE_FILTER_STOP
 
 ## Font used to display text
 var font: = ThemeDB.fallback_font
@@ -248,7 +254,7 @@ func _ready():
 		
 	tail = CurvedTriangleTail.new(self)
 	queue_redraw()
-	
+
 func _draw() -> void:
 	if editing:
 		_draw_editing()
@@ -311,7 +317,7 @@ func _draw_editing_tail() -> void:
 	
 	var closest_point: = get_closest_polyline_position(bubble_poly, local_mouse_pos)
 
-	if local_mouse_pos.distance_to(closest_point) < 60:
+	if local_mouse_pos.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
 		draw_circle(closest_point, 4, Color.DEEP_PINK)
 	else:
 		draw_circle(local_mouse_pos, 4, Color.DEEP_PINK)
@@ -319,47 +325,77 @@ func _draw_editing_tail() -> void:
 
 # region Input Handling
 
+func _get_drag_data(at_position: Vector2) -> Variant:
+	if (
+		_upper_resizer.get_rect().has_point(at_position) or
+		_lower_resizer.get_rect().has_point(at_position)
+	): return null
+
+	# Check if we pressed on existing tail point
+	var points_arr: = tail.get_points_vector_array()
+
+	for i in points_arr.size():
+		var point: = points_arr[i]
+
+		# if yes start dragging it
+		if at_position.distance_to(point) < POINT_RADIUS:
+			_drag_point_idx = i 
+			return null
+
+
+	if _bubble_rect.grow(15).has_point(at_position):
+		_dragging = true
+	
+
+	return null
+
+func _can_drop_data(_at_position: Vector2, _data: Variant) -> bool:
+	return true
+
 ## Index of point inside the [member Tail.points] that the user is currently dragging
 var _drag_point_idx: = -1
 
 func _gui_input(event: InputEvent) -> void:
+	if _dragging and event is InputEventMouseMotion and event.pressure:
+		_lower_resizer.position += event.relative
+		_upper_resizer.position += event.relative
+	else:
+		_dragging = false
+
 	if not editing: return
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		
+		if event.is_pressed():
+			_drag_start_position = event.position
+		
 		# if the mouse is not pressed, disable the resizer and unset the `_drag_point_idx`
-		if not event.is_pressed():
+		else:
 			_active_resizer = null
 			_drag_point_idx = -1
 
+			# if the mouse is released, check if we are on same place or we dragged the mouse
 
-		# if the mouse is pressed outside of the resizers
-		elif not (
-			_upper_resizer.get_rect().has_point(event.position) or
-			_lower_resizer.get_rect().has_point(event.position)
-		):
-			# Check if we pressed on existing tail point
-			var points_arr: = tail.get_points_vector_array()
+			if _drag_start_position.is_equal_approx(event.position):
+				# if the mouse is pressed outside of the resizers
+				if not (
+					_upper_resizer.get_rect().has_point(event.position) or
+					_lower_resizer.get_rect().has_point(event.position)
+				):
+					
+					# if we didn't click on any points, add a new one
+					if _drag_point_idx == -1:
+						# var closest_point: = get_closest_polyline_position(bubble_poly, event.position)
 
-			for i in points_arr.size():
-				var point: = points_arr[i]
+						var idx: = get_closest_ellipse_line(event.position)
 
-				# if yes start dragging it
-				if event.position.distance_to(point) < POINT_RADIUS:
-					_drag_point_idx = i 
-			
-			# if we didn't click on any points, add a new one
-			if _drag_point_idx == -1:
-				# var closest_point: = get_closest_polyline_position(bubble_poly, event.position)
+						var closest_point = bubble_poly[idx]
 
-				var idx: = get_closest_ellipse_line(event.position)
-
-				var closest_point = bubble_poly[idx]
-
-				if event.position.distance_to(closest_point) < 60:
-					# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
-					tail.add_point(idx)
-				else:
-					tail.add_point(event.position)
+						if event.position.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
+							# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
+							tail.add_point(idx)
+						else:
+							tail.add_point(event.position)
 
 			queue_redraw()
 			accept_event()
@@ -387,7 +423,7 @@ func _gui_input(event: InputEvent) -> void:
 
 			var closest_point = bubble_poly[idx]
 
-			if event.position.distance_to(closest_point) < 60:
+			if event.position.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
 				# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
 				tail.points[_drag_point_idx] = idx
 			else:
