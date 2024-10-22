@@ -60,6 +60,16 @@ func set_bounding_rect(rect: Rect2) -> void:
 	_lower_resizer.position = rect.end
 	queue_redraw()
 
+## Move the speech bubble center point relative to the control origin[br].
+## Center point being the middle between the resizer nodes.
+func move(to: Vector2):
+	var current_offset = _upper_resizer.position - _lower_resizer.position
+
+	_upper_resizer.position = to + current_offset / 2
+	_lower_resizer.position = to - current_offset / 2
+	
+
+
 # region Tails
 
 func _create_tail() -> PackedVector2Array:

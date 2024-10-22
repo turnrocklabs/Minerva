@@ -409,8 +409,7 @@ func _gui_input(event: InputEvent):
 		# 3. Instantiate and add the bubble to the NEW layer
 		var new_bubble = Bubble.instantiate()
 		new_layer.add_child(new_bubble)
-		new_bubble.size = Vector2(2000,2000)
-		new_bubble.position = new_layer.get_local_mouse_position() + Vector2(-1000,-700)
+		new_bubble.move(new_layer.get_local_mouse_position())
 		_if_cloud(3,0)
 		clouding = false
 
