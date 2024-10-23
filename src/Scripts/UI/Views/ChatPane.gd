@@ -144,6 +144,9 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.rendered_node.loading = true
 
 	var bot_response = await history.provider.generate_content(history_list)
+
+	# if there was an error with the request
+	if not bot_response: return
 	
 	if bot_response.id: existing_response.Id = bot_response.id
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
@@ -262,6 +265,9 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 	# remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
 
 	var bot_response = await partial_chi.provider.generate_content(history_list)
+
+	# if there was an error just return the partial response
+	if not bot_response: return partial_chi
 
 	partial_chi.Message += " %s" % bot_response.text
 	partial_chi.Complete = bot_response.complete
