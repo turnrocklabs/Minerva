@@ -409,18 +409,31 @@ func _gui_input(event: InputEvent) -> void:
 
 			queue_redraw()
 			accept_event()
-						 
+	
 	if event is InputEventMouseMotion:
 		# if we're dragging the resizer, move it to the mouse position
 		if _active_resizer:
-			_active_resizer.position += event.relative
-			#var new_width = _lower_resizer.position.x - _upper_resizer.position.x
-			#var new_height = _lower_resizer.position.y - _upper_resizer.position.y
-			#
-			#new_width += _lower_resizer.pivot_offset.x + _upper_resizer.pivot_offset.x + pivot_offset.x
-			#new_height += _lower_resizer.pivot_offset.y + _upper_resizer.pivot_offset.y + pivot_offset.y
-			#
-			#size = Vector2(new_width,new_height)
+			# var offset: Vector2 = event.relative
+
+			var estimated_position = _active_resizer.position + event.relative
+
+			# lower resizer can't be above the upper one
+			if _active_resizer == _lower_resizer:
+				if estimated_position.x < _upper_resizer.position.x:
+					estimated_position.x = _upper_resizer.position.x
+
+				if estimated_position.y < _upper_resizer.position.y:
+					estimated_position.y = _upper_resizer.position.y
+			# and upper can't be under the lower one
+			elif _active_resizer == _upper_resizer:
+				if estimated_position.x > _lower_resizer.position.x:
+					estimated_position.x = _lower_resizer.position.x
+
+				if estimated_position.y > _lower_resizer.position.y:
+					estimated_position.y = _lower_resizer.position.y
+			
+			_active_resizer.position = estimated_position
+			
 
 			
 			
