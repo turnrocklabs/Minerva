@@ -641,6 +641,7 @@ func _on_brushes_item_selected(index):
 			%ApplyMaskButton.visible = true
 		3:
 			dialog_clouds.show()
+			clouding = true
 			#%ApplyTail.visible = true
 		4:
 			fill_tool = true
