@@ -4,7 +4,7 @@ extends Control
 #varibles where weadding out notes Head and descriptionn
 
 #these varables are for changing only the font size of the UI
-var _default_zoom = theme.default_font_size
+var _default_zoom: int
 var min_font_size:int 
 var max_font_size: int
 var current_font_size: int
@@ -22,6 +22,8 @@ func _ready() -> void:
 		max_font_size = ThemeDB.fallback_font_size + max_diff_font_size
 		current_font_size =ThemeDB.fallback_font_size
 	
+	_default_zoom = current_font_size
+
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
@@ -65,6 +67,18 @@ func _set_node_font_size(node: Node, new_size: int) -> void:
 	elif node is Control:
 		node.add_theme_font_size_override("font_size", new_size)
 
+func _reset_node_font_size(node: Node) -> void:
+	if node is MarkdownLabel:
+		node.remove_theme_font_size_override("bold_italics_font_size")
+		node.remove_theme_font_size_override("italics_font_size")
+		node.remove_theme_font_size_override("mono_font_size")
+		node.remove_theme_font_size_override("normal_font_size")
+		node.remove_theme_font_size_override("bold_font_size")
+		print("Processed markdownlabel: ", node)
+
+	elif node is Control:
+		node.remove_theme_font_size_override("font_size")
+
 
 func zoom_ui(factor: int):
 	# print("min_fontsize: " + str(min_font_size))
@@ -72,6 +86,7 @@ func zoom_ui(factor: int):
 	# print("current_fontsize: " + str(current_font_size))
 
 	current_font_size = clamp(current_font_size + factor, min_font_size, max_font_size)
+	print("Changing to: ", current_font_size)
 	
 	_recrusive_theme_change(self, _set_node_font_size.bind(current_font_size))
 
@@ -89,7 +104,11 @@ func zoom_ui(factor: int):
 
 func reset_zoom():
 	current_font_size = _default_zoom
+	print("Changing to: ", current_font_size)
+
 	_recrusive_theme_change(self, _set_node_font_size.bind(current_font_size))
+
+	# _recrusive_theme_change(self, _reset_node_font_size)
 
 
 func _gui_input(event):
