@@ -30,7 +30,7 @@ func _ready() -> void:
 	hbox.set("theme_override_constants/separation", 14)
 
 
-var MAX: = 50
+var MAX: = 20
 
 
 func _recrusive_theme_change(node: Control, callback: Callable) -> void:
@@ -42,7 +42,6 @@ func _recrusive_theme_change(node: Control, callback: Callable) -> void:
 
 		for n in _to_process.duplicate():
 			if counter > MAX:
-				print("awaiting next frame")
 				await get_tree().process_frame
 				counter = 0
 			
@@ -62,7 +61,6 @@ func _set_node_font_size(node: Node, new_size: int) -> void:
 		node.add_theme_font_size_override("mono_font_size", new_size)
 		node.add_theme_font_size_override("normal_font_size", new_size)
 		node.add_theme_font_size_override("bold_font_size", new_size)
-		print("Processed markdownlabel: ", node)
 
 	elif node is Control:
 		node.add_theme_font_size_override("font_size", new_size)
@@ -74,7 +72,6 @@ func _reset_node_font_size(node: Node) -> void:
 		node.remove_theme_font_size_override("mono_font_size")
 		node.remove_theme_font_size_override("normal_font_size")
 		node.remove_theme_font_size_override("bold_font_size")
-		print("Processed markdownlabel: ", node)
 
 	elif node is Control:
 		node.remove_theme_font_size_override("font_size")
@@ -86,7 +83,6 @@ func zoom_ui(factor: int):
 	# print("current_fontsize: " + str(current_font_size))
 
 	current_font_size = clamp(current_font_size + factor, min_font_size, max_font_size)
-	print("Changing to: ", current_font_size)
 	
 	_recrusive_theme_change(self, _set_node_font_size.bind(current_font_size))
 
@@ -104,7 +100,6 @@ func zoom_ui(factor: int):
 
 func reset_zoom():
 	current_font_size = _default_zoom
-	print("Changing to: ", current_font_size)
 
 	_recrusive_theme_change(self, _set_node_font_size.bind(current_font_size))
 
