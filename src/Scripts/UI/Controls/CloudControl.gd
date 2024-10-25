@@ -265,6 +265,16 @@ func _ready():
 	tail = CurvedTriangleTail.new(self)
 	queue_redraw()
 
+
+
+# When the node is not visible anymore, don't accept any input events anymore.
+func _on_visibility_changed() -> void:
+	set_process_input(is_visible_in_tree())
+	set_process_unhandled_input(is_visible_in_tree())
+	set_process_unhandled_key_input(is_visible_in_tree())
+	set_process_shortcut_input(is_visible_in_tree())
+
+
 func _draw() -> void:
 	if editing:
 		_draw_editing()
@@ -460,6 +470,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and not _active_resizer:
 		if event.keycode == KEY_ENTER and event.is_pressed():
 			editing = not editing
+			get_viewport().set_input_as_handled()
 			queue_redraw()
 
 func _on_lower_bottom_resizer_button_down() -> void:
