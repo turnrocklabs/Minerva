@@ -75,7 +75,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	match type_:
 		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
 			editor.get_node("%CodeEdit").visible = true
-			#editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
+			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
 		Editor.Type.GRAPHICS:
 			editor.get_node("%GraphicsEditor").visible = true
 			## TODO: Implement changed signal for graphics editor
@@ -114,8 +114,8 @@ func _load_text_file(filename: String):
 	if fa_object:
 		#file_path = file
 		code_edit.text = fa_object.get_as_text()
-		#code_edit.text_changed.emit() # the signal is not emitted for some reason
 		code_edit.saved_content = code_edit.text
+		code_edit.text_changed.emit() # the signal is not emitted for some reason
 	else:
 		code_edit.text = "Could not retrive file"
 	# %SaveButton.disabled = false
@@ -489,9 +489,9 @@ func _on_editor_changed(text: String = ""):
 	if text != "":
 		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
 		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
-		SingletonObject.UpdateUnsavedTabIcon.emit()
-		_file_saved = false
-		file_saved_in_disc = false
+		# SingletonObject.UpdateUnsavedTabIcon.emit()
+		# _file_saved = false
+		# file_saved_in_disc = false
 
 	if has_meta("memory_item"):
 		var item: MemoryItem = get_meta("memory_item")
