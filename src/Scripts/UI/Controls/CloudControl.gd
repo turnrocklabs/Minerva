@@ -486,7 +486,7 @@ func _on_upper_left_resizer_button_down() -> void:
 # region Speech Bubble
 
 func cloud_bubble(rect: Rect2) -> PackedVector2Array:
-	var ellipse_poly: = create_ellipse(rect)
+	var ellipse_poly: = create_ellipse(rect.grow(-circle_radius))
 
 	var cloud: = ellipse_poly.duplicate()
 	
@@ -536,6 +536,19 @@ func create_ellipse(rect: Rect2, num_segments: int = 360) -> PackedVector2Array:
 	ellipse_points.append(ellipse_points[0])
 
 	return ellipse_points
+
+## Returns the shrinken [parameter ellipse] given it's [paramenter center] and a [parameter factor].[br]
+func shrink_ellipse(ellipse: PackedVector2Array, center: Vector2, amount: float) -> PackedVector2Array:
+	var shrinked := PackedVector2Array()
+	shrinked.resize(ellipse.size())
+	for i in ellipse.size():
+		var to_center: = center - ellipse[i]
+		var dist_to_center: = to_center.length()
+		# Don't move more than distance to center
+		var safe_amount: = minf(amount, dist_to_center)
+		var dir: = to_center.normalized()
+		shrinked[i] = ellipse[i] + (dir * safe_amount)
+	return shrinked
 
 func create_circle(center: Vector2, radius: float, resolution: int = 32) -> PackedVector2Array:
 	var circle: = PackedVector2Array()
