@@ -64,5 +64,6 @@ offset_bottom = 8.0
 theme_type_variation = &"SpeechBubbleTextEdit"
 wrap_mode = 1
 
+[connection signal="visibility_changed" from="." to="." method="_on_visibility_changed"]
 [connection signal="button_down" from="LowerBottomResizer" to="." method="_on_lower_bottom_resizer_button_down"]
 [connection signal="button_down" from="UpperLeftResizer" to="." method="_on_upper_left_resizer_button_down"]
