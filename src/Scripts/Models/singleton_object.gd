@@ -5,9 +5,9 @@ var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "
 var supported_text_fortmats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
-var is_graph:bool
+var is_graph:bool = false
 var is_masking:bool
-
+var is_picture:bool = false
 #this is where we save the last path used to save a file or project
 var last_saved_path: String
 
