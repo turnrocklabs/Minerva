@@ -75,7 +75,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	match type_:
 		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
 			editor.get_node("%CodeEdit").visible = true
-			#editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
+			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
 		Editor.Type.GRAPHICS:
 			editor.get_node("%GraphicsEditor").visible = true
 			## TODO: Implement changed signal for graphics editor
@@ -114,8 +114,8 @@ func _load_text_file(filename: String):
 	if fa_object:
 		#file_path = file
 		code_edit.text = fa_object.get_as_text()
-		#code_edit.text_changed.emit() # the signal is not emitted for some reason
 		code_edit.saved_content = code_edit.text
+		code_edit.text_changed.emit() # the signal is not emitted for some reason
 	else:
 		code_edit.text = "Could not retrive file"
 	# %SaveButton.disabled = false
@@ -217,8 +217,10 @@ func is_content_saved() -> bool:
 			return code_edit.text == code_edit.saved_content
 		Type.NOTE_EDITOR:
 			# Note.gd adds a `associated_object` meta for memory item the note is rendering
-			var memory_item: MemoryItem = get_meta('associated_object')
-			return code_edit.text == memory_item.Content
+			if is_instance_valid(associated_object):
+				var memory_item: MemoryItem = associated_object.memory_item
+				return code_edit.text == memory_item.Content
+			else: return false
 		Type.GRAPHICS:
 			if graphics_editor:
 				return graphics_editor.is_image_saved
@@ -283,32 +285,33 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
-	var new_memory = null
-	if _save_override.is_valid():
-		_save_override.call()
-	else:
+
+	if is_instance_valid(associated_object) and associated_object is Note:
+		_update_memory_item(associated_object.memory_item)
+		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
 		
+	else:
 		if Type.TEXT == type:
 			if file:
-				new_memory = SingletonObject.NotesTab.add_note( file.get_file(), code_edit.text)
-				set_meta("associated_object", new_memory)
+				associated_object = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
+				set_meta("associated_object", associated_object)
 			elif tab_title:
-				new_memory = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
-				set_meta("associated_object", new_memory)
+				associated_object = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
+				set_meta("associated_object", associated_object)
 			else:
-				new_memory = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
-				set_meta("associated_object", new_memory)
+				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+				set_meta("associated_object", associated_object)
 		if Type.GRAPHICS == type:
 			if tab_title:
-				new_memory = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
-				set_meta("associated_object", new_memory) 
+				associated_object = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
+				set_meta("associated_object", associated_object) 
 			elif file:
-				new_memory =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
-				set_meta("associated_object", new_memory) 
+				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
+				set_meta("associated_object", associated_object) 
 			else:
-				new_memory = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
-				set_meta("associated_object", new_memory) 
-	associated_object = new_memory
+				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+				set_meta("associated_object", associated_object) 
+
 	type = Type.NOTE_EDITOR
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 	
@@ -459,7 +462,7 @@ func _on_close_buton_pressed() -> void:
 func jump_to_line() -> void:
 	if !jump_to_line_panel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
 		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to."
-		
+
 		#this is a ternary operator equivalent
 		var column: int = code_edit.get_caret_column() if code_edit.get_caret_column() > 1 else 1
 		var line: int = code_edit.get_caret_line() + 1 if code_edit.get_caret_line() > 1 else 1
@@ -486,13 +489,13 @@ func _on_editor_changed(text: String = ""):
 	if text != "":
 		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
 		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
-		SingletonObject.UpdateUnsavedTabIcon.emit()
-		_file_saved = false
-		file_saved_in_disc = false
+		# SingletonObject.UpdateUnsavedTabIcon.emit()
+		# _file_saved = false
+		# file_saved_in_disc = false
 
 	if has_meta("memory_item"):
 		var item: MemoryItem = get_meta("memory_item")
-		_update_note(item)
+		_update_memory_item(item)
 
 	content_changed.emit()
 
@@ -555,8 +558,8 @@ func _create_note() -> MemoryItem:
 	
 	return memory_item
 
-func _update_note(memory_item: MemoryItem) -> void:
-	if type == Type.TEXT:
+func _update_memory_item(memory_item: MemoryItem) -> void:
+	if type == Type.TEXT or type == Type.NOTE_EDITOR:
 		memory_item.Type = SingletonObject.note_type.TEXT
 		memory_item.Content = code_edit.text
 	
