@@ -176,7 +176,7 @@ func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	var size_x = clamp(new_size.x, 1, INF)
 	var size_y = clamp(new_size.y, 1, INF)
-	image_.resize( size_x, size_y)
+	image_.resize( new_size.x, new_size.y)
 
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
