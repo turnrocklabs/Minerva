@@ -102,7 +102,7 @@ func _ready():
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 	SingletonObject.UpdateLastSavePath.connect(update_last_path)
-	code_edit.text_changed.connect(_on_editor_changed)
+	#code_edit.text_changed.connect(_on_editor_changed)
 
 
 func update_last_path(new_path: String) -> void:

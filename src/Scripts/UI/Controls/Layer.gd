@@ -40,7 +40,8 @@ func update(image_: Image = null):# this method get called every time a stroke i
 	if image_ != null and !image_.is_empty():
 		texture = ImageTexture.create_from_image(image_)
 	else:
-		texture = ImageTexture.create_from_image(self.image)
+		if self.image:
+			texture = ImageTexture.create_from_image(self.image)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and dragging:
