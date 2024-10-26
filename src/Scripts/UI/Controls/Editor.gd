@@ -217,12 +217,12 @@ func is_content_saved() -> bool:
 	match type:
 		Type.TEXT:
 			return code_edit.text == code_edit.saved_content
-		Type.NOTE_EDITOR:
+		#Type.NOTE_EDITOR:
 			# Note.gd adds a `associated_object` meta for memory item the note is rendering
-			if is_instance_valid(associated_object):
-				var memory_item: MemoryItem = associated_object.memory_item
-				return code_edit.text == memory_item.Content
-			else: return false
+			#if is_instance_valid(associated_object):
+				#var memory_item = associated_object.memory_item
+				#return code_edit.text == memory_item.Content
+			#else: return false
 		Type.GRAPHICS:
 			if graphics_editor:
 				return graphics_editor.is_image_saved
