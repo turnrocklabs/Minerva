@@ -91,44 +91,50 @@ var layer_undo_histories = {} # Dictionary to store undo histories for each laye
 
 
 func _ready():
+	if SingletonObject.is_picture:
+		var hbox: HBoxContainer = add_new_pic.get_vbox().get_child(0)
+		hbox.set("theme_override_constants/separation", 14)
+		
+		layers_buttons()
 	
-	var hbox: HBoxContainer = add_new_pic.get_vbox().get_child(0)
-	hbox.set("theme_override_constants/separation", 14)
+		SingletonObject.is_graph = false
+		SingletonObject.is_masking = false
 	
-	layers_buttons()
+		for layer in loaded_layers:
+			_layers_container.add_child(layer)
+			layer_undo_histories[layer.name] = [] # Initialize undo history for each layer
+			layer_undo_histories[layer.name].append(layer.image.duplicate()) # Add the initial state to the undo history
+			#%PickLayers.add_item(layer.name)#get_item_text(index)
 	
-	if _layers_container.get_child_count() > 0:
-		_draw_layer = _layers_container.get_child(0)
-	if SingletonObject.is_graph == true:
-		toggle_controls(SingletonObject.is_graph)
-	elif SingletonObject.is_masking == true:
-		#editing and drawing
-		toggle_masking(SingletonObject.is_masking)
+		if loaded_layers.size() > 0:
+			layer_number = loaded_layers.size()
+			SingletonObject.is_graph = true
+			toggle_controls(true)
 	
-	await get_tree().process_frame
-	setup(Vector2i(%CenterContainer.size), Color.WHITE)
-	SingletonObject.is_graph = false
-	SingletonObject.is_masking = false
+		# Initialize undo history
+		#undo_history.append(_draw_layer.image.duplicate())
+		SingletonObject.is_Brush = false
+		SingletonObject.is_square = false
+		SingletonObject.is_cryon = false
 	
-	for layer in loaded_layers:
-		_layers_container.add_child(layer)
-		layer_undo_histories[layer.name] = [] # Initialize undo history for each layer
-		layer_undo_histories[layer.name].append(layer.image.duplicate()) # Add the initial state to the undo history
-		#%PickLayers.add_item(layer.name)#get_item_text(index)
+		_can_resize = true 
+		
+	else:
+		
+		layers_buttons()
+		await get_tree().process_frame
+		setup(Vector2i(%CenterContainer.size), Color.WHITE)
+		
+		for layer in loaded_layers:
+			_layers_container.add_child(layer)
+			layer_undo_histories[layer.name] = [] # Initialize undo history for each layer
+			layer_undo_histories[layer.name].append(layer.image.duplicate()) # Add the initial state to the undo history
+			#%PickLayers.add_item(layer.name)#get_item_text(index)
 	
-	if loaded_layers.size() > 0:
-		layer_number = loaded_layers.size()
-		SingletonObject.is_graph = true
-		toggle_controls(true)
-	
-	# Initialize undo history
-	#undo_history.append(_draw_layer.image.duplicate())
-	SingletonObject.is_Brush = false
-	SingletonObject.is_square = false
-	SingletonObject.is_cryon = false
-	
-	_can_resize = true 
-
+		if loaded_layers.size() > 0:
+			layer_number = loaded_layers.size()
+			SingletonObject.is_graph = true
+			toggle_controls(true)
 
 func toggle_controls(toggle: bool):
 	#only drawing
@@ -168,28 +174,26 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	image_.resize(new_size.x, new_size.y)
+
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
-		#RemoveLayer(ch,)
+	
+	# Create the _draw_layer AFTER loading the image
 	_draw_layer = _create_layer(image_)
-	_draw_layer.image = image_
-	_background_images[_draw_layer] = image_.duplicate()  # Store the initial background
-	
-	
+	_draw_layer.image = image_  # Assign the loaded image to the layer
+	_background_images[_draw_layer] = image_.duplicate() 
+
 	var transparency_node = TextureRect.new()
 	transparency_node.stretch_mode = TextureRect.STRETCH_TILE
 	transparency_node.texture = _transparency_texture
-	
 	transparency_node.custom_minimum_size = _draw_layer.image.get_size()
-	#adding this transparency layer to the scroll container makes it so the layers number
 	_layers_container.add_child(transparency_node, false, INTERNAL_MODE_FRONT)
 
-	image = image_
+	image = image_ 
 
-	# Ensure the undo history contains the initial state
 	layer_undo_histories[_draw_layer.name] = []
 	layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
-
+	
 # Similar updates to the function setup_from_created_image
 func setup_from_created_image(image_: Image):
 	# Create a new image with the same properties as in create_image
@@ -532,8 +536,10 @@ func _on_layers_menu_resized() -> void:
 func _on_add_layer_pressed():
 	layers_buttons()
 	
-	create_image(Vector2i(%CenterContainer.size))
-	# Automatically select the newly created layer
+	var previous_layer = _layers_container.get_child(_layers_container.get_child_count() - 1)
+	var new_layer_size = previous_layer.image.get_size()
+	
+	create_image(new_layer_size)
 
 func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	# Find the index of the HBoxContainer within LayersList
@@ -846,50 +852,54 @@ func _on_arrow_top_pressed() -> void:
 func _on_arrow_bottom_pressed() -> void:
 	_resize_layers(false, false)
 	
-func _resize_layers(resize_width: bool = true, origin_changed: = false) -> void:
+func _resize_layers(resize_width: bool = true, origin_changed: bool = false) -> void:
 	var pixels_to_add = 60
 
 	%MgIcon.visible = false
 	zoomIn = false
 	zoomOut = false
-	
+
 	zoom_in_button.modulate = Color.WHITE
 	zoom_out_button.modulate = Color.WHITE
 
-	var new_size: Vector2i
-	var old_size = _draw_layer.image.get_size()  # Get size of the selected layer
-	if resize_width:
-		new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
-	else:
-		new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
+	# Iterate through all layers in the _layers_container
+	for layer in _layers_container.get_children():
+		if layer is Layer:
+			var old_size = layer.image.get_size()
+			var new_size: Vector2i
 
-	# Resize the selected layer's image
-	var resized_image := Image.create_empty(int(new_size.x), int(new_size.y), false, Image.FORMAT_RGBA8)
+			if resize_width:
+				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
+			else:
+				new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
 
-	# Fill with appropriate color based on layer index
-	var fill_color: Color
-	if _layers_container.get_children().find(_draw_layer) == 0:  # First layer
-		fill_color = Color.WHITE
-	else:
-		fill_color = Color(0, 0, 0, 0)  # Transparent
+			# Resize the layer's image
+			var resized_image := Image.create_empty(int(new_size.x), int(new_size.y), false, Image.FORMAT_RGBA8)
 
-	resized_image.fill(fill_color)
+			# Fill with appropriate color based on layer index
+			var fill_color: Color
+			if _layers_container.get_children().find(layer) == 0:  # First layer
+				fill_color = Color.WHITE
+			else:
+				fill_color = Color(0, 0, 0, 0)  # Transparent
 
-	var offset := Vector2.ZERO # Default offset - no shift
+			resized_image.fill(fill_color)
 
-	if origin_changed:
-		# Calculate offset ONLY if expanding to the right or bottom
-		if resize_width and pixels_to_add > 0:
-			offset.x = pixels_to_add  # Shift content to keep centered
-		elif not resize_width and pixels_to_add > 0:
-			offset.y = pixels_to_add
+			var offset := Vector2.ZERO  # Default offset - no shift
 
-	resized_image.blit_rect(_draw_layer.image, Rect2(Vector2.ZERO, old_size), offset)
+			if origin_changed:
+				# Calculate offset ONLY if expanding to the right or bottom
+				if resize_width and pixels_to_add > 0:
+					offset.x = pixels_to_add  # Shift content to keep centered
+				elif not resize_width and pixels_to_add > 0:
+					offset.y = pixels_to_add
 
-	_draw_layer.image = resized_image
-	_draw_layer.size = new_size
-	_draw_layer.update()
-	
+			resized_image.blit_rect(layer.image, Rect2(Vector2.ZERO, old_size), offset)
+
+			layer.image = resized_image
+			layer.size = new_size
+			layer.update()
+			
 func layers_buttons():
 	var Hbox = HBoxContainer.new()
 	
