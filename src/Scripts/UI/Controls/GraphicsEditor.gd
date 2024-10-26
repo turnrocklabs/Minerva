@@ -42,6 +42,7 @@ var image: Image:
 
 
 var drawing:bool = false
+var drawing_brush_active: = true
 var erasing:bool = false
 var clouding:bool = false
 var zoomIn:bool = false
@@ -274,7 +275,7 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 	var sy = 1 if y1 < y2 else -1
 	var err = dx - dy
 
-	while true and drawing:
+	while true and drawing and drawing_brush_active:
 		pixels.append(Vector2(x1, y1))
 		if x1 == x2 and y1 == y2:
 			break
@@ -319,7 +320,7 @@ func _gui_input(event: InputEvent):
 		#Get color at clicked position and Update the ColorPickerButton
 		color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
 		
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool and drawing_brush_active:
 		flood_fill(active_layer.image, layer_local_pos, brush_color) 
 		active_layer.update()
 		fill_tool = false
@@ -616,6 +617,9 @@ func LayerVisible(Hbox: HBoxContainer):
 
 
 func _on_brushes_item_selected(index):
+	# drawing if the index is 0
+	drawing_brush_active = index == 0
+
 	#off other tools not drawing
 	%MgIcon.visible = false
 	erasing = false
