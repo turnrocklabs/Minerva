@@ -124,6 +124,8 @@ func _load_text_file(filename: String):
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	graphics_editor.setup_from_image(image)
+	#_file_saved = true
+	#SingletonObject.UpdateUnsavedTabIcon.emit()
 	# %SaveButton.disabled = false
 
 
