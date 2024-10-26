@@ -23,7 +23,7 @@ var stop_signal:bool = false
 func _ready():
 	var idx = AudioServer.get_bus_index("Rec")
 	effect = AudioServer.get_bus_effect(idx, 0)
-	btnStop == null
+	#btnStop == null
 func _StartConverting():
 	stop_signal = false
 	if effect.is_recording_active():
