@@ -39,8 +39,8 @@ var memory_item: MemoryItem:
 		# So here we check if there's editor associated with memory_item this note is rendering.
 		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
 			if editor.associated_object:
-				if editor.associated_object.memory_item == memory_item:
-					associate_editor(editor)
+				#if editor.associated_object.memory_item == memory_item:
+				associate_editor(editor)
 
 #region New notes methods
 
