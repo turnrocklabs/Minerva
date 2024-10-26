@@ -183,8 +183,14 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 func estimate_tokens(_input: String) -> int:
 	return 0
 
-func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
+func estimate_tokens_from_prompt(input: Array[Variant]):
+	var latest_prompt = input.back()
+
+	if not latest_prompt.get("text").is_empty() and (latest_prompt.get("images", []) as Array).is_empty():
+		return 0.040 # https://openai.com/api/pricing/ implying we use standard quality and dalle-3
+
 	return 0
+
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
