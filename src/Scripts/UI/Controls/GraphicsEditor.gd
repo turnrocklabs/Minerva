@@ -628,7 +628,7 @@ func LayerVisible(Hbox: HBoxContainer):
 
 func _on_brushes_item_selected(index):
 	# drawing if the index is 0
-	drawing_brush_active = index == 0
+	drawing_brush_active = (index == 0) or (index == 1)
 
 	#off other tools not drawing
 	%MgIcon.visible = false
