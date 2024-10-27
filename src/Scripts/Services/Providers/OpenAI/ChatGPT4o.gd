@@ -91,6 +91,4 @@ func estimate_tokens_from_prompt(input: Array[Variant]):
 					
 					image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
 
-	print(image_tokens)
-
 	return text_tokens + image_tokens
