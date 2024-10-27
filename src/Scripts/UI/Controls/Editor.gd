@@ -102,7 +102,7 @@ func _ready():
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 	SingletonObject.UpdateLastSavePath.connect(update_last_path)
-	code_edit.text_changed.connect(_on_editor_changed)
+	#code_edit.text_changed.connect(_on_editor_changed)
 
 
 func update_last_path(new_path: String) -> void:
@@ -124,6 +124,8 @@ func _load_text_file(filename: String):
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	graphics_editor.setup_from_image(image)
+	#_file_saved = true
+	#SingletonObject.UpdateUnsavedTabIcon.emit()
 	# %SaveButton.disabled = false
 
 
@@ -215,12 +217,12 @@ func is_content_saved() -> bool:
 	match type:
 		Type.TEXT:
 			return code_edit.text == code_edit.saved_content
-		Type.NOTE_EDITOR:
+		#Type.NOTE_EDITOR:
 			# Note.gd adds a `associated_object` meta for memory item the note is rendering
-			if is_instance_valid(associated_object):
-				var memory_item: MemoryItem = associated_object.memory_item
-				return code_edit.text == memory_item.Content
-			else: return false
+			#if is_instance_valid(associated_object):
+				#var memory_item = associated_object.memory_item
+				#return code_edit.text == memory_item.Content
+			#else: return false
 		Type.GRAPHICS:
 			if graphics_editor:
 				return graphics_editor.is_image_saved
