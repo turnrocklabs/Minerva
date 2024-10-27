@@ -48,27 +48,28 @@ func ensure_chat_open() -> void:
 
 ## Generates the full turn prompt using the history of the active chat and the selected provider.
 ## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.[br]
-## Will use [parameter provider_override] as the provider or the provider of the currently active chat.
+## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
 ## Check `History.To_Prompt` for explanation on `predicate`.
-func create_prompt(append_item: ChatHistoryItem = null, provider_override: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
+func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
 	
-	# get history of the active chat tab if there is one
-	if SingletonObject.ChatList.is_empty():
-		if append_item and provider_override: # if we have appended item and given provider return the formatted item using it
-			return [provider_override.Format(append_item)]
-		else:
-			return []
+	# if we don't have any chats history_list will be empty
+	var history_list: Array[Variant] = []
+	var provider: BaseProvider = provider_fallback
 
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if not SingletonObject.ChatList.is_empty():
+		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+		if not provider:
+			provider = history.provider
+
+		history_list = history.To_Prompt(predicate)
 	
-	var provider: = provider_override if provider_override else history.provider
+	# if there's no history provider and no fallback, we can't format the append item even if there is one
+	if not provider:
+		return []
 
 	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(provider)
 
-	# history will turn it into a prompts using the selected provider
-	var history_list: Array[Variant] = history.To_Prompt(predicate)
-
-	# If we don't have a new item but we have active notes, we still need new item to add the noted in there
+	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
 	
@@ -79,7 +80,9 @@ func create_prompt(append_item: ChatHistoryItem = null, provider_override: BaseP
 		var item = provider.Format(append_item)
 		if item: history_list.append(item)
 
+
 	return history_list
+
 
 func _on_btn_inspect_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
@@ -429,6 +432,19 @@ func _ready():
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 
+	SingletonObject.note_toggled.connect(_on_note_toggled)
+	SingletonObject.note_changed.connect(_on_note_changed)
+
+
+# if a note is enabled/disabled recalculate the token cost
+func _on_note_toggled(_note: Note, _on: bool):
+	print("Note %s updated" % _note)
+	update_token_estimation()
+
+# if a note is changed recalculate the token cost
+func _on_note_changed(_note: Note,):
+	print("Note %s changed" % _note)
+	update_token_estimation()
 
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.control = closed_tab_container.get_tab_control(tab)
