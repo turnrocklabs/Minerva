@@ -274,7 +274,6 @@ func _on_play_audio_button_pressed() -> void:
 #endregion Audio Note
 
 func should_add_note_be_disabled() -> void:
-	print(%NoteDescription.text)
 	var text_fields_filled = %NoteHead.text != "" and %NoteDescription.text != ""
 	var image_field_and_title = %NoteHead.text != "" and image_original_res != null
 	var audio_field_and_title = %NoteHead.text != "" and audio_recording != null
