@@ -125,7 +125,7 @@ func _exit_tree() -> void:
 	if has_meta("associated_editor"):
 		var editor: Editor = get_meta("associated_editor")
 		if is_instance_valid(editor):
-			editor.queue_free()
+			editor.associated_object = null
 
 
 #method for changing the dots texture when the main theme changes
@@ -305,7 +305,7 @@ func _on_edit_button_pressed():
 		editor = ep.add(Editor.Type.GRAPHICS, null, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:
-		editor = ep.add(Editor.Type.NOTE_EDITOR, null, memory_item.Title)
+		editor = ep.add(Editor.Type.TEXT, null, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
 
 	associate_editor(editor)
