@@ -438,12 +438,10 @@ func _ready():
 
 # if a note is enabled/disabled recalculate the token cost
 func _on_note_toggled(_note: Note, _on: bool):
-	print("Note %s updated" % _note)
 	update_token_estimation()
 
 # if a note is changed recalculate the token cost
 func _on_note_changed(_note: Note,):
-	print("Note %s changed" % _note)
 	update_token_estimation()
 
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
