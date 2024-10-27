@@ -262,27 +262,17 @@ func get_saved_state() -> int:
 
 	return state
 
-func is_content_saved() -> bool:
-	var state: int
+## Returns whether the editor content is saved in regards to the file or the associated object.[br]
+## [parameter file_save], if set to true will return whether the editor is saved to a file[br],
+## or, if false if the editor is saved at the associted object (eg. Note).
+func is_content_saved(file_save: = true) -> bool:
+	var state: = get_saved_state()
 
-	match type:
-		Type.TEXT:
-			if file:
-				state = FILE_SAVED
-			return code_edit.text == code_edit.saved_content
-		#Type.NOTE_EDITOR:
-			# Note.gd adds a `associated_object` meta for memory item the note is rendering
-			#if is_instance_valid(associated_object):
-				#var memory_item = associated_object.memory_item
-				#return code_edit.text == memory_item.Content
-			#else: return false
-		Type.GRAPHICS:
-			if graphics_editor:
-				return graphics_editor.is_image_saved
-			else:
-				return false
+	if file_save: # if there's no file or the file is saved
+		return not file or state & FILE_SAVED
 	
-	return false
+	return not associated_object or state & ASSOCIATED_OBJECT_SAVED
+
 
 
 func _on_save_dialog_canceled():
