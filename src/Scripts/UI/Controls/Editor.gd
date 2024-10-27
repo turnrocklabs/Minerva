@@ -12,6 +12,16 @@ signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
 enum DIALOG_RESULT { Save, Cancel, Close }
 
+# Flags to represent the saved states
+# combining the flags shows the current state of the editor data
+
+## Represents that the editor file is saved, if there is one
+const FILE_SAVED: = 0x1
+
+## Represents that the associated object is saved, if there is one
+const ASSOCIATED_OBJECT_SAVED: = 0x2
+
+
 @onready var code_edit: EditorCodeEdit = %CodeEdit
 @onready var texture_rect: TextureRect = %TextureRect
 @onready var graphics_editor: GraphicsEditor = %GraphicsEditor
@@ -33,15 +43,17 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 enum Type {
 	TEXT,
 	GRAPHICS,
-	WhiteBoard, # TODO: To be removed
-	NOTE_EDITOR,
 }
 
 ## May contain the object that is being edited by this editor.[br]
 ## Eg. ChatImage, Note, etc..[br]
 ## Allows switching to existing editor intead of
 ## opening a new one for same associated object.
-var associated_object
+var associated_object:
+	set(value):
+		associated_object = value
+		SingletonObject.UpdateUnsavedTabIcon.emit()
+
 var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
@@ -59,7 +71,7 @@ var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
 
- # checks if the editor has been saved at least once
+# checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
 static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null) -> Editor:
@@ -73,7 +85,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 		editor.file = file_
 
 	match type_:
-		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
+		Editor.Type.TEXT:
 			editor.get_node("%CodeEdit").visible = true
 			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
 		Editor.Type.GRAPHICS:
@@ -163,7 +175,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 	if not file:
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
-		if type == Type.TEXT or type == Type.NOTE_EDITOR:
+		if type == Type.TEXT:
 			line_edit.text = tab_title + "." + SingletonObject.supported_text_fortmats[0]
 		else:
 			line_edit.text = tab_title
@@ -205,7 +217,7 @@ func save():
 	
 	# Post save emit the signals to update the saved state icon
 	match type:
-		Type.TEXT, Type.NOTE_EDITOR:
+		Type.TEXT:
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
 			graphics_editor.is_image_saved = true
@@ -213,9 +225,50 @@ func save():
 			pass # TODO: implement for graphics files
 
 
-func is_content_saved() -> bool:
+## Returns the bitmask of the saved state for the editor.
+func get_saved_state() -> int:
+	var state: int = 0x0
+
 	match type:
 		Type.TEXT:
+			# if we have a file and the content matches, add the FILE_SAVED mask
+			if file and code_edit.text == code_edit.saved_content:
+				state |= FILE_SAVED
+			
+			# if there's associated_object and the content matches add the ASSOCIATED_OBJECT_SAVED flag
+			if associated_object:
+				if associated_object is Note:
+					if code_edit.text == associated_object.memory_item.Content:
+						state |= ASSOCIATED_OBJECT_SAVED
+				
+				# if it's not a note, just mark it as saved
+				else:
+					state |= ASSOCIATED_OBJECT_SAVED
+			
+		Type.GRAPHICS:
+			# if there's no graphics editor, even tho that's the type, just return all saved states
+			if not graphics_editor: state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+			if file and graphics_editor.is_image_saved:
+				state |= FILE_SAVED
+			
+			if associated_object:
+				if associated_object is Note:
+					state |= ASSOCIATED_OBJECT_SAVED
+					# associated_object.memory_item
+				
+				else:
+					state |= ASSOCIATED_OBJECT_SAVED
+
+	return state
+
+func is_content_saved() -> bool:
+	var state: int
+
+	match type:
+		Type.TEXT:
+			if file:
+				state = FILE_SAVED
 			return code_edit.text == code_edit.saved_content
 		#Type.NOTE_EDITOR:
 			# Note.gd adds a `associated_object` meta for memory item the note is rendering
@@ -296,25 +349,19 @@ func _on_create_note_button_pressed() -> void:
 		if Type.TEXT == type:
 			if file:
 				associated_object = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
-				set_meta("associated_object", associated_object)
 			elif tab_title:
 				associated_object = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
-				set_meta("associated_object", associated_object)
 			else:
 				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
-				set_meta("associated_object", associated_object)
+
 		if Type.GRAPHICS == type:
 			if tab_title:
 				associated_object = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
-				set_meta("associated_object", associated_object) 
 			elif file:
 				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
-				set_meta("associated_object", associated_object) 
 			else:
 				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
-				set_meta("associated_object", associated_object) 
 
-	type = Type.NOTE_EDITOR
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 	
 
@@ -326,7 +373,7 @@ func _on_reload_button_pressed() -> void:
 		match type:
 			Type.GRAPHICS:
 				_load_graphics_file(file)
-			Type.TEXT, Type.NOTE_EDITOR:
+			Type.TEXT:
 				_load_text_file(file)
 
 
@@ -462,7 +509,7 @@ func _on_close_buton_pressed() -> void:
 
 #this function is called when the user presses 'Ctrl+G'
 func jump_to_line() -> void:
-	if !jump_to_line_panel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
+	if !jump_to_line_panel.visible and type == Type.TEXT:
 		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to."
 
 		#this is a ternary operator equivalent
@@ -561,7 +608,7 @@ func _create_note() -> MemoryItem:
 	return memory_item
 
 func _update_memory_item(memory_item: MemoryItem) -> void:
-	if type == Type.TEXT or type == Type.NOTE_EDITOR:
+	if type == Type.TEXT:
 		memory_item.Type = SingletonObject.note_type.TEXT
 		memory_item.Content = code_edit.text
 	
