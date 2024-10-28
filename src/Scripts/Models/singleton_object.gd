@@ -337,7 +337,7 @@ func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MO
 	# fallback to first provider shown in the chat dropdown
 	return Chats._provider_option_button.get_item_id(0) as API_MODEL_PROVIDERS
 
-@onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
+#@onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 
 #endregion API Consumer
 
@@ -410,7 +410,7 @@ func all_project_features_open() -> bool:
 #region Theme change
 
 # get the root control node and apply the theme to it, all its children inherit the theme
-@onready var root_control: Control = $"/root/RootControl"
+#@onready var root_control: Control = $"/root/RootControl"
 
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
@@ -423,6 +423,7 @@ func get_theme_enum() -> int:
 
 
 func set_theme(themeID: int) -> void:
+	var root_control: Control = get_tree().current_scene
 	if get_theme_enum() != themeID:
 		print("theme enum:" + str(themeID))
 		match themeID:
