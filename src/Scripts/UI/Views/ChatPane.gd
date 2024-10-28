@@ -16,7 +16,23 @@ var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS
 
 ## add new chat 
 func _on_new_chat():
-	var tab_name: = "Chat %s" % (get_tab_count()+1)
+	
+	var last_chat_number: int = -1
+
+	# reverse loop and find last largest number after the Chat string literal
+	for i in range(get_tab_count()-1, -1, -1):
+		var tab_title: = get_tab_title(i)
+		
+		if tab_title == "Chat":
+			last_chat_number = max(last_chat_number, 0)
+		
+		elif tab_title.begins_with("Chat"):
+			var suffix = tab_title.right(-"Chat".length()).strip_edges()
+			
+			if suffix.is_valid_int():
+				last_chat_number = max(last_chat_number, int(suffix))
+
+	var tab_name: = "Chat" if last_chat_number == -1 else "Chat %s" % (last_chat_number+1)
 
 	var provider_obj: BaseProvider
 
