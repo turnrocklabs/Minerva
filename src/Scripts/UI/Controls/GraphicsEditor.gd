@@ -174,8 +174,6 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 
 func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
-	var size_x = clamp(new_size.x, 1, INF)
-	var size_y = clamp(new_size.y, 1, INF)
 	image_.resize( new_size.x, new_size.y)
 
 	for ch in _layers_container.get_children(): 
