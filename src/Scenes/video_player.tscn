@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://d2o42sf0wonia"]
+[gd_scene load_steps=4 format=3 uid="uid://d2o42sf0wonia"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/video_player.gd" id="1_hk33a"]
 [ext_resource type="VideoStream" path="res://sample-2.mkv" id="1_svtgl"]
+[ext_resource type="Texture2D" uid="uid://cb0sgp25gcypd" path="res://assets/icons/pause_icons/pause-24.png" id="3_ese75"]
 
 [node name="VideoPlayer" type="Control"]
 layout_mode = 3
@@ -10,48 +11,92 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+focus_mode = 1
 script = ExtResource("1_hk33a")
 
-[node name="MarginContainer" type="MarginContainer" parent="."]
+[node name="VBoxContainer" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 5
-theme_override_constants/margin_top = 5
-theme_override_constants/margin_right = 5
-theme_override_constants/margin_bottom = 5
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
-layout_mode = 2
-
-[node name="AspectRatioContainer" type="AspectRatioContainer" parent="MarginContainer/VBoxContainer"]
+[node name="AspectRatioContainer" type="AspectRatioContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-ratio = 1.8
+ratio = 1.9
+stretch_mode = 1
 
-[node name="VideoStreamPlayer" type="VideoStreamPlayer" parent="MarginContainer/VBoxContainer/AspectRatioContainer"]
+[node name="VideoStreamPlayer" type="VideoStreamPlayer" parent="VBoxContainer/AspectRatioContainer"]
+unique_name_in_owner = true
 layout_mode = 2
+focus_mode = 1
+audio_track = 1
 stream = ExtResource("1_svtgl")
 autoplay = true
 expand = true
 loop = true
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
+[node name="SliderTimer" type="Timer" parent="VBoxContainer/AspectRatioContainer/VideoStreamPlayer"]
+unique_name_in_owner = true
+wait_time = 0.125
+autostart = true
 
-[node name="Button" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="ColorRect" type="ColorRect" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
-text = "Play"
+size_flags_vertical = 8
+color = Color(0.392157, 0.392157, 0.392157, 0.392157)
 
-[node name="HSlider" type="HSlider" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/ColorRect"]
+layout_mode = 1
+anchors_preset = 14
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_top = -19.0
+offset_bottom = 19.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 8
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 10
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/ColorRect/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PlayButton" type="Button" parent="VBoxContainer/ColorRect/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_default_cursor_shape = 2
+icon = ExtResource("3_ese75")
+
+[node name="HSlider" type="HSlider" parent="VBoxContainer/ColorRect/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_default_cursor_shape = 10
+step = 0.1
+value = 29.3
+scrollable = false
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="VBoxContainer/ColorRect/MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-text = "00:00:00"
+text = "00:00"
 
-[connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer/Button" to="." method="_on_button_pressed"]
+[node name="ControlsTimer" type="Timer" parent="VBoxContainer/ColorRect"]
+wait_time = 2.0
+autostart = true
+
+[connection signal="gui_input" from="." to="." method="_on_gui_input"]
+[connection signal="gui_input" from="VBoxContainer/AspectRatioContainer/VideoStreamPlayer" to="." method="_on_gui_input"]
+[connection signal="timeout" from="VBoxContainer/AspectRatioContainer/VideoStreamPlayer/SliderTimer" to="." method="_on_slider_timer_timeout"]
+[connection signal="pressed" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/PlayButton" to="." method="toggle_pause"]
+[connection signal="drag_ended" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_ended"]
+[connection signal="drag_started" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_started"]
+[connection signal="timeout" from="VBoxContainer/ColorRect/ControlsTimer" to="." method="_on_controls_timer_timeout"]
