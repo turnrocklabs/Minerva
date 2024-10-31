@@ -2,14 +2,21 @@ extends Control
 
 @onready var video_stream_player: VideoStreamPlayer = %VideoStreamPlayer
 @onready var timer: Timer = %SliderTimer
-@onready var button: Button = %PlayButton
+@onready var play_button: Button = %PlayButton
 @onready var h_slider: HSlider = %HSlider
 @onready var label: Label = %Label
 @onready var color_rect: ColorRect = $VBoxContainer/ColorRect
 @onready var controls_timer: Timer = $VBoxContainer/ColorRect/ControlsTimer
+@onready var volume_button: Button = %VolumeButton
+@onready var volume_h_slider: HSlider = %VolumeHSlider
+@onready var volume_rect: ColorRect = %VolumeRect
+
 
 var pause_icon: = preload("res://assets/icons/pause_icons/pause-24.png")
 var play_icon: = preload("res://assets/icons/play_icons/play-24.png")
+
+var was_playing: bool = false # this is for checking if the video was playing when the progress var is dragged
+
 
 func _ready() -> void:
 	h_slider.max_value = video_stream_player.get_stream_length()
@@ -18,6 +25,7 @@ func _ready() -> void:
 
 func update_time_label() -> void:
 	label.text = format_time_label(video_stream_player.stream_position)
+
 
 func format_time_label(time: float) -> String:
 	var minutes: = int(time/ 60)
@@ -30,12 +38,17 @@ func toggle_pause() -> void:
 	video_stream_player.paused = !video_stream_player.paused
 	h_slider.value = video_stream_player.stream_position
 	if !video_stream_player.paused:
-		button.icon = pause_icon
+		play_button.icon = pause_icon
 	else:
-		button.icon = play_icon
+		play_button.icon = play_icon
 
+#region Video Slider
 
 func _on_h_slider_drag_started() -> void:
+	if !video_stream_player.paused:
+		was_playing = true
+	else:
+		was_playing = false
 	video_stream_player.paused = true
 	timer.paused = true
 
@@ -43,8 +56,20 @@ func _on_h_slider_drag_started() -> void:
 func _on_h_slider_drag_ended(value_changed: bool) -> void:
 	if value_changed:
 		video_stream_player.stream_position = h_slider.value
+	if was_playing:
+		video_stream_player.paused = false
+	timer.paused = false
 
 
+func _on_volume_h_slider_drag_ended(value_changed: bool) -> void:
+	if value_changed:
+		#not sure if we should use volume_db or just volume or if it even makes a difference
+		video_stream_player.volume_db = volume_h_slider.value
+		#video_stream_player.volume = volume_h_slider.value
+
+#endregion Video Slider
+
+#region Timers
 func _on_slider_timer_timeout() -> void:
 	h_slider.value = video_stream_player.stream_position
 	update_time_label()
@@ -53,12 +78,18 @@ func _on_slider_timer_timeout() -> void:
 func _on_controls_timer_timeout() -> void:
 	make_controls_invisible()
 
+#endregion Timers
+
+
+#region Controls Visibility
 var tween: Tween
 func make_controls_invisible() -> void:
 	if tween:
 		tween.kill()
 	tween = create_tween()
 	tween.tween_property(color_rect,"modulate", Color(1,1,1,0), 0.3)
+	DisplayServer.mouse_set_mode(DisplayServer.MOUSE_MODE_HIDDEN)
+	color_rect.visible = false
 
 
 func make_controls_visible() -> void:
@@ -66,9 +97,13 @@ func make_controls_visible() -> void:
 		tween.kill()
 	tween = create_tween()
 	tween.tween_property(color_rect,"modulate", Color(1,1,1,1), 0.1)
+	DisplayServer.mouse_set_mode(DisplayServer.MOUSE_MODE_VISIBLE)
+	color_rect.visible = true
 
+#endregion Controls Visibility
 
-# this method gat called when the base node or the videoStream node recieve input
+#region Input listeners for pausing
+# this method is connected to the base node, the aspectRatio Container, the color_rect, videoStream node gui_input signals
 func _on_gui_input(event: InputEvent) -> void:
 	make_controls_visible()
 	controls_timer.start()
@@ -83,3 +118,18 @@ func handle_input_for_pause(event: InputEvent) -> void:
 		elif event is InputEventKey:
 			if event.keycode == KEY_SPACE:
 				toggle_pause()
+
+
+func _on_color_rect_mouse_entered() -> void:
+	controls_timer.paused = true
+
+
+func _on_color_rect_mouse_exited() -> void:
+	if not color_rect.get_rect().has_point(get_local_mouse_position()) or  not volume_rect.get_rect().has_point(get_local_mouse_position()):
+		controls_timer.paused = false
+
+#endregion Input listeners for pausing
+
+
+func _on_volume_button_pressed() -> void:
+	volume_rect.visible =!volume_rect.visible
