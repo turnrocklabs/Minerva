@@ -46,6 +46,13 @@ func _draw() -> void:
 	texture_rect.texture = ImageTexture.create_from_image(layer.image)
 
 
+func _get_drag_data(_active_colorat_position: Vector2) -> Variant:
+
+	set_drag_preview(self.duplicate())
+
+	return null
+
+
 func _on_visibility_check_button_toggled(toggled_on: bool) -> void:
 	layer.visible = toggled_on
 

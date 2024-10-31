@@ -28,7 +28,15 @@ var layers: Array[LayerV2]
 	# get:
 	# 	return layers_container.get_children().filter(func(n): return n is LayerV2) as Array[LayerV2]
 
-var active_layer: LayerV2
+var active_layer: LayerV2:
+	set(value):
+		active_layer = value
+		for l in layers_container.get_children().filter(func(n): return n is LayerV2):
+			l.get_meta("layer_card").selected = false
+		
+		active_layer.get_meta("layer_card").selected = true
+
+
 var active_tool: BaseTool:
 	set(value):
 		active_tool = value
@@ -55,17 +63,12 @@ func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 	img.fill(Color.TRANSPARENT)
 
 	var layer: = LayerV2.create_image_layer(layer_name, img)
-	active_layer = layer
 	var layer_card: = LayerCard.create(layer)
+	
+	# don't change the active_layer untill layer_card updates the layer metadata
+	active_layer = layer
 
-	layer_card.layer_clicked.connect(
-		func():
-			active_layer = layer
-			for l in layers_container.get_children().filter(func(n): return n is LayerV2):
-				l.get_meta("layer_card").selected = false
-			
-			layer_card.selected = true
-	)
+	layer_card.layer_clicked.connect(func(): active_layer = layer)
 
 	layer_cards_container.add_child(layer_card)
 
