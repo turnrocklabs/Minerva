@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=7 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
-[ext_resource type="ButtonGroup" uid="uid://da3bhcsoc4ruq" path="res://assets/data/GraphicsEditorTooleButtonGroup.tres" id="2_ymijy"]
+[ext_resource type="ButtonGroup" uid="uid://da3bhcsoc4ruq" path="res://assets/data/GraphicsEditorToolsButtonGroup.tres" id="2_ymijy"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DrawingTool.gd" id="2_yti2r"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PaneTool.gd" id="3_42ubw"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EraserTool.gd" id="4_146eo"]
 
 [node name="GraphicsEditorV2" type="PanelContainer"]
 anchors_preset = 15
@@ -26,6 +27,12 @@ editor = NodePath("../..")
 [node name="PaneTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("3_42ubw")
+editor = NodePath("../..")
+
+[node name="EraserTool" type="Node" parent="Tools" node_paths=PackedStringArray("_brush_size_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("4_146eo")
+_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/EraserOptions/HSlider")
 editor = NodePath("../..")
 
 [node name="h" type="HBoxContainer" parent="."]
@@ -57,6 +64,12 @@ toggle_mode = true
 button_group = ExtResource("2_ymijy")
 text = "Pane"
 
+[node name="EraserToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Eraser"
+
 [node name="ToolOptionsContainer" type="MarginContainer" parent="h/v/h"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -74,6 +87,20 @@ custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 
 [node name="HSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/BrushOptions"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_vertical = 4
+max_value = 46.0
+value = 1.0
+ticks_on_borders = true
+
+[node name="EraserOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="HSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/EraserOptions"]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_vertical = 4
@@ -117,4 +144,5 @@ icon_alignment = 1
 
 [connection signal="toggled" from="h/v/h/ToolsContainer/BrushToolButton" to="." method="_on_brush_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/EraserToolButton" to="." method="_on_eraser_tool_button_toggled"]
 [connection signal="pressed" from="h/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]

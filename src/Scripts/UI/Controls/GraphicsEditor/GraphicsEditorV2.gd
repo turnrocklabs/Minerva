@@ -10,17 +10,23 @@ signal active_tool_changed(tool_: BaseTool)
 
 # tool options containers
 @onready var _brush_options_container: Control = %BrushOptions
+@onready var _eraser_options_container: Control = %EraserOptions
 
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var pane_tool: PaneTool = %PaneTool
+@onready var eraser_tool: EraserTool = %EraserTool
 
 
 @onready var tool_options_mapping: = {
-	drawing_tool: _brush_options_container
+	drawing_tool: _brush_options_container,
+	eraser_tool: _eraser_options_container,
 }
 
+var canvas_size: = Vector2i(1000, 1000)
 
-var layers: Array[LayerV2] = []
+var layers: Array[LayerV2]
+	# get:
+	# 	return layers_container.get_children().filter(func(n): return n is LayerV2) as Array[LayerV2]
 
 var active_layer: LayerV2
 var active_tool: BaseTool:
@@ -36,32 +42,37 @@ func _ready() -> void:
 	setup()
 
 
-func setup(canvas_size: Vector2i = Vector2i(1000, 1000)) -> void:
+func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
-	var img = Image.create(canvas_size.x, canvas_size.y, true, Image.FORMAT_RGBA8)
+	var img = Image.create(canvas_size_.x, canvas_size_.y, true, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
 
-	active_layer = LayerV2.create_image_layer("Layer", img)
+	active_layer = create_new_layer("Layer", canvas_size_)
 
-	var layer_card: = LayerCard.create(active_layer)
-	
-	layer_cards_container.add_child(layer_card)
 
-	layers_container.add_child(active_layer)
-
-func create_new_layer(layer_name: String) -> LayerV2:
-	var img = Image.create(1000, 1000, true, Image.FORMAT_RGBA8)
+func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
+	var img = Image.create(dimensions.x, dimensions.y, true, Image.FORMAT_RGBA8)
 	img.fill(Color.TRANSPARENT)
 
 	var layer: = LayerV2.create_image_layer(layer_name, img)
 	active_layer = layer
 	var layer_card: = LayerCard.create(layer)
 
+	layer_card.layer_clicked.connect(
+		func():
+			active_layer = layer
+			for l in layers_container.get_children().filter(func(n): return n is LayerV2):
+				l.get_meta("layer_card").selected = false
+			
+			layer_card.selected = true
+	)
+
 	layer_cards_container.add_child(layer_card)
 
 	layers_container.add_child(layer, true)
 
 	return layer
+
 
 func _gui_input(event: InputEvent) -> void:
 
@@ -84,7 +95,7 @@ func _on_active_tool_changed(tool_: BaseTool) -> void:
 
 
 func _on_new_layer_button_pressed() -> void:
-	active_layer = create_new_layer("Layer")
+	active_layer = create_new_layer("Layer", canvas_size)
 
 
 func _on_brush_tool_button_toggled(toggled_on: bool) -> void:
@@ -92,3 +103,6 @@ func _on_brush_tool_button_toggled(toggled_on: bool) -> void:
 
 func _onpane_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = pane_tool if toggled_on else null
+
+func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
+	active_tool = eraser_tool if toggled_on else null

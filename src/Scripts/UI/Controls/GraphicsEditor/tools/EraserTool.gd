@@ -1,19 +1,9 @@
-class_name DrawingTool
+class_name EraserTool
 extends BaseTool
 
-@export var _color_picker_button: ColorPickerButton
 @export var _brush_size_slider: Slider
 
-var _drawing_icon: = Image.load_from_file("res://assets/icons/white_loading_circle.png")
-
-var brush_color: Color:
-	set(value):
-		brush_color = value
-		if not _color_picker_button.is_node_ready():
-			await _color_picker_button.ready
-		_color_picker_button.color = value
-	get:
-		return _color_picker_button.color
+var brush_color: = Color.TRANSPARENT
 
 var brush_size: int:
 	set(value):
@@ -30,13 +20,6 @@ var _last_drawing_position: Vector2
 
 var drawing: = false
 
-func _ready() -> void:
-	_brush_size_slider.value_changed.connect(
-		func(value: float):
-			var s: = int(value*2)
-			# _drawing_icon.resize(s, s, Image.INTERPOLATE_LANCZOS)
-			# Input.set_custom_mouse_cursor(_drawing_icon, Input.CursorShape.CURSOR_ARROW, Vector2.ONE * s/2)
-	)
 
 func handle_input_event(event: InputEvent) -> void:
 	event = editor.active_layer.localize_input(event)
