@@ -24,12 +24,14 @@ offset_right = -1578.0
 offset_bottom = -902.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 1
 theme_override_styles/panel = SubResource("StyleBoxFlat_c4m65")
 script = ExtResource("1_8joxi")
 
 [node name="LayerCard" type="Button" parent="."]
 custom_minimum_size = Vector2(300, 150)
 layout_mode = 2
+mouse_filter = 1
 theme_override_styles/focus = SubResource("StyleBoxEmpty_hqbae")
 flat = true
 
