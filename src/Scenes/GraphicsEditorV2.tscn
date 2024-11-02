@@ -145,4 +145,6 @@ icon_alignment = 1
 [connection signal="toggled" from="h/v/h/ToolsContainer/BrushToolButton" to="." method="_on_brush_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/EraserToolButton" to="." method="_on_eraser_tool_button_toggled"]
+[connection signal="mouse_entered" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
+[connection signal="mouse_exited" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
 [connection signal="pressed" from="h/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]

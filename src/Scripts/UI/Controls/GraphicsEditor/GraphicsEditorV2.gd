@@ -24,6 +24,10 @@ signal active_tool_changed(tool_: BaseTool)
 
 var canvas_size: = Vector2i(1000, 1000)
 
+var _custom_cursor: Resource
+var _custom_cursor_shape: int
+var _custom_cursor_hotspot: Vector2
+
 var layers: Array[LayerV2]
 	# get:
 	# 	return layers_container.get_children().filter(func(n): return n is LayerV2) as Array[LayerV2]
@@ -40,6 +44,9 @@ var active_layer: LayerV2:
 var active_tool: BaseTool:
 	set(value):
 		active_tool = value
+		# reset the cursor here,
+		# so it happends before the signal is consumed by selected tool which may change it
+		set_custom_cursor(null)
 		active_tool_changed.emit(value)
 
 
@@ -76,6 +83,14 @@ func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 
 	return layer
 
+func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 = Vector2.ZERO):
+	_custom_cursor = image
+	_custom_cursor_shape = shape
+	_custom_cursor_hotspot = hotspot
+
+	if layers_container.get_rect().has_point(layers_container.get_local_mouse_position()):
+		Input.set_custom_mouse_cursor(image, shape, hotspot)
+	
 
 func _gui_input(event: InputEvent) -> void:
 
@@ -104,8 +119,16 @@ func _on_new_layer_button_pressed() -> void:
 func _on_brush_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = drawing_tool if toggled_on else null
 
-func _onpane_tool_button_toggled(toggled_on:bool) -> void:
+func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = pane_tool if toggled_on else null
 
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = eraser_tool if toggled_on else null
+
+
+func _on_layers_container_mouse_entered() -> void:
+	Input.set_custom_mouse_cursor(_custom_cursor, _custom_cursor_shape, _custom_cursor_hotspot)
+
+
+func _on_layers_container_mouse_exited() -> void:
+	Input.set_custom_mouse_cursor(null)

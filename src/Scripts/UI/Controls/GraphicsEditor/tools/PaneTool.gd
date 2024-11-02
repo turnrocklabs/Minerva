@@ -1,6 +1,8 @@
 class_name PaneTool
 extends BaseTool
 
+var hand_icon: = preload("res://assets/icons/drag_hand.png")
+
 var dragging: = false
 
 func handle_input_event(event: InputEvent) -> void:
@@ -10,8 +12,10 @@ func handle_input_event(event: InputEvent) -> void:
 
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.is_pressed():
+				editor.set_custom_cursor(hand_icon)
 				dragging = true
 			else:
+				editor.set_custom_cursor(null)
 				dragging = false
 
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:

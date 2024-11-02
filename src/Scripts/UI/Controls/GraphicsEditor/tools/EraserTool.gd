@@ -20,6 +20,23 @@ var _last_drawing_position: Vector2
 
 var drawing: = false
 
+func _ready() -> void:
+	# each time the tool is changed to this one, update the custom cursor
+	editor.active_tool_changed.connect(
+		func(tool_: BaseTool):
+			if tool_ == self:
+				editor.set_custom_cursor(
+					create_fast_circle_image(brush_size),
+					Input.CursorShape.CURSOR_ARROW,
+					Vector2.ONE * brush_size
+				)
+	)
+
+	# when the brush size changed update the cursor
+	_brush_size_slider.value_changed.connect(
+		func(value: float):
+			editor.set_custom_cursor(create_fast_circle_image(int(value)), Input.CursorShape.CURSOR_ARROW, Vector2.ONE * value)
+	)
 
 func handle_input_event(event: InputEvent) -> void:
 	event = editor.active_layer.localize_input(event)
@@ -30,6 +47,8 @@ func handle_input_event(event: InputEvent) -> void:
 			if event.is_pressed():
 				drawing = true
 				_last_drawing_position = event.position
+				image_draw(editor.active_layer.image, event.position, brush_color, brush_size)
+				editor.queue_redraw()
 			else:
 				drawing = false
 
@@ -86,4 +105,53 @@ func get_circle_pixels(center: Vector2, radius: int) -> PackedVector2Array:
 			if (x - center.x) * (x - center.x) + (y - center.y) * (y - center.y) <= radius * radius:
 				pixels.append(Vector2(x, y))
 	return pixels
+
+
+func create_fast_circle_image(radius: int, line_color: Color = Color(1, 1, 1, 1)) -> Image:
+	var size = radius * 2 + 1
+	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
+	
+	# Make the image transparent
+	image.fill(Color(0, 0, 0, 0))
+	
+	# Main circle pixels
+	var x = radius
+	var y = 0
+	var decision = 1 - radius
+	
+	# Slightly transparent color for anti-aliasing
+	var aa_color = line_color
+	aa_color.a = 0.5
+	
+	while x >= y:
+		# Main pixels
+		plot_circle_points(image, radius, x, y, line_color)
+		plot_circle_points(image, radius, y, x, line_color)
+		
+		y += 1
+		if decision <= 0:
+			decision += 2 * y + 1
+		else:
+			x -= 1
+			decision += 2 * (y - x) + 1
+	
+	return image
+
+func plot_circle_points(image: Image, center: int, x: int, y: int, color: Color):
+	# Calculate all 8 symmetric points
+	var points = [
+		Vector2i(center + x, center + y),
+		Vector2i(center - x, center + y),
+		Vector2i(center + x, center - y),
+		Vector2i(center - x, center - y),
+		Vector2i(center + y, center + x),
+		Vector2i(center - y, center + x),
+		Vector2i(center + y, center - x),
+		Vector2i(center - y, center - x)
+	]
+	
+	# Only plot points that are within the image bounds
+	for point in points:
+		if point.x >= 0 and point.x < image.get_width() and point.y >= 0 and point.y < image.get_height():
+			image.set_pixel(point.x, point.y, color)
 
