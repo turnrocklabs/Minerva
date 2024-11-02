@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=8 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DrawingTool.gd" id="2_yti2r"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PaneTool.gd" id="3_42ubw"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EraserTool.gd" id="4_146eo"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TransformTool.gd" id="5_sc07q"]
 
 [node name="GraphicsEditorV2" type="PanelContainer"]
 anchors_preset = 15
@@ -33,6 +34,11 @@ editor = NodePath("../..")
 unique_name_in_owner = true
 script = ExtResource("4_146eo")
 _brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/EraserOptions/HSlider")
+editor = NodePath("../..")
+
+[node name="TransformTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("5_sc07q")
 editor = NodePath("../..")
 
 [node name="h" type="HBoxContainer" parent="."]
@@ -69,6 +75,12 @@ layout_mode = 2
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
 text = "Eraser"
+
+[node name="TransformToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "T"
 
 [node name="ToolOptionsContainer" type="MarginContainer" parent="h/v/h"]
 unique_name_in_owner = true
@@ -145,6 +157,7 @@ icon_alignment = 1
 [connection signal="toggled" from="h/v/h/ToolsContainer/BrushToolButton" to="." method="_on_brush_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/EraserToolButton" to="." method="_on_eraser_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
 [connection signal="mouse_entered" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
 [connection signal="mouse_exited" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
 [connection signal="pressed" from="h/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]

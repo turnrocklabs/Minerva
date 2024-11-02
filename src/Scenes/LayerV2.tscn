@@ -4,14 +4,23 @@
 [ext_resource type="Texture2D" uid="uid://bj0b5cmrbfma" path="res://addons/markdownlabel/assets/screenshot.png" id="2_ac76k"]
 
 [node name="LayerV2" type="Control"]
+z_index = 1
 layout_mode = 3
+anchors_preset = 0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+script = ExtResource("1_fehm3")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 1
-script = ExtResource("1_fehm3")
+color = Color(0.235294, 0.298039, 0.470588, 0.298039)
 
 [node name="CenterContainer" type="CenterContainer" parent="."]
 unique_name_in_owner = true
@@ -24,8 +33,11 @@ grow_vertical = 2
 
 [node name="TextureRect" type="TextureRect" parent="CenterContainer"]
 unique_name_in_owner = true
+z_as_relative = false
 layout_mode = 2
 mouse_filter = 2
 texture = ExtResource("2_ac76k")
-stretch_mode = 5
+expand_mode = 1
 metadata/_edit_use_anchors_ = true
+
+[connection signal="resized" from="." to="." method="_on_resized"]

@@ -15,6 +15,7 @@ signal active_tool_changed(tool_: BaseTool)
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var pane_tool: PaneTool = %PaneTool
 @onready var eraser_tool: EraserTool = %EraserTool
+@onready var transform_tool: TransformTool = %TransformTool
 
 
 @onready var tool_options_mapping: = {
@@ -56,22 +57,17 @@ func _ready() -> void:
 	
 	setup()
 
-	active_layer.image = Image.load_from_file("res://addons/markdownlabel/assets/screenshot.png")
-
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
-	# var img = Image.create(canvas_size_.x, canvas_size_.y, true, Image.FORMAT_RGBA8)
-	# img.fill(Color.WHITE)
-
-	active_layer = create_new_layer("Layer", canvas_size_)
+	create_new_layer("Layer", canvas_size_)
 
 
 func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
-	var img = Image.create(dimensions.x, dimensions.y, true, Image.FORMAT_RGBA8)
-	img.fill(Color.TRANSPARENT)
+	# var img = Image.create(dimensions.x, dimensions.y, true, Image.FORMAT_RGBA8)
+	# img.fill(Color.TRANSPARENT)
 
-	var layer: = LayerV2.create_image_layer(layer_name, img)
+	var layer: = LayerV2.create_drawing_layer(layer_name, dimensions, Color.WHITE)
 	var layer_card: = LayerCard.create(layer)
 	
 	# don't change the active_layer untill layer_card updates the layer metadata
@@ -95,9 +91,9 @@ func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 
 	
 
 func _gui_input(event: InputEvent) -> void:
-
 	if active_layer.is_visible_in_tree() and active_tool:
 		active_tool.handle_input_event(event)
+		accept_event()
 
 
 func _draw() -> void:
@@ -126,6 +122,9 @@ func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
 
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = eraser_tool if toggled_on else null
+
+func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
+	active_tool = transform_tool if toggled_on else null
 
 
 func _on_layers_container_mouse_entered() -> void:

@@ -29,9 +29,12 @@ func handle_input_event(event: InputEvent) -> void:
 
 
 func zoom(mouse_position: Vector2, factor: float):
-	var old_pos = editor.active_layer.position
-	var old_scale = editor.active_layer.scale
-	var new_scale = old_scale * factor
+	# var old_pos = editor.active_layer.position
+	# var old_scale = editor.active_layer.scale
+	# var new_scale = old_scale * factor
 	
-	editor.active_layer.scale = new_scale
-	editor.active_layer.position = mouse_position - (mouse_position - old_pos) * factor
+	# editor.active_layer.custom_minimum_size = editor.active_layer.size * factor
+	editor.active_layer.size *= factor
+
+	# editor.active_layer.scale = new_scale
+	# editor.active_layer.position = mouse_position - (mouse_position - old_pos) * factor
