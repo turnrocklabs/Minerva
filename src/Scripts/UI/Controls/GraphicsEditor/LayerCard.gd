@@ -46,11 +46,29 @@ func _draw() -> void:
 	texture_rect.texture = ImageTexture.create_from_image(layer.image)
 
 
-func _get_drag_data(_active_colorat_position: Vector2) -> Variant:
+func _create_drag_preview(pos: Vector2) -> LayerCard:
+	
+	# create layer copy so it doesnt overwrite the layer metadata
+	var layer_copy: = layer.duplicate()
 
-	set_drag_preview(self.duplicate())
+	var preview: = Control.new()
 
-	return null
+	var lc_copy: = create(layer_copy)
+
+	preview.add_child(lc_copy)
+
+	lc_copy.position = -pos
+
+	return preview
+
+
+func _get_drag_data(at_position: Vector2) -> Variant:	
+
+	var preview: = _create_drag_preview(at_position)
+
+	set_drag_preview(preview)
+
+	return self
 
 
 func _on_visibility_check_button_toggled(toggled_on: bool) -> void:
