@@ -76,7 +76,7 @@ func _on_edit_button_pressed():
 		caption_title = caption_title.substr(0, 15) + "..."
 	SingletonObject.is_masking = true
 	SingletonObject.is_picture = true
-	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, null, caption_title, self)
+	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, "", caption_title, self)
 	editor.graphics_editor.setup_from_image(image)
 	
 

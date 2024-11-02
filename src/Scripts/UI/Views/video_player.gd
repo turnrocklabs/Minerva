@@ -1,12 +1,13 @@
 extends Control
+class_name VideoPlayer
 
 @onready var video_stream_player: VideoStreamPlayer = %VideoStreamPlayer
 @onready var timer: Timer = %SliderTimer
 @onready var play_button: Button = %PlayButton
 @onready var h_slider: HSlider = %HSlider
 @onready var label: Label = %Label
-@onready var color_rect: ColorRect = $VBoxContainer/ColorRect
-@onready var controls_timer: Timer = $VBoxContainer/ColorRect/ControlsTimer
+@onready var color_rect: ColorRect = %ColorRect
+@onready var controls_timer: Timer = %ControlsTimer
 @onready var volume_button: Button = %VolumeButton
 @onready var volume_h_slider: HSlider = %VolumeHSlider
 @onready var volume_rect: ColorRect = %VolumeRect
@@ -16,6 +17,14 @@ var pause_icon: = preload("res://assets/icons/pause_icons/pause-24.png")
 var play_icon: = preload("res://assets/icons/play_icons/play-24.png")
 
 var was_playing: bool = false # this is for checking if the video was playing when the progress var is dragged
+
+var video_path: String:
+	set(value):
+		video_path = value
+		var stream: = FFmpegVideoStream.new()
+		stream.file = value
+		if video_stream_player:
+			video_stream_player.stream = stream
 
 
 func _ready() -> void:
@@ -88,8 +97,11 @@ func make_controls_invisible() -> void:
 		tween.kill()
 	tween = create_tween()
 	tween.tween_property(color_rect,"modulate", Color(1,1,1,0), 0.3)
-	DisplayServer.mouse_set_mode(DisplayServer.MOUSE_MODE_HIDDEN)
+	await tween.finished
+	volume_rect.visible = false
 	color_rect.visible = false
+	if visible and self.get_rect().has_point(get_local_mouse_position()) and is_visible_in_tree():
+		DisplayServer.mouse_set_mode(DisplayServer.MOUSE_MODE_HIDDEN)
 
 
 func make_controls_visible() -> void:
@@ -119,11 +131,11 @@ func handle_input_for_pause(event: InputEvent) -> void:
 			if event.keycode == KEY_SPACE:
 				toggle_pause()
 
-
+#both color_rect and volume_rect are connected to this function
 func _on_color_rect_mouse_entered() -> void:
 	controls_timer.paused = true
 
-
+#both color_rect and volume_rect are connected to this function
 func _on_color_rect_mouse_exited() -> void:
 	if not color_rect.get_rect().has_point(get_local_mouse_position()) or  not volume_rect.get_rect().has_point(get_local_mouse_position()):
 		controls_timer.paused = false
@@ -133,3 +145,23 @@ func _on_color_rect_mouse_exited() -> void:
 
 func _on_volume_button_pressed() -> void:
 	volume_rect.visible =!volume_rect.visible
+
+
+func _on_visibility_changed() -> void:
+	if timer and controls_timer:
+		if !visible:
+			timer.paused = true
+			controls_timer.paused = true
+		else:
+			timer.paused = false
+			controls_timer.paused = false
+
+
+func _on_focus_exited() -> void:
+	timer.paused = true
+	controls_timer.paused = true
+
+
+
+func _on_tree_exited() -> void:
+	DisplayServer.mouse_set_mode(DisplayServer.MOUSE_MODE_VISIBLE)

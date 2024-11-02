@@ -1,4 +1,4 @@
-[gd_scene load_steps=38 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=37 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_d0avd"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -33,7 +33,6 @@
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
 [ext_resource type="PackedScene" uid="uid://b1tux4e3yql3g" path="res://Scenes/loading_pop_up_panel.tscn" id="27_f1wok"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="27_hlu33"]
-[ext_resource type="PackedScene" uid="uid://d2o42sf0wonia" path="res://Scenes/video_player.tscn" id="34_gvcly"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -493,11 +492,6 @@ bus = &"Rec"
 [node name="LoadingPopUpPanel" parent="." instance=ExtResource("27_f1wok")]
 visible = false
 z_index = 100
-layout_mode = 1
-
-[node name="VideoPlayer" parent="." instance=ExtResource("34_gvcly")]
-z_index = 200
-z_as_relative = false
 layout_mode = 1
 
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]

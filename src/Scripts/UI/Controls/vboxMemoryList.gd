@@ -82,11 +82,13 @@ func render_items():
 		#checks how the note is going to be rendered
 		if item.Type == SingletonObject.note_type.TEXT:
 			note_control.new_text_note()
-		if item.Type == SingletonObject.note_type.IMAGE:
+		elif item.Type == SingletonObject.note_type.IMAGE:
 			note_control.new_image_note()
-		if item.Type == SingletonObject.note_type.AUDIO:
+		elif item.Type == SingletonObject.note_type.AUDIO:
 			note_control.new_audio_note()
-		
+		elif item.Type == SingletonObject.note_type.VIDEO:
+			note_control.new_video_note()
+			
 		note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
 		self.add_child.call_deferred(note_control)
 		await note_control.ready

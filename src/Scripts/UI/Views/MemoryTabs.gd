@@ -320,7 +320,7 @@ func attach_file(the_file: String):
 	var content = ""
 	var content_type = ""
 	var type
-	var title = the_file.get_file()#.get_basename()
+	var title = the_file.get_file()
 	
 	# Get the active thread
 	if (SingletonObject.ThreadList == null) or current_tab < 0:
@@ -346,8 +346,8 @@ func attach_file(the_file: String):
 	elif file_ext in SingletonObject.supported_video_formats:
 		file_type = "video"
 		type= SingletonObject.note_type.VIDEO
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
+		#var file_data = file.get_buffer(file.get_length())
+		#content = Marshalls.raw_to_base64(file_data)
 		content_type = "video/%s" % file_ext
 	elif file_ext in SingletonObject.supported_audio_formats:
 		file_type = "audio"
@@ -360,7 +360,7 @@ func attach_file(the_file: String):
 		if file_ext == "wav":
 			var wavAudioStream = AudioStreamWAV.new()
 			wavAudioStream.data = buffer
-			wavAudioStream.format = AudioStreamWAV.FORMAT_16_BITS
+			wavAudioStream.format = AudioStreamWAV.FORMAT_8_BITS
 			new_memory.Audio = wavAudioStream
 		if file_ext == "ogg":
 			var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)
@@ -380,6 +380,7 @@ func attach_file(the_file: String):
 	new_memory.ContentType = content_type
 	new_memory.Type = type
 	new_memory.Visible = true
+	new_memory.FilePath = the_file
 
 	# Append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
