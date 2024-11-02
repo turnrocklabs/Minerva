@@ -16,6 +16,7 @@ signal active_tool_changed(tool_: BaseTool)
 @onready var pane_tool: PaneTool = %PaneTool
 @onready var eraser_tool: EraserTool = %EraserTool
 @onready var transform_tool: TransformTool = %TransformTool
+@onready var speech_bubble_tool: SpeechBubbleTool = %SpeechBubbleTool
 
 
 @onready var tool_options_mapping: = {
@@ -81,6 +82,22 @@ func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 
 	return layer
 
+
+func add_layer(layer: LayerV2):
+	var layer_card: = LayerCard.create(layer)
+	
+	# don't change the active_layer untill layer_card updates the layer metadata
+	active_layer = layer
+
+	layer_card.layer_clicked.connect(func(): active_layer = layer)
+
+	layer_cards_container.add_child(layer_card)
+
+	layers_container.add_child(layer, true)
+
+	return layer
+
+
 func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 = Vector2.ZERO):
 	_custom_cursor = image
 	_custom_cursor_shape = shape
@@ -126,6 +143,8 @@ func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = transform_tool if toggled_on else null
 
+func _on_speech_bubble_tool_button_toggled(toggled_on:bool) -> void:
+	active_tool = speech_bubble_tool if toggled_on else null
 
 func _on_layers_container_mouse_entered() -> void:
 	Input.set_custom_mouse_cursor(_custom_cursor, _custom_cursor_shape, _custom_cursor_hotspot)
@@ -133,3 +152,6 @@ func _on_layers_container_mouse_entered() -> void:
 
 func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
+
+
+

@@ -1,6 +1,9 @@
 class_name CloudControl
 extends Control
 
+
+const _scene: = preload("res://Scenes/CloudControl.tscn")
+
 ## Radius of circles visualizing points in draw mode
 const POINT_RADIUS: = 10
 
@@ -53,6 +56,14 @@ var _bubble_rect: Rect2
 
 ## Polygon that defines the speech bubble
 var bubble_poly: PackedVector2Array
+
+
+
+static func create(type_: Type = Type.ELLIPSE) -> CloudControl:
+	var cc: = _scene.instantiate()
+	cc.type = type_
+	return cc
+
 
 
 func set_bounding_rect(rect: Rect2) -> void:
@@ -376,6 +387,7 @@ func _can_drop_data(_at_position: Vector2, _data: Variant) -> bool:
 var _drag_point_idx: = -1
 
 func _gui_input(event: InputEvent) -> void:
+	print("CLOUD CONTROL EVENT: ", event)
 	if _dragging and event is InputEventMouseMotion and event.pressure:
 		_lower_resizer.position += event.relative
 		_upper_resizer.position += event.relative

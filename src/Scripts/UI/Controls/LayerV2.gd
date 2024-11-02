@@ -4,6 +4,7 @@ extends Control
 enum Type {
 	IMAGE,
 	DRAWING,
+	SPEECH_BUBBLE,
 }
 
 @onready var texture_rect: TextureRect = %TextureRect
@@ -46,10 +47,18 @@ var image: Image:
 		size = img.get_size()
 
 
+var speech_bubble: CloudControl:
+	set(value):
+		speech_bubble = value
+
+		if not is_node_ready():
+			await ready
+
+		center_container.add_child(speech_bubble)
 
 static func create_image_layer(name_: String, image_: Image) -> LayerV2:
 
-	var layer: LayerV2 = _scene.instantiate()	
+	var layer: LayerV2 = _scene.instantiate()
 
 	layer.image = image_
 	layer.name = name_
@@ -59,7 +68,7 @@ static func create_image_layer(name_: String, image_: Image) -> LayerV2:
 
 static func create_drawing_layer(name_: String, size_: Vector2i, background_color: = Color.TRANSPARENT) -> LayerV2:
 
-	var layer: LayerV2 = _scene.instantiate()	
+	var layer: LayerV2 = _scene.instantiate()
 
 	var img = Image.create(size_.x, size_.y, false, Image.Format.FORMAT_RGBA8)
 	img.fill(background_color)
@@ -69,6 +78,19 @@ static func create_drawing_layer(name_: String, size_: Vector2i, background_colo
 	layer.type = Type.DRAWING
 
 	return layer
+
+static func create_speech_bubble_layer(name_: String, type_: CloudControl.Type = CloudControl.Type.ELLIPSE) -> LayerV2:
+
+	var layer: LayerV2 = _scene.instantiate()
+	
+	layer.speech_bubble = CloudControl.create(type_)
+
+	layer.name = name_
+	layer.type = Type.SPEECH_BUBBLE
+
+	return layer
+
+
 
 ## Return the [enum TransformPoint] type of the rect thats under the given [parameter mouse_position]
 func get_rect_by_mouse_position(mouse_position: Vector2) -> TransformPoint:
@@ -138,4 +160,9 @@ func localize_input(event: InputEvent):
 func _on_resized() -> void:
 	if not is_node_ready(): return
 
-	texture_rect.custom_minimum_size = size
+	match type:
+		Type.IMAGE, Type.DRAWING:
+			texture_rect.custom_minimum_size = size
+		Type.SPEECH_BUBBLE:
+			speech_bubble.custom_minimum_size = size
+	

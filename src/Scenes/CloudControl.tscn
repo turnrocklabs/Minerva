@@ -30,6 +30,7 @@ allow_gui_add = false
 
 [node name="LowerBottomResizer" type="TextureButton" parent="."]
 unique_name_in_owner = true
+visible = false
 layout_mode = 0
 offset_left = 1100.0
 offset_top = 602.0
@@ -44,6 +45,7 @@ stretch_mode = 5
 
 [node name="UpperLeftResizer" type="TextureButton" parent="."]
 unique_name_in_owner = true
+visible = false
 layout_mode = 0
 offset_left = 740.0
 offset_top = 419.0
