@@ -111,6 +111,12 @@ func initialize_notes(threads: Array[MemoryThread] = []):
 @warning_ignore("unused_signal")
 signal AttachNoteFile(file_path:String)
 
+## Emitted by `vboxMemoryList` when a note is toggled on/off.[br]
+@warning_ignore("unused_signal")
+signal note_toggled(note: Note, on: bool)
+## Emitted by `vboxMemoryList` when a note has been changed.[br]
+@warning_ignore("unused_signal")
+signal note_changed(note: Note)
 
 func toggle_all_notes(notes_enabled: bool):
 	if notes_enabled:

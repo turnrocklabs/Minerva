@@ -444,6 +444,8 @@ func _gui_input(event: InputEvent) -> void:
 			
 			_active_resizer.position = estimated_position
 			
+			queue_redraw()
+			accept_event()
 
 			
 			
@@ -462,8 +464,8 @@ func _gui_input(event: InputEvent) -> void:
 			else:
 				tail.points[_drag_point_idx] = event.position
 			
-		queue_redraw()
-		accept_event()
+			queue_redraw()
+			accept_event()
 
 ## If we press enter, switch between editing states
 func _unhandled_key_input(event: InputEvent) -> void:
