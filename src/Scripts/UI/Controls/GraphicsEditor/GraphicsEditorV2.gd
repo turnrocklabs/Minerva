@@ -56,11 +56,13 @@ func _ready() -> void:
 	
 	setup()
 
+	active_layer.image = Image.load_from_file("res://addons/markdownlabel/assets/screenshot.png")
+
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
-	var img = Image.create(canvas_size_.x, canvas_size_.y, true, Image.FORMAT_RGBA8)
-	img.fill(Color.WHITE)
+	# var img = Image.create(canvas_size_.x, canvas_size_.y, true, Image.FORMAT_RGBA8)
+	# img.fill(Color.WHITE)
 
 	active_layer = create_new_layer("Layer", canvas_size_)
 

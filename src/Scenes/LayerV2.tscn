@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://dfffqwg0xyekp"]
+[gd_scene load_steps=3 format=3 uid="uid://dfffqwg0xyekp"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/LayerV2.gd" id="1_fehm3"]
+[ext_resource type="Texture2D" uid="uid://bj0b5cmrbfma" path="res://addons/markdownlabel/assets/screenshot.png" id="2_ac76k"]
 
 [node name="LayerV2" type="Control"]
 layout_mode = 3
@@ -25,5 +26,6 @@ grow_vertical = 2
 unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 2
+texture = ExtResource("2_ac76k")
 stretch_mode = 5
 metadata/_edit_use_anchors_ = true

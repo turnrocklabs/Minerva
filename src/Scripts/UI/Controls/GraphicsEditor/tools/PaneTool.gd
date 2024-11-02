@@ -19,11 +19,19 @@ func handle_input_event(event: InputEvent) -> void:
 				dragging = false
 
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			editor.active_layer.scale *= 1.1
+			zoom(event.position, 1.1)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			editor.active_layer.scale *= 0.9
+			zoom(event.position, 0.9)
 
 	if event is InputEventMouseMotion:
 		if dragging:
 			editor.active_layer.position += event.relative * editor.active_layer.scale
+
+
+func zoom(mouse_position: Vector2, factor: float):
+	var old_pos = editor.active_layer.position
+	var old_scale = editor.active_layer.scale
+	var new_scale = old_scale * factor
 	
+	editor.active_layer.scale = new_scale
+	editor.active_layer.position = mouse_position - (mouse_position - old_pos) * factor
