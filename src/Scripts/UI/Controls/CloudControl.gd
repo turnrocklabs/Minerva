@@ -9,13 +9,19 @@ enum Type {
 	CLOUD,
 	RECTANGLE,
 }
-var type
+var type: = Type.ELLIPSE
 var circle_radius
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
 @onready var _text_edit: TextEdit = %TextEdit
 @onready var _bezier_curve: BezierCurve = %BezierCurve
 
+
+var _drag_start_position: Vector2
+var _dragging: = false:
+	set(value):
+		_dragging = value
+		_text_edit.mouse_filter = MOUSE_FILTER_IGNORE if _dragging else MOUSE_FILTER_STOP
 
 ## Font used to display text
 var font: = ThemeDB.fallback_font
@@ -53,6 +59,16 @@ func set_bounding_rect(rect: Rect2) -> void:
 	_upper_resizer.position = rect.position
 	_lower_resizer.position = rect.end
 	queue_redraw()
+
+## Move the speech bubble center point relative to the control origin[br].
+## Center point being the middle between the resizer nodes.
+func move(to: Vector2):
+	var current_offset = _upper_resizer.position - _lower_resizer.position
+
+	_upper_resizer.position = to + current_offset / 2
+	_lower_resizer.position = to - current_offset / 2
+	
+
 
 # region Tails
 
@@ -248,7 +264,17 @@ func _ready():
 		
 	tail = CurvedTriangleTail.new(self)
 	queue_redraw()
-	
+
+
+
+# When the node is not visible anymore, don't accept any input events anymore.
+func _on_visibility_changed() -> void:
+	set_process_input(is_visible_in_tree())
+	set_process_unhandled_input(is_visible_in_tree())
+	set_process_unhandled_key_input(is_visible_in_tree())
+	set_process_shortcut_input(is_visible_in_tree())
+
+
 func _draw() -> void:
 	if editing:
 		_draw_editing()
@@ -311,7 +337,7 @@ func _draw_editing_tail() -> void:
 	
 	var closest_point: = get_closest_polyline_position(bubble_poly, local_mouse_pos)
 
-	if local_mouse_pos.distance_to(closest_point) < 60:
+	if local_mouse_pos.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
 		draw_circle(closest_point, 4, Color.DEEP_PINK)
 	else:
 		draw_circle(local_mouse_pos, 4, Color.DEEP_PINK)
@@ -319,62 +345,105 @@ func _draw_editing_tail() -> void:
 
 # region Input Handling
 
+func _get_drag_data(at_position: Vector2) -> Variant:
+	if (
+		_upper_resizer.get_rect().has_point(at_position) or
+		_lower_resizer.get_rect().has_point(at_position)
+	): return null
+
+	# Check if we pressed on existing tail point
+	var points_arr: = tail.get_points_vector_array()
+
+	for i in points_arr.size():
+		var point: = points_arr[i]
+
+		# if yes start dragging it
+		if at_position.distance_to(point) < POINT_RADIUS:
+			_drag_point_idx = i 
+			return null
+
+
+	if _bubble_rect.grow(15).has_point(at_position):
+		_dragging = true
+	
+
+	return null
+
+func _can_drop_data(_at_position: Vector2, _data: Variant) -> bool:
+	return true
+
 ## Index of point inside the [member Tail.points] that the user is currently dragging
 var _drag_point_idx: = -1
 
 func _gui_input(event: InputEvent) -> void:
+	if _dragging and event is InputEventMouseMotion and event.pressure:
+		_lower_resizer.position += event.relative
+		_upper_resizer.position += event.relative
+	else:
+		_dragging = false
+
 	if not editing: return
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		
+		if event.is_pressed():
+			_drag_start_position = event.position
+		
 		# if the mouse is not pressed, disable the resizer and unset the `_drag_point_idx`
-		if not event.is_pressed():
+		else:
 			_active_resizer = null
 			_drag_point_idx = -1
 
+			# if the mouse is released, check if we are on same place or we dragged the mouse
 
-		# if the mouse is pressed outside of the resizers
-		elif not (
-			_upper_resizer.get_rect().has_point(event.position) or
-			_lower_resizer.get_rect().has_point(event.position)
-		):
-			# Check if we pressed on existing tail point
-			var points_arr: = tail.get_points_vector_array()
+			if _drag_start_position.is_equal_approx(event.position):
+				# if the mouse is pressed outside of the resizers
+				if not (
+					_upper_resizer.get_rect().has_point(event.position) or
+					_lower_resizer.get_rect().has_point(event.position)
+				):
+					
+					# if we didn't click on any points, add a new one
+					if _drag_point_idx == -1:
+						# var closest_point: = get_closest_polyline_position(bubble_poly, event.position)
 
-			for i in points_arr.size():
-				var point: = points_arr[i]
+						var idx: = get_closest_ellipse_line(event.position)
 
-				# if yes start dragging it
-				if event.position.distance_to(point) < POINT_RADIUS:
-					_drag_point_idx = i 
-			
-			# if we didn't click on any points, add a new one
-			if _drag_point_idx == -1:
-				# var closest_point: = get_closest_polyline_position(bubble_poly, event.position)
+						var closest_point = bubble_poly[idx]
 
-				var idx: = get_closest_ellipse_line(event.position)
-
-				var closest_point = bubble_poly[idx]
-
-				if event.position.distance_to(closest_point) < 60:
-					# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
-					tail.add_point(idx)
-				else:
-					tail.add_point(event.position)
+						if event.position.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
+							# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
+							tail.add_point(idx)
+						else:
+							tail.add_point(event.position)
 
 			queue_redraw()
 			accept_event()
-						 
+	
 	if event is InputEventMouseMotion:
 		# if we're dragging the resizer, move it to the mouse position
 		if _active_resizer:
-			_active_resizer.position += event.relative
-			#var new_width = _lower_resizer.position.x - _upper_resizer.position.x
-			#var new_height = _lower_resizer.position.y - _upper_resizer.position.y
-			#
-			#new_width += _lower_resizer.pivot_offset.x + _upper_resizer.pivot_offset.x + pivot_offset.x
-			#new_height += _lower_resizer.pivot_offset.y + _upper_resizer.pivot_offset.y + pivot_offset.y
-			#
-			#size = Vector2(new_width,new_height)
+			# var offset: Vector2 = event.relative
+
+			var estimated_position = _active_resizer.position + event.relative
+
+			# lower resizer can't be above the upper one
+			if _active_resizer == _lower_resizer:
+				if estimated_position.x < _upper_resizer.position.x:
+					estimated_position.x = _upper_resizer.position.x
+
+				if estimated_position.y < _upper_resizer.position.y:
+					estimated_position.y = _upper_resizer.position.y
+			# and upper can't be under the lower one
+			elif _active_resizer == _upper_resizer:
+				if estimated_position.x > _lower_resizer.position.x:
+					estimated_position.x = _lower_resizer.position.x
+
+				if estimated_position.y > _lower_resizer.position.y:
+					estimated_position.y = _lower_resizer.position.y
+			
+			_active_resizer.position = estimated_position
+			
 
 			
 			
@@ -387,7 +456,7 @@ func _gui_input(event: InputEvent) -> void:
 
 			var closest_point = bubble_poly[idx]
 
-			if event.position.distance_to(closest_point) < 60:
+			if event.position.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
 				# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
 				tail.points[_drag_point_idx] = idx
 			else:
@@ -401,6 +470,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and not _active_resizer:
 		if event.keycode == KEY_ENTER and event.is_pressed():
 			editing = not editing
+			get_viewport().set_input_as_handled()
 			queue_redraw()
 
 func _on_lower_bottom_resizer_button_down() -> void:
@@ -416,7 +486,7 @@ func _on_upper_left_resizer_button_down() -> void:
 # region Speech Bubble
 
 func cloud_bubble(rect: Rect2) -> PackedVector2Array:
-	var ellipse_poly: = create_ellipse(rect)
+	var ellipse_poly: = create_ellipse(rect.grow(-circle_radius))
 
 	var cloud: = ellipse_poly.duplicate()
 	
@@ -466,6 +536,19 @@ func create_ellipse(rect: Rect2, num_segments: int = 360) -> PackedVector2Array:
 	ellipse_points.append(ellipse_points[0])
 
 	return ellipse_points
+
+## Returns the shrinken [parameter ellipse] given it's [paramenter center] and a [parameter factor].[br]
+func shrink_ellipse(ellipse: PackedVector2Array, center: Vector2, amount: float) -> PackedVector2Array:
+	var shrinked := PackedVector2Array()
+	shrinked.resize(ellipse.size())
+	for i in ellipse.size():
+		var to_center: = center - ellipse[i]
+		var dist_to_center: = to_center.length()
+		# Don't move more than distance to center
+		var safe_amount: = minf(amount, dist_to_center)
+		var dir: = to_center.normalized()
+		shrinked[i] = ellipse[i] + (dir * safe_amount)
+	return shrinked
 
 func create_circle(center: Vector2, radius: float, resolution: int = 32) -> PackedVector2Array:
 	var circle: = PackedVector2Array()

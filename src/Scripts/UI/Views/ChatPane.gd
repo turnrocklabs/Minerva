@@ -18,12 +18,18 @@ var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS
 func _on_new_chat():
 	var tab_name: = "Chat %s" % (get_tab_count()+1)
 
-	var provider_obj: BaseProvider = default_provider_script.new()
+	var provider_obj: BaseProvider
 
 	# If there are no open chat tabs, use provider from the dropdown as the provider
 	if SingletonObject.ChatList.is_empty():
 		var p_id = _provider_option_button.get_selected_id()
 		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
+	
+	# if we're opening a new chat, by default select the first provider from the dropdown menu
+	else:
+		var first_provider: = _provider_option_button.get_item_id(0) as SingletonObject.API_MODEL_PROVIDERS
+
+		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[first_provider].new()
 
 	# use the provider currently set on this object
 	var history: ChatHistory = ChatHistory.new(provider_obj)
@@ -138,6 +144,9 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.rendered_node.loading = true
 
 	var bot_response = await history.provider.generate_content(history_list)
+
+	# if there was an error with the request
+	if not bot_response: return
 	
 	if bot_response.id: existing_response.Id = bot_response.id
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
@@ -256,6 +265,9 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 	# remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
 
 	var bot_response = await partial_chi.provider.generate_content(history_list)
+
+	# if there was an error just return the partial response
+	if not bot_response: return partial_chi
 
 	partial_chi.Message += " %s" % bot_response.text
 	partial_chi.Complete = bot_response.complete

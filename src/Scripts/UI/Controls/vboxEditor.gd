@@ -92,8 +92,9 @@ func _is_graphics_file(filename: String) -> bool:
 	# If it doesn't match the above, it's not considered a graphics file
 	return false
 
-func _on_open_file(filename:String):
-	open_file(filename)
+func _on_open_files(files: PackedStringArray):
+	for filename in files:
+		open_file(filename)
 	SingletonObject.save_state(false)
 
 
@@ -114,6 +115,7 @@ func open_file(filename: String):
 	## Determine file type
 	if _is_graphics_file(filename):
 		SingletonObject.is_graph = true
+		SingletonObject.is_picture = true
 		editor_pane.add(Editor.Type.GRAPHICS, filename)
 		# new_control = TextureRect.new()
 		# new_control.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED # keep the image at center
@@ -188,5 +190,7 @@ func _on_add_file_editor_pressed() -> void:
 
 
 func _on_add_graphics_editor_pressed() -> void:
+	SingletonObject.is_picture = false
 	SingletonObject.is_graph = true
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)
+	

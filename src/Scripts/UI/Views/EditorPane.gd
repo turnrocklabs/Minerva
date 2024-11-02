@@ -159,7 +159,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 				editor_node.tab_title = tab_name
 	
 	return editor_node
-
+	
 func open_editors() -> Array[Editor]:
 	var editors: Array[Editor] = []
 	for child in self.Tabs.get_children():
