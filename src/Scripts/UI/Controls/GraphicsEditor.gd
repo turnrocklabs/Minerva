@@ -42,6 +42,7 @@ var image: Image:
 
 
 var drawing:bool = false
+var drawing_brush_active: = true
 var erasing:bool = false
 var clouding:bool = false
 var zoomIn:bool = false
@@ -91,44 +92,50 @@ var layer_undo_histories = {} # Dictionary to store undo histories for each laye
 
 
 func _ready():
+	if SingletonObject.is_picture:
+		var hbox: HBoxContainer = add_new_pic.get_vbox().get_child(0)
+		hbox.set("theme_override_constants/separation", 14)
+		
+		layers_buttons()
 	
-	var hbox: HBoxContainer = add_new_pic.get_vbox().get_child(0)
-	hbox.set("theme_override_constants/separation", 14)
+		SingletonObject.is_graph = false
+		SingletonObject.is_masking = false
 	
-	layers_buttons()
+		for layer in loaded_layers:
+			_layers_container.add_child(layer)
+			layer_undo_histories[layer.name] = [] # Initialize undo history for each layer
+			layer_undo_histories[layer.name].append(layer.image.duplicate()) # Add the initial state to the undo history
+			#%PickLayers.add_item(layer.name)#get_item_text(index)
 	
-	if _layers_container.get_child_count() > 0:
-		_draw_layer = _layers_container.get_child(0)
-	if SingletonObject.is_graph == true:
-		toggle_controls(SingletonObject.is_graph)
-	elif SingletonObject.is_masking == true:
-		#editing and drawing
-		toggle_masking(SingletonObject.is_masking)
+		if loaded_layers.size() > 0:
+			layer_number = loaded_layers.size()
+			SingletonObject.is_graph = true
+			toggle_controls(true)
 	
-	await get_tree().process_frame
-	setup(Vector2i(%CenterContainer.size), Color.WHITE)
-	SingletonObject.is_graph = false
-	SingletonObject.is_masking = false
+		# Initialize undo history
+		#undo_history.append(_draw_layer.image.duplicate())
+		SingletonObject.is_Brush = false
+		SingletonObject.is_square = false
+		SingletonObject.is_cryon = false
 	
-	for layer in loaded_layers:
-		_layers_container.add_child(layer)
-		layer_undo_histories[layer.name] = [] # Initialize undo history for each layer
-		layer_undo_histories[layer.name].append(layer.image.duplicate()) # Add the initial state to the undo history
-		#%PickLayers.add_item(layer.name)#get_item_text(index)
+		_can_resize = true 
+		
+	else:
+		
+		layers_buttons()
+		await get_tree().process_frame
+		setup(Vector2i(%CenterContainer.size), Color.WHITE)
+		
+		for layer in loaded_layers:
+			_layers_container.add_child(layer)
+			layer_undo_histories[layer.name] = [] # Initialize undo history for each layer
+			layer_undo_histories[layer.name].append(layer.image.duplicate()) # Add the initial state to the undo history
+			#%PickLayers.add_item(layer.name)#get_item_text(index)
 	
-	if loaded_layers.size() > 0:
-		layer_number = loaded_layers.size()
-		SingletonObject.is_graph = true
-		toggle_controls(true)
-	
-	# Initialize undo history
-	#undo_history.append(_draw_layer.image.duplicate())
-	SingletonObject.is_Brush = false
-	SingletonObject.is_square = false
-	SingletonObject.is_cryon = false
-	
-	_can_resize = true 
-
+		if loaded_layers.size() > 0:
+			layer_number = loaded_layers.size()
+			SingletonObject.is_graph = true
+			toggle_controls(true)
 
 func toggle_controls(toggle: bool):
 	#only drawing
@@ -167,29 +174,29 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 
 func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
-	image_.resize(new_size.x, new_size.y)
+	var size_x = clamp(new_size.x, 1, INF)
+	var size_y = clamp(new_size.y, 1, INF)
+	image_.resize( new_size.x, new_size.y)
+
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
-		#RemoveLayer(ch,)
+	
+	# Create the _draw_layer AFTER loading the image
 	_draw_layer = _create_layer(image_)
-	_draw_layer.image = image_
-	_background_images[_draw_layer.layer_name] = image_.duplicate()  # Store the initial background
-	
-	
+	_draw_layer.image = image_  # Assign the loaded image to the layer
+	_background_images[_draw_layer] = image_.duplicate() 
+
 	var transparency_node = TextureRect.new()
 	transparency_node.stretch_mode = TextureRect.STRETCH_TILE
 	transparency_node.texture = _transparency_texture
-	
 	transparency_node.custom_minimum_size = _draw_layer.image.get_size()
-	#adding this transparency layer to the scroll container makes it so the layers number
 	_layers_container.add_child(transparency_node, false, INTERNAL_MODE_FRONT)
 
-	image = image_
+	image = image_ 
 
-	# Ensure the undo history contains the initial state
 	layer_undo_histories[_draw_layer.name] = []
 	layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
-
+	
 # Similar updates to the function setup_from_created_image
 func setup_from_created_image(image_: Image):
 	# Create a new image with the same properties as in create_image
@@ -203,7 +210,7 @@ func setup_from_created_image(image_: Image):
 	_draw_layer = _create_layer(img)
 
 	# Store the initial background image for the layer
-	_background_images[_draw_layer.name] = img.duplicate()
+	_background_images[_draw_layer] = img.duplicate()
 	
 	# Assign the created image to the editor's image property
 	image = img
@@ -228,7 +235,9 @@ func setup_from_created_image(image_: Image):
 	image = img
 
 func setup(canvas_size: Vector2i, background_color: Color):
-	var img = Image.create(canvas_size.x, canvas_size.y, false, Image.FORMAT_RGBA8)
+	var size_x = clamp(canvas_size.x, 1, INF)
+	var size_y = clamp(canvas_size.y, 1, INF)
+	var img = Image.create(size_x, size_y, false, Image.FORMAT_RGBA8)
 	img.fill(background_color)
 	setup_from_image(img)
 
@@ -240,7 +249,7 @@ func create_image(vec:Vector2):
 	_draw_layer = _create_layer(img)
 	  
 	# Store the initial background image for the layer
-	_background_images[_draw_layer.name] = img.duplicate() 
+	_background_images[_draw_layer] = img.duplicate() 
 
 	   # This line is unnecessary and might be causing issues - remove it:
 	   # setup_from_created_image(img) 
@@ -274,7 +283,7 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 	var sy = 1 if y1 < y2 else -1
 	var err = dx - dy
 
-	while true and drawing:
+	while true and drawing and drawing_brush_active:
 		pixels.append(Vector2(x1, y1))
 		if x1 == x2 and y1 == y2:
 			break
@@ -303,7 +312,7 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 		for pixel in get_circle_pixels(pos, point_size):
 			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
 				if erasing and target_image.get_pixelv(pixel).a > 0.1: 
-					target_image.set_pixelv(pixel, _background_images[_draw_layer.layer_name].get_pixelv(pixel))  
+					target_image.set_pixelv(pixel, _background_images[_draw_layer].get_pixelv(pixel))  
 				elif not erasing:
 					target_image.set_pixelv(pixel, color) 
 				
@@ -319,7 +328,7 @@ func _gui_input(event: InputEvent):
 		#Get color at clicked position and Update the ColorPickerButton
 		color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
 		
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool and drawing_brush_active:
 		flood_fill(active_layer.image, layer_local_pos, brush_color) 
 		active_layer.update()
 		fill_tool = false
@@ -401,7 +410,7 @@ func _gui_input(event: InputEvent):
 		var new_layer_image = Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8) 
 		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
 		var new_layer = _create_layer(new_layer_image)
-		_background_images[new_layer.layer_name] = new_layer_image.duplicate()
+		_background_images[new_layer] = new_layer_image.duplicate()
 
 		# 2. Add layer button to UI 
 		layers_buttons()
@@ -409,8 +418,7 @@ func _gui_input(event: InputEvent):
 		# 3. Instantiate and add the bubble to the NEW layer
 		var new_bubble = Bubble.instantiate()
 		new_layer.add_child(new_bubble)
-		new_bubble.size = Vector2(2000,2000)
-		new_bubble.position = new_layer.get_local_mouse_position() + Vector2(-1000,-700)
+		new_bubble.move(new_layer.get_local_mouse_position())
 		_if_cloud(3,0)
 		clouding = false
 
@@ -523,11 +531,19 @@ func _on_layers_pressed():
 	zoom_out_button.modulate = Color.WHITE 
 
 
+
+func _on_layers_menu_resized() -> void:
+	if layers_menu and %LayerBG:
+		%LayerBG.size = layers_menu.size
+
+
 func _on_add_layer_pressed():
 	layers_buttons()
 	
-	create_image(Vector2i(%CenterContainer.size))
-	# Automatically select the newly created layer
+	var previous_layer = _layers_container.get_child(_layers_container.get_child_count() - 1)
+	var new_layer_size = previous_layer.image.get_size()
+	
+	create_image(new_layer_size)
 
 func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	# Find the index of the HBoxContainer within LayersList
@@ -611,6 +627,9 @@ func LayerVisible(Hbox: HBoxContainer):
 
 
 func _on_brushes_item_selected(index):
+	# drawing if the index is 0
+	drawing_brush_active = (index == 0) or (index == 1)
+
 	#off other tools not drawing
 	%MgIcon.visible = false
 	erasing = false
@@ -636,6 +655,7 @@ func _on_brushes_item_selected(index):
 			%ApplyMaskButton.visible = true
 		3:
 			dialog_clouds.show()
+			clouding = true
 			#%ApplyTail.visible = true
 		4:
 			fill_tool = true
@@ -823,50 +843,57 @@ func _scale(Hbox: HBoxContainer) -> void:
 		active_transfer_button.modulate = Color.LIME_GREEN 
 		
 func _on_arrowleft_pressed() -> void:
-	_resize_layers(true, true)  # Increase width by 10%, center horizontallyc
-	# --- Move layers after resizing ---
-	for layer in _layers_container.get_children():
-		if layer is Layer:
-			layer.position.x -= 60 # Move right by 5% of the new width 
+	_resize_layers(true, true)  # Increase width by 10%, center horizontally
+	# --- Move the selected layer after resizing ---
+	if _draw_layer is Layer:
+		_draw_layer.position.x -= 60 # Move right by 5% of the new width
 
 func _on_arrow_right_pressed() -> void:
 	_resize_layers(true, false)  # Increase width by 10%, center horizontally
 
 func _on_arrow_top_pressed() -> void:
 	_resize_layers(false, true) # Increase height by 10%, center vertically 
-	# --- Move layers after resizing ---
-	for layer in _layers_container.get_children():
-		if layer is Layer:
-			layer.position.y -= 60
+	# --- Move the selected layer after resizing ---
+	if _draw_layer is Layer:
+		_draw_layer.position.y -= 60
 
 func _on_arrow_bottom_pressed() -> void:
 	_resize_layers(false, false)
 	
-func _resize_layers(resize_width: bool = true, origin_changed: = false) -> void:
+func _resize_layers(resize_width: bool = true, origin_changed: bool = false) -> void:
 	var pixels_to_add = 60
 
 	%MgIcon.visible = false
 	zoomIn = false
 	zoomOut = false
-	
+
 	zoom_in_button.modulate = Color.WHITE
 	zoom_out_button.modulate = Color.WHITE
-	 
-	var new_size: Vector2i
-	var old_size = _layers_container.get_child(0).image.get_size()
-	if resize_width:
-		new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
-	else:
-		new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
-		
+
+	# Iterate through all layers in the _layers_container
 	for layer in _layers_container.get_children():
 		if layer is Layer:
+			var old_size = layer.image.get_size()
+			var new_size: Vector2i
 
+			if resize_width:
+				new_size = Vector2i(old_size.x + pixels_to_add, old_size.y)
+			else:
+				new_size = Vector2i(old_size.x, old_size.y + pixels_to_add)
 
+			# Resize the layer's image
 			var resized_image := Image.create_empty(int(new_size.x), int(new_size.y), false, Image.FORMAT_RGBA8)
-			resized_image.fill(Color.WHITE)
 
-			var offset := Vector2.ZERO # Default offset - no shift
+			# Fill with appropriate color based on layer index
+			var fill_color: Color
+			if _layers_container.get_children().find(layer) == 0:  # First layer
+				fill_color = Color.WHITE
+			else:
+				fill_color = Color(0, 0, 0, 0)  # Transparent
+
+			resized_image.fill(fill_color)
+
+			var offset := Vector2.ZERO  # Default offset - no shift
 
 			if origin_changed:
 				# Calculate offset ONLY if expanding to the right or bottom
@@ -879,8 +906,7 @@ func _resize_layers(resize_width: bool = true, origin_changed: = false) -> void:
 
 			layer.image = resized_image
 			layer.size = new_size
-			layer.update() 
-			
+			layer.update()
 			
 func layers_buttons():
 	var Hbox = HBoxContainer.new()
@@ -946,7 +972,7 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 		var new_layer = _create_layer(image_to_load)
 
 		# Store the loaded image as the background for this layer
-		_background_images[new_layer.layer_name] = image_to_load.duplicate()
+		_background_images[new_layer] = image_to_load.duplicate()
 		# Add layer button to the UI
  
 		# Optionally select the newly added layer
@@ -990,7 +1016,7 @@ func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 		# Draw a single pixel for the spray dot
 		if spray_pos.x >= 0 and spray_pos.x < target_image.get_width() and spray_pos.y >= 0 and spray_pos.y < target_image.get_height():
 			if erasing:
-				target_image.set_pixelv(spray_pos, _background_images[_draw_layer.layer_name].get_pixelv(spray_pos))
+				target_image.set_pixelv(spray_pos, _background_images[_draw_layer].get_pixelv(spray_pos))
 			else:
 				target_image.set_pixelv(spray_pos, color)
 
@@ -1002,7 +1028,7 @@ func draw_square(target_image: Image, pos: Vector2, color: Color, square_size: f
 			var pixel = Vector2(x, y)
 			if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
 				if erasing:
-					target_image.set_pixelv(pixel, _background_images[_draw_layer.layer_name].get_pixelv(pixel))
+					target_image.set_pixelv(pixel, _background_images[_draw_layer].get_pixelv(pixel))
 				else:
 					target_image.set_pixelv(pixel, color)
 
@@ -1055,7 +1081,7 @@ func Crayon_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
 		if draw_pos.x >= 0 and draw_pos.x < target_image.get_width() and draw_pos.y >= 0 and draw_pos.y < target_image.get_height():
 			if erasing:
 				# Erase by blending with the background image
-				target_image.set_pixelv(draw_pos, _background_images[_draw_layer.layer_name].get_pixelv(draw_pos))
+				target_image.set_pixelv(draw_pos, _background_images[_draw_layer].get_pixelv(draw_pos))
 			else:
 				var bg_color = target_image.get_pixelv(draw_pos)
 

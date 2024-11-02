@@ -38,7 +38,8 @@ var memory_item: MemoryItem:
 		# that will create completly new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
 		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
-			if editor.has_meta("associated_object") and editor.get_meta("associated_object") == memory_item:
+			if editor.associated_object:
+				#if editor.associated_object.memory_item == memory_item:
 				associate_editor(editor)
 
 #region New notes methods
@@ -113,6 +114,13 @@ func _ready():
 	)
 	
 	%ProgressBar.value = audio_progress
+
+func _exit_tree() -> void:
+	if has_meta("associated_editor"):
+		var editor: Editor = get_meta("associated_editor")
+		if is_instance_valid(editor):
+			editor.queue_free()
+
 
 #method for changing the dots texture when the main theme changes
 func change_modulate_for_texture(theme_enum: int):
@@ -253,26 +261,18 @@ func _on_remove_button_pressed():
 
 	note_deleted.emit()
 
-## Connects this note and the given [parameter editor]
-## by making editor save button update the memory_item and
-## reflecting note title chage into the tab title.
+## Connects this note and the given [parameter editor] and
+## reflects note title chages into the tab title.
 func associate_editor(editor: Editor):
-	editor.override_save(
-		func():
-			if editor.type == Editor.Type.NOTE_EDITOR:
-				memory_item.Content = editor.code_edit.text
-			elif editor.type == Editor.Type.GRAPHICS:
-				memory_item.MemoryImage = editor.graphics_editor.image
-			
-			memory_item = memory_item
-	)
+	editor.associated_object = self
 
 	label_node.text_changed.connect(
 		func(text):
 			editor.tab_title = text
 	)
 
-	editor.set_meta("associated_object", memory_item)
+	# set the editor so we know if we can close the editor if the note is deleted
+	set_meta("associated_editor", editor)
 
 
 func _on_edit_button_pressed():
@@ -285,16 +285,16 @@ func _on_edit_button_pressed():
 	# this note is rendering so we don't end up duplicating them.
 	for i in range(ep.Tabs.get_tab_count()):
 		var tab_control = ep.Tabs.get_tab_control(i)
-
-		if tab_control.has_meta("associated_object"):
-			if tab_control.get_meta("associated_object") == memory_item:
-				ep.Tabs.current_tab = i # change the current tab to that editor
-				return
+		
+		if tab_control is Editor and tab_control.associated_object == self:
+			ep.Tabs.current_tab = i # change the current tab to that editor
+			return
 
 	var editor: Editor
 
 	if memory_item.MemoryImage:
 		SingletonObject.is_graph = true
+		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, null, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:

@@ -52,7 +52,9 @@ func _on_file_submenu_index_pressed(index):
 		0:
 			handle_new_file()
 		1:
+			SingletonObject.is_picture = false
 			handle_new_graphics()
+			
 
 
 func _on_package_submenu_id_pressed(id: int):

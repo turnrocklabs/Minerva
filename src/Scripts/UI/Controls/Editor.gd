@@ -42,12 +42,15 @@ enum Type {
 ## Allows switching to existing editor intead of
 ## opening a new one for same associated object.
 var associated_object
-
+var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
 var tab_title: String = ""
-var file: String
+var file: String:
+	set(value):
+		file = value
+		%reloadButton.disabled = false
 #var file_path: String
 var type: Type
 var _file_saved := false
@@ -72,7 +75,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	match type_:
 		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
 			editor.get_node("%CodeEdit").visible = true
-			#editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
+			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
 		Editor.Type.GRAPHICS:
 			editor.get_node("%GraphicsEditor").visible = true
 			## TODO: Implement changed signal for graphics editor
@@ -99,7 +102,7 @@ func _ready():
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 	SingletonObject.UpdateLastSavePath.connect(update_last_path)
-	code_edit.text_changed.connect(_on_editor_changed)
+	#code_edit.text_changed.connect(_on_editor_changed)
 
 
 func update_last_path(new_path: String) -> void:
@@ -111,8 +114,8 @@ func _load_text_file(filename: String):
 	if fa_object:
 		#file_path = file
 		code_edit.text = fa_object.get_as_text()
-		#code_edit.text_changed.emit() # the signal is not emitted for some reason
 		code_edit.saved_content = code_edit.text
+		code_edit.text_changed.emit() # the signal is not emitted for some reason
 	else:
 		code_edit.text = "Could not retrive file"
 	# %SaveButton.disabled = false
@@ -121,6 +124,8 @@ func _load_text_file(filename: String):
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
 	graphics_editor.setup_from_image(image)
+	#_file_saved = true
+	#SingletonObject.UpdateUnsavedTabIcon.emit()
 	# %SaveButton.disabled = false
 
 
@@ -190,13 +195,13 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
 func save():
-	if _save_override.is_valid():
-		_save_override.call()
+	#if _save_override.is_valid(): this got put on the note button github issue #154
+		#_save_override.call()
+	#else:
+	if SingletonObject.last_saved_path:
+		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
-		if SingletonObject.last_saved_path:
-			await prompt_close(true, false, SingletonObject.last_saved_path)
-		else:
-			await prompt_close(true)
+		await prompt_close(true)
 	
 	# Post save emit the signals to update the saved state icon
 	match type:
@@ -212,10 +217,12 @@ func is_content_saved() -> bool:
 	match type:
 		Type.TEXT:
 			return code_edit.text == code_edit.saved_content
-		Type.NOTE_EDITOR:
+		#Type.NOTE_EDITOR:
 			# Note.gd adds a `associated_object` meta for memory item the note is rendering
-			var memory_item: MemoryItem = get_meta('associated_object')
-			return code_edit.text == memory_item.Content
+			#if is_instance_valid(associated_object):
+				#var memory_item = associated_object.memory_item
+				#return code_edit.text == memory_item.Content
+			#else: return false
 		Type.GRAPHICS:
 			if graphics_editor:
 				return graphics_editor.is_image_saved
@@ -280,36 +287,47 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
-	if Type.TEXT == type:
-		if tab_title:
-			SingletonObject.NotesTab.add_note( tab_title, code_edit.text)
-		elif file:
-			SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
-		else:
-			SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
-		return
-	if Type.GRAPHICS == type:
-		if tab_title:
-			SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
-		elif file:
-			SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
-		else:
-			SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
-		return
-	if Type.WhiteBoard == type:
-		if file:
-			SingletonObject.NotesTab.add_image_note(file.get_file(), %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
-		else:
-			SingletonObject.NotesTab.add_image_note("whiteboard", %PlaceForScreen.get_viewport().get_texture().get_image(), "white board")
+
+	if is_instance_valid(associated_object) and associated_object is Note:
+		_update_memory_item(associated_object.memory_item)
+		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
+		
+	else:
+		if Type.TEXT == type:
+			if file:
+				associated_object = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
+				set_meta("associated_object", associated_object)
+			elif tab_title:
+				associated_object = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
+				set_meta("associated_object", associated_object)
+			else:
+				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+				set_meta("associated_object", associated_object)
+		if Type.GRAPHICS == type:
+			if tab_title:
+				associated_object = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
+				set_meta("associated_object", associated_object) 
+			elif file:
+				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
+				set_meta("associated_object", associated_object) 
+			else:
+				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+				set_meta("associated_object", associated_object) 
+
+	type = Type.NOTE_EDITOR
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+	
+
 
 
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
-	match type:
-		Type.GRAPHICS:
-			_load_graphics_file(file)
-		Type.TEXT:
-			_load_text_file(file)
+	if file:
+		match type:
+			Type.GRAPHICS:
+				_load_graphics_file(file)
+			Type.TEXT, Type.NOTE_EDITOR:
+				_load_text_file(file)
 
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
@@ -323,9 +341,20 @@ func _on_save_open_editor_tabs_button_pressed() -> void:
 
 #this function catches input when the code editor is focused
 func _on_code_edit_gui_input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		if event.pressed and event.keycode == KEY_CTRL:
+			code_edit.set_process_input(false)
+			code_edit.set_process_unhandled_key_input(false)
+		else:
+			code_edit.set_process_input(true)
+			code_edit.set_process_unhandled_key_input(true)
 	if event.is_action_pressed("jump_to_line"):
+		code_edit.set_process_input(false)
+		code_edit.set_process_unhandled_key_input(false)
 		jump_to_line()
 	elif  event.is_action_pressed("find_string"):
+		code_edit.set_process_input(false)
+		code_edit.set_process_unhandled_key_input(false)
 		find_string_in_code_edit()
 
 #this are variables for Ctrl+F
@@ -397,16 +426,17 @@ func update_matches_label(current_search, occurrences) -> void:
 #region find string buttons
 func _on_previous_match_button_pressed() -> void:
 	code_edit.deselect()
-	if code_edit.get_caret_column() - text_to_search.length() -1  < 0:
+	if code_edit.get_caret_column() - text_to_search.length() -1  <= 0:
 		code_edit.set_caret_column(0)
+		if code_edit.get_caret_line() - 1 >= 0:
+			code_edit.set_caret_line(code_edit.get_caret_line() - 1)
+			code_edit.set_caret_column(code_edit.get_text().split("\n")[code_edit.get_caret_line()].length())
 	else:
 		code_edit.set_caret_column( code_edit.get_caret_column() - text_to_search.length() - 1)
 	
 	var result: = code_edit.search(text_to_search, TextEdit.SearchFlags.SEARCH_BACKWARDS, code_edit.get_caret_line(),code_edit.get_caret_column())
 	if result.x != -1:
-		code_edit.set_caret_column(result.x)
-		code_edit.set_caret_line(result.y)
-		print("result from prev:" + str(result))
+		#print("result from prev:" + str(result))
 		code_edit.select(result.y,result.x , result.y, result.x + text_to_search.length())
 		code_edit.adjust_viewport_to_caret()
 	count_text_occurences()
@@ -434,7 +464,7 @@ func _on_close_buton_pressed() -> void:
 func jump_to_line() -> void:
 	if !jump_to_line_panel.visible and (type == Type.TEXT or type == Type.NOTE_EDITOR):
 		var string_format = "you are currently on line %d, character %d, type a line number between %d and %d to jump to."
-		
+
 		#this is a ternary operator equivalent
 		var column: int = code_edit.get_caret_column() if code_edit.get_caret_column() > 1 else 1
 		var line: int = code_edit.get_caret_line() + 1 if code_edit.get_caret_line() > 1 else 1
@@ -461,13 +491,13 @@ func _on_editor_changed(text: String = ""):
 	if text != "":
 		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
 		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
-		SingletonObject.UpdateUnsavedTabIcon.emit()
-		_file_saved = false
-		file_saved_in_disc = false
+		# SingletonObject.UpdateUnsavedTabIcon.emit()
+		# _file_saved = false
+		# file_saved_in_disc = false
 
 	if has_meta("memory_item"):
 		var item: MemoryItem = get_meta("memory_item")
-		_update_note(item)
+		_update_memory_item(item)
 
 	content_changed.emit()
 
@@ -530,8 +560,8 @@ func _create_note() -> MemoryItem:
 	
 	return memory_item
 
-func _update_note(memory_item: MemoryItem) -> void:
-	if type == Type.TEXT:
+func _update_memory_item(memory_item: MemoryItem) -> void:
+	if type == Type.TEXT or type == Type.NOTE_EDITOR:
 		memory_item.Type = SingletonObject.note_type.TEXT
 		memory_item.Content = code_edit.text
 	
