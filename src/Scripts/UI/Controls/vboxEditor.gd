@@ -24,8 +24,6 @@ func serialize() -> Array:
 		match editor.type:
 			editor.Type.TEXT:
 				content = editor.code_edit.text
-			editor.Type.NOTE_EDITOR:
-				content = editor.code_edit.text
 			editor.Type.GRAPHICS:
 				var layers: Array[Dictionary] = []
 				for layer in editor.graphics_editor._layers_container.get_children():
