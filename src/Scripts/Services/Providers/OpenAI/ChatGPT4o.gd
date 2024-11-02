@@ -6,7 +6,7 @@ func _init():
 
 	model_name = "gpt-4o"
 	short_name = "O4"
-	token_cost = 2.5 / 1000000.0 # https://openai.com/api/pricing/
+	token_cost = 0.00000125 # https://openai.com/api/pricing/
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
