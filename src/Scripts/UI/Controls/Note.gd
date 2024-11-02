@@ -10,6 +10,7 @@ signal note_deleted()
 @onready var note_image: TextureRect = %NoteImage
 @onready var audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
 @onready var image_caption_line_edit: LineEdit = %ImageCaptionLineEdit
+@onready var video_label: Label = %VideoLabel
 
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
@@ -33,7 +34,12 @@ var memory_item: MemoryItem:
 			image_caption_line_edit.text = value.ImageCaption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.Audio
-		
+		if memory_item.Type == SingletonObject.note_type.VIDEO:
+			video_label.text = "%s %s" % [value.Title, value.ContentType]
+			
+			var stream: = FFmpegVideoStream.new()
+			stream.file = value.FilePath
+			%VideoStreamPlayer.stream = stream
 		# If we create a note, open a editor associated with it and then rerender the memory_item
 		# that will create completly new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
@@ -50,6 +56,7 @@ func new_text_note():
 	%AudioHBoxContainer.visible = false
 	%ImageVBoxContainer.call_deferred("queue_free")
 	%AudioHBoxContainer.call_deferred("queue_free")
+	%VideoVBoxContainer.call_deferred("queue_free")
 	return self
 
 
@@ -57,6 +64,7 @@ func new_image_note():
 	%ImageVBoxContainer.visible = true
 	%AudioHBoxContainer.visible = false
 	%NoteTextBody.visible = false
+	%VideoVBoxContainer.call_deferred("queue_free")
 	#%AudioHBoxContainer.call_deferred("queue_free")
 	#%NoteTextBody.call_deferred("queue_free")
 	return self
@@ -67,9 +75,18 @@ func new_audio_note():
 	%NoteTextBody.visible = false
 	%EditButton.visible = false
 	%ImageVBoxContainer.visible = false
+	%VideoVBoxContainer.call_deferred("queue_free")
 	#%NoteTextBody.call_deferred("queue_free")
 	#%ImageVBoxContainer.call_deferred("queue_free")
 	return self
+
+
+func new_video_note():
+	%AudioHBoxContainer.visible = false
+	%NoteTextBody.visible = false
+	%ImageVBoxContainer.visible = false
+	%VideoVBoxContainer.visible = true
+
 
 #endregion New notes methods
 
@@ -297,6 +314,8 @@ func _on_edit_button_pressed():
 		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, null, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
+	elif memory_item.Type == SingletonObject.note_type.VIDEO:
+		editor = ep.add(Editor.Type.VIDEO, memory_item.FilePath, null, memory_item.Title)
 	else:
 		editor = ep.add(Editor.Type.NOTE_EDITOR, null, memory_item.Title)
 		editor.code_edit.text = memory_item.Content

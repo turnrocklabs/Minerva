@@ -35,6 +35,7 @@ enum Type {
 	GRAPHICS,
 	WhiteBoard, # TODO: To be removed
 	NOTE_EDITOR,
+	VIDEO
 }
 
 ## May contain the object that is being edited by this editor.[br]
@@ -80,6 +81,16 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.get_node("%GraphicsEditor").visible = true
 			## TODO: Implement changed signal for graphics editor
 			# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
+		Editor.Type.VIDEO:
+			editor.get_node("%ButtonsHBoxContainer").queue_free()#.visible = false
+			editor.get_node("%GraphicsEditor").queue_free()
+			editor.get_node("%CodeEdit").queue_free()
+			var video_player = load("res://Scenes/video_player.tscn").instantiate()
+			editor.add_child(video_player)
+			video_player.video_path = file_
+			
+			
+			
 
 	return editor
 

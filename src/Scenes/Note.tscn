@@ -185,6 +185,26 @@ text = "0.0"
 [node name="Control2" type="Control" parent="PanelContainer/v/AudioHBoxContainer"]
 layout_mode = 2
 
+[node name="VideoVBoxContainer" type="VBoxContainer" parent="PanelContainer/v"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="VideoLabel" type="Label" parent="PanelContainer/v/VideoVBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "this is for the video notes"
+
+[node name="VideoStreamPlayer" type="VideoStreamPlayer" parent="PanelContainer/v/VideoVBoxContainer"]
+unique_name_in_owner = true
+clip_contents = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+autoplay = true
+expand = true
+loop = true
+bus = &"VideoBus"
+
 [node name="LowerSeparator" type="HSeparator" parent="."]
 unique_name_in_owner = true
 visible = false
