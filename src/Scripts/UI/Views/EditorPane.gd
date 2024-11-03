@@ -244,7 +244,6 @@ func update_tabs_icon() -> void:
 func _on_editor_content_changed(editor: Editor):
 
 	var state: = editor.get_saved_state()
-	print(state)
 
 	var icon: Texture2D
 	var tooltip: String = ""
@@ -266,14 +265,14 @@ func _on_editor_content_changed(editor: Editor):
 				tooltip = "File saved"
 
 		Editor.ASSOCIATED_OBJECT_SAVED:
-			# the associated_object is saved, check if we have a file that's not marked as saved
+			# the associated_object is saved, but not the file
+			
+			icon = _unsaved_changes_file_icon
 			if editor.file:
-				icon = _unsaved_changes_file_icon
 				tooltip = "File unsaved, \"%s\" saved" % associated_object_name
 			# else we just have an associated object that's saved
 			else:
-				icon = null
-				tooltip = "Note saved"
+				tooltip = "No File, Note saved"
 
 		# both are saved
 		Editor.FILE_SAVED | Editor.ASSOCIATED_OBJECT_SAVED:
