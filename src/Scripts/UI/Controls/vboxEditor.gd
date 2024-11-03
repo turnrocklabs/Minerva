@@ -90,8 +90,9 @@ func _is_graphics_file(filename: String) -> bool:
 	# If it doesn't match the above, it's not considered a graphics file
 	return false
 
-func _on_open_file(filename:String):
-	open_file(filename)
+func _on_open_files(files: PackedStringArray):
+	for filename in files:
+		open_file(filename)
 	SingletonObject.save_state(false)
 
 
