@@ -95,6 +95,10 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 
 	return editor
 
+func toggle(on: bool) -> void:
+	_note_check_button.button_pressed = on
+
+
 func _ready():
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
 	if file:

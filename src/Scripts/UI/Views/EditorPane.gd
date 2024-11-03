@@ -20,6 +20,7 @@ var current_layout: LAYOUT
 @onready var RightControl: Control = $"VBoxContainer/HBoxContainer/RightControl"
 @onready var BottomControl: Control = $"VBoxContainer/BottomControl"
 
+@onready var _toggle_all_button: Button = %ToggleAllButton
 
 
 func _ready():
@@ -346,3 +347,19 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 #endregion  Enable Editor Buttons
 ###
 ### End Reference Information ###
+
+
+var _last_state: = false
+
+func _on_toggle_all_button_pressed() -> void:
+	_last_state = not _last_state
+	
+	for editor in open_editors():
+		editor.toggle(_last_state)
+	
+	if _last_state:
+		_toggle_all_button.text = "Disable All"
+	else:
+		_toggle_all_button.text = "Enable All"
+
+
