@@ -145,12 +145,12 @@ layout_mode = 1
 
 [node name="fdgOpenFile" type="FileDialog" parent="VBoxRoot/HBoxContainer/menuMain"]
 unique_name_in_owner = true
-title = "Open a File"
+title = "Open File(s)"
 initial_position = 4
 size = Vector2i(800, 600)
 popup_window = true
 ok_button_text = "Open"
-file_mode = 0
+file_mode = 1
 access = 2
 
 [node name="Project" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
@@ -496,7 +496,7 @@ layout_mode = 1
 
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
-[connection signal="file_selected" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_file"]
+[connection signal="files_selected" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_files"]
 [connection signal="tree_entered" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/HBoxContainer/menuMain/ProjectManagement" method="_on_fdg_open_file_tree_entered"]
 [connection signal="about_to_popup" from="VBoxRoot/HBoxContainer/menuMain/Project" to="VBoxRoot/HBoxContainer/menuMain" method="_on_project_about_to_popup"]
 [connection signal="index_pressed" from="VBoxRoot/HBoxContainer/menuMain/Project" to="VBoxRoot/HBoxContainer/menuMain" method="_on_project_index_pressed"]
