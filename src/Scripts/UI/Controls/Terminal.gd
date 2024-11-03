@@ -89,35 +89,31 @@ func display_output(output: String) -> void:
 
 
 func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
-	var item: MemoryItem
+	# Create a new memoryitem to access the hash function. 
+	var item: MemoryItem = MemoryItem.new()
+	item.Enabled = false
+	item.Type = SingletonObject.note_type.TEXT
+	item.Title = "Terminal Note"
+	item.Visible = true
+	item.Content = output
 
-	if not has_meta("memory_item"):
-		item = SingletonObject.NotesTab.create_note("Terminal Note")
-		item.Content = output
-		
-		if not item:
-			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the terminal.")
-			btn.button_pressed = false
-			return
-		
+	# use the hash to see if we already have this item in the DetachedNotes
+	var detached_index: int = -1
+	for search_index in SingletonObject.DetachedNotes.size():
+		if SingletonObject.DetachedNotes[search_index].Sha_256 == item.Sha_256:
+			detached_index = search_index
+	
+	# if we don't have it, connect a toggled handler and append to detached notes.
+	if detached_index == -1:
+		item.Enabled = toggled_on
 		item.toggled.connect(
 			func(on: bool):
 				btn.button_pressed = on
 		)
-
-		set_meta("memory_item", item)
 		SingletonObject.DetachedNotes.append(item)
 	else:
-		item = get_meta("memory_item")
-		var present = false
-		for item_: MemoryItem in SingletonObject.DetachedNotes:
-			if item_ == item:
-				present = true
+		SingletonObject.DetachedNotes[detached_index].Enabled = toggled_on
 
-		if not present:
-			SingletonObject.DetachedNotes.append(item)
-
-	item.Enabled = toggled_on
 
 
 func _on_output_check_button_tree_exiting(btn: CheckButton):
