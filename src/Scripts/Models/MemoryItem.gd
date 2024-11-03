@@ -16,6 +16,10 @@ var Enabled: bool = true:
 		toggled.emit(value)
 		SingletonObject.save_state(false)
 
+## a sha-256 hash computed whenever the item is updated
+var Sha_256: String = "":
+	set(value): SingletonObject.save_state(false); Sha_256 = value
+
 ## If memory item is locked, changing the `Enabled` property is not possible
 var Locked: bool = false:
 	set(value): SingletonObject.save_state(false); Locked = value
@@ -27,7 +31,11 @@ var Title: String:
 	set(value): SingletonObject.save_state(false); Title = value
 
 var Content: String = "":
-	set(value): SingletonObject.save_state(false); Content = value
+	set(value):
+		SingletonObject.save_state(false);
+		var hash:String = hash_string(value)
+		Sha_256 = hash
+		Content = value
 
 var MemoryImage: Image:
 	set(value): SingletonObject.save_state(false); MemoryImage = value
@@ -51,6 +59,13 @@ var Order: int:
 	set(value): SingletonObject.save_state(false); Order = value;
 
 var OwningThread
+
+func hash_string(input: String) -> String:
+	var ctx = HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	ctx.update(input.to_utf8_buffer())
+	var hash = ctx.finish()
+	return hash.hex_encode()
 
 
 func _init(_OwningThread = null):
