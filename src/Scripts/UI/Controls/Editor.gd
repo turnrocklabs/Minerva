@@ -7,14 +7,14 @@ extends Control
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
 static var editor_scene = preload("res://Scenes/Editor.tscn")
+static var graphics_editor_scene = preload("res://Scenes/GraphicsEditor.tscn")
 
 signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
 enum DIALOG_RESULT { Save, Cancel, Close }
 
-@onready var code_edit: EditorCodeEdit = %CodeEdit
-@onready var texture_rect: TextureRect = %TextureRect
-@onready var graphics_editor: GraphicsEditor = %GraphicsEditor
+var code_edit: EditorCodeEdit
+var graphics_editor: GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
 #this are control noes for the Ctrl+F UI
@@ -72,14 +72,30 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	if file_: 
 		editor.file = file_
 
+	# runs before onready so we need to use get_node
+	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
 	match type_:
 		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
-			editor.get_node("%CodeEdit").visible = true
-			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
+			var new_code_edit = EditorCodeEdit.new()
+			new_code_edit.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_code_edit.caret_blink = true
+			new_code_edit.caret_multiple = false
+			new_code_edit.highlight_all_occurrences = true
+			new_code_edit.highlight_current_line = true
+			new_code_edit.gutters_draw_line_numbers = true
+			new_code_edit.gutters_zero_pad_line_numbers = true
+			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
+			new_code_edit.text_changed.connect(editor._on_editor_changed)
+			vbox_container.add_child(new_code_edit)
+			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
-			editor.get_node("%GraphicsEditor").visible = true
+			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
+			new_graphics_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			## TODO: Implement changed signal for graphics editor
-			# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
+			#new_graphics_editor.changed.connect(editor._on_editor_changed)
+			vbox_container.add_child(new_graphics_editor)
+			editor.graphics_editor = new_graphics_editor
 
 	return editor
 
