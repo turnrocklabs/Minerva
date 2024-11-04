@@ -28,12 +28,12 @@ var active_request: HTTPRequest
 
 #region METHODS TO REIMPLEMENT
 
-# moved chat_response signal to SignletonObject
+# moved chat_response signal to SingletonObject
 
 ## This function will generate the model response for given `prompt`
 ## `additional_params` will be added to the request payload
 func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}) -> BotResponse:
-	await get_tree().process_frame # This line is just to supress the 'not a coroutine' warning
+	await get_tree().process_frame # This line is just to suppress the 'not a coroutine' warning
 	push_error("generate_content method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 

@@ -1,4 +1,4 @@
-## botresponse enables me to standarize responses from any chatbot
+## botresponse enables me to standardize responses from any chatbot
 class_name BotResponse
 extends RefCounted
 
@@ -6,7 +6,7 @@ extends RefCounted
 var id: StringName
 var text: String
 
-## Imageg associated with this response.
+## Image associated with this response.
 ## Caption can be set by setting the `caption` meta field of this object
 var image: Image
 

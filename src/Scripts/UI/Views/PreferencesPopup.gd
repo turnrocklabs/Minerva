@@ -29,13 +29,13 @@ func _ready():
 	var res_code = config_file.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 	match res_code:
 		ERR_FILE_NOT_FOUND:
-			# populare config file with default settings
+			# popular config file with default settings
 			config_file.set_value("API KEYS", "google_vertex", "")
 			config_file.set_value("API KEYS", "anthropic", "")
 			config_file.set_value("API KEYS", "openai", "")
 
 			config_file.set_value("USER", "first_name", "Not")
-			config_file.set_value("USER", "last_name", "Avaivable")
+			config_file.set_value("USER", "last_name", "Available")
 	set_field_values()
 	
 	SingletonObject.theme_changed.connect(set_theme_option_menu)
@@ -46,7 +46,7 @@ func _ready():
 
 func set_field_values():
 	_fields["first_name"].text = config_file.get_value("USER", "first_name", "Not")
-	_fields["last_name"].text = config_file.get_value("USER", "last_name", "Avaivable")
+	_fields["last_name"].text = config_file.get_value("USER", "last_name", "Available")
 	
 	_fields["google_vertex"].text = config_file.get_value("API KEYS", "google_vertex", "")
 	_fields["anthropic"].text = config_file.get_value("API KEYS", "anthropic", "")

@@ -519,7 +519,7 @@ layout_mode = 1
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/DisableNotesButton" to="." method="_on_disable_notes_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachement_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachment_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]

@@ -36,7 +36,7 @@ func open_package(package_path: String) -> int:
 		return err
 	
 	if not reader.file_exists(project_fp):
-		_error = "Couln't find %s inside the package file." % project_fp
+		_error = "Couldn't find %s inside the package file." % project_fp
 		return ERR_FILE_NOT_FOUND
 
 	data = JSON.parse_string(reader.read_file(project_fp).get_string_from_utf8())
@@ -75,7 +75,7 @@ func save_package(
 	var err = writer.open(save_path)
 	if err != OK: return err
 
-	# loop through file paths to copy them from original to package destination insize the zip file
+	# loop through file paths to copy them from original to package destination inside the zip file
 	for i in range(original_files.size()):
 		var original_path: String = original_files[i]
 		var package_path: String = package_files[i]
@@ -151,15 +151,15 @@ func error_cleanup(paths: PackedStringArray):
 
 func unpack(files_destination: String, project_destination: String) -> int:
 	if not reader:
-		_error = "Packge reader unconfigured."
+		_error = "Package reader unconfigured."
 		return ERR_UNCONFIGURED
 
 	# _validate_directory will automatically populate _error
-	var ferr: = _validate_directory(files_destination)
-	if ferr != OK: return ferr
+	var file_err: = _validate_directory(files_destination)
+	if file_err != OK: return file_err
 
-	var perr : = _validate_directory(project_destination)
-	if perr != OK: return perr
+	var project_err : = _validate_directory(project_destination)
+	if project_err != OK: return project_err
 
 	var written_files: = PackedStringArray()
 
@@ -174,8 +174,8 @@ func unpack(files_destination: String, project_destination: String) -> int:
 
 		var write_path: = "%s/%s" % [files_destination, pkg_path]
 
-		var derr: = DirAccess.make_dir_recursive_absolute(write_path.get_base_dir())
-		if derr != OK:
+		var dir_err: = DirAccess.make_dir_recursive_absolute(write_path.get_base_dir())
+		if dir_err != OK:
 			_error = "Failed to create the directory (%s)." % write_path.get_base_dir()
 			error_cleanup(written_files)
 			return DirAccess.get_open_error()

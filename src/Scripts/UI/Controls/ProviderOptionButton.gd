@@ -4,7 +4,7 @@ extends OptionButton
 signal provider_selected(provider: BaseProvider)
 
 func _ready():
-	# populate the options button with avaivable model providers
+	# populate the options button with available model providers
 	
 	# duplicate the array of provider keys
 	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
