@@ -425,7 +425,7 @@ func _gui_input(event: InputEvent):
 	# Handle drawing actions
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
+			if event.pressed and drawing_brush_active:
 				drawing = true
 				_draw_begin = true
 			else:
