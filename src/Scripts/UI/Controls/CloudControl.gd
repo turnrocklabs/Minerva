@@ -6,7 +6,7 @@ const POINT_RADIUS: = 10
 
 enum Type {
 	ELLIPSE,
-	CLOUD,
+	SPEECH_BUBBLE,
 	RECTANGLE,
 }
 var type: = Type.ELLIPSE
@@ -82,8 +82,8 @@ func _create_tail() -> PackedVector2Array:
 
 	if type == Type.ELLIPSE:
 			return create_ellipse(_bubble_rect)
-	elif type == Type.CLOUD:
-			return cloud_bubble(_bubble_rect)
+	elif type == Type.SPEECH_BUBBLE:
+			return create_speech_bubble(_bubble_rect)
 	elif type == Type.RECTANGLE:
 			return PackedVector2Array([
 				_bubble_rect.position,
@@ -255,8 +255,8 @@ class BubbleTail:
 # Request redraw in response to changes
 func _ready():
 	circle_radius = 50
-	if SingletonObject.CloudType == Type.CLOUD:
-		type = Type.CLOUD
+	if SingletonObject.CloudType == Type.SPEECH_BUBBLE:
+		type = Type.SPEECH_BUBBLE
 	elif SingletonObject.CloudType == Type.ELLIPSE:
 		type = Type.ELLIPSE
 	elif SingletonObject.CloudType == Type.RECTANGLE:
@@ -485,7 +485,7 @@ func _on_upper_left_resizer_button_down() -> void:
 
 # region Speech Bubble
 
-func cloud_bubble(rect: Rect2) -> PackedVector2Array:
+func create_speech_bubble(rect: Rect2) -> PackedVector2Array:
 	var ellipse_poly: = create_ellipse(rect.grow(-circle_radius))
 
 	var cloud: = ellipse_poly.duplicate()
@@ -730,7 +730,7 @@ func toggle_editing_state() -> void:
 
 func set_circle_radius(new_radius: float) -> void:
 	circle_radius = new_radius
-	cloud_bubble(_bubble_rect) # Recalculate the cloud shape
+	create_speech_bubble(_bubble_rect) # Recalculate the cloud shape
 	queue_redraw() # Tell Godot to redraw the CloudControl 
 	
 	
