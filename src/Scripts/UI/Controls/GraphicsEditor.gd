@@ -44,7 +44,7 @@ var image: Image:
 var drawing:bool = false
 var drawing_brush_active: = true
 var erasing:bool = false
-var clouding:bool = false
+var editing_speech_bubbles:bool = false
 var zoomIn:bool = false
 var zoomOut:bool = false
 
@@ -403,7 +403,7 @@ func _gui_input(event: InputEvent):
 			Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
 			
 			
-	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+	if editing_speech_bubbles and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		# 1. Create a new layer
 		is_image_saved = false
 		SingletonObject.UpdateUnsavedTabIcon.emit()
@@ -420,7 +420,7 @@ func _gui_input(event: InputEvent):
 		new_layer.add_child(new_bubble)
 		new_bubble.move(new_layer.get_local_mouse_position())
 		_if_cloud(3,0)
-		clouding = false
+		editing_speech_bubbles = false
 
 	# Handle drawing actions
 	if event is InputEventMouseButton:
@@ -564,7 +564,7 @@ func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	erasing = false
 	view_tool_active = false
 	_on_mask(false)
-	clouding = false
+	editing_speech_bubbles = false
 	zoomIn =false
 	zoomOut = false
 	_rotating = false
@@ -635,7 +635,7 @@ func _on_brushes_item_selected(index):
 	erasing = false
 	view_tool_active = false
 	_on_mask(false)
-	clouding = false
+	editing_speech_bubbles = false
 	zoomIn = false
 	zoomOut = false
 	zoom_in_button.modulate = Color.WHITE
@@ -655,7 +655,7 @@ func _on_brushes_item_selected(index):
 			%ApplyMaskButton.visible = true
 		3:
 			dialog_clouds.show()
-			clouding = true
+			editing_speech_bubbles = true
 			#%ApplyTail.visible = true
 		4:
 			fill_tool = true
@@ -665,7 +665,7 @@ func _on_option_button_item_selected(index):
 	erasing = false
 	view_tool_active = false
 	_on_mask(false)
-	clouding = true
+	editing_speech_bubbles = true
 	
 	%MgIcon.visible = false
 	zoomIn = false
@@ -678,7 +678,7 @@ func _on_option_button_item_selected(index):
 		0:
 			SingletonObject.CloudType = CloudControl.Type.ELLIPSE
 		1:
-			SingletonObject.CloudType = CloudControl.Type.CLOUD
+			SingletonObject.CloudType = CloudControl.Type.SPEECH_BUBBLE
 		2:
 			SingletonObject.CloudType = CloudControl.Type.RECTANGLE
 
@@ -688,7 +688,7 @@ func _on_hand_pressed() -> void:
 	
 	erasing = false
 	_on_mask(false)
-	clouding = false
+	editing_speech_bubbles = false
 	zoomIn = false
 	zoomOut = false
 	dialog_clouds.hide()
@@ -708,7 +708,7 @@ func _on_zoom_in_pressed() -> void:
 	erasing = false
 	_on_mask(false)
 	view_tool_active = false
-	clouding = false
+	editing_speech_bubbles = false
 	zoomOut = false 
 	dialog_clouds.hide()
 
@@ -727,7 +727,7 @@ func _on_zoom_out_pressed() -> void:
 	erasing = false
 	_on_mask(false)
 	view_tool_active = false
-	clouding = false
+	editing_speech_bubbles = false
 	zoomIn = false 
 	dialog_clouds.hide()
 
@@ -1120,7 +1120,7 @@ func _if_cloud(whatToUse: int, bubble_size: float):
 						cloud_control.CancelEditing()
 					if whatToUse == 4:
 						cloud_control.ApplyEditing()
-					if cloud_control.type == CloudControl.Type.CLOUD:
+					if cloud_control.type == CloudControl.Type.SPEECH_BUBBLE:
 						%ApplyTail.visible = true
 						bubble_radius.visible = true
 					else:  # Ellipse or Rectangle
