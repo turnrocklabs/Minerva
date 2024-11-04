@@ -55,7 +55,7 @@ func estimate_tokens(_input: String) -> int:
 
 ## Estimates token amount for the given input.
 ## `input` parameter is as the parameter for the `generate_content` function.
-func estimate_tokens_from_prompt(_input: Array[Variant]) -> int:
+func estimate_tokens_from_prompt(_input: Array[Variant]) -> float:
 	return 0
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):

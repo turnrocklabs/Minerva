@@ -1,7 +1,11 @@
 class_name Note
 extends VBoxContainer
 
-signal note_deleted()
+signal deleted()
+signal toggled(on: bool)
+
+## This signal is emitted each time the underlying memory item has been updated.
+signal changed()
 
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
@@ -38,9 +42,11 @@ var memory_item: MemoryItem:
 		# that will create completly new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
 		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
-			if editor.associated_object:
-				#if editor.associated_object.memory_item == memory_item:
-				associate_editor(editor)
+			if editor.associated_object is MemoryItem:
+				if editor.associated_object.memory_item == memory_item:
+					associate_editor(editor)
+		
+		changed.emit()
 
 #region New notes methods
 
@@ -119,7 +125,7 @@ func _exit_tree() -> void:
 	if has_meta("associated_editor"):
 		var editor: Editor = get_meta("associated_editor")
 		if is_instance_valid(editor):
-			editor.queue_free()
+			editor.associated_object = null
 
 
 #method for changing the dots texture when the main theme changes
@@ -132,7 +138,7 @@ func change_modulate_for_texture(theme_enum: int):
 
 
 func _to_string():
-	return "Notedadsa %s" % memory_item.Title
+	return "Note %s" % memory_item.Title
 
 # check if we are showing the separator.
 # if yes that means we were dragging the note above this note
@@ -250,6 +256,7 @@ func _drop_data(_at_position: Vector2, data):
 func _on_check_button_toggled(toggled_on: bool) -> void:
 	if memory_item:
 		memory_item.Enabled = toggled_on
+	toggled.emit(toggled_on)
 
 
 func _on_remove_button_pressed():
@@ -259,7 +266,7 @@ func _on_remove_button_pressed():
 	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
 	tween.tween_callback(queue_free)
 
-	note_deleted.emit()
+	deleted.emit()
 
 ## Connects this note and the given [parameter editor] and
 ## reflects note title chages into the tab title.
@@ -295,10 +302,10 @@ func _on_edit_button_pressed():
 	if memory_item.MemoryImage:
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
-		editor = ep.add(Editor.Type.GRAPHICS, null, memory_item.Title)
+		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:
-		editor = ep.add(Editor.Type.NOTE_EDITOR, null, memory_item.Title)
+		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
 
 	associate_editor(editor)

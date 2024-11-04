@@ -289,3 +289,7 @@ func _on_note_head_text_changed() -> void:
 
 func _on_note_description_text_changed() -> void:
 	should_add_note_be_disabled()
+
+
+func _on_note_description_text_set() -> void:
+	should_add_note_be_disabled()

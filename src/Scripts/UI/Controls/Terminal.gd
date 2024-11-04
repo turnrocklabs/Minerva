@@ -55,94 +55,65 @@ func _wrap_linux_command(user_input: String) -> PackedStringArray:
 
 	return full_cmd
 
-var _last_content_height: float = 0
 
-func _text_updated():
-	return
-	var present_btns: = buttons_container.get_child_count()
-	var lines: = _output_label.get_parsed_text().split("\n").size()
+func display_output(output: String) -> void:
+	var output_container = HBoxContainer.new()
+	const MAX_OUTPUT_LEN: int = 8192
+	var check_button = CheckButton.new()
+	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	check_button.size_flags_vertical = Control.SIZE_SHRINK_END
+	check_button.toggled.connect(_on_output_check_button_toggled.bind(output, check_button))
+	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
+	output_container.add_child(check_button)
+
+	var label = Label.new()
+	#label.fit_content = true
+	#label.selection_enabled = true
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var label_text: String  = ""
+	if len(output) <=  MAX_OUTPUT_LEN:
+		label_text = output
+	else:
+		label_text = output.substr(0, MAX_OUTPUT_LEN)
+		label_text += "\n"
+		label_text += "(rest truncated...)"
 	
-	# if lines == 1:
-	# 	_line_height = float(_output_label.get_content_height())
-
-	if not _output_label.is_ready():
-		await _output_label.finished
-
-	for i in range(lines - present_btns):
-		var line_num = present_btns+i
-		
-		var check_button = CheckButton.new()
-		check_button.set_meta("line_num", line_num)
-		check_button.add_theme_constant_override("icon_max_width", 30)
-		check_button.toggled.connect(_on_output_check_button_toggled.bind(line_num, check_button))
-		check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
-
-		var remaining_height = (_output_label.get_content_height() - _last_content_height) * 0.95
-
-		_last_content_height = _output_label.get_content_height()
-
-		check_button.custom_minimum_size.y = remaining_height
-
-		buttons_container.add_child(check_button)		
-
-		print("Line: ", line_num)
-		prints(_output_label.get_content_height(), _last_content_height, remaining_height)
-
-		_output_label.push_indent(1)
-
-		
-
-
-func _on_output_check_button_toggled(toggled_on: bool, line_num: int, btn: CheckButton):
-
-	var enabled_lines: = _output_label.get_meta("_enabled") as Dictionary
-
-	if Input.is_key_pressed(KEY_SHIFT) and _last_enabled_line != -1:
-		for i in range(_last_enabled_line, line_num):
-			var check_button: CheckButton = buttons_container.get_child(i)
-			check_button.button_pressed = toggled_on
-			var ln: int = check_button.get_meta("line_num")
-			enabled_lines[ln] = true
-			
-				
-	_last_enabled_line = line_num
-
-	enabled_lines[line_num] = toggled_on
-
-	var content_lines: PackedStringArray
-
-	for ln in enabled_lines.keys():
-		if not enabled_lines[ln]: continue
-
-		
-
-
-	var item: MemoryItem
+	label.text = label_text
+	output_container.add_child(label)
 	
-	if not has_meta("memory_item"):
-		item = SingletonObject.NotesTab.create_note("Terminal Note")
-		item.Content = "line_num"
-		
-		if not item:
-			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the terminal.")
-			btn.button_pressed = false
-			return
-		
+	outputs_container.add_child(output_container)
+	
+	#this 2 lines are for auto scrollling all the way down
+	await get_tree().process_frame
+	%ScrollContainer.ensure_control_visible(%CwdLabel)
+
+
+func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
+	# Create a new memoryitem to access the hash function. 
+	var item: MemoryItem = MemoryItem.new()
+	item.Enabled = false
+	item.Type = SingletonObject.note_type.TEXT
+	item.Title = "Terminal Note"
+	item.Visible = true
+	item.Content = output
+
+	# use the hash to see if we already have this item in the DetachedNotes
+	var detached_index: int = -1
+	for search_index in SingletonObject.DetachedNotes.size():
+		if SingletonObject.DetachedNotes[search_index].Sha_256 == item.Sha_256:
+			detached_index = search_index
+	
+	# if we don't have it, connect a toggled handler and append to detached notes.
+	if detached_index == -1:
+		item.Enabled = toggled_on
 		item.toggled.connect(
 			func(on: bool):
 				btn.button_pressed = on
 		)
-
-		set_meta("memory_item", item)
 		SingletonObject.DetachedNotes.append(item)
 	else:
-		item = get_meta("memory_item")
-		var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
+		SingletonObject.DetachedNotes[detached_index].Enabled = toggled_on
 
-		if not present:
-			SingletonObject.DetachedNotes.append(item)
-
-	item.Enabled = toggled_on
 
 
 func _on_output_check_button_tree_exiting(btn: CheckButton):
