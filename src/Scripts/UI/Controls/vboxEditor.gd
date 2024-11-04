@@ -8,13 +8,16 @@ func _ready() -> void:
 	editor_pane.enable_editor_action_buttons.connect(_toggle_enable_action_buttons)
 
 
-func _toggle_enable_action_buttons(enable: bool) -> void:
+func _toggle_enable_action_buttons(type: Editor.Type) -> void:
 	if is_inside_tree():
 		var editor_action_buttons = get_tree().get_nodes_in_group("editor_action_button")
 		if editor_action_buttons:
 			for button: Button in editor_action_buttons:
-				button.disabled = !enable
-
+				match button.name:
+					"UndoButton":
+						button.disabled = type!=Editor.Type.TEXT and type!=Editor.Type.GRAPHICS
+					_:
+						button.disabled = type!=Editor.Type.TEXT
 
 func serialize() -> Array:
 	var editors_serialized: Array[Dictionary] = []

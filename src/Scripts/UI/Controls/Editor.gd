@@ -31,10 +31,10 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 @onready var jump_to_line_label: RichTextLabel = %JumpToLineLabel
 
 enum Type {
-	TEXT,
-	GRAPHICS,
-	WhiteBoard, # TODO: To be removed
-	NOTE_EDITOR,
+	NONE = -1,
+	TEXT = 0,
+	GRAPHICS = 1,
+	NOTE_EDITOR = 3,
 }
 
 ## May contain the object that is being edited by this editor.[br]
@@ -519,11 +519,13 @@ func add_new_line() -> void:
 
 
 func undo_action():
-	if Type.TEXT != type:
-		return
-	code_edit.undo()
-	code_edit.grab_focus()
-
+	match type:
+		Type.TEXT:
+			code_edit.undo()
+			code_edit.grab_focus()
+		Type.GRAPHICS:
+			graphics_editor.undo()
+			graphics_editor.grab_focus()
 
 func clear_text():
 	if Type.TEXT != type:

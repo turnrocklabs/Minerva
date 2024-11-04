@@ -29,11 +29,9 @@ var Bubble = preload("res://Scenes/CloudControl.tscn")
 #@export var _apply_mask_button: Button
 @export var masking_color: Color
 
-var selectedLayer: String
-var selectedIndex: int
 var loaded_layers: Array[Layer]
 var layer_number = 1 #we might not need this variable anymore and just use layers.size()
-var layers_array: Array[Layer] # we put every layer we create here except fot the transpaency layer
+var layers_array: Array[Layer] # we put every layer we create here except fot the transparency layer
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
 
@@ -88,8 +86,8 @@ var _masking: bool:
 			masking_ended.emit()
 
 var is_image_saved: bool = false
+var layer_undo_history_size = 0
 var layer_undo_histories = {} # Dictionary to store undo histories for each layer
-
 
 func _ready():
 	if SingletonObject.is_picture:
@@ -176,7 +174,7 @@ func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	var size_x = clamp(new_size.x, 1, INF)
 	var size_y = clamp(new_size.y, 1, INF)
-	image_.resize( new_size.x, new_size.y)
+	image_.resize(size_x, size_y)
 
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
@@ -250,6 +248,8 @@ func create_image(vec:Vector2):
 	  
 	# Store the initial background image for the layer
 	_background_images[_draw_layer] = img.duplicate() 
+	
+	layer_undo_histories[_draw_layer.name] = []
 
 	   # This line is unnecessary and might be causing issues - remove it:
 	   # setup_from_created_image(img) 
@@ -336,7 +336,7 @@ func _gui_input(event: InputEvent):
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 		%Brushes.select(0)
 		%PenAdditionalTools.visible = true
-	
+		add_to_undo_history(active_layer)
 	
 	# Early exit if view tool is active
 	if view_tool_active:
@@ -411,6 +411,7 @@ func _gui_input(event: InputEvent):
 		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
 		var new_layer = _create_layer(new_layer_image)
 		_background_images[new_layer] = new_layer_image.duplicate()
+		layer_undo_histories[new_layer.name] = []
 
 		# 2. Add layer button to UI 
 		layers_buttons()
@@ -421,6 +422,7 @@ func _gui_input(event: InputEvent):
 		new_bubble.move(new_layer.get_local_mouse_position())
 		_if_cloud(3,0)
 		clouding = false
+		add_to_undo_history(new_layer)
 
 	# Handle drawing actions
 	if event is InputEventMouseButton:
@@ -429,9 +431,9 @@ func _gui_input(event: InputEvent):
 				drawing = true
 				_draw_begin = true
 			else:
-				drawing = false
-				
-			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
+				if drawing:
+					drawing = false
+					add_to_undo_history(active_layer)
 
 	if event is InputEventMouseMotion and drawing:
 		is_image_saved = false
@@ -452,9 +454,6 @@ func _gui_input(event: InputEvent):
 
 		_last_pos = layer_local_pos 
 		active_layer.update() 
-	
-
-
 
 func _on_h_slider_value_changed(value):
 	brush_size = value
@@ -545,27 +544,27 @@ func _on_add_layer_pressed():
 	
 	create_image(new_layer_size)
 
-func RemoveLayer(Hbox:HBoxContainer, _index:int):
-	# Find the index of the HBoxContainer within LayersList
-	var hbox_index = %LayersList.get_children().find(Hbox)
+func remove_layer_by_index(index: int) -> void:
+	# Find the HBoxContainer within LayersList
+	var Hbox = %LayersList.get_child(index)
 	
 	# Remove the layer container (visual)
-	Hbox.queue_free()
+	if is_instance_valid(Hbox):
+		Hbox.queue_free()
 	
 	# Get the layer to remove directly from the HBox's index 
-	var layer_to_remove = _layers_container.get_child(hbox_index)
-	layer_to_remove.queue_free()
-	
-	layer_number -= 1
-	
-	# Synchronize undo history to ensure consistency
-	layer_undo_histories.erase(layer_to_remove.layer_name) 
-	
+	var layer_to_remove = _layers_container.get_child(index)
+	if is_instance_valid(layer_to_remove):
+		# Synchronize undo history to ensure consistency
+		layer_undo_histories.erase(layer_to_remove.layer_name) 
+		layer_to_remove.queue_free()
+		layer_number -= 1
+
 	erasing = false
 	view_tool_active = false
 	_on_mask(false)
 	clouding = false
-	zoomIn =false
+	zoomIn = false
 	zoomOut = false
 	_rotating = false
 	
@@ -575,11 +574,16 @@ func RemoveLayer(Hbox:HBoxContainer, _index:int):
 		return # Nothing to select
 		
 	# Select the previous layer 
-	var new_index = max(0, hbox_index - 1) # Clamp to 0 
+	var new_index = max(0, index - 1) # Clamp to 0 
 	if new_index < %LayersList.get_child_count():
 		var new_hbox = %LayersList.get_child(new_index)
 		var new_button = new_hbox.get_child(0) # Assuming button is the first child
 		selectButton(new_button, new_hbox)
+
+func RemoveLayer(Hbox:HBoxContainer):
+	# Find the index of the HBoxContainer within LayersList
+	var hbox_index = %LayersList.get_children().find(Hbox)
+	remove_layer_by_index(hbox_index)
 
 func selectButton(btn: Button, Hbox: HBoxContainer):
 	_if_cloud(4,0)
@@ -1156,3 +1160,26 @@ func _input(event: InputEvent) -> void:
 			var layers_y: int = int(layers_menu.global_position.y)
 			if (event_x < layers_x or event_x > popup_size_limit.x) or (event_y < layers_y or event_y > popup_size_limit.y):
 				popup_panel.hide()
+
+func add_to_undo_history(changed: Layer) -> void:
+	for layer in layers_array:
+		if is_instance_valid(layer):
+			var history: Array = layer_undo_histories[layer.name]
+			if layer==changed:
+				history.append(changed.image.duplicate())
+			else:
+				history.append(history.back()) # add a reference without duplicating
+	layer_undo_history_size += 1
+
+func undo() -> void:
+	if layer_undo_history_size == 0:
+		return
+	for layer in layers_array:
+		if is_instance_valid(layer):
+			var history: Array = layer_undo_histories[layer.name]
+			if history.size() > 1:
+				history.pop_back()
+				layer.image = history.back().duplicate()
+			else:
+				remove_layer_by_index(layers_array.find(layer))
+	layer_undo_history_size -= 1
