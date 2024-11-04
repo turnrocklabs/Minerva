@@ -68,3 +68,27 @@ func wrap_memory(item: MemoryItem) -> Variant:
 		output += "### End Reference Information ###\n\n"
 		output += "Respond to the user's message: \n\n"
 		return output
+
+
+func estimate_tokens_from_prompt(input: Array[Variant]):
+	var text_tokens: float = super(input)
+
+	var image_tokens: = 0.0
+
+	# get all user messages
+	for msg: Dictionary in input:
+		var content = msg.get("content")
+
+		if content is String:
+			continue
+		
+		elif content is Array:
+			for part: Dictionary in content:
+				if part.get("type") == "image_url":
+					var b64: String = part["image_url"]["url"]
+					var img = Image.new()
+					img.load_png_from_buffer(Marshalls.base64_to_raw(b64))
+					
+					image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
+
+	return text_tokens + image_tokens
