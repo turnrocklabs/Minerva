@@ -286,8 +286,11 @@ func _on_editor_content_changed(editor: Editor):
 			else:
 				if editor.file:
 					tooltip = "File unsaved"
-				else:
+				elif editor.associated_object:
 					tooltip = "\"%s\" unsaved" % associated_object_name
+				else:
+					tooltip = "Content unsaved"
+					
 
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	Tabs.set_tab_icon(tab_idx, icon)

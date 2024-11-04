@@ -42,9 +42,9 @@ var memory_item: MemoryItem:
 		# that will create completly new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
 		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
-			if editor.associated_object:
-				#if editor.associated_object.memory_item == memory_item:
-				associate_editor(editor)
+			if editor.associated_object is MemoryItem:
+				if editor.associated_object.memory_item == memory_item:
+					associate_editor(editor)
 		
 		changed.emit()
 
@@ -302,10 +302,10 @@ func _on_edit_button_pressed():
 	if memory_item.MemoryImage:
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
-		editor = ep.add(Editor.Type.GRAPHICS, null, memory_item.Title)
+		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:
-		editor = ep.add(Editor.Type.TEXT, null, memory_item.Title)
+		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
 
 	associate_editor(editor)

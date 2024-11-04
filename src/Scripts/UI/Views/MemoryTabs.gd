@@ -330,6 +330,7 @@ func attach_file(the_file: String):
 	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
 	
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.File = the_file # associate the file with the new memory item
 	
 	if file_ext in SingletonObject.supported_text_fortmats:
 		file_type = "text"
