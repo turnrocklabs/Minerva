@@ -11,12 +11,20 @@ enum Type {
 }
 var type: = Type.ELLIPSE
 var circle_radius
+
+## Offset from the top left corner
+const MOVER_OFFSET = Vector2(30, 0)
+
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
+@onready var _mover: Control = %Mover
 @onready var _text_edit: TextEdit = %TextEdit
 @onready var _bezier_curve: BezierCurve = %BezierCurve
 
+## To move the whole speech bubble
+var _moving := false
 
+## To move points
 var _drag_start_position: Vector2
 var _dragging: = false:
 	set(value):
@@ -37,6 +45,7 @@ var editing: = true:
 		_text_edit.visible = editing
 		_lower_resizer.visible = editing
 		_upper_resizer.visible = editing
+		_mover.visible = editing
 		_bezier_curve.visible = editing
 
 
@@ -57,6 +66,7 @@ var bubble_poly: PackedVector2Array
 
 func set_bounding_rect(rect: Rect2) -> void:
 	_upper_resizer.position = rect.position
+	_mover.position = rect.position + MOVER_OFFSET
 	_lower_resizer.position = rect.end
 	queue_redraw()
 
@@ -67,8 +77,7 @@ func move(to: Vector2):
 
 	_upper_resizer.position = to + current_offset / 2
 	_lower_resizer.position = to - current_offset / 2
-	
-
+	_mover.position = _upper_resizer.position + MOVER_OFFSET
 
 # region Tails
 
@@ -348,7 +357,8 @@ func _draw_editing_tail() -> void:
 func _get_drag_data(at_position: Vector2) -> Variant:
 	if (
 		_upper_resizer.get_rect().has_point(at_position) or
-		_lower_resizer.get_rect().has_point(at_position)
+		_lower_resizer.get_rect().has_point(at_position) or
+		_mover.get_rect().has_point(at_position)
 	): return null
 
 	# Check if we pressed on existing tail point
@@ -379,6 +389,7 @@ func _gui_input(event: InputEvent) -> void:
 	if _dragging and event is InputEventMouseMotion and event.pressure:
 		_lower_resizer.position += event.relative
 		_upper_resizer.position += event.relative
+		_mover.position += event.relative
 	else:
 		_dragging = false
 
@@ -393,6 +404,7 @@ func _gui_input(event: InputEvent) -> void:
 		else:
 			_active_resizer = null
 			_drag_point_idx = -1
+			_moving = false
 
 			# if the mouse is released, check if we are on same place or we dragged the mouse
 
@@ -400,7 +412,8 @@ func _gui_input(event: InputEvent) -> void:
 				# if the mouse is pressed outside of the resizers
 				if not (
 					_upper_resizer.get_rect().has_point(event.position) or
-					_lower_resizer.get_rect().has_point(event.position)
+					_lower_resizer.get_rect().has_point(event.position) or
+					_mover.get_rect().has_point(event.position)
 				):
 					
 					# if we didn't click on any points, add a new one
@@ -443,9 +456,7 @@ func _gui_input(event: InputEvent) -> void:
 					estimated_position.y = _lower_resizer.position.y
 			
 			_active_resizer.position = estimated_position
-			
-
-			
+			_mover.position = _upper_resizer.position + MOVER_OFFSET
 			
 		# if we're moving the mouse, pressing the mouse button and dragging the point
 		# update that points position.
@@ -461,7 +472,14 @@ func _gui_input(event: InputEvent) -> void:
 				tail.points[_drag_point_idx] = idx
 			else:
 				tail.points[_drag_point_idx] = event.position
-			
+
+		# moving the whole speech bubble
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _moving:
+			set_bounding_rect(Rect2(
+				_upper_resizer.position + event.relative,
+				_lower_resizer.position - _upper_resizer.position
+			))
+
 		queue_redraw()
 		accept_event()
 
@@ -741,3 +759,8 @@ func CancelEditing():
 func ApplyEditing():
 	editing = false
 	queue_redraw()
+
+
+func _on_mover_button_down() -> void:
+	_moving = true
+	get_viewport().set_input_as_handled()
