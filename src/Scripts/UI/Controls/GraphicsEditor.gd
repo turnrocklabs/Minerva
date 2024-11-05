@@ -328,7 +328,7 @@ func _gui_input(event: InputEvent):
 		#Get color at clicked position and Update the ColorPickerButton
 		color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
 		
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool and drawing_brush_active:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
 		flood_fill(active_layer.image, layer_local_pos, brush_color) 
 		active_layer.update()
 		fill_tool = false
