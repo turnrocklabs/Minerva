@@ -22,23 +22,9 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="h2" type="HBoxContainer" parent="ScrollContainer/v"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="ButtonsContainer" type="VBoxContainer" parent="ScrollContainer/v/h2"]
+[node name="OutputContainer" type="VBoxContainer" parent="ScrollContainer/v"]
 unique_name_in_owner = true
 layout_mode = 2
-
-[node name="RichTextLabel" type="RichTextLabel" parent="ScrollContainer/v/h2"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 0
-focus_mode = 2
-fit_content = true
-scroll_following = true
-selection_enabled = true
 
 [node name="h" type="HBoxContainer" parent="ScrollContainer/v"]
 layout_mode = 2

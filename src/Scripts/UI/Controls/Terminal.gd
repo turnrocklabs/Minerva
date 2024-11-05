@@ -18,13 +18,15 @@ var pid: int
 
 var _stdio_thread: Thread
 var _stderr_thread: Thread
+var _index: = -1
+var _index_mutex: = Mutex.new()
 
 # label where the output of the current running command should go to
-@onready var _output_label: RichTextLabel = %RichTextLabel
+@onready var _output_container: Container = %OutputContainer
+var _output_label: Label
+
 
 const cwd_delimiter = "##cwd##"
-
-var _last_enabled_line: int = -1
 
 ## History of used commands
 var _history: = PackedStringArray()
@@ -32,7 +34,7 @@ var _history: = PackedStringArray()
 var _history_idx = 0
 
 var wrap_command: Callable
-var delimiter: String = "---$$$---"
+var delimiter: String = "---$$%s$$---"
 var shell: String
 
 
@@ -42,9 +44,9 @@ static func create() -> Terminal:
 
 
 func _wrap_windows_command(user_input: String) -> String:
-	return "{cmd} & echo {delimiter}".format({
+	return "{cmd} & echo.&echo {delimiter}".format({
 		"cmd": user_input,
-		"delimiter": delimiter,
+		"delimiter": delimiter % "",
 	})
 
 func _wrap_linux_command(user_input: String) -> PackedStringArray:
@@ -56,46 +58,40 @@ func _wrap_linux_command(user_input: String) -> PackedStringArray:
 	return full_cmd
 
 
-func display_output(output: String) -> void:
-	var output_container = HBoxContainer.new()
-	const MAX_OUTPUT_LEN: int = 8192
+func _create_command_output_container() -> Container:
+	var command_output_container = HBoxContainer.new()
+
+	_output_label = Label.new()
+	#_output_label.fit_content = true
+	#_output_label.selection_enabled = true
+	_output_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
 	var check_button = CheckButton.new()
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_END
-	check_button.toggled.connect(_on_output_check_button_toggled.bind(output, check_button))
+	check_button.toggled.connect(_on_output_check_button_toggled.bind(_output_label, check_button))
 	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
-	output_container.add_child(check_button)
 
-	var label = Label.new()
-	#label.fit_content = true
-	#label.selection_enabled = true
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var label_text: String  = ""
-	if len(output) <=  MAX_OUTPUT_LEN:
-		label_text = output
-	else:
-		label_text = output.substr(0, MAX_OUTPUT_LEN)
-		label_text += "\n"
-		label_text += "(rest truncated...)"
+	command_output_container.add_child(check_button)
+	command_output_container.add_child(_output_label)
 	
-	label.text = label_text
-	output_container.add_child(label)
+	_output_container.add_child(command_output_container)
 	
-	outputs_container.add_child(output_container)
-	
+	return command_output_container
+
 	#this 2 lines are for auto scrollling all the way down
-	await get_tree().process_frame
-	%ScrollContainer.ensure_control_visible(%CwdLabel)
+	# await get_tree().process_frame
+	# %ScrollContainer.ensure_control_visible(%CwdLabel)
 
 
-func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
+func _on_output_check_button_toggled(toggled_on: bool, label: Label, btn: CheckButton):
 	# Create a new memoryitem to access the hash function. 
 	var item: MemoryItem = MemoryItem.new()
 	item.Enabled = false
 	item.Type = SingletonObject.note_type.TEXT
 	item.Title = "Terminal Note"
 	item.Visible = true
-	item.Content = output
+	item.Content = label.text
 
 	# use the hash to see if we already have this item in the DetachedNotes
 	var detached_index: int = -1
@@ -152,7 +148,6 @@ func _ready():
 
 		print("Started the shell process with pid %s" % pid)
 
-	_output_label.set_meta("_enabled", {})
 
 # colse the threads on node exit
 func _exit_tree() -> void:
@@ -173,27 +168,149 @@ func _clean() -> void:
 
 func _stdio_thread_loop():
 	while stdio.is_open() and stdio.get_error() == OK:
-		_new_text.call_deferred(char(stdio.get_8()))
+		var data: = char(stdio.get_8())
+
+		_index_mutex.lock()
+		_index += 1
+		var index = _index
+		_index_mutex.unlock()
+
+		_new_text.call_deferred(data, index)
 
 
 func _stderr_thread_loop():
 	while stderr.is_open() and stderr.get_error() == OK:
-		_new_text.call_deferred(char(stderr.get_8()))
+		var data: = char(stderr.get_8())
+
+		_index_mutex.lock()
+		_index += 1
+		var index = _index
+		_index_mutex.unlock()
+
+		_new_text.call_deferred(data, index)
+
+## A sequence of characters that must be removed from the terminal output
+## before it's shown to the user. Used to remove internally used echo statement
+class DisalowedSequence:
+	extends RefCounted
+
+	var full: String:
+		get: return "%s%s%s" % [before, content, after]
+
+	var before: String
+	var after: String
+	var content: String
+	var block: = false
+	var command_end: = false
+
+	func _init(content_: String, before_: String, after_: String, command_end_: = false) -> void:
+		content = content_
+		after = after_
+		before = before_
+		command_end = command_end_
+	
+	## Checks if [parameter text] has give [member content]
+	## inbetween [member before] and [member after].
+	func is_present(text: String) -> bool:
+		return text.contains("%s%s%s" % [before, content, after])
+		
+	func is_potential(text: String) -> bool:
+		var full_text: = "%s%s%s" % [before, content, after]
+
+		return full_text.begins_with(text)
+
+	## Strips the [member content] from the given [parameter text]
+	func strip(text: String) -> String:
+		var full_text: = "%s%s%s" % [before, content, after]
+
+		var stripped: = "%s%s" % [before, after]
+
+		return text.replace(full_text, stripped)
 
 
-var _last_cmd: String
+# Array of characters we received from streams
+var _received_characters: = PackedStringArray()
+var _offset: = 0
 
-func _new_text(text: String) -> void:
+# normally the size of this array is between 0 and 2
+# for stargin and ending  command sequence
+var _disallowed_seq: Array[DisalowedSequence]
 
+func _new_text(text: String, index: int) -> void:
+	prints(index, text.c_escape())
 
-	_output_label.add_text(text)
-	_text_updated()
+	if not _output_label:
+		_create_command_output_container()
+
+	# if we're about to add first element to this array, adjust the _offset
+	if _received_characters.is_empty():
+		_offset = index
+	
+	var array_index: = index - _offset
+	print(array_index)
+
+	if array_index < 0:
+		_received_characters.insert(0, text)
+		_offset = index
+
+	else:
+		_received_characters.resize(array_index+1)
+		_received_characters.set(array_index, text)
+	
+
+	if _disallowed_seq.is_empty():
+		_output_label.text += "".join(_received_characters)
+		_received_characters.clear()
+		return
+
+	
+	var full_string: = "".join(_received_characters)
+	
+	var add_char: = true
+	var was_stripped: = false
+
+	var ds: DisalowedSequence = _disallowed_seq.front()
+
+	# currently received characters are not potentially disallowed sequence just add them
+	if ds.is_potential(full_string):
+		# print(r"'%s' is potential for '%s'" % [full_string, ds.full])
+		add_char = false
+
+		if ds.is_present(full_string):
+
+			var stripped: = ds.strip(full_string)
+			full_string = stripped
+			was_stripped = true
+
+			add_char = true
+			_disallowed_seq.erase(ds)
+	
+	if add_char:
+		_output_label.text += full_string
+		_received_characters.clear()
+
+		# if this ds marks command end, start the new command output container
+		if was_stripped and ds.command_end:
+			_create_command_output_container()
+
+	
 
 
 func execute_command(input: String):
 	_history.append(input)
 
-	var command_buffer = (input + "\n").to_utf8_buffer()
+	var command_buffer: PackedByteArray
+
+	# if this array is not empty we didn't reach the end of the previous command yet
+	if _disallowed_seq.is_empty():
+
+		command_buffer = (wrap_command.call(input) + "\n").to_utf8_buffer()
+
+		_disallowed_seq.append(DisalowedSequence.new(wrap_command.call(""), input, ""))
+		_disallowed_seq.append(DisalowedSequence.new(delimiter % "", "\n", "", true))
+
+	else:
+		command_buffer = (input + "\n").to_utf8_buffer()
 
 	stdio.store_buffer(command_buffer)
 
