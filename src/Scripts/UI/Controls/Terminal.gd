@@ -8,7 +8,6 @@ signal execution_finished()
 
 @onready var scroll_container = %ScrollContainer
 @onready var command_line_edit: LineEdit = %CommandLineEdit
-@onready var buttons_container: VBoxContainer = %ButtonsContainer
 @onready var cwd_label: Label = %CwdLabel
 
 
@@ -19,7 +18,8 @@ var pid: int
 var _stdio_thread: Thread
 var _stderr_thread: Thread
 var _index: = -1
-var _index_mutex: = Mutex.new()
+var _mutex: = Mutex.new()
+var _process_text_timer: = Timer.new()
 
 # label where the output of the current running command should go to
 @onready var _output_container: Container = %OutputContainer
@@ -49,13 +49,17 @@ func _wrap_windows_command(user_input: String) -> String:
 		"delimiter": delimiter % "",
 	})
 
-func _wrap_linux_command(user_input: String) -> PackedStringArray:
-	var full_cmd = [
-		"-c",
-		# "cd '%s' && %s; echo '%s'\\$PWD" % [cwd, user_input, cwd_delimiter]
-	]
+func _wrap_linux_command(user_input: String) -> String:
+	# escape the string so it doesn't get expanded on linux
+	var escaped_delimiter = (
+		delimiter % ""
+	).replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`").replace("!", "\\!")
 
-	return full_cmd
+	return "{cmd} & echo -e \"\n{delimiter}\"".format({
+		"cmd": user_input,
+		"delimiter": escaped_delimiter,
+	})
+
 
 
 func _create_command_output_container() -> Container:
@@ -75,13 +79,9 @@ func _create_command_output_container() -> Container:
 	command_output_container.add_child(check_button)
 	command_output_container.add_child(_output_label)
 	
-	_output_container.add_child(command_output_container)
+	_output_container.add_child.call_deferred(command_output_container)
 	
 	return command_output_container
-
-	#this 2 lines are for auto scrollling all the way down
-	# await get_tree().process_frame
-	# %ScrollContainer.ensure_control_visible(%CwdLabel)
 
 
 func _on_output_check_button_toggled(toggled_on: bool, label: Label, btn: CheckButton):
@@ -124,6 +124,16 @@ func _on_output_check_button_tree_exiting(btn: CheckButton):
 
 func _ready():
 
+	_process_text_timer.one_shot = true
+	add_child(_process_text_timer)
+	
+	# for auto scrolling the output container
+	var scrollbar: VScrollBar = scroll_container.get_v_scroll_bar()
+	scrollbar.changed.connect(
+		func():
+			scroll_container.scroll_vertical = scrollbar.max_value
+	)
+
 	match OS.get_name():
 		"Windows":
 			shell = OS.get_environment("COMSPEC")
@@ -153,7 +163,6 @@ func _ready():
 func _exit_tree() -> void:
 	_clean()
 
-
 func _clean() -> void:
 	if pid: OS.kill(pid)
 
@@ -166,28 +175,123 @@ func _clean() -> void:
 	print("Cleaned up shell pipes and threads.")
 
 
+
+
+# Array of characters we received from streams
+var _received_characters: = PackedStringArray()
+var _offset: = 0
+const MAX_PROCESS_PASS: = 200
+
+func _process(_delta: float) -> void:
+	_mutex.lock()
+
+	# print("_process thread: ", OS.get_thread_caller_id())
+
+	if _received_characters.is_empty():
+		# print("_received_characters is empty")
+		set_process(false)
+		_mutex.unlock()
+		return
+	
+	var time_start = Time.get_unix_time_from_system()
+
+	for i in min(MAX_PROCESS_PASS, _received_characters.size()):
+		_proces_received_text(_received_characters[-1], _offset)
+		_offset -= 1
+
+		_received_characters.remove_at(_received_characters.size()-1)
+
+
+	prints(min(MAX_PROCESS_PASS, _received_characters.size()), Time.get_unix_time_from_system() - time_start)
+
+	_mutex.unlock()
+
+
+
 func _stdio_thread_loop():
 	while stdio.is_open() and stdio.get_error() == OK:
 		var data: = char(stdio.get_8())
 
-		_index_mutex.lock()
+		_mutex.lock()
+		# print("stdio thread: ", OS.get_thread_caller_id())
+		
 		_index += 1
 		var index = _index
-		_index_mutex.unlock()
-
-		_new_text.call_deferred(data, index)
+		
+		_new_text(data, index)
+		
+		_mutex.unlock()
 
 
 func _stderr_thread_loop():
 	while stderr.is_open() and stderr.get_error() == OK:
 		var data: = char(stderr.get_8())
 
-		_index_mutex.lock()
+		_mutex.lock()
+		# print("stderr thread: ", OS.get_thread_caller_id())
+		
 		_index += 1
 		var index = _index
-		_index_mutex.unlock()
+		
+		_new_text(data, index)
+		
+		_mutex.unlock()
 
-		_new_text.call_deferred(data, index)
+
+var prev: int
+func _new_text(text: String, index: int) -> void:
+	# print("_new_text thread: ", OS.get_thread_caller_id())
+	
+	if index > 0 and index - prev != 1:
+		push_warning("Current index is %s and previous is %s" % [index, prev])
+
+	prev = index
+
+	# if we're about to add first element to this array, adjust the _offset
+	if _received_characters.is_empty():
+		_offset = index
+
+
+	_received_characters.insert(0, text)
+
+	if not is_processing():
+		set_process.call_deferred(true)
+
+	return
+
+	var array_index: = index - _offset
+
+	# for performance reasons, we'll add elements in reverse order
+
+	if array_index < 0:
+		# if array_index is -2 we'll need to resize the array to accept 2 new elements
+		
+		# new array size will be current substracted with array_index, which is negative in this if branch
+		# if _received_characters is 50 and array_index -2, 50 - (-2) = 50 + 2
+		var new_array_size = _received_characters.size() - array_index
+		_received_characters.resize(new_array_size)
+		
+		_received_characters.set(new_array_size-1, text)
+		
+		# update the offset since we received index lower than the current one
+		_offset = index
+
+
+	# index: 2
+	# _offset: 0
+	# array_index 2
+
+	_received_characters.set(-array_index, text)
+	
+	# ["n", "i", "M"]
+	# 
+
+	_received_characters.resize(array_index+1)
+
+	if not is_processing():
+		set_process.call_deferred(true)
+	
+
 
 ## A sequence of characters that must be removed from the terminal output
 ## before it's shown to the user. Used to remove internally used echo statement
@@ -228,43 +332,27 @@ class DisalowedSequence:
 		return text.replace(full_text, stripped)
 
 
-# Array of characters we received from streams
-var _received_characters: = PackedStringArray()
-var _offset: = 0
+var _processed_text: =  PackedStringArray()
+
 
 # normally the size of this array is between 0 and 2
-# for stargin and ending  command sequence
+# for starting and ending  command sequence
 var _disallowed_seq: Array[DisalowedSequence]
 
-func _new_text(text: String, index: int) -> void:
-	prints(index, text.c_escape())
+func _proces_received_text(text: String, _index_a: int) -> void:
+	# print("_proces_received_text thread: ", OS.get_thread_caller_id())
 
+	_processed_text.append(text)
+	
 	if not _output_label:
 		_create_command_output_container()
 
-	# if we're about to add first element to this array, adjust the _offset
-	if _received_characters.is_empty():
-		_offset = index
-	
-	var array_index: = index - _offset
-	print(array_index)
-
-	if array_index < 0:
-		_received_characters.insert(0, text)
-		_offset = index
-
-	else:
-		_received_characters.resize(array_index+1)
-		_received_characters.set(array_index, text)
-	
-
 	if _disallowed_seq.is_empty():
-		_output_label.text += "".join(_received_characters)
-		_received_characters.clear()
+		_output_label.text += "".join(_processed_text)
+		_processed_text.clear()
 		return
-
 	
-	var full_string: = "".join(_received_characters)
+	var full_string: = "".join(_processed_text)
 	
 	var add_char: = true
 	var was_stripped: = false
@@ -287,13 +375,12 @@ func _new_text(text: String, index: int) -> void:
 	
 	if add_char:
 		_output_label.text += full_string
-		_received_characters.clear()
+		_processed_text.clear()
 
 		# if this ds marks command end, start the new command output container
 		if was_stripped and ds.command_end:
 			_create_command_output_container()
 
-	
 
 
 func execute_command(input: String):
