@@ -4,29 +4,23 @@ extends PanelContainer
 @warning_ignore("unused_signal")
 signal execution_finished()
 
-@export var _send_button: BaseButton
-
 @onready var scroll_container = %ScrollContainer
 @onready var command_line_edit: LineEdit = %CommandLineEdit
-@onready var cwd_label: Label = %CwdLabel
 
 
 var stdio: FileAccess
 var stderr: FileAccess
+## PID of the running shell process
 var pid: int
 
 var _stdio_thread: Thread
 var _stderr_thread: Thread
-var _index: = -1
 var _mutex: = Mutex.new()
-var _process_text_timer: = Timer.new()
 
 # label where the output of the current running command should go to
 @onready var _output_container: Container = %OutputContainer
 var _output_label: Label
 
-
-const cwd_delimiter = "##cwd##"
 
 ## History of used commands
 var _history: = PackedStringArray()
@@ -37,11 +31,13 @@ var wrap_command: Callable
 var delimiter: String = "---$$%s$$---"
 var shell: String
 
-
+## Creates new terminal instance
 static func create() -> Terminal:
 	var terminal = preload("res://Scenes/Terminal.tscn").instantiate()
 	return terminal
 
+
+# region Wrap Commmand
 
 func _wrap_windows_command(user_input: String) -> String:
 	return "{cmd} & echo.&echo {delimiter}".format({
@@ -60,8 +56,10 @@ func _wrap_linux_command(user_input: String) -> String:
 		"delimiter": escaped_delimiter,
 	})
 
+# endregion
 
-
+## Creates output container for the currently running command.[br]
+## Contains label and check button to enable that output content.
 func _create_command_output_container() -> Container:
 	var command_output_container = HBoxContainer.new()
 
@@ -111,7 +109,7 @@ func _on_output_check_button_toggled(toggled_on: bool, label: Label, btn: CheckB
 		SingletonObject.DetachedNotes[detached_index].Enabled = toggled_on
 
 
-
+## Clean up the memory items if the terminal was deleted
 func _on_output_check_button_tree_exiting(btn: CheckButton):
 	if not btn.has_meta("memory_item"): return
 	
@@ -123,9 +121,6 @@ func _on_output_check_button_tree_exiting(btn: CheckButton):
 
 
 func _ready():
-
-	_process_text_timer.one_shot = true
-	add_child(_process_text_timer)
 	
 	# for auto scrolling the output container
 	var scrollbar: VScrollBar = scroll_container.get_v_scroll_bar()
@@ -164,6 +159,7 @@ func _ready():
 func _exit_tree() -> void:
 	_clean()
 
+## Stops the [class FileAccess] streams, threads and kills the shell process.
 func _clean() -> void:
 	if pid: OS.kill(pid)
 
@@ -178,18 +174,22 @@ func _clean() -> void:
 
 
 
+# mutex regulate access to next 3 variables
+
 # Array of characters we received from streams
 var _received_characters: = PackedStringArray()
+# index counter for the character order
+var _index: = -1
+# offset for the first element in _received_characters
 var _offset: = 0
+
+# maximum number of processed characters in _process function
 const MAX_PROCESS_PASS: = 200
 
 func _process(_delta: float) -> void:
 	_mutex.lock()
 
-	# print("_process thread: ", OS.get_thread_caller_id())
-
 	if _received_characters.is_empty():
-		# print("_received_characters is empty")
 		set_process(false)
 		_mutex.unlock()
 		return
@@ -241,57 +241,20 @@ func _stderr_thread_loop():
 
 var prev: int
 func _new_text(text: String, index: int) -> void:
-	# print("_new_text thread: ", OS.get_thread_caller_id())
-	
+	# checks if characters are coming in correct order,
 	if index > 0 and index - prev != 1:
 		push_warning("Current index is %s and previous is %s" % [index, prev])
-
 	prev = index
 
 	# if we're about to add first element to this array, adjust the _offset
 	if _received_characters.is_empty():
 		_offset = index
 
-
 	_received_characters.insert(0, text)
 
 	if not is_processing():
 		set_process.call_deferred(true)
 
-	return
-
-	var array_index: = index - _offset
-
-	# for performance reasons, we'll add elements in reverse order
-
-	if array_index < 0:
-		# if array_index is -2 we'll need to resize the array to accept 2 new elements
-		
-		# new array size will be current substracted with array_index, which is negative in this if branch
-		# if _received_characters is 50 and array_index -2, 50 - (-2) = 50 + 2
-		var new_array_size = _received_characters.size() - array_index
-		_received_characters.resize(new_array_size)
-		
-		_received_characters.set(new_array_size-1, text)
-		
-		# update the offset since we received index lower than the current one
-		_offset = index
-
-
-	# index: 2
-	# _offset: 0
-	# array_index 2
-
-	_received_characters.set(-array_index, text)
-	
-	# ["n", "i", "M"]
-	# 
-
-	_received_characters.resize(array_index+1)
-
-	if not is_processing():
-		set_process.call_deferred(true)
-	
 
 
 ## A sequence of characters that must be removed from the terminal output
@@ -299,13 +262,16 @@ func _new_text(text: String, index: int) -> void:
 class DisalowedSequence:
 	extends RefCounted
 
+	## Read only full string content where[br]
+	## [memeber before], [memeber content] and [memeber after] are added together.
 	var full: String:
 		get: return "%s%s%s" % [before, content, after]
 
 	var before: String
 	var after: String
 	var content: String
-	var block: = false
+
+	# Whether this delimiter marks the command output end.
 	var command_end: = false
 
 	func _init(content_: String, before_: String, after_: String, command_end_: = false) -> void:
@@ -318,7 +284,9 @@ class DisalowedSequence:
 	## inbetween [member before] and [member after].
 	func is_present(text: String) -> bool:
 		return text.contains("%s%s%s" % [before, content, after])
-		
+	
+	## Checks whether the provided unfinished [parameter text][br]
+	## could potentially match the disallowed sequence.
 	func is_potential(text: String) -> bool:
 		var full_text: = "%s%s%s" % [before, content, after]
 
@@ -333,6 +301,8 @@ class DisalowedSequence:
 		return text.replace(full_text, stripped)
 
 
+## Characters that were processed, but are not yet displayed because they[br]
+## possibly match the disallowed sequence 
 var _processed_text: =  PackedStringArray()
 
 
@@ -341,8 +311,6 @@ var _processed_text: =  PackedStringArray()
 var _disallowed_seq: Array[DisalowedSequence]
 
 func _proces_received_text(text: String, _index_a: int) -> void:
-	# print("_proces_received_text thread: ", OS.get_thread_caller_id())
-
 	_processed_text.append(text)
 	
 	if not _output_label:
@@ -396,6 +364,7 @@ func execute_command(input: String):
 
 		command_buffer = (wrap_command.call(input) + "\n").to_utf8_buffer()
 
+		# windows shell outputs the input command, where other shells don't do that
 		if OS.get_name() == "Windows":
 			_disallowed_seq.append(DisalowedSequence.new(wrap_command.call(""), input, ""))
 		
@@ -406,23 +375,6 @@ func execute_command(input: String):
 
 	stdio.store_buffer(command_buffer)
 
-
-func _is_new_shell_command() -> bool:
-	if _history.is_empty(): return true
-
-	var found_delimiter: = false
-
-	var lines: PackedStringArray = _output_label.get_meta("raw_output", _output_label.text).strip_edges().split("\n")
-	lines.reverse()
-	for line in lines:
-		
-		if line.contains(wrap_command.call(_history[-1])):
-			return found_delimiter
-
-		if line.strip_edges() == delimiter:
-			found_delimiter = true
-
-	return false
 
 func _on_button_pressed():
 	if not command_line_edit.text.is_empty():
@@ -435,7 +387,7 @@ func _on_command_line_edit_text_submitted(new_text):
 		execute_command(new_text)
 		command_line_edit.text = ""
 
-
+## iterate over used commands from command history 
 func _on_command_line_edit_gui_input(event: InputEvent):
 	if event.is_action_pressed("ui_up"):
 		if _history_idx < _history.size() - 1:
@@ -453,9 +405,3 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			await get_tree().process_frame
 			command_line_edit.caret_column = command_line_edit.text.length()
 
-
-func _scroll_down():
-	await scroll_container.get_v_scroll_bar().changed
-
-	# scroll to bottom
-	scroll_container.scroll_vertical = int(scroll_container.get_v_scroll_bar().max_value)
