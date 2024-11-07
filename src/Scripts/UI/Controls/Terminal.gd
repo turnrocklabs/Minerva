@@ -55,7 +55,7 @@ func _wrap_linux_command(user_input: String) -> String:
 		delimiter % ""
 	).replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`").replace("!", "\\!")
 
-	return "{cmd} & echo -e \"\n{delimiter}\"".format({
+	return "{cmd}; echo -e \"{delimiter}\"".format({
 		"cmd": user_input,
 		"delimiter": escaped_delimiter,
 	})
@@ -141,6 +141,7 @@ func _ready():
 
 		"Linux", "macOS", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
 			shell = OS.get_environment("SHELL")
+			wrap_command = _wrap_linux_command
 	
 	var process = OS.execute_with_pipe(shell, [])
 	if not process.is_empty():
@@ -359,9 +360,11 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 
 	var ds: DisalowedSequence = _disallowed_seq.front()
 
+	print("Checking \"%s\"..." % full_string)
+
 	# currently received characters are not potentially disallowed sequence just add them
 	if ds.is_potential(full_string):
-		# print(r"'%s' is potential for '%s'" % [full_string, ds.full])
+		print(r"'%s' is potential for '%s'" % [full_string, ds.full])
 		add_char = false
 
 		if ds.is_present(full_string):
@@ -393,7 +396,9 @@ func execute_command(input: String):
 
 		command_buffer = (wrap_command.call(input) + "\n").to_utf8_buffer()
 
-		_disallowed_seq.append(DisalowedSequence.new(wrap_command.call(""), input, ""))
+		if OS.get_name() == "Windows":
+			_disallowed_seq.append(DisalowedSequence.new(wrap_command.call(""), input, ""))
+		
 		_disallowed_seq.append(DisalowedSequence.new(delimiter % "", "\n", "", true))
 
 	else:
