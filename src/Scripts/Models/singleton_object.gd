@@ -2,7 +2,7 @@ extends Node
 
 #region global variables
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
-var supported_text_fortmats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
+var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var is_graph:bool = false
@@ -14,9 +14,9 @@ var last_saved_path: String
 
 var CloudType
 
-var is_Brush
+var is_brush
 var is_square
-var is_cryon
+var is_crayon
 var is_marker
 #endregion global variables
 
@@ -139,9 +139,9 @@ var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
 # var Provider: BaseProvider
 var Chats: ChatPane
-#Add undo to use it throught the singleton
+#Add undo to use it through the singleton
 var undo: undoMain = undoMain.new()
-#Add AtT to use it throught the singleton
+#Add AtT to use it through the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
 
@@ -238,7 +238,7 @@ func _ready():
 	
 	add_child(AtT)
 	add_child(undo)
-	#TODO add ui scale to the config file and retireve it on app load
+	#TODO add ui scale to the config file and retrieve it on app load
 	var err = config_file.load(config_file_name)
 	if err != OK:
 		return
@@ -443,7 +443,7 @@ func set_theme(themeID: int) -> void:
 
 #region Audio Settings
 @warning_ignore("unused_signal")
-signal mic_changed(micrphone)
+signal mic_changed(microphone)
 
 func get_microphone():
 	return config_file.get_value("AudioSettings", "SelectedMic",  "Default")

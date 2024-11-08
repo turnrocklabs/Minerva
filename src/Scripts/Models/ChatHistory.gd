@@ -22,8 +22,8 @@ var Temperature: float = 1:
 var TopP: float = 1:
 	set(value): SingletonObject.save_state(false); TopP = value
 
-var FrecuencyPenalty: float = 0:
-	set(value): SingletonObject.save_state(false); FrecuencyPenalty = value
+var FrequencyPenalty: float = 0:
+	set(value): SingletonObject.save_state(false); FrequencyPenalty = value
 
 var PresencePenalty: float = 0:
 	set(value): SingletonObject.save_state(false); PresencePenalty = value
@@ -40,7 +40,7 @@ static var SERIALIZER_FIELDS = [
 	"Provider", 
 	"Temperature", 
 	"TopP",
-	"FrecuencyPenalty",
+	"FrequencyPenalty",
 	"PresencePenalty"
 	]
 
@@ -63,9 +63,9 @@ func _init(_provider, optional_historyId = null):
 
 
 ## Creates prompt from this history using the set provider.
-## The `predivate` parameter is a `Callable` that returns an `Array` of 2 booleans.
-## First detemines if provided item should be added to the returned list,
-## while second detemines if the execution of the function should stop and the value returned immediately.
+## The `predicate` parameter is a `Callable` that returns an `Array` of 2 booleans.
+## First determines if provided item should be added to the returned list,
+## while second determines if the execution of the function should stop and the value returned immediately.
 func To_Prompt(predicate: Callable = Callable()) -> Array[Variant]:
 	var retVal:Array[Variant] = []
 
@@ -95,8 +95,8 @@ func Serialize() -> Dictionary:
 	var serialized_items: Array[Dictionary] = []
 
 	for chat_history_item: ChatHistoryItem in HistoryItemList:
-		var searialized_item = chat_history_item.Serialize()
-		serialized_items.append(searialized_item)
+		var serialized_item = chat_history_item.Serialize()
+		serialized_items.append(serialized_item)
 
 
 	var save_dict:Dictionary = {
@@ -106,7 +106,7 @@ func Serialize() -> Dictionary:
 		"HistoryItemList" : serialized_items,
 		"Temperature": Temperature,
 		"TopP": TopP,
-		"FrecuencyPenalty": FrecuencyPenalty,
+		"FrequencyPenalty": FrequencyPenalty,
 		"PresencePenalty": PresencePenalty
 	}
 	return save_dict
@@ -130,8 +130,8 @@ static func Deserialize(data: Dictionary) -> ChatHistory:
 		ch.Temperature = data.get("Temperature")
 	if data.get("TopP"):
 		ch.TopP = data.get("TopP")
-	if data.get("FrecuencyPenalty"):
-		ch.FrecuencyPenalty = data.get("FrecuencyPenalty")
+	if data.get("FrequencyPenalty"):
+		ch.FrequencyPenalty = data.get("FrequencyPenalty")
 	if data.get("PresencePenalty"):
 		ch.PresencePenalty = data.get("PresencePenalty")
 	
