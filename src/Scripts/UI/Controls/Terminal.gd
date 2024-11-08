@@ -155,6 +155,12 @@ func _ready():
 		print("Started the shell process with pid %s" % pid)
 
 
+# Auto focus the line input when control is visible again 
+func _on_visibility_changed() -> void:
+	if is_visible_in_tree():
+		command_line_edit.grab_focus()
+
+
 # colse the threads on node exit
 func _exit_tree() -> void:
 	_clean()
@@ -203,7 +209,7 @@ func _process(_delta: float) -> void:
 		_received_characters.remove_at(_received_characters.size()-1)
 
 
-	prints(min(MAX_PROCESS_PASS, _received_characters.size()), Time.get_unix_time_from_system() - time_start)
+	# prints(min(MAX_PROCESS_PASS, _received_characters.size()), Time.get_unix_time_from_system() - time_start)
 
 	_mutex.unlock()
 
@@ -328,11 +334,11 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 
 	var ds: DisalowedSequence = _disallowed_seq.front()
 
-	print("Checking \"%s\"..." % full_string)
+	# print("Checking \"%s\"..." % full_string)
 
 	# currently received characters are not potentially disallowed sequence just add them
 	if ds.is_potential(full_string):
-		print(r"'%s' is potential for '%s'" % [full_string, ds.full])
+		# print(r"'%s' is potential for '%s'" % [full_string, ds.full])
 		add_char = false
 
 		if ds.is_present(full_string):
