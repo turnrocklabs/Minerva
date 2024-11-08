@@ -2,19 +2,19 @@ class_name Editor
 extends Control
 ## Editor node is responsible for acting as a CodeEdit or TextureRect
 ## depending if it handles text or graphics file.
-## A file path can be associated with it to save the conent of the node to it
+## A file path can be associated with it to save the content of the node to it
 
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
 static var editor_scene = preload("res://Scenes/Editor.tscn")
+static var graphics_editor_scene = preload("res://Scenes/GraphicsEditor.tscn")
 
 signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
 enum DIALOG_RESULT { Save, Cancel, Close }
 
-@onready var code_edit: EditorCodeEdit = %CodeEdit
-@onready var texture_rect: TextureRect = %TextureRect
-@onready var graphics_editor: GraphicsEditor = %GraphicsEditor
+var code_edit: EditorCodeEdit
+var graphics_editor: GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
 #this are control noes for the Ctrl+F UI
@@ -39,7 +39,7 @@ enum Type {
 
 ## May contain the object that is being edited by this editor.[br]
 ## Eg. ChatImage, Note, etc..[br]
-## Allows switching to existing editor intead of
+## Allows switching to existing editor instead of
 ## opening a new one for same associated object.
 var associated_object
 var note_saved: bool = false
@@ -72,14 +72,30 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	if file_: 
 		editor.file = file_
 
+	# runs before onready so we need to use get_node
+	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
 	match type_:
 		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
-			editor.get_node("%CodeEdit").visible = true
-			editor.get_node("%CodeEdit").text_changed.connect(editor._on_editor_changed)
+			var new_code_edit = EditorCodeEdit.new()
+			new_code_edit.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_code_edit.caret_blink = true
+			new_code_edit.caret_multiple = false
+			new_code_edit.highlight_all_occurrences = true
+			new_code_edit.highlight_current_line = true
+			new_code_edit.gutters_draw_line_numbers = true
+			new_code_edit.gutters_zero_pad_line_numbers = true
+			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
+			new_code_edit.text_changed.connect(editor._on_editor_changed)
+			vbox_container.add_child(new_code_edit)
+			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
-			editor.get_node("%GraphicsEditor").visible = true
+			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
+			new_graphics_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			## TODO: Implement changed signal for graphics editor
-			# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
+			#new_graphics_editor.changed.connect(editor._on_editor_changed)
+			vbox_container.add_child(new_graphics_editor)
+			editor.graphics_editor = new_graphics_editor
 
 	return editor
 
@@ -93,7 +109,7 @@ func _ready():
 	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
-	for ext in SingletonObject.supported_text_fortmats:
+	for ext in SingletonObject.supported_text_formats:
 		ext = "*." +ext 
 		supported_text_exts.append(ext)
 	$FileDialog.filters = supported_text_exts
@@ -117,7 +133,7 @@ func _load_text_file(filename: String):
 		code_edit.saved_content = code_edit.text
 		code_edit.text_changed.emit() # the signal is not emitted for some reason
 	else:
-		code_edit.text = "Could not retrive file"
+		code_edit.text = "Could not retrieve file"
 	# %SaveButton.disabled = false
 
 
@@ -139,7 +155,7 @@ func override_save(save_function: Callable) -> void:
 
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
-## otherwise if shows save file dialog straing away
+## otherwise if shows save file dialog straight away
 func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_this_path: String = "") -> bool:
 	#var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 	if open_in_this_path != "":
@@ -164,7 +180,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
 		if type == Type.TEXT or type == Type.NOTE_EDITOR:
-			line_edit.text = tab_title + "." + SingletonObject.supported_text_fortmats[0]
+			line_edit.text = tab_title + "." + SingletonObject.supported_text_formats[0]
 		else:
 			line_edit.text = tab_title
 		$FileDialog.popup_centered(Vector2i(700, 500))
@@ -188,7 +204,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 	if _file_saved:
 		_file_saved = false
 		return true
-	# if user canceled the file select dialog, just return to the edtior
+	# if user canceled the file select dialog, just return to the editor
 	else:
 		return false
 
@@ -276,9 +292,8 @@ func save_file_to_disc(path: String):
 		SingletonObject.config_clear_section("LastSavedPath")
 		SingletonObject.save_to_config_file("LastSavedPath", "path", SingletonObject.last_saved_path)
 	tab_title = path.get_file()
-	var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
-	SingletonObject.editor_pane.Tabs.set_tab_title(indx, tab_title)
-
+	var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
+	SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
 
 #region bottom of the pane buttons
 
@@ -380,7 +395,7 @@ func update_search(new_text: String) -> void:
 	code_edit.set_search_text(new_text)
 	text_to_search = new_text
 	code_edit.highlight_all_occurrences = true
-	count_text_occurences()
+	count_text_occurrences()
 
 
 func _on_find_string_line_edit_text_changed(new_text: String) -> void:
@@ -394,22 +409,22 @@ func _on_find_string_line_edit_text_changed(new_text: String) -> void:
 	code_edit.add_selection_for_next_occurrence()
 
 
-func count_text_occurences() -> void:
+func count_text_occurrences() -> void:
 	results_number = 0
 	results_to_current = 0
 	
 	for line: String in code_edit.text.split("\n"):
 		results_number += line.countn(text_to_search,0,0)
 	
-	var for_indx: = 0
+	var for_idx: = 0
 	for i : String in code_edit.text.split("\n"):
-		if code_edit.get_caret_line() == for_indx:
+		if code_edit.get_caret_line() == for_idx:
 			results_to_current += i.countn(text_to_search, 0, code_edit.get_caret_column())
 			break
 		else:
 			results_to_current += i.countn(text_to_search, 0, )
 		
-		for_indx += 1
+		for_idx += 1
 	
 	update_matches_label(results_to_current, results_number)
 
@@ -439,7 +454,7 @@ func _on_previous_match_button_pressed() -> void:
 		#print("result from prev:" + str(result))
 		code_edit.select(result.y,result.x , result.y, result.x + text_to_search.length())
 		code_edit.adjust_viewport_to_caret()
-	count_text_occurences()
+	count_text_occurrences()
 
 
 func _on_next_match_button_pressed() -> void:
@@ -450,10 +465,10 @@ func _on_next_match_button_pressed() -> void:
 		code_edit.set_caret_line(result.y)
 		code_edit.select(result.y,result.x , result.y, result.x + text_to_search.length())
 		code_edit.adjust_viewport_to_caret()
-	count_text_occurences()
+	count_text_occurrences()
 
 #close button for the find string UI controls
-func _on_close_buton_pressed() -> void:
+func _on_close_button_pressed() -> void:
 	code_edit.highlight_all_occurrences = false
 	code_edit.set_search_text('')
 	find_string_container.hide()

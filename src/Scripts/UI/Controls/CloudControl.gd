@@ -6,17 +6,25 @@ const POINT_RADIUS: = 10
 
 enum Type {
 	ELLIPSE,
-	CLOUD,
+	SPEECH_BUBBLE,
 	RECTANGLE,
 }
 var type: = Type.ELLIPSE
 var circle_radius
+
+## Offset from the top left corner
+const MOVER_OFFSET = Vector2(30, 0)
+
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
+@onready var _mover: Control = %Mover
 @onready var _text_edit: TextEdit = %TextEdit
 @onready var _bezier_curve: BezierCurve = %BezierCurve
 
+## To move the whole speech bubble
+var _moving := false
 
+## To move points
 var _drag_start_position: Vector2
 var _dragging: = false:
 	set(value):
@@ -37,6 +45,7 @@ var editing: = true:
 		_text_edit.visible = editing
 		_lower_resizer.visible = editing
 		_upper_resizer.visible = editing
+		_mover.visible = editing
 		_bezier_curve.visible = editing
 
 
@@ -48,7 +57,7 @@ var _active_resizer: Control
 ## The type of the tail determines the way it's rendered on screen.
 var tail: Tail
 
-## Bounding rectange which contains the [member ellipse] that defines the speech bubble.
+## Bounding rectangle which contains the [member ellipse] that defines the speech bubble.
 var _bubble_rect: Rect2
 
 ## Polygon that defines the speech bubble
@@ -57,6 +66,7 @@ var bubble_poly: PackedVector2Array
 
 func set_bounding_rect(rect: Rect2) -> void:
 	_upper_resizer.position = rect.position
+	_mover.position = rect.position + MOVER_OFFSET
 	_lower_resizer.position = rect.end
 	queue_redraw()
 
@@ -67,14 +77,13 @@ func move(to: Vector2):
 
 	_upper_resizer.position = to + current_offset / 2
 	_lower_resizer.position = to - current_offset / 2
-	
-
+	_mover.position = _upper_resizer.position + MOVER_OFFSET
 
 # region Tails
 
 func _create_tail() -> PackedVector2Array:
 
-	# Take the resizer control positions to create the rectange that will contain the speech bubble
+	# Take the resizer control positions to create the rectangle that will contain the speech bubble
 	var rect_start: = _upper_resizer.position + _upper_resizer.pivot_offset
 	var rect_size: = _lower_resizer.position + _lower_resizer.pivot_offset - rect_start
 
@@ -82,8 +91,8 @@ func _create_tail() -> PackedVector2Array:
 
 	if type == Type.ELLIPSE:
 			return create_ellipse(_bubble_rect)
-	elif type == Type.CLOUD:
-			return cloud_bubble(_bubble_rect)
+	elif type == Type.SPEECH_BUBBLE:
+			return create_speech_bubble(_bubble_rect)
 	elif type == Type.RECTANGLE:
 			return PackedVector2Array([
 				_bubble_rect.position,
@@ -127,8 +136,8 @@ class Tail:
 	func draw_editing() -> void:
 		push_error("NotImplemented: method draw_editing of object %s is not implemented" % get_script().resource_path.get_file())
 
-	## Returns [memeber Tail.points] where Vector2's are untouched
-	## and integers are convertes to Vector2 in the context of the [member CloudControl.bubble_poly].
+	## Returns [member Tail.points] where Vector2's are untouched
+	## and integers are converted to Vector2 in the context of the [member CloudControl.bubble_poly].
 	func get_points_vector_array() -> PackedVector2Array:
 		var points_: = PackedVector2Array()
 		
@@ -255,8 +264,8 @@ class BubbleTail:
 # Request redraw in response to changes
 func _ready():
 	circle_radius = 50
-	if SingletonObject.CloudType == Type.CLOUD:
-		type = Type.CLOUD
+	if SingletonObject.CloudType == Type.SPEECH_BUBBLE:
+		type = Type.SPEECH_BUBBLE
 	elif SingletonObject.CloudType == Type.ELLIPSE:
 		type = Type.ELLIPSE
 	elif SingletonObject.CloudType == Type.RECTANGLE:
@@ -293,7 +302,7 @@ func _draw() -> void:
 	
 	# tail.draw()
 	
-	# Get the rectangle thats completly within the speech bubble ellipse
+	# Get the rectangle thats completely within the speech bubble ellipse
 	# and defines the area there text can be in
 	var text_rect: = get_rectangle_in_ellipse(_bubble_rect)
 	
@@ -348,7 +357,8 @@ func _draw_editing_tail() -> void:
 func _get_drag_data(at_position: Vector2) -> Variant:
 	if (
 		_upper_resizer.get_rect().has_point(at_position) or
-		_lower_resizer.get_rect().has_point(at_position)
+		_lower_resizer.get_rect().has_point(at_position) or
+		_mover.get_rect().has_point(at_position)
 	): return null
 
 	# Check if we pressed on existing tail point
@@ -379,6 +389,7 @@ func _gui_input(event: InputEvent) -> void:
 	if _dragging and event is InputEventMouseMotion and event.pressure:
 		_lower_resizer.position += event.relative
 		_upper_resizer.position += event.relative
+		_mover.position += event.relative
 	else:
 		_dragging = false
 
@@ -393,6 +404,7 @@ func _gui_input(event: InputEvent) -> void:
 		else:
 			_active_resizer = null
 			_drag_point_idx = -1
+			_moving = false
 
 			# if the mouse is released, check if we are on same place or we dragged the mouse
 
@@ -400,7 +412,8 @@ func _gui_input(event: InputEvent) -> void:
 				# if the mouse is pressed outside of the resizers
 				if not (
 					_upper_resizer.get_rect().has_point(event.position) or
-					_lower_resizer.get_rect().has_point(event.position)
+					_lower_resizer.get_rect().has_point(event.position) or
+					_mover.get_rect().has_point(event.position)
 				):
 					
 					# if we didn't click on any points, add a new one
@@ -443,9 +456,7 @@ func _gui_input(event: InputEvent) -> void:
 					estimated_position.y = _lower_resizer.position.y
 			
 			_active_resizer.position = estimated_position
-			
-
-			
+			_mover.position = _upper_resizer.position + MOVER_OFFSET
 			
 		# if we're moving the mouse, pressing the mouse button and dragging the point
 		# update that points position.
@@ -461,7 +472,14 @@ func _gui_input(event: InputEvent) -> void:
 				tail.points[_drag_point_idx] = idx
 			else:
 				tail.points[_drag_point_idx] = event.position
-			
+
+		# moving the whole speech bubble
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _moving:
+			set_bounding_rect(Rect2(
+				_upper_resizer.position + event.relative,
+				_lower_resizer.position - _upper_resizer.position
+			))
+
 		queue_redraw()
 		accept_event()
 
@@ -485,7 +503,7 @@ func _on_upper_left_resizer_button_down() -> void:
 
 # region Speech Bubble
 
-func cloud_bubble(rect: Rect2) -> PackedVector2Array:
+func create_speech_bubble(rect: Rect2) -> PackedVector2Array:
 	var ellipse_poly: = create_ellipse(rect.grow(-circle_radius))
 
 	var cloud: = ellipse_poly.duplicate()
@@ -537,18 +555,18 @@ func create_ellipse(rect: Rect2, num_segments: int = 360) -> PackedVector2Array:
 
 	return ellipse_points
 
-## Returns the shrinken [parameter ellipse] given it's [paramenter center] and a [parameter factor].[br]
+## Returns the shrunken [parameter ellipse] given it's [parameter center] and a [parameter factor].[br]
 func shrink_ellipse(ellipse: PackedVector2Array, center: Vector2, amount: float) -> PackedVector2Array:
-	var shrinked := PackedVector2Array()
-	shrinked.resize(ellipse.size())
+	var shrunk := PackedVector2Array()
+	shrunk.resize(ellipse.size())
 	for i in ellipse.size():
 		var to_center: = center - ellipse[i]
 		var dist_to_center: = to_center.length()
 		# Don't move more than distance to center
 		var safe_amount: = minf(amount, dist_to_center)
 		var dir: = to_center.normalized()
-		shrinked[i] = ellipse[i] + (dir * safe_amount)
-	return shrinked
+		shrunk[i] = ellipse[i] + (dir * safe_amount)
+	return shrunk
 
 func create_circle(center: Vector2, radius: float, resolution: int = 32) -> PackedVector2Array:
 	var circle: = PackedVector2Array()
@@ -581,8 +599,8 @@ func get_bezier_curve(p1: Vector2, p2: Vector2, control_points: Array, steps: in
 	return bezier_curve
 
 
-## Gets biggest possible rectangle thats completly contained withing the ellipse.[br]
-## Ellipse is defined by the smallest rectange that containes it. 
+## Gets biggest possible rectangle thats completely contained withing the ellipse.[br]
+## Ellipse is defined by the smallest rectangle that contains it. 
 func get_rectangle_in_ellipse(rect: Rect2) -> Rect2:
 	# Calculate the center of the ellipse
 	var center = rect.position + rect.size / 2
@@ -603,7 +621,7 @@ func get_rectangle_in_ellipse(rect: Rect2) -> Rect2:
 
 
 ## @experimental
-## Simmilar to [method get_rectangle_in_ellipse], but retruned array of [parameter num_slices] rectangles,
+## Similar to [method get_rectangle_in_ellipse], but returned array of [parameter num_slices] rectangles,
 ## that tries to fill the ellipse as much as possible.[br]
 ## Calling this with [parameter num_slices] set to 1 should yield same results as [method get_rectangle_in_ellipse].
 func get_rectangles_in_ellipse(rect: Rect2, num_slices: int = 4) -> Array:
@@ -635,7 +653,7 @@ func get_rectangles_in_ellipse(rect: Rect2, num_slices: int = 4) -> Array:
 	
 	return rectangles
 
-## Given the [parameter mouse_position] returnes the closest point to it on the ellipse.
+## Given the [parameter mouse_position] returns the closest point to it on the ellipse.
 func get_closest_ellipse_line(mouse_position: Vector2) -> int:
 	if bubble_poly.is_empty(): return -1
 
@@ -680,9 +698,9 @@ func get_closest_polyline_position(polygon: PackedVector2Array, pos: Vector2) ->
 		var a = polygon[i]
 		var b = polygon[i+1 if i < polygon.size()-1 else 0]
 
-		var cpts: = Geometry2D.get_closest_point_to_segment(pos, a, b)
-		if pos.distance_squared_to(cpts) < pos.distance_squared_to(closest):
-			closest = cpts
+		var points: = Geometry2D.get_closest_point_to_segment(pos, a, b)
+		if pos.distance_squared_to(points) < pos.distance_squared_to(closest):
+			closest = points
 	
 	return closest
 
@@ -730,14 +748,19 @@ func toggle_editing_state() -> void:
 
 func set_circle_radius(new_radius: float) -> void:
 	circle_radius = new_radius
-	cloud_bubble(_bubble_rect) # Recalculate the cloud shape
+	create_speech_bubble(_bubble_rect) # Recalculate the cloud shape
 	queue_redraw() # Tell Godot to redraw the CloudControl 
 	
 	
-func CancleEditing():
+func CancelEditing():
 	editing = not editing
 	queue_redraw()
 
 func ApplyEditing():
 	editing = false
 	queue_redraw()
+
+
+func _on_mover_button_down() -> void:
+	_moving = true
+	get_viewport().set_input_as_handled()

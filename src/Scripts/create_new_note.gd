@@ -15,7 +15,7 @@ func _ready() -> void:
 	#so that only only one can be pressed at the time
 	text_note_check_box.button_group.pressed.connect(change_note_type)
 	
-	self.files_dropped.connect(_on_image_files_dropped)# sinnal for drop image file on image note
+	self.files_dropped.connect(_on_image_files_dropped)# signal for drop image file on image note
 	
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
 		%DropImageLabel.text = "Drop or Paste \nImage File Here"
@@ -27,7 +27,7 @@ func _ready() -> void:
 	var hbox: HBoxContainer = %ImageNoteFileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
 
-#region Window signal hanldler functions
+#region Window signal handler functions
 #this get called when the CREATE NOTE WINDOW is about to pop up
 func _on_about_to_popup() -> void:
 	%NoteHead.grab_focus()
@@ -47,7 +47,7 @@ func _on_close_requested() -> void:
 	%ImageDropPanel.visible = true
 	%CreateNewNote.exclusive = false
 
-#endregion Window signal hanldler functions
+#endregion Window signal handler functions
 
 #region voice buttons signal handler functions
 
@@ -250,7 +250,7 @@ func get_image_from_clipboard():
 
 #region Audio Note
 
-# gets called when redord button is pressed
+# gets called when record button is pressed
 func _on_record_audio_button_pressed() -> void:
 	if effect.is_recording_active():
 		audio_recording = effect.get_recording() # type -> AudioStreamWAV
