@@ -61,8 +61,8 @@ func _messages_list_changed():
 	if not last_message: return
 	
 	# if last_message is user message, enable edit for it
-	if last_message.history_item.Role == ChatHistoryItem.ChatRole.USER:
-		last_message.editable = true
+	# if last_message.history_item.Role == ChatHistoryItem.ChatRole.USER:
+	last_message.editable = true
 
 
 func scroll_to_bottom():
