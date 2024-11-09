@@ -96,7 +96,15 @@ func render_items():
 		note_control.memory_item = item
 
 		# When the note control is deleted, delete the memory item, so it doesn't get re-rendered next time
-		note_control.note_deleted.connect(self.MainTabContainer.delete_note.bind(item))
+		note_control.deleted.connect(self.MainTabContainer.delete_note.bind(item))
+		
+		note_control.changed.connect(SingletonObject.note_changed.emit.bind(note_control))
+
+		# can't use bind because of the order of the parameters
+		note_control.toggled.connect(
+			func(on: bool):
+				SingletonObject.note_toggled.emit(note_control, on)
+		)
 
 func _memory_thread_find(thread_id: String) -> MemoryThread:
 	return SingletonObject.ThreadList.filter(

@@ -7,7 +7,7 @@ extends RefCounted ## so I get memory management and signals.
 signal toggled(on: bool)
 
 
-static var SERIALIZER_FIELDS = ["Enabled", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order"]
+static var SERIALIZER_FIELDS = ["Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order"]
 
 var Enabled: bool = true:
 	set(value):
@@ -16,9 +16,12 @@ var Enabled: bool = true:
 		toggled.emit(value)
 		SingletonObject.save_state(false)
 
+## File from which this items content was loaded from
+var File: String:
+	set(value): SingletonObject.save_state(false); File = value
+
 ## a sha-256 hash computed whenever the item is updated
-var Sha_256: String = "":
-	set(value): SingletonObject.save_state(false); Sha_256 = value
+var Sha_256: String
 
 ## If memory item is locked, changing the `Enabled` property is not possible
 var Locked: bool = false:
@@ -95,6 +98,7 @@ func Serialize() -> Dictionary:
 
 	var save_dict:Dictionary = {
 		"Enabled": Enabled,
+		"File": File,
 		"Locked": Locked,
 		"Title": Title,
 		"Content": Content,
@@ -124,12 +128,20 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			img.load_png_from_buffer(Marshalls.base64_to_raw(value))
 			value = img
 			
-		if prop == "Audio":
+		elif prop == "Audio":
 			if not value: continue # if no data, just skip
 
 			var audio: AudioStream = Marshalls.base64_to_variant(value, true)
 
 			value = audio
+		
+		elif prop == "File":
+			if not value: continue # if no data, just skip
+			
+			# if file doesn't exist anymore, set it to null
+			if not FileAccess.file_exists(value):
+				value = null
+
 		
 		mi.set(prop, value)
 	
