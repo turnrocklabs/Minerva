@@ -55,7 +55,8 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 		editor_inst.tab_title = editor_ser.get("name")
 		
 		if editor_inst.type == Editor.Type.TEXT:
-			editor_inst.get_node("%CodeEdit").text = editor_ser.get("content")
+			
+			editor_inst.code_edit.text = editor_ser.get("content")
 		elif editor_inst.type == Editor.Type.GRAPHICS:
 			var graphics_editor: GraphicsEditor = editor_inst.get_node("%GraphicsEditor")
 			var counter = 1

@@ -107,14 +107,21 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_code_edit.gutters_zero_pad_line_numbers = true
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
+			new_code_edit.name = "CodeEdit"
 			vbox_container.add_child(new_code_edit)
+			vbox_container.move_child(new_code_edit,0)
 			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
 			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
 			new_graphics_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
-			## TODO: Implement changed signal for graphics editor
-			# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
+			#new_graphics_editor.changed.connect(editor._on_editor_changed)
+			vbox_container.add_child(new_graphics_editor)
+			vbox_container.move_child(new_graphics_editor, 0)
+			editor.graphics_editor = new_graphics_editor
+			## TODO: Implement changed signal for graphics 
+			
+		# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
 		Editor.Type.VIDEO:
 			var new_video_player: VideoPlayer = video_player_scene.instantiate()
 			new_video_player.video_path = file_
@@ -123,6 +130,8 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.get_node("%FindStringContainer").queue_free()
 			
 	
+			
+
 	return editor
 
 func toggle(on: bool) -> void:
