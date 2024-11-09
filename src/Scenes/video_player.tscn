@@ -35,10 +35,8 @@ unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 1
 stream = ExtResource("1_svtgl")
-volume_db = -80.0
 autoplay = true
 expand = true
-loop = true
 bus = &"VideoBus"
 
 [node name="SliderTimer" type="Timer" parent="VBoxContainer/AspectRatioContainer/VideoStreamPlayer"]

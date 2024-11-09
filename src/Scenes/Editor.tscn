@@ -1,6 +1,7 @@
-[gd_scene load_steps=11 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=12 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
+[ext_resource type="PackedScene" uid="uid://d2o42sf0wonia" path="res://Scenes/video_player.tscn" id="2_4td5v"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/EditorCodeEdit.gd" id="2_g3oqj"]
 [ext_resource type="PackedScene" uid="uid://1snj5jsurqrt" path="res://Scenes/GraphicsEditor.tscn" id="3_rd38o"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
@@ -28,6 +29,11 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
+
+[node name="VideoPlayer" parent="VBoxContainer" instance=ExtResource("2_4td5v")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
 
 [node name="GraphicsEditor" parent="VBoxContainer" instance=ExtResource("3_rd38o")]
 unique_name_in_owner = true

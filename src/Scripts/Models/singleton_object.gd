@@ -337,7 +337,7 @@ func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MO
 	# fallback to first provider shown in the chat dropdown
 	return Chats._provider_option_button.get_item_id(0) as API_MODEL_PROVIDERS
 
-#@onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
+@onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 
 #endregion API Consumer
 

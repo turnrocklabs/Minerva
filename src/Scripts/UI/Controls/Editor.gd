@@ -7,7 +7,7 @@ extends Control
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
 static var editor_scene = preload("res://Scenes/Editor.tscn")
-
+static var video_player_scene = preload("res://Scenes/video_player.tscn")
 signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
 enum DIALOG_RESULT { Save, Cancel, Close }
@@ -16,6 +16,7 @@ enum DIALOG_RESULT { Save, Cancel, Close }
 @onready var texture_rect: TextureRect = %TextureRect
 @onready var graphics_editor: GraphicsEditor = %GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
+@onready var video_player: VideoPlayer = %VideoPlayer
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -84,14 +85,11 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 		Editor.Type.VIDEO:
 			editor.get_node("%ButtonsHBoxContainer").queue_free()#.visible = false
 			editor.get_node("%GraphicsEditor").queue_free()
+			editor.get_node("%FindStringContainer").queue_free()
 			editor.get_node("%CodeEdit").queue_free()
-			var video_player = load("res://Scenes/video_player.tscn").instantiate()
-			editor.add_child(video_player)
-			video_player.video_path = file_
+			editor.get_node("%VideoPlayer").visible = true
 			
-			
-			
-
+	
 	return editor
 
 func _ready():
@@ -100,6 +98,7 @@ func _ready():
 		match type:
 			Type.TEXT: _load_text_file(file)
 			Type.GRAPHICS: _load_graphics_file(file)
+			Type.VIDEO: video_player.video_path = file
 	
 	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS
 	
