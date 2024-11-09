@@ -1,6 +1,7 @@
 extends Control
 class_name VideoPlayer
 
+#region onready variables
 @onready var video_stream_player: VideoStreamPlayer = %VideoStreamPlayer
 @onready var timer: Timer = %SliderTimer
 @onready var play_button: Button = %PlayButton
@@ -11,6 +12,7 @@ class_name VideoPlayer
 @onready var volume_button: Button = %VolumeButton
 @onready var volume_h_slider: HSlider = %VolumeHSlider
 @onready var volume_rect: ColorRect = %VolumeRect
+#endregion onready variables
 
 
 var pause_icon: = preload("res://assets/icons/pause_icons/pause-24.png")
@@ -18,18 +20,26 @@ var play_icon: = preload("res://assets/icons/play_icons/play-24.png")
 
 var was_playing: bool = false # this is for checking if the video was playing when the progress var is dragged
 
+
+
 var video_path: String:
 	set(value):
 		video_path = value
 		var stream: = FFmpegVideoStream.new()
 		stream.file = value
+		
 		if video_stream_player:
 			video_stream_player.stream = stream
+			h_slider.max_value = video_stream_player.get_stream_length()
+			h_slider.value = 0
+			video_stream_player.play()
 
 
 func _ready() -> void:
-	h_slider.max_value = video_stream_player.get_stream_length()
-	h_slider.value = 0
+	if video_stream_player:
+		h_slider.max_value = video_stream_player.get_stream_length()
+		h_slider.value = 0
+		video_stream_player.play()
 
 
 func update_time_label() -> void:
@@ -44,7 +54,13 @@ func format_time_label(time: float) -> String:
 # this method is connected to the pressed signal of the play button
 func toggle_pause() -> void:
 	timer.paused = false
-	video_stream_player.paused = !video_stream_player.paused
+	if !video_stream_player.is_playing():
+		video_stream_player.stream_position = 0
+		video_stream_player.play()
+		video_stream_player.paused
+	else:
+		video_stream_player.paused = !video_stream_player.paused
+	
 	h_slider.value = video_stream_player.stream_position
 	if !video_stream_player.paused:
 		play_button.icon = pause_icon
@@ -100,8 +116,8 @@ func make_controls_invisible() -> void:
 	await tween.finished
 	volume_rect.visible = false
 	color_rect.visible = false
-	if visible and self.get_rect().has_point(get_local_mouse_position()) and is_visible_in_tree():
-		DisplayServer.mouse_set_mode(DisplayServer.MOUSE_MODE_HIDDEN)
+	#if visible and self.get_rect().has_point(get_local_mouse_position()) and is_visible_in_tree():
+		#DisplayServer.mouse_set_mode(DisplayServer.MOUSE_MODE_HIDDEN)
 
 
 func make_controls_visible() -> void:

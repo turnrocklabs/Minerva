@@ -315,6 +315,7 @@ func _on_edit_button_pressed():
 		editor = ep.add(Editor.Type.GRAPHICS, null, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	elif memory_item.Type == SingletonObject.note_type.VIDEO:
+		print("this is running")
 		editor = ep.add(Editor.Type.VIDEO, memory_item.FilePath, null, memory_item.Title)
 	else:
 		editor = ep.add(Editor.Type.NOTE_EDITOR, null, memory_item.Title)
