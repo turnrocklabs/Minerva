@@ -73,7 +73,8 @@ func handle_input_event(event: InputEvent) -> void:
 
 ## Checks if given pixel is within the image and draws it using `set_pixelv`
 func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int):
-
+	pos *= editor.active_layer.image_zoom_factor
+	print("pos: ", pos)
 	for pixel in get_circle_pixels(pos, point_size):
 		if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
 			target_image.set_pixelv(pixel, color) 

@@ -11,6 +11,7 @@ signal active_tool_changed(tool_: BaseTool)
 # tool options containers
 @onready var _brush_options_container: Control = %BrushOptions
 @onready var _eraser_options_container: Control = %EraserOptions
+@onready var _speech_bubble_options: Control = %SpeechBubbleOptions
 
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var pane_tool: PaneTool = %PaneTool
@@ -22,6 +23,7 @@ signal active_tool_changed(tool_: BaseTool)
 @onready var tool_options_mapping: = {
 	drawing_tool: _brush_options_container,
 	eraser_tool: _eraser_options_container,
+	speech_bubble_tool: _speech_bubble_options,
 }
 
 var canvas_size: = Vector2i(1000, 1000)

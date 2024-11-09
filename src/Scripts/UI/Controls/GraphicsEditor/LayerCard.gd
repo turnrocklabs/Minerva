@@ -43,7 +43,32 @@ func _draw() -> void:
 		await ready
 
 	label.text = layer.name
-	texture_rect.texture = ImageTexture.create_from_image(layer.image)
+	match layer.type:
+		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING:
+			texture_rect.texture = ImageTexture.create_from_image(layer.image)
+		LayerV2.Type.SPEECH_BUBBLE:
+			texture_rect.texture = await get_texture(layer.speech_bubble)
+
+
+static func get_texture(control: Control) -> ImageTexture:
+	var viewport = SubViewport.new()
+	viewport.transparent_bg = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	viewport.size = control.size
+	
+	Engine.get_main_loop().root.add_child(viewport)
+	viewport.add_child(control.duplicate())
+	
+	await Engine.get_main_loop().process_frame
+	await Engine.get_main_loop().process_frame
+	
+	var image = viewport.get_texture().get_image()
+	# image.save_jpg("test.jpg")
+	var texture = ImageTexture.create_from_image(image)
+	
+	viewport.queue_free()
+	
+	return texture
 
 
 func _create_drag_preview(pos: Vector2) -> LayerCard:
