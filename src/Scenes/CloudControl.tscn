@@ -1,9 +1,10 @@
-[gd_scene load_steps=5 format=3 uid="uid://dmb0k4rdw2p8y"]
+[gd_scene load_steps=6 format=3 uid="uid://dmb0k4rdw2p8y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/CloudControl.gd" id="1_ha15r"]
 [ext_resource type="Texture2D" uid="uid://bwn1v2wcbaegc" path="res://assets/icons/resizer_se.svg" id="2_jl5my"]
 [ext_resource type="Texture2D" uid="uid://bfbaum4y6o8qn" path="res://assets/icons/resizer_nw.svg" id="3_xkjvb"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/BezierCurve.gd" id="4_63mbq"]
+[ext_resource type="Texture2D" uid="uid://b25k6drncexmw" path="res://assets/icons/hand_mover.png" id="5_al3dx"]
 
 [node name="CloudControl" type="ColorRect"]
 anchors_preset = 15
@@ -38,7 +39,7 @@ offset_bottom = 637.0
 pivot_offset = Vector2(17, 17)
 focus_mode = 0
 mouse_filter = 1
-mouse_default_cursor_shape = 13
+mouse_default_cursor_shape = 12
 texture_normal = ExtResource("2_jl5my")
 stretch_mode = 5
 
@@ -52,8 +53,22 @@ offset_bottom = 454.0
 pivot_offset = Vector2(17, 17)
 focus_mode = 0
 mouse_filter = 1
-mouse_default_cursor_shape = 13
+mouse_default_cursor_shape = 12
 texture_normal = ExtResource("3_xkjvb")
+stretch_mode = 5
+
+[node name="Mover" type="TextureButton" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 772.0
+offset_top = 419.0
+offset_right = 807.0
+offset_bottom = 454.0
+pivot_offset = Vector2(17, 17)
+focus_mode = 0
+mouse_filter = 1
+mouse_default_cursor_shape = 6
+texture_normal = ExtResource("5_al3dx")
 stretch_mode = 5
 
 [node name="TextEdit" type="TextEdit" parent="."]
@@ -67,3 +82,4 @@ wrap_mode = 1
 [connection signal="visibility_changed" from="." to="." method="_on_visibility_changed"]
 [connection signal="button_down" from="LowerBottomResizer" to="." method="_on_lower_bottom_resizer_button_down"]
 [connection signal="button_down" from="UpperLeftResizer" to="." method="_on_upper_left_resizer_button_down"]
+[connection signal="button_down" from="Mover" to="." method="_on_mover_button_down"]

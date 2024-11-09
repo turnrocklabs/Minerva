@@ -5,7 +5,7 @@ extends BaseProvider
 # this params are only used in chatGPT
 var temperature: float = 1
 var topP: float = 1
-var frecuencyPenalty: float = 0
+var FrequencyPenalty: float = 0
 var presencePenalty: float = 0
 
 # Change the `model_name` and `short_name` in _ready function
@@ -36,11 +36,11 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 			if "error" in data:
 				bot_response.error = data["error"]["message"]
 			else:
-				bot_response.error = "Unexpected error occured while generating the response"
+				bot_response.error = "Unexpected error occurred while generating the response"
 
 	else:
 		push_error("Invalid result. Response: %s", response.response_code)
-		bot_response.error = "Unexpected error occured with HTTP Client. Code %s" % response.http_request_result
+		bot_response.error = "Unexpected error occurred with HTTP Client. Code %s" % response.http_request_result
 		return
 
 	return bot_response
