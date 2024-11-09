@@ -51,7 +51,10 @@ func _wrap_linux_command(user_input: String) -> String:
 		delimiter % ""
 	).replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`").replace("!", "\\!")
 
-	return "{cmd}; echo -e \"{delimiter}\"".format({
+	var color_code_regex = r"s/\x1B\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGK]//g"
+
+	return "{cmd} | sed -r \"{regex}\"; echo -e \"{delimiter}\"".format({
+		"regex": color_code_regex,
 		"cmd": user_input,
 		"delimiter": escaped_delimiter,
 	})
