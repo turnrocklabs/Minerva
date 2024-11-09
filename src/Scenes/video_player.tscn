@@ -13,6 +13,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+size_flags_vertical = 3
 focus_mode = 1
 script = ExtResource("1_hk33a")
 
@@ -156,6 +157,8 @@ autostart = true
 [connection signal="mouse_entered" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HBoxContainer/VolumeButton/VolumeRect" to="." method="_on_color_rect_mouse_entered"]
 [connection signal="mouse_exited" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HBoxContainer/VolumeButton/VolumeRect" to="." method="_on_color_rect_mouse_exited"]
 [connection signal="drag_ended" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_volume_h_slider_drag_ended"]
+[connection signal="mouse_entered" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_color_rect_mouse_entered"]
+[connection signal="mouse_exited" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_color_rect_mouse_exited"]
 [connection signal="drag_ended" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_ended"]
 [connection signal="drag_started" from="VBoxContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_started"]
 [connection signal="timeout" from="VBoxContainer/ColorRect/ControlsTimer" to="." method="_on_controls_timer_timeout"]

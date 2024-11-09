@@ -98,9 +98,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
 		Editor.Type.VIDEO:
 			editor.get_node("%ButtonsHBoxContainer").queue_free()#.visible = false
-			editor.get_node("%GraphicsEditor").queue_free()
 			editor.get_node("%FindStringContainer").queue_free()
-			editor.get_node("%CodeEdit").queue_free()
 			editor.get_node("%VideoPlayer").visible = true
 			
 	
