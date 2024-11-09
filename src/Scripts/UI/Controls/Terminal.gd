@@ -1,6 +1,8 @@
 class_name Terminal
 extends PanelContainer
 
+const MAX_COMMAND_OUTPUT_LENGTH: = 2048
+
 @warning_ignore("unused_signal")
 signal execution_finished()
 
@@ -160,6 +162,8 @@ func _ready():
 
 # Auto focus the line input when control is visible again 
 func _on_visibility_changed() -> void:
+	if not is_node_ready(): await ready
+	
 	if is_visible_in_tree():
 		command_line_edit.grab_focus()
 
@@ -203,7 +207,7 @@ func _process(_delta: float) -> void:
 		_mutex.unlock()
 		return
 	
-	var time_start = Time.get_unix_time_from_system()
+	# var time_start = Time.get_unix_time_from_system()
 
 	for i in min(MAX_PROCESS_PASS, _received_characters.size()):
 		_proces_received_text(_received_characters[-1], _offset)
@@ -326,7 +330,7 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 		_create_command_output_container()
 
 	if _disallowed_seq.is_empty():
-		_output_label.text += "".join(_processed_text)
+		_append_output_text("".join(_processed_text))
 		_processed_text.clear()
 		return
 	
@@ -354,14 +358,33 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 			_disallowed_seq.erase(ds)
 	
 	if add_char:
-		_output_label.text += full_string
+		_append_output_text(full_string)
+		
 		_processed_text.clear()
 
 		# if this ds marks command end, start the new command output container
 		if was_stripped and ds.command_end:
 			_create_command_output_container()
+			_toggle_progress_bar(false)
 
 
+func _append_output_text(text: String) -> void:
+	var remaining_space: = MAX_COMMAND_OUTPUT_LENGTH - _output_label.text.length()
+	
+	if remaining_space < text.length():
+		text = text.left(remaining_space)
+
+		# Add the notice that the text was truncated, clear the disallowed sequence array,
+		# start the new output container and set the meta so we dont do it again
+		if not _output_label.get_meta("truncated", false):
+			text += "\n(output truncated)"
+			_output_label.set_meta("truncated", true)
+			_output_label.text += text
+			# _create_command_output_container()
+			# _disallowed_seq.clear()
+		return
+
+	_output_label.text += text
 
 func execute_command(input: String):
 	_history.append(input)
@@ -383,6 +406,15 @@ func execute_command(input: String):
 		command_buffer = (input + "\n").to_utf8_buffer()
 
 	stdio.store_buffer(command_buffer)
+
+	_toggle_progress_bar()
+
+
+func _toggle_progress_bar(on: bool = true) -> void:
+	%TextureProgressBar.value = 100 if on else 0
+
+	var tween: Tween = get_tree().create_tween().set_loops()
+	tween.tween_property(%TextureProgressBar, "radial_initial_angle", 360.0, 1.5).as_relative()
 
 
 func _on_button_pressed():
