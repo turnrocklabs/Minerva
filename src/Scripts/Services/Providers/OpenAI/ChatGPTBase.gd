@@ -166,7 +166,7 @@ func to_bot_response(data: Variant) -> BotResponse:
 
 
 func estimate_tokens(input) -> int:
-	return roundi(input.get_slice_count(" ") * 1.5)
+	return roundi(input.get_slice_count(" ") * token_cost)
 
 
 func estimate_tokens_from_prompt(input: Array[Variant]):
@@ -174,9 +174,17 @@ func estimate_tokens_from_prompt(input: Array[Variant]):
 
 	# get all user messages
 	for msg: Dictionary in input:
-		# if msg["role"] != "user": continue
-		all_messages.append(msg["content"])
+		var content = msg.get("content")
+
+		if content is String:
+			all_messages.append(msg["content"])
+		
+		elif content is Array:
+			for part: Dictionary in content:
+				if part.get("type") == "text":
+					all_messages.append(part.get("text"))
 	
+
 	return estimate_tokens("".join(all_messages))
 
 

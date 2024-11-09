@@ -1,7 +1,11 @@
 class_name Note
 extends VBoxContainer
 
-signal note_deleted()
+signal deleted()
+signal toggled(on: bool)
+
+## This signal is emitted each time the underlying memory item has been updated.
+signal changed()
 
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
@@ -41,6 +45,8 @@ var memory_item: MemoryItem:
 			if editor.associated_object:
 				#if editor.associated_object.memory_item == memory_item:
 				associate_editor(editor)
+		
+		changed.emit()
 
 #region New notes methods
 
@@ -119,7 +125,7 @@ func _exit_tree() -> void:
 	if has_meta("associated_editor"):
 		var editor: Editor = get_meta("associated_editor")
 		if is_instance_valid(editor):
-			editor.queue_free()
+			editor.associated_object = null
 
 
 #method for changing the dots texture when the main theme changes
@@ -250,6 +256,7 @@ func _drop_data(_at_position: Vector2, data):
 func _on_check_button_toggled(toggled_on: bool) -> void:
 	if memory_item:
 		memory_item.Enabled = toggled_on
+	toggled.emit(toggled_on)
 
 
 func _on_remove_button_pressed():
@@ -259,7 +266,7 @@ func _on_remove_button_pressed():
 	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
 	tween.tween_callback(queue_free)
 
-	note_deleted.emit()
+	deleted.emit()
 
 ## Connects this note and the given [parameter editor] and
 ## reflects note title changes into the tab title.
@@ -298,7 +305,7 @@ func _on_edit_button_pressed():
 		editor = ep.add(Editor.Type.GRAPHICS, null, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:
-		editor = ep.add(Editor.Type.NOTE_EDITOR, null, memory_item.Title)
+		editor = ep.add(Editor.Type.TEXT, null, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
 
 	associate_editor(editor)
