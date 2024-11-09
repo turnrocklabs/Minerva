@@ -20,6 +20,7 @@ var current_layout: LAYOUT
 @onready var RightControl: Control = $"VBoxContainer/HBoxContainer/RightControl"
 @onready var BottomControl: Control = $"VBoxContainer/BottomControl"
 
+@onready var _toggle_all_button: Button = %ToggleAllButton
 
 
 func _ready():
@@ -243,7 +244,6 @@ func update_tabs_icon() -> void:
 func _on_editor_content_changed(editor: Editor):
 
 	var state: = editor.get_saved_state()
-	print(state)
 
 	var icon: Texture2D
 	var tooltip: String = ""
@@ -265,14 +265,14 @@ func _on_editor_content_changed(editor: Editor):
 				tooltip = "File saved"
 
 		Editor.ASSOCIATED_OBJECT_SAVED:
-			# the associated_object is saved, check if we have a file that's not marked as saved
+			# the associated_object is saved, but not the file
+			
+			icon = _unsaved_changes_file_icon
 			if editor.file:
-				icon = _unsaved_changes_file_icon
 				tooltip = "File unsaved, \"%s\" saved" % associated_object_name
 			# else we just have an associated object that's saved
 			else:
-				icon = null
-				tooltip = "Note saved"
+				tooltip = "No File, Note saved"
 
 		# both are saved
 		Editor.FILE_SAVED | Editor.ASSOCIATED_OBJECT_SAVED:
@@ -286,8 +286,11 @@ func _on_editor_content_changed(editor: Editor):
 			else:
 				if editor.file:
 					tooltip = "File unsaved"
-				else:
+				elif editor.associated_object:
 					tooltip = "\"%s\" unsaved" % associated_object_name
+				else:
+					tooltip = "Content unsaved"
+					
 
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	Tabs.set_tab_icon(tab_idx, icon)
@@ -346,3 +349,19 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 #endregion  Enable Editor Buttons
 ###
 ### End Reference Information ###
+
+
+var _last_state: = false
+
+func _on_toggle_all_button_pressed() -> void:
+	_last_state = not _last_state
+	
+	for editor in open_editors():
+		editor.toggle(_last_state)
+	
+	if _last_state:
+		_toggle_all_button.text = "Disable All"
+	else:
+		_toggle_all_button.text = "Enable All"
+
+
