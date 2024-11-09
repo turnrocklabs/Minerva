@@ -363,7 +363,7 @@ text = "Enable All"
 [node name="ClearButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 size_flags_horizontal = 10
-text = "Clear"
+tooltip_text = "clears all the text in the current tab"
 icon = ExtResource("21_akf3o")
 
 [node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
