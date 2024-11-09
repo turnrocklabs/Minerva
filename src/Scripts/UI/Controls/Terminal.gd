@@ -400,7 +400,7 @@ func execute_command(input: String):
 		if OS.get_name() == "Windows":
 			_disallowed_seq.append(DisalowedSequence.new(wrap_command.call(""), input, ""))
 		
-		_disallowed_seq.append(DisalowedSequence.new(delimiter % "", "\n", "", true))
+		_disallowed_seq.append(DisalowedSequence.new(delimiter % "", "", "", true))
 
 	else:
 		command_buffer = (input + "\n").to_utf8_buffer()
@@ -445,4 +445,3 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			
 			await get_tree().process_frame
 			command_line_edit.caret_column = command_line_edit.text.length()
-
