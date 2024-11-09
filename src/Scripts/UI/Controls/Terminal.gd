@@ -2,6 +2,7 @@ class_name Terminal
 extends PanelContainer
 
 const MAX_COMMAND_OUTPUT_LENGTH: = 2048
+var ASCII_COLOR_CODE_REGEX = RegEx.create_from_string("\\x1B\\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGK]")
 
 @warning_ignore("unused_signal")
 signal execution_finished()
@@ -53,10 +54,8 @@ func _wrap_linux_command(user_input: String) -> String:
 		delimiter % ""
 	).replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`").replace("!", "\\!")
 
-	var color_code_regex = r"s/\x1B\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGK]//g"
 
-	return "{cmd} | sed -r -u \"{regex}\"; echo -e \"{delimiter}\"".format({
-		"regex": color_code_regex,
+	return "{cmd}; echo -e \"{delimiter}\"".format({
 		"cmd": user_input,
 		"delimiter": escaped_delimiter,
 	})
@@ -384,7 +383,9 @@ func _append_output_text(text: String) -> void:
 			# _disallowed_seq.clear()
 		return
 
-	_output_label.text += text
+
+	var full_text: = _output_label.text + text
+	_output_label.text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
 
 func execute_command(input: String):
 	_history.append(input)
