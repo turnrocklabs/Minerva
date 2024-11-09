@@ -1,7 +1,7 @@
 class_name Terminal
 extends PanelContainer
 
-const MAX_COMMAND_OUTPUT_LENGTH: = 2048
+const MAX_COMMAND_OUTPUT_LENGTH: = INF
 var ASCII_COLOR_CODE_REGEX = RegEx.create_from_string("\\x1B\\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGK]")
 
 @warning_ignore("unused_signal")
