@@ -10,7 +10,7 @@ func _init():
 
 	model_name = "claude-3.5-sonnet"
 	short_name = "CS"
-	token_cost = 1.5 / 1_000_000 # https://claude101.com/claude-3-5-sonnet/
+	token_cost = 0.000801 # https://claude101.com/claude-3-5-sonnet/
 
 
 func _parse_request_results(response: RequestResults) -> BotResponse:

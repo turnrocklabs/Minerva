@@ -22,6 +22,7 @@ const FILE_SAVED: = 0x1
 ## Represents that the associated object is saved, if there is one
 const ASSOCIATED_OBJECT_SAVED: = 0x2
 
+
 var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
@@ -195,7 +196,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
 		if type == Type.TEXT:
-			line_edit.text = tab_title + "." + SingletonObject.supported_text_fortmats[0]
+			line_edit.text = tab_title + "." + SingletonObject.supported_text_formats[0]
 		else:
 			line_edit.text = tab_title
 		$FileDialog.popup_centered(Vector2i(700, 500))
