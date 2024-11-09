@@ -132,6 +132,25 @@ max_value = 46.0
 value = 1.0
 ticks_on_borders = true
 
+[node name="SpeechBubbleOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="EditModeCheckButton" type="CheckButton" parent="h/v/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+text = "Edit Mode"
+
+[node name="LineEdit" type="LineEdit" parent="h/v/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Bubble Text"
+expand_to_text_length = true
+
+[node name="ApplyButton" type="Button" parent="h/v/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+text = "Apply"
+
 [node name="HSeparator" type="HSeparator" parent="h/v"]
 layout_mode = 2
 
@@ -139,12 +158,11 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LayersContainer" type="Control" parent="h/v/ScrollContainer"]
+[node name="LayersContainer" type="CenterContainer" parent="h/v/ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-mouse_filter = 1
 
 [node name="ScrollContainer" type="ScrollContainer" parent="h"]
 layout_mode = 2
@@ -171,6 +189,8 @@ icon_alignment = 1
 [connection signal="toggled" from="h/v/h/ToolsContainer/EraserToolButton" to="." method="_on_eraser_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
+[connection signal="text_changed" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
 [connection signal="mouse_entered" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
 [connection signal="mouse_exited" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
 [connection signal="pressed" from="h/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]

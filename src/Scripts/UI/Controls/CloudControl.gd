@@ -12,7 +12,12 @@ enum Type {
 	CLOUD,
 	RECTANGLE,
 }
+
 var type: = Type.ELLIPSE
+
+var text: String
+
+
 var circle_radius
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
@@ -37,9 +42,9 @@ var font_size: = ThemeDB.fallback_font_size
 var editing: = true:
 	set(value):
 		editing = value
-		_text_edit.visible = editing
-		_lower_resizer.visible = editing
-		_upper_resizer.visible = editing
+		# _text_edit.visible = editing
+		# _lower_resizer.visible = editing
+		# _upper_resizer.visible = editing
 		_bezier_curve.visible = editing
 
 
@@ -52,7 +57,7 @@ var _active_resizer: Control
 var tail: Tail
 
 ## Bounding rectange which contains the [member ellipse] that defines the speech bubble.
-var _bubble_rect: Rect2
+# var get_rect(): Rect2
 
 ## Polygon that defines the speech bubble
 var bubble_poly: PackedVector2Array
@@ -86,21 +91,19 @@ func move(to: Vector2):
 func _create_tail() -> PackedVector2Array:
 
 	# Take the resizer control positions to create the rectange that will contain the speech bubble
-	var rect_start: = _upper_resizer.position + _upper_resizer.pivot_offset
-	var rect_size: = _lower_resizer.position + _lower_resizer.pivot_offset - rect_start
-
-	_bubble_rect = Rect2(rect_start, rect_size)
+	# var rect_start: = _upper_resizer.position + _upper_resizer.pivot_offset
+	# var rect_size: = _lower_resizer.position + _lower_resizer.pivot_offset - rect_start
 
 	if type == Type.ELLIPSE:
-			return create_ellipse(_bubble_rect)
+			return create_ellipse(get_rect())
 	elif type == Type.CLOUD:
-			return cloud_bubble(_bubble_rect)
+			return cloud_bubble(get_rect())
 	elif type == Type.RECTANGLE:
 			return PackedVector2Array([
-				_bubble_rect.position,
-				_bubble_rect.position + Vector2(0, _bubble_rect.size.y),
-				_bubble_rect.end,
-				_bubble_rect.position + Vector2(_bubble_rect.size.x, 0),
+				get_rect().position,
+				get_rect().position + Vector2(0, get_rect().size.y),
+				get_rect().end,
+				get_rect().position + Vector2(get_rect().size.x, 0),
 			])
 	
 	else:
@@ -242,7 +245,7 @@ class BubbleTail:
 	func draw() -> void:
 		var points_: = get_points_vector_array()
 
-		var current_area: = control._bubble_rect.get_area() / 16
+		var current_area: = control.get_rect().get_area() / 16
 
 		for point in points_:
 			var radius: = sqrt(current_area / PI)
@@ -273,6 +276,8 @@ func _ready():
 	elif SingletonObject.CloudType == Type.RECTANGLE:
 		type = Type.RECTANGLE
 		
+	_text_edit.visible = false # TODO: REMOVE
+
 	tail = CurvedTriangleTail.new(self)
 	queue_redraw()
 
@@ -287,6 +292,7 @@ func _on_visibility_changed() -> void:
 
 
 func _draw() -> void:
+	print("Draw ", editing)
 	if editing:
 		_draw_editing()
 		return
@@ -306,13 +312,13 @@ func _draw() -> void:
 	
 	# Get the rectangle thats completly within the speech bubble ellipse
 	# and defines the area there text can be in
-	var text_rect: = get_rectangle_in_ellipse(_bubble_rect)
+	var text_rect: = get_rectangle_in_ellipse(get_rect())
 	
 	# Draw the text from the text edit
 	draw_multiline_string(
 		font,
 		text_rect.position + Vector2(0, font.get_ascent()),
-		_text_edit.text,
+		text,
 		HORIZONTAL_ALIGNMENT_LEFT,
 		text_rect.size.x,
 		font_size,
@@ -330,7 +336,7 @@ func _draw_editing() -> void:
 
 	tail.draw_editing()
 
-	var text_rect: = get_rectangle_in_ellipse(_bubble_rect)
+	var text_rect: = get_rectangle_in_ellipse(get_rect())
 	
 	#draw_rect(text_rect, Color.ORANGE_RED)
 	
@@ -374,7 +380,7 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 			return null
 
 
-	if _bubble_rect.grow(15).has_point(at_position):
+	if get_rect().grow(15).has_point(at_position):
 		_dragging = true
 	
 
@@ -387,7 +393,8 @@ func _can_drop_data(_at_position: Vector2, _data: Variant) -> bool:
 var _drag_point_idx: = -1
 
 func _gui_input(event: InputEvent) -> void:
-	print("CLOUD CONTROL EVENT: ", event)
+	# print("CLOUD CONTROL EVENT: ", event)
+	return
 	if _dragging and event is InputEventMouseMotion and event.pressure:
 		_lower_resizer.position += event.relative
 		_upper_resizer.position += event.relative
@@ -744,7 +751,7 @@ func toggle_editing_state() -> void:
 
 func set_circle_radius(new_radius: float) -> void:
 	circle_radius = new_radius
-	cloud_bubble(_bubble_rect) # Recalculate the cloud shape
+	cloud_bubble(get_rect()) # Recalculate the cloud shape
 	queue_redraw() # Tell Godot to redraw the CloudControl 
 	
 	

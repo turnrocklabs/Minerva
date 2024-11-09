@@ -8,7 +8,7 @@ enum Type {
 }
 
 @onready var texture_rect: TextureRect = %TextureRect
-@onready var center_container: CenterContainer = %CenterContainer
+@onready var center_container: Control = %CenterContainer
 
 
 const _scene = preload("res://Scenes/LayerV2.tscn")
@@ -29,8 +29,8 @@ var _transform_rect_size: = Vector2(50, 50)
 
 var transform_rect_visible: = false
 
-var zoom_factor: float:
-	get: return (Vector2(image.get_size()).length() / size.length())
+var image_zoom_factor: float:
+	get: return (Vector2(image.get_size()).length() / size.length()) if image else .0
 
 var type: Type
 
@@ -44,7 +44,7 @@ var image: Image:
 		
 		var img = ImageTexture.create_from_image(image)
 		texture_rect.texture = img
-		size = img.get_size()
+		custom_minimum_size = img.get_size()
 
 
 var speech_bubble: CloudControl:
@@ -77,6 +77,8 @@ static func create_drawing_layer(name_: String, size_: Vector2i, background_colo
 	layer.name = name_
 	layer.type = Type.DRAWING
 
+	print("Img: ", img.get_size())
+
 	return layer
 
 static func create_speech_bubble_layer(name_: String, type_: CloudControl.Type = CloudControl.Type.ELLIPSE) -> LayerV2:
@@ -104,8 +106,12 @@ func get_rect_by_mouse_position(mouse_position: Vector2) -> TransformPoint:
 	return TransformPoint.NONE
 
 func _draw() -> void:
-	var img = ImageTexture.create_from_image(image)
-	texture_rect.texture = img
+	match type:
+		Type.IMAGE, Type.DRAWING:
+			var img = ImageTexture.create_from_image(image)
+			texture_rect.texture = img
+		Type.SPEECH_BUBBLE:
+			speech_bubble.queue_redraw()
 
 	if not transform_rect_visible: return
 	
@@ -152,17 +158,25 @@ func _get_transform_rect_positions() -> Dictionary:
 func localize_input(event: InputEvent):
 	match type:
 		Type.IMAGE, Type.DRAWING:
-			var ev: = make_input_local(event)
-			if ev.position: ev.position *= zoom_factor
-			return ev
+			return texture_rect.make_input_local(event)
+		Type.SPEECH_BUBBLE:
+			return speech_bubble.make_input_local(event)
 
 
 func _on_resized() -> void:
+	_adjust_control_size()
+	
+func _on_minimum_size_changed() -> void:
+	_adjust_control_size()
+
+func _adjust_control_size() -> void:
 	if not is_node_ready(): return
+
+	pivot_offset = size / 2
 
 	match type:
 		Type.IMAGE, Type.DRAWING:
 			texture_rect.custom_minimum_size = size
+			image.resize(int(size.x), int(size.y), Image.INTERPOLATE_LANCZOS)
 		Type.SPEECH_BUBBLE:
 			speech_bubble.custom_minimum_size = size
-	

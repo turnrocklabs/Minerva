@@ -1,7 +1,7 @@
 class_name TransformTool
 extends BaseTool
 
-var _control_point_type: LayerV2.TransformPoint
+var _control_point_type: LayerV2.TransformPoint = LayerV2.TransformPoint.NONE
 
 func _ready() -> void:
 	
@@ -14,7 +14,7 @@ func _ready() -> void:
 
 func handle_input_event(event: InputEvent) -> void:
 	event = editor.active_layer.localize_input(event)
-	
+
 	if event is InputEventMouseButton:
 		if event.pressed:
 			_control_point_type = editor.active_layer.get_rect_by_mouse_position(event.position)
@@ -25,29 +25,27 @@ func handle_input_event(event: InputEvent) -> void:
 		match _control_point_type:
 			LayerV2.TransformPoint.TOP_LEFT:
 				editor.active_layer.position += event.relative
-				editor.active_layer.size -= event.relative
+				editor.active_layer.custom_minimum_size -= event.relative
 			LayerV2.TransformPoint.TOP:
 				editor.active_layer.position.y += event.relative.y
-				editor.active_layer.size.y -= event.relative
+				editor.active_layer.custom_minimum_size.y -= event.relative.y
 			LayerV2.TransformPoint.TOP_RIGHT:
-				editor.active_layer.position += event.relative
-				editor.active_layer.size -= event.relative
-			LayerV2.TransformPoint.RIGHT:
-				editor.active_layer.position.x += event.relative.x
-				editor.active_layer.size.x -= event.relative.x
-			LayerV2.TransformPoint.BOTTOM_RIGHT:
-				editor.active_layer.position += event.relative
-				editor.active_layer.size -= event.relative
-			LayerV2.TransformPoint.BOTTOM:
+				editor.active_layer.custom_minimum_size += event.relative *  Vector2(1, -1)
 				editor.active_layer.position.y += event.relative.y
-				editor.active_layer.size.y -= event.relative.y
+			LayerV2.TransformPoint.RIGHT:
+				editor.active_layer.custom_minimum_size.x += event.relative.x
+			LayerV2.TransformPoint.BOTTOM_RIGHT:
+				editor.active_layer.custom_minimum_size += event.relative
+			LayerV2.TransformPoint.BOTTOM:
+				editor.active_layer.custom_minimum_size.y += event.relative.y
 			LayerV2.TransformPoint.BOTTOM_LEFT:
-				editor.active_layer.position += event.relative
-				editor.active_layer.size -= event.relative
+				editor.active_layer.custom_minimum_size += event.relative * Vector2(-1, 1)
+				editor.active_layer.position.x += event.relative.x
 			LayerV2.TransformPoint.LEFT:
 				editor.active_layer.position.x += event.relative.x
-				editor.active_layer.size.x -= event.relative.x
+				editor.active_layer.custom_minimum_size.x -= event.relative.x
 
+		editor.queue_redraw()
 
 
 func _draw():

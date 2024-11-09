@@ -1,6 +1,7 @@
 extends BaseTool
 class_name SpeechBubbleTool
 
+var layer: LayerV2
 
 func _tool_selected():
 	pass
@@ -10,9 +11,18 @@ func handle_input_event(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton:
 
-		if event.pressed:
+		if event.pressed and not layer:
 			
-			var layer: = LayerV2.create_speech_bubble_layer("Layer")
+			layer = LayerV2.create_speech_bubble_layer("Layer")
+			layer.custom_minimum_size = Vector2(100, 100)
 			editor.add_layer(layer)
 
-			editor.active_layer.speech_bubble.position = event.position
+
+func _on_edit_mode_check_button_toggled(toggled_on: bool) -> void:
+	layer.speech_bubble.editing = toggled_on
+	layer.queue_redraw()
+
+
+func _on_line_edit_text_changed(new_text: String) -> void:
+	layer.speech_bubble.text = new_text
+	layer.queue_redraw()
