@@ -523,9 +523,16 @@ func update_token_estimation():
 	chi.Message = %txtMainUserInput.text
 
 	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi, provider))
+	
+	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) * 100, 0.01)]
+	if (provider.token_cost * token_count) * 100 < 0.01:
+		%EstimatedTokensLabel.text = "%s¢" % 0.01
+		
+	
+	print("token cound",token_count)
+	print((provider.token_cost * token_count) * 100)
+	
 
-	%EstimatedTokensLabel.text = "%.2f¢" % [provider.token_cost * token_count]
-	%EstimatedTokensLabel.tooltip_text = "%s¢" % [provider.token_cost * token_count]
 
 # region Edit provider Title
 
@@ -579,6 +586,8 @@ func _on_btn_clear_pressed():
 ## When user types in the chat box, estimate tokens count based on selected provider
 func _on_txt_main_user_input_text_changed():
 	update_token_estimation()
+	if %txtMainUserInput.text == "":
+		%EstimatedTokensLabel.text = "%s¢" % 0.00
 
 func _on_txt_main_user_input_text_set():
 	update_token_estimation()

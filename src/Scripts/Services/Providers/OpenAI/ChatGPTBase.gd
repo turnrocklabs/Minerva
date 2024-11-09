@@ -166,7 +166,7 @@ func to_bot_response(data: Variant) -> BotResponse:
 
 
 func estimate_tokens(input) -> int:
-	return roundi(input.get_slice_count(" ") * 1.5)
+	return roundi(input.get_slice_count(" ") * token_cost)
 
 
 func estimate_tokens_from_prompt(input: Array[Variant]):
