@@ -292,7 +292,6 @@ func _on_visibility_changed() -> void:
 
 
 func _draw() -> void:
-	print("Draw ", editing)
 	if editing:
 		_draw_editing()
 		return
@@ -340,8 +339,21 @@ func _draw_editing() -> void:
 	
 	#draw_rect(text_rect, Color.ORANGE_RED)
 	
-	_text_edit.position = text_rect.position
-	_text_edit.size = text_rect.size
+	# _text_edit.position = text_rect.position
+	# _text_edit.size = text_rect.size
+
+	# Draw the text from the text edit
+	draw_multiline_string(
+		font,
+		text_rect.position + Vector2(0, font.get_ascent()),
+		text,
+		HORIZONTAL_ALIGNMENT_LEFT,
+		text_rect.size.x,
+		font_size,
+		100,
+		Color.BLACK,
+		TextServer.BREAK_ADAPTIVE | TextServer.BREAK_WORD_BOUND
+	)
 
 	_draw_editing_tail()
 
@@ -362,45 +374,38 @@ func _draw_editing_tail() -> void:
 
 # region Input Handling
 
-func _get_drag_data(at_position: Vector2) -> Variant:
-	if (
-		_upper_resizer.get_rect().has_point(at_position) or
-		_lower_resizer.get_rect().has_point(at_position)
-	): return null
+# func _get_drag_data(at_position: Vector2) -> Variant:
+# 	if (
+# 		_upper_resizer.get_rect().has_point(at_position) or
+# 		_lower_resizer.get_rect().has_point(at_position)
+# 	): return null
 
-	# Check if we pressed on existing tail point
-	var points_arr: = tail.get_points_vector_array()
+# 	# Check if we pressed on existing tail point
+# 	var points_arr: = tail.get_points_vector_array()
 
-	for i in points_arr.size():
-		var point: = points_arr[i]
+# 	for i in points_arr.size():
+# 		var point: = points_arr[i]
 
-		# if yes start dragging it
-		if at_position.distance_to(point) < POINT_RADIUS:
-			_drag_point_idx = i 
-			return null
+# 		# if yes start dragging it
+# 		if at_position.distance_to(point) < POINT_RADIUS:
+# 			_drag_point_idx = i 
+# 			return null
 
 
-	if get_rect().grow(15).has_point(at_position):
-		_dragging = true
+# 	if get_rect().grow(15).has_point(at_position):
+# 		_dragging = true
 	
 
-	return null
+# 	return null
 
-func _can_drop_data(_at_position: Vector2, _data: Variant) -> bool:
-	return true
+# func _can_drop_data(_at_position: Vector2, _data: Variant) -> bool:
+# 	return true
 
 ## Index of point inside the [member Tail.points] that the user is currently dragging
 var _drag_point_idx: = -1
 
-func _gui_input(event: InputEvent) -> void:
-	# print("CLOUD CONTROL EVENT: ", event)
+func handle_event(event: InputEvent) -> void:
 	return
-	if _dragging and event is InputEventMouseMotion and event.pressure:
-		_lower_resizer.position += event.relative
-		_upper_resizer.position += event.relative
-	else:
-		_dragging = false
-
 	if not editing: return
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -439,35 +444,7 @@ func _gui_input(event: InputEvent) -> void:
 			queue_redraw()
 			accept_event()
 	
-	if event is InputEventMouseMotion:
-		# if we're dragging the resizer, move it to the mouse position
-		if _active_resizer:
-			# var offset: Vector2 = event.relative
-
-			var estimated_position = _active_resizer.position + event.relative
-
-			# lower resizer can't be above the upper one
-			if _active_resizer == _lower_resizer:
-				if estimated_position.x < _upper_resizer.position.x:
-					estimated_position.x = _upper_resizer.position.x
-
-				if estimated_position.y < _upper_resizer.position.y:
-					estimated_position.y = _upper_resizer.position.y
-			# and upper can't be under the lower one
-			elif _active_resizer == _upper_resizer:
-				if estimated_position.x > _lower_resizer.position.x:
-					estimated_position.x = _lower_resizer.position.x
-
-				if estimated_position.y > _lower_resizer.position.y:
-					estimated_position.y = _lower_resizer.position.y
-			
-			_active_resizer.position = estimated_position
-			
-			queue_redraw()
-			accept_event()
-
-			
-			
+	if event is InputEventMouseMotion:			
 		# if we're moving the mouse, pressing the mouse button and dragging the point
 		# update that points position.
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _drag_point_idx != -1:

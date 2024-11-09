@@ -51,6 +51,7 @@ var active_tool: BaseTool:
 		# reset the cursor here,
 		# so it happends before the signal is consumed by selected tool which may change it
 		set_custom_cursor(null)
+		_set_drag_forward_to_layer(active_tool)
 		active_tool_changed.emit(value)
 
 
@@ -119,7 +120,27 @@ func _draw() -> void:
 	active_layer.queue_redraw()
 	for c: LayerCard in layer_cards_container.get_children():
 		c.queue_redraw()
+
+## Delegates drag handling functions to given layer.[br]
+## See [method Control.set_drag_forwarding].
+func _set_drag_forward_to_layer(tool_: BaseTool) -> void:
+	return
+	if not tool_: return
+
+	var gdd = tool_.get("_get_drag_data")
+	print(gdd)
+	gdd = gdd if gdd else Callable()
+
+	var cdd = tool_.get("_can_drop_data")
+	cdd = cdd if cdd else Callable()
+
+	var dd = tool_.get("_drop_data")
+	dd = dd if dd else Callable()
 	
+	prints(gdd, cdd, dd)
+
+	set_drag_forwarding(gdd, cdd, dd)
+
 func _on_active_tool_changed(tool_: BaseTool) -> void:
 	for child in tool_options_container.get_children():
 		child.visible = false
