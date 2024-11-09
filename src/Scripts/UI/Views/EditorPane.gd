@@ -363,5 +363,3 @@ func _on_toggle_all_button_pressed() -> void:
 		_toggle_all_button.text = "Disable All"
 	else:
 		_toggle_all_button.text = "Enable All"
-
-
