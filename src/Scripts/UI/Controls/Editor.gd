@@ -98,7 +98,9 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_code_edit.gutters_zero_pad_line_numbers = true
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
+			new_code_edit.name = "CodeEdit"
 			vbox_container.add_child(new_code_edit)
+			vbox_container.move_child(new_code_edit,0)
 			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
 			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
@@ -107,6 +109,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			## TODO: Implement changed signal for graphics editor
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
+			vbox_container.move_child(new_graphics_editor, 0)
 			editor.graphics_editor = new_graphics_editor
 
 	return editor
