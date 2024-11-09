@@ -97,7 +97,7 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 	else:
 		create_new_notes_tab(tab_name)
 
-## add indexxing system here
+## add indexing system here
 func create_new_notes_tab(tab_name: String = "notes 1"):
 	var thread = MemoryThread.new()
 	thread.ThreadName = tab_name_to_use(tab_name)
@@ -305,7 +305,7 @@ func _memory_thread_find(thread_id: String) -> MemoryThread:
 
 
 ## Function:
-# attach_file creates a memoryitem/note from a file.  It can detect file type
+# attach_file creates a memory item/note from a file.  It can detect file type
 func attach_file(the_file: String):
 	# Check if the file exists
 	var file = FileAccess.open(the_file, FileAccess.READ)
@@ -331,7 +331,7 @@ func attach_file(the_file: String):
 	
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	
-	if file_ext in SingletonObject.supported_text_fortmats:
+	if file_ext in SingletonObject.supported_text_formats:
 		file_type = "text"
 		content = file.get_as_text()
 		content_type = "text/plain"
@@ -354,9 +354,9 @@ func attach_file(the_file: String):
 		type= SingletonObject.note_type.AUDIO
 		var buffer = file.get_buffer(file.get_length())
 		if file_ext == "mp3":
-			var mp3AudioStrem = AudioStreamMP3.new()
-			mp3AudioStrem.data = buffer
-			new_memory.Audio = mp3AudioStrem
+			var mp3AudioStream = AudioStreamMP3.new()
+			mp3AudioStream.data = buffer
+			new_memory.Audio = mp3AudioStream
 		if file_ext == "wav":
 			var wavAudioStream = AudioStreamWAV.new()
 			wavAudioStream.data = buffer
@@ -394,7 +394,7 @@ func _ready():
 	%tcThreads.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	%tcThreads.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreads))
 
-	# tab bar need mouse_filter set to pass to allow the tabcontainer to catch drag event and call _can_drop_data
+	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 
 	# Connect signals for changes in your data
@@ -415,7 +415,7 @@ func _can_drop_data(at_position: Vector2, data):
 
 # find out which tab we are above
 # and get it's vboxMemoryList control (which is the only child of the scroll container)
-# then call it's _drop_data so it handles the Note by just appendg it and removing it from the old thread
+# then call it's _drop_data so it handles the Note by just appending it and removing it from the old thread
 func _drop_data(at_position: Vector2, data):
 	if not data is Note: return
 
@@ -435,7 +435,7 @@ func _notification(what):
 
 #region Tab signal methods
 
-var clicked: = -1 # this is used to tack double click to cahnge the tab nama
+var clicked: = -1 # this is used to tack double click to change the tab nama
 var temp_current_tab: = -1 # this is used to track the clicked tab when rearranged
 func _on_tab_clicked(tab: int):
 	#print("tab clicked: " + str(tab))

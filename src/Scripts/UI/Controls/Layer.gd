@@ -25,14 +25,14 @@ static func create(image_: Image, name_:String) -> Layer:
 
 
 func _ready():
-	%EditButton1.connect("button_up",self.cancleDragging)
-	%EditButton2.connect("button_up",self.cancleDragging)
-	%EditButton3.connect("button_up",self.cancleDragging)
-	%EditButton4.connect("button_up",self.cancleDragging)
-	%EditButton5.connect("button_up",self.cancleDragging)
-	%EditButton6.connect("button_up",self.cancleDragging)
-	%EditButton7.connect("button_up",self.cancleDragging)
-	%EditButton8.connect("button_up",self.cancleDragging)
+	%EditButton1.connect("button_up",self.cancelDragging)
+	%EditButton2.connect("button_up",self.cancelDragging)
+	%EditButton3.connect("button_up",self.cancelDragging)
+	%EditButton4.connect("button_up",self.cancelDragging)
+	%EditButton5.connect("button_up",self.cancelDragging)
+	%EditButton6.connect("button_up",self.cancelDragging)
+	%EditButton7.connect("button_up",self.cancelDragging)
+	%EditButton8.connect("button_up",self.cancelDragging)
 	custom_minimum_size = image.get_size()
 
 
@@ -173,7 +173,7 @@ func _on_edit_button_2_button_down() -> void:
 	bottomRight = false
 
 
-func cancleDragging():
+func cancelDragging():
 	dragging = false
 
 

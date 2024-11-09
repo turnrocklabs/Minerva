@@ -49,7 +49,7 @@ func serialize() -> Array:
 static func deserialize(editors_array: Array) -> Array[Editor]:
 	# first clear all open editors
 	#var data: Array = editors_array_dic.get("editors_array")
-	var editor_insts: Array[Editor] = []
+	var editor_instances: Array[Editor] = []
 	for editor_ser in editors_array:
 		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
 		editor_inst.tab_title = editor_ser.get("name")
@@ -69,9 +69,9 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				graphics_editor.loaded_layers.append(layer)
 				counter +=1
 		
-		editor_insts.append(editor_inst)
+		editor_instances.append(editor_inst)
 	
-	return editor_insts
+	return editor_instances
 
 
 
@@ -90,8 +90,9 @@ func _is_graphics_file(filename: String) -> bool:
 	# If it doesn't match the above, it's not considered a graphics file
 	return false
 
-func _on_open_file(filename:String):
-	open_file(filename)
+func _on_open_files(files: PackedStringArray):
+	for filename in files:
+		open_file(filename)
 	SingletonObject.save_state(false)
 
 

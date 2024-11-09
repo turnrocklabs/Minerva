@@ -237,7 +237,7 @@ func execute_chat():
 		"temperature": history.Temperature,
 		"top_p": history.TopP,
 		"presence_penalty": history.PresencePenalty,
-		"frequency_penalty": history.FrecuencyPenalty,
+		"frequency_penalty": history.FrequencyPenalty,
 	}
 
 	var bot_response
@@ -267,11 +267,11 @@ func execute_chat():
 		user_history_item.TokenCost = bot_response.prompt_tokens
 		user_msg_node.render()
 
-		# Change the history item and the mesasge node will update itself
+		# Change the history item and the message node will update itself
 		model_msg_node.history_item = chi
 		history.HistoryItemList.append(chi)
 
-		## Inform the user history item that the responsew has arrived
+		## Inform the user history item that the response has arrived
 		user_history_item.response_arrived.emit(chi)
 
 		history.VBox.scroll_to_bottom()
@@ -322,9 +322,9 @@ func render_single_chat(item: ChatHistoryItem):
 	
 
 
-## Will remove the chat histoy item from the history and remove the rendered node.
+## Will remove the chat history item from the history and remove the rendered node.
 ## if `auto_merge` is false, this function will only delete the given history item and it's rendered node,
-## otherwise, it will automatically merge next message with previous so perserve the user/model turn
+## otherwise, it will automatically merge next message with previous so preserve the user/model turn
 func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, auto_merge:= true):
 	if item.rendered_node:
 		item.rendered_node.queue_free()
@@ -367,7 +367,7 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 	history.HistoryItemList.erase(item)
 
 
-## Will hide the chat histoy item. If `remove_pair` is true
+## Will hide the chat history item. If `remove_pair` is true
 ## and the item is user message it will also hide the answer or 
 ## the question if the item is bot message if the item is present in any chat history.
 func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, remove_pair: = true):	
