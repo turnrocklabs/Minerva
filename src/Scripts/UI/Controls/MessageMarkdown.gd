@@ -144,7 +144,7 @@ func _setup_model_message():
 	continue_btn.visible = not history_item.Complete
 
 	# we can't edit model messages
-	%EditButton.visible = false
+	# %EditButton.visible = false
 
 	if history_item.Error:
 		label.text = "An error occurred:\n%s" % history_item.Error
