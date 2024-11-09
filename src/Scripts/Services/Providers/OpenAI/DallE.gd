@@ -10,7 +10,7 @@ func _init():
 
 	model_name = "dall-e-2"
 	short_name = "D2"
-	token_cost = 1
+	token_cost = 0.018
 
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
