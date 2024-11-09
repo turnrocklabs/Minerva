@@ -58,7 +58,7 @@ func _wrap_linux_command(user_input: String) -> PackedStringArray:
 
 func display_output(output: String) -> void:
 	var output_container = HBoxContainer.new()
-	
+	const MAX_OUTPUT_LEN: int = 8192
 	var check_button = CheckButton.new()
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -66,47 +66,54 @@ func display_output(output: String) -> void:
 	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
 	output_container.add_child(check_button)
 
-	var label = RichTextLabel.new()
-	label.fit_content = true
-	label.selection_enabled = true
+	var label = Label.new()
+	#label.fit_content = true
+	#label.selection_enabled = true
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.text = output
+	var label_text: String  = ""
+	if len(output) <=  MAX_OUTPUT_LEN:
+		label_text = output
+	else:
+		label_text = output.substr(0, MAX_OUTPUT_LEN)
+		label_text += "\n"
+		label_text += "(rest truncated...)"
+	
+	label.text = label_text
 	output_container.add_child(label)
 	
 	outputs_container.add_child(output_container)
 	
-	#this 2 lines are for auto scrollling all the way down
+	#this 2 lines are for auto scrolling all the way down
 	await get_tree().process_frame
 	%ScrollContainer.ensure_control_visible(%CwdLabel)
 
 
 func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
-	var item: MemoryItem
+	# Create a new memory item to access the hash function. 
+	var item: MemoryItem = MemoryItem.new()
+	item.Enabled = false
+	item.Type = SingletonObject.note_type.TEXT
+	item.Title = "Terminal Note"
+	item.Visible = true
+	item.Content = output
 
-	if not has_meta("memory_item"):
-		item = SingletonObject.NotesTab.create_note("Terminal Note")
-		item.Content = output
-		
-		if not item:
-			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the terminal.")
-			btn.button_pressed = false
-			return
-		
+	# use the hash to see if we already have this item in the DetachedNotes
+	var detached_index: int = -1
+	for search_index in SingletonObject.DetachedNotes.size():
+		if SingletonObject.DetachedNotes[search_index].Sha_256 == item.Sha_256:
+			detached_index = search_index
+	
+	# if we don't have it, connect a toggled handler and append to detached notes.
+	if detached_index == -1:
+		item.Enabled = toggled_on
 		item.toggled.connect(
 			func(on: bool):
 				btn.button_pressed = on
 		)
-
-		set_meta("memory_item", item)
 		SingletonObject.DetachedNotes.append(item)
 	else:
-		item = get_meta("memory_item")
-		var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
+		SingletonObject.DetachedNotes[detached_index].Enabled = toggled_on
 
-		if not present:
-			SingletonObject.DetachedNotes.append(item)
-
-	item.Enabled = toggled_on
 
 
 func _on_output_check_button_tree_exiting(btn: CheckButton):
@@ -170,7 +177,7 @@ func execute_thread_command(input: String):
 	var callback = func():
 		var output = _thread.get_meta("output")
 
-		# last line is current working directory, so we just extarct that
+		# last line is current working directory, so we just extract that
 		var cmd_result: String = output.back()
 		
 		var cwd_index_start = cmd_result.rfind(cwd_delimiter)
