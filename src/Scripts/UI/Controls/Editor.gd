@@ -111,6 +111,10 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 
 	return editor
 
+func toggle(on: bool) -> void:
+	_note_check_button.button_pressed = on
+
+
 func _ready():
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
 	if file:
@@ -261,6 +265,11 @@ func get_saved_state() -> int:
 				else:
 					state |= ASSOCIATED_OBJECT_SAVED
 			
+			# if we have no file or associated object, but the content is marked as saved
+			# that usually means that the editors was just created (content is emtry string)
+			if not (file or is_instance_valid(associated_object)) and code_edit.text == code_edit.saved_content:
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
 		Type.GRAPHICS:
 			# if there's no graphics editor, even tho that's the type, just return all saved states
 			if not graphics_editor: state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
