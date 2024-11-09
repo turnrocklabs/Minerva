@@ -10,7 +10,7 @@ signal _tab_metadata_ready()
 var _last_terminal_num = 0
 
 func _ready():
-	_on_new_tab_button_pressed() # starti with one tab open already
+	_on_new_tab_button_pressed() # start with one tab open already
 
 func _on_new_tab_button_pressed():
 	_tab_bar.add_tab("Terminal %s" % _last_terminal_num)

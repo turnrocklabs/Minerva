@@ -19,7 +19,7 @@ static var SERIALIZER_FIELDS = [
 	"Visible",
 ]
 
-# This signal is to be emited when new message in the history list is added
+# This signal is to be emitted when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
 
 var Id: String:

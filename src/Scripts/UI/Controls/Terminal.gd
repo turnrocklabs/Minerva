@@ -83,13 +83,13 @@ func display_output(output: String) -> void:
 	
 	outputs_container.add_child(output_container)
 	
-	#this 2 lines are for auto scrollling all the way down
+	#this 2 lines are for auto scrolling all the way down
 	await get_tree().process_frame
 	%ScrollContainer.ensure_control_visible(%CwdLabel)
 
 
 func _on_output_check_button_toggled(toggled_on: bool, output: String, btn: CheckButton):
-	# Create a new memoryitem to access the hash function. 
+	# Create a new memory item to access the hash function. 
 	var item: MemoryItem = MemoryItem.new()
 	item.Enabled = false
 	item.Type = SingletonObject.note_type.TEXT
@@ -177,7 +177,7 @@ func execute_thread_command(input: String):
 	var callback = func():
 		var output = _thread.get_meta("output")
 
-		# last line is current working directory, so we just extarct that
+		# last line is current working directory, so we just extract that
 		var cmd_result: String = output.back()
 		
 		var cwd_index_start = cmd_result.rfind(cwd_delimiter)

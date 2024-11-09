@@ -99,7 +99,7 @@ func save_project():
 
 
 # this function checks if there are unsaved editor panes and saves them
-func save_editorpanes(skip_selecting_items: bool = false):
+func save_editor_panes(skip_selecting_items: bool = false):
 	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
 		# if the state is unsaved or we have unsaved editors open
 	if not SingletonObject.saved_state or unsaved_editors:
@@ -108,8 +108,8 @@ func save_editorpanes(skip_selecting_items: bool = false):
 		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 		item_list.clear()
 		for editor in unsaved_editors:
-			var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
-			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(indx)
+			var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
+			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(idx)
 			var item_idx = item_list.add_item(tab_title)
 			item_list.set_item_metadata(item_idx, editor)
 		
@@ -230,7 +230,7 @@ func _ready():
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)
-	SingletonObject.SaveOpenEditorTabs.connect( save_editorpanes.bind(true))
+	SingletonObject.SaveOpenEditorTabs.connect( save_editor_panes.bind(true))
 	SingletonObject.UpdateLastSavePath.connect(update_last_save_path)
 
 #region FDG Dialog
@@ -276,7 +276,7 @@ func open_project_given_path(project_path: String) -> int:
 	# Why deferred?
 	# If not some of the deserialized object alter the state after this function ends
 	# even tho we called deserialize above. Probably because the nodes are not added
-	# to the hierarchy untill the idle time, when they call set_state(false).
+	# to the hierarchy until the idle time, when they call set_state(false).
 	# So we just delay this call to that idle time also.
 	SingletonObject.call_deferred("save_state", true)
 	
@@ -288,7 +288,7 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		save_editorpanes()
+		save_editor_panes()
 
 
 func _on_exit_confirmation_dialog_canceled():

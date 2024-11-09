@@ -4,13 +4,13 @@ var Memories: Array[MemoryItem] = []
 var MainTabContainer
 var MainThreadId
 var disable_notes_button
-## initilize the box
+## initialize the box
 func _init(_parent, _threadId, _mem = null):
-	# we add separation between the chidren of the HBoxContainer
+	# we add separation between the children of the HBoxContainer
 	add_theme_constant_override("Separation", 12)
 	
 	#we add a disable notes button
-	add_child(initialise_disable_button())
+	add_child(initialize_disable_button())
 	
 	self.MainTabContainer = _parent
 	self.MainThreadId = _threadId
@@ -22,17 +22,17 @@ func _init(_parent, _threadId, _mem = null):
 		render_items()
 	pass
 
-#create a checkbutton for toggling enabled notes 
-func initialise_disable_button() -> CheckButton:
+#create a check button for toggling enabled notes 
+func initialize_disable_button() -> CheckButton:
 	disable_notes_button = CheckButton.new()
 	disable_notes_button.text = "Notes Enabled"
 	disable_notes_button.button_pressed = false
-	disable_notes_button.alignment = 2# we use a constant for the aligmanet (RIGHT)
-	disable_notes_button.toggled.connect(_on_toggled_diable_notes_button)
+	disable_notes_button.alignment = 2# we use a constant for the alignment (RIGHT)
+	disable_notes_button.toggled.connect(_on_toggled_disable_notes_button)
 	return disable_notes_button
 
 
-func _on_toggled_diable_notes_button(toggled_on: bool) -> void:
+func _on_toggled_disable_notes_button(toggled_on: bool) -> void:
 	if toggled_on:
 		disable_notes_button.text = "Notes Enabled"
 		toggle_notes(toggled_on)
