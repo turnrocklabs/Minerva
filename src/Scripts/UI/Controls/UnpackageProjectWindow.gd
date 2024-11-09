@@ -95,7 +95,7 @@ func _on_package_line_edit_text_changed(new_text: String):
 
 	if editor_files:
 		_populate_files_tree(editor_files)
-		_package_file_info_label.text = "Succesfully opened package file %s" % package.path.get_file()
+		_package_file_info_label.text = "Successfully opened package file %s" % package.path.get_file()
 	else:
 		_package_file_info_label.text = "Couldn't load package file %s. Invalid data." % package.path.get_file()
 
@@ -168,7 +168,7 @@ func _on_export_button_pressed():
 		show_message(error_string(err), package.get_last_error())
 		return
 	
-	show_message(error_string(OK), "Succesfully exported the package file.")
+	show_message(error_string(OK), "Successfully exported the package file.")
 	_dialog.visibility_changed.connect(
 		func(): if not _dialog.visible: hide(),
 		CONNECT_ONE_SHOT

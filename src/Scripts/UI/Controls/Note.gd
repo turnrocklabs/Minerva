@@ -41,7 +41,7 @@ var memory_item: MemoryItem:
 			stream.file = value.FilePath
 			%VideoStreamPlayer.stream = stream
 		# If we create a note, open a editor associated with it and then rerender the memory_item
-		# that will create completly new Note node and break the connection between note and the editor.
+		# that will create completely new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
 		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
 			if editor.associated_object:
@@ -91,7 +91,7 @@ func new_video_note():
 #endregion New notes methods
 
 # FIXME maybe we could move this function to Singleton so all images 
-# can be resized and add another paremeter to place the 200 constant
+# can be resized and add another parameter to place the 200 constant
 #  this method resizes the image so the texture rec doesn't render images at full res
 func downscale_image(image: Image) -> Image:
 	if image == null: return
@@ -149,7 +149,7 @@ func change_modulate_for_texture(theme_enum: int):
 
 
 func _to_string():
-	return "Notedadsa %s" % memory_item.Title
+	return "Note %s" % memory_item.Title
 
 # check if we are showing the separator.
 # if yes that means we were dragging the note above this note
@@ -237,7 +237,7 @@ func _drop_data(_at_position: Vector2, data):
 	var dragged_note_thread := _memory_thread_find(data.memory_item.OwningThread)
 	
 	# if dragged note and the note we're dropping on to are not in same tabs
-	# it meands we have to deal with two different MemoryThreads
+	# it means we have to deal with two different MemoryThreads
 	if memory_item.OwningThread != data.memory_item.OwningThread:
 		
 		var target_note_thread := _memory_thread_find(memory_item.OwningThread)
@@ -279,7 +279,7 @@ func _on_remove_button_pressed():
 	note_deleted.emit()
 
 ## Connects this note and the given [parameter editor] and
-## reflects note title chages into the tab title.
+## reflects note title changes into the tab title.
 func associate_editor(editor: Editor):
 	editor.associated_object = self
 
@@ -298,7 +298,7 @@ func _on_edit_button_pressed():
 	# show the editor if it's hidden
 	SingletonObject.main_ui.set_editor_pane_visible(true)
 
-	# Try to find editor that's already assiciated with memory_item
+	# Try to find editor that's already associated with memory_item
 	# this note is rendering so we don't end up duplicating them.
 	for i in range(ep.Tabs.get_tab_count()):
 		var tab_control = ep.Tabs.get_tab_control(i)

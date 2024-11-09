@@ -18,11 +18,11 @@ func _on_file_index_pressed(index):
 			var tabs = SingletonObject.editor_container.editor_pane.Tabs
 			var current_editor_tab = tabs.get_current_tab_control()
 			
-			#check is tab exists and a file for the tab doesnot exist (the file is being saved for the first time)
+			#check is tab exists and a file for the tab doesn't exist (the file is being saved for the first time)
 			if current_editor_tab and !current_editor_tab.file_saved_in_disc :
 				current_editor_tab.prompt_close(true)# shows file save pop up
 				
-			else: # this runs if the file has been saved already so the pop up for saving does not apear
+			else: # this runs if the file has been saved already so the pop up for saving does not appear
 				current_editor_tab.save_file_to_disc(current_editor_tab.file) #calls save to disc fun
 				
 		3: #this match if for the save as... button
@@ -115,8 +115,8 @@ func _on_view_id_pressed(id: int):
 		4: SingletonObject.main_scene.zoom_ui(2); return
 		5: SingletonObject.main_scene.zoom_ui(-2); return
 		6: SingletonObject.main_scene.reset_zoom(); return
-		8: _unhide_notes()
-		9: _unhide_messages()
+		8: _show_notes()
+		9: _show_messages()
 		#11: SingletonObject.change_buttons_zoom(0.5); return
 		#12: SingletonObject.change_buttons_zoom(-0.5); return
 		16: SingletonObject.increment_scale_ui()
@@ -132,14 +132,14 @@ func _on_view_id_pressed(id: int):
 	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(view.get_item_index(2)))
 	SingletonObject.main_ui.set_terminal_pane_visible(view.is_item_checked(view.get_item_index(10)))
 
-func _unhide_notes():
+func _show_notes():
 	for ch in SingletonObject.ChatList:
 		for chi in ch.HistoryItemList:
 			if not chi.Visible:
 				chi.Visible = true
 				chi.rendered_node.render()
 
-func _unhide_messages():
+func _show_messages():
 	for thread in SingletonObject.ThreadList:
 		for item in thread.MemoryItemList:
 			if not item.Visible:
@@ -163,7 +163,7 @@ func _on_file_about_to_popup():
 
 func _on_project_about_to_popup() -> void:
 	#checks if current editor tabs, chat tabs or notes exists 
-	#and enables saving features for ther project if so
+	#and enables saving features for their project if so
 	if SingletonObject.any_project_features_open():
 		%Project.set_item_disabled(2, false)
 		%Project.set_item_disabled(3, false)
@@ -171,7 +171,7 @@ func _on_project_about_to_popup() -> void:
 		%Project.set_item_disabled(2, true)
 		%Project.set_item_disabled(3, true)
 
-#this function gets call when the mouse ehovers over the MenuBar
+#this function gets call when the mouse hovers over the MenuBar
 #it has a timer so it doesn't execute all the time
 var timer
 var active: bool = true
@@ -203,7 +203,7 @@ func load_recent_projects():
 		if project.get_tree().has_group("open_recent"):
 			project.remove_item(project.item_count - 1)
 		
-		# create submenu item, fill it with recent projectd and add to menu
+		# create submenu item, fill it with recent projects and add to menu
 		submenu = PopupMenu.new()
 		submenu.name = "OpenRecentSubmenu"
 		submenu.add_to_group("open_recent")

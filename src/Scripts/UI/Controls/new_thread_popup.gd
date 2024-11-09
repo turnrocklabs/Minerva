@@ -4,11 +4,11 @@ var tab_reference = null
 #var tab_title: String = ""
 
 func _ready() -> void:
-	SingletonObject.associated_notes_tab.connect(_on_assosiated_notes_tab)
+	SingletonObject.associated_notes_tab.connect(_on_associated_notes_tab)
 	SingletonObject.pop_up_new_tab.connect(_pop_up_new_tab)
 
 
-func _on_assosiated_notes_tab(tab_name: String, tab: Control)-> void:
+func _on_associated_notes_tab(tab_name: String, tab: Control)-> void:
 	#print(tab_name)
 	#print(tab.get_class())
 	set_values(tab_name, tab)

@@ -140,7 +140,7 @@ func _get_file_items(current: TreeItem) -> Array[TreeItem]:
 
 	return items
 
-## Givent tree item, it will go up the hierarchy and compose a string that represents it's path.
+## Given tree item, it will go up the hierarchy and compose a string that represents it's path.
 func _construct_package_file_path(item: TreeItem) -> String:
 	var sections: = PackedStringArray()
 
@@ -193,7 +193,7 @@ func _on_file_dialog_file_selected(path: String):
 	save_path = path
 
 
-func _on_change_destionation_button_pressed():
+func _on_change_destination_button_pressed():
 	file_dialog.current_path = save_path
 	file_dialog.popup_centered()
 

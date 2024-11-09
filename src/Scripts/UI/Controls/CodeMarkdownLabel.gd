@@ -73,8 +73,8 @@ func _on_replace_all_pressed():
 		else: 
 			print("Error: Active tab is not a Text editor.")
 		ep.update_tabs_icon()
-	#elif ep.Tabs.get_child(current_tab_indx):
-		#var editor = ep.Tabs.get_child(current_tab_indx)
+	#elif ep.Tabs.get_child(current_tab_idx):
+		#var editor = ep.Tabs.get_child(current_tab_idx)
 		#var FindCodeEdit = editor.get_child(0)
 		#var code_edit_node = FindCodeEdit.get_node("%CodeEdit")
 		#if code_edit_node:
