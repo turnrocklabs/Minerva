@@ -54,7 +54,6 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-text = "more C:\\Users\\milos\\Downloads\\junk.txt"
 placeholder_text = "Command Input"
 flat = true
 caret_blink = true
