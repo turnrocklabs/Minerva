@@ -36,8 +36,8 @@ var Title: String:
 var Content: String = "":
 	set(value):
 		SingletonObject.save_state(false);
-		var hash_:String = hash_string(value)
-		Sha_256 = hash_
+		var hashed:String = hash_string(value)
+		Sha_256 = hashed
 		Content = value
 
 var MemoryImage: Image:
@@ -67,8 +67,8 @@ func hash_string(input: String) -> String:
 	var ctx = HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
 	ctx.update(input.to_utf8_buffer())
-	var hash_ = ctx.finish()
-	return hash_.hex_encode()
+	var hashed = ctx.finish()
+	return hashed.hex_encode()
 
 
 func _init(_OwningThread = null):

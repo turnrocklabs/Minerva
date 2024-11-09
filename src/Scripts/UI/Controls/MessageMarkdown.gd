@@ -65,7 +65,7 @@ func set_message_loading(loading_: bool):
 
 
 ## This function will rerender the messaged using set `history_item`.
-## Either call this function or set the `history_item` whos setter will trigger it.
+## Either call this function or set the `history_item` which setter will trigger it.
 func render():
 	if not (history_item and is_node_ready()): return
 
@@ -223,7 +223,7 @@ func _on_hide_button_pressed():
 
 # code below emits a `message_selection` signal when text selection starts or ends
 # if mouse is not pressed emit false
-# if mouse is pressed AND somoe of richtextlabels have selected text emit true
+# if mouse is pressed AND some of richtext labels have selected text emit true
 
 var _pressed: = false
 func _on_gui_input(event: InputEvent):
@@ -286,7 +286,7 @@ func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
 	var new_ts1 = _extract_text_segments(TextSegment.new(text.content.substr(0, match_.get_start())))
 	found.append_array(new_ts1)
 
-	# if theres no syntax, just set it to anything but emty string
+	# if theres no syntax, just set it to anything but empty string
 	# since empty string would mean it's not a code block
 	var syntax = match_.get_string("syntax")
 	if not syntax: syntax = "Plain Text"
