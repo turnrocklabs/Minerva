@@ -52,7 +52,7 @@ func _notification(what):
 func _messages_list_changed():
 	var last_message: MessageMarkdown
 
-	# disalbe edit for all user messages
+	# disable edit for all user messages
 	for child in get_children():
 		if child is MessageMarkdown:
 			child.editable = false
@@ -112,7 +112,7 @@ func render_items():
 
 # determines how much to scroll the chat container scroll container
 # 0 being no scroll
-# this being a float insted of bool allows for faster
+# this being a float instead of bool allows for faster
 # scroll further the mouse is outside the control
 var _scroll_factor:= 0.0
 var _text_selection:= false
@@ -125,7 +125,7 @@ func _process(delta: float):
 
 func _input(event):
 	if event is InputEventMouseButton: pass
-		# scroll_container.visi
+		# scroll_container.visible = true
 
 	if not event is InputEventMouseMotion: return
 

@@ -10,7 +10,7 @@ func _init():
 
 	model_name = "claude-3.5-sonnet"
 	short_name = "CS"
-	token_cost = 1.5 / 1_000_000 # https://claude101.com/claude-3-5-sonnet/
+	token_cost = 0.000015 # https://claude101.com/claude-3-5-sonnet/
 
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
@@ -34,11 +34,11 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 			if "error" in data:
 				bot_response.error = data["error"]["message"]
 			else:
-				bot_response.error = "Unexpected error occured while generating the response"
+				bot_response.error = "Unexpected error occurred while generating the response"
 
 	else:
 		push_error("Invalid result. Response: %s", response.response_code)
-		bot_response.error = "Unexpected error occured with HTTP Client. Code %s" % response.http_request_result
+		bot_response.error = "Unexpected error occurred with HTTP Client. Code %s" % response.http_request_result
 		return
 
 	return bot_response

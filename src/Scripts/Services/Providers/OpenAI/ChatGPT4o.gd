@@ -6,7 +6,7 @@ func _init():
 
 	model_name = "gpt-4o"
 	short_name = "O4"
-	token_cost = 2.5 / 1000000.0 # https://openai.com/api/pricing/
+	token_cost = 0.00000125 # https://openai.com/api/pricing/
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
@@ -70,25 +70,34 @@ func wrap_memory(item: MemoryItem) -> Variant:
 		return output
 
 
+func estimate_tokens(input: String) -> int:
+	# Provide a basic token estimation (improve as needed)
+	return roundi(input.get_slice_count(" ") * 1.335)
+
 func estimate_tokens_from_prompt(input: Array[Variant]):
-	var text_tokens: float = super(input)
+	var text_tokens: float = 0.0 # Initialize to 0
 
-	var image_tokens: = 0.0
-
-	# get all user messages
 	for msg: Dictionary in input:
 		var content = msg.get("content")
 
 		if content is String:
-			continue
-		
+			text_tokens += estimate_tokens(content) # Count tokens for text-only messages
 		elif content is Array:
 			for part: Dictionary in content:
+				if part.get("type") == "text":
+					text_tokens += estimate_tokens(part.get("text")) # Count tokens for text parts
+
+	return text_tokens + estimate_image_tokens_from_prompt(input)
+
+func estimate_image_tokens_from_prompt(input: Array[Variant]) -> float:
+	var image_tokens := 0.0
+	for msg: Dictionary in input:
+		var content = msg.get("content")
+		if content is Array:
+			for part in content:
 				if part.get("type") == "image_url":
 					var b64: String = part["image_url"]["url"]
 					var img = Image.new()
 					img.load_png_from_buffer(Marshalls.base64_to_raw(b64))
-					
 					image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
-
-	return text_tokens + image_tokens
+	return image_tokens
