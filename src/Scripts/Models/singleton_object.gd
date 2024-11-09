@@ -303,6 +303,7 @@ enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC }
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
+	HUMAN,
 	CHAT_GPT_4O,
 	CHAT_GPT_O1,
 	CHAT_GPT_35_TURBO,
@@ -314,6 +315,7 @@ enum API_MODEL_PROVIDERS {
 
 ## Dictionary of all model providers and scripts that implement their functionality
 var API_MODEL_PROVIDER_SCRIPTS = {
+	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
 	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	API_MODEL_PROVIDERS.CHAT_GPT_O1: ChatGPTo1,
 	API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
