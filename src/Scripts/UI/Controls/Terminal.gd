@@ -445,4 +445,3 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			
 			await get_tree().process_frame
 			command_line_edit.caret_column = command_line_edit.text.length()
-
