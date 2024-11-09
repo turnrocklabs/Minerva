@@ -86,7 +86,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	# runs before onready so we need to use get_node
 	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
 	match type_:
-		Editor.Type.TEXT, Editor.Type.NOTE_EDITOR:
+		Editor.Type.TEXT:
 			var new_code_edit = EditorCodeEdit.new()
 			new_code_edit.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			new_code_edit.caret_blink = true
