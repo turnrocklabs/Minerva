@@ -1,7 +1,7 @@
 class_name Terminal
 extends PanelContainer
 
-const MAX_COMMAND_OUTPUT_LENGTH: = INF
+const MAX_COMMAND_OUTPUT_LENGTH: = 8192
 var ASCII_COLOR_CODE_REGEX = RegEx.create_from_string("\\x1B\\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGK]")
 
 @warning_ignore("unused_signal")
@@ -13,12 +13,16 @@ signal execution_finished()
 
 var stdio: FileAccess
 var stderr: FileAccess
-## PID of the running shell process
-var pid: int
 
+## state of the running shell process
+var pid: int
+var pwd: String
 var _stdio_thread: Thread
 var _stderr_thread: Thread
+
+## state management for the terminal
 var _mutex: = Mutex.new()
+var last_container_checkbutton: CheckButton
 
 # label where the output of the current running command should go to
 @onready var _output_container: Container = %OutputContainer
@@ -75,8 +79,11 @@ func _create_command_output_container() -> Container:
 	var check_button = CheckButton.new()
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_END
+	if last_container_checkbutton != null:
+		check_button.visible = false
 	check_button.toggled.connect(_on_output_check_button_toggled.bind(_output_label, check_button))
 	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
+	last_container_checkbutton = check_button
 
 	command_output_container.add_child(check_button)
 	command_output_container.add_child(_output_label)
@@ -200,6 +207,9 @@ const MAX_PROCESS_PASS: = 200
 
 func _process(_delta: float) -> void:
 	_mutex.lock()
+	if OS.get_name() == "Linux":
+		pwd = "(" + OS.get_environment("CONDA_DEFAULT_ENV") + ") " + OS.get_environment("PWD")
+		%CwdLabel.text = pwd + "% "
 
 	if _received_characters.is_empty():
 		set_process(false)
@@ -211,9 +221,7 @@ func _process(_delta: float) -> void:
 	for i in min(MAX_PROCESS_PASS, _received_characters.size()):
 		_proces_received_text(_received_characters[-1], _offset)
 		_offset -= 1
-
 		_received_characters.remove_at(_received_characters.size()-1)
-
 
 	# prints(min(MAX_PROCESS_PASS, _received_characters.size()), Time.get_unix_time_from_system() - time_start)
 
@@ -388,6 +396,8 @@ func _append_output_text(text: String) -> void:
 	_output_label.text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
 
 func execute_command(input: String):
+	if last_container_checkbutton != null:
+		last_container_checkbutton.visible = true
 	_history.append(input)
 
 	var command_buffer: PackedByteArray
