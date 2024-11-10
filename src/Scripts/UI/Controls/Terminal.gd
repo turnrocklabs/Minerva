@@ -16,7 +16,7 @@ var stderr: FileAccess
 
 ## state of the running shell process
 var pid: int
-var pwd: String
+var shell_prompt: String
 var _stdio_thread: Thread
 var _stderr_thread: Thread
 
@@ -208,8 +208,8 @@ const MAX_PROCESS_PASS: = 200
 func _process(_delta: float) -> void:
 	_mutex.lock()
 	if OS.get_name() == "Linux":
-		pwd = "(" + OS.get_environment("CONDA_DEFAULT_ENV") + ") " + OS.get_environment("PWD")
-		%CwdLabel.text = pwd + "% "
+		shell_prompt = "(" + OS.get_environment("CONDA_DEFAULT_ENV") + ") " + OS.get_environment("PWD") + "% "
+		%CwdLabel.text = shell_prompt
 
 	if _received_characters.is_empty():
 		set_process(false)
@@ -376,7 +376,11 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 
 
 func _append_output_text(text: String) -> void:
-	var remaining_space: = MAX_COMMAND_OUTPUT_LENGTH - _output_label.text.length()
+	var remaining_space: int
+	var label_length: int = 0
+	if _output_label != null:
+		label_length = _output_label.text.length()
+	remaining_space = MAX_COMMAND_OUTPUT_LENGTH - label_length
 	
 	if remaining_space < text.length():
 		text = text.left(remaining_space)
@@ -392,8 +396,10 @@ func _append_output_text(text: String) -> void:
 		return
 
 
-	var full_text: = _output_label.text + text
-	_output_label.text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
+	var full_text: String = ""
+	if _output_label != null:
+		full_text = _output_label.text + text
+		_output_label.text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
 
 func execute_command(input: String):
 	if last_container_checkbutton != null:
@@ -417,6 +423,7 @@ func execute_command(input: String):
 		command_buffer = (input + "\n").to_utf8_buffer()
 
 	stdio.store_buffer(command_buffer)
+	_append_output_text(shell_prompt + input + "\n")
 
 	_toggle_progress_bar()
 
