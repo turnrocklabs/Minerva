@@ -2,7 +2,10 @@ class_name Terminal
 extends PanelContainer
 
 const MAX_COMMAND_OUTPUT_LENGTH: = 8192
-var ASCII_COLOR_CODE_REGEX = RegEx.create_from_string("\\x1B\\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGK]")
+var ASCII_COLOR_CODE_REGEX: = RegEx.create_from_string("\\x1B\\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGK]")
+
+var WINDOWS_PATH_REGEX_PATTERN: = r"^[a-zA-Z](?::(?:[\\\/](?:[a-zA-Z0-9]+[\\\/])*([a-zA-Z0-9]+)?)?)?"
+var LINUX_PATH_REGEX_PATTERN: = r"(?:\/)?(?:[a-zA-Z0-9-_.]+\/)*[a-zA-Z0-9-_.]*(?:\/)?[\s]*"
 
 @warning_ignore("unused_signal")
 signal execution_finished()
@@ -16,12 +19,17 @@ var stderr: FileAccess
 
 ## state of the running shell process
 var pid: int
-var shell_prompt: String
+var shell_prompt: String:
+	set(value):
+		shell_prompt = value
+		_update_shell_prompt()
+
 var _stdio_thread: Thread
 var _stderr_thread: Thread
 
 ## state management for the terminal
-var _mutex: = Mutex.new()
+var _idx_mutex: = Mutex.new() ## mutex for index of the received character to perserve the order
+var _chars_mutex: = Mutex.new() ## mutex for the array of received characters
 var last_container_checkbutton: CheckButton
 
 # label where the output of the current running command should go to
@@ -35,8 +43,10 @@ var _history: = PackedStringArray()
 var _history_idx = 0
 
 var wrap_command: Callable
-var delimiter: String = "---$$%s$$---"
+var delimiter: String = "---$$$$---"
 var shell: String
+## Parameters for starting the above shell
+var _parameters: = PackedStringArray()
 
 ## Creates new terminal instance
 static func create() -> Terminal:
@@ -47,24 +57,32 @@ static func create() -> Terminal:
 # region Wrap Commmand
 
 func _wrap_windows_command(user_input: String) -> String:
-	return "{cmd} & echo.&echo {delimiter}".format({
+	return "({cmd} & echo.&echo {delimiter} & cd & echo {delimiter}) 2>&1 | more".format({
 		"cmd": user_input,
-		"delimiter": delimiter % "",
+		"delimiter": delimiter,
 	})
 
 func _wrap_linux_command(user_input: String) -> String:
 	# escape the string so it doesn't get expanded on linux
 	var escaped_delimiter = (
-		delimiter % ""
+		delimiter
 	).replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`").replace("!", "\\!")
 
 
-	return "{cmd}; echo -e \"{delimiter}\"".format({
+	return "{cmd}; echo -e \"{delimiter}\"; pwd; echo -e \"{delimiter}\"".format({
 		"cmd": user_input,
 		"delimiter": escaped_delimiter,
 	})
 
 # endregion
+
+func _update_shell_prompt():
+	print(shell_prompt)
+	if OS.get_name() == "Windows":
+		%CwdLabel.text = shell_prompt
+	else:
+		%CwdLabel.text = "(%s) %s%% " % [OS.get_environment("CONDA_DEFAULT_ENV"), shell_prompt]
+
 
 ## Creates output container for the currently running command.[br]
 ## Contains label and check button to enable that output content.
@@ -144,12 +162,15 @@ func _ready():
 		"Windows":
 			shell = OS.get_environment("COMSPEC")
 			wrap_command = _wrap_windows_command
+			_parameters = ["/K", "cd /d %s" % OS.get_environment("USERPROFILE")]
+			shell_prompt = OS.get_environment("USERPROFILE")
 
 		"Linux", "macOS", "FreeBSD", "NetBSD", "OpenBSD", "BSD":
 			shell = OS.get_environment("SHELL")
 			wrap_command = _wrap_linux_command
+			shell_prompt = OS.get_environment("PWD")
 	
-	var process = OS.execute_with_pipe(shell, [])
+	var process = OS.execute_with_pipe(shell, _parameters)
 	if not process.is_empty():
 		stdio = process.get("stdio")
 		stderr = process.get("stderr")
@@ -206,57 +227,58 @@ var _offset: = 0
 const MAX_PROCESS_PASS: = 200
 
 func _process(_delta: float) -> void:
-	_mutex.lock()
-	if OS.get_name() == "Linux":
-		shell_prompt = "(" + OS.get_environment("CONDA_DEFAULT_ENV") + ") " + OS.get_environment("PWD") + "% "
-		%CwdLabel.text = shell_prompt
+	_chars_mutex.lock()
 
 	if _received_characters.is_empty():
 		set_process(false)
-		_mutex.unlock()
+		_chars_mutex.unlock()
 		return
 	
 	# var time_start = Time.get_unix_time_from_system()
 
 	for i in min(MAX_PROCESS_PASS, _received_characters.size()):
-		_proces_received_text(_received_characters[-1], _offset)
+		_proces_received_text(_received_characters[0], _offset)
 		_offset -= 1
-		_received_characters.remove_at(_received_characters.size()-1)
+		_received_characters.remove_at(0)
 
 	# prints(min(MAX_PROCESS_PASS, _received_characters.size()), Time.get_unix_time_from_system() - time_start)
 
-	_mutex.unlock()
+	_chars_mutex.unlock()
 
 
 
 func _stdio_thread_loop():
 	while stdio.is_open() and stdio.get_error() == OK:
 		var data: = char(stdio.get_8())
+		# var recv_time: = Time.get_ticks_msec()
 
-		_mutex.lock()
 		# print("stdio thread: ", OS.get_thread_caller_id())
 		
+		_idx_mutex.lock()
 		_index += 1
 		var index = _index
+		_idx_mutex.unlock()
 		
+		# print("STDOUT", recv_time)
 		_new_text(data, index)
 		
-		_mutex.unlock()
 
 
 func _stderr_thread_loop():
 	while stderr.is_open() and stderr.get_error() == OK:
 		var data: = char(stderr.get_8())
+		# var recv_time: = Time.get_ticks_msec()
 
-		_mutex.lock()
 		# print("stderr thread: ", OS.get_thread_caller_id())
 		
+		_idx_mutex.lock()
 		_index += 1
 		var index = _index
-		
+		_idx_mutex.unlock()
+
+		# print("STDERR", recv_time)
 		_new_text(data, index)
 		
-		_mutex.unlock()
 
 
 var prev: int
@@ -266,11 +288,13 @@ func _new_text(text: String, index: int) -> void:
 		push_warning("Current index is %s and previous is %s" % [index, prev])
 	prev = index
 
+	_chars_mutex.lock()
 	# if we're about to add first element to this array, adjust the _offset
 	if _received_characters.is_empty():
 		_offset = index
 
-	_received_characters.insert(0, text)
+	_received_characters.append(text)
+	_chars_mutex.unlock()
 
 	if not is_processing():
 		set_process.call_deferred(true)
@@ -289,36 +313,128 @@ class DisalowedSequence:
 
 	var before: String
 	var after: String
-	var content: String
+	var content
+	var replace_with: String
 
 	# Whether this delimiter marks the command output end.
 	var command_end: = false
 
-	func _init(content_: String, before_: String, after_: String, command_end_: = false) -> void:
+	var full_regex: RegEx
+
+	func _init(content_, before_: String, after_: String, command_end_: = false, replace_with_: = "") -> void:
 		content = content_
 		after = after_
 		before = before_
 		command_end = command_end_
-	
-	## Checks if [parameter text] has give [member content]
+		replace_with = replace_with_
+
+		if content is String:
+			var full_text: = "%s%s%s" % [before, content, after]
+			full_regex = RegEx.create_from_string(regex_escape(full_text))
+		elif content is RegEx:
+			var full_text: = "%s%s%s" % [regex_escape(before), content.get_pattern(), regex_escape(after)]
+			full_regex = RegEx.create_from_string("(?m)%s" % full_text)
+
+
+	static func _create_partial_regex_pattern(literal: String):
+		var pattern_array: = PackedStringArray(["^"])
+
+		for i in range(literal.length()):
+			var char_ = literal[i]
+			
+			if i == 0:
+				pattern_array.append(regex_escape(char_))
+				continue
+
+			pattern_array.append("(" + regex_escape(char_))
+
+		for i in range(literal.length()-1):
+			pattern_array.append(")?")
+		
+		pattern_array.append("$")
+
+		return "".join(pattern_array)
+
+	# Escapes special regex characters in a string to create a literal search pattern
+	static func regex_escape(literal: String) -> String:
+		# List of special characters that need to be escaped in regex
+		const SPECIAL_CHARS = [
+			"\\", # Backslash must be first to avoid double-escaping
+			".", 
+			"+", 
+			"*", 
+			"?", 
+			"^", 
+			"$", 
+			"(", 
+			")", 
+			"[", 
+			"]", 
+			"{", 
+			"}", 
+			"|",
+			"/"
+		]
+		
+		var escaped = literal
+		# Add backslash before each special character
+		for char_ in SPECIAL_CHARS:
+			escaped = escaped.replace(char_, "\\" + char_)
+		
+		return escaped
+
+	## Checks if [parameter text] has the given [member content]
 	## inbetween [member before] and [member after].
 	func is_present(text: String) -> bool:
-		return text.contains("%s%s%s" % [before, content, after])
+
+		print("\n")
+		print("Checking if '%s' is present in '%s'" % [text.c_escape(), full_regex.get_pattern()])
+		print("IT IS" if full_regex.search(text) is RegExMatch else "IT'S NOT")
+		print("\n")
+		return full_regex.search(text) is RegExMatch
+
+		# return text.contains("%s%s%s" % [before, content, after])
 	
 	## Checks whether the provided unfinished [parameter text][br]
 	## could potentially match the disallowed sequence.
 	func is_potential(text: String) -> bool:
-		var full_text: = "%s%s%s" % [before, content, after]
+		if text.length() <= before.length():
+			return before.begins_with(text)
 
-		return full_text.begins_with(text)
+		var remaining: = text.substr(before.length())
+
+		if remaining.strip_escapes().strip_edges().is_empty():
+			return true
+
+		var pr: RegEx
+
+		if content is String:
+			pr = RegEx.create_from_string(_create_partial_regex_pattern(content))
+		elif content is RegEx:
+			pr = content
+
+		var match_: = pr.search(remaining.strip_escapes())
+
+
+		if not match_ or match_.get_start() != 0: return false
+
+		remaining = remaining.substr(match_.get_end()+1)
+
+
+		return true
+
+	func extract_cwd(text: String) -> String:
+		
+		var match_ = full_regex.search(text)
+
+		if not match_: return ""
+
+		return match_.get_string().trim_prefix(before).trim_suffix(after)
 
 	## Strips the [member content] from the given [parameter text]
 	func strip(text: String) -> String:
-		var full_text: = "%s%s%s" % [before, content, after]
 
-		var stripped: = "%s%s" % [before, after]
-
-		return text.replace(full_text, stripped)
+		return full_regex.sub(text, replace_with)
 
 
 ## Characters that were processed, but are not yet displayed because they[br]
@@ -348,14 +464,16 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 
 	var ds: DisalowedSequence = _disallowed_seq.front()
 
-	# print("Checking \"%s\"..." % full_string)
-
 	# currently received characters are not potentially disallowed sequence just add them
 	if ds.is_potential(full_string):
 		# print(r"'%s' is potential for '%s'" % [full_string, ds.full])
 		add_char = false
 
 		if ds.is_present(full_string):
+			
+			if ds.command_end:
+				shell_prompt = ds.extract_cwd(full_string)
+				print("Extracted cwd: ", shell_prompt)
 
 			var stripped: = ds.strip(full_string)
 			full_string = stripped
@@ -391,8 +509,6 @@ func _append_output_text(text: String) -> void:
 			text += "\n(output truncated)"
 			_output_label.set_meta("truncated", true)
 			_output_label.text += text
-			# _create_command_output_container()
-			# _disallowed_seq.clear()
 		return
 
 
@@ -415,15 +531,39 @@ func execute_command(input: String):
 
 		# windows shell outputs the input command, where other shells don't do that
 		if OS.get_name() == "Windows":
-			_disallowed_seq.append(DisalowedSequence.new(wrap_command.call(""), input, ""))
+			_disallowed_seq.append(DisalowedSequence.new(wrap_command.call(input), "", "", false, input))
 		
-		_disallowed_seq.append(DisalowedSequence.new(delimiter % "", "", "", true))
+		
+			_disallowed_seq.append(
+				DisalowedSequence.new(
+					RegEx.create_from_string(WINDOWS_PATH_REGEX_PATTERN),
+					delimiter + " \r\n",
+					"\r\n" + delimiter,
+					true,
+					""
+				)
+			)
+		
+		else: # Linux
+			_disallowed_seq.append(
+				DisalowedSequence.new(
+					RegEx.create_from_string(LINUX_PATH_REGEX_PATTERN),
+					delimiter + "\n",
+					"\n" + delimiter,
+					true,
+					""
+				)
+			)
 
 	else:
 		command_buffer = (input + "\n").to_utf8_buffer()
-
+	
+	print("Executing command: ", command_buffer.get_string_from_utf8())
+	
 	stdio.store_buffer(command_buffer)
-	_append_output_text(shell_prompt + input + "\n")
+
+	if OS.get_name() == "Linux":
+		_append_output_text(shell_prompt + input + "\n")
 
 	_toggle_progress_bar()
 
