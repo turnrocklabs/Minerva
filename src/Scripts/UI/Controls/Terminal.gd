@@ -563,7 +563,7 @@ func execute_command(input: String):
 	stdio.store_buffer(command_buffer)
 
 	if OS.get_name() == "Linux":
-		_append_output_text(shell_prompt + input + "\n")
+		_append_output_text(shell_prompt + "% " + input + "\n")
 
 	_toggle_progress_bar()
 
