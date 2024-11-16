@@ -8,7 +8,7 @@ extends Control
 
 static var editor_scene = preload("res://Scenes/Editor.tscn")
 static var graphics_editor_scene = preload("res://Scenes/GraphicsEditor.tscn")
-static var video_player_scene = preload("res://Scenes/video_player.tscn")
+
 
 signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
@@ -123,11 +123,12 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			
 		# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
 		Editor.Type.VIDEO:
-			var new_video_player: VideoPlayer = video_player_scene.instantiate()
+			var new_video_player: VideoPlayer = SingletonObject.video_player_scene.instantiate()
 			new_video_player.video_path = file_
 			editor.video_player = new_video_player
-			editor.get_node("%ButtonsHBoxContainer").queue_free()#.visible = false
+			editor.get_node("%ButtonsHBoxContainer").queue_free()
 			editor.get_node("%FindStringContainer").queue_free()
+			#editor.get_node("%JumpToLinePanel").queue_free()
 			
 	
 			

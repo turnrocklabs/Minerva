@@ -2,11 +2,11 @@ extends Control
 class_name VideoPlayer
 
 #region onready variables
-@onready var video_stream_player: VideoStreamPlayer = %VideoStreamPlayer
+@export var video_stream_player: VideoStreamPlayer
 @onready var timer: Timer = %SliderTimer
 @onready var play_button: Button = %PlayButton
-@onready var h_slider: HSlider = %HSlider
-@onready var label: Label = %Label
+@export var h_slider: HSlider
+@onready var label: Label = %RunningTimeLabel
 @onready var color_rect: ColorRect = %ColorRect
 @onready var controls_timer: Timer = %ControlsTimer
 @onready var volume_button: Button = %VolumeButton
@@ -15,8 +15,10 @@ class_name VideoPlayer
 #endregion onready variables
 
 
-var pause_icon: = preload("res://assets/icons/pause_icons/pause-24.png")
-var play_icon: = preload("res://assets/icons/play_icons/play-24.png")
+static var pause_icon: = preload("res://assets/icons/pause_icons/pause-24.png")
+static var play_icon: = preload("res://assets/icons/play_icons/play-24.png")
+static var muted_icon: = preload("res://assets/icons/speaker-muted-24.png")
+static var speaker_icon: = preload("res://assets/icons/speaker-24.png")
 
 var was_playing: bool = false # this is for checking if the video was playing when the progress var is dragged
 
@@ -25,21 +27,18 @@ var was_playing: bool = false # this is for checking if the video was playing wh
 var video_path: String:
 	set(value):
 		video_path = value
-		var stream: = FFmpegVideoStream.new()
-		stream.file = value
-		
 		if video_stream_player:
-			video_stream_player.stream = stream
+			video_stream_player.stream.file = value
 			h_slider.max_value = video_stream_player.get_stream_length()
 			h_slider.value = 0
-			video_stream_player.play()
+
 
 
 func _ready() -> void:
 	if video_stream_player:
 		h_slider.max_value = video_stream_player.get_stream_length()
 		h_slider.value = 0
-		video_stream_player.play()
+	video_stream_player.play()
 
 
 func update_time_label() -> void:
@@ -146,6 +145,10 @@ func handle_input_for_pause(event: InputEvent) -> void:
 		elif event is InputEventKey:
 			if event.keycode == KEY_SPACE:
 				toggle_pause()
+			elif event.keycode == KEY_ESCAPE:
+				if is_fullscreen:
+					get_tree().root.borderless = true
+					self.queue_free()
 
 #both color_rect and volume_rect are connected to this function
 func _on_color_rect_mouse_entered() -> void:
@@ -181,3 +184,24 @@ func _on_focus_exited() -> void:
 
 func _on_tree_exited() -> void:
 	DisplayServer.mouse_set_mode(DisplayServer.MOUSE_MODE_VISIBLE)
+
+
+var is_fullscreen: bool = false
+
+var video_group: = "fullscreen_video"
+func _on_fullscreen_button_pressed() -> void:
+	video_stream_player.paused = true
+	if !is_fullscreen:
+		var full_screen_player: VideoPlayer = SingletonObject.video_player_scene.instantiate()
+		full_screen_player.z_index = 1000
+		full_screen_player.video_path = self.video_path
+		full_screen_player.add_to_group(video_group)
+		full_screen_player.is_fullscreen = true
+		get_tree().root.add_child(full_screen_player)
+		full_screen_player.grab_focus()
+		get_tree().root.borderless = true
+	else:
+		get_tree().root.borderless = true
+		self.queue_free()
+		
+		

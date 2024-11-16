@@ -15,7 +15,7 @@ signal changed()
 @onready var audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
 @onready var image_caption_line_edit: LineEdit = %ImageCaptionLineEdit
 @onready var video_label: Label = %VideoLabel
-
+@export var video_player_container: VBoxContainer
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
 
@@ -39,11 +39,12 @@ var memory_item: MemoryItem:
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			audio_stream_player.stream = value.Audio
 		if memory_item.Type == SingletonObject.note_type.VIDEO:
-			video_label.text = "%s %s" % [value.Title, value.ContentType]
 			
-			var stream: = FFmpegVideoStream.new()
-			stream.file = value.FilePath
-			%VideoStreamPlayer.stream = stream
+			var video_player_node: = SingletonObject.video_player_scene.instantiate()
+			video_label.text = "%s %s" % [value.Title, value.ContentType]
+			video_player_node.video_path = value.FilePath
+			video_player_container.add_child(video_player_node)
+			
 		# If we create a note, open a editor associated with it and then rerender the memory_item
 		# that will create completely new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
