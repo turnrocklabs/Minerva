@@ -49,11 +49,16 @@ texture_progress = ExtResource("2_dkh1c")
 [node name="CwdLabel" type="Label" parent="ScrollContainer/v/h"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
+clip_text = true
+text_overrun_behavior = 3
+text_direction = 2
 
 [node name="CommandLineEdit" type="LineEdit" parent="ScrollContainer/v/h"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_stretch_ratio = 5.0
 placeholder_text = "Command Input"
 flat = true
 caret_blink = true
@@ -70,5 +75,6 @@ layout_mode = 2
 
 [connection signal="visibility_changed" from="." to="." method="_on_visibility_changed"]
 [connection signal="gui_input" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_gui_input"]
+[connection signal="text_changed" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_text_changed"]
 [connection signal="text_submitted" from="ScrollContainer/v/h/CommandLineEdit" to="." method="_on_command_line_edit_text_submitted"]
 [connection signal="pressed" from="ScrollContainer/v/h/Button" to="." method="_on_button_pressed"]
