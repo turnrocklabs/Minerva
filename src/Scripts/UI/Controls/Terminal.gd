@@ -13,6 +13,8 @@ signal execution_finished()
 @onready var scroll_container = %ScrollContainer
 @onready var command_line_edit: LineEdit = %CommandLineEdit
 
+## Holds the current output container created in [method _create_command_output_container]
+var _current_output_container: Container
 
 var stdio: FileAccess
 var stderr: FileAccess
@@ -171,7 +173,7 @@ func _autocomplete() -> void:
 ## Creates output container for the currently running command.[br]
 ## Contains label and check button to enable that output content.
 func _create_command_output_container() -> Container:
-	var command_output_container = HBoxContainer.new()
+	_current_output_container = HBoxContainer.new()
 
 	_output_label = Label.new()
 	#_output_label.fit_content = true
@@ -187,12 +189,12 @@ func _create_command_output_container() -> Container:
 	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
 	last_container_checkbutton = check_button
 
-	command_output_container.add_child(check_button)
-	command_output_container.add_child(_output_label)
+	_current_output_container.add_child(check_button)
+	_current_output_container.add_child(_output_label)
 	
-	_output_container.add_child.call_deferred(command_output_container)
+	_output_container.add_child.call_deferred(_current_output_container)
 	
-	return command_output_container
+	return _current_output_container
 
 
 func _on_output_check_button_toggled(toggled_on: bool, label: Label, btn: CheckButton):
@@ -377,7 +379,7 @@ func _new_text(text: String, index: int) -> void:
 
 ## A sequence of characters that must be removed from the terminal output
 ## before it's shown to the user. Used to remove internally used echo statement
-class DisalowedSequence:
+class Sequence:
 	extends RefCounted
 
 	## Read only full string content where[br]
@@ -464,15 +466,15 @@ class DisalowedSequence:
 		return full_regex.search(text) is RegExMatch
 	
 	## Checks whether the provided unfinished [parameter text][br]
-	## could potentially match the disallowed sequence.
-	func is_potential(text: String) -> bool:
-		if text.length() <= before.length():
+	## could potentially match the sequence.
+	func is_potential(text: String, allow_empty: = true) -> bool:
+		if not before.is_empty() and text.length() <= before.length():
 			return before.begins_with(text)
 
 		var remaining: = text.substr(before.length())
 
 		if remaining.strip_escapes().strip_edges().is_empty():
-			return true
+			if allow_empty: return true
 
 		var pr: RegEx
 
@@ -480,8 +482,8 @@ class DisalowedSequence:
 			pr = RegEx.create_from_string(_create_partial_regex_pattern(content))
 		elif content is RegEx:
 			pr = content
-
-		var match_: = pr.search(remaining.strip_escapes())
+		
+		var match_: = pr.search(remaining)
 
 
 		if not match_ or match_.get_start() != 0: return false
@@ -512,11 +514,31 @@ var _processed_text: =  PackedStringArray()
 
 # normally the size of this array is between 0 and 2
 # for starting and ending  command sequence
-var _disallowed_seq: Array[DisalowedSequence]
+var _disallowed_seq: Array[Sequence]
+
+var _windows_clear_seq: = Sequence.new("\f", "", "")
+var _linux_clear_seq: = Sequence.new(RegEx.create_from_string(r"^\x1b(\[2J)?$|^\x1b\[2?$|^\x1b\[$"), "", "")
 
 func _proces_received_text(text: String, _index_a: int) -> void:
 	_processed_text.append(text)
 	
+	var full_string: = "".join(_processed_text)
+
+	if OS.get_name() == "Windows":
+		if _windows_clear_seq.is_potential(full_string, false):
+			
+			if _windows_clear_seq.is_present(full_string):
+				clear_terminal()	
+			return
+	
+	elif OS.get_name() == "Linux":
+		if _linux_clear_seq.is_potential(full_string, false):
+			
+			if _linux_clear_seq.is_present(full_string):
+				clear_terminal()
+			return
+
+
 	if not _output_label:
 		_create_command_output_container()
 
@@ -525,12 +547,10 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 		_processed_text.clear()
 		return
 	
-	var full_string: = "".join(_processed_text)
-	
 	var add_char: = true
 	var was_stripped: = false
 
-	var ds: DisalowedSequence = _disallowed_seq.front()
+	var ds: Sequence = _disallowed_seq.front()
 
 	# currently received characters are not potentially disallowed sequence just add them
 	if ds.is_potential(full_string):
@@ -585,6 +605,13 @@ func _append_output_text(text: String) -> void:
 		full_text = _output_label.text + text
 		_output_label.text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
 
+## Clears all the terminal content
+func clear_terminal() -> void:
+	for ch in _output_container.get_children():
+		ch.queue_free()
+
+
+
 func execute_command(input: String):
 	if last_container_checkbutton != null:
 		last_container_checkbutton.visible = true
@@ -599,11 +626,11 @@ func execute_command(input: String):
 
 		# windows shell outputs the input command, where other shells don't do that
 		if OS.get_name() == "Windows":
-			_disallowed_seq.append(DisalowedSequence.new(wrap_command.call(input), "", "", false, input))
+			_disallowed_seq.append(Sequence.new(wrap_command.call(input), "", "", false, input))
 		
 		
 			_disallowed_seq.append(
-				DisalowedSequence.new(
+				Sequence.new(
 					RegEx.create_from_string(WINDOWS_PATH_REGEX_PATTERN),
 					delimiter + " \r\n",
 					"\r\n" + delimiter,
@@ -614,7 +641,7 @@ func execute_command(input: String):
 		
 		else: # Linux
 			_disallowed_seq.append(
-				DisalowedSequence.new(
+				Sequence.new(
 					RegEx.create_from_string(LINUX_PATH_REGEX_PATTERN),
 					delimiter + "\n",
 					"\n" + delimiter,
