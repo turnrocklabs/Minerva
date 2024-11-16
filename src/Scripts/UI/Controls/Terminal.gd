@@ -4,7 +4,7 @@ extends PanelContainer
 const MAX_COMMAND_OUTPUT_LENGTH: = 8192
 var ASCII_COLOR_CODE_REGEX: = RegEx.create_from_string("\\x1B\\[([0-9]{1,3}(;[0-9]{1,2};?)?)?[mGK]")
 
-var WINDOWS_PATH_REGEX_PATTERN: = r"^[a-zA-Z](?::(?:[\\\/](?:[a-zA-Z0-9]+[\\\/])*([a-zA-Z0-9]+)?)?)?"
+var WINDOWS_PATH_REGEX_PATTERN: = r"^[a-zA-Z](?::(?:[\\\/](?:[a-zA-Z0-9._-]+[\\\/])*([a-zA-Z0-9._-]+)?)?)?"
 var LINUX_PATH_REGEX_PATTERN: = r"(?:\/)?(?:[a-zA-Z0-9-_.]+\/)*[a-zA-Z0-9-_.]*(?:\/)?[\s]*"
 
 @warning_ignore("unused_signal")
@@ -23,6 +23,8 @@ var shell_prompt: String:
 	set(value):
 		shell_prompt = value
 		_update_shell_prompt()
+
+var _cwd: DirAccess
 
 var _stdio_thread: Thread
 var _stderr_thread: Thread
@@ -57,7 +59,7 @@ static func create() -> Terminal:
 # region Wrap Commmand
 
 func _wrap_windows_command(user_input: String) -> String:
-	return "({cmd} & echo.&echo {delimiter} & cd & echo {delimiter}) 2>&1 | more".format({
+	return " call {cmd} 2>&1 & echo.&echo {delimiter} & cd & echo {delimiter} | more".format({
 		"cmd": user_input,
 		"delimiter": delimiter,
 	})
@@ -77,12 +79,94 @@ func _wrap_linux_command(user_input: String) -> String:
 # endregion
 
 func _update_shell_prompt():
-	print(shell_prompt)
 	if OS.get_name() == "Windows":
 		%CwdLabel.text = shell_prompt
 	else:
 		%CwdLabel.text = "(%s) %s%% " % [OS.get_environment("CONDA_DEFAULT_ENV"), shell_prompt]
+	
+	%CwdLabel.tooltip_text = %CwdLabel.text
 
+	_cwd = DirAccess.open(shell_prompt)
+	_autocomplete_suggestions_all.clear()
+	_autocomplete_suggestions_all.append_array(_cwd.get_files())
+	_autocomplete_suggestions_all.append_array(_cwd.get_directories())
+	_autocomplete_suggestions_all.sort()
+	_autocomplete_idx = 0
+
+# region Autocomplete
+
+## List of all possible autcomplete results (all files, directories, etc.) for the current [member cwd].[br]
+## Regenerated each time [member cwd] changes.
+var _autocomplete_suggestions_all: Array[String]
+
+## Current index of autocomplete suggestion used.
+var _autocomplete_idx: int
+
+## List all autocomplete suggestions for the current user input.[br]
+## Regenerated each time user changes input.
+var _autocomplete_suggestions: PackedStringArray
+
+## User input that is being autocompleted
+var _autocomplete_input: String
+
+var _autcomplete_source_idx: int
+
+var _autcomplete_on: = true
+
+## Changes the input text for the autocomplete.
+func _autocomplete_change_input_string(text: String):
+	if not _autcomplete_on: return
+
+	_autocomplete_input = text
+	_autocomplete_idx = 0
+	
+	if text.is_empty():
+		_autocomplete_suggestions = _autocomplete_suggestions_all
+		return
+
+	var partial_text: String
+
+	_autcomplete_source_idx = text.rfind(" ")
+	if _autcomplete_source_idx == -1:
+		partial_text = text
+		_autcomplete_source_idx = 0
+	else:
+		_autcomplete_source_idx += 1
+		partial_text = text.substr(_autcomplete_source_idx)
+
+	if partial_text.is_empty():
+		_autocomplete_suggestions = _autocomplete_suggestions_all
+		return
+
+	_autocomplete_suggestions = _autocomplete_suggestions_all.filter(func(suggestion: String): return suggestion.begins_with(partial_text))
+
+
+func _autocomplete_get_next() -> String:
+	if _autocomplete_suggestions.is_empty(): return ""
+
+	var next: = _autocomplete_suggestions[_autocomplete_idx]
+
+	_autocomplete_idx = wrapi(_autocomplete_idx+1, 0, _autocomplete_suggestions.size())
+
+	return next
+
+func _autocomplete() -> void:
+	_autcomplete_on = false
+
+	var next: = _autocomplete_get_next()
+	if not next:
+		_autcomplete_on = true
+		return
+
+	var text: = command_line_edit.text.left(_autcomplete_source_idx)
+	text += next
+
+	command_line_edit.text = text
+	command_line_edit.caret_column = text.length()
+
+	_autcomplete_on = true
+
+# endregion
 
 ## Creates output container for the currently running command.[br]
 ## Contains label and check button to enable that output content.
@@ -185,6 +269,8 @@ func _ready():
 		get_window().close_requested.connect(_clean)
 
 		print("Started the shell process with pid %s" % pid)
+	
+	_autocomplete_change_input_string(command_line_edit.text)
 
 
 # Auto focus the line input when control is visible again 
@@ -233,15 +319,11 @@ func _process(_delta: float) -> void:
 		set_process(false)
 		_chars_mutex.unlock()
 		return
-	
-	# var time_start = Time.get_unix_time_from_system()
 
 	for i in min(MAX_PROCESS_PASS, _received_characters.size()):
 		_proces_received_text(_received_characters[0], _offset)
 		_offset -= 1
 		_received_characters.remove_at(0)
-
-	# prints(min(MAX_PROCESS_PASS, _received_characters.size()), Time.get_unix_time_from_system() - time_start)
 
 	_chars_mutex.unlock()
 
@@ -250,16 +332,12 @@ func _process(_delta: float) -> void:
 func _stdio_thread_loop():
 	while stdio.is_open() and stdio.get_error() == OK:
 		var data: = char(stdio.get_8())
-		# var recv_time: = Time.get_ticks_msec()
 
-		# print("stdio thread: ", OS.get_thread_caller_id())
-		
 		_idx_mutex.lock()
 		_index += 1
 		var index = _index
 		_idx_mutex.unlock()
-		
-		# print("STDOUT", recv_time)
+	
 		_new_text(data, index)
 		
 
@@ -267,16 +345,12 @@ func _stdio_thread_loop():
 func _stderr_thread_loop():
 	while stderr.is_open() and stderr.get_error() == OK:
 		var data: = char(stderr.get_8())
-		# var recv_time: = Time.get_ticks_msec()
-
-		# print("stderr thread: ", OS.get_thread_caller_id())
 		
 		_idx_mutex.lock()
 		_index += 1
 		var index = _index
 		_idx_mutex.unlock()
 
-		# print("STDERR", recv_time)
 		_new_text(data, index)
 		
 
@@ -387,13 +461,7 @@ class DisalowedSequence:
 	## inbetween [member before] and [member after].
 	func is_present(text: String) -> bool:
 
-		print("\n")
-		print("Checking if '%s' is present in '%s'" % [text.c_escape(), full_regex.get_pattern()])
-		print("IT IS" if full_regex.search(text) is RegExMatch else "IT'S NOT")
-		print("\n")
 		return full_regex.search(text) is RegExMatch
-
-		# return text.contains("%s%s%s" % [before, content, after])
 	
 	## Checks whether the provided unfinished [parameter text][br]
 	## could potentially match the disallowed sequence.
@@ -466,14 +534,12 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 
 	# currently received characters are not potentially disallowed sequence just add them
 	if ds.is_potential(full_string):
-		# print(r"'%s' is potential for '%s'" % [full_string, ds.full])
 		add_char = false
 
 		if ds.is_present(full_string):
 			
 			if ds.command_end:
 				shell_prompt = ds.extract_cwd(full_string)
-				print("Extracted cwd: ", shell_prompt)
 
 			var stripped: = ds.strip(full_string)
 			full_string = stripped
@@ -489,6 +555,8 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 
 		# if this ds marks command end, start the new command output container
 		if was_stripped and ds.command_end:
+			# trim the last new line, and the \r in case we're on windows
+			_output_label.text = _output_label.text.trim_suffix("\n").trim_suffix("\r")
 			_create_command_output_container()
 			_toggle_progress_bar(false)
 
@@ -558,8 +626,6 @@ func execute_command(input: String):
 	else:
 		command_buffer = (input + "\n").to_utf8_buffer()
 	
-	print("Executing command: ", command_buffer.get_string_from_utf8())
-	
 	stdio.store_buffer(command_buffer)
 
 	if OS.get_name() == "Linux":
@@ -578,13 +644,21 @@ func _toggle_progress_bar(on: bool = true) -> void:
 func _on_button_pressed():
 	if not command_line_edit.text.is_empty():
 		execute_command(command_line_edit.text)
-		command_line_edit.text = ""
+		
+		command_line_edit.clear()
+		_autocomplete_change_input_string("")
 
 
 func _on_command_line_edit_text_submitted(new_text):
 	if not command_line_edit.text.is_empty():
+		command_line_edit.clear()
 		execute_command(new_text)
-		command_line_edit.text = ""
+		_autocomplete_change_input_string("")
+
+
+func _on_command_line_edit_text_changed(new_text:String) -> void:
+	_autocomplete_change_input_string(new_text)
+
 
 ## iterate over used commands from command history 
 func _on_command_line_edit_gui_input(event: InputEvent):
@@ -595,6 +669,7 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			
 			await get_tree().process_frame
 			command_line_edit.caret_column = command_line_edit.text.length()
+			accept_event()
 
 	elif event.is_action_pressed("ui_down"):
 		if _history_idx > 0:
@@ -603,3 +678,9 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			
 			await get_tree().process_frame
 			command_line_edit.caret_column = command_line_edit.text.length()
+			accept_event()
+
+	elif event.is_action_pressed("autocomplete"):
+		_autocomplete()
+		accept_event()
+	
