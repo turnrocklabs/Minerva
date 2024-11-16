@@ -17,7 +17,7 @@ thickness = 10
 color = Color(0.164706, 0.345098, 0.831373, 1)
 thickness = 10
 
-[node name="Note" type="VBoxContainer"]
+[node name="Note" type="VBoxContainer" node_paths=PackedStringArray("video_player_container")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -25,6 +25,7 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 16
 script = ExtResource("1_bjbgn")
+video_player_container = NodePath("PanelContainer/v/VideoVBoxContainer")
 
 [node name="UpperSeparator" type="HSeparator" parent="."]
 unique_name_in_owner = true
@@ -101,6 +102,7 @@ layout_mode = 2
 
 [node name="NoteImage" type="TextureRect" parent="PanelContainer/v/ImageVBoxContainer"]
 unique_name_in_owner = true
+visible = false
 custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 expand_mode = 3
@@ -188,22 +190,13 @@ layout_mode = 2
 [node name="VideoVBoxContainer" type="VBoxContainer" parent="PanelContainer/v"]
 unique_name_in_owner = true
 visible = false
+custom_minimum_size = Vector2(0, 350)
 layout_mode = 2
 
 [node name="VideoLabel" type="Label" parent="PanelContainer/v/VideoVBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "this is for the video notes"
-
-[node name="VideoStreamPlayer" type="VideoStreamPlayer" parent="PanelContainer/v/VideoVBoxContainer"]
-unique_name_in_owner = true
-clip_contents = true
-custom_minimum_size = Vector2(0, 200)
-layout_mode = 2
-autoplay = true
-expand = true
-loop = true
-bus = &"VideoBus"
 
 [node name="LowerSeparator" type="HSeparator" parent="."]
 unique_name_in_owner = true
