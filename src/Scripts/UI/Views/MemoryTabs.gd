@@ -134,6 +134,8 @@ func render_threads():
 	for c in %tcThreads.get_children():
 		c.free() # Use free instead of queue_free so the node gets deleted immediately
 	
+	print("threads: ", SingletonObject.ThreadList.size())
+
 	for thread in SingletonObject.ThreadList:
 		render_thread(thread)
 
