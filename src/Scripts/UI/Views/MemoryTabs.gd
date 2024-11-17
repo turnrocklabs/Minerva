@@ -349,6 +349,7 @@ func attach_file(the_file: String):
 		type= SingletonObject.note_type.VIDEO
 		#var file_data = file.get_buffer(file.get_length())
 		#content = Marshalls.raw_to_base64(file_data)
+		content = the_file
 		content_type = "video/%s" % file_ext
 	elif file_ext in SingletonObject.supported_audio_formats:
 		file_type = "audio"

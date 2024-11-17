@@ -42,7 +42,7 @@ var memory_item: MemoryItem:
 			
 			var video_player_node: = SingletonObject.video_player_scene.instantiate()
 			video_label.text = "%s %s" % [value.Title, value.ContentType]
-			video_player_node.video_path = value.FilePath
+			video_player_node.video_path = value.Content
 			video_player_container.add_child(video_player_node)
 			
 		# If we create a note, open a editor associated with it and then rerender the memory_item
@@ -190,7 +190,7 @@ func _notification(notification_type):
 # and make the original node transparent
 func _get_drag_data(at_position: Vector2) -> Note:
 	var preview = Control.new()
-	var preview_note: Note = duplicate()
+	var preview_note:  = duplicate(true)
 
 	preview.add_child(preview_note)
 
@@ -206,7 +206,7 @@ func _get_drag_data(at_position: Vector2) -> Note:
 
 	set_drag_preview(preview)
 
-	get_parent().remove_child(self)
+	#get_parent().remove_child(self)
 
 	return self
 
@@ -268,6 +268,7 @@ func _drop_data(_at_position: Vector2, data):
 			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)+1
 
 		dragged_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
+	data.queue_free()
 
 
 
@@ -322,9 +323,9 @@ func _on_edit_button_pressed():
 		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, memory_item.Title)
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
-	elif memory_item.Type == SingletonObject.note_type.VIDEO:
-		print("this is running")
-		editor = ep.add(Editor.Type.VIDEO, memory_item.FilePath, null, memory_item.Title)
+	#elif memory_item.Type == SingletonObject.note_type.VIDEO:
+		#
+		#editor = ep.add(Editor.Type.VIDEO, memory_item.FilePath, null, memory_item.Title)
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
