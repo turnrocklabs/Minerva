@@ -24,6 +24,8 @@ static var speaker_icon: = preload("res://assets/icons/speaker-24.png")
 # this is for checking if the video was playing when the progress var is dragged
 var was_playing: bool = false 
 
+var video_title: String = ""
+
 var video_path: String:
 	set(value):
 		video_path = value
@@ -162,7 +164,8 @@ func _on_color_rect_mouse_entered() -> void:
 
 #both color_rect and volume_rect are connected to this function
 func _on_color_rect_mouse_exited() -> void:
-	if not color_rect.get_rect().has_point(get_local_mouse_position()) or  not volume_rect.get_rect().has_point(get_local_mouse_position()):
+	if not color_rect.get_rect().has_point(get_local_mouse_position()) \
+		or  not volume_rect.get_rect().has_point(get_local_mouse_position()):
 		controls_timer.paused = false
 
 #endregion Input listeners for pausing
@@ -244,3 +247,9 @@ func _on_visibility_changed() -> void:
 func _on_focus_exited() -> void:
 	timer.paused = true
 	controls_timer.paused = true
+
+
+func _on_screenshot_button_pressed() -> void:
+	var image = video_stream_player.get_video_texture().get_image()
+	var stream_position: = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]
+	SingletonObject.NotesTab.add_image_note(video_path.get_file(), image, stream_position)
