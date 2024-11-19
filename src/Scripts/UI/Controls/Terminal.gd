@@ -610,7 +610,104 @@ func clear_terminal() -> void:
 	for ch in _output_container.get_children():
 		ch.queue_free()
 
+func terminate_process() -> void:
+	var output = []
+	
+	if OS.get_name() == "Windows":
+		var exit_code = OS.execute("powershell", [
+			"-ExecutionPolicy", "Bypass",
+			"-Command",
+			"Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq %s } | Select-Object ProcessId,Name | ConvertTo-Json" % pid
+		], output)
 
+		if exit_code != 0 or output.is_empty():
+			push_error("Couldn't fetch the current subprocess data: Exit code: %s" % exit_code)
+			push_error("Couldn't fetch the current subprocess data: Output: %s" % output)
+			return
+
+		var data = JSON.parse_string(output[0])
+
+		if data is Dictionary:
+			# usually this will be the only one, and we shouldn't terminate this one, or else the terminal will chrash
+			if data["Name"] == "conhost.exe": return
+
+			_generate_console_ctrl_event(data["ProcessId"])
+
+		elif data is Array:
+			
+			for process_data: Dictionary in data:
+				if process_data["Name"] == "conhost.exe": continue
+				
+				_generate_console_ctrl_event(process_data["ProcessId"])
+	elif OS.get_name() == "Linux":
+
+		# ps --ppid 2664 -o pid=,comm= --no-headers
+		var exit_code = OS.execute("pgrep", [
+			"-P", pid,
+		], output, true)
+
+		if exit_code != 0 or output.is_empty():
+			push_error("Couldn't fetch the current subprocess data: Exit code: %s" % exit_code)
+			push_error("Couldn't fetch the current subprocess data: Output: %s" % output)
+			return
+
+		for output_line in output[0].split("\n"):
+			print(output_line)
+			output_line = output_line.strip_edges()
+			if not output_line.is_valid_int(): continue
+
+			
+			var proc_id: = int(output_line)
+			print(proc_id)
+
+			# var proc_name: String = parts[1]
+
+			_generate_console_ctrl_event(proc_id)
+
+
+func _generate_console_ctrl_event(process_id: int) -> void:
+	var output = []
+	var exit_code: int
+
+	# On windows we'll use the powershell to send the CTRL_BREAK_EVENT signal to the given process
+	# https://stackoverflow.com/a/64921030
+	if OS.get_name() == "Windows":
+		var member_definition: = """
+			$MemberDefinition = '
+			[DllImport(\\"kernel32.dll\\")]public static extern bool FreeConsole();
+			[DllImport(\\"kernel32.dll\\")]public static extern bool AttachConsole(uint p);
+			[DllImport(\\"kernel32.dll\\")]public static extern bool GenerateConsoleCtrlEvent(uint e, uint p);
+			public static void SendCtrlC(uint p) {
+				FreeConsole();
+				AttachConsole(p);
+				GenerateConsoleCtrlEvent(1, p);
+				FreeConsole();
+				AttachConsole(uint.MaxValue);
+			}'
+		"""
+
+		var whole_command: = ("
+			%s;
+			Add-Type -Name 'Terminal' -Namespace 'Minerva' -MemberDefinition $MemberDefinition;
+			[Minerva.Terminal]::SendCtrlC(%s);
+		" % [member_definition, process_id]).strip_escapes()
+
+		exit_code = OS.execute("powershell", [
+			"-ExecutionPolicy", "Bypass",
+			"-Command", whole_command
+		], output, true)
+	
+	elif OS.get_name() == "Linux":
+		exit_code = OS.execute(shell, [
+			"-c", "kill -s SIGINT %s" % process_id
+		], output, true)
+
+	
+	if exit_code != 0:
+		push_error("Couldn't send CTRL_BREAK_EVENT signal to process %s. Exit code: %s" % [process_id, exit_code])
+		push_error("Couldn't send CTRL_BREAK_EVENT signal to process %s. Output: %s" % [process_id, output])
+
+	print(output)
 
 func execute_command(input: String):
 	if last_container_checkbutton != null:
@@ -711,3 +808,5 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 		_autocomplete()
 		accept_event()
 	
+	elif event.is_action_pressed("cancel"):
+		terminate_process()
