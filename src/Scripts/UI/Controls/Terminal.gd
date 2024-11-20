@@ -144,7 +144,7 @@ func _autocomplete_change_input_string(text: String):
 	if not _autcomplete_on: return
 
 	_autocomplete_input = text
-	_autocomplete_idx = 0
+	_autocomplete_idx = -1
 	
 	if text.is_empty():
 		_autocomplete_suggestions = _autocomplete_suggestions_all
@@ -165,23 +165,34 @@ func _autocomplete_change_input_string(text: String):
 		return
 
 	_autocomplete_suggestions = (
-		_autocomplete_suggestions_path + _autocomplete_suggestions_cwd.filter(func(suggestion: String): return suggestion.begins_with(partial_text))
+		_autocomplete_suggestions_cwd.filter(func(suggestion: String): return suggestion.begins_with(partial_text))
 	)
 
 
 func _autocomplete_get_next() -> String:
 	if _autocomplete_suggestions.is_empty(): return ""
 
-	var next: = _autocomplete_suggestions[_autocomplete_idx]
-
 	_autocomplete_idx = wrapi(_autocomplete_idx+1, 0, _autocomplete_suggestions.size())
+
+	var next: = _autocomplete_suggestions[_autocomplete_idx]
 
 	return next
 
-func _autocomplete() -> void:
+func _autocomplete_get_previous() -> String:
+	if _autocomplete_suggestions.is_empty(): return ""
+
+	_autocomplete_idx = wrapi(_autocomplete_idx-1, 0, _autocomplete_suggestions.size())
+
+	var next: = _autocomplete_suggestions[_autocomplete_idx]
+
+	return next
+
+
+
+func _autocomplete(forward: = true) -> void:
 	_autcomplete_on = false
 
-	var next: = _autocomplete_get_next()
+	var next: = _autocomplete_get_next() if forward else _autocomplete_get_previous()
 	if not next:
 		_autcomplete_on = true
 		return
@@ -835,7 +846,7 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			accept_event()
 
 	elif event.is_action_pressed("autocomplete"):
-		_autocomplete()
+		_autocomplete(Input.is_key_pressed(KEY_SHIFT))
 		accept_event()
 	
 	elif event.is_action_pressed("cancel"):
