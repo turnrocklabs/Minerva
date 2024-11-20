@@ -44,7 +44,7 @@ var _output_label: Label
 ## History of used commands
 var _history: = PackedStringArray()
 
-var _history_idx = 0
+var _history_idx := 0
 
 var wrap_command: Callable
 var delimiter: String = "---$$$$---"
@@ -628,7 +628,7 @@ func terminate_process() -> void:
 		var data = JSON.parse_string(output[0])
 
 		if data is Dictionary:
-			# usually this will be the only one, and we shouldn't terminate this one, or else the terminal will chrash
+			# usually this will be the only one, and we shouldn't terminate this one, or else the terminal will crash
 			if data["Name"] == "conhost.exe": return
 
 			_generate_console_ctrl_event(data["ProcessId"])
@@ -641,7 +641,6 @@ func terminate_process() -> void:
 				_generate_console_ctrl_event(process_data["ProcessId"])
 	elif OS.get_name() == "Linux":
 
-		# ps --ppid 2664 -o pid=,comm= --no-headers
 		var exit_code = OS.execute("pgrep", [
 			"-P", pid,
 		], output, true)
@@ -657,8 +656,6 @@ func terminate_process() -> void:
 
 			
 			var proc_id: = int(output_line)
-
-			# var proc_name: String = parts[1]
 
 			_generate_console_ctrl_event(proc_id)
 
@@ -709,7 +706,10 @@ func _generate_console_ctrl_event(process_id: int) -> void:
 func execute_command(input: String):
 	if last_container_checkbutton != null:
 		last_container_checkbutton.visible = true
-	_history.append(input)
+	
+	_history[0] = input
+	_history.insert(0, "")
+	_history_idx = 0
 
 	var command_buffer: PackedByteArray
 
@@ -778,6 +778,11 @@ func _on_command_line_edit_text_submitted(new_text):
 
 
 func _on_command_line_edit_text_changed(new_text:String) -> void:
+	if _history.is_empty():
+		_history.append("")
+	else:
+		_history[0] = new_text
+	
 	_autocomplete_change_input_string(new_text)
 
 
