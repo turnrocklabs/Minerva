@@ -652,13 +652,11 @@ func terminate_process() -> void:
 			return
 
 		for output_line in output[0].split("\n"):
-			print(output_line)
 			output_line = output_line.strip_edges()
 			if not output_line.is_valid_int(): continue
 
 			
 			var proc_id: = int(output_line)
-			print(proc_id)
 
 			# var proc_name: String = parts[1]
 
@@ -707,7 +705,6 @@ func _generate_console_ctrl_event(process_id: int) -> void:
 		push_error("Couldn't send CTRL_BREAK_EVENT signal to process %s. Exit code: %s" % [process_id, exit_code])
 		push_error("Couldn't send CTRL_BREAK_EVENT signal to process %s. Output: %s" % [process_id, output])
 
-	print(output)
 
 func execute_command(input: String):
 	if last_container_checkbutton != null:
