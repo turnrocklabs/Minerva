@@ -89,17 +89,23 @@ func _update_shell_prompt():
 	%CwdLabel.tooltip_text = %CwdLabel.text
 
 	_cwd = DirAccess.open(shell_prompt)
-	_autocomplete_suggestions_all.clear()
-	_autocomplete_suggestions_all.append_array(_cwd.get_files())
-	_autocomplete_suggestions_all.append_array(_cwd.get_directories())
-	_autocomplete_suggestions_all.sort()
+	_autocomplete_suggestions_cwd.clear()
+	_autocomplete_suggestions_cwd.append_array(_cwd.get_files())
+	_autocomplete_suggestions_cwd.append_array(_cwd.get_directories())
+	_autocomplete_suggestions_cwd.sort()
 	_autocomplete_idx = 0
 
 # region Autocomplete
 
 ## List of all possible autcomplete results (all files, directories, etc.) for the current [member cwd].[br]
 ## Regenerated each time [member cwd] changes.
-var _autocomplete_suggestions_all: Array[String]
+var _autocomplete_suggestions_cwd: Array[String]
+
+## List of all possible autcomplete results from the PATH environment variable. Loaded once on the terminal startup.
+var _autocomplete_suggestions_path: Array[String]
+
+var _autocomplete_suggestions_all: Array[String]:
+	get: return _autocomplete_suggestions_cwd + _autocomplete_suggestions_path
 
 ## Current index of autocomplete suggestion used.
 var _autocomplete_idx: int
@@ -114,6 +120,24 @@ var _autocomplete_input: String
 var _autcomplete_source_idx: int
 
 var _autcomplete_on: = true
+
+func _load_path_autosuggestions() -> void:
+	if OS.get_name() == "Windows":
+		var path_env: = OS.get_environment("PATH")
+
+		var directories: = path_env.split(";")
+
+		for dir in directories:
+			_autocomplete_suggestions_path.append_array(DirAccess.get_files_at(dir))
+
+	elif OS.get_name() == "Linux":
+		var path_env: = OS.get_environment("PATH")
+
+		var directories: = path_env.split(":")
+
+		for dir in directories:
+			_autocomplete_suggestions_path.append_array(DirAccess.get_files_at(dir))
+
 
 ## Changes the input text for the autocomplete.
 func _autocomplete_change_input_string(text: String):
@@ -140,7 +164,9 @@ func _autocomplete_change_input_string(text: String):
 		_autocomplete_suggestions = _autocomplete_suggestions_all
 		return
 
-	_autocomplete_suggestions = _autocomplete_suggestions_all.filter(func(suggestion: String): return suggestion.begins_with(partial_text))
+	_autocomplete_suggestions = (
+		_autocomplete_suggestions_path + _autocomplete_suggestions_cwd.filter(func(suggestion: String): return suggestion.begins_with(partial_text))
+	)
 
 
 func _autocomplete_get_next() -> String:
@@ -236,6 +262,8 @@ func _on_output_check_button_tree_exiting(btn: CheckButton):
 
 
 func _ready():
+
+	_load_path_autosuggestions()
 	
 	# for auto scrolling the output container
 	var scrollbar: VScrollBar = scroll_container.get_v_scroll_bar()
