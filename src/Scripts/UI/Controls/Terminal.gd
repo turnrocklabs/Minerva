@@ -128,7 +128,10 @@ func _load_path_autosuggestions() -> void:
 		var directories: = path_env.split(";")
 
 		for dir in directories:
-			_autocomplete_suggestions_path.append_array(DirAccess.get_files_at(dir))
+			var da: = DirAccess.open(dir)
+			if da == null: continue
+
+			_autocomplete_suggestions_path.append_array(da.get_files())
 
 	elif OS.get_name() == "Linux":
 		var path_env: = OS.get_environment("PATH")
@@ -136,7 +139,9 @@ func _load_path_autosuggestions() -> void:
 		var directories: = path_env.split(":")
 
 		for dir in directories:
-			_autocomplete_suggestions_path.append_array(DirAccess.get_files_at(dir))
+			var da: = DirAccess.open(dir)
+			if da == null: continue
+			_autocomplete_suggestions_path.append_array(da.get_files())
 
 
 ## Changes the input text for the autocomplete.
@@ -165,7 +170,7 @@ func _autocomplete_change_input_string(text: String):
 		return
 
 	_autocomplete_suggestions = (
-		_autocomplete_suggestions_cwd.filter(func(suggestion: String): return suggestion.begins_with(partial_text))
+		_autocomplete_suggestions_all.filter(func(suggestion: String): return suggestion.begins_with(partial_text))
 	)
 
 
@@ -846,7 +851,7 @@ func _on_command_line_edit_gui_input(event: InputEvent):
 			accept_event()
 
 	elif event.is_action_pressed("autocomplete"):
-		_autocomplete(Input.is_key_pressed(KEY_SHIFT))
+		_autocomplete(not Input.is_key_pressed(KEY_SHIFT))
 		accept_event()
 	
 	elif event.is_action_pressed("cancel"):
