@@ -236,6 +236,7 @@ func delete_note(memory_item: MemoryItem):
 	
 	active_thread.MemoryItemList.remove_at(idx)
 
+
 func render_thread(thread_item: MemoryThread):
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
