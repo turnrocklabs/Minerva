@@ -84,8 +84,7 @@ func _on_h_slider_drag_ended(value_changed: bool) -> void:
 	if value_changed:
 		video_stream_player.paused = false
 		video_stream_player.stream_position = h_slider.value
-		video_stream_player.stream.file
-		get_tree().create_timer(0.21).timeout
+		await get_tree().create_timer(0.23).timeout
 		video_current_frame.texture = video_stream_player.get_video_texture()
 		video_current_frame.visible = true
 		video_stream_player.paused = true
@@ -170,6 +169,7 @@ func _on_color_rect_mouse_exited() -> void:
 
 #endregion Input listeners for pausing
 
+#region Buttons pressed
 func _on_back_button_pressed() -> void:
 	video_stream_player.paused = true
 	if video_stream_player.stream_position - 5 < 0:
@@ -195,7 +195,6 @@ func _on_ford_button_pressed() -> void:
 	video_current_frame.texture = video_stream_player.get_video_texture()
 	video_stream_player.paused = true
 	#video_current_frame.visible = true
-	
 
 
 var muted = false
@@ -215,6 +214,12 @@ func _on_volume_button_pressed() -> void:
 		muted = false
 
 
+func _on_screenshot_button_pressed() -> void:
+	var image = video_stream_player.get_video_texture().get_image()
+	var stream_position: = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]
+	SingletonObject.NotesTab.add_image_note(video_path.get_file(), image, stream_position)
+
+
 var is_fullscreen: bool = false
 func _on_fullscreen_button_pressed() -> void:
 	video_stream_player.paused = true
@@ -229,7 +234,7 @@ func _on_fullscreen_button_pressed() -> void:
 	else:
 		get_tree().root.borderless = false
 		self.queue_free()
-
+#region Buttons pressed
 
 func _on_volume_button_mouse_entered() -> void:
 	volume_rect.visible = true
@@ -247,9 +252,3 @@ func _on_visibility_changed() -> void:
 func _on_focus_exited() -> void:
 	timer.paused = true
 	controls_timer.paused = true
-
-
-func _on_screenshot_button_pressed() -> void:
-	var image = video_stream_player.get_video_texture().get_image()
-	var stream_position: = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]
-	SingletonObject.NotesTab.add_image_note(video_path.get_file(), image, stream_position)
