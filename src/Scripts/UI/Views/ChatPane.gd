@@ -16,7 +16,23 @@ var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS
 
 ## add new chat 
 func _on_new_chat():
-	var tab_name: = "Chat %s" % (get_tab_count()+1)
+	
+	var last_chat_number: int = -1
+
+	# reverse loop and find last largest number after the Chat string literal
+	for i in range(get_tab_count()-1, -1, -1):
+		var tab_title: = get_tab_title(i)
+		
+		if tab_title == "Chat":
+			last_chat_number = max(last_chat_number, 0)
+		
+		elif tab_title.begins_with("Chat"):
+			var suffix = tab_title.right(-"Chat".length()).strip_edges()
+			
+			if suffix.is_valid_int():
+				last_chat_number = max(last_chat_number, int(suffix))
+
+	var tab_name: = "Chat" if last_chat_number == -1 else "Chat %s" % (last_chat_number+1)
 
 	var provider_obj: BaseProvider
 
@@ -47,21 +63,29 @@ func ensure_chat_open() -> void:
 		_on_new_chat()
 
 ## Generates the full turn prompt using the history of the active chat and the selected provider.
-## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.
+## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.[br]
+## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
 ## Check `History.To_Prompt` for explanation on `predicate`.
-func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Callable()) -> Array[Variant]:
-	# get history of the active chat tab if there is one
-	if SingletonObject.ChatList.is_empty():
+func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
+	
+	# if we don't have any chats history_list will be empty
+	var history_list: Array[Variant] = []
+	var provider: BaseProvider = provider_fallback
+
+	if not SingletonObject.ChatList.is_empty():
+		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+		if not provider:
+			provider = history.provider
+
+		history_list = history.To_Prompt(predicate)
+	
+	# if there's no history provider and no fallback, we can't format the append item even if there is one
+	if not provider:
 		return []
-	
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	
-	var working_memory: = SingletonObject.NotesTab.To_Prompt(history.provider)
 
-	# history will turn it into a prompts using the selected provider
-	var history_list: Array[Variant] = history.To_Prompt(predicate)
+	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(provider)
 
-	# If we don't have a new item but we have active notes, we still need new item to add the noted in there
+	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
 	
@@ -69,10 +93,12 @@ func create_prompt(append_item: ChatHistoryItem = null, predicate: Callable = Ca
 	if append_item:
 		append_item.InjectedNotes = working_memory
 		# also append the new item since it's not in the history yet
-		var item = history.provider.Format(append_item)
+		var item = provider.Format(append_item)
 		if item: history_list.append(item)
 
+
 	return history_list
+
 
 func _on_btn_inspect_pressed():
 	var new_history_item: ChatHistoryItem = ChatHistoryItem.new()
@@ -139,7 +165,7 @@ func regenerate_response(chi: ChatHistoryItem):
 			history.HistoryItemList.find(item) < index,
 		]
 
-	var history_list = create_prompt(chi, predicate)
+	var history_list = create_prompt(chi, null, predicate)
 
 	existing_response.rendered_node.loading = true
 
@@ -447,6 +473,17 @@ func _ready():
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 
+	SingletonObject.note_toggled.connect(_on_note_toggled)
+	SingletonObject.note_changed.connect(_on_note_changed)
+
+
+# if a note is enabled/disabled recalculate the token cost
+func _on_note_toggled(_note: Note, _on: bool):
+	update_token_estimation()
+
+# if a note is changed recalculate the token cost
+func _on_note_changed(_note: Note,):
+	update_token_estimation()
 
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.control = closed_tab_container.get_tab_control(tab)
@@ -496,16 +533,30 @@ func clear_all_chats():
 
 
 func update_token_estimation():
-	if SingletonObject.ChatList.is_empty(): return
+
+	var provider: BaseProvider
+
+	# if we don't have any chats use the selected provider from the dropdown
+	if SingletonObject.ChatList.is_empty():
+
+		var p_id = _provider_option_button.get_selected_id()
+		provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
+	else:
+		provider = SingletonObject.ChatList[current_tab].provider
 
 	var chi = ChatHistoryItem.new()
 	chi.Message = %txtMainUserInput.text
+
+	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi, provider))
 	
-	var provider: = SingletonObject.ChatList[current_tab].provider
-
-	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi))
-
-	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) *100, 0.01)]
+	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) * 100, 0.01)]
+	if (provider.token_cost * token_count) * 100 < 0.01:
+		%EstimatedTokensLabel.text = "%s¢" % 0.01
+		
+	
+	print("token cound",token_count)
+	print((provider.token_cost * token_count) * 100)
+	
 
 
 # region Edit provider Title
@@ -560,6 +611,8 @@ func _on_btn_clear_pressed():
 ## When user types in the chat box, estimate tokens count based on selected provider
 func _on_txt_main_user_input_text_changed():
 	update_token_estimation()
+	if %txtMainUserInput.text == "":
+		%EstimatedTokensLabel.text = "%s¢" % 0.00
 
 func _on_txt_main_user_input_text_set():
 	update_token_estimation()
@@ -587,6 +640,8 @@ func _on_system_button_pressed() -> void:
 
 
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
+	update_token_estimation()
+
 	if SingletonObject.ChatList.is_empty(): return
 
 	var history = SingletonObject.ChatList[current_tab]
