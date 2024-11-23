@@ -172,26 +172,28 @@ func _on_color_rect_mouse_exited() -> void:
 #region Buttons pressed
 func _on_back_button_pressed() -> void:
 	video_stream_player.paused = true
-	if video_stream_player.stream_position - 5 < 0:
+	if video_stream_player.stream_position - frame_time < 0:
 		video_stream_player.stream_position = 0
 	else:
-		video_stream_player.stream_position -= 5
+		video_stream_player.stream_position -= frame_time
 	video_stream_player.paused = false
 	video_stream_player.queue_redraw()
-	await get_tree().create_timer(.21).timeout
+	#await get_tree().create_timer(.21).timeout
 	video_current_frame.texture = video_stream_player.get_video_texture()
 	video_stream_player.paused = true
 
 
+var frame_time: = 1.0/24.0
+
 func _on_ford_button_pressed() -> void:
 	video_stream_player.paused = true
-	if video_stream_player.stream_position + 5 > video_stream_player.get_stream_length():
+	if video_stream_player.stream_position + frame_time > video_stream_player.get_stream_length():
 		video_stream_player.stream_position = video_stream_player.get_stream_length()
 	else:
-		video_stream_player.stream_position += 5
+		video_stream_player.stream_position += frame_time
 	video_stream_player.paused = false
 	video_stream_player.queue_redraw()
-	await get_tree().create_timer(.21).timeout
+	#await get_tree().create_timer(.21).timeout
 	video_current_frame.texture = video_stream_player.get_video_texture()
 	video_stream_player.paused = true
 	#video_current_frame.visible = true
