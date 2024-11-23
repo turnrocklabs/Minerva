@@ -177,7 +177,13 @@ func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	var size_x = clamp(new_size.x, 1, INF)
 	var size_y = clamp(new_size.y, 1, INF)
-	image_.resize(size_x, size_y)
+	
+	if size_x != 1 and size_y != 1: 
+		image_.resize(size_x, size_y)
+	else:
+		image_.resize(%CenterContainer.size.x, %CenterContainer.size.y)
+		
+	
 
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
@@ -197,6 +203,7 @@ func setup_from_image(image_: Image):
 
 	layer_undo_histories[_draw_layer.name] = []
 	layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
+	
 	
 # Similar updates to the function setup_from_created_image
 func setup_from_created_image(image_: Image):
@@ -317,28 +324,38 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 				elif not erasing:
 					target_image.set_pixelv(pixel, color) 
 				
+				
+				
 func _gui_input(event: InputEvent):
 	var active_layer = _mask_layer if _masking else _draw_layer
 	var layer_local_pos
 	if active_layer:
-		layer_local_pos = active_layer.get_local_mouse_position()
+		# Get global mouse position first
+		var global_mouse_pos = get_global_mouse_position()
+
+		# Transform to layers container local position
+		var layers_container_local_pos = _layers_container.get_global_transform().affine_inverse() * global_mouse_pos
+
+		# Transform from layers container local position to active layer local position.
+		layer_local_pos = active_layer.get_global_transform().affine_inverse() * _layers_container.get_global_transform() * layers_container_local_pos
+
 	else: 
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		
 		#Get color at clicked position and Update the ColorPickerButton
-		color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
-		
+		if active_layer:
+			color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
+
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
-		flood_fill(active_layer.image, layer_local_pos, brush_color) 
-		active_layer.update()
-		fill_tool = false
-		is_image_saved = false
-		SingletonObject.UpdateUnsavedTabIcon.emit()
-		%Brushes.select(0)
-		%PenAdditionalTools.visible = true
-	
-	
+		if active_layer:
+			flood_fill(active_layer.image, layer_local_pos, brush_color) 
+			active_layer.update()
+			fill_tool = false
+			is_image_saved = false
+			SingletonObject.UpdateUnsavedTabIcon.emit()
+			%Brushes.select(0)
+			%PenAdditionalTools.visible = true
+
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -351,25 +368,27 @@ func _gui_input(event: InputEvent):
 			if event.pressed:
 				prev_mouse_position = event.position
 			return
-		
-	if _rotating and not null:
-		var hbox_index = %LayersList.get_children().find(active_transfer_button.get_parent())
-		var layer = _layers_container.get_child(hbox_index)
 
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+	if _rotating:
+		var hbox_index = %LayersList.get_children().find(active_transfer_button.get_parent())
+		var layer = _layers_container.get_child(hbox_index) if hbox_index != -1 else null
+
+		if layer and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:  
 				_rotation_pivot = _layers_container.get_local_mouse_position()
 				layer.pivot_offset = _rotation_pivot - layer.position
 
-		elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT: 
+		elif layer and event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT: 
 			var angle = (_layers_container.get_local_mouse_position() - _rotation_pivot).angle()
 			layer.rotation = angle
 
 		elif event is InputEventKey and event.pressed and event.keycode == KEY_ENTER:
 			_rotating = false
-			active_transfer_button.modulate = Color.WHITE
+			if active_transfer_button:
+				active_transfer_button.modulate = Color.WHITE
 			active_transfer_button = null
-			layer.pivot_offset = Vector2.ZERO
+			if layer:
+				layer.pivot_offset = Vector2.ZERO
 		return
 
 	if layer_being_transferred: 
@@ -393,30 +412,24 @@ func _gui_input(event: InputEvent):
 
 			_layers_container.scale *= Vector2.ONE * zoom_factor
 			_layers_container.position += zoom_offset
-			
+
 		if event is InputEventMouseMotion and %MgIcon.visible == true:
-			# Correctly calculate the position relative to the zoom level and container position
 			var local_position_temp = _layers_container.get_local_mouse_position()
 			var global_position_temp = _layers_container.position + local_position_temp * _layers_container.scale
 			%MgIcon.offset = Vector2(-20,20)
 			%MgIcon.position = global_position_temp
 			drawing = false
 			Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
-			
-			
+
+
 	if editing_speech_bubbles and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		# 1. Create a new layer
 		is_image_saved = false
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 		var new_layer_image = Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8) 
-		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
+		new_layer_image.fill(Color(0, 0, 0, 0)) 
 		var new_layer = _create_layer(new_layer_image)
 		_background_images[new_layer] = new_layer_image.duplicate()
-
-		# 2. Add layer button to UI 
 		layers_buttons()
-
-		# 3. Instantiate and add the bubble to the NEW layer
 		var new_bubble = Bubble.instantiate()
 		new_layer.add_child(new_bubble)
 		new_bubble.move(new_layer.get_local_mouse_position())
@@ -431,17 +444,11 @@ func _gui_input(event: InputEvent):
 				_draw_begin = true
 			else:
 				drawing = false
-				
-			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
 	if event is InputEventMouseMotion and drawing:
 		is_image_saved = false
 		SingletonObject.UpdateUnsavedTabIcon.emit()
-		# Get mouse position relative to the active layer
-		layer_local_pos = active_layer.get_global_transform().affine_inverse() * get_global_transform_with_canvas() * event.position
-
-		# --- No manual offset calculation needed here ---
-		if %LayersList.get_child_count() > 0:
+		if active_layer:
 			if _draw_begin:  
 				_last_pos = layer_local_pos 
 				image_draw(active_layer.image, layer_local_pos, brush_color, brush_size * event.pressure)
@@ -453,10 +460,10 @@ func _gui_input(event: InputEvent):
 
 		_last_pos = layer_local_pos 
 		active_layer.update() 
-	
-
-
-
+		
+		
+		
+		
 func _on_h_slider_value_changed(value):
 	brush_size = value
 

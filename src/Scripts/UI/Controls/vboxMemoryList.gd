@@ -80,11 +80,12 @@ func render_items():
 	for child in get_children():
 		if child is Note:
 			child.queue_free()
-			
+
 	# Re-add memory items
 	for item in Memories:
 		var note_control: Note = SingletonObject.notes_scene.instantiate()
 		#checks how the note is going to be rendered
+		
 		if item.Type == SingletonObject.note_type.TEXT:
 			note_control.new_text_note()
 		elif item.Type == SingletonObject.note_type.IMAGE:
@@ -99,6 +100,10 @@ func render_items():
 		await note_control.ready
 
 		note_control.memory_item = item
+		
+		note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
+
+		self.add_child(note_control)
 
 		# When the note control is deleted, delete the memory item, so it doesn't get re-rendered next time
 		note_control.deleted.connect(self.MainTabContainer.delete_note.bind(item))
