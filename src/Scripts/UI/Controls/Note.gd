@@ -304,7 +304,7 @@ func _on_edit_button_pressed():
 	if memory_item.MemoryImage:
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
-		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, memory_item.Title)
+		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
