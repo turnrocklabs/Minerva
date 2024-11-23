@@ -227,6 +227,8 @@ func execute_chat():
 		mdl_msg_node.regeneratable = false
 		mdl_msg_node.render()
 
+		mdl_msg_node.set_edit()
+
 		return
 	
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
