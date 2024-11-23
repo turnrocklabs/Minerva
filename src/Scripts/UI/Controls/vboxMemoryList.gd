@@ -70,6 +70,11 @@ func _notification(notification_type):
 			_update_memory_item_order()
 			render_items()
 
+
+func render_note():
+	pass
+
+
 func render_items():
 	# Clear existing children
 	for child in get_children():
@@ -78,7 +83,7 @@ func render_items():
 			
 	# Re-add memory items
 	for item in Memories:
-		var note_control: Note = load("res://Scenes/Note.tscn").instantiate()
+		var note_control: Note = SingletonObject.notes_scene.instantiate()
 		#checks how the note is going to be rendered
 		if item.Type == SingletonObject.note_type.TEXT:
 			note_control.new_text_note()

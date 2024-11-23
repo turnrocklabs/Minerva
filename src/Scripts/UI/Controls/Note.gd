@@ -10,14 +10,14 @@ signal changed()
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
 @onready var description_node: RichTextLabel = %NoteTextBody
-@onready var drag_texture_rect: TextureRect = $PanelContainer/v/DragTextureRect
+@onready var drag_texture_rect: TextureRect = %DragTextureRect
 @onready var note_image: TextureRect = %NoteImage
-@onready var audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
 @onready var image_caption_line_edit: LineEdit = %ImageCaptionLineEdit
 @onready var video_label: Label = %VideoLabel
 @export var video_player_container: VBoxContainer
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
+@onready var v_box_container: VBoxContainer = %vBoxContainer
 
 var downscaled_image: Image
 # this will react each time memory item is changed
@@ -37,7 +37,10 @@ var memory_item: MemoryItem:
 				set_note_image(value.MemoryImage)
 			image_caption_line_edit.text = value.ImageCaption
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
-			audio_stream_player.stream = value.Audio
+			#audio_stream_player.stream = value.Audio
+			var audio_control_inst: = SingletonObject.audio_contols_scene.instantiate()
+			audio_control_inst.audio = value.Audio
+			v_box_container.add_child(audio_control_inst)
 		if memory_item.Type == SingletonObject.note_type.VIDEO:
 			
 			var video_player_node: = SingletonObject.video_player_scene.instantiate()
@@ -60,16 +63,13 @@ var memory_item: MemoryItem:
 func new_text_note():
 	%NoteTextBody.set_deferred("visible", true)#.visible = true
 	%ImageVBoxContainer.visible = false
-	%AudioHBoxContainer.visible = false
 	%ImageVBoxContainer.call_deferred("queue_free")
-	%AudioHBoxContainer.call_deferred("queue_free")
 	%VideoVBoxContainer.call_deferred("queue_free")
 	return self
 
 
 func new_image_note():
 	%ImageVBoxContainer.visible = true
-	%AudioHBoxContainer.visible = false
 	%NoteTextBody.visible = false
 	%VideoVBoxContainer.call_deferred("queue_free")
 	#%AudioHBoxContainer.call_deferred("queue_free")
@@ -78,7 +78,6 @@ func new_image_note():
 
 
 func new_audio_note():
-	%AudioHBoxContainer.visible = true
 	%NoteTextBody.visible = false
 	%EditButton.visible = false
 	%ImageVBoxContainer.visible = false
@@ -89,7 +88,7 @@ func new_audio_note():
 
 
 func new_video_note():
-	%AudioHBoxContainer.visible = false
+	
 	%NoteTextBody.visible = false
 	%ImageVBoxContainer.visible = false
 	%VideoVBoxContainer.visible = true
@@ -137,7 +136,7 @@ func _ready():
 			if memory_item: memory_item.Title = text
 	)
 	
-	%ProgressBar.value = audio_progress
+
 
 func _exit_tree() -> void:
 	if has_meta("associated_editor"):
@@ -162,10 +161,7 @@ func _to_string():
 # if yes that means we were dragging the note above this note
 # but if the mouse is not above this note anymore, hide the separators
 func _process(_delta):
-	if memory_item:
-		if memory_item.Type == SingletonObject.note_type.AUDIO:
-			if audio_stream_player.is_playing():
-				update_progress_bar()
+	
 	
 	if not _upper_separator.visible and not _lower_separator.visible: return
 	
@@ -358,39 +354,6 @@ func _on_image_caption_line_edit_text_changed(new_text: String) -> void:
 	if memory_item: memory_item.ImageCaption = new_text
 
 
-#region Audio controls
-var audio_progress: = 0.0
-
-func _on_play_button_pressed() -> void:
-	%ProgressBar.max_value = audio_stream_player.stream.get_length()
-	
-	if audio_stream_player.stream_paused:
-		audio_stream_player.play(audio_progress)
-	else:
-		audio_stream_player.play()
-
-
-func _on_stop_button_pressed() -> void:
-	audio_stream_player.stop()
-	audio_progress = 0.0
-	%ProgressBar.value = audio_progress
-
-
-func _on_pause_button_pressed() -> void:
-	audio_progress = %AudioStreamPlayer.get_playback_position()
-	audio_stream_player.stream_paused = true
-
-
-func _on_audio_stream_player_finished() -> void:
-	pass
-	#audio_progress = 0.0
-	#%ProgressBar.value = audio_progress
-
-
-func update_progress_bar() -> void:
-	%ProgressBar.value = audio_stream_player.get_playback_position()
-
-#endregion Audio controls
 
 #region Paste image 
 

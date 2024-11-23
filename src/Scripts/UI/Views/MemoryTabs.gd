@@ -126,21 +126,6 @@ func clear_all_tabs():
 	pass
 	
 
-func render_threads():
-	# Save the last active thread.
-	var last_thread = self.current_tab
-
-	# we must delete existing noted so creating new project works
-	for c in %tcThreads.get_children():
-		c.free() # Use free instead of queue_free so the node gets deleted immediately
-	
-	for thread in SingletonObject.ThreadList:
-		render_thread(thread)
-
-	# Restore the last active thread:
-	if self.get_child_count():
-		self.current_tab = clampi(last_thread, 0, self.get_child_count()-1)
-	
 
 #region Add notes methods
 
@@ -165,7 +150,7 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 
-	render_threads()
+	#render_threads()
 
 	return new_memory
 
@@ -237,6 +222,22 @@ func delete_note(memory_item: MemoryItem):
 	active_thread.MemoryItemList.remove_at(idx)
 
 
+func render_threads():
+	# Save the last active thread.
+	var last_thread = self.current_tab
+
+	# we must delete existing noted so creating new project works
+	for c in %tcThreads.get_children():
+		c.free() # Use free instead of queue_free so the node gets deleted immediately
+	
+	for thread in SingletonObject.ThreadList:
+		render_thread(thread)
+
+	# Restore the last active thread:
+	if self.get_child_count():
+		self.current_tab = clampi(last_thread, 0, self.get_child_count()-1)
+
+static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
 func render_thread(thread_item: MemoryThread):
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
@@ -244,7 +245,7 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# Create a custom VBoxContainer derived class
-	var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread_item.ThreadId, thread_item.MemoryItemList)
+	var vboxMemoryList = vboxMemoryList_scene.new(self, thread_item.ThreadId, thread_item.MemoryItemList)
 
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vboxMemoryList)
@@ -256,7 +257,8 @@ func render_thread(thread_item: MemoryThread):
 	%tcThreads.add_child(scroll_container)
 	var tab_idx = %tcThreads.get_tab_idx_from_control(scroll_container)
 	%tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
-	
+
+
 
 
 func _on_close_tab(tab: int, container: TabContainer):
