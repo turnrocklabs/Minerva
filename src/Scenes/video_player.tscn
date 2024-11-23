@@ -147,6 +147,16 @@ layout_mode = 2
 icon = ExtResource("5_wt0mh")
 flat = true
 
+[node name="FrameBackButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+layout_mode = 2
+text = "SFB"
+flat = true
+
+[node name="FrameFordButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+layout_mode = 2
+text = "SFF"
+flat = true
+
 [node name="HSlider" type="HSlider" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -162,7 +172,6 @@ text = "00:00"
 
 [node name="ScreenshotButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
-disabled = true
 icon = ExtResource("4_sunu6")
 flat = true
 
@@ -199,6 +208,8 @@ autostart = true
 [connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/BackButton" to="." method="_on_back_button_pressed"]
 [connection signal="mouse_entered" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FordButton" to="." method="_on_color_rect_mouse_entered"]
 [connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FordButton" to="." method="_on_ford_button_pressed"]
+[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FrameBackButton" to="." method="_on_frame_back_button_pressed"]
+[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FrameFordButton" to="." method="_on_frame_ford_button_pressed"]
 [connection signal="drag_ended" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_ended"]
 [connection signal="drag_started" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_started"]
 [connection signal="mouse_entered" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_color_rect_mouse_entered"]

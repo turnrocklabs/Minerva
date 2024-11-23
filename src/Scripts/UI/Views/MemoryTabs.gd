@@ -150,7 +150,7 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 
-	#render_threads()
+	render_threads()
 
 	return new_memory
 
@@ -272,7 +272,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 
 		# this will crash the program by freeing the `control` object
 		# Update the UI with the remaining threads
-		# render_threads()
+		#render_threads()
 
 		# Store deleted tab for potential undo
 		SingletonObject.undo.store_deleted_tab_right(tab, control, "right")
