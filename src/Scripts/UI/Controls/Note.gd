@@ -25,6 +25,8 @@ var memory_item: MemoryItem:
 
 		if not value: return
 
+		if not is_node_ready(): await ready
+
 		label_node.text = value.Title
 		checkbutton_node.button_pressed = value.Enabled
 		visible = value.Visible
@@ -295,7 +297,7 @@ func _on_edit_button_pressed():
 	if memory_item.MemoryImage:
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
-		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, memory_item.Title)
+		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	#elif memory_item.Type == SingletonObject.note_type.VIDEO:
 		#

@@ -12,7 +12,7 @@ var _drag_active := false
 
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
-
+var _can_drop:bool = false
 ## return a single large string of all active memories
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
@@ -433,7 +433,7 @@ func _drop_data(at_position: Vector2, data):
 
 	vbox_memory_list._drop_data(at_position, data)
 	current_tab = tab_idx
-
+	
 func _notification(what):
 	match what:
 		NOTIFICATION_DRAG_BEGIN: _drag_active = true
