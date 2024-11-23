@@ -26,6 +26,8 @@ var memory_item: MemoryItem:
 
 		if not value: return
 
+		if not is_node_ready(): await ready
+
 		label_node.text = value.Title
 		checkbutton_node.button_pressed = value.Enabled
 		visible = value.Visible
