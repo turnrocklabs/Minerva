@@ -553,12 +553,6 @@ func update_token_estimation():
 	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) * 100, 0.01)]
 	if (provider.token_cost * token_count) * 100 < 0.01:
 		%EstimatedTokensLabel.text = "%s¢" % 0.01
-		
-	
-	print("token cound",token_count)
-	print((provider.token_cost * token_count) * 100)
-	
-
 
 # region Edit provider Title
 

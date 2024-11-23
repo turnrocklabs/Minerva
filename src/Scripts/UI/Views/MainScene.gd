@@ -1,5 +1,8 @@
 extends Control
 
+var is_dragging = false
+var drag_start_position = Vector2()
+
 @export  var terminal_container: TerminalTabContainer
 #variables where writing out notes Head and description
 
@@ -118,12 +121,6 @@ func _gui_input(event):
 		
 		accept_event()
 
-
-func _input(event):
-	if event.is_action_released("ui_terminal", true):
-		terminal_container.visible = not terminal_container.visible
-
-
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
 	%CreateNewNote.popup_centered()
@@ -208,3 +205,28 @@ func _on_stop_button_3_pressed() -> void:
 
 func _on_stop_button_4_pressed() -> void:
 	SingletonObject.AtT._StopConverting()
+	
+
+func _input(event):
+	if event.is_action_released("ui_terminal", true):
+		terminal_container.visible = not terminal_container.visible
+	# Detect mouse button press to start drag
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			drag_start_position = event.position
+			is_dragging = false
+		else:
+			is_dragging = false
+			await get_tree().process_frame
+			%DropForNode.visible = false
+
+	# Detect mouse motion to confirm dragging
+	elif event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		if not is_dragging:
+			if get_viewport().gui_get_drag_data() != null: # Minimum distance to count as a drag
+				if typeof(get_viewport().gui_get_drag_data()) == TYPE_STRING:
+					is_dragging = true
+					%DropForNode.visible = true
+			
+				
+				
