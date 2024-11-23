@@ -219,6 +219,7 @@ func execute_chat():
 		history.HistoryItemList.append(history_item)
 
 		var msg_node: = history.VBox.add_history_item(history_item)
+		msg_node.regeneratable = false
 		msg_node.render()
 
 

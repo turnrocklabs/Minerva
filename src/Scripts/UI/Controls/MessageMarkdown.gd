@@ -43,6 +43,15 @@ var editable:= false:
 		editable = value
 		%EditButton.visible = editable
 
+## Whether the messages can be regenerated.[br]
+## Controls the visibility of the regenerate button.
+var regeneratable: = true:
+	set(value):
+		regeneratable = value
+
+		if not regeneratable and %RegenerateButton.visible:
+			%RegenerateButton.visible = false
+
 ## Returns all rendered chat images in this message
 var images: Array[ChatImage]:
 	get:
@@ -106,7 +115,8 @@ func _setup_user_message():
 	label.markdown_text = history_item.Message
 	label.set("theme_override_colors/default_color", Color.WHITE)
 
-	%RegenerateButton.visible = true
+	if regeneratable:
+		%RegenerateButton.visible = true
 
 	var style: StyleBoxFlat = get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = user_message_color
