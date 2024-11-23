@@ -176,7 +176,13 @@ func setup_from_image(image_: Image):
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	var size_x = clamp(new_size.x, 1, INF)
 	var size_y = clamp(new_size.y, 1, INF)
-	image_.resize(size_x, size_y)
+	
+	if size_x != 1 and size_y != 1: 
+		image_.resize(size_x, size_y)
+	else:
+		image_.resize(%CenterContainer.size.x, %CenterContainer.size.y)
+		
+	
 
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
@@ -196,6 +202,7 @@ func setup_from_image(image_: Image):
 
 	layer_undo_histories[_draw_layer.name] = []
 	layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
+	
 	
 # Similar updates to the function setup_from_created_image
 func setup_from_created_image(image_: Image):
