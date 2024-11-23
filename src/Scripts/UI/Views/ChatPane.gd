@@ -201,8 +201,32 @@ func execute_chat():
 	ensure_chat_open()
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
+
+	# if we're using the human provider, handle it here
+	if history.provider is HumanProvider:
+		var next_role: = ChatHistoryItem.ChatRole.USER 
+		
+		if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER:
+			next_role = ChatHistoryItem.ChatRole.MODEL
+
+		var history_item: = ChatHistoryItem.new()
+		history_item.Message = %txtMainUserInput.text
+		history_item.Role = next_role
+
+		%txtMainUserInput.text = ""
+
+		history.HistoryItemList.append(history_item)
+
+		var msg_node: = history.VBox.add_history_item(history_item)
+		msg_node.regeneratable = false
+		msg_node.render()
+
+
+		return
+
+
+	
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
 
 	## prepare an append item for the history
@@ -277,6 +301,8 @@ func execute_chat():
 		history.VBox.scroll_to_bottom()
 
 		model_msg_node.loading = false
+	else:
+		model_msg_node.queue_free()
 
 # TODO: check if changing the active tab during the request causes any trouble
 
@@ -527,12 +553,6 @@ func update_token_estimation():
 	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) * 100, 0.01)]
 	if (provider.token_cost * token_count) * 100 < 0.01:
 		%EstimatedTokensLabel.text = "%s¢" % 0.01
-		
-	
-	print("token cound",token_count)
-	print((provider.token_cost * token_count) * 100)
-	
-
 
 # region Edit provider Title
 

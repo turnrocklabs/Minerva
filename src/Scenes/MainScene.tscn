@@ -1,4 +1,4 @@
-[gd_scene load_steps=38 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=39 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_d0avd"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -34,6 +34,7 @@
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
 [ext_resource type="PackedScene" uid="uid://b1tux4e3yql3g" path="res://Scenes/loading_pop_up_panel.tscn" id="27_f1wok"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="27_hlu33"]
+[ext_resource type="Script" path="res://Scripts/DropScript.gd" id="30_1anci"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -466,14 +467,54 @@ tooltip_text = "Creates a new notes tab"
 text = "New Tab"
 icon = ExtResource("12_6jk4t")
 
-[node name="tcThreads" type="TabContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane"]
-unique_name_in_owner = true
+[node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane"]
 layout_mode = 2
+size_flags_vertical = 3
+
+[node name="tcThreads" type="TabContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 drag_to_rearrange_enabled = true
 tab_focus_mode = 1
 script = ExtResource("1_gunt8")
+
+[node name="DropForNode" type="ColorRect" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+color = Color(0, 0.145098, 0.219608, 0.556863)
+script = ExtResource("30_1anci")
+
+[node name="Label" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/DropForNode"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -206.0
+offset_top = -14.5
+offset_right = 240.0
+offset_bottom = 31.5
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 33
+text = "Drop text here to crete note
+"
 
 [node name="TerminalTabContainer" parent="VBoxRoot/VSplitContainer" instance=ExtResource("23_ejoiu")]
 visible = false
@@ -502,6 +543,16 @@ visible = false
 z_index = 100
 layout_mode = 1
 
+[node name="ColorRect" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
 [connection signal="files_selected" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_files"]
@@ -529,6 +580,6 @@ layout_mode = 1
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/DisableNotesButton" to="." method="_on_disable_notes_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachment_pressed"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_new_pressed"]
-[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_active_tab_rearranged"]
-[connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/tcThreads" method="_on_tab_clicked"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_new_pressed"]
+[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_active_tab_rearranged"]
+[connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_tab_clicked"]
