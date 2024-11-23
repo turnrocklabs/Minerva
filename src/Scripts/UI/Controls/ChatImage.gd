@@ -71,12 +71,12 @@ func _on_save_file_dialog_file_selected(path: String):
 		)
 
 func _on_edit_button_pressed():
-	var caption_title: String = image.get_meta("caption", "")
-	if caption_title.length() > 15:
-		caption_title = caption_title.substr(0, 15) + "..."
+	#var caption_title: String = image.get_meta("caption", "")
+	#if caption_title.length() > 15:
+		#caption_title = caption_title.substr(0, 15) + "..."
 	SingletonObject.is_masking = true
 	SingletonObject.is_picture = true
-	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, null, caption_title, self)
+	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, null, "Graphic Note", self)
 	editor.graphics_editor.setup_from_image(image)
 	
 
@@ -86,4 +86,4 @@ func _on_note_button_pressed():
 	var caption_title: String = image.get_meta("caption", "")
 	#if caption_title.length() > 25:
 		#caption_title = caption_title.substr(0, 25) + "..."
-	SingletonObject.NotesTab.add_image_note(caption_title, image, image.get_meta("caption", ""))
+	SingletonObject.NotesTab.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
