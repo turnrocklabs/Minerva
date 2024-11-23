@@ -478,7 +478,8 @@ func hide_loading_screen():
 
 #region Prealoaded static scenes
 static var video_player_scene: = preload("res://Scenes/video_player.tscn")
-
+static var audio_contols_scene: = preload("res://Scenes/audio_note_controls.tscn")
+static var notes_scene: = preload("res://Scenes/Note.tscn")
 
 
 #endregion Prealoaded static scenes
