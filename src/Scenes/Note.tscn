@@ -20,6 +20,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+scale = Vector2(1, 1.00261)
 theme_override_constants/separation = 16
 script = ExtResource("1_bjbgn")
 video_player_container = NodePath("PanelContainer/vBoxContainer/VideoVBoxContainer")
@@ -94,35 +95,6 @@ context_menu_enabled = true
 threaded = true
 selection_enabled = true
 
-[node name="ImageVBoxContainer" type="VBoxContainer" parent="PanelContainer/vBoxContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-
-[node name="NoteImage" type="TextureRect" parent="PanelContainer/vBoxContainer/ImageVBoxContainer"]
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(0, 200)
-layout_mode = 2
-expand_mode = 3
-stretch_mode = 5
-
-[node name="ImageCaptionHBoxContainer" type="HBoxContainer" parent="PanelContainer/vBoxContainer/ImageVBoxContainer"]
-layout_mode = 2
-theme_override_constants/separation = 16
-
-[node name="ImageCaptionLabel" type="Label" parent="PanelContainer/vBoxContainer/ImageVBoxContainer/ImageCaptionHBoxContainer"]
-layout_mode = 2
-text = "Image Caption:"
-
-[node name="ImageCaptionLineEdit" type="LineEdit" parent="PanelContainer/vBoxContainer/ImageVBoxContainer/ImageCaptionHBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-placeholder_text = "image caption here"
-flat = true
-caret_blink = true
-
 [node name="VideoVBoxContainer" type="VBoxContainer" parent="PanelContainer/vBoxContainer"]
 unique_name_in_owner = true
 visible = false
@@ -145,6 +117,3 @@ theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]
-[connection signal="gui_input" from="PanelContainer/vBoxContainer/ImageVBoxContainer" to="." method="_on_image_v_box_container_gui_input"]
-[connection signal="text_changed" from="PanelContainer/vBoxContainer/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_changed"]
-[connection signal="text_submitted" from="PanelContainer/vBoxContainer/ImageVBoxContainer/ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_submitted"]
