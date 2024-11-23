@@ -9,6 +9,8 @@ extends Control
 enum LAYOUT {HORIZONTAL, VERTICAL}
 
 static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
+static var _unsaved_changes_file_icon: = preload("res://assets/icons/half_circle_left.svg")
+static var _unsaved_changes_associated_icon: = preload("res://assets/icons/half_circle_right.svg")
 
 var current_layout: LAYOUT
 
@@ -18,6 +20,7 @@ var current_layout: LAYOUT
 @onready var RightControl: Control = $"VBoxContainer/HBoxContainer/RightControl"
 @onready var BottomControl: Control = $"VBoxContainer/BottomControl"
 
+@onready var _toggle_all_button: Button = %ToggleAllButton
 
 
 func _ready():
@@ -50,9 +53,6 @@ func _shortcut_input(event: InputEvent):
 
 	
 func _on_close_tab(tab: int, container: TabContainer):
-	if Editor.Type.WhiteBoard:
-		#GraphicsEditor.layer_Number = 0
-		pass
 	var control = container.get_tab_control(tab)
 	if control is Editor:
 		if not control.is_content_saved():
@@ -231,20 +231,70 @@ func update_tabs_icon() -> void:
 	var counter:= 0
 	while counter < tab_count:
 		var editor = Tabs.get_tab_control(counter)
-		if not editor.is_content_saved():
-			Tabs.set_tab_icon(counter, _unsaved_changes_icon)
-		else:
-			Tabs.set_tab_icon(counter, null)
+		_on_editor_content_changed(editor) # call the below implementation to update the icon
+
+		# if not editor.is_content_saved():
+		# 	Tabs.set_tab_icon(counter, _unsaved_changes_icon)
+		# else:
+		# 	Tabs.set_tab_icon(counter, null)
 		
 		counter += 1
 
 
 func _on_editor_content_changed(editor: Editor):
+
+	var state: = editor.get_saved_state()
+
+	var icon: Texture2D
+	var tooltip: String = ""
+
+	var associated_object_name: String
+
+	if editor.associated_object:
+		associated_object_name = str(editor.associated_object)
+
+	match state & (Editor.FILE_SAVED | Editor.ASSOCIATED_OBJECT_SAVED):
+		Editor.FILE_SAVED:
+			# the file is saved, check if we have an associated object that's not marked as saved
+			if editor.associated_object:
+				icon = _unsaved_changes_associated_icon
+				tooltip = "File saved, \"%s\" unsaved" % associated_object_name
+			# else we just have a file that's saved
+			else:
+				icon = null
+				tooltip = "File saved"
+
+		Editor.ASSOCIATED_OBJECT_SAVED:
+			# the associated_object is saved, but not the file
+			
+			icon = _unsaved_changes_file_icon
+			if editor.file:
+				tooltip = "File unsaved, \"%s\" saved" % associated_object_name
+			# else we just have an associated object that's saved
+			else:
+				tooltip = "No File, Note saved"
+
+		# both are saved
+		Editor.FILE_SAVED | Editor.ASSOCIATED_OBJECT_SAVED:
+			icon = null
+			tooltip = "File and \"%s\" saved" % associated_object_name
+
+		0: # nothing is saved in this case
+			icon = _unsaved_changes_icon
+			if editor.file and editor.associated_object:
+				tooltip = "File and \"%s\" unsaved" % associated_object_name
+			else:
+				if editor.file:
+					tooltip = "File unsaved"
+				elif editor.associated_object:
+					tooltip = "\"%s\" unsaved" % associated_object_name
+				else:
+					tooltip = "Content unsaved"
+					
+
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
-	if not editor.is_content_saved():
-		Tabs.set_tab_icon(tab_idx, _unsaved_changes_icon)
-	else:
-		Tabs.set_tab_icon(tab_idx, null)
+	Tabs.set_tab_icon(tab_idx, icon)
+	Tabs.set_tab_tooltip(tab_idx, tooltip)
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
@@ -253,6 +303,8 @@ func _on_tab_container_tab_selected(_tab: int) -> void:
 	var current_control = Tabs.get_current_tab_control()
 	if not current_control:
 		return
+	
+	
 	if current_control is Editor and current_control.type == Editor.Type.TEXT:
 		enable_editor_action_buttons.emit(true)
 		current_control.code_edit.grab_focus()
@@ -297,3 +349,17 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 #endregion  Enable Editor Buttons
 ###
 ### End Reference Information ###
+
+
+var _last_state: = false
+
+func _on_toggle_all_button_pressed() -> void:
+	_last_state = not _last_state
+	
+	for editor in open_editors():
+		editor.toggle(_last_state)
+	
+	if _last_state:
+		_toggle_all_button.text = "Disable All"
+	else:
+		_toggle_all_button.text = "Enable All"

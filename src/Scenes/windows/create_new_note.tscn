@@ -269,6 +269,7 @@ icon = ExtResource("5_nij35")
 [connection signal="text_changed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
 [connection signal="text_changed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/TextNoteControl/NoteDescription" to="." method="_on_note_description_text_changed"]
+[connection signal="text_set" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/TextNoteControl/NoteDescription" to="." method="_on_note_description_text_set"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/PlayAudioButton" to="." method="_on_play_audio_button_pressed"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl/OpenImageFileButton" to="." method="_on_open_image_file_button_pressed"]
