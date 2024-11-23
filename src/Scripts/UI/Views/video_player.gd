@@ -1,6 +1,6 @@
 class_name VideoPlayer extends Control
 
-#region onready variables
+#region variables
 @export var video_stream_player: VideoStreamPlayer
 @export var h_slider: HSlider
 @export var volume_h_slider: HSlider
@@ -12,8 +12,7 @@ class_name VideoPlayer extends Control
 @onready var volume_button: Button = %VolumeButton
 @onready var volume_rect: ColorRect = %VolumeRect
 @onready var video_current_frame: TextureRect = %VideoCurrentFrame
-
-#endregion onready variables
+#endregion variables
 
 # icon textures for the buttons
 static var pause_icon: = preload("res://assets/icons/pause_icons/pause-24.png")
@@ -23,15 +22,21 @@ static var speaker_icon: = preload("res://assets/icons/speaker-24.png")
 
 # this is for checking if the video was playing when the progress var is dragged
 var was_playing: bool = false 
-
+var frame_time: = 1.0/24.0
+var skip_time: = 10.0
 var video_title: String = ""
 
 var video_path: String:
 	set(value):
 		video_path = value
 		if video_stream_player:
-			var video_resource = FFmpegVideoStream.new()
-			video_resource.file = value
+			var video_resource
+			if video_path.get_extension() == ".ogv":
+				video_resource = VideoStreamTheora.new()
+				video_resource.file = value
+			else:
+				video_resource = FFmpegVideoStream.new()
+				video_resource.file = value
 			video_stream_player.stream = video_resource
 			h_slider.max_value = video_stream_player.get_stream_length()
 			h_slider.value = 0
@@ -172,20 +177,37 @@ func _on_color_rect_mouse_exited() -> void:
 #region Buttons pressed
 func _on_back_button_pressed() -> void:
 	video_stream_player.paused = true
+	if video_stream_player.stream_position - skip_time < 0:
+		video_stream_player.stream_position = 0
+	else:
+		video_stream_player.stream_position -= skip_time
+	video_stream_player.paused = false
+	video_stream_player.queue_redraw()
+	video_stream_player.paused = true
+
+func _on_ford_button_pressed() -> void:
+	video_stream_player.paused = true
+	if video_stream_player.stream_position + skip_time > video_stream_player.get_stream_length():
+		video_stream_player.stream_position = video_stream_player.get_stream_length()
+	else:
+		video_stream_player.stream_position += skip_time
+	video_stream_player.paused = false
+	video_stream_player.queue_redraw()
+	video_stream_player.paused = true
+
+
+func _on_frame_back_button_pressed() -> void:
+	video_stream_player.paused = true
 	if video_stream_player.stream_position - frame_time < 0:
 		video_stream_player.stream_position = 0
 	else:
 		video_stream_player.stream_position -= frame_time
 	video_stream_player.paused = false
 	video_stream_player.queue_redraw()
-	#await get_tree().create_timer(.21).timeout
-	video_current_frame.texture = video_stream_player.get_video_texture()
 	video_stream_player.paused = true
 
 
-var frame_time: = 1.0/24.0
-
-func _on_ford_button_pressed() -> void:
+func _on_frame_ford_button_pressed() -> void:
 	video_stream_player.paused = true
 	if video_stream_player.stream_position + frame_time > video_stream_player.get_stream_length():
 		video_stream_player.stream_position = video_stream_player.get_stream_length()
@@ -193,10 +215,7 @@ func _on_ford_button_pressed() -> void:
 		video_stream_player.stream_position += frame_time
 	video_stream_player.paused = false
 	video_stream_player.queue_redraw()
-	#await get_tree().create_timer(.21).timeout
-	video_current_frame.texture = video_stream_player.get_video_texture()
 	video_stream_player.paused = true
-	#video_current_frame.visible = true
 
 
 var muted = false
@@ -217,9 +236,50 @@ func _on_volume_button_pressed() -> void:
 
 
 func _on_screenshot_button_pressed() -> void:
-	var image = video_stream_player.get_video_texture().get_image()
-	var stream_position: = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]
-	SingletonObject.NotesTab.add_image_note(video_path.get_file(), image, stream_position)
+	# Create a Viewport if you don't have one already
+	var viewport = SubViewport.new()
+	viewport.size = Vector2(640, 480)  # Replace with your video's resolution
+	add_child(viewport)
+
+
+	# Add a TextureRect or Sprite2D to the Viewport
+	var texture_rect = TextureRect.new()
+	texture_rect.texture = video_stream_player.get_video_texture()
+	texture_rect.size = viewport.size
+	viewport.add_child(texture_rect)
+
+	# Force an update to the Viewport
+	
+	await get_tree().process_frame  # Wait for the frame to process
+
+	# Get the image from the Viewport's texture
+	var viewport_texture = viewport.get_texture()
+	var image = null
+	if viewport_texture:
+		image = viewport_texture.get_image()
+	else:
+		print("Failed to get texture from viewport")
+		return
+
+	if image == null:
+		print("Failed to get image from viewport texture")
+		return
+
+	# Create a Texture from the Image if needed
+	var image_texture = ImageTexture.new()
+	image_texture.create_from_image(image)
+	video_current_frame.texture = image_texture
+
+	# Proceed with the rest of your code
+	var stream_position = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]
+
+	var ep: EditorPane = SingletonObject.editor_container.editor_pane
+	SingletonObject.is_graph = true
+	SingletonObject.is_picture = true
+	var editor = ep.add(Editor.Type.GRAPHICS, null, stream_position)
+	editor.graphics_editor.setup_from_image(image)
+	remove_child(viewport)
+	viewport = null
 
 
 var is_fullscreen: bool = false
