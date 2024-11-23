@@ -50,8 +50,20 @@ func _notification(what):
 
 
 func _messages_list_changed():
-	var last_message: MessageMarkdown
 
+
+	# When exiting it could happen we get a "Left operand if 'is' is a  previously freed instance"
+	# so just check if it's still valid, if not we're exiting the program anyways so it doesn't matter
+	if is_instance_valid(chat_history.provider) and chat_history.provider is HumanProvider:
+		# We want to enable editing for all messages if using the Human Provider
+		for child in get_children():
+			if child is MessageMarkdown:
+				child.editable = true
+				child.regeneratable = false
+
+		return
+
+	var last_message: MessageMarkdown
 	# disable edit for all user messages
 	for child in get_children():
 		if child is MessageMarkdown:
