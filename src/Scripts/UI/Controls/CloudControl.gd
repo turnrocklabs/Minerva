@@ -222,10 +222,10 @@ class CurvedTriangleTail:
 		control._bezier_curve.create_point(position)
 
 	func remove_point(point):
-		super(point)
-		
 		var position = point if point is Vector2 else control.bubble_poly[point]
 		control._bezier_curve.destroy_point(position)
+
+		super(point)
 	
 	func get_polygon():
 		var poly: = PackedVector2Array()
@@ -471,9 +471,15 @@ func _gui_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.is_pressed() and tail.points.size()>0:
 		var points = tail.get_points_vector_array()
+		var closest_idx = 0
+		var min_distance = points[closest_idx].distance_to(event.position)
 		for idx in tail.points.size():
-			if points[idx].distance_to(event.position) < 60:
-				tail.remove_point(tail.points[idx])
+			var distance = points[idx].distance_to(event.position)
+			if distance < min_distance:
+				closest_idx = idx
+				min_distance = distance
+		if min_distance < 60:
+			tail.remove_point(tail.points[closest_idx])
 
 	if event is InputEventMouseMotion:
 		# if we're dragging the resizer, move it to the mouse position
