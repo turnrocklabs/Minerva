@@ -41,13 +41,25 @@ var font_size: = ThemeDB.fallback_font_size
 ## When not in editing mode the scene is rendered in final form.
 var editing: = true:
 	set(value):
-		editing = value
-		_text_edit.visible = editing
-		_lower_resizer.visible = editing
-		_upper_resizer.visible = editing
-		_mover.visible = editing
-		_bezier_curve.visible = editing
+		_text_edit.visible = value
+		_lower_resizer.visible = value
+		_upper_resizer.visible = value
+		_mover.visible = value
+		_bezier_curve.visible = value
 
+		# if value changed
+		if editing != value:
+			editing = value
+
+			# only capture mouse when editing
+			mouse_filter = MOUSE_FILTER_PASS if value else MOUSE_FILTER_IGNORE
+			var layer = get_parent()
+			if is_instance_valid(layer) and layer is Layer:
+				layer.mouse_filter = MOUSE_FILTER_PASS if value else MOUSE_FILTER_IGNORE
+
+			# ask other bubbles to redraw themselves
+			for other_bubble in _find_other_bubbles():
+				other_bubble.queue_redraw()
 
 ## There are two control nodes that are used for resizing the speech bubble react.[br]
 ## This variable hold the active one during the drag.
@@ -292,10 +304,25 @@ func _draw() -> void:
 	# Create a ellipse thats contained within the given rectangle
 	bubble_poly = _create_tail()
 	
+	# Find other bubbles outside the for loop
+	var other_bubbles := _find_other_bubbles()
+
 	var polys := Geometry2D.merge_polygons(bubble_poly, tail.get_polygon())
-	
 	for poly in polys:
-		draw_colored_polygon(Geometry2D.offset_polygon(poly, 3)[0], Color.BLACK)
+		# *** Draw outline of the bubble ***
+
+		# Expand bubble and tail combined shape by 3 pixels
+		var outline = Geometry2D.offset_polygon(poly, 3)[0]
+
+		# Remove other bubbles' bubble_poly
+		for other_bubble in other_bubbles:
+			if !other_bubble.editing:
+				outline = Geometry2D.clip_polygons(outline, other_bubble.bubble_poly)[0]
+
+		# Fraw outline
+		draw_colored_polygon(outline, Color.BLACK)
+
+		# *** Fill inside in the bubble ***
 		draw_colored_polygon(poly, Color.WHITE)
 		
 	# draw_polyline(ellipse, Color.BLACK, 7, true)
@@ -764,3 +791,15 @@ func ApplyEditing():
 func _on_mover_button_down() -> void:
 	_moving = true
 	get_viewport().set_input_as_handled()
+
+func _find_other_bubbles() -> Array[CloudControl]:
+	var other_bubbles: Array[CloudControl] = []
+	var layer = get_parent()
+	if is_instance_valid(layer) and layer is Layer:
+		var layer_container = layer.get_parent()
+		for other_layer in layer_container.get_children():
+			if other_layer != layer:
+				for child in other_layer.get_children():
+					if is_instance_valid(child) and child is CloudControl:
+						other_bubbles.append(child)
+	return other_bubbles
