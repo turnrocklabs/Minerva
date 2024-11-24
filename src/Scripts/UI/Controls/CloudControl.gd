@@ -137,6 +137,9 @@ class Tail:
 	func add_point(point) -> void:
 		points.append(point)
 
+	func remove_point(point) -> void:
+		points.erase(point)
+
 	## Draws the final form of the tail.
 	func draw() -> void:
 		push_error("NotImplemented: method draw of object %s is not implemented" % get_script().resource_path.get_file())
@@ -217,6 +220,12 @@ class CurvedTriangleTail:
 		
 		var position = point if point is Vector2 else control.bubble_poly[point]
 		control._bezier_curve.create_point(position)
+
+	func remove_point(point):
+		super(point)
+		
+		var position = point if point is Vector2 else control.bubble_poly[point]
+		control._bezier_curve.destroy_point(position)
 	
 	func get_polygon():
 		var poly: = PackedVector2Array()
@@ -459,7 +468,13 @@ func _gui_input(event: InputEvent) -> void:
 
 			queue_redraw()
 			accept_event()
-	
+
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.is_pressed() and tail.points.size()>0:
+		var points = tail.get_points_vector_array()
+		for idx in tail.points.size():
+			if points[idx].distance_to(event.position) < 60:
+				tail.remove_point(tail.points[idx])
+
 	if event is InputEventMouseMotion:
 		# if we're dragging the resizer, move it to the mouse position
 		if _active_resizer:
