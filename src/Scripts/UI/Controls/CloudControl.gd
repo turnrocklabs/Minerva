@@ -463,7 +463,7 @@ func _gui_input(event: InputEvent) -> void:
 						if event.position.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
 							# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
 							tail.add_point(idx)
-						else:
+						elif tail.points.size()>0: # don't allow the first point to be outside the ellipse
 							tail.add_point(event.position)
 
 			queue_redraw()
