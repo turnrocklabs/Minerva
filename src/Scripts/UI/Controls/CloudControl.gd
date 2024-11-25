@@ -521,12 +521,9 @@ func _gui_input(event: InputEvent) -> void:
 			else:
 				tail.points[_drag_point_idx] = event.position
 
-		# moving the whole speech bubble
+		# moving the whole speech bubble using the mover handle
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _moving:
-			set_bounding_rect(Rect2(
-				_upper_resizer.position + event.relative,
-				_lower_resizer.position - _upper_resizer.position
-			))
+			_move_bubble(event.relative)
 
 		queue_redraw()
 		accept_event()
@@ -824,3 +821,23 @@ func _find_other_bubbles() -> Array[CloudControl]:
 					if is_instance_valid(child) and child is CloudControl:
 						other_bubbles.append(child)
 	return other_bubbles
+
+# move the whole speech bubble
+func _move_bubble(offset: Vector2) -> void:
+	# move the textbox and ellipse
+	set_bounding_rect(Rect2(
+		_upper_resizer.position + offset,
+		_lower_resizer.position - _upper_resizer.position
+	))
+
+	# move the fixed points
+	for idx in tail.points.size():
+		var point = tail.points[idx]
+		if point is Vector2:
+			tail.points[idx] += offset
+
+	# move the control points
+	for point in tail.control._bezier_curve.points:
+		point.position += offset
+		point.control_point_out += offset
+		point.control_point_in += offset
