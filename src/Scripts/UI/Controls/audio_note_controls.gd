@@ -76,8 +76,3 @@ func _on_volume_slider_value_changed(value: float) -> void:
 
 func _on_audio_timer_timeout() -> void:
 	audio_slider.value = audio_stream_player.get_playback_position()
-
-
-func _on_audio_slider_drag_ended(value_changed: bool) -> void:
-	if value_changed:
-		audio_stream_player.pla
