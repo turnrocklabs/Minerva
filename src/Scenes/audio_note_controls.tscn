@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" uid="uid://bat0uh67ipveo" path="res://assets/icons/stop_icons/stop_icon_24.png" id="3_l1kh3"]
 [ext_resource type="Texture2D" uid="uid://c5kcyetd4isge" path="res://assets/icons/speaker-24.png" id="5_hiiy7"]
 
-[node name="AudioHBoxContainer" type="HBoxContainer" node_paths=PackedStringArray("audio_slider", "volume_slider", "audio_stream_player", "play_button", "stop_button", "mute_button")]
+[node name="AudioHBoxContainer" type="HBoxContainer" node_paths=PackedStringArray("audio_slider", "volume_slider", "audio_stream_player", "audio_timer", "play_button", "stop_button", "mute_button")]
 custom_minimum_size = Vector2(0, 100)
 anchors_preset = 10
 anchor_right = 1.0
@@ -17,6 +17,7 @@ script = ExtResource("1_ikrgo")
 audio_slider = NodePath("AudioSlider")
 volume_slider = NodePath("VolumeSlider")
 audio_stream_player = NodePath("AudioStreamPlayer")
+audio_timer = NodePath("AudioSlider/AudioTimer")
 play_button = NodePath("PlayButton")
 stop_button = NodePath("StopButton")
 mute_button = NodePath("MuteButton")
@@ -68,6 +69,10 @@ size_flags_vertical = 4
 editable = false
 scrollable = false
 
+[node name="AudioTimer" type="Timer" parent="AudioSlider"]
+wait_time = 0.05
+autostart = true
+
 [node name="Label2" type="Label" parent="."]
 visible = false
 layout_mode = 2
@@ -80,3 +85,5 @@ layout_mode = 2
 [connection signal="pressed" from="StopButton" to="." method="_on_stop_button_pressed"]
 [connection signal="pressed" from="MuteButton" to="." method="_on_mute_button_pressed"]
 [connection signal="value_changed" from="VolumeSlider" to="." method="_on_volume_slider_value_changed"]
+[connection signal="drag_ended" from="AudioSlider" to="." method="_on_audio_slider_drag_ended"]
+[connection signal="timeout" from="AudioSlider/AudioTimer" to="." method="_on_audio_timer_timeout"]
