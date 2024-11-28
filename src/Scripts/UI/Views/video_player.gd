@@ -22,7 +22,7 @@ static var speaker_icon: = preload("res://assets/icons/speaker-24.png")
 
 # this is for checking if the video was playing when the progress var is dragged
 var was_playing: bool = false 
-var frame_time: = 1.0/24.0
+static var frame_time: = 1.0/24.0
 var skip_time: = 10.0
 var video_title: String = ""
 
@@ -238,20 +238,16 @@ func _on_volume_button_pressed() -> void:
 func _on_screenshot_button_pressed() -> void:
 	# Create a Viewport if you don't have one already
 	var viewport = SubViewport.new()
-	viewport.size = Vector2(640, 480)  # Replace with your video's resolution
+	viewport.size = video_stream_player.get_video_texture().get_size()
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(viewport)
-
-
 	# Add a TextureRect or Sprite2D to the Viewport
 	var texture_rect = TextureRect.new()
 	texture_rect.texture = video_stream_player.get_video_texture()
 	texture_rect.size = viewport.size
 	viewport.add_child(texture_rect)
-
-	# Force an update to the Viewport
 	
-	await get_tree().process_frame  # Wait for the frame to process
-
+	await RenderingServer.frame_post_draw  # Wait for the frame to be drawned
 	# Get the image from the Viewport's texture
 	var viewport_texture = viewport.get_texture()
 	var image = null
@@ -260,19 +256,15 @@ func _on_screenshot_button_pressed() -> void:
 	else:
 		print("Failed to get texture from viewport")
 		return
-
 	if image == null:
 		print("Failed to get image from viewport texture")
 		return
-
 	# Create a Texture from the Image if needed
 	var image_texture = ImageTexture.new()
-	image_texture.create_from_image(image)
+	ImageTexture.create_from_image(image)
 	video_current_frame.texture = image_texture
-
 	# Proceed with the rest of your code
 	var stream_position = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]
-
 	var ep: EditorPane = SingletonObject.editor_container.editor_pane
 	SingletonObject.is_graph = true
 	SingletonObject.is_picture = true
