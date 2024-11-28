@@ -7,10 +7,11 @@ var ASCII_COLOR_CODE_REGEX: = RegEx.create_from_string("\\x1B\\[([0-9]{1,3}(;[0-
 var WINDOWS_PATH_REGEX_PATTERN: = r"^[a-zA-Z](?::(?:[\\\/](?:[a-zA-Z0-9._-]+[\\\/])*([a-zA-Z0-9._-]+)?)?)?"
 var LINUX_PATH_REGEX_PATTERN: = r"(?:\/)?(?:[a-zA-Z0-9-_.]+\/)*[a-zA-Z0-9-_.]*(?:\/)?[\s]*"
 
-@warning_ignore("unused_signal")
+## Emitted when the command execution has finished and the output has been processed.
 signal execution_finished()
 
 @onready var scroll_container = %ScrollContainer
+
 @onready var command_line_edit: LineEdit = %CommandLineEdit
 
 ## Holds the current output container created in [method _create_command_output_container]
@@ -215,18 +216,19 @@ func _autocomplete(forward: = true) -> void:
 ## Creates output container for the currently running command.[br]
 ## Contains label and check button to enable that output content.
 func _create_command_output_container() -> Container:
+	if _output_label and _output_label.text.strip_edges().is_empty():
+		_output_label.text = ""
+		return
+
 	_current_output_container = HBoxContainer.new()
 
 	_output_label = Label.new()
-	#_output_label.fit_content = true
-	#_output_label.selection_enabled = true
 	_output_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var check_button = CheckButton.new()
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_END
-	if last_container_checkbutton != null:
-		check_button.visible = false
+
 	check_button.toggled.connect(_on_output_check_button_toggled.bind(_output_label, check_button))
 	check_button.tree_exiting.connect(_on_output_check_button_tree_exiting.bind(check_button))
 	last_container_checkbutton = check_button
@@ -234,7 +236,7 @@ func _create_command_output_container() -> Container:
 	_current_output_container.add_child(check_button)
 	_current_output_container.add_child(_output_label)
 	
-	_output_container.add_child.call_deferred(_current_output_container)
+	_output_container.add_child(_current_output_container)
 	
 	return _current_output_container
 
@@ -338,15 +340,12 @@ func _clean() -> void:
 	stdio.close()
 	stderr.close()
 
-	_stdio_thread.wait_to_finish()
-	_stderr_thread.wait_to_finish()
+	if _stdio_thread.is_started(): _stdio_thread.wait_to_finish()
+	if _stderr_thread.is_started(): _stderr_thread.wait_to_finish()
 
 	print("Cleaned up shell pipes and threads.")
 
 
-
-
-# mutex regulate access to next 3 variables
 
 # Array of characters we received from streams
 var _received_characters: = PackedStringArray()
@@ -441,19 +440,31 @@ class Sequence:
 
 	var full_regex: RegEx
 
-	func _init(content_, before_: String, after_: String, command_end_: = false, replace_with_: = "") -> void:
+	## [parameter content_] Content that we're searching for that is present inbetween the [parameter before_] and [parameter after_].[br]
+	## [parameter content_] can be either a String or a RegEx object.[br]
+	## [parameter command_end_] marks whether this sequence marks command output end. Used so the terminal can create new output container/checkbutton...[br]
+	## [parameter replace_with_] determines what the sequence should be replaced with in the text provided to the [method strip].[br]
+	## [parameter full_regex_] will be used in [method is_present].
+	## If not provided it will be created from [parameter content_], [parameter before_] and [parameter after_]
+	## [member full_regex] will be created from [code]"%s%s%s" % [[before, content, after]][/code] if [parameter content_] is String
+	## and [member full_regex] is not provided.[br]
+	## [member full_regex] will be created from [code]"%s%s%s" % [[regex_escape(before), content.get_pattern(), regex_escape(after)]][/code]
+	## if [parameter content_] is RegEx object and [member full_regex] is not provided.[br].[br]
+	func _init(content_, before_: String, after_: String, command_end_: = false, replace_with_: = "", full_regex_: RegEx = null) -> void:
 		content = content_
 		after = after_
 		before = before_
 		command_end = command_end_
 		replace_with = replace_with_
+		full_regex = full_regex_
 
-		if content is String:
-			var full_text: = "%s%s%s" % [before, content, after]
-			full_regex = RegEx.create_from_string(regex_escape(full_text))
-		elif content is RegEx:
-			var full_text: = "%s%s%s" % [regex_escape(before), content.get_pattern(), regex_escape(after)]
-			full_regex = RegEx.create_from_string("(?m)%s" % full_text)
+		if not full_regex:
+			if content is String:
+				var full_text: = "%s%s%s" % [before, content, after]
+				full_regex = RegEx.create_from_string(regex_escape(full_text))
+			elif content is RegEx:
+				var full_text: = "%s%s%s" % [regex_escape(before), content.get_pattern(), regex_escape(after)]
+				full_regex = RegEx.create_from_string("(?m)%s" % full_text)
 
 
 	static func _create_partial_regex_pattern(literal: String):
@@ -506,7 +517,6 @@ class Sequence:
 	## Checks if [parameter text] has the given [member content]
 	## inbetween [member before] and [member after].
 	func is_present(text: String) -> bool:
-
 		return full_regex.search(text) is RegExMatch
 	
 	## Checks whether the provided unfinished [parameter text][br]
@@ -528,7 +538,6 @@ class Sequence:
 			pr = content
 		
 		var match_: = pr.search(remaining)
-
 
 		if not match_ or match_.get_start() != 0: return false
 
@@ -561,27 +570,72 @@ var _processed_text: =  PackedStringArray()
 var _disallowed_seq: Array[Sequence]
 
 var _windows_clear_seq: = Sequence.new("\f", "", "")
-var _linux_clear_seq: = Sequence.new(RegEx.create_from_string(r"^\x1b(\[2J)?$|^\x1b\[2?$|^\x1b\[$"), "", "")
+var _linux_clear_seq: = Sequence.new(
+	# Partial matches regex matches all valid partial sequences
+	RegEx.create_from_string(
+		r"^\x1b$|" +
+		r"^\x1b\[$|" +
+		r"^\x1b\[(?:2|3|H)?$|" +
+		r"^\x1b\[(?:2J|3J|H)$|" +
+		r"^\x1b\[H\x1b$|" +
+		r"^\x1b\[H\x1b\[$|" +
+		r"^\x1b\[H\x1b\[(?:2|3)$|" +
+		r"^\x1b\[H\x1b\[(?:2J|3J)$|" +
+		r"^\x1b\[2J\x1b$|" +
+		r"^\x1b\[2J\x1b\[$|" +
+		r"^\x1b\[2J\x1b\[(?:3|H)$|" +
+		r"^\x1b\[2J\x1b\[(?:3J|H)$|" +
+		r"^\x1b\[3J\x1b$|" +
+		r"^\x1b\[3J\x1b\[$|" +
+		r"^\x1b\[3J\x1b\[(?:2|H)$|" +
+		r"^\x1b\[3J\x1b\[(?:2J|H)$|" +
+		r"^\x1b\[H\x1b\[2J\x1b$|" +
+		r"^\x1b\[H\x1b\[2J\x1b\[$|" +
+		r"^\x1b\[H\x1b\[2J\x1b\[3$|" +
+		r"^\x1b\[H\x1b\[2J\x1b\[3J$|" +
+		r"^\x1b\[H\x1b\[3J\x1b$|" +
+		r"^\x1b\[H\x1b\[3J\x1b\[$|" +
+		r"^\x1b\[H\x1b\[3J\x1b\[2$|" +
+		r"^\x1b\[H\x1b\[3J\x1b\[2J$|" +
+		r"^\x1b\[2J\x1b\[H\x1b$|" +
+		r"^\x1b\[2J\x1b\[H\x1b\[$|" +
+		r"^\x1b\[2J\x1b\[H\x1b\[3$|" +
+		r"^\x1b\[2J\x1b\[H\x1b\[3J$|" +
+		r"^\x1b\[2J\x1b\[3J\x1b$|" +
+		r"^\x1b\[2J\x1b\[3J\x1b\[$|" +
+		r"^\x1b\[2J\x1b\[3J\x1b\[H$|" +
+		r"^\x1b\[3J\x1b\[H\x1b$|" +
+		r"^\x1b\[3J\x1b\[H\x1b\[$|" +
+		r"^\x1b\[3J\x1b\[H\x1b\[2$|" +
+		r"^\x1b\[3J\x1b\[H\x1b\[2J$|" +
+		r"^\x1b\[3J\x1b\[2J\x1b$|" +
+		r"^\x1b\[3J\x1b\[2J\x1b\[$|" +
+		r"^\x1b\[3J\x1b\[2J\x1b\[H$"
+	),
+	"",
+	"",
+	false,
+	"",
+	# Full match regex - must have exactly one of each command
+	RegEx.create_from_string(
+		r"^\x1b\[(?:H\x1b\[2J\x1b\[3J|H\x1b\[3J\x1b\[2J|2J\x1b\[H\x1b\[3J|2J\x1b\[3J\x1b\[H|3J\x1b\[H\x1b\[2J|3J\x1b\[2J\x1b\[H)$"
+	)
+)
+
+@onready var _clear_sequence: Sequence = _windows_clear_seq if OS.get_name() == "Windows" else _linux_clear_seq
 
 func _proces_received_text(text: String, _index_a: int) -> void:
 	_processed_text.append(text)
-	
+
 	var full_string: = "".join(_processed_text)
 
-	if OS.get_name() == "Windows":
-		if _windows_clear_seq.is_potential(full_string, false):
-			
-			if _windows_clear_seq.is_present(full_string):
-				clear_terminal()	
-			return
-	
-	elif OS.get_name() == "Linux":
-		if _linux_clear_seq.is_potential(full_string, false):
-			
-			if _linux_clear_seq.is_present(full_string):
-				clear_terminal()
-			return
-
+	# If we encounter a clear sequence in output, clear the terminal content
+	if _clear_sequence and _clear_sequence.is_potential(full_string, false):
+		if _clear_sequence.is_present(full_string):
+			_processed_text.clear()
+			clear_terminal()
+		
+		return # return to keep the received characters that are potential clear sequence
 
 	if not _output_label:
 		_create_command_output_container()
@@ -623,6 +677,7 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 			_output_label.text = _output_label.text.trim_suffix("\n").trim_suffix("\r")
 			_create_command_output_container()
 			_toggle_progress_bar(false)
+			execution_finished.emit()
 
 
 func _append_output_text(text: String) -> void:
@@ -647,12 +702,22 @@ func _append_output_text(text: String) -> void:
 	var full_text: String = ""
 	if _output_label != null:
 		full_text = _output_label.text + text
-		_output_label.text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
+		
+		full_text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
+
+		# if this is the only output container, stip the newlines at the top.
+		if _current_output_container.get_index() == 0:
+			full_text = full_text.strip_edges(true, false)
+
+		_output_label.text = full_text
+		# hide the output container if the content is empty
+		_current_output_container.visible = not _output_label.text.strip_edges().is_empty()
 
 ## Clears all the terminal content
 func clear_terminal() -> void:
+	_output_label = null
 	for ch in _output_container.get_children():
-		ch.queue_free()
+		ch.free()
 
 func terminate_process() -> void:
 	var output = []
@@ -788,13 +853,14 @@ func execute_command(input: String):
 				)
 			)
 
+		# If we're about to run a new command prepend this text, because Linux doesnt output it to stdout
+		if OS.get_name() == "Linux":
+			_append_output_text(shell_prompt + "% " + input + "\n")
+
 	else:
 		command_buffer = (input + "\n").to_utf8_buffer()
 	
 	stdio.store_buffer(command_buffer)
-
-	if OS.get_name() == "Linux":
-		_append_output_text(shell_prompt + "% " + input + "\n")
 
 	_toggle_progress_bar()
 
