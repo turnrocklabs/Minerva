@@ -4,6 +4,7 @@ class_name VideoPlayer extends Control
 @export var video_stream_player: VideoStreamPlayer
 @export var h_slider: HSlider
 @export var volume_h_slider: HSlider
+@onready var volume_controls_timer: Timer = %VolumeControlsTimer
 @onready var timer: Timer = %SliderTimer
 @onready var play_button: Button = %PlayButton
 @onready var label: Label = %RunningTimeLabel
@@ -165,12 +166,16 @@ func handle_input_for_pause(event: InputEvent) -> void:
 #both color_rect and volume_rect are connected to this function
 func _on_color_rect_mouse_entered() -> void:
 	controls_timer.paused = true
+	volume_controls_timer.paused = true
 
 #both color_rect and volume_rect are connected to this function
 func _on_color_rect_mouse_exited() -> void:
 	if not color_rect.get_rect().has_point(get_local_mouse_position()) \
 		or  not volume_rect.get_rect().has_point(get_local_mouse_position()):
 		controls_timer.paused = false
+		volume_controls_timer.paused = false
+		volume_controls_timer.start()
+		controls_timer.start()
 
 #endregion Input listeners for pausing
 
@@ -292,6 +297,7 @@ func _on_fullscreen_button_pressed() -> void:
 
 func _on_volume_button_mouse_entered() -> void:
 	volume_rect.visible = true
+	volume_controls_timer.start()
 
 func _on_visibility_changed() -> void:
 	if timer and controls_timer:
@@ -306,3 +312,7 @@ func _on_visibility_changed() -> void:
 func _on_focus_exited() -> void:
 	timer.paused = true
 	controls_timer.paused = true
+
+
+func _on_volume_controls_timer_timeout() -> void:
+	volume_rect.hide()

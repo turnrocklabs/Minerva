@@ -4,6 +4,7 @@ extends HBoxContainer
 @export var audio_slider: HSlider
 @export var volume_slider: HSlider
 @export var audio_stream_player: AudioStreamPlayer
+@export var audio_timer: Timer
 
 @export_category("audio buttons")
 @export var play_button: Button
@@ -28,6 +29,7 @@ var was_playing: = false
 func _on_play_button_pressed() -> void:
 	if was_playing:
 		audio_stream_player.stream_paused = !audio_stream_player.stream_paused
+		audio_timer.paused = audio_stream_player.stream_paused
 		play_button.icon = play_icon
 		if audio_stream_player.stream_paused:
 			play_button.icon = play_icon
@@ -37,11 +39,6 @@ func _on_play_button_pressed() -> void:
 		audio_stream_player.play()
 		play_button.icon = pause_icon
 		was_playing = true
-	#audio_stream_player.stream_paused = !audio_stream_player.stream_paused
-	#if audio_stream_player.stream_paused:
-		#audio_stream_player.play(audio_progress)
-	#else:
-		#audio_stream_player.play()
 
 
 func _on_stop_button_pressed() -> void:
@@ -51,10 +48,6 @@ func _on_stop_button_pressed() -> void:
 	play_button.icon = play_icon
 	audio_slider.value = audio_progress
 
-
-func _on_pause_button_pressed() -> void:
-	audio_progress = %AudioStreamPlayer.get_playback_position()
-	audio_stream_player.stream_paused = true
 
 var muted: = false
 func _on_mute_button_pressed() -> void:
@@ -69,11 +62,6 @@ func _on_mute_button_pressed() -> void:
 		#_on_volume_slider_value_changed(0.0)
 		mute_button.icon = muted_icon
 		muted = true
-	
-
-
-func update_progress_bar() -> void:
-	audio_slider.value = audio_stream_player.get_playback_position()
 
 
 func _on_volume_slider_value_changed(value: float) -> void:
@@ -84,3 +72,12 @@ func _on_volume_slider_value_changed(value: float) -> void:
 		mute_button.icon = muted_icon
 	else:
 		mute_button.icon = speaker_icon
+
+
+func _on_audio_timer_timeout() -> void:
+	audio_slider.value = audio_stream_player.get_playback_position()
+
+
+func _on_audio_slider_drag_ended(value_changed: bool) -> void:
+	if value_changed:
+		audio_stream_player.pla
