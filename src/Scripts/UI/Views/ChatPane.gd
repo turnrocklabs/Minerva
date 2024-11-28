@@ -244,7 +244,7 @@ func execute_chat():
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
 
-	user_history_item.EstimatedTokenCost = history.provider.estimate_tokens_from_prompt(history_list)
+	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	# rerender the message wince we changed the history item
 	user_msg_node.render()
 

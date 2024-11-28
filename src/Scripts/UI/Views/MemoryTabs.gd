@@ -12,7 +12,7 @@ var _drag_active := false
 
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
-var _can_drop:bool = false
+#var _can_drop:bool = false
 ## return a single large string of all active memories
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
