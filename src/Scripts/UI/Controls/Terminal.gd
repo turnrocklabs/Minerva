@@ -337,9 +337,11 @@ func _clean() -> void:
 
 	stdio.close()
 	stderr.close()
-
-	_stdio_thread.wait_to_finish()
-	_stderr_thread.wait_to_finish()
+	
+	if _stdio_thread.is_alive():
+		_stdio_thread.wait_to_finish()
+	if _stderr_thread.is_alive():
+		_stderr_thread.wait_to_finish()
 
 	print("Cleaned up shell pipes and threads.")
 

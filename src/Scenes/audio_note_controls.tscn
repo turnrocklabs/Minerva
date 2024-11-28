@@ -85,5 +85,4 @@ layout_mode = 2
 [connection signal="pressed" from="StopButton" to="." method="_on_stop_button_pressed"]
 [connection signal="pressed" from="MuteButton" to="." method="_on_mute_button_pressed"]
 [connection signal="value_changed" from="VolumeSlider" to="." method="_on_volume_slider_value_changed"]
-[connection signal="drag_ended" from="AudioSlider" to="." method="_on_audio_slider_drag_ended"]
 [connection signal="timeout" from="AudioSlider/AudioTimer" to="." method="_on_audio_timer_timeout"]
