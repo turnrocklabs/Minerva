@@ -277,7 +277,6 @@ func _on_screenshot_button_pressed() -> void:
 		print("Failed to get image from viewport texture")
 		return
 	# Create a Texture from the Image if needed
-	var image_texture = ImageTexture.new()
 	ImageTexture.create_from_image(image)
 	# Proceed with the rest of your code
 	var stream_position = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]

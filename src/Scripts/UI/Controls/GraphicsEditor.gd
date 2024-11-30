@@ -181,7 +181,8 @@ func setup_from_image(image_: Image):
 	if size_x != 1 and size_y != 1: 
 		image_.resize(size_x, size_y)
 	else:
-		image_.resize(%CenterContainer.size.x, %CenterContainer.size.y)
+		if %CenterContainer.size.x > 0 and %CenterContainer.size.y > 0:
+			image_.resize(%CenterContainer.size.x, %CenterContainer.size.y)
 		
 	
 
