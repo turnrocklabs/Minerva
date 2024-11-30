@@ -19,6 +19,7 @@ grow_vertical = 2
 script = ExtResource("1_8t5ew")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -76,37 +77,38 @@ focus_mode = 0
 icon = ExtResource("6_eqakq")
 flat = true
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+[node name="ButtonsHBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 14
 alignment = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 4
 
-[node name="CheckButton" type="CheckButton" parent="VBoxContainer/HBoxContainer"]
+[node name="CheckButton" type="CheckButton" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Pass editor content to chat"
 
-[node name="FillerControl2" type="Control" parent="VBoxContainer/HBoxContainer"]
+[node name="FillerControl2" type="Control" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="reloadButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="reloadButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "reload file from disc"
 disabled = true
 icon = ExtResource("4_0is2e")
 
-[node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 tooltip_text = "save all unsaved and open editor tabs"
 icon = ExtResource("5_oex5t")
 
-[node name="SaveButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="SaveButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
@@ -114,12 +116,12 @@ tooltip_text = "save current tab into a file
 "
 icon = ExtResource("4_1qp3n")
 
-[node name="CreateNoteButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="CreateNoteButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 tooltip_text = "Creates note from editor tab content"
 icon = ExtResource("6_15oj3")
 
-[node name="FillerControl" type="Control" parent="VBoxContainer/HBoxContainer"]
+[node name="FillerControl" type="Control" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 
 [node name="FillerControl3" type="Control" parent="VBoxContainer"]
@@ -198,11 +200,11 @@ layout_mode = 2
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/PreviousMatchButton" to="." method="_on_previous_match_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/NextMatchButton" to="." method="_on_next_match_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_buton_pressed"]
-[connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]
+[connection signal="toggled" from="VBoxContainer/ButtonsHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]
 [connection signal="canceled" from="CloseDialog" to="." method="_on_save_dialog_canceled"]
 [connection signal="confirmed" from="CloseDialog" to="." method="_on_save_dialog_confirmed"]
 [connection signal="custom_action" from="CloseDialog" to="." method="_on_close_dialog_custom_action"]

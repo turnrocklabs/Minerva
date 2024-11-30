@@ -10,14 +10,14 @@ signal changed()
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
 @onready var description_node: RichTextLabel = %NoteTextBody
-@onready var drag_texture_rect: TextureRect = $PanelContainer/v/DragTextureRect
-@onready var note_image: TextureRect = %NoteImage
-@onready var audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
-@onready var image_caption_line_edit: LineEdit = %ImageCaptionLineEdit
-
+@onready var drag_texture_rect: TextureRect = %DragTextureRect
+@onready var video_label: Label = %VideoLabel
+@export var video_player_container: VBoxContainer
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
+@onready var v_box_container: VBoxContainer = %vBoxContainer
 
+var control_type
 var downscaled_image: Image
 # this will react each time memory item is changed
 var memory_item: MemoryItem:
@@ -35,11 +35,23 @@ var memory_item: MemoryItem:
 			description_node.text = value.Content
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
 			if value.MemoryImage:
-				set_note_image(value.MemoryImage)
-			image_caption_line_edit.text = value.ImageCaption
+				var image_controls_inst: = SingletonObject.image_controls_scenne.instantiate()
+				image_controls_inst.memory_item = value
+				v_box_container.add_child(image_controls_inst)
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
-			audio_stream_player.stream = value.Audio
-		
+			#audio_stream_player.stream = value.Audio
+			var audio_control_inst: = SingletonObject.audio_contols_scene.instantiate()
+			audio_control_inst.audio = value.Audio
+			v_box_container.add_child(audio_control_inst)
+			control_type = audio_control_inst
+		if memory_item.Type == SingletonObject.note_type.VIDEO:
+			%EditButton.visible = false
+			var video_player_node: = SingletonObject.video_player_scene.instantiate()
+			video_label.text = "%s %s" % [value.Title, value.ContentType]
+			video_player_node.video_path = value.Content
+			video_player_container.add_child(video_player_node)
+			control_type = video_player_node
+			
 		# If we create a note, open a editor associated with it and then rerender the memory_item
 		# that will create completely new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
@@ -53,35 +65,32 @@ var memory_item: MemoryItem:
 #region New notes methods
 
 func new_text_note():
-	%NoteTextBody.set_deferred("visible", true)#.visible = true
-	%ImageVBoxContainer.visible = false
-	%AudioHBoxContainer.visible = false
-	%ImageVBoxContainer.call_deferred("queue_free")
-	%AudioHBoxContainer.call_deferred("queue_free")
+	%NoteTextBody.set_deferred("visible", true)
+	%VideoVBoxContainer.call_deferred("queue_free")
 	return self
 
 
 func new_image_note():
-	%ImageVBoxContainer.visible = true
-	%AudioHBoxContainer.visible = false
 	%NoteTextBody.visible = false
-	#%AudioHBoxContainer.call_deferred("queue_free")
-	#%NoteTextBody.call_deferred("queue_free")
+	%VideoVBoxContainer.call_deferred("queue_free")
 	return self
 
 
 func new_audio_note():
-	%AudioHBoxContainer.visible = true
 	%NoteTextBody.visible = false
 	%EditButton.visible = false
-	%ImageVBoxContainer.visible = false
-	#%NoteTextBody.call_deferred("queue_free")
-	#%ImageVBoxContainer.call_deferred("queue_free")
+	%VideoVBoxContainer.call_deferred("queue_free")
 	return self
+
+
+func new_video_note():
+	%NoteTextBody.visible = false
+	%VideoVBoxContainer.visible = true
+
 
 #endregion New notes methods
 
-# FIXME maybe we could move this function to Singleton so all images 
+# TODO maybe we could move this function to Singleton so all images 
 # can be resized and add another parameter to place the 200 constant
 #  this method resizes the image so the texture rec doesn't render images at full res
 func downscale_image(image: Image) -> Image:
@@ -95,21 +104,6 @@ func downscale_image(image: Image) -> Image:
 	return image
 
 
-# set the image of the note to the given image
-func set_note_image(image: Image) -> void:
-	# create a copy of a image so we don't downscale the original
-	if image == null: return
-	downscaled_image = Image.new()
-	downscaled_image.copy_from(image)
-	
-	downscaled_image = downscale_image(downscaled_image)
-	
-	var image_texture = ImageTexture.new()
-	image_texture.set_image(downscaled_image)
-	note_image.texture = image_texture
-
-
-
 func _ready():
 	# connecting signal for changing the dots texture when the main theme changes
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
@@ -121,7 +115,7 @@ func _ready():
 			if memory_item: memory_item.Title = text
 	)
 	
-	%ProgressBar.value = audio_progress
+
 
 func _exit_tree() -> void:
 	if has_meta("associated_editor"):
@@ -146,10 +140,7 @@ func _to_string():
 # if yes that means we were dragging the note above this note
 # but if the mouse is not above this note anymore, hide the separators
 func _process(_delta):
-	if memory_item:
-		if memory_item.Type == SingletonObject.note_type.AUDIO:
-			if audio_stream_player.is_playing():
-				update_progress_bar()
+	
 	
 	if not _upper_separator.visible and not _lower_separator.visible: return
 	
@@ -174,7 +165,7 @@ func _notification(notification_type):
 # and make the original node transparent
 func _get_drag_data(at_position: Vector2) -> Note:
 	var preview = Control.new()
-	var preview_note: Note = duplicate()
+	var preview_note:  = duplicate(true)
 
 	preview.add_child(preview_note)
 
@@ -190,7 +181,7 @@ func _get_drag_data(at_position: Vector2) -> Note:
 
 	set_drag_preview(preview)
 
-	get_parent().remove_child(self)
+	#get_parent().remove_child(self)
 
 	return self
 
@@ -252,6 +243,7 @@ func _drop_data(_at_position: Vector2, data):
 			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)+1
 
 		dragged_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
+	data.queue_free()
 
 
 
@@ -306,15 +298,22 @@ func _on_edit_button_pressed():
 		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
+	#elif memory_item.Type == SingletonObject.note_type.VIDEO:
+		#
+		#editor = ep.add(Editor.Type.VIDEO, memory_item.FilePath, null, memory_item.Title)
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
-
+	
 	associate_editor(editor)
 
 
 func _on_hide_button_pressed():
-	
+	self.release_focus()
+	if memory_item.Type == SingletonObject.note_type.AUDIO:
+		control_type._on_stop_button_pressed()
+	if memory_item.Type == SingletonObject.note_type.VIDEO:
+		control_type.video_stream_player.paused = true
 	var tween = get_tree().create_tween()
 	tween.tween_property(self, "modulate:a", 0, 0.2)
 	tween.tween_callback(
@@ -322,96 +321,9 @@ func _on_hide_button_pressed():
 			memory_item.Visible = false
 			memory_item = memory_item
 	)
+	visible = false
 
 
 func _on_title_text_submitted(new_text: String) -> void:
 	label_node.release_focus()
 	if memory_item: memory_item.Title = new_text
-
-
-func _on_image_caption_line_edit_text_submitted(new_text: String) -> void:
-	image_caption_line_edit.release_focus()
-	if memory_item: memory_item.ImageCaption = new_text
-
-
-func _on_image_caption_line_edit_text_changed(new_text: String) -> void:
-	if memory_item: memory_item.ImageCaption = new_text
-
-
-#region Audio controls
-var audio_progress: = 0.0
-
-func _on_play_button_pressed() -> void:
-	%ProgressBar.max_value = audio_stream_player.stream.get_length()
-	
-	if audio_stream_player.stream_paused:
-		audio_stream_player.play(audio_progress)
-	else:
-		audio_stream_player.play()
-
-
-func _on_stop_button_pressed() -> void:
-	audio_stream_player.stop()
-	audio_progress = 0.0
-	%ProgressBar.value = audio_progress
-
-
-func _on_pause_button_pressed() -> void:
-	audio_progress = %AudioStreamPlayer.get_playback_position()
-	audio_stream_player.stream_paused = true
-
-
-func _on_audio_stream_player_finished() -> void:
-	pass
-	#audio_progress = 0.0
-	#%ProgressBar.value = audio_progress
-
-
-func update_progress_bar() -> void:
-	%ProgressBar.value = audio_stream_player.get_playback_position()
-
-#endregion Audio controls
-
-#region Paste image 
-
-func _on_image_v_box_container_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
-		match event.button_index:
-			MOUSE_BUTTON_LEFT:
-				pass
-			MOUSE_BUTTON_RIGHT:
-				print("right click")
-				paste_image_from_clipboard()
-
-
-# check if display server can paste image from clipboard and does so
-func paste_image_from_clipboard():
-	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
-		if OS.get_name() == "Windows":
-			if DisplayServer.clipboard_has_image():
-				var image = DisplayServer.clipboard_get_image()
-				memory_item.MemoryImage = image
-				set_note_image(image)
-		
-		if OS.get_name() == "Linux":
-			if DisplayServer.clipboard_has():
-				var path = DisplayServer.clipboard_get().split("\n")[0]
-				var file_format = get_file_format(path)
-				if file_format in SingletonObject.supported_image_formats:
-					var image = Image.new()
-					image.load(path)
-					memory_item.MemoryImage = image
-					set_note_image(image)
-				else:
-					print_rich("[b]file format not supported :c[/b]")
-			else:
-				print("no image to put here")
-	else: 
-		print("Display Server does not support clipboard feature :c, its a godot thing")
-
-
-func get_file_format(path: String) -> String:
-	return path.split(".")[path.split(".").size() -1]
-
-
-#endregion Paste image 

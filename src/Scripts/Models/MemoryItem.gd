@@ -61,6 +61,9 @@ var Pinned: bool:
 var Order: int:
 	set(value): SingletonObject.save_state(false); Order = value;
 
+var FilePath: String:
+	set(value): SingletonObject.save_state(false); FilePath = value;
+
 var OwningThread
 
 func hash_string(input: String) -> String:
