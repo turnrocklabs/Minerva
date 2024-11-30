@@ -89,6 +89,14 @@ func render():
 
 	_create_code_labels()
 
+func set_edit(on: = true):
+	%MessageLabelsContainer.visible = not on
+	
+	if on:
+		text_edit.text = content
+		text_edit.grab_focus()
+	
+	text_edit.visible = on
 
 func _update_tokens_cost() -> void:
 	var price = history_item.provider.token_cost * history_item.TokenCost
@@ -204,12 +212,7 @@ func _on_regenerate_button_pressed():
 
 
 func _on_edit_button_pressed():
-	# edit_popup.popup_centered()
-	%MessageLabelsContainer.visible = false
-
-	text_edit.visible = true
-	text_edit.text = content
-	text_edit.grab_focus()
+	set_edit()
 
 # when we click outside the text edit, hide it and save changes
 func _input(event: InputEvent):
