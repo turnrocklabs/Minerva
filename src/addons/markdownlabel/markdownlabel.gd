@@ -118,7 +118,8 @@ func display_text(display_text: String) -> void:
 
 #region Private methods:
 func _update() -> void:
-	text = _convert_markdown(markdown_text)
+	if markdown_text:
+		text = _convert_markdown(markdown_text)
 	queue_redraw()
 
 func _set_markdown_text(new_text: String):

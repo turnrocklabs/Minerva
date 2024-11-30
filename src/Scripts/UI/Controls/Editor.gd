@@ -9,6 +9,7 @@ extends Control
 static var editor_scene = preload("res://Scenes/Editor.tscn")
 static var graphics_editor_scene = preload("res://Scenes/GraphicsEditor.tscn")
 
+
 signal content_changed()
 signal save_dialog(dialog_result: DIALOG_RESULT)
 enum DIALOG_RESULT { Save, Cancel, Close }
@@ -22,10 +23,15 @@ const FILE_SAVED: = 0x1
 ## Represents that the associated object is saved, if there is one
 const ASSOCIATED_OBJECT_SAVED: = 0x2
 
+var video_player: VideoPlayer:
+	set(value):
+		video_player = value
+		get_node("%VBoxContainer").add_child(value)
 
 var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
+
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -43,6 +49,9 @@ var graphics_editor: GraphicsEditor
 enum Type {
 	TEXT,
 	GRAPHICS,
+	WhiteBoard, # TODO: To be removed
+	NOTE_EDITOR,
+	VIDEO
 }
 
 ## May contain the object that is being edited by this editor.[br]
@@ -106,11 +115,23 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
 			new_graphics_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
-			## TODO: Implement changed signal for graphics editor
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
 			vbox_container.move_child(new_graphics_editor, 0)
 			editor.graphics_editor = new_graphics_editor
+			## TODO: Implement changed signal for graphics 
+			
+		# editor.get_node("%GraphicsEditor").changed.connect(editor._on_editor_changed)
+		Editor.Type.VIDEO:
+			var new_video_player: VideoPlayer = SingletonObject.video_player_scene.instantiate()
+			new_video_player.video_path = file_
+			editor.video_player = new_video_player
+			editor.get_node("%ButtonsHBoxContainer").queue_free()
+			editor.get_node("%FindStringContainer").queue_free()
+			#editor.get_node("%JumpToLinePanel").queue_free()
+			
+	
+			
 
 	return editor
 
@@ -124,6 +145,7 @@ func _ready():
 		match type:
 			Type.TEXT: _load_text_file(file)
 			Type.GRAPHICS: _load_graphics_file(file)
+			Type.VIDEO: video_player.video_path = file
 	
 	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS
 	
