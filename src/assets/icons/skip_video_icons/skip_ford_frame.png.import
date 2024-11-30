@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cijm747lcgayy"
-path="res://.godot/imported/forward-24.png-fb35fa70c26e1091cf1081891e7bf095.ctex"
+uid="uid://bsgrroufsbo7i"
+path="res://.godot/imported/skip_ford_frame.png-b2bd76ae9b5eb85ea61d0b66901b23ff.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/skip_video_icons/forward-24.png"
-dest_files=["res://.godot/imported/forward-24.png-fb35fa70c26e1091cf1081891e7bf095.ctex"]
+source_file="res://assets/icons/skip_video_icons/skip_ford_frame.png"
+dest_files=["res://.godot/imported/skip_ford_frame.png-b2bd76ae9b5eb85ea61d0b66901b23ff.ctex"]
 
 [params]
 

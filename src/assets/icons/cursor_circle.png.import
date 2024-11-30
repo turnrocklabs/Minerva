@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://ctlk5jr00r5d3"
-path="res://.godot/imported/backward-48.png-c4d119aec89a64ece0f54a2383bf5f6a.ctex"
+uid="uid://co368olqmlfqs"
+path="res://.godot/imported/cursor_circle.png-71a6ce58f66503bad87f7797adbeaadc.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/skip_video_icons/backward-48.png"
-dest_files=["res://.godot/imported/backward-48.png-c4d119aec89a64ece0f54a2383bf5f6a.ctex"]
+source_file="res://assets/icons/cursor_circle.png"
+dest_files=["res://.godot/imported/cursor_circle.png-71a6ce58f66503bad87f7797adbeaadc.ctex"]
 
 [params]
 
