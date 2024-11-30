@@ -51,11 +51,6 @@ unique_name_in_owner = true
 wait_time = 0.125
 autostart = true
 
-[node name="VideoCurrentFrame" type="TextureRect" parent="PanelContainer/AspectRatioContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-expand_mode = 2
-
 [node name="ColorRect" type="ColorRect" parent="PanelContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)

@@ -12,7 +12,6 @@ class_name VideoPlayer extends Control
 @onready var controls_timer: Timer = %ControlsTimer
 @onready var volume_button: Button = %VolumeButton
 @onready var volume_rect: ColorRect = %VolumeRect
-@onready var video_current_frame: TextureRect = %VideoCurrentFrame
 #endregion variables
 
 # icon textures for the buttons
@@ -48,8 +47,10 @@ func _ready() -> void:
 		h_slider.max_value = video_stream_player.get_stream_length()
 		h_slider.value = 0
 		volume_h_slider.value = video_stream_player.volume
-	if visible:
-		video_stream_player.play()
+	#if visible:
+		#video_stream_player.play()
+		#await get_tree().create_timer(0.02).timeout
+		#video_stream_player.paused = true
 
 
 func update_time_label() -> void:
@@ -60,6 +61,15 @@ func format_time_label(time: float) -> String:
 	var minutes: = int(time/ 60)
 	var seconds: = int(time) % 60
 	return "%0*d:" % [2, minutes] + "%0*d" % [2, seconds]
+
+
+func set_video_player_position(new_pos: float) -> void:
+	if video_stream_player:
+		if new_pos <= video_stream_player.get_stream_length():
+			video_stream_player.stream_position = new_pos
+		else:
+			printerr("new video position not valid")
+
 
 # this method is connected to the pressed signal of the play button
 func toggle_pause() -> void:
@@ -95,8 +105,6 @@ func _on_h_slider_drag_ended(value_changed: bool) -> void:
 		video_stream_player.paused = false
 		video_stream_player.stream_position = h_slider.value
 		await get_tree().create_timer(0.23).timeout
-		video_current_frame.texture = video_stream_player.get_video_texture()
-		video_current_frame.visible = true
 		video_stream_player.paused = true
 	if was_playing:
 		video_stream_player.paused = false
@@ -271,7 +279,6 @@ func _on_screenshot_button_pressed() -> void:
 	# Create a Texture from the Image if needed
 	var image_texture = ImageTexture.new()
 	ImageTexture.create_from_image(image)
-	video_current_frame.texture = image_texture
 	# Proceed with the rest of your code
 	var stream_position = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]
 	var ep: EditorPane = SingletonObject.editor_container.editor_pane
@@ -289,13 +296,17 @@ func _on_fullscreen_button_pressed() -> void:
 	if !is_fullscreen:
 		var full_screen_player: VideoPlayer = SingletonObject.video_player_scene.instantiate()
 		full_screen_player.z_index = 1000
-		full_screen_player.video_path = self.video_path
+		full_screen_player.video_path = video_path
 		full_screen_player.is_fullscreen = true
 		get_tree().root.add_child(full_screen_player)
+		full_screen_player.set_video_player_position(video_stream_player.stream_position)
 		full_screen_player.grab_focus()
 		get_tree().root.borderless = true
+		full_screen_player.set_meta("origin_video_note", self)
 	else:
 		get_tree().root.borderless = false
+		if self.has_meta("origin_video_note"):
+			self.get_meta("origin_video_note").set_video_player_position(video_stream_player.stream_position)
 		self.queue_free()
 #region Buttons pressed
 
