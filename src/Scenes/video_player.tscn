@@ -1,12 +1,14 @@
-[gd_scene load_steps=8 format=3 uid="uid://d2o42sf0wonia"]
+[gd_scene load_steps=10 format=3 uid="uid://d2o42sf0wonia"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/video_player.gd" id="1_hk33a"]
 [ext_resource type="Texture2D" uid="uid://cb0sgp25gcypd" path="res://assets/icons/pause_icons/pause-24.png" id="3_ese75"]
-[ext_resource type="Texture2D" uid="uid://duixowuu8gwmv" path="res://assets/icons/skip_video_icons/backward-24.png" id="4_8vrwt"]
+[ext_resource type="Texture2D" uid="uid://bryqv0bvklds8" path="res://assets/icons/skip_video_icons/skip_back-10.png" id="4_0tdjm"]
 [ext_resource type="Texture2D" uid="uid://c5kcyetd4isge" path="res://assets/icons/speaker-24.png" id="4_21b1o"]
 [ext_resource type="Texture2D" uid="uid://3nr1cj5728cp" path="res://assets/icons/screenshot/screenshot-24.png" id="4_sunu6"]
 [ext_resource type="Texture2D" uid="uid://cb4ksle4s2pci" path="res://assets/icons/fullscreen.png" id="5_kw031"]
-[ext_resource type="Texture2D" uid="uid://cijm747lcgayy" path="res://assets/icons/skip_video_icons/forward-24.png" id="5_wt0mh"]
+[ext_resource type="Texture2D" uid="uid://nwfguhp60xc3" path="res://assets/icons/skip_video_icons/skip_ford-10.png" id="5_x62rg"]
+[ext_resource type="Texture2D" uid="uid://blqs56nnlc4ml" path="res://assets/icons/skip_video_icons/skip_back_frame.png" id="6_eka47"]
+[ext_resource type="Texture2D" uid="uid://bsgrroufsbo7i" path="res://assets/icons/skip_video_icons/skip_ford_frame.png" id="7_7icuc"]
 
 [node name="VideoPlayer" type="Control" node_paths=PackedStringArray("video_stream_player", "h_slider", "volume_h_slider")]
 custom_minimum_size = Vector2(200, 200)
@@ -78,7 +80,7 @@ theme_override_constants/margin_bottom = 10
 [node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/ColorRect/MarginContainer"]
 layout_mode = 2
 mouse_filter = 0
-theme_override_constants/separation = 12
+theme_override_constants/separation = 10
 
 [node name="PlayButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
@@ -138,22 +140,22 @@ one_shot = true
 
 [node name="BackButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
-icon = ExtResource("4_8vrwt")
+icon = ExtResource("4_0tdjm")
 flat = true
 
 [node name="FordButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
-icon = ExtResource("5_wt0mh")
+icon = ExtResource("5_x62rg")
 flat = true
 
 [node name="FrameBackButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
-text = "SFB"
+icon = ExtResource("6_eka47")
 flat = true
 
 [node name="FrameFordButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
-text = "SFF"
+icon = ExtResource("7_7icuc")
 flat = true
 
 [node name="HSlider" type="HSlider" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
