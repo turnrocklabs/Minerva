@@ -39,7 +39,7 @@ var last_container_checkbutton: CheckButton
 
 # label where the output of the current running command should go to
 @onready var _output_container: Container = %OutputContainer
-var _output_label: Label
+var _output_label: RichTextLabel
 
 
 ## History of used commands
@@ -222,8 +222,12 @@ func _create_command_output_container() -> Container:
 
 	_current_output_container = HBoxContainer.new()
 
-	_output_label = Label.new()
+	_output_label = RichTextLabel.new()
+	_output_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_output_label.selection_enabled = true
+	_output_label.fit_content = true
 	_output_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_output_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	var check_button = CheckButton.new()
 	check_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
@@ -241,7 +245,7 @@ func _create_command_output_container() -> Container:
 	return _current_output_container
 
 
-func _on_output_check_button_toggled(toggled_on: bool, label: Label, btn: CheckButton):
+func _on_output_check_button_toggled(toggled_on: bool, label: RichTextLabel, btn: CheckButton):
 	# Create a new memoryitem to access the hash function. 
 	var item: MemoryItem = MemoryItem.new()
 	item.Enabled = false
@@ -467,51 +471,26 @@ class Sequence:
 				full_regex = RegEx.create_from_string("(?m)%s" % full_text)
 
 
-	static func _create_partial_regex_pattern(literal: String):
-		var pattern_array: = PackedStringArray(["^"])
-
+	static func _create_partial_regex_pattern(literal: String) -> String:
+		var pattern = "^"
 		for i in range(literal.length()):
-			var char_ = literal[i]
-			
 			if i == 0:
-				pattern_array.append(regex_escape(char_))
-				continue
-
-			pattern_array.append("(" + regex_escape(char_))
-
-		for i in range(literal.length()-1):
-			pattern_array.append(")?")
+				pattern += regex_escape(literal[i])
+			else:
+				pattern += "(" + regex_escape(literal[i])
 		
-		pattern_array.append("$")
-
-		return "".join(pattern_array)
+		for _i in range(literal.length() - 1):
+			pattern += ")?"
+		
+		pattern += "$"
+		return pattern
 
 	# Escapes special regex characters in a string to create a literal search pattern
 	static func regex_escape(literal: String) -> String:
-		# List of special characters that need to be escaped in regex
-		const SPECIAL_CHARS = [
-			"\\", # Backslash must be first to avoid double-escaping
-			".", 
-			"+", 
-			"*", 
-			"?", 
-			"^", 
-			"$", 
-			"(", 
-			")", 
-			"[", 
-			"]", 
-			"{", 
-			"}", 
-			"|",
-			"/"
-		]
-		
+		const SPECIAL_CHARS = ["\\", ".", "+", "*", "?", "^", "$", "(", ")", "[", "]", "{", "}", "|", "/"]
 		var escaped = literal
-		# Add backslash before each special character
 		for char_ in SPECIAL_CHARS:
 			escaped = escaped.replace(char_, "\\" + char_)
-		
 		return escaped
 
 	## Checks if [parameter text] has the given [member content]
@@ -525,26 +504,19 @@ class Sequence:
 		if not before.is_empty() and text.length() <= before.length():
 			return before.begins_with(text)
 
-		var remaining: = text.substr(before.length())
+		var remaining := text.substr(before.length())
 
-		if remaining.strip_escapes().strip_edges().is_empty():
-			if allow_empty: return true
+		if remaining.is_empty():
+			return allow_empty
 
-		var pr: RegEx
-
+		# For string content, use direct prefix matching
 		if content is String:
-			pr = RegEx.create_from_string(_create_partial_regex_pattern(content))
+			return content.begins_with(remaining)
+		# For regex content, keep using regex
 		elif content is RegEx:
-			pr = content
-		
-		var match_: = pr.search(remaining)
+			return content.search(remaining) != null and content.search(remaining).get_start() == 0
 
-		if not match_ or match_.get_start() != 0: return false
-
-		remaining = remaining.substr(match_.get_end()+1)
-
-
-		return true
+		return false
 
 	func extract_cwd(text: String) -> String:
 		
