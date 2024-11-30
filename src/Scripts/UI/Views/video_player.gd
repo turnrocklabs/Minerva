@@ -48,7 +48,8 @@ func _ready() -> void:
 		h_slider.max_value = video_stream_player.get_stream_length()
 		h_slider.value = 0
 		volume_h_slider.value = video_stream_player.volume
-	video_stream_player.play()
+	if visible:
+		video_stream_player.play()
 
 
 func update_time_label() -> void:
@@ -63,6 +64,9 @@ func format_time_label(time: float) -> String:
 # this method is connected to the pressed signal of the play button
 func toggle_pause() -> void:
 	timer.paused = false
+	if !visible:
+		video_stream_player.paused = true
+		return
 	if !video_stream_player.is_playing():
 		video_stream_player.stream_position = 0
 		video_stream_player.play()

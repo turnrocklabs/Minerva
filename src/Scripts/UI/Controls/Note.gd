@@ -17,6 +17,7 @@ signal changed()
 @onready var _lower_separator: HSeparator = %LowerSeparator
 @onready var v_box_container: VBoxContainer = %vBoxContainer
 
+var control_type
 var downscaled_image: Image
 # this will react each time memory item is changed
 var memory_item: MemoryItem:
@@ -42,12 +43,14 @@ var memory_item: MemoryItem:
 			var audio_control_inst: = SingletonObject.audio_contols_scene.instantiate()
 			audio_control_inst.audio = value.Audio
 			v_box_container.add_child(audio_control_inst)
+			control_type = audio_control_inst
 		if memory_item.Type == SingletonObject.note_type.VIDEO:
-			
+			%EditButton.visible = false
 			var video_player_node: = SingletonObject.video_player_scene.instantiate()
 			video_label.text = "%s %s" % [value.Title, value.ContentType]
 			video_player_node.video_path = value.Content
 			video_player_container.add_child(video_player_node)
+			control_type = video_player_node
 			
 		# If we create a note, open a editor associated with it and then rerender the memory_item
 		# that will create completely new Note node and break the connection between note and the editor.
@@ -99,10 +102,6 @@ func downscale_image(image: Image) -> Image:
 		image_size.x = image_size.x / image_ratio
 		image.resize(image_size.x, image_size.y, Image.INTERPOLATE_LANCZOS)
 	return image
-
-
-
-
 
 
 func _ready():
@@ -305,12 +304,16 @@ func _on_edit_button_pressed():
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
-
+	
 	associate_editor(editor)
 
 
 func _on_hide_button_pressed():
-	
+	self.release_focus()
+	if memory_item.Type == SingletonObject.note_type.AUDIO:
+		control_type._on_stop_button_pressed()
+	if memory_item.Type == SingletonObject.note_type.VIDEO:
+		control_type.video_stream_player.paused = true
 	var tween = get_tree().create_tween()
 	tween.tween_property(self, "modulate:a", 0, 0.2)
 	tween.tween_callback(
@@ -318,6 +321,7 @@ func _on_hide_button_pressed():
 			memory_item.Visible = false
 			memory_item = memory_item
 	)
+	visible = false
 
 
 func _on_title_text_submitted(new_text: String) -> void:
