@@ -67,7 +67,7 @@ func wrap_memory(item: MemoryItem) -> Variant:
 		output += item.Content
 		output += "### End Reference Information ###\n\n"
 		output += "Respond to the user's message: \n\n"
-		return output
+		return output.json_escape()
 
 
 func estimate_tokens(input: String) -> int:

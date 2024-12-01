@@ -252,7 +252,7 @@ func _on_output_check_button_toggled(toggled_on: bool, label: RichTextLabel, btn
 	item.Type = SingletonObject.note_type.TEXT
 	item.Title = "Terminal Note"
 	item.Visible = true
-	item.Content = label.text
+	item.Content = label.get_meta("clean_output", "")
 
 	# use the hash to see if we already have this item in the DetachedNotes
 	var detached_index: int = -1
@@ -655,8 +655,24 @@ func _proces_received_text(text: String, _index_a: int) -> void:
 func _append_output_text(text: String) -> void:
 	var remaining_space: int
 	var label_length: int = 0
-	if _output_label != null:
-		label_length = _output_label.text.length()
+
+	if not _output_label: return
+
+	label_length = _output_label.text.length()
+	
+	# keep the whole cmd output in meta, as the label text will be truncated if too large
+	var raw_output: String = _output_label.get_meta("raw_output", "")
+	_output_label.set_meta("raw_output", raw_output + text)
+
+
+	var full_text: String = ""
+	full_text = _output_label.get_meta("clean_output", "") + text
+	
+	full_text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
+
+	# Clean text, without the ASCII color codes goes here
+	_output_label.set_meta("clean_output", full_text)
+
 	remaining_space = MAX_COMMAND_OUTPUT_LENGTH - label_length
 	
 	if remaining_space < text.length():
@@ -669,21 +685,15 @@ func _append_output_text(text: String) -> void:
 			_output_label.set_meta("truncated", true)
 			_output_label.text += text
 		return
+	
 
+	# if this is the only output container, stip the newlines at the top.
+	if _current_output_container.get_index() == 0:
+		full_text = full_text.strip_edges(true, false)
 
-	var full_text: String = ""
-	if _output_label != null:
-		full_text = _output_label.text + text
-		
-		full_text = ASCII_COLOR_CODE_REGEX.sub(full_text, "", true)
-
-		# if this is the only output container, stip the newlines at the top.
-		if _current_output_container.get_index() == 0:
-			full_text = full_text.strip_edges(true, false)
-
-		_output_label.text = full_text
-		# hide the output container if the content is empty
-		_current_output_container.visible = not _output_label.text.strip_edges().is_empty()
+	_output_label.text = full_text
+	# hide the output container if the content is empty
+	_current_output_container.visible = not _output_label.text.strip_edges().is_empty()
 
 ## Clears all the terminal content
 func clear_terminal() -> void:
