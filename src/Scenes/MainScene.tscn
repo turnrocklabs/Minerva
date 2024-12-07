@@ -553,6 +553,97 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="PopupPanelRecent" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 50
+z_as_relative = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="RecentBg" type="Panel" parent="PopupPanelRecent"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = -263.0
+offset_top = -174.0
+offset_right = 271.0
+offset_bottom = 159.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="RecentMenu" type="ScrollContainer" parent="PopupPanelRecent/RecentBg"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+follow_focus = true
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="PopupPanelRecent/RecentBg/RecentMenu"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 180
+alignment = 2
+
+[node name="Name" type="Label" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Recent Projects"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+text = "X"
+
+[node name="HSeparator" type="HSeparator" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 25)
+layout_mode = 2
+
+[node name="RecentHolder" type="VBoxContainer" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 0
+alignment = 1
+
+[node name="RecentList" type="VBoxContainer" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/RecentHolder"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HSeparator" type="HSeparator" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/RecentHolder"]
+custom_minimum_size = Vector2(0, 25)
+layout_mode = 2
+
+[node name="RemoveAllRecent" type="Button" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/RecentHolder"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
+text = "remove all"
+
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
 [connection signal="files_selected" from="VBoxRoot/HBoxContainer/menuMain/fdgOpenFile" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_open_files"]
@@ -583,3 +674,5 @@ grow_vertical = 2
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_new_pressed"]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_tab_clicked"]
+[connection signal="pressed" from="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/HBoxContainer/CloseButton" to="VBoxRoot/HBoxContainer/menuMain" method="_on_close_button_pressed"]
+[connection signal="pressed" from="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/RecentHolder/RemoveAllRecent" to="VBoxRoot/HBoxContainer/menuMain" method="_on_remove_all_recent_pressed"]

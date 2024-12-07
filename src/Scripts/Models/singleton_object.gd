@@ -70,7 +70,53 @@ func clear_recent_projects() -> void:
 	config_file.erase_section("OpenRecent")
 	config_file.save(config_file_name)
 
+func remove_recent_project(index: int) -> void:
+	if !has_recent_projects():
+		return
 
+	var recent_projects: Array = get_recent_projects()
+
+	if index < 0 or index >= recent_projects.size():
+		printerr("Invalid index for removing recent project.")
+		return
+
+	var project_name_to_remove = recent_projects[index]  # Get the project NAME at the index
+	config_file.erase_section_key("OpenRecent", project_name_to_remove) # Remove by name (key)
+	config_file.save(config_file_name)
+	
+
+func swap_recent_projects(index1: int, index2: int):
+	if !has_recent_projects():
+		return
+
+	var recent_projects = get_recent_projects()
+	var size = recent_projects.size()
+
+	if index1 < 0 or index1 >= size or index2 < 0 or index2 >= size:
+		printerr("Invalid indices for swapping recent projects.")
+		return
+
+	# 1. Get all project names and paths
+	var project_data = {}
+	for project_name in recent_projects:
+		project_data[project_name] = config_file.get_value("OpenRecent", project_name)
+
+	# 2. Clear the "OpenRecent" section
+	config_clear_section("OpenRecent") 
+
+	# 3. Rebuild the "OpenRecent" section with swapped entries
+	var keys = project_data.keys()
+	
+	# Correct swapping logic using a temporary variable:
+	var temp = keys[index1]
+	keys[index1] = keys[index2]
+	keys[index2] = temp
+
+
+	for project_name in keys:
+		config_file.set_value("OpenRecent", project_name, project_data[project_name])
+
+	config_file.save(config_file_name)
 #endregion Config File
 
 
