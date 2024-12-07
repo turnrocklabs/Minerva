@@ -107,9 +107,11 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_code_edit.gutters_zero_pad_line_numbers = true
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
+			new_code_edit.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+			new_code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 			new_code_edit.name = "CodeEdit"
 			vbox_container.add_child(new_code_edit)
-			vbox_container.move_child(new_code_edit,0)
+			#vbox_container.move_child(new_code_edit,0)
 			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
 			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
@@ -117,7 +119,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
-			vbox_container.move_child(new_graphics_editor, 0)
+			#vbox_container.move_child(new_graphics_editor, 0)
 			editor.graphics_editor = new_graphics_editor
 			## TODO: Implement changed signal for graphics 
 			
@@ -442,6 +444,13 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 		code_edit.set_process_input(false)
 		code_edit.set_process_unhandled_key_input(false)
 		find_string_in_code_edit()
+	elif event.is_action_pressed("toggle_autowrap"):
+		if code_edit.wrap_mode != TextEdit.LINE_WRAPPING_BOUNDARY:
+			code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+		if code_edit.autowrap_mode == TextServer.AutowrapMode.AUTOWRAP_OFF:
+			code_edit.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+		else:
+			code_edit.autowrap_mode = TextServer.AutowrapMode.AUTOWRAP_OFF
 
 #this are variables for Ctrl+F
 var text_to_search: String = ""
@@ -460,6 +469,8 @@ func find_string_in_code_edit() -> void:
 		text_to_search = code_edit.get_selected_text()
 		update_search(code_edit.get_selected_text())
 		find_string_line_edit.select_all()
+	else:
+		find_string_line_edit.grab_focus()
 
 
 func update_search(new_text: String) -> void:
@@ -682,3 +693,7 @@ func _on_check_button_toggled(toggled_on: bool):
 			SingletonObject.DetachedNotes.append(item)
 
 	item.Enabled = toggled_on
+
+
+func _on_close_buton_pressed() -> void:
+	find_string_container.hide()
