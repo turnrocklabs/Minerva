@@ -373,7 +373,7 @@ func _on_create_note_button_pressed() -> void:
 
 		if Type.GRAPHICS == type:
 			if tab_title:
-				associated_object = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
+				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", graphics_editor.image, graphics_editor.image.get_meta("caption", ""))
 			elif file:
 				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
 			else:
