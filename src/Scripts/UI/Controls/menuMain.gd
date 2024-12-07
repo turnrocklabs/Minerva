@@ -298,8 +298,9 @@ func _on_remove_all_recent_pressed():
 	
 	
 
-var submenu
+var submenu: PopupMenu
 func load_recent_projects_sub():
+	if submenu: submenu.queue_free()
 	if SingletonObject.has_recent_projects():# check if user has recent projects
 		
 		# this if statement removes the open recent item if there was one already
