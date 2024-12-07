@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=17 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
@@ -12,6 +12,13 @@
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
 [ext_resource type="PackedScene" uid="uid://celpfkr7c745u" path="res://Scenes/ProviderOptionButton.tscn" id="9_xd60x"]
 [ext_resource type="Texture2D" uid="uid://nnp6ljh5gjl0" path="res://assets/icons/stop_icons/stop-sign-24.png" id="11_ekb48"]
+
+[sub_resource type="InputEventAction" id="InputEventAction_f28tr"]
+action = &"record_audio"
+pressed = true
+
+[sub_resource type="Shortcut" id="Shortcut_hix46"]
+events = [SubResource("InputEventAction_f28tr")]
 
 [sub_resource type="InputEventKey" id="InputEventKey_rh3fk"]
 ctrl_pressed = true
@@ -205,6 +212,7 @@ icon = ExtResource("9_4ngla")
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "record message"
+shortcut = SubResource("Shortcut_hix46")
 icon = ExtResource("8_tl5be")
 
 [node name="AudioStop1" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
