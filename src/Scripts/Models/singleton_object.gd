@@ -24,25 +24,36 @@ var is_marker
 var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
+func load_config_file() -> ConfigFile:
+	var err = config_file.load(config_file_name)
+	if err != OK:
+		return null
+	else: 
+		return config_file
+
 # use this method to save any settings to the file
 func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
+	load_config_file()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
 
 func config_has_saved_section(section: String) -> bool:
 	if !section: return false
+	load_config_file()
 	return config_file.has_section(section)
 
 
 func config_clear_section(section: String)-> void:
 	if !section: return
+	load_config_file()
 	config_file.erase_section(section)
 	config_file.save(config_file_name)
 
 
 #method for checking if the user has saved files
 func has_recent_projects() -> bool:
+	load_config_file()
 	return config_file.has_section("OpenRecent")
 
 #method for adding the project to the open recent list
@@ -56,6 +67,7 @@ func save_recent_project(path: String):
 # this function returns an array with the files 
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
+	load_config_file()
 	if has_recent_projects():
 		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
@@ -63,6 +75,7 @@ func get_recent_projects() -> Array:
 
 # method for getting the p0ath on disk of the specified project file
 func get_project_path(project_name: String) -> String:
+	load_config_file()
 	return config_file.get_value("OpenRecent", project_name)
 
 # method for erasing all the recently opened projects
@@ -291,9 +304,7 @@ func _ready():
 	add_child(AtT)
 	add_child(undo)
 	#TODO add ui scale to the config file and retrieve it on app load
-	var err = config_file.load(config_file_name)
-	if err != OK:
-		return
+	load_config_file()
 	
 	if config_has_saved_section("LastSavedPath"):
 		last_saved_path = config_file.get_section_keys("LastSavedPath")[0]
