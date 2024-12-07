@@ -570,6 +570,7 @@ func show_title_edit_dialog(tab: int):
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
 	set_tab_title(tab, %LineEdit.text)
+	SingletonObject.ChatList[tab].HistoryName = %LineEdit.text
 
 
 func _on_line_edit_text_submitted(_new_text: String) -> void:
