@@ -32,6 +32,7 @@ var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
+@onready var mic_button: Button = %MicButton
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -130,11 +131,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.video_player = new_video_player
 			editor.get_node("%ButtonsHBoxContainer").queue_free()
 			editor.get_node("%FindStringContainer").queue_free()
-			#editor.get_node("%JumpToLinePanel").queue_free()
 			
-	
-			
-
 	return editor
 
 func toggle(on: bool) -> void:
@@ -162,6 +159,11 @@ func _ready():
 	hbox.set("theme_override_constants/separation", 12)
 	SingletonObject.UpdateLastSavePath.connect(update_last_path)
 	#code_edit.text_changed.connect(_on_editor_changed)
+	
+	if self.type == Type.TEXT:
+		mic_button.show()
+	else:
+		mic_button.hide() 
 
 
 func update_last_path(new_path: String) -> void:
@@ -627,6 +629,13 @@ func clear_text():
 		return
 	code_edit.clear()
 	code_edit.grab_focus()
+
+
+func _on_mic_button_pressed() -> void:
+	SingletonObject.AtT.FieldForFilling = code_edit
+	SingletonObject.AtT._StartConverting()
+	SingletonObject.AtT.btn = mic_button
+	mic_button.modulate = Color(Color.LIME_GREEN)
 
 
 func _on_audio_btn_pressed():
