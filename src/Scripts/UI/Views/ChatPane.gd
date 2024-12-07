@@ -563,6 +563,7 @@ func update_token_estimation():
 func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
 	%LineEdit.text = get_tab_title(tab)
+	%LineEdit.select_all()
 	%LineEdit.call_deferred("grab_focus")
 	%EditTitleDialog.popup_centered()
 
@@ -570,6 +571,7 @@ func show_title_edit_dialog(tab: int):
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
 	set_tab_title(tab, %LineEdit.text)
+	SingletonObject.ChatList[tab].HistoryName = %LineEdit.text
 
 
 func _on_line_edit_text_submitted(_new_text: String) -> void:
