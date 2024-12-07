@@ -32,6 +32,7 @@ var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
+@onready var autowrap_button: Button = %AutowrapButton
 @onready var mic_button: Button = %MicButton
 
 #this are control noes for the Ctrl+F UI
@@ -162,8 +163,11 @@ func _ready():
 	
 	if self.type == Type.TEXT:
 		mic_button.show()
+		autowrap_button.show()
+		toggle_autowrap()
 	else:
 		mic_button.hide() 
+		autowrap_button.hide()
 
 
 func update_last_path(new_path: String) -> void:
@@ -409,7 +413,6 @@ func _on_create_note_button_pressed() -> void:
 	
 
 
-
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
 	if file:
@@ -447,12 +450,17 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 		code_edit.set_process_unhandled_key_input(false)
 		find_string_in_code_edit()
 	elif event.is_action_pressed("toggle_autowrap"):
-		if code_edit.wrap_mode != TextEdit.LINE_WRAPPING_BOUNDARY:
-			code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-		if code_edit.autowrap_mode == TextServer.AutowrapMode.AUTOWRAP_OFF:
-			code_edit.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-		else:
-			code_edit.autowrap_mode = TextServer.AutowrapMode.AUTOWRAP_OFF
+		toggle_autowrap()
+
+
+func toggle_autowrap() -> void:
+	if code_edit.wrap_mode != TextEdit.LINE_WRAPPING_BOUNDARY:
+		code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	if code_edit.autowrap_mode == TextServer.AutowrapMode.AUTOWRAP_OFF:
+		code_edit.autowrap_mode = TextServer.AUTOWRAP_WORD
+	else:
+		code_edit.autowrap_mode = TextServer.AutowrapMode.AUTOWRAP_OFF
+
 
 #this are variables for Ctrl+F
 var text_to_search: String = ""
@@ -637,13 +645,6 @@ func _on_mic_button_pressed() -> void:
 	SingletonObject.AtT.btn = mic_button
 	mic_button.modulate = Color(Color.LIME_GREEN)
 
-
-func _on_audio_btn_pressed():
-	SingletonObject.AtT.FieldForFilling = code_edit
-	SingletonObject.AtT._StartConverting()
-	SingletonObject.AtT.btn = %AudioBTN
-	%AudioBTN.modulate = Color(Color.LIME_GREEN)
-
 #endregion Top Editor buttons
 #endregion Code Editor
 
@@ -702,7 +703,3 @@ func _on_check_button_toggled(toggled_on: bool):
 			SingletonObject.DetachedNotes.append(item)
 
 	item.Enabled = toggled_on
-
-
-func _on_close_buton_pressed() -> void:
-	find_string_container.hide()
