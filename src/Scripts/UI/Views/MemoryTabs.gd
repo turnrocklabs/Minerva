@@ -41,7 +41,7 @@ func Disable_All():
 		item.Enabled = false
 
 	self.render_threads()
-	pass
+
 
 func enable_all():
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
@@ -228,7 +228,7 @@ func render_threads():
 
 	# we must delete existing noted so creating new project works
 	for c in %tcThreads.get_children():
-		c.free() # Use free instead of queue_free so the node gets deleted immediately
+		c.queue_free() # Use free instead of queue_free so the node gets deleted immediately
 	
 	for thread in SingletonObject.ThreadList:
 		render_thread(thread)
@@ -249,7 +249,7 @@ func render_thread(thread_item: MemoryThread):
 
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vboxMemoryList)
-	scroll_container.follow_focus = true
+	#scroll_container.follow_focus = true
 	
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
 	#scroll_container.name = thread_item.ThreadName

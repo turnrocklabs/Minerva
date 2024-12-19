@@ -67,6 +67,7 @@ var FilePath: String:
 var OwningThread
 
 func hash_string(input: String) -> String:
+	if input.length() < 1: return ""
 	var ctx = HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
 	ctx.update(input.to_utf8_buffer())
