@@ -6,6 +6,10 @@ extends MenuBar
 @onready var project: PopupMenu = $Project
 @onready var edit: PopupMenu = %File
 
+var popUpRecent
+var recentList
+var ButtonCloseForPopUp
+
 # Add a new submenu for 'File'
 @onready var file_submenu: PopupMenu = PopupMenu.new()
 
@@ -63,6 +67,20 @@ func _on_package_submenu_id_pressed(id: int):
 		1: SingletonObject.UnpackageProject.emit()
 
 func _ready():
+	
+	popUpRecent = %PopupPanelRecent
+	popUpRecent.visible = false
+	#set op position for pop up by a center of the root node
+	popUpRecent.position.x = $"../../..".size.x/2
+	popUpRecent.position.y = $"../../..".size.y/2
+	add_child(popUpRecent)
+	
+	recentList = popUpRecent.find_child("RecentList")
+	ButtonCloseForPopUp = popUpRecent.find_child("CloseButton")
+	
+	ButtonCloseForPopUp.pressed.connect(_on_close_button_pressed)
+	
+	
 	_rebuild_recent_projects_ui()
 	# Create the new submenu
 	file_submenu.name = "file_submenu"
@@ -111,7 +129,7 @@ func _on_project_index_pressed(index):
 			SingletonObject.SaveProjectAs.emit()
 			pass
 		5:
-			%PopupPanelRecent.visible = true
+			popUpRecent.visible = true
 			load_recent_projects()
 			#pass
 
@@ -177,7 +195,7 @@ func _on_project_about_to_popup() -> void:
 		%Project.set_item_disabled(2, true)
 		%Project.set_item_disabled(3, true)
 
-#this function gets call when the mouse hovers over the MenuBar
+#this function gets call when the mouse ers over the MenuBar
 #it has a timer so it doesn't execute all the time
 var timer
 var active: bool = true
@@ -204,7 +222,7 @@ func set_active():
 var projects_size: int
 func load_recent_projects():
 	# Clear existing recent project entries in the UI more robustly
-	for child in %RecentList.get_children():
+	for child in recentList.get_children():
 		if child is HBoxContainer:
 			child.queue_free()
 
@@ -218,54 +236,38 @@ func load_recent_projects():
 				_add_recent_project_ui(i, item)
 
 func _add_recent_project_ui(index: int, item: String):
-	var hbox = HBoxContainer.new()
+	var newRecentButtons = preload("res://Scenes/RecentPopUpButtons.tscn").instantiate() # Instantiate a NEW one each time
 	
-	var TopDownButtons = VBoxContainer.new()
-	var arrowOne = Button.new()
-	var arrowTwo = Button.new()
-	
-	var RecentBtn = Button.new()
-	var exitBtn = Button.new()
+
+	var arrowOne = newRecentButtons.find_child("Up") #find elements within NEW instance
+	var arrowTwo = newRecentButtons.find_child("Down")
+	var RecentBtn = newRecentButtons.find_child("RecentBtn")
+	var exitBtn = newRecentButtons.find_child("exitBtn")
+	var dragBtn = newRecentButtons.find_child("DragButton")
 
 	# Limit the text length and add ellipsis if necessary
+	newRecentButtons.name = item
 	var displayed_text = item
 	if displayed_text.length() > 16:
 		displayed_text = displayed_text.substr(0, 13) + "..."
 	RecentBtn.text = displayed_text
-
-	exitBtn.text = "X"
-
-	# Set a fixed size for the buttons
-	var button_size = Vector2(100, 25) # Adjust these values as needed
+	
+	# Set a fixed size for the buttons (optional, but good practice)
+	var button_size = Vector2(100, 25) 
 	RecentBtn.size = button_size
-	exitBtn.size = Vector2(25,25) # Smaller size for the "X" button
+	exitBtn.size = Vector2(25,25)
 
-	# Ensure the buttons expand to fill their allocated space
-	RecentBtn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	#exitBtn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER # Keep the X button small
-	
-	arrowOne.text = "▲"
-	arrowTwo.text = "▼"
-	
-	TopDownButtons.add_child(arrowOne)
-	TopDownButtons.add_child(arrowTwo)
 
-	hbox.add_child(TopDownButtons)
-	hbox.add_child(RecentBtn)
-	hbox.add_child(exitBtn)
-	
-	%RecentList.add_child(hbox)
-
-	RecentBtn.pressed.connect(_on_open_recent_project.bind(index, item)) # Pass the original 'item' for functionality
+	RecentBtn.pressed.connect(_on_open_recent_project.bind(index, item))
 	exitBtn.pressed.connect(_on_remove_recent_single.bind(index))
-	arrowOne.pressed.connect(arrowTop.bind(index))
-	arrowTwo.pressed.connect(arrowDown.bind(index))
 
+	recentList.add_child(newRecentButtons) # Add the *new instance* to the VboxContainer
+	
 
 func _on_open_recent_project(index: int, itemText:String):
 	# The "Clear Recent Projects" button should be handled separately, not within this function.  Add this logic to the PopupMenu where that button resides. 
 	SingletonObject.OpenRecentProject.emit(itemText)
-	%PopupPanelRecent.visible = false
+	popUpRecent.visible = false
 
 
 func _on_remove_recent_single(index: int):
@@ -279,8 +281,8 @@ func _on_remove_recent_single(index: int):
 
 func _rebuild_recent_projects_ui():
 	# Clear all HBoxContainers from LayersList
-	for child in %RecentList.get_children():
-		if child is HBoxContainer:
+	for child in recentList.get_children():
+		if child is VBoxContainer:
 			child.queue_free()
 
 	# Reload the recent projects from SingletonObject and rebuild the UI
@@ -290,17 +292,9 @@ func _rebuild_recent_projects_ui():
 			_add_recent_project_ui(i, recent_projects[i])
 
 
-
-func _on_remove_all_recent_pressed():
-	call_deferred("load_recent_projects_sub")
-	SingletonObject.clear_recent_projects() # Clear data first
-	_rebuild_recent_projects_ui() # Then rebuild the UI
-	
-	
-
 var submenu: PopupMenu
 func load_recent_projects_sub():
-	if submenu: submenu.queue_free()
+	#if submenu: submenu.queue_free()
 	if SingletonObject.has_recent_projects():# check if user has recent projects
 		
 		# this if statement removes the open recent item if there was one already
@@ -335,30 +329,14 @@ func _on_open_recent_project_sub(index: int):
 		project.remove_item(project.item_count - 1)
 	elif projects_size + 2 == index:
 		_rebuild_recent_projects_ui()
-		%PopupPanelRecent.visible = true
+		popUpRecent.visible = true
 	else:
 		var selected_project_name = submenu.get_item_text(index)
 		SingletonObject.OpenRecentProject.emit(selected_project_name)
 
 
 func _on_close_button_pressed() -> void:
-	%PopupPanelRecent.visible = false
+	popUpRecent.visible = false
 	
-	
-func arrowTop(index :int):
-	if index > 0:  # Prevent going out of bounds
-		SingletonObject.swap_recent_projects(index, index - 1)
-		_rebuild_recent_projects_ui()
-		call_deferred("load_recent_projects_sub")
-		_rebuild_recent_projects_ui()
-
-
-func arrowDown(index :int):
-	if index < projects_size - 1: # Prevent going out of bounds
-		SingletonObject.swap_recent_projects(index, index + 1)
-		_rebuild_recent_projects_ui()
-		call_deferred("load_recent_projects_sub")
-		_rebuild_recent_projects_ui()
-		
 ###
 ### End Reference Information ###

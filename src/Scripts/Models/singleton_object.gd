@@ -11,7 +11,6 @@ var is_picture:bool = false
 #this is where we save the last path used to save a file or project
 var last_saved_path: String
 
-
 var CloudType
 
 var is_brush
@@ -98,38 +97,7 @@ func remove_recent_project(index: int) -> void:
 	config_file.save(config_file_name)
 	
 
-func swap_recent_projects(index1: int, index2: int):
-	if !has_recent_projects():
-		return
 
-	var recent_projects = get_recent_projects()
-	var size = recent_projects.size()
-
-	if index1 < 0 or index1 >= size or index2 < 0 or index2 >= size:
-		printerr("Invalid indices for swapping recent projects.")
-		return
-
-	# 1. Get all project names and paths
-	var project_data = {}
-	for project_name in recent_projects:
-		project_data[project_name] = config_file.get_value("OpenRecent", project_name)
-
-	# 2. Clear the "OpenRecent" section
-	config_clear_section("OpenRecent") 
-
-	# 3. Rebuild the "OpenRecent" section with swapped entries
-	var keys = project_data.keys()
-	
-	# Correct swapping logic using a temporary variable:
-	var temp = keys[index1]
-	keys[index1] = keys[index2]
-	keys[index2] = temp
-
-
-	for project_name in keys:
-		config_file.set_value("OpenRecent", project_name, project_data[project_name])
-
-	config_file.save(config_file_name)
 #endregion Config File
 
 
@@ -533,3 +501,46 @@ func hide_loading_screen():
 	Loading.emit(false, "")
 
 #endregion Loading screen stuff
+
+	
+func reorder_recent_project(firstIndex: int, secondIndex: int) -> void:
+	if !has_recent_projects():
+		return
+
+	var recent_projects: Array = get_recent_projects()
+
+	if firstIndex < 0 or firstIndex >= recent_projects.size() or secondIndex < 0 or secondIndex >= recent_projects.size():
+		printerr("Invalid indices for reordering recent project.")
+		return
+
+	# Get the project NAME at the first index
+	var project_name_to_move = recent_projects[firstIndex]
+	# Get the corresponding PATH
+	var project_path_to_move = get_project_path(project_name_to_move)
+
+	# Remove the project from its original position (by name/key)
+	config_file.erase_section_key("OpenRecent", project_name_to_move)
+
+
+	#Create a temporary dictionary to store the reordered projects
+	var reordered_projects: Dictionary = {}
+	var i := 0
+	for project_name in recent_projects:
+		if i == secondIndex:
+			reordered_projects[project_name_to_move] = project_path_to_move # Insert at the new index
+		if i != firstIndex: #Skip the original index of the moved project.
+			reordered_projects[project_name] = get_project_path(project_name)
+		i += 1
+
+	if secondIndex >= recent_projects.size(): #handle inserting at the end
+		reordered_projects[project_name_to_move] = project_path_to_move
+		
+
+
+	# Clear the "OpenRecent" section and add the reordered projects
+	config_file.erase_section("OpenRecent")
+	for key in reordered_projects:
+		config_file.set_value("OpenRecent", key, reordered_projects[key])
+
+
+	config_file.save(config_file_name)
