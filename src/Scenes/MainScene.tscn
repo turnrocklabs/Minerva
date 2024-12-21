@@ -1,4 +1,4 @@
-[gd_scene load_steps=39 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=40 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_d0avd"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -35,6 +35,7 @@
 [ext_resource type="PackedScene" uid="uid://b1tux4e3yql3g" path="res://Scenes/loading_pop_up_panel.tscn" id="27_f1wok"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="27_hlu33"]
 [ext_resource type="Script" path="res://Scripts/DropScript.gd" id="30_1anci"]
+[ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="36_rfuqj"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -553,96 +554,10 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="PopupPanelRecent" type="Control" parent="."]
+[node name="PopupPanelRecent" parent="." instance=ExtResource("36_rfuqj")]
 unique_name_in_owner = true
 visible = false
-z_index = 50
-z_as_relative = false
 layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="RecentBg" type="Panel" parent="PopupPanelRecent"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = -263.0
-offset_top = -174.0
-offset_right = 271.0
-offset_bottom = 159.0
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="RecentMenu" type="ScrollContainer" parent="PopupPanelRecent/RecentBg"]
-unique_name_in_owner = true
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 0
-follow_focus = true
-horizontal_scroll_mode = 0
-vertical_scroll_mode = 2
-
-[node name="MarginContainer" type="MarginContainer" parent="PopupPanelRecent/RecentBg/RecentMenu"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 5
-
-[node name="VBoxContainer" type="VBoxContainer" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer"]
-layout_mode = 2
-
-[node name="HBoxContainer" type="HBoxContainer" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer"]
-layout_mode = 2
-theme_override_constants/separation = 180
-alignment = 2
-
-[node name="Name" type="Label" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 4
-text = "Recent Projects"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="CloseButton" type="Button" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 4
-size_flags_vertical = 4
-text = "X"
-
-[node name="HSeparator" type="HSeparator" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer"]
-custom_minimum_size = Vector2(0, 25)
-layout_mode = 2
-
-[node name="RecentHolder" type="VBoxContainer" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_filter = 0
-alignment = 1
-
-[node name="RecentList" type="VBoxContainer" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/RecentHolder"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="HSeparator" type="HSeparator" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/RecentHolder"]
-custom_minimum_size = Vector2(0, 25)
-layout_mode = 2
-
-[node name="RemoveAllRecent" type="Button" parent="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/RecentHolder"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 8
-text = "remove all"
 
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
@@ -674,5 +589,3 @@ text = "remove all"
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_new_pressed"]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/tcThreads" method="_on_tab_clicked"]
-[connection signal="pressed" from="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/HBoxContainer/CloseButton" to="VBoxRoot/HBoxContainer/menuMain" method="_on_close_button_pressed"]
-[connection signal="pressed" from="PopupPanelRecent/RecentBg/RecentMenu/MarginContainer/VBoxContainer/RecentHolder/RemoveAllRecent" to="VBoxRoot/HBoxContainer/menuMain" method="_on_remove_all_recent_pressed"]

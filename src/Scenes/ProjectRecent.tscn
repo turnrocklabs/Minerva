@@ -1,0 +1,72 @@
+[gd_scene format=3 uid="uid://bd8ohb6l8jjyr"]
+
+[node name="ProjectRecent" type="Control"]
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LayerBG" type="Panel" parent="."]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 379.0
+offset_bottom = 146.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="LayersMenu" type="ScrollContainer" parent="LayerBG"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+follow_focus = true
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="LayerBG/LayersMenu"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="LayerBG/LayersMenu/MarginContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="CloseButton" type="Button" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "X"
+
+[node name="LayersHolder" type="VBoxContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 0
+alignment = 1
+
+[node name="Name" type="Label" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder"]
+layout_mode = 2
+text = "Recent projects"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="RecentList" type="VBoxContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10

@@ -1,0 +1,42 @@
+[gd_scene load_steps=4 format=3 uid="uid://dip3cdlo0qilw"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Views/RecentDragData.gd" id="1_3m2s7"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/RecentDropData.gd" id="1_fwd6b"]
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_3ay8p"]
+color = Color(0.164706, 0.345098, 0.831373, 1)
+thickness = 10
+
+[node name="NecacaryButtons" type="VBoxContainer"]
+offset_right = 88.0
+offset_bottom = 35.0
+
+[node name="DropTop" type="HSeparator" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_3ay8p")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="DragButton" type="Button" parent="HBoxContainer"]
+layout_mode = 2
+text = "***"
+script = ExtResource("1_3m2s7")
+
+[node name="RecentBtn" type="Button" parent="HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("1_fwd6b")
+
+[node name="exitBtn" type="Button" parent="HBoxContainer"]
+layout_mode = 2
+text = "X"
+script = ExtResource("1_fwd6b")
+
+[node name="DropBottom" type="HSeparator" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_3ay8p")
