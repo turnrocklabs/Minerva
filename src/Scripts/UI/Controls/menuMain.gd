@@ -79,9 +79,9 @@ func _ready():
 	ButtonCloseForPopUp = popUpRecent.find_child("CloseButton")
 	
 	ButtonCloseForPopUp.pressed.connect(_on_close_button_pressed)
+	recentList.child_order_changed.connect(updateNames)
 	
-	
-	_rebuild_recent_projects_ui()
+	#_rebuild_recent_projects_ui()
 	# Create the new submenu
 	file_submenu.name = "file_submenu"
 	file_submenu.add_item("New File")
@@ -236,15 +236,14 @@ func load_recent_projects():
 				_add_recent_project_ui(i, item)
 
 func _add_recent_project_ui(index: int, item: String):
-	var newRecentButtons = preload("res://Scenes/RecentPopUpButtons.tscn").instantiate() # Instantiate a NEW one each time
-	
 
+	var newRecentButtons = preload("res://Scenes/RecentPopUpButtons.tscn").instantiate() # Instantiate a NEW one each time
+	newRecentButtons.set_meta("project_path", item)
 	var arrowOne = newRecentButtons.find_child("Up") #find elements within NEW instance
 	var arrowTwo = newRecentButtons.find_child("Down")
 	var RecentBtn = newRecentButtons.find_child("RecentBtn")
 	var exitBtn = newRecentButtons.find_child("exitBtn")
 	var dragBtn = newRecentButtons.find_child("DragButton")
-
 	# Limit the text length and add ellipsis if necessary
 	newRecentButtons.name = item
 	var displayed_text = item
@@ -264,6 +263,8 @@ func _add_recent_project_ui(index: int, item: String):
 	recentList.add_child(newRecentButtons) # Add the *new instance* to the VboxContainer
 	
 
+	
+	
 func _on_open_recent_project(index: int, itemText:String):
 	# The "Clear Recent Projects" button should be handled separately, not within this function.  Add this logic to the PopupMenu where that button resides. 
 	SingletonObject.OpenRecentProject.emit(itemText)
@@ -276,24 +277,42 @@ func _on_remove_recent_single(index: int):
 	load_recent_projects_sub()
 	projects_size -= 1
 
-
-
-
 func _rebuild_recent_projects_ui():
-	# Clear all HBoxContainers from LayersList
-	for child in recentList.get_children():
-		if child is VBoxContainer:
+	var recent_projects = SingletonObject.get_recent_projects()
+	var children = recentList.get_children()
+
+	# 1. Remove buttons for projects no longer in the recent list
+	for child in children:
+		if child.has_meta("project_path") and child.get_meta("project_path") not in recent_projects:
 			child.queue_free()
 
-	# Reload the recent projects from SingletonObject and rebuild the UI
-	if SingletonObject.has_recent_projects():
-		var recent_projects = SingletonObject.get_recent_projects()
-		for i in range(recent_projects.size()):
-			_add_recent_project_ui(i, recent_projects[i])
+	children = recentList.get_children() # Update children after removal
+
+	# 2. Add buttons for new projects
+	for i in range(recent_projects.size()):
+		var project_path = recent_projects[i]
+		var existing_button = _find_existing_button(project_path, children)
+		if !existing_button:
+			_add_recent_project_ui(i, project_path)
+
+	children = recentList.get_children() # Update children after adding
+
+	# 3. Reorder existing buttons to match the recent_projects order
+	for i in range(recent_projects.size()):
+		var project_path = recent_projects[i]
+		var button = _find_existing_button(project_path, children)
+		if button:
+			recentList.move_child(button, i)  # Move to the correct index
 
 
+func _find_existing_button(project_path: String, children: Array) -> Node:
+	for child in children:
+		if child.has_meta("project_path") and child.get_meta("project_path") == project_path:
+			return child
+	return null
 var submenu: PopupMenu
 func load_recent_projects_sub():
+
 	#if submenu: submenu.queue_free()
 	if SingletonObject.has_recent_projects():# check if user has recent projects
 		
@@ -309,6 +328,7 @@ func load_recent_projects_sub():
 		var recent_projects = SingletonObject.get_recent_projects()
 		projects_size = recent_projects.size()
 		if recent_projects:
+			
 			for item in recent_projects:
 				submenu.add_item(item)
 		
@@ -337,6 +357,9 @@ func _on_open_recent_project_sub(index: int):
 
 func _on_close_button_pressed() -> void:
 	popUpRecent.visible = false
-	
+
+func updateNames():
+	for i in recentList.get_children():
+		i.name = i.get_meta("project_path")
 ###
 ### End Reference Information ###
