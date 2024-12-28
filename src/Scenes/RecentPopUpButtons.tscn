@@ -40,3 +40,6 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_3ay8p")
+
+[connection signal="mouse_exited" from="HBoxContainer/RecentBtn" to="HBoxContainer/RecentBtn" method="_on_mouse_exited"]
+[connection signal="pressed" from="HBoxContainer/RecentBtn" to="HBoxContainer/DragButton" method="_on_recent_btn_pressed"]

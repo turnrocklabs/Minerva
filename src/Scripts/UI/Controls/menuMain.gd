@@ -79,7 +79,6 @@ func _ready():
 	ButtonCloseForPopUp = popUpRecent.find_child("CloseButton")
 	
 	ButtonCloseForPopUp.pressed.connect(_on_close_button_pressed)
-	recentList.child_order_changed.connect(updateNames)
 	
 	#_rebuild_recent_projects_ui()
 	# Create the new submenu
@@ -239,8 +238,6 @@ func _add_recent_project_ui(index: int, item: String):
 
 	var newRecentButtons = preload("res://Scenes/RecentPopUpButtons.tscn").instantiate() # Instantiate a NEW one each time
 	newRecentButtons.set_meta("project_path", item)
-	var arrowOne = newRecentButtons.find_child("Up") #find elements within NEW instance
-	var arrowTwo = newRecentButtons.find_child("Down")
 	var RecentBtn = newRecentButtons.find_child("RecentBtn")
 	var exitBtn = newRecentButtons.find_child("exitBtn")
 	var dragBtn = newRecentButtons.find_child("DragButton")
@@ -269,6 +266,7 @@ func _on_open_recent_project(index: int, itemText:String):
 	# The "Clear Recent Projects" button should be handled separately, not within this function.  Add this logic to the PopupMenu where that button resides. 
 	SingletonObject.OpenRecentProject.emit(itemText)
 	popUpRecent.visible = false
+	print(index)
 
 
 func _on_remove_recent_single(index: int):
@@ -310,15 +308,21 @@ func _find_existing_button(project_path: String, children: Array) -> Node:
 		if child.has_meta("project_path") and child.get_meta("project_path") == project_path:
 			return child
 	return null
+	
 var submenu: PopupMenu
 func load_recent_projects_sub():
-
 	#if submenu: submenu.queue_free()
-	if SingletonObject.has_recent_projects():# check if user has recent projects
-		
+	if SingletonObject.has_recent_projects():
 		# this if statement removes the open recent item if there was one already
 		if project.get_tree().has_group("open_recent"):
 			project.remove_item(project.item_count - 1)
+		if project.get_tree().has_group("open_recent"):
+			# Remove the old submenu entirely instead of individual items
+			for n in project.get_children():
+				if n is PopupMenu and n.is_in_group("open_recent"):
+					n.free()  # or n.queue_free() if needed
+					break  # Assume only one submenu in the group
+					
 		
 		# create submenu item, fill it with recent projects and add to menu
 		submenu = PopupMenu.new()
@@ -327,8 +331,9 @@ func load_recent_projects_sub():
 		submenu.index_pressed.connect(_on_open_recent_project_sub)
 		var recent_projects = SingletonObject.get_recent_projects()
 		projects_size = recent_projects.size()
+		
 		if recent_projects:
-			
+			submenu.get_children().clear()
 			for item in recent_projects:
 				submenu.add_item(item)
 		
@@ -342,6 +347,8 @@ func load_recent_projects_sub():
 		project.add_child(submenu)# adds submenu to scene tree
 		#add submenu as a submenu of indicated item
 		project.add_submenu_item("Open Recent", "OpenRecentSubmenu")
+		
+		
 
 func _on_open_recent_project_sub(index: int):
 	if projects_size + 1 == index: # check if the index is for the clear recent projects button
@@ -358,8 +365,5 @@ func _on_open_recent_project_sub(index: int):
 func _on_close_button_pressed() -> void:
 	popUpRecent.visible = false
 
-func updateNames():
-	for i in recentList.get_children():
-		i.name = i.get_meta("project_path")
 ###
 ### End Reference Information ###

@@ -52,3 +52,8 @@ func get_insertion_index(container: Container, local_position: Vector2) -> int:
 			if local_position.y < child_rect.position.y + child_rect.size.y / 2: # Check the half height to determine where to insert
 				return i # Insert before
 	return container.get_child_count() # Insert at the end if no suitable position is found
+
+
+func _on_mouse_exited() -> void:
+	%DropBottom.visible = false
+	%DropTop.visible = false
