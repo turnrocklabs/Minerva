@@ -30,3 +30,7 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 
 	# Return the duplicated node for the drag
 	return preview_parent
+
+
+func _on_recent_btn_pressed() -> void:
+	SingletonObject.OpenRecentProject.emit($"../..".get_meta("project_path"))
