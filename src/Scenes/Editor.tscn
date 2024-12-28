@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=13 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
@@ -10,6 +10,13 @@
 [ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="5_ru7ju"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
+
+[sub_resource type="InputEventAction" id="InputEventAction_1e7nj"]
+action = &"toggle_autowrap"
+pressed = true
+
+[sub_resource type="Shortcut" id="Shortcut_rmr81"]
+events = [SubResource("InputEventAction_1e7nj")]
 
 [node name="Editor" type="Control"]
 layout_mode = 3
@@ -102,6 +109,7 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "warps text that goes over the width of the editor"
+shortcut = SubResource("Shortcut_rmr81")
 shortcut_feedback = false
 icon = ExtResource("5_7o203")
 

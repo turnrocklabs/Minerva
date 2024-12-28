@@ -66,20 +66,17 @@ var memory_item: MemoryItem:
 
 func new_text_note():
 	%NoteTextBody.set_deferred("visible", true)
-	%VideoVBoxContainer.call_deferred("queue_free")
 	return self
 
 
 func new_image_note():
 	%NoteTextBody.visible = false
-	%VideoVBoxContainer.call_deferred("queue_free")
 	return self
 
 
 func new_audio_note():
 	%NoteTextBody.visible = false
 	%EditButton.visible = false
-	%VideoVBoxContainer.call_deferred("queue_free")
 	return self
 
 
@@ -171,7 +168,7 @@ func _get_drag_data(at_position: Vector2) -> Note:
 
 	preview.custom_minimum_size = size
 	preview_note.custom_minimum_size = size
-
+	preview.rotation_degrees = 3.0
 	preview_note.position = -at_position
 
 	var tween = get_tree().create_tween()
@@ -185,9 +182,9 @@ func _get_drag_data(at_position: Vector2) -> Note:
 
 	return self
 
-func _can_drop_data(at_position: Vector2, data):
-	if not data is Note: return false
 
+func _can_drop_data(at_position: Vector2, data) -> bool:
+	if not data is Note: return false
 	if data == self: return false
 
 	if at_position.y < size.y / 2:
@@ -196,8 +193,8 @@ func _can_drop_data(at_position: Vector2, data):
 	else:
 		_lower_separator.visible = true
 		_upper_separator.visible = false
-
 	return true
+	
 
 func _memory_thread_find(thread_id: String) -> MemoryThread:
 	return SingletonObject.ThreadList.filter(
@@ -206,9 +203,8 @@ func _memory_thread_find(thread_id: String) -> MemoryThread:
 	).pop_front()
 
 
-func _drop_data(_at_position: Vector2, data):
+func _drop_data(_at_position: Vector2, data) -> void:
 	data = data as Note
-
 	# dragged note should be moved to thread where 'self' is 
 	# at 'insert_index'
 	var insert_index: int
@@ -229,21 +225,25 @@ func _drop_data(_at_position: Vector2, data):
 		elif _lower_separator.visible:
 			insert_index = target_note_thread.MemoryItemList.find(memory_item)+1
 		
-		dragged_note_thread.MemoryItemList.erase(data.memory_item)
-		target_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
+		if dragged_note_thread.MemoryItemList.has(data.memory_item):
+			dragged_note_thread.MemoryItemList.erase(data.memory_item)
+		if insert_index >= 0 and insert_index <= dragged_note_thread.MemoryItemList.size():
+			target_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
 
 		data.memory_item.OwningThread = target_note_thread.ThreadId
 	
 	else:
-		dragged_note_thread.MemoryItemList.erase(data.memory_item)
+		if dragged_note_thread.MemoryItemList.has(data.memory_item):
+			dragged_note_thread.MemoryItemList.erase(data.memory_item)
 
 		if _upper_separator.visible:
 			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)
 		elif _lower_separator.visible:
 			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)+1
-
-		dragged_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
-	data.queue_free()
+		
+		if insert_index >= 0 and insert_index <= dragged_note_thread.MemoryItemList.size():
+			dragged_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
+	#data.queue_free()
 
 
 

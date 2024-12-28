@@ -449,8 +449,7 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 		code_edit.set_process_input(false)
 		code_edit.set_process_unhandled_key_input(false)
 		find_string_in_code_edit()
-	elif event.is_action_pressed("toggle_autowrap"):
-		toggle_autowrap()
+	
 
 
 func toggle_autowrap() -> void:
