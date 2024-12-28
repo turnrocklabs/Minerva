@@ -54,7 +54,7 @@ var shell: String
 var _parameters: = PackedStringArray()
 
 ## Creates new terminal instance
-static func create() -> Terminal:
+static func create() -> TerminalNew:
 	var terminal = preload("res://Scenes/Terminal.tscn").instantiate()
 	return terminal
 

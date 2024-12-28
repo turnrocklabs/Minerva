@@ -536,7 +536,6 @@ script = ExtResource("14_rrnyx")
 [node name="AudioStreamRecord" type="AudioStreamPlayer" parent="AudioToText"]
 stream = SubResource("AudioStreamMicrophone_i6lnv")
 autoplay = true
-bus = &"Rec"
 
 [node name="LoadingPopUpPanel" parent="." instance=ExtResource("27_f1wok")]
 visible = false
