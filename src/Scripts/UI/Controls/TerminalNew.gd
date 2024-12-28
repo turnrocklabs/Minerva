@@ -6,6 +6,7 @@ const CURSOR_CHAR: = "█"
 var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-zA-Z0-9]+[\\\/])*([a-zA-Z0-9]+>)")
 
 @onready var _output_container: ScrollContainer = %OutputContainer
+@onready var _check_buttons_container: VBoxContainer = %CheckButtonsContainer
 
 # var _output_label: TextLayer
 var _output_label_nodes: Array[TextLayer]
@@ -147,8 +148,13 @@ func _on_output_received(text: String, type: WindowsTerminal.Type) -> void:
 
 	var match_: = WINDOWS_CWD_REGEX.search(text)
 	
-	# if match_ != null:
-	# 	text_layer.add_background_color(Color.RED, _cursor_pos)
+	if match_ != null:
+		text_layer.add_background_color(Color.RED, _cursor_pos)
+		# var btn = CheckButton.new()
+		# var ctrl = Control.new()
+		# ctrl.custom_minimum_size.y = _cursor_pos.x * line_height
+		# _check_buttons_container.add_child(ctrl)
+		# _check_buttons_container.add_child(btn)
 
 	if type == WindowsTerminal.Type.TEXT:
 
@@ -206,8 +212,8 @@ func _on_output_received(text: String, type: WindowsTerminal.Type) -> void:
 			_cursor_pos.y += char_.length()
 			_cursor_pos = _cursor_pos
 
-		# if match_ != null:
-		# 	text_layer.add_background_color(Color.TRANSPARENT, _cursor_pos)
+		if match_ != null:
+			text_layer.add_background_color(Color.TRANSPARENT, _cursor_pos)
 
 
 
@@ -672,6 +678,13 @@ class TextLayer extends Control:
 		
 		if row-1 > content.size()-1:
 			prints("Cant erase", row, content.size())		
+			return
+
+		
+		if from == 1 and length == -1: # just delete the whole line right away
+			print("Deleting whole line ", content[row-1])
+			content[row-1] = []
+			queue_redraw()
 			return
 
 
