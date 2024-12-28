@@ -7,12 +7,17 @@ signal _tab_metadata_ready()
 @export var _controls_container: Control
 
 
-func _ready():
-	_on_new_tab_button_pressed() # starting with one tab open already
+# func _ready():
+# 	_on_new_tab_button_pressed() # starting with one tab open already
+
+
+func _on_visibility_changed() -> void:
+	if is_visible_in_tree() and _tab_bar.tab_count == 0:
+		_on_new_tab_button_pressed()
 
 func _on_new_tab_button_pressed():
 
-	var terminal_node = Terminal.create()
+	var terminal_node = TerminalNew.create()
 	terminal_node.name = "Terminal "
 	terminal_node.visible = false
 
@@ -34,12 +39,12 @@ func _on_tab_bar_tab_changed(tab: int):
 	if not _tab_bar.get_tab_metadata(tab):
 		await _tab_metadata_ready
 	
-	var terminal_control: Terminal = _tab_bar.get_tab_metadata(tab)
+	var terminal_control: TerminalNew = _tab_bar.get_tab_metadata(tab)
 	
 	terminal_control.visible = true
 
 
 func _on_tab_bar_tab_close_pressed(tab: int):
-	var terminal_control: Terminal = _tab_bar.get_tab_metadata(tab)
+	var terminal_control: TerminalNew = _tab_bar.get_tab_metadata(tab)
 	_tab_bar.remove_tab(tab)
 	terminal_control.queue_free()
