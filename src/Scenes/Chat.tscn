@@ -129,12 +129,15 @@ size_flags_vertical = 0
 theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VBoxContainer2"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 
 [node name="Label" type="Label" parent="VBoxContainer3/VBoxContainer2/HBoxContainer"]
 layout_mode = 2
+size_flags_vertical = 1
 theme_override_font_sizes/font_size = 24
 text = "Chats"
+vertical_alignment = 2
 
 [node name="btnNewChat" type="Button" parent="VBoxContainer3/VBoxContainer2/HBoxContainer"]
 unique_name_in_owner = true
@@ -175,7 +178,7 @@ caret_blink = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer"]
 layout_mode = 2
-theme_override_constants/separation = 18
+theme_override_constants/separation = 10
 
 [node name="ProviderOptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" instance=ExtResource("9_xd60x")]
 unique_name_in_owner = true

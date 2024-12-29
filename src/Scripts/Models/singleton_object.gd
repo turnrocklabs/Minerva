@@ -433,7 +433,6 @@ func get_theme_enum() -> int:
 func set_theme(themeID: int) -> void:
 	var root_control: Control = get_tree().current_scene
 	if get_theme_enum() != themeID:
-		print("theme enum:" + str(themeID))
 		match themeID:
 			theme.LIGHT_MODE:
 				var _light_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/light_mode.theme")
