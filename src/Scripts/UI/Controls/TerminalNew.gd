@@ -6,18 +6,29 @@ const CURSOR_CHAR: = "█"
 var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-zA-Z0-9]+[\\\/])*([a-zA-Z0-9]+>)")
 
 @onready var _output_container: ScrollContainer = %OutputContainer
-@onready var _check_buttons_container: VBoxContainer = %CheckButtonsContainer
+@onready var _check_buttons_container: Control = %CheckButtonsContainer
 
 # var _output_label: TextLayer
 var _output_label_nodes: Array[TextLayer]
 
 var terminal:  = WindowsTerminal.new()
 
+var _viewport_start: int = 0
+# var _cursor_pos: Vector2i = Vector2i(1, 1)
 var _cursor_pos: Vector2i = Vector2i(1, 1):
 	set(value):
 		print("Cursor position changed from %s to %s" % [_cursor_pos, value])
+		print("Real value: %s" % _cursor_pos)
+
 		_cursor_pos = value
-		cursor_layer.pos = value
+
+		# _cursor_pos = _cursor_pos
+
+		cursor_layer.pos = _cursor_pos
+
+		# var scrollbar: VScrollBar = _output_container.get_v_scroll_bar()
+
+		# scrollbar.value = int((_cursor_pos.x-1) * line_height)
 
 		# _output_container.scroll_vertical = int((_cursor_pos.x-1) * line_height)
 		
@@ -52,18 +63,27 @@ func _ready():
 
 	var scrollbar: VScrollBar = _output_container.get_v_scroll_bar()
 
-	# scrollbar.scrolling.connect(
-	# 	func():
-	# 		var lines_amount: = floorf(snappedf(scrollbar.value, line_height) / line_height) + 1
-	# 		var new_value: = snappedf(scrollbar.value, line_height) + lines_amount
-	# 		scrollbar.set_value_no_signal(new_value)
-	# )
 
-	# scrollbar.changed.connect(
-	# 	func():
-	# 		return
-	# 		# _output_container.scroll_vertical = int(scrollbar.max_value)
-	# )
+	scrollbar.scrolling.connect(
+		func():
+			var lines_amount: = floorf(snappedf(scrollbar.value, line_height) / line_height) + 1
+			var new_value: = snappedf(scrollbar.value, line_height) + lines_amount
+			scrollbar.set_value_no_signal(new_value)
+			
+			pass# print("NEW VALUE: ", new_value)
+			_viewport_start = int(lines_amount) - 1
+			print("_viewport_start is now %s" % _viewport_start)
+	)
+
+	scrollbar.changed.connect(
+		func():
+			scrollbar.value = int((_cursor_pos.x-1) * line_height)
+			
+			var lines_amount: = floorf(snappedf(scrollbar.value, line_height) / line_height) + 1
+			_viewport_start = int(lines_amount) - 1
+			
+			# _output_container.scroll_vertical = int(scrollbar.max_value)
+	)
 
 
 
@@ -82,7 +102,7 @@ func _ready():
 
 	terminal.seq_erase_character.connect(
 		func(count: int):
-			print("Delete %s characters at %s" % [count, _cursor_pos])
+			pass# print("Delete %s characters at %s" % [count, _cursor_pos])
 	)
 
 	terminal.seq_erase_from_cursor_to_end_of_line.connect(
@@ -92,7 +112,7 @@ func _ready():
 	
 	terminal.seq_set_cursor_visible.connect(
 		func(enabled: bool):
-			print("Set cursor to: ", enabled)
+			pass# print("Set cursor to: ", enabled)
 			cursor_layer.visible = enabled
 	)
 
@@ -105,24 +125,29 @@ func _ready():
 	await get_tree().process_frame
 
 
-	print(size)
-	prints(int(size.y / line_height), int(size.x / char_width))
+	pass# print(size)
+	pass# prints(int(size.y / line_height), int(size.x / char_width))
 
 	var a = terminal.start(int(size.x / char_width), int(size.y / line_height))
 	
-	print(a)
+	pass# print(a)
 
 	# terminal.start(size.y, size.x)
 
 	resized.connect(
 		func():
-			print("Terminal resized to %s" % Vector2(int(size.y / line_height), int(size.x / char_width)))
+			pass# print("Terminal resized to %s" % Vector2(int(size.y / line_height), int(size.x / char_width)))
 			terminal.resize(int(size.x / char_width), int(size.y / line_height))
 	)
 
 func _create_output_container(_next: = true) -> void:
-	print("Created new ouput container")
 	
+	var hbox: = HBoxContainer.new()
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	_check_buttons_container = Control.new()
+	_check_buttons_container.custom_minimum_size.x = 32
+
 	text_layer = TextLayer.new()
 	text_layer.terminal = self
 	text_layer.font = font
@@ -135,26 +160,40 @@ func _create_output_container(_next: = true) -> void:
 	cursor_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	
-	_output_container.add_child(text_layer)
 	text_layer.add_child(cursor_layer)
+
+	hbox.add_child(_check_buttons_container)
+	hbox.add_child(text_layer)
+
+	_output_container.add_child(hbox)
 
 	_output_label_nodes.append(text_layer)
 
+func _create_check_button(offset: float) -> void:
+	print(offset)
+	var btn = CheckButton.new()
+
+	# var ctrl = Control.new()
+	# ctrl.custom_minimum_size.y = offset - 8
+	# _check_buttons_container.add_child(ctrl)
+
+
+	btn.position.y = offset
+	_check_buttons_container.add_child(btn)
 
 func _on_output_received(text: String, type: WindowsTerminal.Type) -> void:
 	# text = text.replace("\r\n", "\n") # TODO: handle \r\n on windows
 	
-	print("\n\n_on_output_received: '%s'" % text.c_escape())
+	pass# print("\n\n_on_output_received: '%s'" % text.c_escape())
 
-	var match_: = WINDOWS_CWD_REGEX.search(text)
+	var matches: = WINDOWS_CWD_REGEX.search_all(text)
 	
-	if match_ != null:
-		text_layer.add_background_color(Color.RED, _cursor_pos)
-		# var btn = CheckButton.new()
-		# var ctrl = Control.new()
-		# ctrl.custom_minimum_size.y = _cursor_pos.x * line_height
-		# _check_buttons_container.add_child(ctrl)
-		# _check_buttons_container.add_child(btn)
+	if not matches.is_empty():
+		for match_ in matches:
+			text_layer.add_background_color(Color.RED, _cursor_pos)
+			_create_check_button((_cursor_pos.x + text.count("\n", match_.get_start(), match_.get_end()) -1) * line_height)
+			print("Added check button at %s" % _cursor_pos.x)
+		
 
 	if type == WindowsTerminal.Type.TEXT:
 
@@ -169,27 +208,27 @@ func _on_output_received(text: String, type: WindowsTerminal.Type) -> void:
 			if char_ == "\r":
 
 				# find next \r or \n
-				var next_r_idx: = text.find("\r", i+1)
-				var next_n_idx: = text.find("\n", i+1)
+				# var next_r_idx: = text.find("\r", i+1)
+				# var next_n_idx: = text.find("\n", i+1)
 
-				var idx: int = text.length()
+				# var idx: int = text.length()
 
-				if next_r_idx == -1 and next_n_idx == -1:
-					idx = text.length()
-				elif next_r_idx == -1:
-					idx = next_n_idx
-				elif next_n_idx == -1:
-					idx = next_r_idx
-				else:
-					idx = mini(next_r_idx, next_n_idx)
+				# if next_r_idx == -1 and next_n_idx == -1:
+				# 	idx = text.length()
+				# elif next_r_idx == -1:
+				# 	idx = next_n_idx
+				# elif next_n_idx == -1:
+				# 	idx = next_r_idx
+				# else:
+				# 	idx = mini(next_r_idx, next_n_idx)
 
-				for modifier_key in text_layer.content_modifiers.keys().filter(
-					func(modifier_pos: Vector2i):
-						print("Going through modifier at %s, while cursor is at %s and idx is %s" % [modifier_pos, _cursor_pos, idx])
-						return modifier_pos.y == _cursor_pos.x-1 and modifier_pos.x < idx
-				):
-					print("Deleting modifier at '%s' on line %s after '\\r'" % [modifier_key, i])
-					text_layer.content_modifiers.erase(modifier_key)
+				# for modifier_key in text_layer.content_modifiers.keys().filter(
+				# 	func(modifier_pos: Vector2i):
+				# 		pass# print("Going through modifier at %s, while cursor is at %s and idx is %s" % [modifier_pos, _cursor_pos, idx])
+				# 		return modifier_pos.y == _cursor_pos.x-1 and modifier_pos.x < idx
+				# ):
+				# 	pass# print("Deleting modifier at '%s' on line %s after '\\r'" % [modifier_key, i])
+				# 	text_layer.content_modifiers.erase(modifier_key)
 
 				_cursor_pos = Vector2i(_cursor_pos.x, 1)
 				
@@ -197,6 +236,8 @@ func _on_output_received(text: String, type: WindowsTerminal.Type) -> void:
 
 			elif char_ == "\n":
 				# text_layer.add_text(char_, _cursor_pos)
+				print("char is \\n, going to next line")
+				prints(_cursor_pos, Vector2i(_cursor_pos.x+1, _cursor_pos.y))
 				_cursor_pos = Vector2i(_cursor_pos.x+1, _cursor_pos.y)
 				# _cursor_pos = Vector2i(_cursor_pos.x+1, 1)
 				continue
@@ -206,14 +247,15 @@ func _on_output_received(text: String, type: WindowsTerminal.Type) -> void:
 				_cursor_pos = _cursor_pos
 				continue
 			
-			print("Adding %s to %s" % [char_.c_escape(), _cursor_pos])
+			pass# print("Adding %s to %s" % [char_.c_escape(), _cursor_pos])
 			text_layer.add_text(char_, _cursor_pos)
 
 			_cursor_pos.y += char_.length()
 			_cursor_pos = _cursor_pos
 
-		if match_ != null:
+		if not matches.is_empty():
 			text_layer.add_background_color(Color.TRANSPARENT, _cursor_pos)
+			text_layer.queue_redraw()
 
 
 
@@ -244,7 +286,8 @@ func _parse_bbcode_tag(text: String) -> Dictionary:
 
 
 func _set_cursor_position(row: int, column: int) -> void:
-	_cursor_pos = Vector2i(row, column)
+	_cursor_pos = Vector2i(row + _viewport_start, column)
+
 	print("Set cursor position to %s..." % _cursor_pos)
 	# _update_cursor_position()
 
@@ -424,7 +467,7 @@ class CursorLayer extends Control:
 			# draw_pos = Vector2i(char_width, line_height)
 
 			draw_string(font, draw_pos, CURSOR_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-			# print("Draw cursor at %s" % draw_pos)
+			# pass# print("Draw cursor at %s" % draw_pos)
 			# draw_rect(Rect2(draw_pos, Vector2(char_width, line_height)), Color.WHITE)
 		
 			custom_minimum_size.y = draw_pos.y
@@ -432,6 +475,8 @@ class CursorLayer extends Control:
 
 
 class TextLayer extends Control:
+	
+
 	var terminal: TerminalNew
 	var font: Font
 	var font_size: int = ThemeDB.fallback_font_size
@@ -464,9 +509,9 @@ class TextLayer extends Control:
 	var content_modifiers: Dictionary = {}
 
 
-	func add_color(color: Color, at: Vector2i) -> void:
+	func add_color(color: Color, _at: Vector2i) -> void:
 
-		print("Adding color modifier at %s" % at)
+		pass# print("Adding color modifier at %s" % at)
 
 		var modifier_callable: = func(): print("Changed color to: ", color); _foreground_color = color
 
@@ -479,16 +524,16 @@ class TextLayer extends Control:
 
 		# at = Vector2i(at.y-1, at.x-1)
 		
-		# print("Added color (%s) modifier at %s" % [color, at])
+		# pass# print("Added color (%s) modifier at %s" % [color, at])
 
-		# _modifier_queue.append(func(): print("Changed color to: ", color); _foreground_color = color)
+		# _modifier_queue.append(func(): pass# print("Changed color to: ", color); _foreground_color = color)
 	
 
-	func add_background_color(color: Color, at: Vector2i) -> void:
+	func add_background_color(color: Color, _at: Vector2i) -> void:
 
-		at = Vector2i(at.y-1, at.x-1)
+		# at = Vector2i(at.y-1, at.x-1)
 		
-		print("Added background color (%s) modifier at %s" % [color, at])
+		pass# print("Added background color (%s) modifier at %s" % [color, at])
 
 		var modifier_callable: = func(): print("Changed background color to: ", color); _background_color = color
 		
@@ -505,7 +550,7 @@ class TextLayer extends Control:
 			for i in range(at.x - content.size()):
 				content.append([])
 		
-		print("Adding part '%s' at %s" % [part, at])
+		pass# print("Adding part '%s' at %s" % [part, at])
 
 		var line_content: Array = content[at.x-1]
 
@@ -525,19 +570,19 @@ class TextLayer extends Control:
 		else:
 			for i in range(line_content.size()):
 				var line_part = line_content[i]
-				print("ex 1: %s %s" % [total, at.y])
+				pass# print("ex 1: %s %s" % [total, at.y])
 				
 				if line_part is String:
-					print("ex 2: %s %s" % [total, at.y])
+					pass# print("ex 2: %s %s" % [total, at.y])
 					if total + line_part.length() >= at.y:
-						print("Adding '%s' to '%s' at position %s" % [part, line_part, at.y-total-1])
+						pass# print("Adding '%s' to '%s' at position %s" % [part, line_part, at.y-total-1])
 						line_part[at.y-total-1] = part
 						line_content[i] = line_part
 						break
 										
 					# if we're on last i and we didnt add the text
 					elif i == line_content.size()-1:
-						print("ex r: %s %s %s" % [line_content.size(), i, last_string_part_idx])
+						pass# print("ex r: %s %s %s" % [line_content.size(), i, last_string_part_idx])
 
 						# if string is the last element, append the new one
 						if i == last_string_part_idx:
@@ -551,8 +596,8 @@ class TextLayer extends Control:
 					total += line_part.length()
 				
 				elif line_part is Modifier:
-					print("line_part is Modifier")
-					prints(last_string_part_idx)
+					pass# print("line_part is Modifier")
+					pass# prints(last_string_part_idx)
 
 					# if we're not on the last one just skip it
 					if i == line_content.size()-1:
@@ -565,14 +610,14 @@ class TextLayer extends Control:
 				
 
 		content[at.x-1] = line_content
-		print(line_content)
+		pass# print(line_content)
 	
 	func _add_modifier_content_part(part: Modifier, at: Vector2i) -> void:
 		if at.x > content.size():
 			for i in range(at.x - content.size()):
 				content.append([])
 		
-		print("Adding part '%s' at %s" % [part, at])
+		pass# print("Adding part '%s' at %s" % [part, at])
 
 		var line_content: Array = content[at.x-1]
 
@@ -591,27 +636,27 @@ class TextLayer extends Control:
 		else:
 			for i in range(line_content.size()):
 				var line_part = line_content[i]
-				print("ex 1: %s %s" % [total, at.y])
+				pass# print("ex 1: %s %s" % [total, at.y])
 				
 				if line_part is String:
-					print("ex 2: %s %s" % [total, at.y])
+					pass# print("ex 2: %s %s" % [total, at.y])
 					
 					if total + line_part.length() >= at.y:
 						
 						# check if we're on first char of the string, and just add modifier before it
 
 						if at.y-total-1 == 0:
-							print("Prepending the modifier")
+							pass# print("Prepending the modifier")
 							line_content.insert(i, part)
 							break
 
 						# if this is the case, devide the string into two and insert the modifier inbetween
 
-						print("Splitting '%s' into two strings" % line_part.c_escape())
+						pass# print("Splitting '%s' into two strings" % line_part.c_escape())
 
 						var p1: String = line_part.substr(0, at.y-total-1)
 						var p2: String = line_part.substr(at.y-total-1)
-						prints(p1.c_escape(), p2.c_escape())
+						pass# prints(p1.c_escape(), p2.c_escape())
 
 						line_content.remove_at(i)
 
@@ -639,8 +684,8 @@ class TextLayer extends Control:
 					total += line_part.length()
 				
 				elif line_part is Modifier:
-					print("line_part is Modifier")
-					prints(last_modifier_part_idx)
+					pass# print("line_part is Modifier")
+					pass# prints(last_modifier_part_idx)
 
 					# if we're not on the last one just skip it
 					if i == line_content.size()-1:
@@ -659,7 +704,7 @@ class TextLayer extends Control:
 
 		content[at.x-1] = line_content
 
-		print(line_content)
+		pass# print(line_content)
 
 
 	func add_text(text: String, at: Vector2i) -> void:
@@ -675,6 +720,7 @@ class TextLayer extends Control:
 
 	func erase(row: int, from: int, length: int = -1) -> void:
 		print("\nErasing.")
+		prints(row, from, length)
 		
 		if row-1 > content.size()-1:
 			prints("Cant erase", row, content.size())		
@@ -721,24 +767,16 @@ class TextLayer extends Control:
 					
 					var actl = line_part.length()-from_rel if length == -1 else length
 
-					# if length == -1:
-					# 	print("Must delete in next parts, deleting = true")
-					# 	var chars = line_part.length()-from_rel if length == -1 else length
-					# 	line_part = line_part.erase(from_rel, chars)
-					# 	print("line part is now '%s'" % line_part.c_escape())
-					# 	deleting = true
-					# 	continue
-
 					if from_rel + actl >= line_part.length():
 						print("Must delete in next parts, deleting = true")
-						var chars = line_part.length()-from_rel if length == -1 else length
+						var chars = max(0, line_part.length()-from_rel) if length == -1 else length
 						line_part = line_part.erase(from_rel, chars)
 						print("line part is now '%s'" % line_part.c_escape())
 						deleting = true
 						line_content[i] = line_part
 						continue
 					else:
-						var chars = line_part.length()-from_rel if length == -1 else length
+						var chars = max(0, line_part.length()-from_rel) if length == -1 else length
 						
 						line_part = line_part.erase(from_rel, chars)
 						print("line part is now '%s'" % line_part.c_escape())
@@ -784,15 +822,15 @@ class TextLayer extends Control:
 			var line_part = line_content[i]
 
 			if line_part is String:
-				print("Line part is '%s'" % line_part.c_escape())
+				pass# print("Line part is '%s'" % line_part.c_escape())
 				deleting = false
 				
 				var from_rel: = from - offset
 				var to_rel: int = line_part.length() if length == -1 else length - offset
 
-				print("from_rel: ", from_rel)
-				print("to_rel: ", to_rel)
-				print("line_part.length(): ", line_part.length())
+				pass# print("from_rel: ", from_rel)
+				pass# print("to_rel: ", to_rel)
+				pass# print("line_part.length(): ", line_part.length())
 
 				from_rel = max(from_rel, 0)
 
@@ -805,18 +843,18 @@ class TextLayer extends Control:
 					line_part = line_part.erase(from_rel, to_rel)
 					line_content_copy[i] = line_part
 
-					print("After erasing: '%s'" % line_content_copy[i].c_escape())
+					pass# print("After erasing: '%s'" % line_content_copy[i].c_escape())
 
 					if to_rel < line_part.length()-1:
 						deleting = false
 						break # end reached
 				else:
 					offset += line_part.length()
-				print("offset is now: ", offset)
+				pass# print("offset is now: ", offset)
 			
 			elif deleting and line_part is Modifier:
-				print("DELETING MODIFIER")
-				print(line_content_copy[i])
+				pass# print("DELETING MODIFIER")
+				pass# print(line_content_copy[i])
 				line_content_copy[i] = null
 
 		content[row-1] = line_content_copy.filter(func(element): return element != null)
@@ -824,7 +862,7 @@ class TextLayer extends Control:
 		queue_redraw()
 		
 
-		# print("Erasing (%s, %s) to %s on line %s..." % [row, from, to, content[row-1].c_escape()])
+		# pass# print("Erasing (%s, %s) to %s on line %s..." % [row, from, to, content[row-1].c_escape()])
 		
 		# if to == -1:
 		# 	to = content[row-1].length() - (from-1)
@@ -832,7 +870,7 @@ class TextLayer extends Control:
 
 		# content[row-1] = content[row-1].erase(from-1, to)
 		# content[row-1] = content[row-1].insert(from-1, " ".repeat(to-(from-1)))
-		# print("Result: ", content[row-1].c_escape())
+		# pass# print("Result: ", content[row-1].c_escape())
 		
 		# var to_delete: = content_modifiers.keys().filter(
 		# 	func(modifier_pos: Vector2i):
@@ -853,7 +891,7 @@ class TextLayer extends Control:
 
 
 		for line_parts in content:
-			print(line_parts)
+			# print(line_parts)
 			for part in line_parts:
 				if part is String:
 					var string_pos: = pos * Vector2(char_width, line_height)
@@ -871,13 +909,14 @@ class TextLayer extends Control:
 								draw_rect(background_rect, _background_color)
 							start = i+1
 
-
+					print(part)
 					draw_string(font, string_pos, part, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, _foreground_color)
 					
 					
 					pos.x += part.length()
 				
 				if part is Modifier:
+					print("Applying part: ", part)
 					part.apply()
 
 			pos.y += 1
@@ -887,7 +926,7 @@ class TextLayer extends Control:
 		return
 
 		# for i in range(content.size()):
-		# 	print(content[i])
+		# 	pass# print(content[i])
 
 		# for i in range(content.size()):
 		# 	var line: = content[i]
@@ -898,29 +937,29 @@ class TextLayer extends Control:
 		# 	)
 
 		# 	if line_modifier_keys.is_empty():
-		# 		# print("Drawing '%s' at %s" % [line.c_escape(), pos])
+		# 		# pass# print("Drawing '%s' at %s" % [line.c_escape(), pos])
 		# 		draw_string(font, pos * Vector2(char_width, line_height), line, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, _foreground_color)
 		# 		pos.y += 1
 		# 		pos.x = 0
 		# 		continue
 
-		# 	print("\n")
+		# 	pass# print("\n")
 
 		# 	var offset: = 0
 			
 		# 	for key in line_modifier_keys:
 		# 		var part: = line.substr(offset, key.x-offset)
 
-		# 		print("Drawing '%s' at %s" % [part.c_escape(), pos])
+		# 		pass# print("Drawing '%s' at %s" % [part.c_escape(), pos])
 		# 		draw_string(font, pos * Vector2(char_width, line_height), part, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, _foreground_color)
 
 
-		# 		print("Processing modifier at position %s" % key)
+		# 		pass# print("Processing modifier at position %s" % key)
 		# 		for modifier_callable in content_modifiers[key]:
 		# 			modifier_callable.call()
 				
-		# 		print("Line before the modifier is: '%s'" % part.c_escape())
-		# 		print("with color: ", _foreground_color)
+		# 		pass# print("Line before the modifier is: '%s'" % part.c_escape())
+		# 		pass# print("with color: ", _foreground_color)
 				
 		# 		pos.x += part.length()
 		# 		offset += part.length()
@@ -929,7 +968,7 @@ class TextLayer extends Control:
 		# 	if pos.x < line.length()-1:
 		# 		draw_string(font, pos * Vector2(char_width, line_height), line.substr(pos.x, -1), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, _foreground_color)
 			
-		# 	print("\n")
+		# 	pass# print("\n")
 		# 	pos.y += 1
 		# 	pos.x = 0
 		

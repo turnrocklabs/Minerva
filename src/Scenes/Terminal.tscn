@@ -22,11 +22,10 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="CheckButtonsContainer" type="VBoxContainer" parent="ScrollContainer/HBoxContainer"]
+[node name="CheckButtonsContainer" type="Control" parent="ScrollContainer/HBoxContainer"]
 unique_name_in_owner = true
-layout_mode = 2
-
-[node name="CheckButton" type="CheckButton" parent="ScrollContainer/HBoxContainer/CheckButtonsContainer"]
+visible = false
+custom_minimum_size = Vector2(32, 0)
 layout_mode = 2
 
 [node name="OutputContainer" type="ScrollContainer" parent="ScrollContainer/HBoxContainer"]
