@@ -11,12 +11,8 @@ using namespace godot;
 void WindowsTerminal::_bind_methods()
 {
 
-    BIND_ENUM_CONSTANT(TEXT)
-    BIND_ENUM_CONSTANT(CURSOR_MOVE)
-    BIND_ENUM_CONSTANT(CLEAR_LINE)
-    BIND_ENUM_CONSTANT(CURSOR_VISIBLE)
-    BIND_ENUM_CONSTANT(ERASE_CHARS)
-    BIND_ENUM_CONSTANT(CURSOR_RIGHT)
+    BIND_ENUM_CONSTANT(TEXT);
+    BIND_ENUM_CONSTANT(SEQUENCE);
 
     ClassDB::bind_method(D_METHOD("start", "width", "height"), &WindowsTerminal::start, DEFVAL(100), DEFVAL(100));
     ClassDB::bind_method(D_METHOD("resize", "width", "height"), &WindowsTerminal::resize);
@@ -83,7 +79,6 @@ bool WindowsTerminal::_process_sequence(const String &seq)
     // https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 
     UtilityFunctions::print("Processing sequence: ", seq.c_escape());
-    // call_deferred("emit_signal", "output_received", seq, (int)OutputType::TEXT);
 
     for (const auto &[key, value] : ANSI_SEQUENCES)
     {
@@ -509,8 +504,6 @@ bool WindowsTerminal::_handle_cursor_sequence(const String &seq)
 
 void WindowsTerminal::_process_input(const String &input)
 {
-    UtilityFunctions::print("Got: ", input.c_escape());
-
     String text_buffer;
 
     for (int i = 0; i < input.length(); i++)
@@ -519,8 +512,7 @@ void WindowsTerminal::_process_input(const String &input)
         if (c == '\x1B')
         {
             if (!text_buffer.is_empty())
-            {   
-                _strip_delimiter(text_buffer, true);
+            {
                 call_deferred("emit_signal", "output_received", text_buffer, (int)OutputType::TEXT);
                 text_buffer = String();
             }
@@ -531,7 +523,6 @@ void WindowsTerminal::_process_input(const String &input)
         if (_in_escape)
         {
             _escape_buffer += String::chr(c);
-            UtilityFunctions::print(_escape_buffer.c_escape());
             if ((_escape_buffer.begins_with("]") && c == 0x07) ||                         // Title sequence
                 (!_escape_buffer.begins_with("]") && c >= 0x40 && c <= 0x7E && c != '[')) // Normal sequences
             {
@@ -543,68 +534,12 @@ void WindowsTerminal::_process_input(const String &input)
         else
         {
             text_buffer += String::chr(c);
-            _strip_delimiter(text_buffer);
         }
     }
 
     if (!text_buffer.is_empty())
     {
         call_deferred("emit_signal", "output_received", text_buffer, (int)OutputType::TEXT);
-    }
-}
-
-void WindowsTerminal::_strip_delimiter(String &text, bool buffer_end)
-{
-    // UtilityFunctions::print("\nStripping: ", text.c_escape());
-    // UtilityFunctions::print("Command running: ", _command_running);
-    
-
-    Array arr;
-    arr.push_back(_last_command);
-    arr.push_back(_delimiter);
-
-
-    String delimiter_command = String(" & echo {1}").format(arr);
-
-    Ref<RegEx> delimiter_output_regex = RegEx::create_from_string(String("(\r\n)?([[:blank:]])*{1}([[:blank:]])*(\r\n)?").format(arr));
-
-
-    if (!_command_running) {
-        if (text.contains(delimiter_command))
-        {
-            text = text.replace(delimiter_command, String("").rpad(delimiter_command.length()));
-        }
-        if (buffer_end) {
-            if (text.contains(_delimiter))
-            {
-                text = text.replace(_delimiter, String("").rpad(_delimiter.length()));
-            }
-        }
-        return;
-    }
-
-    if (text.contains(delimiter_command))
-    {
-        text = text.replace(delimiter_command, String("").rpad(delimiter_command.length()));
-    }
-    else if (!delimiter_output_regex->search(text).is_null())
-    {
-        text = delimiter_output_regex->sub(text, "");
-        UtilityFunctions::print("Found command delimiter: ", text);
-        call_deferred("emit_signal", "command_output_end_reached");
-        _command_running = false;
-        _last_command.resize(0);
-    }
-
-    if (buffer_end) {
-        if (text.contains(delimiter_command))
-        {
-            text = text.replace(delimiter_command, String("").rpad(delimiter_command.length()));
-        }
-        if (text.contains(_delimiter))
-        {
-            text = text.replace(_delimiter, String("").rpad(_delimiter.length()));
-        }
     }
 }
 
@@ -665,8 +600,7 @@ bool WindowsTerminal::start(int width, int height)
     si.lpAttributeList = (PPROC_THREAD_ATTRIBUTE_LIST)HeapAlloc(GetProcessHeap(), 0, attrListSize);
 
     if (!InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &attrListSize) ||
-        !UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-                                   _console, sizeof(HPCON), NULL, NULL))
+        !UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, _console, sizeof(HPCON), NULL, NULL))
     {
         ClosePseudoConsole(_console);
         HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
@@ -679,8 +613,7 @@ bool WindowsTerminal::start(int width, int height)
 
     // Create cmd process
     WCHAR cmd[] = L"cmd.exe";
-    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, EXTENDED_STARTUPINFO_PRESENT,
-                        NULL, NULL, &si.StartupInfo, &_process_info))
+    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, &si.StartupInfo, &_process_info))
     {
         ClosePseudoConsole(_console);
         HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
@@ -799,107 +732,8 @@ bool WindowsTerminal::write_input(const String &input)
     if (!_running || !_input_write || input.is_empty())
         return false;
 
-
-    String command;
-
-    UtilityFunctions::print("Input is: ", input.c_escape());
-
-    if (input == String::chr(8))
-    {
-        UtilityFunctions::print("BACKSPACE");
-        _last_command = _last_command.erase(_last_command.length()-1);
-    }
-
-    // if (input == "\x1B[A") {
-        
-    //     command = "";
-
-    //     // if there's another history element older than the current one
-    //     if (_command_history_idx+1 < _command_history.size()-1) {
-
-    //         // to delete the current present command
-    //         String backspaces;
-    //         if (_command_history_idx < 0) {
-    //             backspaces = String::chr(8).repeat(_last_command.length());
-    //         } else {
-    //             backspaces = String::chr(8).repeat(_command_history.at(_command_history_idx).length());
-    //         }
-            
-    //         _command_history_idx += 1;
-            
-    //         command = backspaces + _command_history.at(_command_history_idx);
-    //     }
-        
-    // }
-    if (!_command_running) {
-        
-        if (false && input == "\r\n" && !_last_command.strip_edges().is_empty()) {
-            Array arr;
-            arr.push_back(_delimiter);
-
-            command = String(" & echo {0}\r\n").format(arr);
-            UtilityFunctions::print("Last history command: ", _last_command);
-
-            _command_history.push_back(_last_command);
-            _command_running = true;
-            _command_history_idx = -1;
-        }
-        else {
-            _last_command += input;
-            command = input;
-        }
-
-    
-    } else {
-        command = input;
-        // _last_command += input;
-    }
-
-    // command = input;
-
-    UtilityFunctions::print("Command is: ", command);
-    UtilityFunctions::print("Last command: ", _last_command);
-
-    CharString data = command.utf8();
+    CharString data = input.utf8();
     DWORD written;
     
     return WriteFile(_input_write, data.ptr(), data.length(), &written, NULL);
-
-    //
-
-    // if (input == "\r\n") {
-    //     Array arr;
-    //     arr.push_back(_delimiter);
-    //     arr.push_back(input);
-
-    //     command = String("{0} & echo {1} ").format(arr);
-
-    //     _last_command = input; // last user command without the delimiter echo
-    //     _command_running = true;
-    // }
-
-    // if (!_command_running) {
-
-    //     Array arr;
-    //     arr.push_back(input);
-    //     arr.push_back(_delimiter);
-
-    //     command = String("{0} & echo {1} ").format(arr);
-
-    //     _last_command = input; // last user command without the delimiter echo
-    //     _command_running = true;
-    // } else {
-    //     command = input;
-    // }
-
-    // if (send) {
-    //     command = command + String("\r\n");
-
-    //     if (!_command_running) _command_running = true;
-    // }
-
-    // CharString data = command.utf8();
-    // DWORD written;
-
-    // return WriteFile(_input_write, data.ptr(), data.length(), &written, NULL);
 }
