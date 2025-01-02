@@ -26,11 +26,7 @@ namespace godot
             enum Type
             {
                 TEXT = 0,
-                CURSOR_MOVE = 1,
-                CLEAR_LINE = 2,
-                CURSOR_VISIBLE = 3,
-                ERASE_CHARS = 4,
-                CURSOR_RIGHT = 5,
+                SEQUENCE = 1,
             };
             Type type;
             int param1 = 0;
@@ -41,12 +37,6 @@ namespace godot
 
         int _width;
         int _height;
-
-        // for determinig the command output end
-        String _delimiter = "##__COMMAND_END__##";
-        String _last_command = "";
-        std::vector<String> _command_history;
-        std::atomic<int> _command_history_idx = -1;
 
         HANDLE _input_write;
         HANDLE _output_read;
@@ -92,11 +82,7 @@ namespace godot
         enum Type
         {
             TEXT = TerminalCommand::TEXT,
-            CURSOR_MOVE = TerminalCommand::CURSOR_MOVE,
-            CLEAR_LINE = TerminalCommand::CLEAR_LINE,
-            CURSOR_VISIBLE = TerminalCommand::CURSOR_VISIBLE,
-            ERASE_CHARS = TerminalCommand::ERASE_CHARS,
-            CURSOR_RIGHT = TerminalCommand::CURSOR_RIGHT
+            SEQUENCE = TerminalCommand::SEQUENCE
         };
 
         bool start(int width = 100, int height = 100);
