@@ -40,7 +40,7 @@ jobs:
         scons platform=windows target=template_debug
         
     - name: Upload Extension Artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: terminal-windows
         path: src/bin/libterminal*
@@ -73,7 +73,7 @@ jobs:
         scons platform=linux target=template_debug
         
     - name: Upload Extension Artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: terminal-linux
         path: src/bin/libterminal*
@@ -117,7 +117,7 @@ jobs:
           debugMode: "true"
           
       - name: Upload Builds
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: Minerva-builds
           path: ${{ github.workspace }}/*.zip
