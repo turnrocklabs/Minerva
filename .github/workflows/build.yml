@@ -1,5 +1,4 @@
 name: Build Project
-
 on:
   workflow_dispatch:
     inputs:
@@ -12,9 +11,9 @@ on:
         - all
         - windows
         - linux
-  push:  # Add this temporarily
+  push:
     branches:
-      - user/milos/feature/terminal  # Your branch name
+      - user/milos/feature/terminal
 
 jobs:
   build-windows:
@@ -30,6 +29,27 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: '3.x'
+
+    - name: Cache SCons build
+      uses: actions/cache@v2
+      with:
+        path: |
+          src/.sconsign.dblite
+          src/**/*.os
+          src/**/*.obj
+        key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-scons-
+
+    - name: Cache godot-cpp
+      uses: actions/cache@v2
+      with:
+        path: |
+          src/godot-cpp/bin/**
+          src/godot-cpp/gen/**
+        key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-godot-cpp-
         
     - name: Install SCons
       run: pip install scons
@@ -58,6 +78,27 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: '3.x'
+
+    - name: Cache SCons build
+      uses: actions/cache@v2
+      with:
+        path: |
+          src/.sconsign.dblite
+          src/**/*.os
+          src/**/*.obj
+        key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-scons-
+
+    - name: Cache godot-cpp
+      uses: actions/cache@v2
+      with:
+        path: |
+          src/godot-cpp/bin/**
+          src/godot-cpp/gen/**
+        key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-godot-cpp-
         
     - name: Install SCons
       run: pip install scons
@@ -79,6 +120,7 @@ jobs:
         path: src/bin/libterminal*
 
   build-godot:
+    if: always() && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all')
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
