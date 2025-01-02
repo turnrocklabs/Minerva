@@ -18,7 +18,7 @@ enum class OutputType {
     SEQUENCE = 1
 };
 
-class WindowsTerminal : public TerminalInterface {
+class LinuxTerminal : public TerminalInterface {
     GDCLASS(LinuxTerminal, Node)
 
 private:
