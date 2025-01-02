@@ -4,21 +4,23 @@ import sys
 
 env = SConscript("godot-cpp/SConstruct")
 
-# For reference:
-# - CCFLAGS are compilation flags shared between C and C++
-# - CFLAGS are for C-specific compilation flags
-# - CXXFLAGS are for C++-specific compilation flags
-# - CPPFLAGS are for pre-processor flags
-# - CPPDEFINES are for pre-processor defines
-# - LINKFLAGS are for linking flags
+# Add include paths for both common and terminal root
+env.Append(CPPPATH=[
+    "gdextension/terminal/",       # For terminal root
+    "gdextension/terminal/common"  # For common interface
+])
 
-# tweak this if you want to use different folders, or more folders, to store your source code in.
-env.Append(CPPPATH=["src/gdextension/windows/"])
-sources = [
-    "gdextension/terminal/register_types.cpp",
-    "gdextension/terminal/windows/terminal.cpp"
-]
+# Platform specific sources
+sources = ["gdextension/terminal/register_types.cpp"]
 
+if env["platform"] == "windows":
+    sources.append("gdextension/terminal/windows/terminal.cpp")
+elif env["platform"] == "linux":
+    sources.append("gdextension/terminal/unix/terminal.cpp")
+    # Add Linux-specific libraries
+    env.Append(LIBS=["util"])
+
+# Build the library
 if env["platform"] == "macos":
     library = env.SharedLibrary(
         "bin/libterminal.{}.{}.framework/libterminal.{}.{}".format(

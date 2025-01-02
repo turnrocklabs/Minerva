@@ -1,6 +1,10 @@
-// register_types.cpp
 #include "register_types.h"
-#include "windows/terminal.h"
+#ifdef _WIN32
+    #include "windows/terminal.h"
+#else
+    #include "unix/terminal.h"
+#endif
+
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -12,7 +16,12 @@ void initialize_terminal_module(ModuleInitializationLevel p_level) {
     if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
         return;
     }
-    ClassDB::register_class<WindowsTerminal>();
+
+    #ifdef _WIN32
+        ClassDB::register_class<WindowsTerminal>();
+    #else
+        ClassDB::register_class<LinuxTerminal>();
+    #endif
 }
 
 void uninitialize_terminal_module(ModuleInitializationLevel p_level) {
@@ -23,7 +32,9 @@ void uninitialize_terminal_module(ModuleInitializationLevel p_level) {
 
 extern "C" {
     // Initialization.
-    GDExtensionBool GDE_EXPORT terminal_library_init(GDExtensionInterfaceGetProcAddress p_get_proc_address, const GDExtensionClassLibraryPtr p_library, GDExtensionInitialization *r_initialization) {
+    GDExtensionBool GDE_EXPORT terminal_library_init(GDExtensionInterfaceGetProcAddress p_get_proc_address, 
+                                                    const GDExtensionClassLibraryPtr p_library, 
+                                                    GDExtensionInitialization *r_initialization) {
         godot::GDExtensionBinding::InitObject init_obj(p_get_proc_address, p_library, r_initialization);
 
         init_obj.register_initializer(initialize_terminal_module);

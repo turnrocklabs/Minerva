@@ -1,6 +1,7 @@
 #ifndef WINDOWS_TERMINAL_H
 #define WINDOWS_TERMINAL_H
 
+#include <common/terminal_interface.h>
 #include <godot_cpp/classes/node.hpp>
 #include <thread>
 #include <atomic>
@@ -16,7 +17,7 @@ namespace godot
         SEQUENCE = 1
     };
 
-    class WindowsTerminal : public Node
+    class WindowsTerminal : public TerminalInterface
     {
         GDCLASS(WindowsTerminal, Node)
 
