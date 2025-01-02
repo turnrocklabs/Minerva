@@ -1,0 +1,120 @@
+name: Build Project
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build for'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - windows
+        - linux
+
+jobs:
+  build-windows:
+    if: github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all'
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+        lfs: true
+        
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+        
+    - name: Install SCons
+      run: pip install scons
+        
+    - name: Build Extension
+      run: |
+        cd src
+        scons platform=windows target=template_debug
+        
+    - name: Upload Extension Artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: terminal-windows
+        path: src/bin/libterminal*
+
+  build-linux:
+    if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+        lfs: true
+        
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+        
+    - name: Install SCons
+      run: pip install scons
+
+    - name: Install Linux Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libutf8proc-dev libutil-linux-dev
+        
+    - name: Build Extension
+      run: |
+        cd src
+        scons platform=linux target=template_debug
+        
+    - name: Upload Extension Artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: terminal-linux
+        path: src/bin/libterminal*
+
+  build-godot:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          lfs: true
+          
+      - name: Download Windows Extension
+        if: github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all'
+        uses: actions/download-artifact@v2
+        with:
+          name: terminal-windows
+          path: src/bin/
+          
+      - name: Download Linux Extension
+        if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all'
+        uses: actions/download-artifact@v2
+        with:
+          name: terminal-linux
+          path: src/bin/
+          
+      - name: Build Windows
+        if: github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all'
+        uses: manleydev/build-godot-action@v1.4.1
+        with:
+          name: minerva
+          preset: windows
+          debugMode: "true"
+          
+      - name: Build Linux
+        if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all'
+        uses: manleydev/build-godot-action@v1.4.1
+        with:
+          name: minerva
+          preset: linux
+          debugMode: "true"
+          
+      - name: Upload Builds
+        uses: actions/upload-artifact@v2
+        with:
+          name: Minerva-builds
+          path: ${{ github.workspace }}/*.zip
