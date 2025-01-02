@@ -12,6 +12,9 @@ on:
         - all
         - windows
         - linux
+  push:  # Add this temporarily
+    branches:
+      - user/milos/feature/terminal  # Your branch name
 
 jobs:
   build-windows:
