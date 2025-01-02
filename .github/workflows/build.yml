@@ -130,14 +130,14 @@ jobs:
           
       - name: Download Windows Extension
         if: github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all'
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: terminal-windows
           path: src/bin/
           
       - name: Download Linux Extension
         if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all'
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: terminal-linux
           path: src/bin/
@@ -149,6 +149,7 @@ jobs:
           name: minerva
           preset: windows
           debugMode: "true"
+          arguments: "--headless"
           
       - name: Build Linux
         if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all'
@@ -157,6 +158,7 @@ jobs:
           name: minerva
           preset: linux
           debugMode: "true"
+          arguments: "--headless"
           
       - name: Upload Builds
         uses: actions/upload-artifact@v4
