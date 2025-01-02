@@ -12,3 +12,5 @@
 *.wav
 *.wav.import
 *.tmp
+
+bin/
