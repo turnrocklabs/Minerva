@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=29 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
@@ -7,11 +7,23 @@
 [ext_resource type="Texture2D" uid="uid://jdgspalgxo3u" path="res://assets/icons/gear_icons/gears_icon_24_no_bg.png" id="6_u4707"]
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="7_pery3"]
-[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/mic_icons/icons8-microphone-24.png" id="8_tl5be"]
+[ext_resource type="Texture2D" uid="uid://lmmhfyqj83jd" path="res://assets/icons/gear_icons/gears_icon_48_no_bg.png" id="8_0o5iw"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/icons_button.gd" id="8_rhvdc"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="9_4ngla"]
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
+[ext_resource type="Texture2D" uid="uid://dskn0gjd7h730" path="res://assets/icons/m_glass_icons/search_icon_48_no_bg.png" id="9_wd4ss"]
+[ext_resource type="Texture2D" uid="uid://cvwwmnuuovww5" path="res://assets/icons/gear_icons/gears_icon_64_no_bg.png" id="9_wu8ul"]
 [ext_resource type="PackedScene" uid="uid://celpfkr7c745u" path="res://Scenes/ProviderOptionButton.tscn" id="9_xd60x"]
+[ext_resource type="Texture2D" uid="uid://1qpbadp6okdw" path="res://assets/icons/m_glass_icons/search_icon_64_no_bg.png" id="10_gb1vp"]
 [ext_resource type="Texture2D" uid="uid://nnp6ljh5gjl0" path="res://assets/icons/stop_icons/stop-sign-24.png" id="11_ekb48"]
+[ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="13_8d2fd"]
+[ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="14_r7m7p"]
+[ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="15_t0aqa"]
+[ext_resource type="Texture2D" uid="uid://dflw78ayjikvx" path="res://assets/icons/stop_icons/stop-sign-48.png" id="17_0g7mq"]
+[ext_resource type="Texture2D" uid="uid://bvxolgw4msf57" path="res://assets/icons/stop_icons/stop-sign-68.png" id="18_libyp"]
+[ext_resource type="Texture2D" uid="uid://dd64jugx3u72c" path="res://assets/icons/send_icons/send_icon_24_no_bg.png" id="20_0uhqe"]
+[ext_resource type="Texture2D" uid="uid://datcnfkvibyog" path="res://assets/icons/send_icons/send_icon_48_no_bg.png" id="21_ut25t"]
+[ext_resource type="Texture2D" uid="uid://vmgpf2cn6t4n" path="res://assets/icons/send_icons/send_icon_64_no_bg.png" id="22_my2cu"]
 
 [sub_resource type="InputEventAction" id="InputEventAction_f28tr"]
 action = &"record_audio"
@@ -181,16 +193,26 @@ theme_override_constants/separation = 18
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
+icon_alignment = 1
+expand_icon = true
 
 [node name="btnChatSettings" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "AI Settings"
 icon = ExtResource("6_u4707")
+script = ExtResource("8_rhvdc")
+icon_24 = ExtResource("6_u4707")
+icon_48 = ExtResource("8_0o5iw")
+icon_68 = ExtResource("9_wu8ul")
 
 [node name="btnInspect" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Inspect Turn"
 icon = ExtResource("7_pery3")
+script = ExtResource("8_rhvdc")
+icon_24 = ExtResource("7_pery3")
+icon_48 = ExtResource("9_wd4ss")
+icon_68 = ExtResource("10_gb1vp")
 
 [node name="btnTest" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 visible = false
@@ -214,13 +236,21 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "record message"
 shortcut = SubResource("Shortcut_hix46")
-icon = ExtResource("8_tl5be")
+icon = ExtResource("13_8d2fd")
+script = ExtResource("8_rhvdc")
+icon_24 = ExtResource("13_8d2fd")
+icon_48 = ExtResource("14_r7m7p")
+icon_68 = ExtResource("15_t0aqa")
 
 [node name="AudioStop1" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 icon = ExtResource("11_ekb48")
+script = ExtResource("8_rhvdc")
+icon_24 = ExtResource("11_ekb48")
+icon_48 = ExtResource("17_0g7mq")
+icon_68 = ExtResource("18_libyp")
 
 [node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" node_paths=PackedStringArray("shortcut_context")]
 layout_mode = 2
@@ -228,6 +258,10 @@ tooltip_text = "Send Message"
 shortcut_context = NodePath("../../txtMainUserInput")
 shortcut = SubResource("Shortcut_4b3s7")
 icon = ExtResource("7_51nod")
+script = ExtResource("8_rhvdc")
+icon_24 = ExtResource("20_0uhqe")
+icon_48 = ExtResource("21_ut25t")
+icon_68 = ExtResource("22_my2cu")
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 clip_contents = true
