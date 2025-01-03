@@ -70,28 +70,40 @@ func _notification(notification_type):
 			_update_memory_item_order()
 			render_items()
 
+
+func render_note():
+	pass
+
+
 func render_items():
 	# Clear existing children
 	for child in get_children():
 		if child is Note:
 			child.queue_free()
-			
+
 	# Re-add memory items
 	for item in Memories:
-		var note_control: Note = load("res://Scenes/Note.tscn").instantiate()
+		var note_control: Note = SingletonObject.notes_scene.instantiate()
 		#checks how the note is going to be rendered
+		
 		if item.Type == SingletonObject.note_type.TEXT:
 			note_control.new_text_note()
-		if item.Type == SingletonObject.note_type.IMAGE:
+		elif item.Type == SingletonObject.note_type.IMAGE:
 			note_control.new_image_note()
-		if item.Type == SingletonObject.note_type.AUDIO:
+		elif item.Type == SingletonObject.note_type.AUDIO:
 			note_control.new_audio_note()
-		
+		elif item.Type == SingletonObject.note_type.VIDEO:
+			note_control.new_video_note()
+			
 		note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
 		self.add_child.call_deferred(note_control)
 		await note_control.ready
 
 		note_control.memory_item = item
+		
+		#note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
+#
+		#self.add_child(note_control)
 
 		# When the note control is deleted, delete the memory item, so it doesn't get re-rendered next time
 		note_control.deleted.connect(self.MainTabContainer.delete_note.bind(item))

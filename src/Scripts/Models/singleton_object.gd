@@ -3,7 +3,7 @@ extends Node
 #region global variables
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
 var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
-var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
+var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm", "ogv"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var is_graph:bool = false
 var is_masking:bool
@@ -309,6 +309,7 @@ enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC }
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
+	HUMAN,
 	CHAT_GPT_4O,
 	CHAT_GPT_O1,
 	CHAT_GPT_35_TURBO,
@@ -320,6 +321,7 @@ enum API_MODEL_PROVIDERS {
 
 ## Dictionary of all model providers and scripts that implement their functionality
 var API_MODEL_PROVIDER_SCRIPTS = {
+	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
 	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	API_MODEL_PROVIDERS.CHAT_GPT_O1: ChatGPTo1,
 	API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
@@ -416,7 +418,7 @@ func all_project_features_open() -> bool:
 #region Theme change
 
 # get the root control node and apply the theme to it, all its children inherit the theme
-@onready var root_control: Control = $"/root/RootControl"
+#@onready var root_control: Control = $"/root/RootControl"
 
 #more themes can be added in the future with ease using the enums
 enum theme {LIGHT_MODE, DARK_MODE}
@@ -429,6 +431,7 @@ func get_theme_enum() -> int:
 
 
 func set_theme(themeID: int) -> void:
+	var root_control: Control = get_tree().current_scene
 	if get_theme_enum() != themeID:
 		print("theme enum:" + str(themeID))
 		match themeID:
@@ -474,3 +477,12 @@ func hide_loading_screen():
 	Loading.emit(false, "")
 
 #endregion Loading screen stuff
+
+#region Prealoaded static scenes
+static var video_player_scene: = preload("res://Scenes/video_player.tscn")
+static var audio_contols_scene: = preload("res://Scenes/audio_note_controls.tscn")
+static var image_controls_scenne: = preload("res://Scenes/image_note_controls.tscn")
+static var notes_scene: = preload("res://Scenes/Note.tscn")
+
+
+#endregion Prealoaded static scenes

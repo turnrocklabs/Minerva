@@ -201,8 +201,36 @@ func execute_chat():
 	ensure_chat_open()
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
+
+	# if we're using the human provider, handle it here
+	if history.provider is HumanProvider:
+		var usr_history_item: = ChatHistoryItem.new()
+		usr_history_item.Message = %txtMainUserInput.text
+		usr_history_item.Role = ChatHistoryItem.ChatRole.USER
+		usr_history_item.provider = history.provider
+		%txtMainUserInput.text = ""
+
+		history.HistoryItemList.append(usr_history_item)
+
+		var usr_msg_node: = history.VBox.add_history_item(usr_history_item)
+		usr_msg_node.regeneratable = false
+		usr_msg_node.render()
+		
+		var mdl_history_item: = ChatHistoryItem.new()
+		mdl_history_item.Role = ChatHistoryItem.ChatRole.MODEL
+		mdl_history_item.provider = history.provider
+
+		history.HistoryItemList.append(mdl_history_item)
+
+		var mdl_msg_node: = history.VBox.add_history_item(mdl_history_item)
+		mdl_msg_node.regeneratable = false
+		mdl_msg_node.render()
+
+		mdl_msg_node.set_edit()
+
+		return
+	
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
 
 	## prepare an append item for the history
@@ -220,7 +248,7 @@ func execute_chat():
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
 
-	user_history_item.EstimatedTokenCost = history.provider.estimate_tokens_from_prompt(history_list)
+	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	# rerender the message wince we changed the history item
 	user_msg_node.render()
 
@@ -277,6 +305,8 @@ func execute_chat():
 		history.VBox.scroll_to_bottom()
 
 		model_msg_node.loading = false
+	else:
+		model_msg_node.queue_free()
 
 # TODO: check if changing the active tab during the request causes any trouble
 
@@ -523,22 +553,17 @@ func update_token_estimation():
 	chi.Message = %txtMainUserInput.text
 
 	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi, provider))
-	
+
 	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) * 100, 0.01)]
 	if (provider.token_cost * token_count) * 100 < 0.01:
 		%EstimatedTokensLabel.text = "%s¢" % 0.01
-		
-	
-	print("token cound",token_count)
-	print((provider.token_cost * token_count) * 100)
-	
-
 
 # region Edit provider Title
 
 func show_title_edit_dialog(tab: int):
 	%EditTitleDialog.set_meta("tab", tab)
 	%LineEdit.text = get_tab_title(tab)
+	%LineEdit.select_all()
 	%LineEdit.call_deferred("grab_focus")
 	%EditTitleDialog.popup_centered()
 
@@ -546,6 +571,7 @@ func show_title_edit_dialog(tab: int):
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
 	set_tab_title(tab, %LineEdit.text)
+	SingletonObject.ChatList[tab].HistoryName = %LineEdit.text
 
 
 func _on_line_edit_text_submitted(_new_text: String) -> void:

@@ -36,6 +36,10 @@ func create_point(pos: Vector2) -> Point:
 	queue_redraw()
 	return new_point
 
+func destroy_point(pos: Vector2) -> void:
+	points = points.filter(func(point): return point.position!=pos)
+	queue_redraw()
+
 func calculate_polygons() -> Array[PackedVector2Array]:
 	var curves: Array[PackedVector2Array] = []
 	if points.size() > 1:
