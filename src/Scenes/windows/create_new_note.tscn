@@ -1,10 +1,17 @@
-[gd_scene load_steps=6 format=3 uid="uid://cqgltib53weii"]
+[gd_scene load_steps=13 format=3 uid="uid://cqgltib53weii"]
 
 [ext_resource type="Script" path="res://Scripts/create_new_note.gd" id="1_jtoh0"]
 [ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/mic_icons/icons8-microphone-24.png" id="2_y0meg"]
 [ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="3_0e5iv"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/icons_button.gd" id="3_1xf7d"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file/file.svg" id="4_46txl"]
+[ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="4_tenly"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="5_nij35"]
+[ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="5_tuaww"]
+[ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="6_6vlg8"]
+[ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="10_wn3ce"]
+[ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="11_pwa0c"]
+[ext_resource type="Texture2D" uid="uid://dpphnihk74dd0" path="res://assets/icons/create_pencil_icons/pencil_icon_64_no_bg.png" id="12_c1ai6"]
 
 [node name="CreateNewNote" type="Window"]
 auto_translate_mode = 1
@@ -83,6 +90,10 @@ layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "record note title"
 icon = ExtResource("2_y0meg")
+script = ExtResource("3_1xf7d")
+icon_24 = ExtResource("4_tenly")
+icon_48 = ExtResource("5_tuaww")
+icon_68 = ExtResource("6_6vlg8")
 
 [node name="NoteTypeButtonGroupVBox" type="VBoxContainer" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 layout_mode = 2
@@ -251,7 +262,11 @@ theme_override_constants/separation = 16
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "record audio to text for note description"
-icon = ExtResource("2_y0meg")
+icon = ExtResource("4_tenly")
+script = ExtResource("3_1xf7d")
+icon_24 = ExtResource("4_tenly")
+icon_48 = ExtResource("5_tuaww")
+icon_68 = ExtResource("6_6vlg8")
 
 [node name="AddNotePopUp" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
@@ -261,6 +276,10 @@ size_flags_vertical = 8
 tooltip_text = "Add note"
 disabled = true
 icon = ExtResource("5_nij35")
+script = ExtResource("3_1xf7d")
+icon_24 = ExtResource("10_wn3ce")
+icon_48 = ExtResource("11_pwa0c")
+icon_68 = ExtResource("12_c1ai6")
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
