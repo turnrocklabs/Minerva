@@ -18,7 +18,7 @@ on:
 
 jobs:
   build-windows:
-    if: github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all'
+    if: github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push'
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
@@ -65,7 +65,7 @@ jobs:
         path: src/bin/libterminal*
 
   build-linux:
-    if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all'
+    if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -164,10 +164,10 @@ jobs:
         working-directory: src
         run: |
           mkdir -p build
-          if [ "${{ github.event.inputs.platform }}" = "windows" ] || [ "${{ github.event.inputs.platform }}" = "all" ]; then
+          if [ "${{ github.event.inputs.platform }}" = "windows" ] || [ "${{ github.event.inputs.platform }}" = "all" || [ "${{ github.event_name }}" = "push" ]; then
             godot --headless --export-debug "Windows Desktop" build/Minerva.exe
           fi
-          if [ "${{ github.event.inputs.platform }}" = "linux" ] || [ "${{ github.event.inputs.platform }}" = "all" ]; then
+          if [ "${{ github.event.inputs.platform }}" = "linux" ] || [ "${{ github.event.inputs.platform }}" = "all" || [ "${{ github.event_name }}" = "push" ]; then
             godot --headless --export-debug "Linux/X11" build/Minerva.x86_64
           fi
           

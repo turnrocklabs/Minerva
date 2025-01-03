@@ -1,7 +1,10 @@
 #include "register_types.h"
-#ifdef _WIN32
+
+#ifdef PLATFORM_WINDOWS
     #include "windows/terminal.h"
-#else
+#endif
+
+#ifdef PLATFORM_LINUX
     #include "unix/terminal.h"
 #endif
 
@@ -17,9 +20,11 @@ void initialize_terminal_module(ModuleInitializationLevel p_level) {
         return;
     }
 
-    #ifdef _WIN32
+    #ifdef PLATFORM_WINDOWS
         ClassDB::register_class<WindowsTerminal>();
-    #else
+    #endif
+
+    #ifdef PLATFORM_LINUX
         ClassDB::register_class<LinuxTerminal>();
     #endif
 }
