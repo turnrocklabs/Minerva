@@ -177,4 +177,3 @@ jobs:
           name: Minerva-builds
           path: |
             src/build/*
-            src/bin/libterminal*
