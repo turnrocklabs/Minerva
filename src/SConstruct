@@ -15,10 +15,12 @@ sources = ["gdextension/terminal/register_types.cpp"]
 
 if env["platform"] == "windows":
     sources.append("gdextension/terminal/windows/terminal.cpp")
+    env.Append(CPPDEFINES=["PLATFORM_WINDOWS"])
 elif env["platform"] == "linux":
     sources.append("gdextension/terminal/unix/terminal.cpp")
     # Add Linux-specific libraries
     env.Append(LIBS=["util"])
+    env.Append(CPPDEFINES=["PLATFORM_LINUX"])
 
 # Build the library
 if env["platform"] == "macos":
