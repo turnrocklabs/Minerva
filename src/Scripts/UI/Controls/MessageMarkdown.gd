@@ -43,6 +43,15 @@ var editable:= false:
 		editable = value
 		%EditButton.visible = editable
 
+## Whether the messages can be regenerated.[br]
+## Controls the visibility of the regenerate button.
+var regeneratable: = true:
+	set(value):
+		regeneratable = value
+
+		if not regeneratable and %RegenerateButton.visible:
+			%RegenerateButton.visible = false
+
 ## Returns all rendered chat images in this message
 var images: Array[ChatImage]:
 	get:
@@ -80,6 +89,14 @@ func render():
 
 	_create_code_labels()
 
+func set_edit(on: = true):
+	%MessageLabelsContainer.visible = not on
+	
+	if on:
+		text_edit.text = content
+		text_edit.grab_focus()
+	
+	text_edit.visible = on
 
 func _update_tokens_cost() -> void:
 	var price = history_item.provider.token_cost * history_item.TokenCost
@@ -106,14 +123,15 @@ func _setup_user_message():
 	label.markdown_text = history_item.Message
 	label.set("theme_override_colors/default_color", Color.WHITE)
 
-	%RegenerateButton.visible = true
+	if regeneratable:
+		%RegenerateButton.visible = true
 
 	var style: StyleBoxFlat = get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = user_message_color
 
 
 func _setup_model_message():
-	%RightMarginControl.visible = true
+	#%RightMarginControl.visible = true
 	left_control.visible = true
 	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
 	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
@@ -144,7 +162,7 @@ func _setup_model_message():
 	continue_btn.visible = not history_item.Complete
 
 	# we can't edit model messages
-	%EditButton.visible = false
+	# %EditButton.visible = false
 
 	if history_item.Error:
 		label.text = "An error occurred:\n%s" % history_item.Error
@@ -194,12 +212,7 @@ func _on_regenerate_button_pressed():
 
 
 func _on_edit_button_pressed():
-	# edit_popup.popup_centered()
-	%MessageLabelsContainer.visible = false
-
-	text_edit.visible = true
-	text_edit.text = content
-	text_edit.grab_focus()
+	set_edit()
 
 # when we click outside the text edit, hide it and save changes
 func _input(event: InputEvent):

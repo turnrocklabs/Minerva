@@ -9,11 +9,17 @@ func _ready():
 	# duplicate the array of provider keys
 	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
 
+	# we'll add the human provider at the bottom
+	var human: = SingletonObject.API_MODEL_PROVIDERS.HUMAN
+	sorted_keys.erase(human)
+
 	# sort the provider keys by initializing the provider class and comparing the token_cost for each one of them
 	sorted_keys.sort_custom(
 		func(a: SingletonObject.API_MODEL_PROVIDERS, b: SingletonObject.API_MODEL_PROVIDERS):
 			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
 	)
+
+	sorted_keys.append(human)
 
 	# display the sorted providers
 	for key in sorted_keys:
