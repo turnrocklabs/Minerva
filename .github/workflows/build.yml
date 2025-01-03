@@ -128,6 +128,10 @@ jobs:
         with:
           pattern: terminal-*
           path: src/bin/
+          merge-multiple: true
+      
+      - name: Verify Files
+        run: ls -la src/bin/
           
       - name: Install Linux Build Dependencies
         run: |
