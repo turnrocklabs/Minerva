@@ -374,6 +374,13 @@ signal SaveOpenEditorTabs
 signal UpdateLastSavePath(new_path: String)
 @warning_ignore("unused_signal")
 signal UpdateUnsavedTabIcon
+##
+@warning_ignore("unused_signal")
+signal set_icon_size_24
+@warning_ignore("unused_signal")
+signal set_icon_size_48
+@warning_ignore("unused_signal")
+signal set_icon_size_68
 
 var saved_state = true
 
