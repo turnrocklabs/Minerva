@@ -175,4 +175,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-builds
-          path: src/build/*
+          path: |
+            src/build/*
+            src/bin/libterminal*
