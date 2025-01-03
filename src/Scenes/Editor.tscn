@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=22 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
@@ -7,9 +7,18 @@
 [ext_resource type="Texture2D" uid="uid://dlwhgven8t3hj" path="res://assets/icons/folder_down.png" id="5_2k2ha"]
 [ext_resource type="Texture2D" uid="uid://c5gxq5cm5tpnk" path="res://assets/icons/autowrap_icon.png" id="5_7o203"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
-[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="5_ru7ju"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/icons_button.gd" id="6_jf4nm"]
+[ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="7_clgig"]
+[ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="8_r334w"]
+[ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="9_65m80"]
+[ext_resource type="Texture2D" uid="uid://dq5axtf0gpsp7" path="res://assets/icons/save_icons/save-all-48-white.png" id="12_jegqv"]
+[ext_resource type="Texture2D" uid="uid://bnsrtyilgj4d6" path="res://assets/icons/save_icons/save-all-64-white.png" id="13_sk5he"]
+[ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="15_rdxx4"]
+[ext_resource type="Texture2D" uid="uid://dmhyo26833yx8" path="res://assets/icons/save_icons/save-64-white.png" id="16_wgr4y"]
+[ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="18_nil3p"]
+[ext_resource type="Texture2D" uid="uid://dpphnihk74dd0" path="res://assets/icons/create_pencil_icons/pencil_icon_64_no_bg.png" id="19_tg3kk"]
 
 [sub_resource type="InputEventAction" id="InputEventAction_1e7nj"]
 action = &"toggle_autowrap"
@@ -115,12 +124,17 @@ tooltip_text = "warps text that goes over the width of the editor"
 shortcut = SubResource("Shortcut_rmr81")
 shortcut_feedback = false
 icon = ExtResource("5_7o203")
+script = ExtResource("6_jf4nm")
 
 [node name="MicButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "press to record audio and press again to stop recording"
-icon = ExtResource("5_ru7ju")
+icon = ExtResource("7_clgig")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("7_clgig")
+icon_48 = ExtResource("8_r334w")
+icon_68 = ExtResource("9_65m80")
 
 [node name="reloadButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
@@ -128,11 +142,16 @@ layout_mode = 2
 tooltip_text = "reload file from disc"
 disabled = true
 icon = ExtResource("4_0is2e")
+script = ExtResource("6_jf4nm")
 
 [node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 tooltip_text = "save all unsaved and open editor tabs"
 icon = ExtResource("5_oex5t")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("5_oex5t")
+icon_48 = ExtResource("12_jegqv")
+icon_68 = ExtResource("13_sk5he")
 
 [node name="SaveButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
@@ -141,11 +160,19 @@ size_flags_horizontal = 8
 tooltip_text = "save current tab into a file
 "
 icon = ExtResource("4_1qp3n")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("4_1qp3n")
+icon_48 = ExtResource("15_rdxx4")
+icon_68 = ExtResource("16_wgr4y")
 
 [node name="CreateNoteButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 tooltip_text = "Creates note from editor tab content"
 icon = ExtResource("6_15oj3")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("6_15oj3")
+icon_48 = ExtResource("18_nil3p")
+icon_68 = ExtResource("19_tg3kk")
 
 [node name="FillerControl" type="Control" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
