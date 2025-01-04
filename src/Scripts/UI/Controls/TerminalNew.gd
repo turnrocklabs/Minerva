@@ -159,6 +159,10 @@ func _on_output_received(text: String, type: Terminal.Type) -> void:
 				continue
 
 			elif char_ == "\n":
+				# if we're on linux also move to the beginning of the line
+				if OS.get_name() == "Linux":
+					_cursor_pos = Vector2i(_cursor_pos.x, 1)
+
 				_cursor_pos = Vector2i(_cursor_pos.x+1, _cursor_pos.y)
 				continue
 			
