@@ -83,6 +83,10 @@ func _ready():
 		func():
 			text_layer.erase(_cursor_pos.x, _cursor_pos.y)
 	)
+
+	terminal.seq_erase_entire_screen.connect(
+		func(): text_layer.erase_screen()
+	)
 	
 	terminal.seq_set_cursor_visible.connect(
 		func(enabled: bool):
@@ -568,6 +572,12 @@ class TextLayer extends Control:
 		queue_redraw()
 	
 
+	## Erases everything displayed
+	func erase_screen() -> void:
+		content = []
+
+		queue_redraw()
+
 	func erase(row: int, from: int, length: int = -1) -> void:
 		print("\nErasing.")
 		prints(row, from, length)
@@ -587,7 +597,6 @@ class TextLayer extends Control:
 		from -= 1
 
 		var line_content: = content[row-1]
-		var line_content_copy: = line_content.duplicate(true)
 
 		var offset: = 0
 
