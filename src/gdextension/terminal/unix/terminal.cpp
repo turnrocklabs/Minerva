@@ -17,7 +17,7 @@ using namespace godot;
 
 void Terminal::_bind_methods()
 {
-    // Binding methods and signals - this part remains mostly the same
+    // Binding methods and signals
     BIND_ENUM_CONSTANT(TEXT);
     BIND_ENUM_CONSTANT(SEQUENCE);
 
@@ -27,7 +27,6 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("write_input", "input"), &Terminal::write_input);
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
 
-    // All the signal bindings remain exactly the same as in WindowsTerminal
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
 
     ADD_SIGNAL(MethodInfo("seq_erase_in_display"));
@@ -592,13 +591,17 @@ bool Terminal::start(int width, int height)
         // Set up environment
         putenv((char*)"TERM=xterm-256color");
         
-        putenv((char*)"PS1=Minerva:\\u@\\h:\\w\\$ ");  
+        putenv((char*)"PS1=Minerva:\\u@\\h:\\w\\$ ");
+
+        // Prevent reading user's bash configuration
+        putenv((char*)"BASH_ENV=");
+        putenv((char*)"ENV=");
 
         // Execute shell
         const char* shell = getenv("SHELL");
         if (!shell) shell = "/bin/bash";
         
-        execlp(shell, shell, nullptr);
+        execlp(shell, shell, "--norc", "--noprofile", nullptr);
         _exit(1); // In case exec fails
     }
 
@@ -611,10 +614,10 @@ bool Terminal::start(int width, int height)
     _old_term = term_settings;
     
     // Modified settings for raw mode
-    term_settings.c_lflag &= ~(ICANON | ECHO | ISIG | IEXTEN);
+    term_settings.c_lflag &= ~(ICANON | ISIG | IEXTEN);
     term_settings.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     term_settings.c_cflag &= ~(CSIZE | PARENB);
-    term_settings.c_cflag |= CS8;
+    term_settings.c_cflag |= CS8 | ECHO;
     term_settings.c_oflag &= ~(OPOST);
     
     // Set minimal character and timing
