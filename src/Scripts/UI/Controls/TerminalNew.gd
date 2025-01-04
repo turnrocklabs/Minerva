@@ -3,7 +3,7 @@ extends Control
 
 const CURSOR_CHAR: = "█"
 
-var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-zA-Z0-9]+[\\\/])*([a-zA-Z0-9]+>)")
+var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-zA-Z0-9]+[\\\/])*([a-zA-Z0-9\s-]+>)")
 
 @onready var _output_container: ScrollContainer = %OutputContainer
 @onready var _check_buttons_container: Control = %CheckButtonsContainer
