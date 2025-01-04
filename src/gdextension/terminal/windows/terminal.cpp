@@ -3,9 +3,6 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
-#include <godot_cpp/classes/reg_ex.hpp>
-#include <godot_cpp/classes/reg_ex_match.hpp>
-
 using namespace godot;
 
 void Terminal::_bind_methods()
@@ -21,7 +18,6 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
-    ADD_SIGNAL(MethodInfo("command_output_end_reached"));
 
     ADD_SIGNAL(MethodInfo("seq_erase_in_display"));
     ADD_SIGNAL(MethodInfo("seq_erase_from_cursor_to_beginning_of_screen"));
