@@ -13,6 +13,8 @@ on:
         - windows
         - linux
   push:
+    paths:
+      - "src/gdextension/**"
     branches:
       - user/milos/feature/terminal
 
