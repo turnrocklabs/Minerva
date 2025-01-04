@@ -614,12 +614,27 @@ bool Terminal::start(int width, int height)
     _old_term = term_settings;
     
     // Modified settings for raw mode
-    term_settings.c_lflag &= ~(ICANON | ISIG | IEXTEN);
-    term_settings.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    term_settings.c_cflag &= ~(CSIZE | PARENB);
-    term_settings.c_cflag |= CS8 | ECHO;
-    term_settings.c_oflag &= ~(OPOST);
+    // term_settings.c_lflag &= ~(ICANON | ISIG | IEXTEN);
+    // term_settings.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    // term_settings.c_cflag &= ~(CSIZE | PARENB);
+    // term_settings.c_cflag |= CS8 | ECHO;
+    // term_settings.c_oflag &= ~(OPOST);
     
+    // Keep canonical mode off for raw input
+    term_settings.c_lflag &= ~(ICANON | ISIG);
+    // Keep IEXTEN for extended input processing
+
+    // Keep input processing for sequences
+    term_settings.c_iflag = ICRNL;  // Keep carriage return translation
+    // Disable other input processing that might interfere
+    term_settings.c_iflag &= ~(INLCR | IGNCR | ISTRIP);
+
+    // 8-bit characters and enable echo
+    term_settings.c_cflag |= CS8 | ECHO;
+
+    // Enable output processing for sequences
+    term_settings.c_oflag |= OPOST;
+
     // Set minimal character and timing
     term_settings.c_cc[VMIN] = 1;
     term_settings.c_cc[VTIME] = 0;
