@@ -8,17 +8,17 @@
 
 using namespace godot;
 
-void WindowsTerminal::_bind_methods()
+void Terminal::_bind_methods()
 {
 
     BIND_ENUM_CONSTANT(TEXT);
     BIND_ENUM_CONSTANT(SEQUENCE);
 
-    ClassDB::bind_method(D_METHOD("start", "width", "height"), &WindowsTerminal::start, DEFVAL(100), DEFVAL(100));
-    ClassDB::bind_method(D_METHOD("resize", "width", "height"), &WindowsTerminal::resize);
-    ClassDB::bind_method(D_METHOD("stop"), &WindowsTerminal::stop);
-    ClassDB::bind_method(D_METHOD("write_input", "input"), &WindowsTerminal::write_input);
-    ClassDB::bind_method(D_METHOD("is_running"), &WindowsTerminal::is_running);
+    ClassDB::bind_method(D_METHOD("start", "width", "height"), &Terminal::start, DEFVAL(100), DEFVAL(100));
+    ClassDB::bind_method(D_METHOD("resize", "width", "height"), &Terminal::resize);
+    ClassDB::bind_method(D_METHOD("stop"), &Terminal::stop);
+    ClassDB::bind_method(D_METHOD("write_input", "input"), &Terminal::write_input);
+    ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
     ADD_SIGNAL(MethodInfo("command_output_end_reached"));
@@ -74,7 +74,7 @@ void WindowsTerminal::_bind_methods()
     ADD_SIGNAL(MethodInfo("title_changed", PropertyInfo(Variant::STRING, "title")));
 }
 
-bool WindowsTerminal::_process_sequence(const String &seq)
+bool Terminal::_process_sequence(const String &seq)
 {
     // https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 
@@ -154,7 +154,7 @@ bool WindowsTerminal::_process_sequence(const String &seq)
     return false;
 }
 
-bool WindowsTerminal::_handle_erase_sequence(const String &seq)
+bool Terminal::_handle_erase_sequence(const String &seq)
 {
 
     char lastChar = seq[seq.length() - 1];
@@ -172,7 +172,7 @@ bool WindowsTerminal::_handle_erase_sequence(const String &seq)
     return false;
 }
 
-bool WindowsTerminal::_handle_private_sequence(const String &seq)
+bool Terminal::_handle_private_sequence(const String &seq)
 {
     // Private sequences start with [ and have ? after it
     if (!seq.begins_with("[?"))
@@ -219,7 +219,7 @@ bool WindowsTerminal::_handle_private_sequence(const String &seq)
 }
 
 // https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797#colors--graphics-mode
-bool WindowsTerminal::_handle_graphics_mode(const String &seq)
+bool Terminal::_handle_graphics_mode(const String &seq)
 {
     String params = seq.substr(1, seq.length() - 2);
 
@@ -341,7 +341,7 @@ bool WindowsTerminal::_handle_graphics_mode(const String &seq)
     return true;
 }
 
-Color WindowsTerminal::_get_basic_color(int index) const
+Color Terminal::_get_basic_color(int index) const
 {
     switch(index) {
         case 0: return Color(0, 0, 0);        // Black
@@ -356,7 +356,7 @@ Color WindowsTerminal::_get_basic_color(int index) const
     }
 }
 
-Color WindowsTerminal::_get_bright_color(int index) const
+Color Terminal::_get_bright_color(int index) const
 {
     switch(index) {
         case 0: return Color(0.5, 0.5, 0.5);  // Bright Black (Gray)
@@ -371,7 +371,7 @@ Color WindowsTerminal::_get_bright_color(int index) const
     }
 }
 
-Color WindowsTerminal::_get_256_color(int index) const
+Color Terminal::_get_256_color(int index) const
 {
     if (index < 16) {
         // First 16 colors are the basic + bright colors
@@ -392,7 +392,7 @@ Color WindowsTerminal::_get_256_color(int index) const
     }
 }
 
-bool WindowsTerminal::_handle_cursor_sequence(const String &seq)
+bool Terminal::_handle_cursor_sequence(const String &seq)
 {
     // Handle sequences ending in specific letters
     char lastChar = seq[seq.length() - 1];
@@ -502,7 +502,7 @@ bool WindowsTerminal::_handle_cursor_sequence(const String &seq)
     return false;
 }
 
-void WindowsTerminal::_process_input(const String &input)
+void Terminal::_process_input(const String &input)
 {
     String text_buffer;
 
@@ -543,7 +543,7 @@ void WindowsTerminal::_process_input(const String &input)
     }
 }
 
-WindowsTerminal::WindowsTerminal() : _width(100), _height(100)
+Terminal::Terminal() : _width(100), _height(100)
 {
     _input_write = nullptr;
     _output_read = nullptr;
@@ -551,12 +551,12 @@ WindowsTerminal::WindowsTerminal() : _width(100), _height(100)
     ZeroMemory(&_process_info, sizeof(PROCESS_INFORMATION));
 }
 
-WindowsTerminal::~WindowsTerminal()
+Terminal::~Terminal()
 {
     stop();
 }
 
-bool WindowsTerminal::start(int width, int height)
+bool Terminal::start(int width, int height)
 {
     if (_running)
         return false;
@@ -671,7 +671,7 @@ bool WindowsTerminal::start(int width, int height)
     return true;
 }
 
-void WindowsTerminal::stop()
+void Terminal::stop()
 {
     if (!_running)
         return;
@@ -710,7 +710,7 @@ void WindowsTerminal::stop()
     }
 }
 
-bool WindowsTerminal::resize(int width, int height)
+bool Terminal::resize(int width, int height)
 {
     if (!_running || !_console)
         return false;
@@ -727,7 +727,7 @@ bool WindowsTerminal::resize(int width, int height)
     return false;
 }
 
-bool WindowsTerminal::write_input(const String &input)
+bool Terminal::write_input(const String &input)
 {
     if (!_running || !_input_write || input.is_empty())
         return false;

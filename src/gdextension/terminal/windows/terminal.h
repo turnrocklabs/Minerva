@@ -17,9 +17,9 @@ namespace godot
         SEQUENCE = 1
     };
 
-    class WindowsTerminal : public TerminalInterface
+    class Terminal : public TerminalInterface
     {
-        GDCLASS(WindowsTerminal, Node)
+        GDCLASS(Terminal, Node)
 
     private:
         struct TerminalCommand
@@ -77,8 +77,8 @@ namespace godot
         static void _bind_methods();
 
     public:
-        WindowsTerminal();
-        ~WindowsTerminal();
+        Terminal();
+        ~Terminal();
 
         enum Type
         {
@@ -95,6 +95,6 @@ namespace godot
 
 }
 
-VARIANT_ENUM_CAST(WindowsTerminal::Type)
+VARIANT_ENUM_CAST(Terminal::Type)
 
 #endif // WINDOWS_TERMINAL_H
