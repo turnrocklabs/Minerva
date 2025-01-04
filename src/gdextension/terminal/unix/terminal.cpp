@@ -15,17 +15,17 @@
 
 using namespace godot;
 
-void LinuxTerminal::_bind_methods()
+void Terminal::_bind_methods()
 {
     // Binding methods and signals - this part remains mostly the same
     BIND_ENUM_CONSTANT(TEXT);
     BIND_ENUM_CONSTANT(SEQUENCE);
 
-    ClassDB::bind_method(D_METHOD("start", "width", "height"), &LinuxTerminal::start, DEFVAL(100), DEFVAL(100));
-    ClassDB::bind_method(D_METHOD("resize", "width", "height"), &LinuxTerminal::resize);
-    ClassDB::bind_method(D_METHOD("stop"), &LinuxTerminal::stop);
-    ClassDB::bind_method(D_METHOD("write_input", "input"), &LinuxTerminal::write_input);
-    ClassDB::bind_method(D_METHOD("is_running"), &LinuxTerminal::is_running);
+    ClassDB::bind_method(D_METHOD("start", "width", "height"), &Terminal::start, DEFVAL(100), DEFVAL(100));
+    ClassDB::bind_method(D_METHOD("resize", "width", "height"), &Terminal::resize);
+    ClassDB::bind_method(D_METHOD("stop"), &Terminal::stop);
+    ClassDB::bind_method(D_METHOD("write_input", "input"), &Terminal::write_input);
+    ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
 
     // All the signal bindings remain exactly the same as in WindowsTerminal
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
@@ -33,26 +33,26 @@ void LinuxTerminal::_bind_methods()
 }
 
 // The sequence processing methods remain exactly the same as they handle ANSI sequences
-bool LinuxTerminal::_process_sequence(const String &seq)
+bool Terminal::_process_sequence(const String &seq)
 {
     // Keep the same implementation as WindowsTerminal
     // This code processes ANSI sequences which are platform-independent
     // ... [same implementation as WindowsTerminal]
 }
 
-LinuxTerminal::LinuxTerminal() : _width(100), _height(100)
+Terminal::Terminal() : _width(100), _height(100)
 {
     _master_fd = -1;
     _slave_fd = -1;
     _child_pid = -1;
 }
 
-LinuxTerminal::~LinuxTerminal()
+Terminal::~Terminal()
 {
     stop();
 }
 
-bool LinuxTerminal::start(int width, int height)
+bool Terminal::start(int width, int height)
 {
     if (_running)
         return false;
@@ -136,7 +136,7 @@ bool LinuxTerminal::start(int width, int height)
     return true;
 }
 
-void LinuxTerminal::stop()
+void Terminal::stop()
 {
     if (!_running)
         return;
@@ -165,7 +165,7 @@ void LinuxTerminal::stop()
     }
 }
 
-bool LinuxTerminal::resize(int width, int height)
+bool Terminal::resize(int width, int height)
 {
     if (!_running || _master_fd < 0)
         return false;
@@ -186,7 +186,7 @@ bool LinuxTerminal::resize(int width, int height)
     return true;
 }
 
-bool LinuxTerminal::write_input(const String &input)
+bool Terminal::write_input(const String &input)
 {
     if (!_running || _master_fd < 0 || input.is_empty())
         return false;

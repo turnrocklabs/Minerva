@@ -10,7 +10,8 @@ var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-
 
 var _output_label_nodes: Array[TextLayer]
 
-var terminal:  = WindowsTerminal.new()
+var terminal:  = Terminal.new()
+
 
 var _viewport_start: int = 0
 var _cursor_pos: Vector2i = Vector2i(1, 1):
@@ -136,7 +137,7 @@ func _create_check_button(offset: float) -> void:
 	btn.position.y = offset
 	_check_buttons_container.add_child(btn)
 
-func _on_output_received(text: String, type: WindowsTerminal.Type) -> void:
+func _on_output_received(text: String, type: Terminal.Type) -> void:
 	var matches: = WINDOWS_CWD_REGEX.search_all(text)
 	
 	if not matches.is_empty():
@@ -146,7 +147,7 @@ func _on_output_received(text: String, type: WindowsTerminal.Type) -> void:
 			print("Added check button at %s" % _cursor_pos.x)
 		
 
-	if type == WindowsTerminal.Type.TEXT:
+	if type == Terminal.Type.TEXT:
 
 		# TODO: buffer the text, split by \n \b or smth
 		for i in text.length():

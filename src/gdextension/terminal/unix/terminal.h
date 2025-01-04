@@ -18,8 +18,8 @@ enum class OutputType {
     SEQUENCE = 1
 };
 
-class LinuxTerminal : public TerminalInterface {
-    GDCLASS(LinuxTerminal, Node)
+class Terminal : public TerminalInterface {
+    GDCLASS(Terminal, Node)
 
 private:
     struct TerminalCommand {
@@ -75,8 +75,8 @@ protected:
     static void _bind_methods();
 
 public:
-    LinuxTerminal();
-    ~LinuxTerminal();
+    Terminal();
+    ~Terminal();
 
     enum Type {
         TEXT = TerminalCommand::TEXT,
@@ -92,6 +92,6 @@ public:
 
 }
 
-VARIANT_ENUM_CAST(LinuxTerminal::Type)
+VARIANT_ENUM_CAST(Terminal::Type)
 
 #endif // LINUX_TERMINAL_H

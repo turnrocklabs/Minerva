@@ -20,12 +20,8 @@ void initialize_terminal_module(ModuleInitializationLevel p_level) {
         return;
     }
 
-    #ifdef PLATFORM_WINDOWS
-        ClassDB::register_class<WindowsTerminal>();
-    #endif
-
-    #ifdef PLATFORM_LINUX
-        ClassDB::register_class<LinuxTerminal>();
+    #if defined(PLATFORM_WINDOWS) || defined(PLATFORM_LINUX)
+        ClassDB::register_class<Terminal>();
     #endif
 }
 
