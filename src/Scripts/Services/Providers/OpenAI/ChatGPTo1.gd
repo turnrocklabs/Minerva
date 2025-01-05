@@ -15,3 +15,11 @@ class Mini extends ChatGPTo1:
 		model_name = "o1-mini"
 		short_name = "OM"
 		token_cost = 0.0030 / 1000 * 100
+
+class Preview extends ChatGPTo1:
+	func _init():
+		super()
+
+		model_name = "o1-preview"
+		short_name = "OM"
+		token_cost = 0.0150 / 1000 * 100
