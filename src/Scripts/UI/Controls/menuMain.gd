@@ -76,9 +76,6 @@ func _ready():
 	add_child(popUpRecent)
 	
 	recentList = popUpRecent.find_child("RecentList")
-	ButtonCloseForPopUp = popUpRecent.find_child("CloseButton")
-	
-	ButtonCloseForPopUp.pressed.connect(_on_close_button_pressed)
 	
 	#_rebuild_recent_projects_ui()
 	# Create the new submenu
