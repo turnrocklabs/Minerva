@@ -1,7 +1,8 @@
-[gd_scene load_steps=4 format=3 uid="uid://dip3cdlo0qilw"]
+[gd_scene load_steps=5 format=3 uid="uid://dip3cdlo0qilw"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/RecentDragData.gd" id="1_3m2s7"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/RecentDropData.gd" id="1_fwd6b"]
+[ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_icons/drag_24px_no_bg.png" id="1_jojv5"]
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_3ay8p"]
 color = Color(0.164706, 0.345098, 0.831373, 1)
@@ -17,20 +18,30 @@ visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_3ay8p")
 
-[node name="HBoxContainer" type="HBoxContainer" parent="."]
+[node name="PanelContainer" type="PanelContainer" parent="."]
 layout_mode = 2
 
-[node name="DragButton" type="Button" parent="HBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="PanelContainer"]
 layout_mode = 2
-text = "***"
+
+[node name="DragTextureRect" type="TextureRect" parent="PanelContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+mouse_default_cursor_shape = 6
+texture = ExtResource("1_jojv5")
+expand_mode = 2
+stretch_mode = 5
 script = ExtResource("1_3m2s7")
 
-[node name="RecentBtn" type="Button" parent="HBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="RecentBtn" type="Button" parent="PanelContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("1_fwd6b")
 
-[node name="exitBtn" type="Button" parent="HBoxContainer"]
+[node name="exitBtn" type="Button" parent="PanelContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "X"
 script = ExtResource("1_fwd6b")
@@ -41,5 +52,5 @@ visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_3ay8p")
 
-[connection signal="mouse_exited" from="HBoxContainer/RecentBtn" to="HBoxContainer/RecentBtn" method="_on_mouse_exited"]
-[connection signal="pressed" from="HBoxContainer/RecentBtn" to="HBoxContainer/DragButton" method="_on_recent_btn_pressed"]
+[connection signal="mouse_exited" from="PanelContainer" to="PanelContainer/VBoxContainer/HBoxContainer/RecentBtn" method="_on_panel_container_mouse_exited"]
+[connection signal="mouse_exited" from="PanelContainer/VBoxContainer/HBoxContainer/RecentBtn" to="PanelContainer/VBoxContainer/HBoxContainer/RecentBtn" method="_on_mouse_exited"]

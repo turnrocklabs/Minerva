@@ -1,17 +1,13 @@
 extends Button
 
-@onready var recentList = $"../../..".get_parent().find_child("RecentList")
+@onready var recentList = $"../../..".get_parent().get_parent()
 
 func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
 	
 	if data == self: return false
 
-	if at_position.y < size.y / 2:
-		%DropTop.visible = true
-		%DropBottom.visible = false
-	else:
-		%DropBottom.visible = true
-		%DropTop.visible = false
+	%DropTop.visible = false
+	%DropBottom.visible = true
 
 	return true
 
@@ -54,6 +50,6 @@ func get_insertion_index(container: Container, local_position: Vector2) -> int:
 	return container.get_child_count() # Insert at the end if no suitable position is found
 
 
-func _on_mouse_exited() -> void:
-	%DropBottom.visible = false
+func _on_panel_container_mouse_exited() -> void:
 	%DropTop.visible = false
+	%DropBottom.visible = false
