@@ -18,6 +18,8 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
+    ADD_SIGNAL(MethodInfo("on_shell_prompt_start"));
+    ADD_SIGNAL(MethodInfo("on_shell_prompt_end"));
 
     ADD_SIGNAL(MethodInfo("seq_erase_in_display"));
     ADD_SIGNAL(MethodInfo("seq_erase_from_cursor_to_beginning_of_screen"));
