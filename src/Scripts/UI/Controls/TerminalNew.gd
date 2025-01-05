@@ -101,13 +101,11 @@ func _ready():
 
 	terminal.on_shell_prompt_start.connect(
 		func():
-			_set_background_color(Color.RED)
 			_create_check_button((_cursor_pos.x -1))
 	)
 
 	terminal.on_shell_prompt_end.connect(
 		func():
-			_set_background_color(Color.TRANSPARENT)
 			_create_check_button((_cursor_pos.x -1))
 	)
 
@@ -236,7 +234,6 @@ func _on_output_received(text: String, type: Terminal.Type) -> void:
 	
 	if not matches.is_empty():
 		for match_ in matches:
-			text_layer.add_background_color(Color.RED, _cursor_pos)
 			_create_check_button((_cursor_pos.x + text.count("\n", match_.get_start(), match_.get_end()) -1))
 		
 
@@ -270,7 +267,6 @@ func _on_output_received(text: String, type: Terminal.Type) -> void:
 			_cursor_pos = _cursor_pos
 
 		if not matches.is_empty():
-			text_layer.add_background_color(Color.TRANSPARENT, _cursor_pos)
 			text_layer.queue_redraw()
 
 
