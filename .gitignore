@@ -12,3 +12,9 @@
 *.wav
 *.wav.import
 *.tmp
+
+# gdextension
+bin/
+*.obj
+*.os
+*.dblite

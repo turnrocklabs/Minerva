@@ -615,7 +615,6 @@ script = ExtResource("14_rrnyx")
 [node name="AudioStreamRecord" type="AudioStreamPlayer" parent="AudioToText"]
 stream = SubResource("AudioStreamMicrophone_i6lnv")
 autoplay = true
-bus = &"Rec"
 
 [node name="ColorRect" type="ColorRect" parent="."]
 unique_name_in_owner = true
