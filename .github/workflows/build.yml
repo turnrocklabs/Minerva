@@ -1,0 +1,225 @@
+name: Build Project
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build for'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - windows
+        - linux
+  push:
+    paths:
+      - "src/**"
+    branches:
+      - user/milos/feature/terminal
+
+jobs:
+  check-gdextension:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            git diff --name-only HEAD^ HEAD > changes.txt
+            if grep -q "src/gdextension/" changes.txt; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  build-windows:
+    needs: check-gdextension
+    if: |
+      needs.check-gdextension.outputs.should_build == 'true' &&
+      (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+        lfs: true
+    
+    - name: Cache SCons build
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/.sconsign.dblite
+          src/**/*.os
+          src/**/*.obj
+        key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-scons-
+
+    - name: Cache godot-cpp
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/godot-cpp/bin/**
+          src/godot-cpp/gen/**
+        key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-godot-cpp-
+        
+    - name: Setup Python and SCons
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+    - run: pip install scons
+        
+    - name: Build Extension
+      run: |
+        cd src
+        scons platform=windows target=template_debug
+        
+    - name: Upload Extension
+      uses: actions/upload-artifact@v4
+      with:
+        name: terminal-windows
+        path: src/bin/libterminal*
+
+  build-linux:
+    needs: check-gdextension
+    if: |
+      needs.check-gdextension.outputs.should_build == 'true' &&
+      (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+        lfs: true
+        
+    - name: Cache SCons build
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/.sconsign.dblite
+          src/**/*.os
+          src/**/*.obj
+        key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-scons-
+
+    - name: Cache godot-cpp
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/godot-cpp/bin/**
+          src/godot-cpp/gen/**
+        key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-godot-cpp-
+    
+    - name: Setup Python and SCons
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+    - run: pip install scons
+
+    - name: Install Linux Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential util-linux
+        
+    - name: Build Extension
+      run: |
+        cd src
+        scons platform=linux target=template_debug
+        
+    - name: Upload Extension
+      uses: actions/upload-artifact@v4
+      with:
+        name: terminal-linux
+        path: src/bin/libterminal*
+
+  build-godot:
+    needs: [check-gdextension, build-windows, build-linux]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Download Previous Artifacts
+        if: needs.check-gdextension.outputs.should_build != 'true'
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build.yml
+          workflow_conclusion: success
+          name: terminal-*
+          path: src/bin/
+          if_no_artifact_found: ignore
+      
+      - name: Download Current Artifacts
+        if: needs.check-gdextension.outputs.should_build == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: terminal-*
+          path: src/bin/
+          merge-multiple: true
+      
+      - name: Create and Verify Bin Directory
+        run: |
+          mkdir -p src/bin
+          ls -la src/bin/
+          
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libx11-dev libxcursor-dev \
+            libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
+            libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm unzip
+        
+      - name: Install Godot
+        run: |
+          GODOT_VERSION="4.3"
+          RELEASE="stable"
+          curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64.zip"
+          unzip ./godot.zip
+          sudo mv ./Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64 /usr/local/bin/godot
+
+      - name: Install Godot Export Templates
+        run: |
+          GODOT_VERSION="4.3"
+          RELEASE="stable"
+          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates"
+          curl -L -o ./godot-templates.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_export_templates.tpz"
+          unzip ./godot-templates.zip
+          mkdir -p "$TEMPLATE_DIR/${GODOT_VERSION}.${RELEASE}"
+          mv templates/* "$TEMPLATE_DIR/${GODOT_VERSION}.${RELEASE}"
+
+      - name: Setup Godot Project Structure
+        working-directory: src
+        run: |
+          mkdir -p .godot/editor
+          chmod -R 777 .godot
+          
+      - name: Export Project
+        working-directory: src
+        run: |
+          mkdir -p build
+          if [ "${{ github.event.inputs.platform }}" = "windows" ] || [ "${{ github.event.inputs.platform }}" = "all" ] || [ "${{ github.event_name }}" = "push" ]; then
+            godot --headless --export-debug "Windows Desktop" build/Minerva.exe
+          fi
+          if [ "${{ github.event.inputs.platform }}" = "linux" ] || [ "${{ github.event.inputs.platform }}" = "all" ] || [ "${{ github.event_name }}" = "push" ]; then
+            godot --headless --export-debug "Linux/X11" build/Minerva.x86_64
+          fi
+          
+      - name: Upload Builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minerva-builds
+          path: |
+            src/build/*
