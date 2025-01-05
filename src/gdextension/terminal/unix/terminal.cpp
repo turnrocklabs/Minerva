@@ -28,6 +28,8 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
+    ADD_SIGNAL(MethodInfo("on_shell_prompt_start"));
+    ADD_SIGNAL(MethodInfo("on_shell_prompt_end"));
 
     ADD_SIGNAL(MethodInfo("seq_erase_in_display"));
     ADD_SIGNAL(MethodInfo("seq_erase_from_cursor_to_beginning_of_screen"));
@@ -93,6 +95,14 @@ bool Terminal::_process_sequence(const String &seq)
             call_deferred("emit_signal", value);
             return true;
         }
+    }
+
+    if (seq == "[888z") {
+        call_deferred("emit_signal", "on_shell_prompt_start");
+        return true;
+    } else if (seq == "[999z") {
+        call_deferred("emit_signal", "on_shell_prompt_end");
+        return true;
     }
 
     if (seq.begins_with("[?"))
@@ -590,25 +600,19 @@ bool Terminal::start(int width, int height)
     
     if (_child_pid == 0) {
         // Child process
-        // Set up environment
         putenv((char*)"TERM=xterm-256color");
-        
-        putenv((char*)"PS1=Minerva:\\u@\\h:\\w\\$ ");
-
-        // Prevent reading user's bash configuration
+        putenv((char*)"PS1=\\033[888z\\033[01;32mMinerva:\\u@\\h\\033[00m:\\033[01;34m\\w\\033[00m\\$ \\033[999z");
         putenv((char*)"BASH_ENV=");
         putenv((char*)"ENV=");
 
-        // Execute shell
         const char* shell = getenv("SHELL");
         if (!shell) shell = "/bin/bash";
         
         execlp(shell, shell, "--norc", "--noprofile", nullptr);
-        _exit(1); // In case exec fails
+        _exit(1);
     }
 
     // Parent process
-    // Set up master PTY
     struct termios term_settings;
     tcgetattr(_master_fd, &term_settings);
     
@@ -616,37 +620,20 @@ bool Terminal::start(int width, int height)
     _old_term = term_settings;
     
     // Modified settings for raw mode
-    // term_settings.c_lflag &= ~(ICANON | ISIG | IEXTEN);
-    // term_settings.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    // term_settings.c_cflag &= ~(CSIZE | PARENB);
-    // term_settings.c_cflag |= CS8 | ECHO;
-    // term_settings.c_oflag &= ~(OPOST);
-    
-    // Keep canonical mode off for raw input
-    term_settings.c_lflag &= ~(ICANON | ISIG);
-    // Keep IEXTEN for extended input processing
-
-    // Keep input processing for sequences
-    term_settings.c_iflag = ICRNL;  // Keep carriage return translation
-    // Disable other input processing that might interfere
-    term_settings.c_iflag &= ~(INLCR | IGNCR | ISTRIP);
-
-    // 8-bit characters and enable echo
+    term_settings.c_lflag &= ~(ICANON | ISIG | IEXTEN);
+    term_settings.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    term_settings.c_cflag &= ~(CSIZE | PARENB);
     term_settings.c_cflag |= CS8 | ECHO;
-
-    // Enable output processing for sequences
-    term_settings.c_oflag |= OPOST;
-
+    term_settings.c_oflag &= ~(OPOST);
+    
     // Set minimal character and timing
     term_settings.c_cc[VMIN] = 1;
     term_settings.c_cc[VTIME] = 0;
     
     tcsetattr(_master_fd, TCSANOW, &term_settings);
-
     // Set non-blocking mode for master
     int flags = fcntl(_master_fd, F_GETFL);
     fcntl(_master_fd, F_SETFL, flags | O_NONBLOCK);
-
     // Start output thread
     _running = true;
     _output_thread = std::thread([this]() {

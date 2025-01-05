@@ -93,6 +93,18 @@ func _ready():
 			cursor_layer.visible = enabled
 	)
 
+	terminal.on_shell_prompt_start.connect(
+		func():
+			_set_background_color(Color.RED)
+			_create_check_button((_cursor_pos.x -1) * line_height)
+	)
+
+	terminal.on_shell_prompt_end.connect(
+		func():
+			_set_background_color(Color.TRANSPARENT)
+			_create_check_button((_cursor_pos.x -1) * line_height)
+	)
+	
 	terminal.seq_set_foreground_color.connect(_set_color)
 	terminal.seq_set_background_color.connect(_set_background_color)
 	terminal.seq_reset_graphics.connect(_reset_graphics)
