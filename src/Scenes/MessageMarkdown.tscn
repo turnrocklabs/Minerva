@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://by7y1xd78nqmu" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://dofxcn7kl30km" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_p2uud"]
 [ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/clipboard_icons/content_copy.svg" id="4_3sl4b"]
@@ -211,62 +211,11 @@ focus_mode = 2
 theme_type_variation = &"chatRichTextLabel"
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
 bbcode_enabled = true
-text = "Certainly! Here's a simple Python program that calculates the factorial of a number provided by the user:
-
-[code syntax=python]
-def factorial(n):
-    if n == 0:
-        return 1
-    else:
-        return n * factorial(n-1)
-
-def main():
-    num = int(input(\"Enter a number to compute the factorial: \"))
-    if num < 0:
-        print(\"Factorial does not exist for negative numbers.\")
-    else:
-        result = factorial(num)
-        print(f\"The factorial of {num} is {result}.\")
-
-if __name__ == \"__main__\":
-    main()[/code]
-
-This program has two functions:
-[ul][code]factorial(n)[/code]: This function uses recursion to compute the factorial of a given integer [code]n[/code]. Factorial of [code]n[/code] ([code]n![/code]) is the product of all positive integers less than or equal to [code]n[/code].
-[code]main()[/code]: This function prompts the user to enter an integer and then calculates and displays the factorial of that number using the [code]factorial()[/code]. It also checks to make sure that the input number is non-negative, as factorials for negative numbers are not defined.
-[/ul]
-
-Feel free to ask if you need another example or if you have specific requirements for your program!"
+text = "a"
 fit_content = true
 threaded = true
 selection_enabled = true
 script = ExtResource("2_5cmtk")
-markdown_text = "Certainly! Here's a simple Python program that calculates the factorial of a number provided by the user:
-
-```python
-def factorial(n):
-    if n == 0:
-        return 1
-    else:
-        return n * factorial(n-1)
-
-def main():
-    num = int(input(\"Enter a number to compute the factorial: \"))
-    if num < 0:
-        print(\"Factorial does not exist for negative numbers.\")
-    else:
-        result = factorial(num)
-        print(f\"The factorial of {num} is {result}.\")
-
-if __name__ == \"__main__\":
-    main()
-```
-
-This program has two functions:
-- `factorial(n)`: This function uses recursion to compute the factorial of a given integer `n`. Factorial of `n` (`n!`) is the product of all positive integers less than or equal to `n`.
-- `main()`: This function prompts the user to enter an integer and then calculates and displays the factorial of that number using the `factorial()`. It also checks to make sure that the input number is non-negative, as factorials for negative numbers are not defined.
-
-Feel free to ask if you need another example or if you have specific requirements for your program!"
 h1 = SubResource("Resource_de4hw")
 h2 = SubResource("Resource_s8if8")
 h3 = SubResource("Resource_6ck5t")
