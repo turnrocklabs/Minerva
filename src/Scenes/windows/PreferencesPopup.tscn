@@ -1,7 +1,10 @@
-[gd_scene load_steps=3 format=3 uid="uid://booxo77json0y"]
+[gd_scene load_steps=6 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
+[ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="4_0f5nr"]
+[ext_resource type="Texture2D" uid="uid://dmhyo26833yx8" path="res://assets/icons/save_icons/save-64-white.png" id="5_346qj"]
 
 [node name="PreferencesPopup" type="Window"]
 title = "Preferences"
@@ -160,10 +163,12 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 allow_reselect = true
-item_count = 2
+item_count = 3
 popup/item_0/text = "Light Mode"
 popup/item_1/text = "Dark Mode"
 popup/item_1/id = 1
+popup/item_2/text = "Windows"
+popup/item_2/id = 2
 
 [node name="HSeparator3" type="HSeparator" parent="v/SectionsContainer"]
 layout_mode = 2
@@ -198,6 +203,10 @@ size_flags_horizontal = 0
 size_flags_vertical = 6
 tooltip_text = "save settings"
 icon = ExtResource("2_kl0rj")
+script = ExtResource("3_5qeyl")
+icon_24 = ExtResource("2_kl0rj")
+icon_48 = ExtResource("4_0f5nr")
+icon_68 = ExtResource("5_346qj")
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="toggled" from="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer/GoogleVertexCheckBox" to="." method="_on_google_vertex_check_box_toggled"]

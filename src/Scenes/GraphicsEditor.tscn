@@ -1,8 +1,8 @@
 [gd_scene load_steps=20 format=3 uid="uid://1snj5jsurqrt"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor.gd" id="1_dqx0p"]
-[ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="2_tkvqr"]
-[ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="2_yagwo"]
+[ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="2_qxyqe"]
+[ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/eraser/ink_eraser_off.svg" id="2_tkvqr"]
 [ext_resource type="Texture2D" uid="uid://coj8ug8ba8d1k" path="res://assets/icons/Mask-24-24.png" id="4_82rro"]
 [ext_resource type="Texture2D" uid="uid://3bwyhwh5bral" path="res://assets/icons/Text-24-24.png" id="5_a37t7"]
 [ext_resource type="Texture2D" uid="uid://xek338m84w7" path="res://assets/icons/CryonBrush-24-24.png" id="5_f2f1e"]
@@ -59,7 +59,7 @@ size_flags_vertical = 4
 tooltip_text = "tool selection dropdown"
 selected = 0
 item_count = 5
-popup/item_0/icon = ExtResource("2_yagwo")
+popup/item_0/icon = ExtResource("2_qxyqe")
 popup/item_1/icon = ExtResource("2_tkvqr")
 popup/item_1/id = 1
 popup/item_2/icon = ExtResource("4_82rro")
@@ -223,8 +223,10 @@ tooltip_text = "click to see dropdown for adding layers"
 icon = ExtResource("18_yov21")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+mouse_default_cursor_shape = 2
 
 [node name="CenterContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer"]
 unique_name_in_owner = true
@@ -334,6 +336,8 @@ access = 2
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="mouse_entered" from="VBoxContainer/ScrollContainer" to="." method="_on_scroll_container_mouse_entered"]
+[connection signal="mouse_exited" from="VBoxContainer/ScrollContainer" to="." method="_on_scroll_container_mouse_exited"]
 [connection signal="resized" from="PopupPanel/LayerBG/LayersMenu" to="." method="_on_layers_menu_resized"]
 [connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
 [connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddImagelayer" to="." method="_on_add_image_layer_pressed"]

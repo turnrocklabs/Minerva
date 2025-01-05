@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://bdgef0ru6o5ux"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/AISettings.gd" id="1_2377q"]
-[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="2_bhryf"]
+[ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="2_bfm0p"]
 
 [node name="AISettings" type="Window"]
 initial_position = 4
@@ -172,7 +172,7 @@ text = "Type System Prompt Message: "
 [node name="RecordSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-icon = ExtResource("2_bhryf")
+icon = ExtResource("2_bfm0p")
 
 [node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer"]
 unique_name_in_owner = true

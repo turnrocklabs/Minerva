@@ -83,7 +83,7 @@ func _on_edit_button_pressed():
 
 
 func _on_note_button_pressed():
-	var caption_title: String = image.get_meta("caption", "")
+	#var caption_title: String = image.get_meta("caption", "")
 	#if caption_title.length() > 25:
 		#caption_title = caption_title.substr(0, 25) + "..."
 	SingletonObject.NotesTab.add_image_note("Graphic Note", image, image.get_meta("caption", ""))

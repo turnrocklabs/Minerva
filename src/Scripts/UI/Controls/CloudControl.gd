@@ -41,13 +41,25 @@ var font_size: = ThemeDB.fallback_font_size
 ## When not in editing mode the scene is rendered in final form.
 var editing: = true:
 	set(value):
-		editing = value
-		_text_edit.visible = editing
-		_lower_resizer.visible = editing
-		_upper_resizer.visible = editing
-		_mover.visible = editing
-		_bezier_curve.visible = editing
+		_text_edit.visible = value
+		_lower_resizer.visible = value
+		_upper_resizer.visible = value
+		_mover.visible = value
+		_bezier_curve.visible = value
 
+		# if value changed
+		if editing != value:
+			editing = value
+
+			# only capture mouse when editing
+			mouse_filter = MOUSE_FILTER_PASS if value else MOUSE_FILTER_IGNORE
+			var layer = get_parent()
+			if is_instance_valid(layer) and layer is Layer:
+				layer.mouse_filter = MOUSE_FILTER_PASS if value else MOUSE_FILTER_IGNORE
+
+			# ask other bubbles to redraw themselves
+			for other_bubble in _find_other_bubbles():
+				other_bubble.queue_redraw()
 
 ## There are two control nodes that are used for resizing the speech bubble react.[br]
 ## This variable hold the active one during the drag.
@@ -124,6 +136,9 @@ class Tail:
 	
 	func add_point(point) -> void:
 		points.append(point)
+
+	func remove_point(point) -> void:
+		points.erase(point)
 
 	## Draws the final form of the tail.
 	func draw() -> void:
@@ -205,6 +220,12 @@ class CurvedTriangleTail:
 		
 		var position = point if point is Vector2 else control.bubble_poly[point]
 		control._bezier_curve.create_point(position)
+
+	func remove_point(point):
+		var position = point if point is Vector2 else control.bubble_poly[point]
+		control._bezier_curve.destroy_point(position)
+
+		super(point)
 	
 	func get_polygon():
 		var poly: = PackedVector2Array()
@@ -292,10 +313,25 @@ func _draw() -> void:
 	# Create a ellipse thats contained within the given rectangle
 	bubble_poly = _create_tail()
 	
+	# Find other bubbles outside the for loop
+	var other_bubbles := _find_other_bubbles()
+
 	var polys := Geometry2D.merge_polygons(bubble_poly, tail.get_polygon())
-	
 	for poly in polys:
-		draw_colored_polygon(Geometry2D.offset_polygon(poly, 3)[0], Color.BLACK)
+		# *** Draw outline of the bubble ***
+
+		# Expand bubble and tail combined shape by 3 pixels
+		var outline = Geometry2D.offset_polygon(poly, 3)[0]
+
+		# Remove other bubbles' bubble_poly
+		for other_bubble in other_bubbles:
+			if !other_bubble.editing:
+				outline = Geometry2D.clip_polygons(outline, other_bubble.bubble_poly)[0]
+
+		# Fraw outline
+		draw_colored_polygon(outline, Color.BLACK)
+
+		# *** Fill inside in the bubble ***
 		draw_colored_polygon(poly, Color.WHITE)
 		
 	# draw_polyline(ellipse, Color.BLACK, 7, true)
@@ -427,12 +463,24 @@ func _gui_input(event: InputEvent) -> void:
 						if event.position.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
 							# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
 							tail.add_point(idx)
-						else:
+						elif tail.points.size()>0: # don't allow the first point to be outside the ellipse
 							tail.add_point(event.position)
 
 			queue_redraw()
 			accept_event()
-	
+
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.is_pressed() and tail.points.size()>0:
+		var points = tail.get_points_vector_array()
+		var closest_idx = 0
+		var min_distance = points[closest_idx].distance_to(event.position)
+		for idx in tail.points.size():
+			var distance = points[idx].distance_to(event.position)
+			if distance < min_distance:
+				closest_idx = idx
+				min_distance = distance
+		if min_distance < 60:
+			tail.remove_point(tail.points[closest_idx])
+
 	if event is InputEventMouseMotion:
 		# if we're dragging the resizer, move it to the mouse position
 		if _active_resizer:
@@ -473,12 +521,9 @@ func _gui_input(event: InputEvent) -> void:
 			else:
 				tail.points[_drag_point_idx] = event.position
 
-		# moving the whole speech bubble
+		# moving the whole speech bubble using the mover handle
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _moving:
-			set_bounding_rect(Rect2(
-				_upper_resizer.position + event.relative,
-				_lower_resizer.position - _upper_resizer.position
-			))
+			_move_bubble(event.relative)
 
 		queue_redraw()
 		accept_event()
@@ -764,3 +809,35 @@ func ApplyEditing():
 func _on_mover_button_down() -> void:
 	_moving = true
 	get_viewport().set_input_as_handled()
+
+func _find_other_bubbles() -> Array[CloudControl]:
+	var other_bubbles: Array[CloudControl] = []
+	var layer = get_parent()
+	if is_instance_valid(layer) and layer is Layer:
+		var layer_container = layer.get_parent()
+		for other_layer in layer_container.get_children():
+			if other_layer != layer:
+				for child in other_layer.get_children():
+					if is_instance_valid(child) and child is CloudControl:
+						other_bubbles.append(child)
+	return other_bubbles
+
+# move the whole speech bubble
+func _move_bubble(offset: Vector2) -> void:
+	# move the textbox and ellipse
+	set_bounding_rect(Rect2(
+		_upper_resizer.position + offset,
+		_lower_resizer.position - _upper_resizer.position
+	))
+
+	# move the fixed points
+	for idx in tail.points.size():
+		var point = tail.points[idx]
+		if point is Vector2:
+			tail.points[idx] += offset
+
+	# move the control points
+	for point in tail.control._bezier_curve.points:
+		point.position += offset
+		point.control_point_out += offset
+		point.control_point_in += offset

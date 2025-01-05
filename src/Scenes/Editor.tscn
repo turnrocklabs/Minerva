@@ -1,13 +1,35 @@
-[gd_scene load_steps=9 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=26 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_1qp3n"]
 [ext_resource type="Texture2D" uid="uid://c48b7t07xvrlk" path="res://assets/icons/folder_up.svg" id="4_ycwhj"]
 [ext_resource type="Texture2D" uid="uid://dlwhgven8t3hj" path="res://assets/icons/folder_down.png" id="5_2k2ha"]
+[ext_resource type="Texture2D" uid="uid://c5gxq5cm5tpnk" path="res://assets/icons/autowrap/autowrap_icon.png" id="5_7o203"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/icons_button.gd" id="6_jf4nm"]
+[ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="7_clgig"]
+[ext_resource type="Texture2D" uid="uid://gwm8wy3mpotw" path="res://assets/icons/autowrap/autowrap_icon_48.png" id="7_sbudh"]
+[ext_resource type="Texture2D" uid="uid://b7e8ub4l1hynh" path="res://assets/icons/autowrap/autowrap_icon_68.png" id="8_mxr1i"]
+[ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="8_r334w"]
+[ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="9_65m80"]
+[ext_resource type="Texture2D" uid="uid://cieg7eg003vd7" path="res://assets/icons/reload-icons/reload-48.svg" id="11_nrs0x"]
+[ext_resource type="Texture2D" uid="uid://dq5axtf0gpsp7" path="res://assets/icons/save_icons/save-all-48-white.png" id="12_jegqv"]
+[ext_resource type="Texture2D" uid="uid://cx8xu0burk3hm" path="res://assets/icons/reload-icons/reload-64.svg" id="12_yvsru"]
+[ext_resource type="Texture2D" uid="uid://bnsrtyilgj4d6" path="res://assets/icons/save_icons/save-all-64-white.png" id="13_sk5he"]
+[ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="15_rdxx4"]
+[ext_resource type="Texture2D" uid="uid://dmhyo26833yx8" path="res://assets/icons/save_icons/save-64-white.png" id="16_wgr4y"]
+[ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="18_nil3p"]
+[ext_resource type="Texture2D" uid="uid://dpphnihk74dd0" path="res://assets/icons/create_pencil_icons/pencil_icon_64_no_bg.png" id="19_tg3kk"]
+
+[sub_resource type="InputEventAction" id="InputEventAction_1e7nj"]
+action = &"toggle_autowrap"
+pressed = true
+
+[sub_resource type="Shortcut" id="Shortcut_rmr81"]
+events = [SubResource("InputEventAction_1e7nj")]
 
 [node name="Editor" type="Control"]
 layout_mode = 3
@@ -19,6 +41,7 @@ grow_vertical = 2
 script = ExtResource("1_8t5ew")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -26,6 +49,9 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
+
+[node name="Control" type="Control" parent="VBoxContainer"]
+layout_mode = 2
 
 [node name="TextureRect" type="TextureRect" parent="VBoxContainer"]
 unique_name_in_owner = true
@@ -76,50 +102,89 @@ focus_mode = 0
 icon = ExtResource("6_eqakq")
 flat = true
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+[node name="ButtonsHBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 14
+theme_override_constants/separation = 10
 alignment = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 4
 
-[node name="CheckButton" type="CheckButton" parent="VBoxContainer/HBoxContainer"]
+[node name="CheckButton" type="CheckButton" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Pass editor content to chat"
 
-[node name="FillerControl2" type="Control" parent="VBoxContainer/HBoxContainer"]
+[node name="FillerControl2" type="Control" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="reloadButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="AutowrapButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "warps text that goes over the width of the editor"
+shortcut = SubResource("Shortcut_rmr81")
+shortcut_feedback = false
+icon = ExtResource("5_7o203")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("5_7o203")
+icon_48 = ExtResource("7_sbudh")
+icon_68 = ExtResource("8_mxr1i")
+
+[node name="MicButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "press to record audio and press again to stop recording"
+icon = ExtResource("7_clgig")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("7_clgig")
+icon_48 = ExtResource("8_r334w")
+icon_68 = ExtResource("9_65m80")
+
+[node name="reloadButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "reload file from disc"
 disabled = true
 icon = ExtResource("4_0is2e")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("4_0is2e")
+icon_48 = ExtResource("11_nrs0x")
+icon_68 = ExtResource("12_yvsru")
 
-[node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 tooltip_text = "save all unsaved and open editor tabs"
 icon = ExtResource("5_oex5t")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("5_oex5t")
+icon_48 = ExtResource("12_jegqv")
+icon_68 = ExtResource("13_sk5he")
 
-[node name="SaveButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="SaveButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "save current tab into a file
 "
 icon = ExtResource("4_1qp3n")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("4_1qp3n")
+icon_48 = ExtResource("15_rdxx4")
+icon_68 = ExtResource("16_wgr4y")
 
-[node name="CreateNoteButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="CreateNoteButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 tooltip_text = "Creates note from editor tab content"
 icon = ExtResource("6_15oj3")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("6_15oj3")
+icon_48 = ExtResource("18_nil3p")
+icon_68 = ExtResource("19_tg3kk")
 
-[node name="FillerControl" type="Control" parent="VBoxContainer/HBoxContainer"]
+[node name="FillerControl" type="Control" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 
 [node name="FillerControl3" type="Control" parent="VBoxContainer"]
@@ -197,12 +262,14 @@ layout_mode = 2
 [connection signal="text_changed" from="VBoxContainer/FindStringContainer/FindStringLineEdit" to="." method="_on_find_string_line_edit_text_changed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/PreviousMatchButton" to="." method="_on_previous_match_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/NextMatchButton" to="." method="_on_next_match_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_buton_pressed"]
-[connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_button_pressed"]
+[connection signal="toggled" from="VBoxContainer/ButtonsHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/AutowrapButton" to="." method="toggle_autowrap"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/MicButton" to="." method="_on_mic_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]
 [connection signal="canceled" from="CloseDialog" to="." method="_on_save_dialog_canceled"]
 [connection signal="confirmed" from="CloseDialog" to="." method="_on_save_dialog_confirmed"]
 [connection signal="custom_action" from="CloseDialog" to="." method="_on_close_dialog_custom_action"]

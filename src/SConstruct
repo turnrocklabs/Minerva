@@ -1,0 +1,39 @@
+#!/usr/bin/env python
+import os
+import sys
+
+env = SConscript("godot-cpp/SConstruct")
+
+# Add include paths for both common and terminal root
+env.Append(CPPPATH=[
+    "gdextension/terminal/",       # For terminal root
+    "gdextension/terminal/common"  # For common interface
+])
+
+# Platform specific sources
+sources = ["gdextension/terminal/register_types.cpp"]
+
+if env["platform"] == "windows":
+    sources.append("gdextension/terminal/windows/terminal.cpp")
+    env.Append(CPPDEFINES=["PLATFORM_WINDOWS"])
+elif env["platform"] == "linux":
+    sources.append("gdextension/terminal/unix/terminal.cpp")
+    # Add Linux-specific libraries
+    env.Append(LIBS=["util"])
+    env.Append(CPPDEFINES=["PLATFORM_LINUX"])
+
+# Build the library
+if env["platform"] == "macos":
+    library = env.SharedLibrary(
+        "bin/libterminal.{}.{}.framework/libterminal.{}.{}".format(
+            env["platform"], env["target"], env["platform"], env["target"]
+        ),
+        source=sources,
+    )
+else:
+    library = env.SharedLibrary(
+        "bin/libterminal{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=sources,
+    )
+
+Default(library)

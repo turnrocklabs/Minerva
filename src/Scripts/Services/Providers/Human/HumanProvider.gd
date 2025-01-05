@@ -5,8 +5,8 @@ func _init():
 	provider_name = "Human"
 
 	model_name = "human"
-	short_name = "HP"
-	token_cost = 0
+	short_name = "HU"
+	token_cost = 0 # so it ends up at the bottom of the list
 
 
 func _parse_request_results(_response: RequestResults) -> BotResponse:

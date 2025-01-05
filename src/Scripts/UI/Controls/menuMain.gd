@@ -138,8 +138,9 @@ func _on_view_id_pressed(id: int):
 		6: SingletonObject.main_scene.reset_zoom(); return
 		8: _show_notes()
 		9: _show_messages()
-		#11: SingletonObject.change_buttons_zoom(0.5); return
-		#12: SingletonObject.change_buttons_zoom(-0.5); return
+		11: SingletonObject.set_icon_size_24.emit(); return
+		12: SingletonObject.set_icon_size_48.emit(); return
+		13: SingletonObject.set_icon_size_68.emit(); return
 		16: SingletonObject.increment_scale_ui()
 		17: SingletonObject.decrement_ui_scale()
 		18: SingletonObject.reset_ui_scale()
