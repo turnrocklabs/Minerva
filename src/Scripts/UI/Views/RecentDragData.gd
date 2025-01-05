@@ -19,7 +19,7 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 			indexOne = recentList.get_children().find(i)
 			recentList.get_child(indexOne).queue_free()
 			break
-			
+
 	if recentList == null:
 		printerr("RecentList not found!")
 		return
