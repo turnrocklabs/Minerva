@@ -43,6 +43,12 @@ static func create() -> TerminalNew:
 func _ready():
 	add_child(terminal)
 
+	visibility_changed.connect(
+		func():
+			if is_visible_in_tree():
+				grab_focus()
+	)
+
 	var char_metrics = font.get_char_size("M".unicode_at(0), font_size)
 	line_height = font.get_height(font_size)
 	char_width = char_metrics.x
@@ -96,15 +102,15 @@ func _ready():
 	terminal.on_shell_prompt_start.connect(
 		func():
 			_set_background_color(Color.RED)
-			_create_check_button((_cursor_pos.x -1) * line_height)
+			_create_check_button((_cursor_pos.x -1))
 	)
 
 	terminal.on_shell_prompt_end.connect(
 		func():
 			_set_background_color(Color.TRANSPARENT)
-			_create_check_button((_cursor_pos.x -1) * line_height)
+			_create_check_button((_cursor_pos.x -1))
 	)
-	
+
 	terminal.seq_set_foreground_color.connect(_set_color)
 	terminal.seq_set_background_color.connect(_set_background_color)
 	terminal.seq_reset_graphics.connect(_reset_graphics)
@@ -148,19 +154,90 @@ func _create_output_container() -> void:
 
 	_output_label_nodes.append(text_layer)
 
-func _create_check_button(offset: float) -> void:
+func _create_check_button(row: float) -> void:
 	var btn = CheckButton.new()
-	btn.position.y = offset
+	btn.set_meta("row", row)
+
+	btn.toggled.connect(_on_check_button_toggled.bind(btn))
+
+	btn.position.y = row * line_height
 	_check_buttons_container.add_child(btn)
+
+
+func _on_check_button_toggled(toggled_on: bool, btn: CheckButton):
+	var item: MemoryItem
+
+	if not btn.has_meta("memory_item"):
+		item = MemoryItem.new()
+		item.Title = "Terminal Note"
+		
+		# content will be every line from this check buttons row to next check button
+		# if theres no next check button, got untill the end
+
+		item.Content = ""
+
+		var last: CheckButton
+
+		for i in range(_check_buttons_container.get_child_count()-1, -1, -1):
+			var ch = _check_buttons_container.get_child(i)
+			if ch is CheckButton:
+				# break when we reach btn that was toggled
+				if ch == btn:
+					break
+				
+				last = ch
+
+		var last_line: int
+
+		# if this IS the last check button go until the end
+		if not last or btn == last:
+			last_line = text_layer.content.size()
+		else:
+			last_line = last.get_meta("row")+1
+		
+		for i in range(btn.get_meta("row"), last_line):
+			item.Content += "\n"
+			for line_part in text_layer.content[i]:
+				if line_part is String:
+					item.Content += line_part
+
+		item.toggled.connect(
+			(func(on: bool, btn: CheckButton):
+				btn.button_pressed = on).bind(btn)
+		)
+
+		btn.set_meta("memory_item", item)
+		SingletonObject.DetachedNotes.append(item)
+	else:
+		item = btn.get_meta("memory_item")
+		var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
+
+		if not present:
+			SingletonObject.DetachedNotes.append(item)
+
+	item.Enabled = toggled_on
+
 
 func _on_output_received(text: String, type: Terminal.Type) -> void:
 	var matches: = WINDOWS_CWD_REGEX.search_all(text)
+
+	# check if last check button is toggled on and update the content
+
+	var ch: CheckButton
+
+	if _check_buttons_container.get_child_count() > 0:
+		ch = _check_buttons_container.get_child(_check_buttons_container.get_child_count()-1)
+
+	# FIXME: if theres a prompt in text, some content of next command will end up in here
+	if ch and ch.button_pressed:
+		(ch.get_meta("memory_item") as MemoryItem).Content += text
+
+
 	
 	if not matches.is_empty():
 		for match_ in matches:
 			text_layer.add_background_color(Color.RED, _cursor_pos)
-			_create_check_button((_cursor_pos.x + text.count("\n", match_.get_start(), match_.get_end()) -1) * line_height)
-			print("Added check button at %s" % _cursor_pos.x)
+			_create_check_button((_cursor_pos.x + text.count("\n", match_.get_start(), match_.get_end()) -1))
 		
 
 	if type == Terminal.Type.TEXT:
@@ -197,30 +274,6 @@ func _on_output_received(text: String, type: Terminal.Type) -> void:
 			text_layer.queue_redraw()
 
 
-
-func _parse_bbcode_tag(text: String) -> Dictionary:
-	var regex = RegEx.create_from_string("\\[(\\w+)(.*?)\\](.*?)\\[/\\1\\]")
-	var result = regex.search(text)
-	if not result:
-		return {}
-
-	var tag_data = {
-		"tag": result.get_string(1),
-		"params": {},
-		"content": result.get_string(3)
-	}
-   
-	var params = result.get_string(2).strip_edges()
-	if params:
-		var param_regex = RegEx.create_from_string("(\\w+)=([^\\s]+)")
-		var param_matches = param_regex.search_all(params)
-		for match in param_matches:
-			tag_data["params"][match.get_string(1)] = match.get_string(2)
-
-	return tag_data
-
-
-
 # region cursor
 
 
@@ -235,38 +288,6 @@ func _set_cursor_position(row: int, column: int) -> void:
 
 # region graphics
 
-class BbcodeTag extends RefCounted:
-	var name: String
-	var parameters: Dictionary
-	var params_string: String
-
-	func _init(name_: String, parameters_: Dictionary) -> void:
-		name = name_
-		parameters = parameters_
-		parameters.make_read_only()
-
-		params_string = _get_params_string()
-
-	func _get_params_string() -> String:
-		return " ".join(
-			parameters.keys().map(
-				func(key: String): return "%s=%s" % [key, parameters[key]]
-			)
-		)
-
-	func get_opening_tag() -> String:
-		if not name.is_empty():
-			return "[%s %s]" % [name, params_string]
-		else:
-			return "[%s]" % [params_string]
-
-	func get_closing_tag() -> String:
-		return "[/%s]" % [parameters.keys().front() if name.is_empty() else name]
-
-	func _to_string() -> String:
-		return get_opening_tag()
-
-
 func _set_color(color: Color) -> void:
 	text_layer.add_color(color, _cursor_pos)
 
@@ -279,7 +300,7 @@ func _reset_graphics() -> void:
 
 # endregion
 
-func _input(event: InputEvent) -> void:
+func _gui_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
 		# Handle modifier key combinations first
 		if event.ctrl_pressed:
@@ -378,7 +399,7 @@ class CursorLayer extends Control:
 
 
 	func _ready() -> void:
-		
+		mouse_filter = Control.MOUSE_FILTER_PASS
 		var char_metrics = font.get_char_size(" ".unicode_at(0), font_size)
 		line_height = font.get_height(font_size) 
 		char_width = char_metrics.x
@@ -417,7 +438,7 @@ class TextLayer extends Control:
 	var _modifier_queue: Array[Modifier]
 
 	func _ready() -> void:
-		
+		mouse_filter = Control.MOUSE_FILTER_PASS
 		var char_metrics = font.get_char_size(" ".unicode_at(0), font_size)
 		line_height = font.get_height(font_size)
 		char_width = char_metrics.x
@@ -588,12 +609,20 @@ class TextLayer extends Control:
 	func erase_screen() -> void:
 		content = []
 
+		# remove all check buttons
+		for ch in terminal._check_buttons_container.get_children(): ch.queue_free()
+
 		queue_redraw()
 
 	func erase(row: int, from: int, length: int = -1) -> void:
 		print("\nErasing.")
 		prints(row, from, length)
-		
+
+		# remove check buttons first
+		for ch in terminal._check_buttons_container.get_children():
+			if ch is CheckButton and ch.get_meta("row") == row-1:
+				ch.queue_free()
+
 		if row-1 > content.size()-1:
 			prints("Cant erase", row, content.size())		
 			return

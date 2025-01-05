@@ -10,6 +10,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+focus_mode = 2
 script = ExtResource("1_pj6ef")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="."]
@@ -27,6 +28,7 @@ unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(32, 0)
 layout_mode = 2
+mouse_filter = 1
 
 [node name="OutputContainer" type="ScrollContainer" parent="ScrollContainer/HBoxContainer"]
 unique_name_in_owner = true
