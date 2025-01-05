@@ -1,8 +1,17 @@
-extends Button
+extends TextureRect
+
+func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+	print(at_position)
+	if data == self: return false
+
+	%DropTop.visible = true
+	%DropBottom.visible = false
+	
+	return true
 
 func _get_drag_data(at_position: Vector2) -> Variant:
 	# Get the parent node you want to duplicate (in this case, "../..")
-	var parent = $"../.."
+	var parent = $"../../.."
 	if not parent:
 		print("Parent node not found!")
 		return null
