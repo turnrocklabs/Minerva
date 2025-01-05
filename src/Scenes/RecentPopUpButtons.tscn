@@ -39,11 +39,13 @@ layout_mode = 2
 [node name="RecentBtn" type="Button" parent="PanelContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+focus_mode = 0
 flat = true
 script = ExtResource("1_fwd6b")
 
 [node name="exitBtn" type="Button" parent="PanelContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+focus_mode = 0
 text = "X"
 flat = true
 script = ExtResource("1_fwd6b")
