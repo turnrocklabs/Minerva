@@ -76,6 +76,7 @@ func _ready():
 	add_child(popUpRecent)
 	
 	recentList = popUpRecent.find_child("RecentList")
+	popUpRecent.close_requested.connect(popUpClose)
 	
 	#_rebuild_recent_projects_ui()
 	# Create the new submenu
@@ -358,6 +359,8 @@ func _on_open_recent_project_sub(index: int):
 		var selected_project_name = submenu.get_item_text(index)
 		SingletonObject.OpenRecentProject.emit(selected_project_name)
 
+func popUpClose():
+	popUpRecent.visible = false
 
 func _on_close_button_pressed() -> void:
 	popUpRecent.visible = false
