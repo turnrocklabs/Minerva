@@ -1,22 +1,13 @@
-[gd_scene load_steps=13 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=9 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_1qp3n"]
 [ext_resource type="Texture2D" uid="uid://c48b7t07xvrlk" path="res://assets/icons/folder_up.svg" id="4_ycwhj"]
 [ext_resource type="Texture2D" uid="uid://dlwhgven8t3hj" path="res://assets/icons/folder_down.png" id="5_2k2ha"]
-[ext_resource type="Texture2D" uid="uid://c5gxq5cm5tpnk" path="res://assets/icons/autowrap_icon.png" id="5_7o203"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
-[ext_resource type="Texture2D" uid="uid://bs4p4f5yu37l7" path="res://assets/icons/icons8-microphone-24.png" id="5_ru7ju"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
-
-[sub_resource type="InputEventAction" id="InputEventAction_1e7nj"]
-action = &"toggle_autowrap"
-pressed = true
-
-[sub_resource type="Shortcut" id="Shortcut_rmr81"]
-events = [SubResource("InputEventAction_1e7nj")]
 
 [node name="Editor" type="Control"]
 layout_mode = 3
@@ -28,7 +19,6 @@ grow_vertical = 2
 script = ExtResource("1_8t5ew")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
-unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -86,52 +76,37 @@ focus_mode = 0
 icon = ExtResource("6_eqakq")
 flat = true
 
-[node name="ButtonsHBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
-unique_name_in_owner = true
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 14
 alignment = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/ButtonsHBoxContainer"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 4
 
-[node name="CheckButton" type="CheckButton" parent="VBoxContainer/ButtonsHBoxContainer"]
+[node name="CheckButton" type="CheckButton" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Pass editor content to chat"
 
-[node name="FillerControl2" type="Control" parent="VBoxContainer/ButtonsHBoxContainer"]
+[node name="FillerControl2" type="Control" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="AutowrapButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-tooltip_text = "warps text that goes over the width of the editor"
-shortcut = SubResource("Shortcut_rmr81")
-shortcut_feedback = false
-icon = ExtResource("5_7o203")
-
-[node name="MicButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-tooltip_text = "press to record audio and press again to stop recording"
-icon = ExtResource("5_ru7ju")
-
-[node name="reloadButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+[node name="reloadButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "reload file from disc"
 disabled = true
 icon = ExtResource("4_0is2e")
 
-[node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+[node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "save all unsaved and open editor tabs"
 icon = ExtResource("5_oex5t")
 
-[node name="SaveButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+[node name="SaveButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
@@ -139,12 +114,12 @@ tooltip_text = "save current tab into a file
 "
 icon = ExtResource("4_1qp3n")
 
-[node name="CreateNoteButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+[node name="CreateNoteButton" type="Button" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Creates note from editor tab content"
 icon = ExtResource("6_15oj3")
 
-[node name="FillerControl" type="Control" parent="VBoxContainer/ButtonsHBoxContainer"]
+[node name="FillerControl" type="Control" parent="VBoxContainer/HBoxContainer"]
 layout_mode = 2
 
 [node name="FillerControl3" type="Control" parent="VBoxContainer"]
@@ -174,8 +149,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 396.0
-offset_bottom = 136.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"bgPanel"
@@ -222,14 +197,12 @@ layout_mode = 2
 [connection signal="text_changed" from="VBoxContainer/FindStringContainer/FindStringLineEdit" to="." method="_on_find_string_line_edit_text_changed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/PreviousMatchButton" to="." method="_on_previous_match_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/NextMatchButton" to="." method="_on_next_match_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_button_pressed"]
-[connection signal="toggled" from="VBoxContainer/ButtonsHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
-[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/AutowrapButton" to="." method="toggle_autowrap"]
-[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/MicButton" to="." method="_on_mic_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_buton_pressed"]
+[connection signal="toggled" from="VBoxContainer/HBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]
 [connection signal="canceled" from="CloseDialog" to="." method="_on_save_dialog_canceled"]
 [connection signal="confirmed" from="CloseDialog" to="." method="_on_save_dialog_confirmed"]
 [connection signal="custom_action" from="CloseDialog" to="." method="_on_close_dialog_custom_action"]
