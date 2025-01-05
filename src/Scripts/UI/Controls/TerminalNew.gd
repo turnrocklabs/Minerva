@@ -82,7 +82,7 @@ func _ready():
 
 	terminal.seq_erase_character.connect(
 		func(count: int):
-			print("Delete %s characters at %s" % [count, _cursor_pos])
+			pass # print("Delete %s characters at %s" % [count, _cursor_pos])
 	)
 
 	terminal.seq_erase_from_cursor_to_end_of_line.connect(
@@ -280,7 +280,7 @@ func _on_output_received(text: String, type: Terminal.Type) -> void:
 func _set_cursor_position(row: int, column: int) -> void:
 	_cursor_pos = Vector2i(row + _viewport_start, column)
 
-	print("Set cursor position to %s..." % _cursor_pos)
+	pass # print("Set cursor position to %s..." % _cursor_pos)
 
 # endregion
 
@@ -451,7 +451,7 @@ class TextLayer extends Control:
 
 
 	func add_color(color: Color, _at: Vector2i) -> void:
-		var modifier_callable: = func(): print("Changed color to: ", color); _foreground_color = color
+		var modifier_callable: = func(): _foreground_color = color
 
 		var modifier: = Modifier.new([modifier_callable])
 		modifier.name += ";fgr_color: %s" % color
@@ -459,7 +459,7 @@ class TextLayer extends Control:
 		_modifier_queue.append(modifier)
 
 	func add_background_color(color: Color, _at: Vector2i) -> void:
-		var modifier_callable: = func(): print("Changed background color to: ", color); _background_color = color
+		var modifier_callable: = func(): _background_color = color
 		
 		var modifier: = Modifier.new([modifier_callable])
 		modifier.name += ";bgr_color: %s" % color
@@ -468,7 +468,7 @@ class TextLayer extends Control:
 
 
 	func _add_string_content_part(part: String, at: Vector2i) -> void:
-		print("Adding '%s' at %s" % [part.c_escape(), at])
+		pass # print("Adding '%s' at %s" % [part.c_escape(), at])
 		if at.x > content.size():
 			for i in range(at.x - content.size()):
 				content.append([])
@@ -615,8 +615,8 @@ class TextLayer extends Control:
 		queue_redraw()
 
 	func erase(row: int, from: int, length: int = -1) -> void:
-		print("\nErasing.")
-		prints(row, from, length)
+		pass # print("\nErasing.")
+		pass # prints(row, from, length)
 
 		# remove check buttons first
 		for ch in terminal._check_buttons_container.get_children():
@@ -624,12 +624,12 @@ class TextLayer extends Control:
 				ch.queue_free()
 
 		if row-1 > content.size()-1:
-			prints("Cant erase", row, content.size())		
+			pass # prints("Cant erase", row, content.size())		
 			return
 
 		
 		if from == 1 and length == -1: # just delete the whole line right away
-			print("Deleting whole line ", content[row-1])
+			pass # print("Deleting whole line ", content[row-1])
 			content[row-1] = []
 			queue_redraw()
 			return
@@ -641,11 +641,11 @@ class TextLayer extends Control:
 
 		var offset: = 0
 
-		print("offset: ", offset)
-		print("from: ", from)
-		print("length: ", length)
+		pass # print("offset: ", offset)
+		pass # print("from: ", from)
+		pass # print("length: ", length)
 
-		print("Erasing line content '%s'" % str(line_content))
+		pass # print("Erasing line content '%s'" % str(line_content))
 
 		var total: = 0
 		var delete_to: = -1 if length == -1 else from + length
@@ -654,24 +654,24 @@ class TextLayer extends Control:
 		for i in range(line_content.size()):
 			var line_part = line_content[i]
 
-			print("line_part: ", line_part)
+			pass # print("line_part: ", line_part)
 
 			if line_part is String:
 				total += line_part.length()
-				print("Total is now %s" % total)
+				pass # print("Total is now %s" % total)
 
 				# if we reach the point where we start deleting
 				if not deleting and from < total-1:
-					print("Not deleting and from < total-1")
+					pass # print("Not deleting and from < total-1")
 					var from_rel: int = from - (total - line_part.length())
 					
 					var actl = line_part.length()-from_rel if length == -1 else length
 
 					if from_rel + actl >= line_part.length():
-						print("Must delete in next parts, deleting = true")
+						pass # print("Must delete in next parts, deleting = true")
 						var chars = max(0, line_part.length()-from_rel) if length == -1 else length
 						line_part = line_part.erase(from_rel, chars)
-						print("line part is now '%s'" % line_part.c_escape())
+						pass # print("line part is now '%s'" % line_part.c_escape())
 						deleting = true
 						line_content[i] = line_part
 						continue
@@ -679,24 +679,24 @@ class TextLayer extends Control:
 						var chars = max(0, line_part.length()-from_rel) if length == -1 else length
 						
 						line_part = line_part.erase(from_rel, chars)
-						print("line part is now '%s'" % line_part.c_escape())
-						print(from_rel, length)
+						pass # print("line part is now '%s'" % line_part.c_escape())
+						pass # print(from_rel, length)
 						line_content[i] = line_part
-						print("break")
+						pass # print("break")
 						break
 
 				if deleting:
-					print("deleting...")
+					pass # print("deleting...")
 					if delete_to == -1:
-						print("Deleting the whole part")
+						pass # print("Deleting the whole part")
 						line_part = ""
 					else:
-						print("Deleting part of string")
+						pass # print("Deleting part of string")
 						if delete_to <= total-1:
 							line_part = line_part.erase(0, total-1-delete_to)
-							print("line part is now '%s'" % line_part.c_escape())
+							pass # print("line part is now '%s'" % line_part.c_escape())
 						else:
-							print("Deleting whole string, deleting = false")
+							pass # print("Deleting whole string, deleting = false")
 							line_part = ""
 							deleting = false
 
@@ -724,7 +724,7 @@ class TextLayer extends Control:
 
 
 		for line_parts in content:
-			print(line_parts)
+			pass # print(line_parts)
 			for part in line_parts:
 				if part is String:
 					var string_pos: = pos * Vector2(char_width, line_height)
@@ -742,14 +742,14 @@ class TextLayer extends Control:
 								draw_rect(background_rect, _background_color)
 							start = i+1
 
-					print(part)
+					pass # print(part)
 					draw_string(font, string_pos, part, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, _foreground_color)
 					
 					
 					pos.x += part.length()
 				
 				if part is Modifier:
-					print("Applying part: ", part)
+					pass # print("Applying part: ", part)
 					part.apply()
 
 			pos.y += 1
