@@ -1,22 +1,13 @@
 [gd_scene format=3 uid="uid://bd8ohb6l8jjyr"]
 
-[node name="ProjectRecent" type="Control"]
-layout_mode = 3
-anchors_preset = 0
-size_flags_horizontal = 8
-size_flags_vertical = 4
+[node name="ProjectRecent" type="Window"]
+position = Vector2i(0, 36)
+size = Vector2i(605, 410)
 
 [node name="LayerBG" type="Panel" parent="."]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -299.5
-offset_top = -203.0
-offset_right = 299.5
-offset_bottom = 203.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
@@ -44,14 +35,6 @@ theme_override_constants/margin_bottom = 5
 
 [node name="VBoxContainer" type="VBoxContainer" parent="LayerBG/LayersMenu/MarginContainer"]
 layout_mode = 2
-
-[node name="HBoxContainer" type="HBoxContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer"]
-layout_mode = 2
-alignment = 2
-
-[node name="CloseButton" type="Button" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-text = "X"
 
 [node name="LayersHolder" type="VBoxContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer"]
 layout_mode = 2
