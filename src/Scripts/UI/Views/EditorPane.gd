@@ -11,6 +11,7 @@ enum LAYOUT {HORIZONTAL, VERTICAL}
 static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
 static var _unsaved_changes_file_icon: = preload("res://assets/icons/half_circle_left.svg")
 static var _unsaved_changes_associated_icon: = preload("res://assets/icons/half_circle_right.svg")
+static var _incoplete_snippet_icon: = preload("res://assets/icons/warning_circle.svg")
 
 var current_layout: LAYOUT
 
@@ -240,6 +241,12 @@ func update_tabs_icon() -> void:
 		
 		counter += 1
 
+func check_incomplete_snippet(editor: Editor):
+	if editor.type == Editor.Type.TEXT:
+		if editor.code_edit.text.contains("rest of code"):
+			var tab_idx: = Tabs.get_tab_idx_from_control(editor)
+			Tabs.set_tab_icon(tab_idx, _incoplete_snippet_icon)
+			Tabs.set_tab_tooltip(tab_idx, "Potential incomplete code snippet")
 
 func _on_editor_content_changed(editor: Editor):
 
@@ -290,11 +297,13 @@ func _on_editor_content_changed(editor: Editor):
 					tooltip = "\"%s\" unsaved" % associated_object_name
 				else:
 					tooltip = "Content unsaved"
-					
+	
 
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	Tabs.set_tab_icon(tab_idx, icon)
 	Tabs.set_tab_tooltip(tab_idx, tooltip)
+
+	check_incomplete_snippet(editor)
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
