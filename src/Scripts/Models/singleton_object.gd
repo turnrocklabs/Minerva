@@ -3,7 +3,7 @@ extends Node
 #region global variables
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
 var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
-var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm"]
+var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm", "ogv"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var is_graph:bool = false
 var is_masking:bool
@@ -399,6 +399,13 @@ signal SaveOpenEditorTabs
 signal UpdateLastSavePath(new_path: String)
 @warning_ignore("unused_signal")
 signal UpdateUnsavedTabIcon
+##
+@warning_ignore("unused_signal")
+signal set_icon_size_24
+@warning_ignore("unused_signal")
+signal set_icon_size_48
+@warning_ignore("unused_signal")
+signal set_icon_size_68
 
 var saved_state = true
 
@@ -443,10 +450,10 @@ func all_project_features_open() -> bool:
 #region Theme change
 
 # get the root control node and apply the theme to it, all its children inherit the theme
-@onready var root_control: Control = $"/root/RootControl"
+#@onready var root_control: Control = $"/root/RootControl"
 
 #more themes can be added in the future with ease using the enums
-enum theme {LIGHT_MODE, DARK_MODE}
+enum theme {LIGHT_MODE, DARK_MODE, WINDOWS_MODE}
 @warning_ignore("unused_signal")
 signal theme_changed(theme_enum)
 
@@ -456,19 +463,24 @@ func get_theme_enum() -> int:
 
 
 func set_theme(themeID: int) -> void:
+	var root_control: Control = get_tree().current_scene
 	if get_theme_enum() != themeID:
-		print("theme enum:" + str(themeID))
 		match themeID:
 			theme.LIGHT_MODE:
 				var _light_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/light_mode.theme")
-				var light_theme = ResourceLoader.load_threaded_get("res://assets/themes/light_mode.theme")
+				var light_theme: = ResourceLoader.load_threaded_get("res://assets/themes/light_mode.theme")
 				root_control.theme = light_theme
 				save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
 			theme.DARK_MODE:
 				var _dark_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/blue_dark_mode.theme")
-				var dark_theme = ResourceLoader.load_threaded_get("res://assets/themes/blue_dark_mode.theme")
+				var dark_theme: = ResourceLoader.load_threaded_get("res://assets/themes/blue_dark_mode.theme")
 				root_control.theme = dark_theme
 				save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
+			theme.WINDOWS_MODE:
+				var _windows_theme_request: = ResourceLoader.load_threaded_request("res://assets/themes/Windows.theme")
+				var windows_theme: = ResourceLoader.load_threaded_get("res://assets/themes/Windows.theme")
+				root_control.theme = windows_theme
+				save_to_config_file("theme", "theme_enum", theme.WINDOWS_MODE)
 		theme_changed.emit(themeID)
 
 #endregion Theme change
@@ -501,6 +513,15 @@ func hide_loading_screen():
 	Loading.emit(false, "")
 
 #endregion Loading screen stuff
+
+#region Prealoaded static scenes
+static var video_player_scene: = preload("res://Scenes/video_player.tscn")
+static var audio_contols_scene: = preload("res://Scenes/audio_note_controls.tscn")
+static var image_controls_scenne: = preload("res://Scenes/image_note_controls.tscn")
+static var notes_scene: = preload("res://Scenes/Note.tscn")
+
+
+#endregion Prealoaded static scenes
 
 	
 func reorder_recent_project(firstIndex: int, secondIndex: int) -> void:

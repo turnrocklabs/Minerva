@@ -3,6 +3,7 @@ class_name GraphicsEditor
 extends PanelContainer
 
 signal masking_ended()
+var circle_cursor: =  preload("res://assets/icons/cursor_circle.png")
 
 var Bubble = preload("res://Scenes/CloudControl.tscn")
 #region onready control declarations
@@ -92,6 +93,7 @@ var layer_undo_histories = {} # Dictionary to store undo histories for each laye
 
 
 func _ready():
+	DisplayServer.cursor_set_custom_image(circle_cursor, DisplayServer.CURSOR_POINTING_HAND, circle_cursor.get_size()/2)
 	if SingletonObject.is_picture:
 		var hbox: HBoxContainer = add_new_pic.get_vbox().get_child(0)
 		hbox.set("theme_override_constants/separation", 14)
@@ -173,6 +175,7 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 
 
 func setup_from_image(image_: Image):
+	if image_ == null: return
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	var size_x = clamp(new_size.x, 1, INF)
 	var size_y = clamp(new_size.y, 1, INF)
@@ -180,7 +183,8 @@ func setup_from_image(image_: Image):
 	if size_x != 1 and size_y != 1: 
 		image_.resize(size_x, size_y)
 	else:
-		image_.resize(%CenterContainer.size.x, %CenterContainer.size.y)
+		if %CenterContainer.size.x > 0 and %CenterContainer.size.y > 0:
+			image_.resize(%CenterContainer.size.x, %CenterContainer.size.y)
 		
 	
 
@@ -322,9 +326,8 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 					target_image.set_pixelv(pixel, _background_images[_draw_layer].get_pixelv(pixel))  
 				elif not erasing:
 					target_image.set_pixelv(pixel, color) 
-				
-				
-				
+
+
 func _gui_input(event: InputEvent):
 	var active_layer = _mask_layer if _masking else _draw_layer
 	var layer_local_pos
@@ -636,7 +639,7 @@ func LayerVisible(Hbox: HBoxContainer):
 func _on_brushes_item_selected(index):
 	# drawing if the index is 0
 	drawing_brush_active = (index == 0) or (index == 1)
-
+	
 	#off other tools not drawing
 	%MgIcon.visible = false
 	erasing = false
@@ -647,7 +650,6 @@ func _on_brushes_item_selected(index):
 	zoomOut = false
 	zoom_in_button.modulate = Color.WHITE
 	zoom_out_button.modulate = Color.WHITE
-	
 	dialog_clouds.hide()
 	%PenAdditionalTools.visible = false
 	%ApplyMaskButton.visible = false
@@ -1163,3 +1165,12 @@ func _input(event: InputEvent) -> void:
 			var layers_y: int = int(layers_menu.global_position.y)
 			if (event_x < layers_x or event_x > popup_size_limit.x) or (event_y < layers_y or event_y > popup_size_limit.y):
 				popup_panel.hide()
+
+
+func _on_scroll_container_mouse_exited() -> void:
+	DisplayServer.cursor_set_shape(DisplayServer.CURSOR_ARROW)
+
+
+func _on_scroll_container_mouse_entered() -> void:
+	if (erasing or drawing):
+		DisplayServer.cursor_set_shape(DisplayServer.CURSOR_POINTING_HAND)
