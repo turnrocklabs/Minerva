@@ -81,7 +81,7 @@ func _ready():
 	terminal.seq_cursor_position.connect(_set_cursor_position)
 
 	terminal.seq_erase_character.connect(
-		func(count: int):
+		func(_count: int):
 			pass # print("Delete %s characters at %s" % [count, _cursor_pos])
 	)
 
@@ -635,7 +635,7 @@ class TextLayer extends Control:
 
 		var line_content: = content[row-1]
 
-		var offset: = 0
+		var _offset: = 0
 
 		pass # print("offset: ", offset)
 		pass # print("from: ", from)
