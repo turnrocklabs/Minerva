@@ -522,8 +522,6 @@ void Terminal::_process_input(const String &input)
 {
     String text_buffer;
 
-    UtilityFunctions::print("Got: ", input.c_escape());
-
     for (int i = 0; i < input.length(); i++)
     {
         char32_t c = input[i];
