@@ -41,8 +41,21 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 16
 
+[node name="Button" type="Button" parent="PanelContainer/vBoxContainer"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+focus_mode = 0
+mouse_filter = 1
+mouse_default_cursor_shape = 6
+icon = ExtResource("2_vvcoi")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
 [node name="DragTextureRect" type="TextureRect" parent="PanelContainer/vBoxContainer"]
 unique_name_in_owner = true
+visible = false
+z_index = 5
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 mouse_default_cursor_shape = 6

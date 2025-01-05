@@ -374,6 +374,13 @@ signal SaveOpenEditorTabs
 signal UpdateLastSavePath(new_path: String)
 @warning_ignore("unused_signal")
 signal UpdateUnsavedTabIcon
+##
+@warning_ignore("unused_signal")
+signal set_icon_size_24
+@warning_ignore("unused_signal")
+signal set_icon_size_48
+@warning_ignore("unused_signal")
+signal set_icon_size_68
 
 var saved_state = true
 
@@ -421,7 +428,7 @@ func all_project_features_open() -> bool:
 #@onready var root_control: Control = $"/root/RootControl"
 
 #more themes can be added in the future with ease using the enums
-enum theme {LIGHT_MODE, DARK_MODE}
+enum theme {LIGHT_MODE, DARK_MODE, WINDOWS_MODE}
 @warning_ignore("unused_signal")
 signal theme_changed(theme_enum)
 
@@ -433,18 +440,22 @@ func get_theme_enum() -> int:
 func set_theme(themeID: int) -> void:
 	var root_control: Control = get_tree().current_scene
 	if get_theme_enum() != themeID:
-		print("theme enum:" + str(themeID))
 		match themeID:
 			theme.LIGHT_MODE:
 				var _light_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/light_mode.theme")
-				var light_theme = ResourceLoader.load_threaded_get("res://assets/themes/light_mode.theme")
+				var light_theme: = ResourceLoader.load_threaded_get("res://assets/themes/light_mode.theme")
 				root_control.theme = light_theme
 				save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
 			theme.DARK_MODE:
 				var _dark_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/blue_dark_mode.theme")
-				var dark_theme = ResourceLoader.load_threaded_get("res://assets/themes/blue_dark_mode.theme")
+				var dark_theme: = ResourceLoader.load_threaded_get("res://assets/themes/blue_dark_mode.theme")
 				root_control.theme = dark_theme
 				save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
+			theme.WINDOWS_MODE:
+				var _windows_theme_request: = ResourceLoader.load_threaded_request("res://assets/themes/Windows.theme")
+				var windows_theme: = ResourceLoader.load_threaded_get("res://assets/themes/Windows.theme")
+				root_control.theme = windows_theme
+				save_to_config_file("theme", "theme_enum", theme.WINDOWS_MODE)
 		theme_changed.emit(themeID)
 
 #endregion Theme change
