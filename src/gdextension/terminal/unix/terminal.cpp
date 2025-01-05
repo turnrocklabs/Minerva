@@ -86,7 +86,7 @@ bool Terminal::_process_sequence(const String &seq)
 {
     // https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 
-    UtilityFunctions::print("Processing sequence: ", seq.c_escape());
+    // UtilityFunctions::print("Processing sequence: ", seq.c_escape());
 
     for (const auto &[key, value] : ANSI_SEQUENCES)
     {
