@@ -131,7 +131,7 @@ func _setup_user_message():
 
 
 func _setup_model_message():
-	%RightMarginControl.visible = true
+	#%RightMarginControl.visible = true
 	left_control.visible = true
 	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
 	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName

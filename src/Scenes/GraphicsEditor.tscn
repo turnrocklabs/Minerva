@@ -223,8 +223,10 @@ tooltip_text = "click to see dropdown for adding layers"
 icon = ExtResource("18_yov21")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+mouse_default_cursor_shape = 2
 
 [node name="CenterContainer" type="CenterContainer" parent="VBoxContainer/ScrollContainer"]
 unique_name_in_owner = true
@@ -334,6 +336,8 @@ access = 2
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/VBoxContainer/ArrowBottom" to="." method="_on_arrow_bottom_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/layersIncrease/ArrowRight" to="." method="_on_arrow_right_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Layers" to="." method="_on_layers_pressed"]
+[connection signal="mouse_entered" from="VBoxContainer/ScrollContainer" to="." method="_on_scroll_container_mouse_entered"]
+[connection signal="mouse_exited" from="VBoxContainer/ScrollContainer" to="." method="_on_scroll_container_mouse_exited"]
 [connection signal="resized" from="PopupPanel/LayerBG/LayersMenu" to="." method="_on_layers_menu_resized"]
 [connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddLayer" to="." method="_on_add_layer_pressed"]
 [connection signal="pressed" from="PopupPanel/LayerBG/LayersMenu/MarginContainer/LayersHolder/AddImagelayer" to="." method="_on_add_image_layer_pressed"]

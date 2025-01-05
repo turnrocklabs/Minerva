@@ -12,7 +12,7 @@ var _drag_active := false
 
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
-var _can_drop:bool = false
+#var _can_drop:bool = false
 ## return a single large string of all active memories
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
@@ -41,7 +41,7 @@ func Disable_All():
 		item.Enabled = false
 
 	self.render_threads()
-	pass
+
 
 func enable_all():
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
@@ -126,23 +126,6 @@ func clear_all_tabs():
 	pass
 	
 
-func render_threads():
-	# Save the last active thread.
-	var last_thread = self.current_tab
-
-	# we must delete existing noted so creating new project works
-	for c in %tcThreads.get_children():
-		c.free() # Use free instead of queue_free so the node gets deleted immediately
-	
-	print("threads: ", SingletonObject.ThreadList.size())
-
-	for thread in SingletonObject.ThreadList:
-		render_thread(thread)
-
-	# Restore the last active thread:
-	if self.get_child_count():
-		self.current_tab = clampi(last_thread, 0, self.get_child_count()-1)
-	
 
 #region Add notes methods
 
@@ -238,6 +221,23 @@ func delete_note(memory_item: MemoryItem):
 	
 	active_thread.MemoryItemList.remove_at(idx)
 
+
+func render_threads():
+	# Save the last active thread.
+	var last_thread = self.current_tab
+
+	# we must delete existing noted so creating new project works
+	for c in %tcThreads.get_children():
+		c.queue_free() # Use free instead of queue_free so the node gets deleted immediately
+	
+	for thread in SingletonObject.ThreadList:
+		render_thread(thread)
+
+	# Restore the last active thread:
+	if self.get_child_count():
+		self.current_tab = clampi(last_thread, 0, self.get_child_count()-1)
+
+static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
 func render_thread(thread_item: MemoryThread):
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
@@ -245,11 +245,11 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# Create a custom VBoxContainer derived class
-	var vboxMemoryList = preload("res://Scripts/UI/Controls/vboxMemoryList.gd").new(self, thread_item.ThreadId, thread_item.MemoryItemList)
+	var vboxMemoryList = vboxMemoryList_scene.new(self, thread_item.ThreadId, thread_item.MemoryItemList)
 
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vboxMemoryList)
-	scroll_container.follow_focus = true
+	#scroll_container.follow_focus = true
 	
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
 	#scroll_container.name = thread_item.ThreadName
@@ -257,7 +257,8 @@ func render_thread(thread_item: MemoryThread):
 	%tcThreads.add_child(scroll_container)
 	var tab_idx = %tcThreads.get_tab_idx_from_control(scroll_container)
 	%tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
-	
+
+
 
 
 func _on_close_tab(tab: int, container: TabContainer):
@@ -271,7 +272,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 
 		# this will crash the program by freeing the `control` object
 		# Update the UI with the remaining threads
-		# render_threads()
+		#render_threads()
 
 		# Store deleted tab for potential undo
 		SingletonObject.undo.store_deleted_tab_right(tab, control, "right")
@@ -322,7 +323,7 @@ func attach_file(the_file: String):
 	var content = ""
 	var content_type = ""
 	var type
-	var title = the_file.get_file()#.get_basename()
+	var title = the_file.get_file()
 	
 	# Get the active thread
 	if (SingletonObject.ThreadList == null) or current_tab < 0:
@@ -349,8 +350,9 @@ func attach_file(the_file: String):
 	elif file_ext in SingletonObject.supported_video_formats:
 		file_type = "video"
 		type= SingletonObject.note_type.VIDEO
-		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
+		#var file_data = file.get_buffer(file.get_length())
+		#content = Marshalls.raw_to_base64(file_data)
+		content = the_file
 		content_type = "video/%s" % file_ext
 	elif file_ext in SingletonObject.supported_audio_formats:
 		file_type = "audio"
@@ -363,7 +365,7 @@ func attach_file(the_file: String):
 		if file_ext == "wav":
 			var wavAudioStream = AudioStreamWAV.new()
 			wavAudioStream.data = buffer
-			wavAudioStream.format = AudioStreamWAV.FORMAT_16_BITS
+			wavAudioStream.format = AudioStreamWAV.FORMAT_8_BITS
 			new_memory.Audio = wavAudioStream
 		if file_ext == "ogg":
 			var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)
@@ -383,6 +385,7 @@ func attach_file(the_file: String):
 	new_memory.ContentType = content_type
 	new_memory.Type = type
 	new_memory.Visible = true
+	new_memory.FilePath = the_file
 
 	# Append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
