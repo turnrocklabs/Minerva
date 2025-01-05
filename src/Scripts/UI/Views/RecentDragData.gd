@@ -1,13 +1,51 @@
 extends TextureRect
 
+@onready var recentList = $"../../..".get_parent()
+
 func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
-	print(at_position)
 	if data == self: return false
 
 	%DropTop.visible = true
 	%DropBottom.visible = false
 	
 	return true
+
+func _drop_data(at_position: Vector2, data: Variant) -> void:
+	var indexOne = 0
+	for i in recentList.get_children():
+		var DroppedData = data.name.split("_")
+		var FromList = i.name.split("_")
+		if FromList == DroppedData:
+			indexOne = recentList.get_children().find(i)
+			recentList.get_child(indexOne).queue_free()
+			break
+			
+	if recentList == null:
+		printerr("RecentList not found!")
+		return
+
+	if data is Control:
+		var new_button = data.duplicate()
+
+		var local_position = recentList.get_global_transform().affine_inverse() * get_global_transform() * at_position
+		var index = get_insertion_index(recentList, local_position)
+		recentList.add_child(new_button)
+		recentList.move_child(new_button, index)
+		SingletonObject.reorder_recent_project(indexOne,index)
+		
+	else:
+		printerr("Dropped data is not a Control node.")
+
+# RecentDropData.gd
+func get_insertion_index(container: Container, local_position: Vector2) -> int:
+	for i in range(container.get_child_count()):
+		var child = container.get_child(i)
+		if child is Control:
+			var child_rect = Rect2(child.position, child.size)
+			if local_position.y < child_rect.position.y + child_rect.size.y:  # Anywhere over the child
+				return i
+	return container.get_child_count()
+	
 
 func _get_drag_data(at_position: Vector2) -> Variant:
 	# Get the parent node you want to duplicate (in this case, "../..")
