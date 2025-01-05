@@ -14,13 +14,37 @@ on:
         - linux
   push:
     paths:
-      - "src/gdextension/**"
+      - "src/**"
     branches:
       - user/milos/feature/terminal
 
 jobs:
+  check-gdextension:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            git diff --name-only HEAD^ HEAD > changes.txt
+            if grep -q "src/gdextension/" changes.txt; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
   build-windows:
-    if: github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push'
+    needs: check-gdextension
+    if: |
+      needs.check-gdextension.outputs.should_build == 'true' &&
+      (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
@@ -29,7 +53,7 @@ jobs:
         lfs: true
     
     - name: Cache SCons build
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: |
           src/.sconsign.dblite
@@ -40,7 +64,7 @@ jobs:
           ${{ runner.os }}-scons-
 
     - name: Cache godot-cpp
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: |
           src/godot-cpp/bin/**
@@ -67,7 +91,10 @@ jobs:
         path: src/bin/libterminal*
 
   build-linux:
-    if: github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push'
+    needs: check-gdextension
+    if: |
+      needs.check-gdextension.outputs.should_build == 'true' &&
+      (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -76,7 +103,7 @@ jobs:
         lfs: true
         
     - name: Cache SCons build
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: |
           src/.sconsign.dblite
@@ -87,7 +114,7 @@ jobs:
           ${{ runner.os }}-scons-
 
     - name: Cache godot-cpp
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: |
           src/godot-cpp/bin/**
@@ -119,21 +146,34 @@ jobs:
         path: src/bin/libterminal*
 
   build-godot:
-    needs: [build-windows, build-linux]
-    if: always() && (needs.build-windows.result == 'success' || needs.build-linux.result == 'success')
+    needs: [check-gdextension, build-windows, build-linux]
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       
-      - name: Download Extensions
+      - name: Download Previous Artifacts
+        if: needs.check-gdextension.outputs.should_build != 'true'
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build.yml
+          workflow_conclusion: success
+          name: terminal-*
+          path: src/bin/
+          if_no_artifact_found: ignore
+      
+      - name: Download Current Artifacts
+        if: needs.check-gdextension.outputs.should_build == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: terminal-*
           path: src/bin/
           merge-multiple: true
       
-      - name: Verify Files
-        run: ls -la src/bin/
+      - name: Create and Verify Bin Directory
+        run: |
+          mkdir -p src/bin
+          ls -la src/bin/
           
       - name: Install Linux Build Dependencies
         run: |
@@ -170,10 +210,10 @@ jobs:
         working-directory: src
         run: |
           mkdir -p build
-          if [ "${{ github.event.inputs.platform }}" = "windows" ] || [ "${{ github.event.inputs.platform }}" = "all" || [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event.inputs.platform }}" = "windows" ] || [ "${{ github.event.inputs.platform }}" = "all" ] || [ "${{ github.event_name }}" = "push" ]; then
             godot --headless --export-debug "Windows Desktop" build/Minerva.exe
           fi
-          if [ "${{ github.event.inputs.platform }}" = "linux" ] || [ "${{ github.event.inputs.platform }}" = "all" || [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event.inputs.platform }}" = "linux" ] || [ "${{ github.event.inputs.platform }}" = "all" ] || [ "${{ github.event_name }}" = "push" ]; then
             godot --headless --export-debug "Linux/X11" build/Minerva.x86_64
           fi
           
