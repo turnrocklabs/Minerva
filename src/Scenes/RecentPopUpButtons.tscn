@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/RecentDragData.gd" id="1_3m2s7"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/RecentDropData.gd" id="1_fwd6b"]
-[ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_icons/drag_24px_no_bg.png" id="1_jojv5"]
+[ext_resource type="Texture2D" uid="uid://cu0vsfkdca6ah" path="res://assets/icons/drag_icons/drag_24px_no_bg_3_dots.png" id="1_tpp3r"]
 
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_3ay8p"]
 color = Color(0.164706, 0.345098, 0.831373, 1)
@@ -28,7 +28,7 @@ layout_mode = 2
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 mouse_default_cursor_shape = 6
-texture = ExtResource("1_jojv5")
+texture = ExtResource("1_tpp3r")
 expand_mode = 2
 stretch_mode = 5
 script = ExtResource("1_3m2s7")
@@ -39,11 +39,13 @@ layout_mode = 2
 [node name="RecentBtn" type="Button" parent="PanelContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+flat = true
 script = ExtResource("1_fwd6b")
 
 [node name="exitBtn" type="Button" parent="PanelContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "X"
+flat = true
 script = ExtResource("1_fwd6b")
 
 [node name="DropBottom" type="HSeparator" parent="."]
