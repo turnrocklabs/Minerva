@@ -1,0 +1,88 @@
+[gd_scene load_steps=5 format=3 uid="uid://bwtmgweop2bhn"]
+
+[ext_resource type="Texture2D" uid="uid://bi2d1wriixcyu" path="res://assets/icons/play_icons/play-24.png" id="1_e86o4"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/audio_note_controls.gd" id="1_ikrgo"]
+[ext_resource type="Texture2D" uid="uid://bat0uh67ipveo" path="res://assets/icons/stop_icons/stop_icon_24.png" id="3_l1kh3"]
+[ext_resource type="Texture2D" uid="uid://c5kcyetd4isge" path="res://assets/icons/speaker-24.png" id="5_hiiy7"]
+
+[node name="AudioHBoxContainer" type="HBoxContainer" node_paths=PackedStringArray("audio_slider", "volume_slider", "audio_stream_player", "audio_timer", "play_button", "stop_button", "mute_button")]
+custom_minimum_size = Vector2(0, 100)
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 28.0
+grow_horizontal = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 8
+script = ExtResource("1_ikrgo")
+audio_slider = NodePath("AudioSlider")
+volume_slider = NodePath("VolumeSlider")
+audio_stream_player = NodePath("AudioStreamPlayer")
+audio_timer = NodePath("AudioSlider/AudioTimer")
+play_button = NodePath("PlayButton")
+stop_button = NodePath("StopButton")
+mute_button = NodePath("MuteButton")
+
+[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 2
+
+[node name="PlayButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 1
+text = "
+"
+icon = ExtResource("1_e86o4")
+flat = true
+
+[node name="StopButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 1
+icon = ExtResource("3_l1kh3")
+flat = true
+
+[node name="MuteButton" type="Button" parent="."]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+icon = ExtResource("5_hiiy7")
+flat = true
+
+[node name="VolumeSlider" type="HSlider" parent="."]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+size_flags_vertical = 4
+max_value = 1.0
+step = 0.03
+value = 0.99
+scrollable = false
+
+[node name="AudioSlider" type="HSlider" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+editable = false
+scrollable = false
+
+[node name="AudioTimer" type="Timer" parent="AudioSlider"]
+wait_time = 0.05
+autostart = true
+
+[node name="Label2" type="Label" parent="."]
+visible = false
+layout_mode = 2
+text = "0.0"
+
+[node name="Control2" type="Control" parent="."]
+layout_mode = 2
+
+[connection signal="pressed" from="PlayButton" to="." method="_on_play_button_pressed"]
+[connection signal="pressed" from="StopButton" to="." method="_on_stop_button_pressed"]
+[connection signal="pressed" from="MuteButton" to="." method="_on_mute_button_pressed"]
+[connection signal="value_changed" from="VolumeSlider" to="." method="_on_volume_slider_value_changed"]
+[connection signal="timeout" from="AudioSlider/AudioTimer" to="." method="_on_audio_timer_timeout"]
