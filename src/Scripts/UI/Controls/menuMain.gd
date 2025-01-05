@@ -66,14 +66,17 @@ func _on_package_submenu_id_pressed(id: int):
 		0: SingletonObject.PackageProject.emit()
 		1: SingletonObject.UnpackageProject.emit()
 
+
+@onready var project_recent: Window = %ProjectRecent
+
 func _ready():
 	
-	popUpRecent = %PopupPanelRecent
+	popUpRecent = project_recent
 	popUpRecent.visible = false
 	#set op position for pop up by a center of the root node
 	popUpRecent.position.x = $"../../..".size.x/2
 	popUpRecent.position.y = $"../../..".size.y/2
-	add_child(popUpRecent)
+
 	
 	recentList = popUpRecent.find_child("RecentList")
 	popUpRecent.close_requested.connect(popUpClose)
