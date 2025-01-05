@@ -104,7 +104,8 @@ func downscale_image(image: Image) -> Image:
 func _ready():
 	# connecting signal for changing the dots texture when the main theme changes
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
-	change_modulate_for_texture(SingletonObject.get_theme_enum())
+	description_node.text = ""
+	#change_modulate_for_texture(SingletonObject.get_theme_enum())
 	# var new_size: Vector2 = size * 0.15
 	# set_size(new_size)
 	label_node.text_changed.connect(

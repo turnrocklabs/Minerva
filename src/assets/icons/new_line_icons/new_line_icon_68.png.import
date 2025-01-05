@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bs4p4f5yu37l7"
-path="res://.godot/imported/icons8-microphone-24.png-1c7c064d56ceb51176a11d740d1019af.ctex"
+uid="uid://dbcxp7ty3bnc4"
+path="res://.godot/imported/new_line_icon_68.png-3326bbe0ef19e3cd1ec06c9216a1e90b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/icons8-microphone-24.png"
-dest_files=["res://.godot/imported/icons8-microphone-24.png-1c7c064d56ceb51176a11d740d1019af.ctex"]
+source_file="res://assets/icons/new_line_icons/new_line_icon_68.png"
+dest_files=["res://.godot/imported/new_line_icon_68.png-3326bbe0ef19e3cd1ec06c9216a1e90b.ctex"]
 
 [params]
 

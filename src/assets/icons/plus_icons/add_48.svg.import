@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://csohmidpjjaxd"
-path="res://.godot/imported/ink_eraser_off.svg-66ce8c5a023dcda1fda2129876b1c9ab.ctex"
+uid="uid://cvb2vnkv4fpn5"
+path="res://.godot/imported/add_48.svg-62a95d08eb42af4302ee6c3d00c0cf3c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/ink_eraser_off.svg"
-dest_files=["res://.godot/imported/ink_eraser_off.svg-66ce8c5a023dcda1fda2129876b1c9ab.ctex"]
+source_file="res://assets/icons/plus_icons/add_48.svg"
+dest_files=["res://.godot/imported/add_48.svg-62a95d08eb42af4302ee6c3d00c0cf3c.ctex"]
 
 [params]
 
