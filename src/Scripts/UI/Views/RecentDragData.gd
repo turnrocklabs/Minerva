@@ -2,7 +2,7 @@ extends TextureRect
 
 @onready var recentList = $"../../..".get_parent()
 
-func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
 	if data == self: return false
 
 	%DropTop.visible = true

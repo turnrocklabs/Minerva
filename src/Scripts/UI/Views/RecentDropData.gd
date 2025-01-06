@@ -2,7 +2,7 @@ extends Button
 
 @onready var recentList = $"../../..".get_parent().get_parent()
 
-func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
 	
 	if data == self: return false
 
@@ -18,7 +18,7 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 		var FromList = i.name.split("_")
 		if FromList == DroppedData:
 			indexOne = recentList.get_children().find(i)
-			recentList.get_child(indexOne).queue_free()
+			#recentList.get_child(indexOne).queue_free()
 			break
 			
 	if recentList == null:
@@ -30,8 +30,8 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 
 		var local_position = recentList.get_global_transform().affine_inverse() * get_global_transform() * at_position
 		var index = get_insertion_index(recentList, local_position)
-		recentList.add_child(new_button)
-		recentList.move_child(new_button, index)
+		#recentList.add_child(new_button)
+		recentList.move_child(data, index)
 		SingletonObject.reorder_recent_project(indexOne,index)
 		
 	else:
