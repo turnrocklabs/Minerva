@@ -245,9 +245,10 @@ func _add_recent_project_ui(index: int, item: String):
 	var dragBtn = newRecentButtons.find_child("DragButton")
 	# Limit the text length and add ellipsis if necessary
 	newRecentButtons.name = item
+	newRecentButtons.index = index
 	var displayed_text = item
-	if displayed_text.length() > 16:
-		displayed_text = displayed_text.substr(0, 13) + "..."
+	#if displayed_text.length() > 16:
+		#displayed_text = displayed_text.substr(0, 13) + "..."
 	RecentBtn.text = displayed_text
 	
 	# Set a fixed size for the buttons (optional, but good practice)
