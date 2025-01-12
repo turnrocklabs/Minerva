@@ -209,11 +209,16 @@ jobs:
       - name: Export Project
         working-directory: src
         run: |
+          # Ensure build directory exists
           mkdir -p build
-          if [ "${{ github.event.inputs.platform }}" = "windows" ] || [ "${{ github.event.inputs.platform }}" = "all" ] || [ "${{ github.event_name }}" = "push" ]; then
+          
+          if [ "${{ github.event.inputs.platform }}" = "windows" ]; then
             godot --headless --export-debug "Windows Desktop" build/Minerva.exe
-          fi
-          if [ "${{ github.event.inputs.platform }}" = "linux" ] || [ "${{ github.event.inputs.platform }}" = "all" ] || [ "${{ github.event_name }}" = "push" ]; then
+          elif [ "${{ github.event.inputs.platform }}" = "linux" ]; then
+            godot --headless --export-debug "Linux/X11" build/Minerva.x86_64
+          else
+            # For 'all' option or push events, export both but sequentially
+            godot --headless --export-debug "Windows Desktop" build/Minerva.exe &&
             godot --headless --export-debug "Linux/X11" build/Minerva.x86_64
           fi
           
