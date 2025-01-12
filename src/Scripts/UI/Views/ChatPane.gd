@@ -205,8 +205,10 @@ func execute_chat():
 
 	# if we're using the human provider, handle it here
 	if history.provider is HumanProvider:
+		#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
+		var SetupUnderscores = %txtMainUserInput.text.replace("_",r"\_")
 		var usr_history_item: = ChatHistoryItem.new()
-		usr_history_item.Message = %txtMainUserInput.text
+		usr_history_item.Message = SetupUnderscores
 		usr_history_item.Role = ChatHistoryItem.ChatRole.USER
 		usr_history_item.provider = history.provider
 		%txtMainUserInput.text = ""
@@ -235,7 +237,9 @@ func execute_chat():
 
 	## prepare an append item for the history
 	var user_history_item: = ChatHistoryItem.new()
-	user_history_item.Message = %txtMainUserInput.text
+	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
+	var CheckUnderscores = %txtMainUserInput.text.replace("_",r"\_")
+	user_history_item.Message = CheckUnderscores
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 
 	%txtMainUserInput.text = ""
