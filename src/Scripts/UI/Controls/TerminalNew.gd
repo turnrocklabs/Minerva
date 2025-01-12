@@ -38,7 +38,10 @@ static func create() -> TerminalNew:
 	var terminal_instance = preload("res://Scenes/Terminal.tscn").instantiate()
 	return terminal_instance
 
-
+func _update_font_metrics():
+	var char_metrics = font.get_char_size("M".unicode_at(0), font_size)
+	line_height = font.get_height(font_size)
+	char_width = char_metrics.x
 
 func _ready():
 	add_child(terminal)
@@ -49,9 +52,7 @@ func _ready():
 				grab_focus()
 	)
 
-	var char_metrics = font.get_char_size("M".unicode_at(0), font_size)
-	line_height = font.get_height(font_size)
-	char_width = char_metrics.x
+	_update_font_metrics()
 
 	var scrollbar: VScrollBar = _output_container.get_v_scroll_bar()
 
@@ -133,10 +134,9 @@ func _create_output_container() -> void:
 
 	text_layer = TextLayer.new()
 	text_layer.terminal = self
-	text_layer.font = font
 	
 	cursor_layer = CursorLayer.new()
-	cursor_layer.font = font
+	cursor_layer.terminal = self
 
 	
 	text_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -296,7 +296,27 @@ func _reset_graphics() -> void:
 
 # endregion
 
+func _shortcut_input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		if not event.is_pressed(): return
+
+		if event.ctrl_pressed and event.keycode == KEY_C:
+			DisplayServer.clipboard_set(text_layer.get_selected_text())
+			
+		if event.ctrl_pressed and event.keycode == KEY_V:
+			terminal.write_input(DisplayServer.clipboard_get())
+			
+
 func _gui_input(event: InputEvent) -> void:
+	
+	# if there's selected text ignore the event
+	if text_layer.selection_active:
+		if event is InputEventKey:
+			if not (event.keycode == KEY_CTRL or event.keycode == KEY_ALT):
+				text_layer.reset_selection.call_deferred()
+
+		return
+
 	if event is InputEventKey and event.pressed:
 		# Handle modifier key combinations first
 		if event.ctrl_pressed:
@@ -364,7 +384,7 @@ func _gui_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-class Modifier extends RefCounted:
+class  Modifier extends RefCounted:
 	var callables: Array[Callable]
 	var name: String = "Modifier"
 
@@ -382,23 +402,15 @@ class Modifier extends RefCounted:
 			callable.call()
 
 class CursorLayer extends Control:
-	
+	var terminal: TerminalNew
 	var blink_time: float = 0.5
 	var elapsed: float = 0
 	var cursor_visible: = true
 	var pos: Vector2i
 
-	var font: Font = load("res://assets/fonts/Mono_Space/SpaceMono-Regular.ttf")
-	var font_size: int = ThemeDB.fallback_font_size
-	var line_height: float
-	var char_width: float
-
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_PASS
-		var char_metrics = font.get_char_size(" ".unicode_at(0), font_size)
-		line_height = font.get_height(font_size) 
-		char_width = char_metrics.x
 
 		queue_redraw()
 
@@ -415,30 +427,86 @@ class CursorLayer extends Control:
 	func _draw() -> void:
 
 		if cursor_visible:
-			var draw_pos = Vector2((pos.y-1) * char_width, (pos.x) * line_height)
-			draw_string(font, draw_pos, CURSOR_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+			var draw_pos = Vector2((pos.y-1) * terminal.char_width, (pos.x) * terminal.line_height)
+			draw_string(terminal.font, draw_pos, CURSOR_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size)
 			custom_minimum_size.y = draw_pos.y
 
 
 
 class TextLayer extends Control:
 	var terminal: TerminalNew
-	var font: Font
-	var font_size: int = ThemeDB.fallback_font_size
-	var line_height: float
-	var char_width: float
 
 	var _foreground_color: = Color.WHITE
 	var _background_color: = Color.TRANSPARENT
+	var _selection_background_color: = Color.WHITE_SMOKE
 
 	var _modifier_queue: Array[Modifier]
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_PASS
-		var char_metrics = font.get_char_size(" ".unicode_at(0), font_size)
-		line_height = font.get_height(font_size)
-		char_width = char_metrics.x
+		mouse_default_cursor_shape = CursorShape.CURSOR_IBEAM
+
 		queue_redraw()
+
+	var selection_active: bool:
+		get: return abs(_selection_start - _selection_end) > Vector2i.ZERO
+
+	var _selecting: = false
+	var _selection_start: Vector2i
+	var _selection_end: Vector2i
+	var p1: Vector2i
+	var p2: Vector2i
+
+	func reset_selection():
+		_selection_start = Vector2i.ZERO
+		_selection_end = Vector2i.ZERO
+		queue_redraw()
+
+	func _gui_input(event: InputEvent) -> void:
+		if _selecting:
+			accept_event()
+
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			_selecting = event.is_pressed()
+			accept_event()
+
+			if not _selecting: return
+
+			var row: = maxi(0, floori(event.position.y / terminal.line_height))
+			var column: = maxi(0, floori(event.position.x / terminal.char_width))
+
+			p1 = Vector2i(column, row)
+			p2 = p1
+
+			var check = func(a, b):
+				return a.y < b.y or (a.y == b.y and a.x < b.x)
+			
+			_selection_start = p1 if check.call(p1, p2) else p2
+			_selection_end = p1 if check.call(p2, p1) else p2
+
+			_selecting = event.is_pressed()
+
+			queue_redraw()
+			
+		
+		if _selecting:
+			if event is InputEventMouseMotion:
+				var row: = maxi(0, floori(event.position.y / terminal.line_height))
+				var column: = maxi(0, floori(event.position.x / terminal.char_width))
+
+				p2 = Vector2i(column, row)
+
+				var check = func(a, b):
+					return a.y < b.y or (a.y == b.y and a.x < b.x)
+				
+				_selection_start = p1 if check.call(p1, p2) else p2
+				_selection_end = p1 if check.call(p2, p1) else p2
+
+				queue_redraw()
+		
+		if event is InputEventMouseButton:
+			if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed == false:
+				_create_context_menu(event.global_position)
 
 
 	var content: Array[Array] = []
@@ -723,7 +791,7 @@ class TextLayer extends Control:
 			pass # print(line_parts)
 			for part in line_parts:
 				if part is String:
-					var string_pos: = pos * Vector2(char_width, line_height)
+					var string_pos: = pos * Vector2(terminal.char_width, terminal.line_height)
 
 					var start: = 0
 					for i in range(part.length()):
@@ -731,15 +799,50 @@ class TextLayer extends Control:
 						if part[i] == char(10240) or i == part.length()-1:
 							if i > start+1:
 								var background_rect: = Rect2(
-									(pos + Vector2(start, 0)) * Vector2(char_width, line_height),
-									Vector2((i-start+1)*char_width, -line_height)
+									(pos + Vector2(start, 0)) * Vector2(terminal.char_width, terminal.line_height),
+									Vector2((i-start+1)*terminal.char_width, -terminal.line_height)
 								)
 								
 								draw_rect(background_rect, _background_color)
 							start = i+1
 
-					pass # print(part)
-					draw_string(font, string_pos, part, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, _foreground_color)
+					if pos.y-1 == _selection_start.y and pos.y-1 == _selection_end.y:
+						var background_rect: = Rect2(
+							(pos + Vector2(_selection_start.x, 0)) * Vector2(terminal.char_width, terminal.line_height),
+							Vector2((_selection_end.x-_selection_start.x)*terminal.char_width, -terminal.line_height)
+						)
+						
+						draw_rect(background_rect, _selection_background_color)
+					
+					# selection_end must be on another line down
+					elif pos.y-1 == _selection_start.y:
+						var background_rect: = Rect2(
+							(Vector2(_selection_start.x, pos.y)) * Vector2(terminal.char_width, terminal.line_height),
+							Vector2((max(0, part.length()-_selection_start.x))*terminal.char_width, -terminal.line_height)
+						)
+						
+						draw_rect(background_rect, _selection_background_color)
+
+					# selection_start must be on another line above
+					elif pos.y-1 == _selection_end.y:
+						var background_rect: = Rect2(
+							(pos) * Vector2(terminal.char_width, terminal.line_height),
+							Vector2((_selection_end.x)*terminal.char_width, -terminal.line_height)
+						)
+						
+						draw_rect(background_rect, _selection_background_color)
+
+					# we're inbetween the selection start and end
+					elif pos.y-1 > _selection_start.y and pos.y-1 < _selection_end.y:
+						var background_rect: = Rect2(
+							(pos) * Vector2(terminal.char_width, terminal.ine_height),
+							Vector2((part.length())*terminal.char_width, -terminal.line_height)
+						)
+						
+						draw_rect(background_rect, _selection_background_color)
+
+					draw_string_outline(terminal.font, string_pos, part, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size, 5, Color.BLACK)
+					draw_string(terminal.font, string_pos, part, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size, _foreground_color)
 					
 					
 					pos.x += part.length()
@@ -751,4 +854,57 @@ class TextLayer extends Control:
 			pos.y += 1
 			pos.x = 0
 		
-		custom_minimum_size.y = pos.y * line_height
+		custom_minimum_size.y = pos.y * terminal.line_height
+
+	func _create_context_menu_item(text: String, keycode: Key, id: int, callback: Callable = Callable()):
+		var shortcut: = Shortcut.new()
+		var event: = InputEventKey.new()
+		event.keycode = keycode
+		event.ctrl_pressed = true
+		shortcut.events.append(event)
+
+		_context_menu.add_shortcut(shortcut, id)
+		_context_menu.set_item_text(id, text)
+
+		if callback.is_valid():
+			_context_menu.id_pressed.connect(func(id_: int): if id_ == id: callback.call())
+		
+
+	var _context_menu: PopupMenu
+	func _create_context_menu(at: Vector2) -> void:
+		if not _context_menu:
+			_context_menu = PopupMenu.new()
+			_context_menu.initial_position = Window.WINDOW_INITIAL_POSITION_ABSOLUTE
+			add_child(_context_menu)
+
+			_create_context_menu_item("Copy", KEY_CTRL, 0, func(): DisplayServer.clipboard_set(get_selected_text());reset_selection())
+			_create_context_menu_item("Paste", KEY_V, 1, func(): terminal.terminal.write_input(DisplayServer.clipboard_get()))
+			_create_context_menu_item("Zoom In", KEY_PLUS, 2, func(): terminal.font_size += 1; terminal._update_font_metrics(); queue_redraw())
+			_create_context_menu_item("Zoom In", KEY_MINUS, 3, func(): terminal.font_size -= 1; terminal._update_font_metrics(); queue_redraw())
+
+		_context_menu.popup()
+		_context_menu.position = at + Vector2(0, _context_menu.size.y/2.0)
+
+	func get_selected_text() -> String:
+		var parts: = PackedStringArray()
+
+		var line_total: = 0
+
+		for i in range(_selection_start.y, _selection_end.y+1):
+			var line_parts: = content[i]
+			for part in line_parts:
+				line_total = 0
+				if part is String:
+					for j in range(part.length()):
+						line_total += 1
+						
+						if i == _selection_start.y and line_total < _selection_start.x:
+							continue
+
+						if i == _selection_end.y and line_total > _selection_end.x:
+							break
+
+						parts.append(part[j])
+				parts.append("\n")
+
+		return "".join(parts).strip_edges()
