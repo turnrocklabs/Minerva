@@ -599,7 +599,7 @@ bool Terminal::start(int width, int height)
     if (_child_pid == 0) {
         // Child process
         putenv((char*)"TERM=xterm-256color");
-        putenv((char*)"PS1=\\033[888z\\033[01;32mMinerva:\\u@\\h\\033[00m:\\033[01;34m\\w\\033[00m\\$ \\033[999z");
+        putenv((char*)"PS1=\\033[888z\\033[01;\\u@\\h\\033[00m:\\033[01;34m\\w\\033[00m\\$ \\033[999z");
         putenv((char*)"BASH_ENV=");
         putenv((char*)"ENV=");
 
