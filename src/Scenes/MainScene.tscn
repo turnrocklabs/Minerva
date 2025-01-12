@@ -1,6 +1,6 @@
-[gd_scene load_steps=38 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=60 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_d0avd"]
+[ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_5g4ge"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
@@ -22,22 +22,51 @@
 [ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icons/new_line_icon.png" id="11_p11dv"]
 [ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_icons/undo_arrow.png" id="11_srtkx"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="12_6jk4t"]
-[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="12_j6ukv"]
 [ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload-icons/reload-16.svg" id="13_xhsmd"]
 [ext_resource type="Script" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="14_sknqf"]
-[ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file.svg" id="18_mitgl"]
+[ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file/file.svg" id="18_mitgl"]
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="20_cqinw"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="20_n1ygu"]
 [ext_resource type="Texture2D" uid="uid://deboh0lwmv7f7" path="res://assets/icons/paperclip_icons/paperclip_icon_24_no_bg.png" id="21_0ds70"]
-[ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/ink_eraser_off.svg" id="21_akf3o"]
+[ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/eraser/ink_eraser_off.svg" id="21_akf3o"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/icons_button.gd" id="21_rnx1y"]
+[ext_resource type="Texture2D" uid="uid://bnn2c6bwu3w0e" path="res://assets/icons/file/file_24.svg" id="21_wcf3l"]
+[ext_resource type="Texture2D" uid="uid://cde1opucpvcqd" path="res://assets/icons/file/file_48.svg" id="22_av2ut"]
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
+[ext_resource type="Texture2D" uid="uid://bjvsgln2l7hyt" path="res://assets/icons/file/file_68.svg" id="23_xw6gv"]
+[ext_resource type="Texture2D" uid="uid://buq3nkd4uw5hb" path="res://assets/icons/brush/brush-48._white.png" id="25_bqwub"]
+[ext_resource type="Texture2D" uid="uid://lka8ba6qwger" path="res://assets/icons/brush/brush-68._white.png" id="26_swy8f"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="27_hlu33"]
+[ext_resource type="Texture2D" uid="uid://rnoowdcewge8" path="res://assets/icons/undo_icons/undo_arrow_48.png" id="29_rqudt"]
 [ext_resource type="Script" path="res://Scripts/DropScript.gd" id="30_1anci"]
+[ext_resource type="Texture2D" uid="uid://c6bgcn813bv5q" path="res://assets/icons/undo_icons/undo_arrow_64.png" id="30_i8mta"]
+[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="32_nebas"]
+[ext_resource type="Texture2D" uid="uid://bu8qmpvu3256b" path="res://assets/icons/backspace_icons/backspace_icon_48.png" id="33_u2ws1"]
+[ext_resource type="Texture2D" uid="uid://c4nsaahtb7v0k" path="res://assets/icons/backspace_icons/backspace_icon_68.png" id="34_eiycj"]
+[ext_resource type="Texture2D" uid="uid://bit2mc7dcdd4p" path="res://assets/icons/new_line_icons/new_line_icon_48.png" id="36_hfhsg"]
+[ext_resource type="Texture2D" uid="uid://dbcxp7ty3bnc4" path="res://assets/icons/new_line_icons/new_line_icon_68.png" id="37_toq4t"]
+[ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="38_6qpnt"]
+[ext_resource type="Texture2D" uid="uid://djqrl07g4xxjo" path="res://assets/icons/paperclip_icons/paperclip_icon_48_no_bg.png" id="39_dp74p"]
+[ext_resource type="Texture2D" uid="uid://dpphnihk74dd0" path="res://assets/icons/create_pencil_icons/pencil_icon_64_no_bg.png" id="39_ttovn"]
+[ext_resource type="Texture2D" uid="uid://w2j8sjt23eiy" path="res://assets/icons/paperclip_icons/paperclip_icon_64_no_bg.png" id="40_02im0"]
+[ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="40_056ov"]
+[ext_resource type="Texture2D" uid="uid://cvb2vnkv4fpn5" path="res://assets/icons/plus_icons/add_48.svg" id="41_jftao"]
+[ext_resource type="Texture2D" uid="uid://bk13anfwduwom" path="res://assets/icons/plus_icons/add_68.svg" id="42_l3jum"]
+[ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
 font_color = Color(1, 0, 0, 1)
+
+[sub_resource type="InputEventKey" id="InputEventKey_s4ag0"]
+device = -1
+ctrl_pressed = true
+keycode = 78
+unicode = 110
+
+[sub_resource type="Shortcut" id="Shortcut_gb6ck"]
+events = [SubResource("InputEventKey_s4ag0")]
 
 [sub_resource type="CanvasTexture" id="CanvasTexture_o30k1"]
 diffuse_texture = ExtResource("8_oxf75")
@@ -52,11 +81,20 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("1_d0avd")
+theme = ExtResource("1_5g4ge")
 script = ExtResource("2_65hnk")
 terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
-[node name="Panel" type="Panel" parent="."]
+[node name="TopBar" type="Panel" parent="."]
+z_index = -2
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+grow_horizontal = 2
+theme_type_variation = &"TopBar"
+
+[node name="Background" type="Panel" parent="."]
 z_index = -5
 layout_mode = 1
 anchors_preset = 15
@@ -207,14 +245,11 @@ item_7/icon = ExtResource("11_i5ytf")
 item_7/id = 6
 item_8/id = 7
 item_8/separator = true
-item_9/text = "Zoom In Icons"
-item_9/icon = ExtResource("9_6n2ks")
+item_9/text = "Set Icons to 24"
 item_9/id = 11
-item_10/text = "Zoom Out Icons"
-item_10/icon = ExtResource("10_wto0r")
+item_10/text = "Set Icons to 48"
 item_10/id = 12
-item_11/text = "Reset Icons Zoom"
-item_11/icon = ExtResource("11_i5ytf")
+item_11/text = "Set Icons to 68"
 item_11/id = 13
 item_12/id = 15
 item_12/separator = true
@@ -330,25 +365,37 @@ size_flags_vertical = 3
 theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer"]
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 10
 
 [node name="EditorLabel" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
+size_flags_vertical = 1
 theme_override_font_sizes/font_size = 24
 text = "Editor"
+vertical_alignment = 2
 
 [node name="AddFileEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 0
 tooltip_text = "create new text editor tab"
+shortcut = SubResource("Shortcut_gb6ck")
 icon = ExtResource("18_mitgl")
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("21_wcf3l")
+icon_48 = ExtResource("22_av2ut")
+icon_68 = ExtResource("23_xw6gv")
 
 [node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 0
 tooltip_text = "create new graphics editor tab"
 icon = ExtResource("20_cqinw")
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("20_cqinw")
+icon_48 = ExtResource("25_bqwub")
+icon_68 = ExtResource("26_swy8f")
 
 [node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -365,32 +412,51 @@ layout_mode = 2
 size_flags_horizontal = 10
 tooltip_text = "clears all the text in the current tab"
 icon = ExtResource("21_akf3o")
+script = ExtResource("21_rnx1y")
 
 [node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Undo (Returns Editor to previous state)"
 icon = ExtResource("11_srtkx")
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("11_srtkx")
+icon_48 = ExtResource("29_rqudt")
+icon_68 = ExtResource("30_i8mta")
 
 [node name="BackSpaceButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Backspace"
 focus_mode = 0
-icon = ExtResource("12_j6ukv")
+icon = ExtResource("32_nebas")
+icon_alignment = 1
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("32_nebas")
+icon_48 = ExtResource("33_u2ws1")
+icon_68 = ExtResource("34_eiycj")
 
 [node name="NewLineButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Start new line"
 icon = ExtResource("11_p11dv")
+icon_alignment = 1
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("11_p11dv")
+icon_48 = ExtResource("36_hfhsg")
+icon_68 = ExtResource("37_toq4t")
 
 [node name="HButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 horizontal panes"
 icon = SubResource("CanvasTexture_o30k1")
+icon_alignment = 1
+script = ExtResource("21_rnx1y")
 
 [node name="VButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
+icon_alignment = 1
+script = ExtResource("21_rnx1y")
 
 [node name="Control2" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
@@ -428,15 +494,18 @@ size_flags_stretch_ratio = 0.5
 theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane"]
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 size_flags_vertical = 0
-theme_override_constants/separation = 16
+theme_override_constants/separation = 10
 
 [node name="NotesLabel" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 2
+size_flags_vertical = 1
 theme_override_font_sizes/font_size = 24
 text = "Notes"
+vertical_alignment = 2
 
 [node name="DisableNotesButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 unique_name_in_owner = true
@@ -451,6 +520,10 @@ size_flags_horizontal = 8
 tooltip_text = "Creates a new note in current active tab"
 text = "Create Note"
 icon = ExtResource("20_n1ygu")
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("20_n1ygu")
+icon_48 = ExtResource("38_6qpnt")
+icon_68 = ExtResource("39_ttovn")
 
 [node name="btnAddAttachement" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
@@ -458,13 +531,21 @@ size_flags_horizontal = 8
 tooltip_text = "Creates a new note from a given text file"
 text = "Attach File"
 icon = ExtResource("21_0ds70")
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("21_0ds70")
+icon_48 = ExtResource("39_dp74p")
+icon_68 = ExtResource("40_02im0")
 
 [node name="btnNewTab" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Creates a new notes tab"
 text = "New Tab"
-icon = ExtResource("12_6jk4t")
+icon = ExtResource("40_056ov")
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("40_056ov")
+icon_48 = ExtResource("41_jftao")
+icon_68 = ExtResource("42_l3jum")
 
 [node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane"]
 layout_mode = 2
@@ -535,6 +616,7 @@ script = ExtResource("14_rrnyx")
 [node name="AudioStreamRecord" type="AudioStreamPlayer" parent="AudioToText"]
 stream = SubResource("AudioStreamMicrophone_i6lnv")
 autoplay = true
+bus = &"Rec"
 
 [node name="ColorRect" type="ColorRect" parent="."]
 unique_name_in_owner = true
@@ -545,6 +627,10 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="ProjectRecent" parent="." instance=ExtResource("54_7n3d4")]
+unique_name_in_owner = true
+visible = false
 
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]

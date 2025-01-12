@@ -193,7 +193,7 @@ func _on_help_id_pressed(id: int) -> void:
 
 func _on_save_open_editor_tabs_button_pressed() -> void:
 	SingletonObject.SaveOpenEditorTabs.emit()
-
+	print("saved")
 
 func _on_audio_stop_button_2_pressed() -> void:
 	SingletonObject.AtT._StopConverting()
@@ -230,3 +230,15 @@ func _input(event):
 			
 				
 				
+
+
+func _on_project_mouse_entered() -> void:
+	print("aaaaaaaaaaaaa")
+
+
+func _on_project_mouse_exited() -> void:
+	pass # Replace with function body.
+
+
+func _on_add_layer_pressed() -> void:
+	pass # Replace with function body.
