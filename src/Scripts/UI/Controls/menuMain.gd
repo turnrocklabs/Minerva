@@ -6,6 +6,10 @@ extends MenuBar
 @onready var project: PopupMenu = $Project
 @onready var edit: PopupMenu = %File
 
+var popUpRecent
+var recentList
+var ButtonCloseForPopUp
+
 # Add a new submenu for 'File'
 @onready var file_submenu: PopupMenu = PopupMenu.new()
 
@@ -62,7 +66,22 @@ func _on_package_submenu_id_pressed(id: int):
 		0: SingletonObject.PackageProject.emit()
 		1: SingletonObject.UnpackageProject.emit()
 
+
+@onready var project_recent: Window = %ProjectRecent
+
 func _ready():
+	
+	popUpRecent = project_recent
+	popUpRecent.visible = false
+	#set op position for pop up by a center of the root node
+	popUpRecent.position.x = $"../../..".size.x/2
+	popUpRecent.position.y = $"../../..".size.y/2
+
+	
+	recentList = popUpRecent.find_child("RecentList")
+	popUpRecent.close_requested.connect(popUpClose)
+	
+	#_rebuild_recent_projects_ui()
 	# Create the new submenu
 	file_submenu.name = "file_submenu"
 	file_submenu.add_item("New File")
@@ -78,6 +97,7 @@ func _ready():
 	
 	%Project.add_child(package_submenu)
 	%Project.add_submenu_item("Package Project", package_submenu.name, 0)
+
 
 	# Add the "New" submenu to the top of the "File" menu
 	%File.add_child(file_submenu)
@@ -108,6 +128,10 @@ func _on_project_index_pressed(index):
 			## Save as a project
 			SingletonObject.SaveProjectAs.emit()
 			pass
+		5:
+			popUpRecent.visible = true
+			load_recent_projects()
+			#pass
 
 func _on_view_id_pressed(id: int):
 	# if zoom items are selected
@@ -172,15 +196,15 @@ func _on_project_about_to_popup() -> void:
 		%Project.set_item_disabled(2, true)
 		%Project.set_item_disabled(3, true)
 
-#this function gets call when the mouse hovers over the MenuBar
+#this function gets call when the mouse ers over the MenuBar
 #it has a timer so it doesn't execute all the time
 var timer
 var active: bool = true
 func _on_mouse_entered() -> void:
 	if active:
-		call_deferred("load_recent_projects")# load_recent_projects()
 		active = false
-		
+		call_deferred("load_recent_projects_sub")
+		_rebuild_recent_projects_ui()
 		#add submenu fro button new edit
 		
 		timer = Timer.new()
@@ -188,6 +212,7 @@ func _on_mouse_entered() -> void:
 		timer.timeout.connect(set_active)
 		add_child(timer)
 		timer.start()
+		
 
 func set_active():
 	active = true
@@ -195,23 +220,123 @@ func set_active():
 
 #load recent projects if they exist on the config file
 #this function gets called on ready and when you hover over menuMain
-var submenu
 var projects_size: int
 func load_recent_projects():
-	if SingletonObject.has_recent_projects():# check if user has recent projects
-		
+	# Clear existing recent project entries in the UI more robustly
+	for child in recentList.get_children():
+		if child is HBoxContainer:
+			child.queue_free()
+
+	if SingletonObject.has_recent_projects():
+		var recent_projects = SingletonObject.get_recent_projects()
+		projects_size = recent_projects.size()
+
+		if recent_projects:
+			for i in range(projects_size):
+				var item = recent_projects[i]
+				_add_recent_project_ui(i, item)
+
+func _add_recent_project_ui(index: int, item: String):
+
+	var newRecentButtons = preload("res://Scenes/RecentPopUpButtons.tscn").instantiate() # Instantiate a NEW one each time
+	newRecentButtons.set_meta("project_path", item)
+	var RecentBtn = newRecentButtons.find_child("RecentBtn")
+	var exitBtn = newRecentButtons.find_child("exitBtn")
+	var dragBtn = newRecentButtons.find_child("DragButton")
+	# Limit the text length and add ellipsis if necessary
+	newRecentButtons.name = item
+	newRecentButtons.index = index
+	var displayed_text = item
+	#if displayed_text.length() > 16:
+		#displayed_text = displayed_text.substr(0, 13) + "..."
+	RecentBtn.text = displayed_text
+	
+	# Set a fixed size for the buttons (optional, but good practice)
+	var button_size = Vector2(100, 25) 
+	RecentBtn.size = button_size
+	exitBtn.size = Vector2(25,25)
+
+
+	RecentBtn.pressed.connect(_on_open_recent_project.bind(index, item))
+	exitBtn.pressed.connect(_on_remove_recent_single.bind(index))
+
+	recentList.add_child(newRecentButtons) # Add the *new instance* to the VboxContainer
+	
+
+	
+	
+func _on_open_recent_project(index: int, itemText:String):
+	# The "Clear Recent Projects" button should be handled separately, not within this function.  Add this logic to the PopupMenu where that button resides. 
+	SingletonObject.OpenRecentProject.emit(itemText)
+	popUpRecent.visible = false
+	print(index)
+
+
+func _on_remove_recent_single(index: int):
+	SingletonObject.remove_recent_project(index) # Remove the project data
+	_rebuild_recent_projects_ui()  # Update the UI
+	load_recent_projects_sub()
+	projects_size -= 1
+
+func _rebuild_recent_projects_ui():
+	var recent_projects = SingletonObject.get_recent_projects()
+	var children = recentList.get_children()
+
+	# 1. Remove buttons for projects no longer in the recent list
+	for child in children:
+		if child.has_meta("project_path") and child.get_meta("project_path") not in recent_projects:
+			child.queue_free()
+
+	children = recentList.get_children() # Update children after removal
+
+	# 2. Add buttons for new projects
+	for i in range(recent_projects.size()):
+		var project_path = recent_projects[i]
+		var existing_button = _find_existing_button(project_path, children)
+		if !existing_button:
+			_add_recent_project_ui(i, project_path)
+
+	children = recentList.get_children() # Update children after adding
+
+	# 3. Reorder existing buttons to match the recent_projects order
+	for i in range(recent_projects.size()):
+		var project_path = recent_projects[i]
+		var button = _find_existing_button(project_path, children)
+		if button:
+			recentList.move_child(button, i)  # Move to the correct index
+
+
+func _find_existing_button(project_path: String, children: Array) -> Node:
+	for child in children:
+		if child.has_meta("project_path") and child.get_meta("project_path") == project_path:
+			return child
+	return null
+	
+var submenu: PopupMenu
+func load_recent_projects_sub():
+	#if submenu: submenu.queue_free()
+	if SingletonObject.has_recent_projects():
 		# this if statement removes the open recent item if there was one already
 		if project.get_tree().has_group("open_recent"):
 			project.remove_item(project.item_count - 1)
+		if project.get_tree().has_group("open_recent"):
+			# Remove the old submenu entirely instead of individual items
+			for n in project.get_children():
+				if n is PopupMenu and n.is_in_group("open_recent"):
+					n.free()  # or n.queue_free() if needed
+					break  # Assume only one submenu in the group
+					
 		
 		# create submenu item, fill it with recent projects and add to menu
 		submenu = PopupMenu.new()
 		submenu.name = "OpenRecentSubmenu"
 		submenu.add_to_group("open_recent")
-		submenu.index_pressed.connect(_on_open_recent_project)
+		submenu.index_pressed.connect(_on_open_recent_project_sub)
 		var recent_projects = SingletonObject.get_recent_projects()
 		projects_size = recent_projects.size()
+		
 		if recent_projects:
+			submenu.get_children().clear()
 			for item in recent_projects:
 				submenu.add_item(item)
 		
@@ -219,17 +344,31 @@ func load_recent_projects():
 		var clear_recent_item = "Clear recent Projects"
 		submenu.add_item(clear_recent_item)
 		
+		var manager = "Manage..."
+		submenu.add_item(manager)
+		
 		project.add_child(submenu)# adds submenu to scene tree
 		#add submenu as a submenu of indicated item
 		project.add_submenu_item("Open Recent", "OpenRecentSubmenu")
+		
+		
 
-func _on_open_recent_project(index: int):
+func _on_open_recent_project_sub(index: int):
 	if projects_size + 1 == index: # check if the index is for the clear recent projects button
 		SingletonObject.clear_recent_projects()
 		project.remove_item(project.item_count - 1)
+	elif projects_size + 2 == index:
+		_rebuild_recent_projects_ui()
+		popUpRecent.visible = true
 	else:
 		var selected_project_name = submenu.get_item_text(index)
 		SingletonObject.OpenRecentProject.emit(selected_project_name)
 
+func popUpClose():
+	popUpRecent.visible = false
+
+func _on_close_button_pressed() -> void:
+	popUpRecent.visible = false
+
 ###
-### End Reference Information ###w
+### End Reference Information ###

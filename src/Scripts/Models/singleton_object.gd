@@ -11,7 +11,6 @@ var is_picture:bool = false
 #this is where we save the last path used to save a file or project
 var last_saved_path: String
 
-
 var CloudType
 
 var is_brush
@@ -24,25 +23,36 @@ var is_marker
 var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
+func load_config_file() -> ConfigFile:
+	var err = config_file.load(config_file_name)
+	if err != OK:
+		return null
+	else: 
+		return config_file
+
 # use this method to save any settings to the file
 func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
+	load_config_file()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
 
 func config_has_saved_section(section: String) -> bool:
 	if !section: return false
+	load_config_file()
 	return config_file.has_section(section)
 
 
 func config_clear_section(section: String)-> void:
 	if !section: return
+	load_config_file()
 	config_file.erase_section(section)
 	config_file.save(config_file_name)
 
 
 #method for checking if the user has saved files
 func has_recent_projects() -> bool:
+	load_config_file()
 	return config_file.has_section("OpenRecent")
 
 #method for adding the project to the open recent list
@@ -56,6 +66,7 @@ func save_recent_project(path: String):
 # this function returns an array with the files 
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
+	load_config_file()
 	if has_recent_projects():
 		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
@@ -63,12 +74,28 @@ func get_recent_projects() -> Array:
 
 # method for getting the p0ath on disk of the specified project file
 func get_project_path(project_name: String) -> String:
+	load_config_file()
 	return config_file.get_value("OpenRecent", project_name)
 
 # method for erasing all the recently opened projects
 func clear_recent_projects() -> void:
 	config_file.erase_section("OpenRecent")
 	config_file.save(config_file_name)
+
+func remove_recent_project(index: int) -> void:
+	if !has_recent_projects():
+		return
+
+	var recent_projects: Array = get_recent_projects()
+
+	if index < 0 or index >= recent_projects.size():
+		printerr("Invalid index for removing recent project.")
+		return
+
+	var project_name_to_remove = recent_projects[index]  # Get the project NAME at the index
+	config_file.erase_section_key("OpenRecent", project_name_to_remove) # Remove by name (key)
+	config_file.save(config_file_name)
+	
 
 
 #endregion Config File
@@ -245,9 +272,7 @@ func _ready():
 	add_child(AtT)
 	add_child(undo)
 	#TODO add ui scale to the config file and retrieve it on app load
-	var err = config_file.load(config_file_name)
-	if err != OK:
-		return
+	load_config_file()
 	
 	if config_has_saved_section("LastSavedPath"):
 		last_saved_path = config_file.get_section_keys("LastSavedPath")[0]
@@ -501,3 +526,46 @@ static var notes_scene: = preload("res://Scenes/Note.tscn")
 
 
 #endregion Prealoaded static scenes
+
+	
+func reorder_recent_project(firstIndex: int, secondIndex: int) -> void:
+	if !has_recent_projects():
+		return
+
+	var recent_projects: Array = get_recent_projects()
+
+	if firstIndex < 0 or firstIndex >= recent_projects.size() or secondIndex < 0 or secondIndex >= recent_projects.size():
+		printerr("Invalid indices for reordering recent project.")
+		return
+
+	# Get the project NAME at the first index
+	var project_name_to_move = recent_projects[firstIndex]
+	# Get the corresponding PATH
+	var project_path_to_move = get_project_path(project_name_to_move)
+
+	# Remove the project from its original position (by name/key)
+	config_file.erase_section_key("OpenRecent", project_name_to_move)
+
+
+	#Create a temporary dictionary to store the reordered projects
+	var reordered_projects: Dictionary = {}
+	var i := 0
+	for project_name in recent_projects:
+		if i == secondIndex:
+			reordered_projects[project_name_to_move] = project_path_to_move # Insert at the new index
+		if i != firstIndex: #Skip the original index of the moved project.
+			reordered_projects[project_name] = get_project_path(project_name)
+		i += 1
+
+	if secondIndex >= recent_projects.size(): #handle inserting at the end
+		reordered_projects[project_name_to_move] = project_path_to_move
+		
+
+
+	# Clear the "OpenRecent" section and add the reordered projects
+	config_file.erase_section("OpenRecent")
+	for key in reordered_projects:
+		config_file.set_value("OpenRecent", key, reordered_projects[key])
+
+
+	config_file.save(config_file_name)
