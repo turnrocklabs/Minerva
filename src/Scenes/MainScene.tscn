@@ -1,6 +1,6 @@
 [gd_scene load_steps=60 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_5g4ge"]
+[ext_resource type="Theme" path="res://assets/themes/blue_dark_mode.theme" id="1_5g4ge"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]

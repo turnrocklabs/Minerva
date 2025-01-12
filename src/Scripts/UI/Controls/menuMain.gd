@@ -242,7 +242,7 @@ func _add_recent_project_ui(index: int, item: String):
 	newRecentButtons.set_meta("project_path", item)
 	var RecentBtn = newRecentButtons.find_child("RecentBtn")
 	var exitBtn = newRecentButtons.find_child("exitBtn")
-	var dragBtn = newRecentButtons.find_child("DragButton")
+	var _dragBtn = newRecentButtons.find_child("DragButton")
 	# Limit the text length and add ellipsis if necessary
 	newRecentButtons.name = item
 	newRecentButtons.index = index

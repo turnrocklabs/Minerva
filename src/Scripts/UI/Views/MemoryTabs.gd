@@ -241,6 +241,8 @@ static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemory
 func render_thread(thread_item: MemoryThread):
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
+	scroll_container.scroll_vertical = 4060
+	scroll_container.follow_focus = true
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
