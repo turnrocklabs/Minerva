@@ -3,10 +3,12 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/image_note_controls.gd" id="1_kgw3y"]
 
 [node name="ImageVBoxContainer" type="VBoxContainer" node_paths=PackedStringArray("note_image", "image_caption_line_edit")]
-anchors_preset = 10
+custom_minimum_size = Vector2(0, 235)
+anchors_preset = 15
 anchor_right = 1.0
-offset_bottom = 235.0
+anchor_bottom = 1.0
 grow_horizontal = 2
+grow_vertical = 2
 size_flags_horizontal = 3
 script = ExtResource("1_kgw3y")
 note_image = NodePath("NoteImage")
@@ -14,8 +16,8 @@ image_caption_line_edit = NodePath("ImageCaptionHBoxContainer/ImageCaptionLineEd
 
 [node name="NoteImage" type="TextureRect" parent="."]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
+size_flags_vertical = 3
 expand_mode = 3
 stretch_mode = 5
 

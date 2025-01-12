@@ -7,6 +7,9 @@ signal toggled(on: bool)
 ## This signal is emitted each time the underlying memory item has been updated.
 signal changed()
 
+@export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
+@export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
+
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
 @onready var description_node: RichTextLabel = %NoteTextBody
@@ -16,8 +19,15 @@ signal changed()
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
 @onready var v_box_container: VBoxContainer = %vBoxContainer
+@onready var expand_note_button: TextureRect = %ExpandNoteButton
+@onready var resize_drag_control: Control = %ResizeControl
 
-var control_type
+
+var expanded: bool = true
+var last_min_size: int = 0
+var min_size_top_limit: int = 500
+
+var control_type: Control
 var downscaled_image: Image
 # this will react each time memory item is changed
 var memory_item: MemoryItem:
@@ -33,11 +43,13 @@ var memory_item: MemoryItem:
 		visible = value.Visible
 		if memory_item.Type == SingletonObject.note_type.TEXT:
 			description_node.text = value.Content
+			control_type = description_node
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
 			if value.MemoryImage:
-				var image_controls_inst: = SingletonObject.image_controls_scenne.instantiate()
+				var image_controls_inst: = SingletonObject.image_controls_scene.instantiate()
 				image_controls_inst.memory_item = value
 				v_box_container.add_child(image_controls_inst)
+				control_type = image_controls_inst
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			#audio_stream_player.stream = value.Audio
 			var audio_control_inst: = SingletonObject.audio_contols_scene.instantiate()
@@ -50,8 +62,8 @@ var memory_item: MemoryItem:
 			video_label.text = "%s %s" % [value.Title, value.ContentType]
 			video_player_node.video_path = value.Content
 			video_player_container.add_child(video_player_node)
-			control_type = video_player_node
-			
+			control_type = video_player_container
+		last_min_size = control_type.get_minimum_size().y
 		# If we create a note, open a editor associated with it and then rerender the memory_item
 		# that will create completely new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
@@ -247,7 +259,6 @@ func _drop_data(_at_position: Vector2, data) -> void:
 	#data.queue_free()
 
 
-
 func _on_check_button_toggled(toggled_on: bool) -> void:
 	if memory_item:
 		memory_item.Enabled = toggled_on
@@ -328,3 +339,33 @@ func _on_hide_button_pressed():
 func _on_title_text_submitted(new_text: String) -> void:
 	label_node.release_focus()
 	if memory_item: memory_item.Title = new_text
+
+
+func _on_expand_note_button_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.is_pressed():
+		event = event as InputEventMouseButton
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			handle_expand_button_pressed()
+
+
+var resize_tween: Tween
+func handle_expand_button_pressed():
+	if resize_tween and resize_tween.is_running():
+		resize_tween.kill()
+		return
+	resize_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
+	if expanded:
+		last_min_size = control_type.custom_minimum_size.y
+		resize_tween.tween_property(control_type, "custom_minimum_size:y", 0, expand_anim_duration)
+		resize_tween.set_parallel()
+		resize_tween.tween_property(expand_note_button,"rotation", deg_to_rad(-90.0), expand_anim_duration)
+	else:
+		resize_tween.tween_property(control_type, "custom_minimum_size:y", last_min_size, expand_anim_duration)
+		resize_tween.set_parallel()
+		resize_tween.tween_property(expand_note_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
+	
+	expanded = !expanded
+
+func _on_resize_control_gui_input(event: InputEvent) -> void:
+	if expanded:
+		pass
