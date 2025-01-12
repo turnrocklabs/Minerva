@@ -17,6 +17,8 @@ extends HBoxContainer
 ## Setting this property will update the history item and rerender the note
 var content: String:
 	set(value):
+		#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
+		value = value.replace("_",r"\_")
 		content = value
 		history_item.Message = value
 		history_item = history_item # so the setter is triggered
@@ -206,7 +208,7 @@ func _on_note_button_pressed():
 
 func _on_delete_button_pressed():
 	SingletonObject.Chats.remove_chat_history_item(history_item)
-
+	
 func _on_regenerate_button_pressed():
 	SingletonObject.Chats.regenerate_response(history_item)
 
