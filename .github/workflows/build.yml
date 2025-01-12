@@ -209,7 +209,9 @@ jobs:
       - name: Export Project
         working-directory: src
         run: |
+          # Ensure build directory exists
           mkdir -p build
+          
           if [ "${{ github.event.inputs.platform }}" = "windows" ] || [ "${{ github.event.inputs.platform }}" = "all" ] || [ "${{ github.event_name }}" = "push" ]; then
             godot --headless --export-debug "Windows Desktop" build/Minerva.exe
           fi
