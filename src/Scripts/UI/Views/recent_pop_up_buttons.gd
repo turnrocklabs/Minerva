@@ -9,7 +9,7 @@ class_name RecentPopupButton extends VBoxContainer
 var index: = 0
 var drop_top_bool: = true
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if not drop_top.visible and not drop_bottom.visible: return
 	
 	if not get_global_rect().has_point(get_global_mouse_position()):
