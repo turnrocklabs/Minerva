@@ -835,7 +835,7 @@ class TextLayer extends Control:
 					# we're inbetween the selection start and end
 					elif pos.y-1 > _selection_start.y and pos.y-1 < _selection_end.y:
 						var background_rect: = Rect2(
-							(pos) * Vector2(terminal.char_width, terminal.ine_height),
+							(pos) * Vector2(terminal.char_width, terminal.line_height),
 							Vector2((part.length())*terminal.char_width, -terminal.line_height)
 						)
 						
