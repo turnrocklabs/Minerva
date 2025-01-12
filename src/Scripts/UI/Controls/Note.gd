@@ -9,6 +9,9 @@ signal changed()
 
 @export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
+@export_range(1, 6, 1) var resize_pixel_rate: int = 4
+@export var max_note_size_limit: int = 400
+@export var min_note_size_limit: int = 30
 
 @onready var checkbutton_node: CheckButton = %CheckButton
 @onready var label_node: LineEdit = %Title
@@ -349,7 +352,7 @@ func _on_expand_note_button_gui_input(event: InputEvent) -> void:
 
 
 var resize_tween: Tween
-func handle_expand_button_pressed():
+func handle_expand_button_pressed() -> void:
 	if resize_tween and resize_tween.is_running():
 		resize_tween.kill()
 		return
@@ -366,6 +369,21 @@ func handle_expand_button_pressed():
 	
 	expanded = !expanded
 
+
+var resize_dragging: bool = false
+var last_y_pos: int = 0
 func _on_resize_control_gui_input(event: InputEvent) -> void:
 	if expanded:
-		pass
+		if event is InputEventMouseButton:
+			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+				resize_dragging = true
+				last_y_pos = event.position.y
+			elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
+				resize_dragging = false
+		elif event is InputEventMouseMotion and resize_dragging:
+			if event.global_position.y > last_y_pos and control_type.custom_minimum_size.y < max_note_size_limit:
+				control_type.custom_minimum_size.y += resize_pixel_rate
+			elif event.global_position.y < last_y_pos and control_type.custom_minimum_size.y > min_note_size_limit:
+				control_type.custom_minimum_size.y -= resize_pixel_rate
+			last_y_pos = event.global_position.y
+			last_min_size = control_type.custom_minimum_size.y
