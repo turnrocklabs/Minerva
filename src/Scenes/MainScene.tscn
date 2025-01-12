@@ -1,4 +1,4 @@
-[gd_scene load_steps=59 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=60 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_5g4ge"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
@@ -53,6 +53,7 @@
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="40_056ov"]
 [ext_resource type="Texture2D" uid="uid://cvb2vnkv4fpn5" path="res://assets/icons/plus_icons/add_48.svg" id="41_jftao"]
 [ext_resource type="Texture2D" uid="uid://bk13anfwduwom" path="res://assets/icons/plus_icons/add_68.svg" id="42_l3jum"]
+[ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -626,6 +627,10 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="ProjectRecent" parent="." instance=ExtResource("54_7n3d4")]
+unique_name_in_owner = true
+visible = false
 
 [connection signal="focus_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_focus_entered"]
 [connection signal="mouse_entered" from="VBoxRoot/HBoxContainer/menuMain" to="VBoxRoot/HBoxContainer/menuMain" method="_on_mouse_entered"]
