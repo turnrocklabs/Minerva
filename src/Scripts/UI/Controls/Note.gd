@@ -27,7 +27,7 @@ signal changed()
 
 
 var expanded: bool = true
-var last_min_size: int = 0
+var last_min_size: float = 0.0
 var min_size_top_limit: int = 500
 
 var control_type: Control
