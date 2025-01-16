@@ -9,7 +9,7 @@ signal changed()
 
 @export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
-@export_range(1, 6, 1) var resize_pixel_rate: int = 4
+@export var expand_ease_type: Tween.EaseType = Tween.EASE_OUT
 @export var expand_icon_color: Color = Color.WHITE
 @export var max_note_size_limit: int = 400
 @export var min_note_size_limit: int = 30
@@ -23,8 +23,9 @@ signal changed()
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
 @onready var v_box_container: VBoxContainer = %vBoxContainer
-@onready var expand_note_button: TextureRect = %ExpandNoteButton
+@onready var expand_button: Button = %ExapndButton
 @onready var resize_drag_control: Control = %ResizeControl
+@onready var h_separator: HSeparator = %HSeparator
 
 
 var expanded: bool = true:
@@ -88,11 +89,6 @@ var memory_item: MemoryItem:
 			last_min_size = memory_item.LastYSize
 		else:
 			last_min_size = control_type.custom_minimum_size.y
-			print("inside last y size Else")
-		
-		
-		
-		
 		expanded = memory_item.Expanded
 		
 		
@@ -183,13 +179,19 @@ func _to_string():
 # but if the mouse is not above this note anymore, hide the separators
 func _process(_delta):
 	
+	if resize_dragging:
+		_resize_vertical(get_global_mouse_position().y, last_mouse_posistion_y)
 	
+	last_mouse_posistion_y = get_global_mouse_position().y
 	if not _upper_separator.visible and not _lower_separator.visible: return
 	
 	if not get_global_rect().has_point(get_global_mouse_position()):
 		_upper_separator.visible = false
 		_lower_separator.visible = false
+	
+	
 
+var last_mouse_posistion_y: float = 0.0
 
 func _notification(notification_type):
 	match notification_type:
@@ -372,7 +374,7 @@ func _on_title_text_submitted(new_text: String) -> void:
 	if memory_item: memory_item.Title = new_text
 
 
-func _on_expand_note_button_gui_input(event: InputEvent) -> void:
+func _on_expand_button_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.is_pressed():
 		event = event as InputEventMouseButton
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -383,65 +385,63 @@ func _on_expand_note_button_gui_input(event: InputEvent) -> void:
 
 
 var resize_tween: Tween
-
-
 func expand_note() -> void:
 	if resize_tween and resize_tween.is_running():
 		resize_tween.kill()
 		return
-	resize_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
+	resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
 	if last_min_size == 0:
 		last_min_size = 100
 	resize_tween.tween_property(control_type, "custom_minimum_size:y", last_min_size, expand_anim_duration)
 	resize_tween.set_parallel()
-	resize_tween.tween_property(expand_note_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
+	resize_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
 	resize_tween.set_parallel()
-	resize_tween.tween_property(expand_note_button, "modulate", Color.WHITE, expand_anim_duration)
+	resize_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
+	video_label.show()
+	resize_drag_control.show()
+	control_type.show()
+
 
 func contract_note() -> void:
 	if resize_tween and resize_tween.is_running():
 		resize_tween.kill()
 		return
-	resize_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
+	resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
 	
 	last_min_size = control_type.custom_minimum_size.y
 	resize_tween.tween_property(control_type, "custom_minimum_size:y", 0, expand_anim_duration)
 	resize_tween.set_parallel()
-	resize_tween.tween_property(expand_note_button,"rotation", deg_to_rad(-90.0), expand_anim_duration)
+	resize_tween.tween_property(expand_button,"rotation", deg_to_rad(-90.0), expand_anim_duration)
 	resize_tween.set_parallel()
-	resize_tween.tween_property(expand_note_button, "modulate", expand_icon_color, expand_anim_duration)
+	resize_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
+	video_label.hide()
+	await resize_tween.finished
+	control_type.hide()
+	resize_drag_control.hide()
+	
 
 
 var resize_dragging: bool = false
-var initial_dragging_pos: float = 0.0
-var last_distance: float = 0.0
-var distance_counter: int = 0
-var rate_multiplier: float = 1.0
 func _on_resize_control_gui_input(event: InputEvent) -> void:
 	if expanded:
 		if event is InputEventMouseButton:
 			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
 				resize_dragging = true
-				initial_dragging_pos = event.global_position.y
 			elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
 				resize_dragging = false
-				distance_counter = 0
-		elif event is InputEventMouseMotion and resize_dragging:
-			if event.global_position.y > initial_dragging_pos and control_type.custom_minimum_size.y < max_note_size_limit:
-				var temp_dist = last_distance
-				last_distance = initial_dragging_pos -  event.global_position.y
-				if last_distance > temp_dist:
-					distance_counter += 1
-				if distance_counter % 200 == 0:
-					rate_multiplier += 0.2
-				control_type.custom_minimum_size.y += (resize_pixel_rate *rate_multiplier)
-			elif event.global_position.y < initial_dragging_pos and control_type.custom_minimum_size.y > min_note_size_limit:
-				var temp_dist = last_distance
-				last_distance = event.global_position.y - initial_dragging_pos
-				if last_distance > temp_dist:
-					distance_counter += 1
-				if distance_counter % 200 == 0:
-					rate_multiplier += 0.2
-				control_type.custom_minimum_size.y -= (resize_pixel_rate *rate_multiplier)
-			initial_dragging_pos = event.global_position.y
-			last_min_size = control_type.custom_minimum_size.y
+
+
+func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
+	var difference: float = current_mouse_pos_y - last_mouse_pos_y
+	
+	if control_type.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:
+		control_type.custom_minimum_size.y = min_note_size_limit
+	elif control_type.custom_minimum_size.y + difference > max_note_size_limit and max_note_size_limit != 0:
+		control_type.custom_minimum_size.y = max_note_size_limit
+	else:
+		control_type.custom_minimum_size.y += difference
+		last_min_size = control_type.custom_minimum_size.y
+
+
+func _on_exapnd_button_toggled(toggled_on: bool) -> void:
+	expanded = toggled_on

@@ -16,7 +16,9 @@ static var SERIALIZER_FIELDS = [
 	"ModelShortName",
 	"EstimatedTokenCost",
 	"TokenCost",
-	"Visible",
+	"Visible"
+	#"Expanded",
+	#"LastYSize"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -71,6 +73,13 @@ var provider: BaseProvider:
 	set(value):
 		_provider_updated()
 		provider = value
+
+var Expanded: bool = true:
+	set(value): SingletonObject.save_state(false); Expanded = value
+
+var LastYSize: float = 0.0:
+	set(value): SingletonObject.save_state(false); LastYSize = value
+
 
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
@@ -152,6 +161,8 @@ func Serialize() -> Dictionary:
 		"TokenCost": TokenCost,
 		"Images": images_,
 		"Captions": captions_,
+		#"Expanded": Expanded,
+		#"LastYSize": LastYSize
 	}
 	return save_dict
 
