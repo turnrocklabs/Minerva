@@ -10,8 +10,37 @@ extends HBoxContainer
 @export var bot_message_color: Color
 @export var error_message_color: Color
 
+@export_category("Expand Animation Stats")
+@export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
+@export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
+@export var expand_ease_type: Tween.EaseType = Tween.EASE_OUT
+@export var expand_icon_color: Color = Color.WHITE
+@export var max_note_size_limit: int = 400
+@export var min_note_size_limit: int = 30
+@onready var expand_button: Button = %ExpandButton
+@onready var resize_scroll_container: ScrollContainer = %ResizeScrollContainer
+@onready var message_labels_container: VBoxContainer = %MessageLabelsContainer
+@onready var resize_drag_control: Control = %ResizeDragControl
+
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var text_edit: TextEdit = %MessageTextEdit
+
+
+var expanded: bool = true:
+	set(value):
+		history_item.Expanded = value
+		expanded = value
+
+
+var last_custom_size_y: float = 100.0:
+	set(value):
+		if value > 0:
+			last_custom_size_y = value
+			if history_item:
+				history_item.LastYSize = value
+			#if resize_scroll_container:
+				#resize_scroll_container.custom_minimum_size.y = value
+
 
 ## Content of this message in markdown, returns `label.text`
 ## Setting this property will update the history item and rerender the note
@@ -64,6 +93,14 @@ var images: Array[ChatImage]:
 
 func _ready():
 	render()
+
+
+var last_mouse_posistion_y: float = 0.0
+func _process(delta: float) -> void:
+	if resize_dragging:
+		_resize_vertical(get_global_mouse_position().y, last_mouse_posistion_y)
+	last_mouse_posistion_y = get_global_mouse_position().y
+
 
 ## sets loading label visibility to `loading_` and toggles_controls
 func set_message_loading(loading_: bool):
@@ -248,7 +285,7 @@ func _on_gui_input(event: InputEvent):
 			get_parent().message_selection.emit(self, false)
 		return
 	
-	if event is InputEventMouseMotion:
+	if event is InputEventMouseMotion and !resize_dragging:
 		for ch in %MessageLabelsContainer.get_children(): # ch is either RichTextLabel or CodeMarkdownLabel
 			if not ch.get_selected_text().is_empty():
 				get_parent().message_selection.emit(self, true)
@@ -325,7 +362,7 @@ func _create_code_labels():
 	# but keep it so we can access the message content easily
 	label.visible = false
 	
-	for child in %MessageLabelsContainer.get_children(): child.queue_free()
+	for child in message_labels_container.get_children(): child.queue_free()
 
 	for ts in segments:
 		var node: Node
@@ -345,4 +382,61 @@ func _create_code_labels():
 			# set the color for model message
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
 		
-		%MessageLabelsContainer.add_child(node)
+		message_labels_container.add_child(node)
+	await get_tree().process_frame
+	resize_scroll_container.custom_minimum_size.y = message_labels_container.size.y + 5
+	last_custom_size_y = message_labels_container.size.y + 5
+	max_note_size_limit = message_labels_container.size.y + 5
+
+
+var resize_tween: Tween
+var last_min_size: = 0
+func _on_expand_button_toggled(toggled_on: bool) -> void:
+	if resize_tween and resize_tween.is_running():
+			resize_tween.kill()
+			return
+	if toggled_on:
+		resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
+		resize_tween.tween_property(resize_scroll_container, "custom_minimum_size:y", last_custom_size_y, expand_anim_duration)
+		resize_tween.set_parallel()
+		resize_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
+		resize_tween.set_parallel()
+		resize_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
+		resize_drag_control.show()
+		resize_scroll_container.show()
+	else:
+		resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
+		last_custom_size_y = resize_scroll_container.custom_minimum_size.y
+		resize_tween.tween_property(resize_scroll_container, "custom_minimum_size:y", 0, expand_anim_duration)
+		resize_tween.set_parallel()
+		resize_tween.tween_property(expand_button,"rotation", deg_to_rad(-90.0), expand_anim_duration)
+		resize_tween.set_parallel()
+		resize_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
+		await resize_tween.finished
+		resize_scroll_container.hide()
+		resize_drag_control.hide()
+	expanded = toggled_on
+
+
+var resize_dragging: bool = false
+func _on_resize_control_gui_input(event: InputEvent) -> void:
+	if expanded:
+		if event is InputEventMouseButton:
+			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+				resize_dragging = true
+				set_process(true)
+			elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
+				resize_dragging = false
+				set_process(false)
+
+
+func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
+	var difference: float = current_mouse_pos_y - last_mouse_pos_y
+	
+	if resize_scroll_container.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:
+		resize_scroll_container.custom_minimum_size.y = min_note_size_limit
+	elif resize_scroll_container.custom_minimum_size.y + difference > max_note_size_limit and max_note_size_limit != 0:
+		resize_scroll_container.custom_minimum_size.y = max_note_size_limit
+	else:
+		resize_scroll_container.custom_minimum_size.y += difference
+		#last_custom_size_y = resize_scroll_container.custom_minimum_size.y
