@@ -199,7 +199,7 @@ jobs:
           # Ensure build directory exists and print directory structure
           mkdir -p build
 
-          timeout 10s "godot" --headless --import || true
+          timeout 20s "godot" --headless --import || true
           
           if [ "${{ github.event.inputs.platform }}" = "windows" ]; then
             godot --headless --export-debug "Windows Desktop" build/Minerva.exe
