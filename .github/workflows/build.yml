@@ -43,7 +43,6 @@ jobs:
   build-windows:
     needs: check-gdextension
     if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
-        # needs.check-gdextension.outputs.should_build == 'true' &&
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
@@ -92,7 +91,6 @@ jobs:
   build-linux:
     needs: check-gdextension
     if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
-      # needs.check-gdextension.outputs.should_build == 'true' &&
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -152,18 +150,7 @@ jobs:
         with:  
           submodules: 'true'
       
-      # - name: Download Previous Artifacts
-      #   if: needs.check-gdextension.outputs.should_build != 'true'
-      #   uses: dawidd6/action-download-artifact@v3
-      #   with:
-      #     workflow: build.yml
-      #     workflow_conclusion: success
-      #     name: terminal-*
-      #     path: src/bin/
-      #     if_no_artifact_found: ignore
-      
       - name: Download Current Artifacts
-        # if: needs.check-gdextension.outputs.should_build == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: terminal-*
@@ -211,26 +198,18 @@ jobs:
         run: |
           # Ensure build directory exists and print directory structure
           mkdir -p build
-          echo "Current directory contents:"
-          ls -la
-          echo "Project directory structure:"
-          find . -type f -name "project.godot" -o -name "export_presets.cfg"
+
+          timeout 10s "godot" --headless --import || true
           
-          echo "Starting export..."
           if [ "${{ github.event.inputs.platform }}" = "windows" ]; then
-            godot --headless --verbose --export-debug "Windows Desktop" build/Minerva.exe || echo "Exit code: $?"
+            godot --headless --export-debug "Windows Desktop" build/Minerva.exe
           elif [ "${{ github.event.inputs.platform }}" = "linux" ]; then
-            godot --headless --verbose --export-debug "Linux/X11" build/Minerva.x86_64 || echo "Exit code: $?"
+            godot --headless --export-debug "Linux/X11" build/Minerva.x86_64
           else
-            # For 'all' option or push events, export both but sequentially
-            echo "Exporting Windows..."
-            godot --headless --verbose --export-debug "Windows Desktop" build/Minerva.exe || echo "Windows exit code: $?"
-            echo "Exporting Linux..."
-            godot --headless --verbose --export-debug "Linux/X11" build/Minerva.x86_64 || echo "Linux exit code: $?"
+            # For 'all' option or push events, export both
+            godot --headless --export-debug "Windows Desktop" build/Minerva.exe
+            godot --headless --export-debug "Linux/X11" build/Minerva.x86_64 
           fi
-          
-          echo "Build directory contents after export:"
-          ls -la build/
           
       - name: Upload Builds
         uses: actions/upload-artifact@v4
