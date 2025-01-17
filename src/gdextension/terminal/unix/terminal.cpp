@@ -599,14 +599,13 @@ bool Terminal::start(int width, int height)
     if (_child_pid == 0) {
         // Child process
         putenv((char*)"TERM=xterm-256color");
-        putenv((char*)"PS1=\\[\\033[888z\\]$PS1\\[\\033[999z\\]");
+        putenv((char*)"PS1=\\[\\033[888z\\]\\u@\\h:\\w\\$\\[\\033[999z\\] ");
+        putenv((char*)"SHLVL=0");  // Force shell level to 0 before starting
         putenv((char*)"BASH_ENV=");
         putenv((char*)"ENV=");
 
-        const char* shell = getenv("SHELL");
-        if (!shell) shell = "/bin/bash";
-        
-        execlp(shell, shell, "--norc", "--noprofile", nullptr);
+        const char* shell = "/bin/bash";  // Explicitly use bash
+        execl(shell, "bash", "--login", nullptr);  // Use --login to ensure proper initialization
         _exit(1);
     }
 
