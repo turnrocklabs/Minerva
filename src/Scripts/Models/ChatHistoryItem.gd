@@ -16,9 +16,9 @@ static var SERIALIZER_FIELDS = [
 	"ModelShortName",
 	"EstimatedTokenCost",
 	"TokenCost",
-	"Visible"
-	#"Expanded",
-	#"LastYSize"
+	"Visible",
+	"Expanded",
+	"LastYSize"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -161,8 +161,8 @@ func Serialize() -> Dictionary:
 		"TokenCost": TokenCost,
 		"Images": images_,
 		"Captions": captions_,
-		#"Expanded": Expanded,
-		#"LastYSize": LastYSize
+		"Expanded": Expanded,
+		"LastYSize": LastYSize
 	}
 	return save_dict
 

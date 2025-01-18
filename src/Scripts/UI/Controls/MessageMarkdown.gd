@@ -6,6 +6,7 @@ extends HBoxContainer
 @export var right_control: Control
 @export var label: MarkdownLabel
 
+@export_category("Message Container Colors")
 @export var user_message_color: Color
 @export var bot_message_color: Color
 @export var error_message_color: Color
@@ -15,12 +16,16 @@ extends HBoxContainer
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
 @export var expand_ease_type: Tween.EaseType = Tween.EASE_OUT
 @export var expand_icon_color: Color = Color.WHITE
-@export var max_note_size_limit: int = 400
-@export var min_note_size_limit: int = 30
+@export var max_note_size_limit: float = 400.0
+@export var min_note_size_limit: float = 30.0
+
+
 @onready var expand_button: Button = %ExpandButton
 @onready var resize_scroll_container: ScrollContainer = %ResizeScrollContainer
 @onready var message_labels_container: VBoxContainer = %MessageLabelsContainer
 @onready var resize_drag_control: Control = %ResizeDragControl
+@onready var images_grid_container: GridContainer = %ImagesGridContainer
+@onready var v_box_container: VBoxContainer = %VBoxContainer
 
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var text_edit: TextEdit = %MessageTextEdit
@@ -96,7 +101,7 @@ func _ready():
 
 
 var last_mouse_posistion_y: float = 0.0
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if resize_dragging:
 		_resize_vertical(get_global_mouse_position().y, last_mouse_posistion_y)
 	last_mouse_posistion_y = get_global_mouse_position().y
@@ -117,8 +122,19 @@ func set_message_loading(loading_: bool):
 func render():
 	if not (history_item and is_node_ready()): return
 
-	if history_item.Role == ChatHistoryItem.ChatRole.USER: _setup_user_message()
-	else: _setup_model_message()
+	if history_item.Role == ChatHistoryItem.ChatRole.USER: 
+		_setup_user_message()
+		await get_tree().process_frame
+		resize_scroll_container.custom_minimum_size.y = label.size.y + 5
+		last_custom_size_y = label.size.y + 5
+		max_note_size_limit = label.size.y + 5
+		
+	else: 
+		_setup_model_message()
+		await get_tree().process_frame
+		resize_scroll_container.size.y = message_labels_container.size.y + images_grid_container.size.y + 5
+		last_custom_size_y = message_labels_container.size.y + images_grid_container.size.y + 5
+		max_note_size_limit = message_labels_container.size.y + images_grid_container.size.y + 5
 
 	visible = history_item.Visible
 
@@ -127,6 +143,8 @@ func render():
 	history_item.rendered_node = self
 
 	_create_code_labels()
+	
+	
 
 func set_edit(on: = true):
 	%MessageLabelsContainer.visible = not on
@@ -167,6 +185,7 @@ func _setup_user_message():
 
 	var style: StyleBoxFlat = get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = user_message_color
+	
 
 
 func _setup_model_message():
@@ -199,7 +218,7 @@ func _setup_model_message():
 
 	var continue_btn = get_node("%ContinueButton") as Button
 	continue_btn.visible = not history_item.Complete
-
+	
 	# we can't edit model messages
 	# %EditButton.visible = false
 
@@ -209,6 +228,11 @@ func _setup_model_message():
 	else:
 		label.markdown_text = history_item.Message
 		style.bg_color = bot_message_color
+	
+	#await get_tree().process_frame
+	#resize_scroll_container.custom_minimum_size.y = label.size.y + images_grid_container.size.y + 5
+	#last_custom_size_y = label.size.y + images_grid_container.size.y + 5
+	#max_note_size_limit = label.size.y + images_grid_container.size.y + 5
 
 
 ## Instantiates new message node
@@ -372,6 +396,7 @@ func _create_code_labels():
 		else:
 			# Maybe have this node as scene
 			node = RichTextLabel.new()
+			#node.threaded = true
 			node.fit_content = true
 			node.bbcode_enabled = true
 			node.selection_enabled = true
@@ -383,10 +408,7 @@ func _create_code_labels():
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
 		
 		message_labels_container.add_child(node)
-	await get_tree().process_frame
-	resize_scroll_container.custom_minimum_size.y = message_labels_container.size.y + 5
-	last_custom_size_y = message_labels_container.size.y + 5
-	max_note_size_limit = message_labels_container.size.y + 5
+
 
 
 var resize_tween: Tween
@@ -428,6 +450,7 @@ func _on_resize_control_gui_input(event: InputEvent) -> void:
 			elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
 				resize_dragging = false
 				set_process(false)
+				last_mouse_posistion_y = 0.0
 
 
 func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
@@ -439,4 +462,4 @@ func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> vo
 		resize_scroll_container.custom_minimum_size.y = max_note_size_limit
 	else:
 		resize_scroll_container.custom_minimum_size.y += difference
-		#last_custom_size_y = resize_scroll_container.custom_minimum_size.y
+		last_custom_size_y = resize_scroll_container.custom_minimum_size.y

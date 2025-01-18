@@ -80,6 +80,7 @@ grow_vertical = 2
 pivot_offset = Vector2(19, 15)
 focus_mode = 0
 toggle_mode = true
+button_pressed = true
 icon = ExtResource("3_kmw2p")
 flat = true
 icon_alignment = 1
