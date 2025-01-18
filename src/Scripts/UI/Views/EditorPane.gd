@@ -28,7 +28,6 @@ func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
 	SingletonObject.UpdateUnsavedTabIcon.connect(update_tabs_icon)
-	
 
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
@@ -241,17 +240,54 @@ func update_tabs_icon() -> void:
 		
 		counter += 1
 
-func check_incomplete_snippet(editor: Editor):
+func check_incomplete_snippet(editor: Editor): 
 	if editor.type == Editor.Type.TEXT:
-		if editor.code_edit.text.contains("rest of code"):
-			var tab_idx: = Tabs.get_tab_idx_from_control(editor)
-			Tabs.set_tab_icon(tab_idx, _incoplete_snippet_icon)
-			Tabs.set_tab_tooltip(tab_idx, "Potential incomplete code snippet")
+		var tab_idx = Tabs.get_tab_idx_from_control(editor)
+		var new_text := editor.code_edit.text.strip_edges()
+		var old_text :String = editor.code_edit.get_meta("old_text", "") # Retrieve previous text
+
+		if old_text == "" : #first input, nothing to compare with
+			editor.code_edit.set_meta("old_text", new_text)
+			Tabs.get_child(tab_idx).find_child("WarningIcon").visible = false
+			Tabs.get_child(tab_idx).find_child("keyWordDetected").visible = false
+			Tabs.get_child(tab_idx).find_child("newTextIsBigger").visible = false  
+			return
+		
+		var old_size := old_text.length()
+		var new_size := new_text.length()
+
+		if new_size < old_size: # Check if new text is 10% larger
+			Tabs.get_child(tab_idx).find_child("WarningIcon").visible = true
+			Tabs.get_child(tab_idx).find_child("newTextIsBigger").visible = true
+			
+		else:
+			Tabs.get_child(tab_idx).find_child("newTextIsBigger").visible = false
+			Tabs.get_child(tab_idx).find_child("WarningIcon").visible = false
+
+
+		var lastline = new_text.to_lower()
+		# Remove punctuation and non-alphanumeric characters
+		lastline = lastline.replace("[^a-zA-Z0-9 ]", "") 
+
+		var list_of_words = ["and so on", "rest of code", "etc", "and so forth", "and more",
+							 "and the rest", "continuing", "this pattern continues", "and so on and so forth",
+							 "and similar", "the list continues", "there are further examples", "snippet continued",
+							 "the full code includes", "the remaining code follows a similar pattern", "additional logic"] 
+
+		for word in list_of_words: #simplified loop
+			if lastline.ends_with(word.to_lower()):
+				Tabs.get_child(tab_idx).find_child("WarningIcon").visible = true
+				Tabs.get_child(tab_idx).find_child("keyWordDetected").visible = true
+				editor.code_edit.set_meta("old_text", new_text) # Store current text for next comparison. Crucial!
+				return #exit after finding a match
+
+		# If no keyword is found:
+		#Tabs.get_child(tab_idx).find_child("WarningIcon").visible = false
+		editor.code_edit.set_meta("old_text", new_text) # Store current text for the next comparison
 
 func _on_editor_content_changed(editor: Editor):
 
 	var state: = editor.get_saved_state()
-
 	var icon: Texture2D
 	var tooltip: String = ""
 
@@ -304,6 +340,7 @@ func _on_editor_content_changed(editor: Editor):
 	Tabs.set_tab_tooltip(tab_idx, tooltip)
 
 	check_incomplete_snippet(editor)
+	
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
