@@ -85,7 +85,7 @@ var memory_item: MemoryItem:
 			video_player_container.add_child(video_player_node)
 			control_type = video_player_container
 		
-		if memory_item.LastYSize > 0:
+		if memory_item.LastYSize > min_note_size_limit:
 			last_min_size = memory_item.LastYSize
 		else:
 			last_min_size = control_type.custom_minimum_size.y
