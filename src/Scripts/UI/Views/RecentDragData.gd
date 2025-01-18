@@ -11,14 +11,18 @@ func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
 	return true
 
 func _drop_data(at_position: Vector2, data: Variant) -> void:
-	var indexOne = 0
+	# Find the original index *after* potential reordering
+	var indexOne = -1 # Initialize to -1 to indicate not found
 	for i in recentList.get_children():
 		var DroppedData = data.name.split("_")
 		var FromList = i.name.split("_")
 		if FromList == DroppedData:
 			indexOne = recentList.get_children().find(i)
-			recentList.get_child(indexOne).queue_free()
 			break
+
+	if indexOne == -1: # Handle case where item is not found
+		print("Error: Item not found in recentList")
+		return
 
 	if recentList == null:
 		printerr("RecentList not found!")
@@ -29,10 +33,14 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 
 		var local_position = recentList.get_global_transform().affine_inverse() * get_global_transform() * at_position
 		var index = get_insertion_index(recentList, local_position)
+
+		# Remove the original item before adding the duplicate (avoids duplicates)
+		recentList.remove_child(data)  
+
 		recentList.add_child(new_button)
 		recentList.move_child(new_button, index)
-		SingletonObject.reorder_recent_project(indexOne,index)
-		
+		SingletonObject.reorder_recent_project(indexOne, index)
+
 	else:
 		printerr("Dropped data is not a Control node.")
 
