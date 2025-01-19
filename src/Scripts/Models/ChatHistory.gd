@@ -114,7 +114,13 @@ func Serialize() -> Dictionary:
 static func Deserialize(data: Dictionary) -> ChatHistory:
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("Provider", 0))
-	var provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
+	var provider_obj: BaseProvider
+
+	if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
+		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
+	else:
+		# Fallback to second defined model, skipping the human provider
+		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.values()[1].new()
 
 	var ch = ChatHistory.new(provider_obj, data.get("HistoryId"))
 
