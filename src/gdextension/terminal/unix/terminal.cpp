@@ -604,9 +604,10 @@ bool Terminal::start(int width, int height)
         putenv((char*)"BASH_ENV=");
         putenv((char*)"ENV=");
 
-        const char* shell = "/bin/bash";  // Explicitly use bash
-        execl(shell, "bash", "--login", nullptr);  // Use --login to ensure proper initialization
-        _exit(1);
+        const char* shell = getenv("SHELL");
+        if (!shell) shell = "/bin/bash";
+        
+        execlp(shell, shell, "--norc", "--noprofile", nullptr);
     }
 
     // Parent process
