@@ -43,6 +43,10 @@ func _update_font_metrics():
 	line_height = font.get_height(font_size)
 	char_width = char_metrics.x
 
+	for check_button: CheckButton in _check_buttons_container.get_children():
+		check_button.position.y = (check_button.get_meta("row") * line_height) + (line_height/2) - check_button.size.y/2
+		print(check_button.size.y)
+
 func _ready():
 	add_child(terminal)
 
