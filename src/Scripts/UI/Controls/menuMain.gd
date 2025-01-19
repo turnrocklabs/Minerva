@@ -239,6 +239,7 @@ func load_recent_projects():
 func _add_recent_project_ui(index: int, item: String):
 
 	var newRecentButtons = preload("res://Scenes/RecentPopUpButtons.tscn").instantiate() # Instantiate a NEW one each time
+	
 	newRecentButtons.set_meta("project_path", item)
 	var RecentBtn = newRecentButtons.find_child("RecentBtn")
 	var exitBtn = newRecentButtons.find_child("exitBtn")
@@ -258,21 +259,18 @@ func _add_recent_project_ui(index: int, item: String):
 
 
 	RecentBtn.pressed.connect(_on_open_recent_project.bind(index, item))
-	exitBtn.pressed.connect(_on_remove_recent_single.bind(index))
+	exitBtn.pressed.connect(_on_remove_recent_single.bind(newRecentButtons.get_meta("project_path")))
 
 	recentList.add_child(newRecentButtons) # Add the *new instance* to the VboxContainer
-	
-
 	
 	
 func _on_open_recent_project(index: int, itemText:String):
 	# The "Clear Recent Projects" button should be handled separately, not within this function.  Add this logic to the PopupMenu where that button resides. 
 	SingletonObject.OpenRecentProject.emit(itemText)
 	popUpRecent.visible = false
-	print(index)
 
 
-func _on_remove_recent_single(index: int):
+func _on_remove_recent_single(index: String):
 	SingletonObject.remove_recent_project(index) # Remove the project data
 	_rebuild_recent_projects_ui()  # Update the UI
 	load_recent_projects_sub()
