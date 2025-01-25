@@ -63,7 +63,7 @@ theme_override_constants/separation = 12
 custom_minimum_size = Vector2(24, 0)
 layout_mode = 2
 
-[node name="ExapndButton" type="Button" parent="PanelContainer/vBoxContainer/headHBoxContainer/Control"]
+[node name="ExpandButton" type="Button" parent="PanelContainer/vBoxContainer/headHBoxContainer/Control"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 8
@@ -79,8 +79,6 @@ grow_horizontal = 2
 grow_vertical = 2
 pivot_offset = Vector2(19, 15)
 focus_mode = 0
-toggle_mode = true
-button_pressed = true
 icon = ExtResource("3_kmw2p")
 flat = true
 icon_alignment = 1
@@ -143,7 +141,7 @@ text = "this is for the video notes"
 
 [node name="ResizeControl" type="Control" parent="PanelContainer/vBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 12)
+custom_minimum_size = Vector2(0, 15)
 layout_mode = 2
 size_flags_vertical = 8
 mouse_default_cursor_shape = 9
@@ -154,7 +152,7 @@ visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 
-[connection signal="toggled" from="PanelContainer/vBoxContainer/headHBoxContainer/Control/ExapndButton" to="." method="_on_exapnd_button_toggled"]
+[connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/Control/ExpandButton" to="." method="_on_expand_button_pressed"]
 [connection signal="toggled" from="PanelContainer/vBoxContainer/headHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="text_submitted" from="PanelContainer/vBoxContainer/headHBoxContainer/Title" to="." method="_on_title_text_submitted"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/HideButton" to="." method="_on_hide_button_pressed"]
