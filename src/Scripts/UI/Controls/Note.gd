@@ -370,6 +370,9 @@ func _on_edit_button_pressed():
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
 		editor.code_edit.text = memory_item.Content
+		ep.check_incomplete_snippet(editor)
+		ep._is_Completed = memory_item.isCompleted
+		
 	
 	associate_editor(editor)
 
