@@ -2,7 +2,7 @@ class_name ChatPane
 extends TabContainer
 
 
-var icActive = preload("res://assets/icons/Microphone_active.png")
+#var icActive = preload("res://assets/icons/Microphone_active.png")
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -205,8 +205,10 @@ func execute_chat():
 
 	# if we're using the human provider, handle it here
 	if history.provider is HumanProvider:
+		#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
+		var SetupUnderscores = %txtMainUserInput.text.replace("_",r"\_")
 		var usr_history_item: = ChatHistoryItem.new()
-		usr_history_item.Message = %txtMainUserInput.text
+		usr_history_item.Message = SetupUnderscores
 		usr_history_item.Role = ChatHistoryItem.ChatRole.USER
 		usr_history_item.provider = history.provider
 		%txtMainUserInput.text = ""
@@ -235,7 +237,9 @@ func execute_chat():
 
 	## prepare an append item for the history
 	var user_history_item: = ChatHistoryItem.new()
-	user_history_item.Message = %txtMainUserInput.text
+	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
+	var CheckUnderscores = %txtMainUserInput.text.replace("_",r"\_")
+	user_history_item.Message = CheckUnderscores
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 
 	%txtMainUserInput.text = ""
@@ -495,6 +499,7 @@ func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.container = closed_tab_container 
 	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	closed_tab_container.remove_child(control)
+	control.queue_free()
 
 # Function to restore a deleted tab
 func restore_deleted_tab(tab_name: String):
@@ -534,7 +539,8 @@ func _on_btn_test_pressed():
 
 func clear_all_chats():
 	for child in get_children():
-		call_deferred("remove_child", child)#remove_child(child)
+		remove_child(child)
+		child.queue_free()
 
 
 func update_token_estimation():

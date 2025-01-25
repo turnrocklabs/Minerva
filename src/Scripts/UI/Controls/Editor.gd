@@ -410,7 +410,7 @@ func _on_create_note_button_pressed() -> void:
 
 		if Type.GRAPHICS == type:
 			if tab_title:
-				associated_object = SingletonObject.NotesTab.add_image_note(tab_title, graphics_editor.image, "Sketch")
+				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", graphics_editor.image, graphics_editor.image.get_meta("caption", ""))
 			elif file:
 				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
 			else:
@@ -456,8 +456,7 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 		code_edit.set_process_input(false)
 		code_edit.set_process_unhandled_key_input(false)
 		find_string_in_code_edit()
-	elif event.is_action_pressed("toggle_autowrap"):
-		toggle_autowrap()
+	
 
 
 func toggle_autowrap() -> void:

@@ -7,7 +7,11 @@ extends RefCounted ## so I get memory management and signals.
 signal toggled(on: bool)
 
 
-static var SERIALIZER_FIELDS = ["Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order"]
+static var SERIALIZER_FIELDS = ["UUID" ,"Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order", "Expanded", "LastYSize"]
+
+var UUID: String = "":
+	set(value):
+		SingletonObject.save_state(false); UUID = value
 
 var Enabled: bool = true:
 	set(value):
@@ -64,12 +68,22 @@ var Order: int:
 var FilePath: String:
 	set(value): SingletonObject.save_state(false); FilePath = value;
 
+var Expanded: bool = true:
+	set(value): SingletonObject.save_state(false); Expanded = value
+
+var LastYSize: float = 0.0:
+	set(value): SingletonObject.save_state(false); LastYSize = value
+###### ////////////////////////////////////////////////////////////////
+## Every time you add a field to the serializer be sure to add it to the SERIALIZER_FIELDS array at the top
+###### ////////////////////////////////////////////////////////////////
+
 var isCompleted: bool:
 	set(value): SingletonObject.save_state(false); isCompleted = value;
 
 var OwningThread
 
 func hash_string(input: String) -> String:
+	if input.length() < 1: return ""
 	var ctx = HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
 	ctx.update(input.to_utf8_buffer())
@@ -113,7 +127,9 @@ func Serialize() -> Dictionary:
 		"Visible": Visible,
 		"Pinned": Pinned,
 		"Order": Order,
-		"OwningThread": OwningThread
+		"OwningThread": OwningThread,
+		"Expanded": Expanded,
+		"LastYSize": LastYSize
 	}
 	return save_dict
 
