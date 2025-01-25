@@ -7,7 +7,11 @@ extends RefCounted ## so I get memory management and signals.
 signal toggled(on: bool)
 
 
-static var SERIALIZER_FIELDS = ["Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order", "Expanded", "LastYSize"]
+static var SERIALIZER_FIELDS = ["UUID" ,"Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order", "Expanded", "LastYSize"]
+
+var UUID: String = "":
+	set(value):
+		SingletonObject.save_state(false); UUID = value
 
 var Enabled: bool = true:
 	set(value):
