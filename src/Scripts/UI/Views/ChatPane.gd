@@ -2,7 +2,7 @@ class_name ChatPane
 extends TabContainer
 
 
-var icActive = preload("res://assets/icons/Microphone_active.png")
+#var icActive = preload("res://assets/icons/Microphone_active.png")
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -499,6 +499,7 @@ func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.container = closed_tab_container 
 	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	closed_tab_container.remove_child(control)
+	control.queue_free()
 
 # Function to restore a deleted tab
 func restore_deleted_tab(tab_name: String):
@@ -538,7 +539,8 @@ func _on_btn_test_pressed():
 
 func clear_all_chats():
 	for child in get_children():
-		call_deferred("remove_child", child)#remove_child(child)
+		remove_child(child)
+		child.queue_free()
 
 
 func update_token_estimation():

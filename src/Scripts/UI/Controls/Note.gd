@@ -71,12 +71,13 @@ var memory_item: MemoryItem:
 				image_controls_inst.memory_item = value
 				v_box_container.add_child(image_controls_inst)
 				control_type = image_controls_inst
+				last_min_size = image_controls_inst.size.y
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
-			#audio_stream_player.stream = value.Audio
 			var audio_control_inst: = SingletonObject.audio_contols_scene.instantiate()
 			audio_control_inst.audio = value.Audio
 			v_box_container.add_child(audio_control_inst)
 			control_type = audio_control_inst
+			v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
 		if memory_item.Type == SingletonObject.note_type.VIDEO:
 			%EditButton.visible = false
 			var video_player_node: = SingletonObject.video_player_scene.instantiate()
@@ -88,10 +89,11 @@ var memory_item: MemoryItem:
 		if memory_item.LastYSize > min_note_size_limit:
 			last_min_size = memory_item.LastYSize
 		else:
-			last_min_size = control_type.custom_minimum_size.y
+			if control_type:
+				last_min_size = control_type.custom_minimum_size.y
 		expanded = memory_item.Expanded
 		
-		
+		v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
 		# If we create a note, open a editor associated with it and then rerender the memory_item
 		# that will create completely new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
@@ -386,6 +388,7 @@ func _on_expand_button_gui_input(event: InputEvent) -> void:
 
 var resize_tween: Tween
 func expand_note() -> void:
+	if control_type == null: return
 	if resize_tween and resize_tween.is_running():
 		resize_tween.kill()
 		return
@@ -394,15 +397,19 @@ func expand_note() -> void:
 		last_min_size = 100
 	resize_tween.tween_property(control_type, "custom_minimum_size:y", last_min_size, expand_anim_duration)
 	resize_tween.set_parallel()
+	resize_tween.tween_property(resize_drag_control, "custom_minimum_size:y", 10, 0.1)
+	resize_tween.set_parallel()
 	resize_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
 	resize_tween.set_parallel()
 	resize_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
+	
 	video_label.show()
 	resize_drag_control.show()
 	control_type.show()
 
 
 func contract_note() -> void:
+	if control_type == null: return
 	if resize_tween and resize_tween.is_running():
 		resize_tween.kill()
 		return
@@ -411,9 +418,12 @@ func contract_note() -> void:
 	last_min_size = control_type.custom_minimum_size.y
 	resize_tween.tween_property(control_type, "custom_minimum_size:y", 0, expand_anim_duration)
 	resize_tween.set_parallel()
+	resize_tween.tween_property(resize_drag_control, "custom_minimum_size:y", 0, 0.1)
+	resize_tween.set_parallel()
 	resize_tween.tween_property(expand_button,"rotation", deg_to_rad(-90.0), expand_anim_duration)
 	resize_tween.set_parallel()
 	resize_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
+	
 	video_label.hide()
 	await resize_tween.finished
 	control_type.hide()
@@ -432,6 +442,7 @@ func _on_resize_control_gui_input(event: InputEvent) -> void:
 
 
 func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
+	if control_type == null: return
 	var difference: float = current_mouse_pos_y - last_mouse_pos_y
 	
 	if control_type.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:

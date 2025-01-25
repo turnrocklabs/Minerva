@@ -173,6 +173,7 @@ layout_mode = 2
 
 [node name="ExpandButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/ResizeControl"]
 unique_name_in_owner = true
+texture_filter = 2
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -207,12 +208,14 @@ size_flags_horizontal = 10
 theme_override_constants/separation = 8
 
 [node name="HideButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
+texture_filter = 2
 layout_mode = 2
 tooltip_text = "Hide this history item, but keep it in history list."
 icon = ExtResource("3_p2uud")
 
 [node name="EditButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
 unique_name_in_owner = true
+texture_filter = 2
 layout_mode = 2
 tooltip_text = "Edit Message Contens"
 icon = ExtResource("10_h3jau")
@@ -223,6 +226,7 @@ tooltip_text = "Copy Message Contents"
 icon = ExtResource("4_3sl4b")
 
 [node name="NoteButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
+texture_filter = 2
 layout_mode = 2
 tooltip_text = "Create a Note from The Message"
 icon = ExtResource("4_qpk4n")
@@ -343,7 +347,6 @@ custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 
 [connection signal="gui_input" from="." to="." method="_on_gui_input"]
-[connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/ResizeControl/ExpandButton" to="." method="_on_expand_button_pressed"]
 [connection signal="toggled" from="MarginContainer/HBoxContainer/PanelContainer/v/h/ResizeControl/ExpandButton" to="." method="_on_expand_button_toggled"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/EditButton" to="." method="_on_edit_button_pressed"]
