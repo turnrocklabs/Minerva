@@ -123,6 +123,7 @@ func clear_all_tabs():
 	var children = %tcThreads.get_children()
 	for child in children:
 		%tcThreads.remove_child(child)
+		child.queue_free()
 	pass
 	
 
@@ -281,6 +282,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	# Remove the tab control from the TabContainer
 	container.remove_child(control) 
+	control.queue_redraw()
 	
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
@@ -346,8 +348,29 @@ func attach_file(the_file: String):
 		file_type = "image"
 		type= SingletonObject.note_type.IMAGE
 		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		new_memory.MemoryImage = Image.load_from_file(the_file)
+		var image: Image = Image.new()
+		var err: Error = OK
+		match file_ext:
+			"svg":
+				err = image.load_svg_from_buffer(file_data)
+			"jpeg":
+				err = image.load_jpg_from_buffer(file_data)
+			"jpg":
+				err = image.load_jpg_from_buffer(file_data)
+			"png":
+				err = image.load_png_from_buffer(file_data)
+			"bmp":
+				err = image.load_bmp_from_buffer(file_data)
+			"webp":
+				err = image.load_webp_from_buffer(file_data)
+			"tga":
+				err = image.load_tga_from_buffer(file_data)
+		if err == OK:
+				new_memory.MemoryImage = image
+				content = Marshalls.raw_to_base64(file_data)
+		else:
+			printerr("an error ocurrred while trying to load the image file %s" % file)
+			SingletonObject.ErrorDisplay("Error loading image", "an error ocurrred while trying to load the image file %s" % file)
 		content_type = "image/%s" % file_ext
 	elif file_ext in SingletonObject.supported_video_formats:
 		file_type = "video"

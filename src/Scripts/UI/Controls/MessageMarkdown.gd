@@ -96,8 +96,21 @@ var images: Array[ChatImage]:
 		return images_
 
 
-func _ready():
+func _ready() -> void:
+	code_labels_updated.connect(_on_code_labels_updated)
 	render()
+
+
+func _on_code_labels_updated() -> void:
+	call_deferred("deferred_labels_updated")
+	
+
+func deferred_labels_updated()-> void:
+	await  get_tree().process_frame
+	resize_scroll_container.custom_minimum_size.y = message_labels_container.size.y + images_grid_container.size.y + 5
+	
+	last_custom_size_y = message_labels_container.size.y + images_grid_container.size.y + 5
+	max_note_size_limit = message_labels_container.size.y + images_grid_container.size.y + 5
 
 
 var last_mouse_posistion_y: float = 0.0
@@ -119,22 +132,18 @@ func set_message_loading(loading_: bool):
 
 ## This function will rerender the messaged using set `history_item`.
 ## Either call this function or set the `history_item` which setter will trigger it.
-func render():
+func render() -> void:
 	if not (history_item and is_node_ready()): return
 
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: 
 		_setup_user_message()
-		await get_tree().process_frame
-		resize_scroll_container.custom_minimum_size.y = label.size.y + 5
-		last_custom_size_y = label.size.y + 5
-		max_note_size_limit = label.size.y + 5
 		
 	else: 
 		_setup_model_message()
-		await get_tree().process_frame
-		resize_scroll_container.size.y = message_labels_container.size.y + images_grid_container.size.y + 5
-		last_custom_size_y = message_labels_container.size.y + images_grid_container.size.y + 5
-		max_note_size_limit = message_labels_container.size.y + images_grid_container.size.y + 5
+		#await get_tree().process_frame
+		#resize_scroll_container.size.y = message_labels_container.size.y + images_grid_container.size.y + 5
+		#last_custom_size_y = message_labels_container.size.y + images_grid_container.size.y + 5
+		#max_note_size_limit = message_labels_container.size.y + images_grid_container.size.y + 5
 
 	visible = history_item.Visible
 
@@ -144,9 +153,14 @@ func render():
 
 	_create_code_labels()
 	
-	
+	if history_item.Role == ChatHistoryItem.ChatRole.USER:
+		await get_tree().process_frame
+		resize_scroll_container.custom_minimum_size.y = label.size.y + 5
+		last_custom_size_y = label.size.y + 5
+		max_note_size_limit = label.size.y + 5
+		images_grid_container.hide()
 
-func set_edit(on: = true):
+func set_edit(on: = true) -> void:
 	%MessageLabelsContainer.visible = not on
 	
 	if on:
@@ -172,7 +186,7 @@ func _toggle_controls(enabled:= true):
 	if is_inside_tree():
 		get_tree().call_group("controls", "set_disabled", not enabled)
 
-func _setup_user_message():
+func _setup_user_message() -> void:
 	#%LeftMarginControl.visible = true
 	right_control.visible = true
 	right_control.get_node("%AvatarName").text = SingletonObject.preferences_popup.get_user_initials()
@@ -228,11 +242,7 @@ func _setup_model_message():
 	else:
 		label.markdown_text = history_item.Message
 		style.bg_color = bot_message_color
-	
-	#await get_tree().process_frame
-	#resize_scroll_container.custom_minimum_size.y = label.size.y + images_grid_container.size.y + 5
-	#last_custom_size_y = label.size.y + images_grid_container.size.y + 5
-	#max_note_size_limit = label.size.y + images_grid_container.size.y + 5
+
 
 
 ## Instantiates new message node
@@ -378,7 +388,7 @@ func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
 	return found
 
 
-
+signal code_labels_updated
 func _create_code_labels():
 	var segments: Array[TextSegment] = _extract_text_segments(TextSegment.new(label.text))
 
@@ -408,7 +418,7 @@ func _create_code_labels():
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
 		
 		message_labels_container.add_child(node)
-
+		code_labels_updated.emit()
 
 
 var resize_tween: Tween
