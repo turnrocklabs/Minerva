@@ -23,20 +23,16 @@ signal changed()
 @onready var _upper_separator: HSeparator = %UpperSeparator
 @onready var _lower_separator: HSeparator = %LowerSeparator
 @onready var v_box_container: VBoxContainer = %vBoxContainer
-@onready var expand_button: Button = %ExapndButton
+@onready var expand_button: Button = %ExpandButton
 @onready var resize_drag_control: Control = %ResizeControl
 @onready var h_separator: HSeparator = %HSeparator
 
 
 var expanded: bool = true:
 	set(value):
-		
-		memory_item.Expanded = value
-		if value:
-			expand_note()
-		else:
-			contract_note()
 		expanded = value
+		memory_item.Expanded = value
+		print(value)
 
 var last_min_size: float = 100.0:
 	set(value):
@@ -91,7 +87,29 @@ var memory_item: MemoryItem:
 		else:
 			if control_type:
 				last_min_size = control_type.custom_minimum_size.y
+		
 		expanded = memory_item.Expanded
+		if !memory_item.Expanded:
+			if last_min_size == 0:
+				last_min_size = 100
+				if control_type:
+					control_type.custom_minimum_size.y = last_min_size
+				resize_drag_control.custom_minimum_size.y = 10
+				expand_button.rotation = deg_to_rad(0.0)
+				expand_button.modulate = Color.WHITE
+				video_label.show()
+				control_type.show()
+				resize_drag_control.show()
+			else:
+				if control_type:
+					control_type.custom_minimum_size.y = 0
+					resize_drag_control.custom_minimum_size.y = 0
+					expand_button.rotation = deg_to_rad(-90.0)
+					expand_button.modulate = expand_icon_color
+					video_label.hide()
+					control_type.hide()
+					resize_drag_control.hide()
+		expand_button.disabled = false
 		
 		v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
 		# If we create a note, open a editor associated with it and then rerender the memory_item
@@ -154,6 +172,7 @@ func _ready():
 		func(text):
 			if memory_item: memory_item.Title = text
 	)
+	
 	
 
 
@@ -393,6 +412,8 @@ func expand_note() -> void:
 		resize_tween.kill()
 		return
 	resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
+	resize_tween.finished.connect(enable_expand_button)
+	expand_button.disabled = true
 	if last_min_size == 0:
 		last_min_size = 100
 	resize_tween.tween_property(control_type, "custom_minimum_size:y", last_min_size, expand_anim_duration)
@@ -414,7 +435,8 @@ func contract_note() -> void:
 		resize_tween.kill()
 		return
 	resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
-	
+	resize_tween.finished.connect(enable_expand_button)
+	expand_button.disabled = true
 	last_min_size = control_type.custom_minimum_size.y
 	resize_tween.tween_property(control_type, "custom_minimum_size:y", 0, expand_anim_duration)
 	resize_tween.set_parallel()
@@ -424,12 +446,15 @@ func contract_note() -> void:
 	resize_tween.set_parallel()
 	resize_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
 	
-	video_label.hide()
 	await resize_tween.finished
+	video_label.hide()
 	control_type.hide()
 	resize_drag_control.hide()
 	
 
+
+func enable_expand_button() -> void:
+	expand_button.disabled = false
 
 var resize_dragging: bool = false
 func _on_resize_control_gui_input(event: InputEvent) -> void:
@@ -442,7 +467,7 @@ func _on_resize_control_gui_input(event: InputEvent) -> void:
 
 
 func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
-	if control_type == null: return
+	#if control_type == null: return
 	var difference: float = current_mouse_pos_y - last_mouse_pos_y
 	
 	if control_type.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:
@@ -454,5 +479,9 @@ func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> vo
 		last_min_size = control_type.custom_minimum_size.y
 
 
-func _on_exapnd_button_toggled(toggled_on: bool) -> void:
-	expanded = toggled_on
+func _on_expand_button_pressed() -> void:
+	expanded = !expanded
+	if !expanded:
+		contract_note()
+	else:
+		expand_note()
