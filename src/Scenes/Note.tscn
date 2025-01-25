@@ -1,7 +1,8 @@
-[gd_scene load_steps=8 format=3 uid="uid://fr1vfchpwjq2"]
+[gd_scene load_steps=9 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
-[ext_resource type="Texture2D" uid="uid://b7ge70ak17waw" path="res://assets/icons/drag_icons/drag_24px_no_bg.png" id="2_vvcoi"]
+[ext_resource type="Texture2D" uid="uid://cu0vsfkdca6ah" path="res://assets/icons/drag_icons/drag_24px_no_bg_3_dots.png" id="2_enjbp"]
+[ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="3_kmw2p"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_x4kas"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="4_vm57c"]
@@ -23,6 +24,9 @@ grow_vertical = 2
 scale = Vector2(1, 1.00261)
 theme_override_constants/separation = 16
 script = ExtResource("1_bjbgn")
+expand_anim_duration = 0.7
+expand_transition_type = 5
+expand_icon_color = Color(0.160784, 0.772549, 1, 1)
 video_player_container = NodePath("PanelContainer/vBoxContainer/VideoVBoxContainer")
 
 [node name="UpperSeparator" type="HSeparator" parent="."]
@@ -39,20 +43,46 @@ mouse_filter = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 16
+theme_override_constants/separation = 10
 
 [node name="DragTextureRect" type="TextureRect" parent="PanelContainer/vBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 40)
+z_index = 5
+custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
 mouse_default_cursor_shape = 6
-texture = ExtResource("2_vvcoi")
+texture = ExtResource("2_enjbp")
 expand_mode = 2
 stretch_mode = 5
 
 [node name="headHBoxContainer" type="HBoxContainer" parent="PanelContainer/vBoxContainer"]
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 12
+
+[node name="Control" type="Control" parent="PanelContainer/vBoxContainer/headHBoxContainer"]
+custom_minimum_size = Vector2(24, 0)
+layout_mode = 2
+
+[node name="ExpandButton" type="Button" parent="PanelContainer/vBoxContainer/headHBoxContainer/Control"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -19.0
+offset_top = -15.0
+offset_right = 19.0
+offset_bottom = 15.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(19, 15)
+focus_mode = 0
+icon = ExtResource("3_kmw2p")
+flat = true
+icon_alignment = 1
+expand_icon = true
 
 [node name="CheckButton" type="CheckButton" parent="PanelContainer/vBoxContainer/headHBoxContainer" groups=["NoteCheckButton"]]
 unique_name_in_owner = true
@@ -63,6 +93,8 @@ focus_mode = 0
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+text = "THis is a a title"
+placeholder_text = "Note Title"
 flat = true
 caret_blink = true
 
@@ -81,6 +113,7 @@ layout_mode = 2
 icon = ExtResource("4_05ydn")
 
 [node name="HSeparator" type="HSeparator" parent="PanelContainer/vBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 1
 
@@ -106,14 +139,23 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "this is for the video notes"
 
+[node name="ResizeControl" type="Control" parent="PanelContainer/vBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 15)
+layout_mode = 2
+size_flags_vertical = 8
+mouse_default_cursor_shape = 9
+
 [node name="LowerSeparator" type="HSeparator" parent="."]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 
+[connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/Control/ExpandButton" to="." method="_on_expand_button_pressed"]
 [connection signal="toggled" from="PanelContainer/vBoxContainer/headHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="text_submitted" from="PanelContainer/vBoxContainer/headHBoxContainer/Title" to="." method="_on_title_text_submitted"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]
+[connection signal="gui_input" from="PanelContainer/vBoxContainer/ResizeControl" to="." method="_on_resize_control_gui_input"]

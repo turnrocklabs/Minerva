@@ -171,7 +171,12 @@ func deserialize_project(data: Dictionary):
 
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("default_provider", 0))
-	SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index]
+	if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
+		SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index]
+	else:
+		# Fallback to second defined model, skipping the human provider
+		SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.values()[1]
+
 
 	var chats: Array[ChatHistory] = []
 	for chat_data in data.get("ChatList", []):

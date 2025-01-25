@@ -41,7 +41,7 @@ func Disable_All():
 		item.Enabled = false
 
 	self.render_threads()
-	pass
+
 
 func enable_all():
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
@@ -98,12 +98,13 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 		create_new_notes_tab(tab_name)
 
 ## add indexing system here
+var new_tab: bool = false
 func create_new_notes_tab(tab_name: String = "notes 1"):
 	var thread = MemoryThread.new()
 	thread.ThreadName = tab_name_to_use(tab_name)
 	var thread_memories: Array[MemoryItem] = []
 	thread.MemoryItemList = thread_memories
-
+	new_tab = true
 	SingletonObject.ThreadList.append(thread)
 	render_thread(thread)
 
@@ -123,6 +124,7 @@ func clear_all_tabs():
 	var children = %tcThreads.get_children()
 	for child in children:
 		%tcThreads.remove_child(child)
+		child.queue_free()
 	pass
 	
 
@@ -229,19 +231,25 @@ func render_threads():
 
 	# we must delete existing noted so creating new project works
 	for c in %tcThreads.get_children():
-		c.free() # Use free instead of queue_free so the node gets deleted immediately
+		c.queue_free()
 	
 	for thread in SingletonObject.ThreadList:
 		render_thread(thread)
 
 	# Restore the last active thread:
-	if self.get_child_count():
-		self.current_tab = clampi(last_thread, 0, self.get_child_count()-1)
+	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
+	if not new_tab:
+		self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
+	else:
+		self.current_tab = get_tab_count() - 1
+	new_tab = false
 
 static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
 func render_thread(thread_item: MemoryThread):
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
+	scroll_container.scroll_vertical = 4060
+	scroll_container.follow_focus = true
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
@@ -250,7 +258,7 @@ func render_thread(thread_item: MemoryThread):
 
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vboxMemoryList)
-	scroll_container.follow_focus = true
+	#scroll_container.follow_focus = true
 	
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
 	#scroll_container.name = thread_item.ThreadName
@@ -258,6 +266,8 @@ func render_thread(thread_item: MemoryThread):
 	%tcThreads.add_child(scroll_container)
 	var tab_idx = %tcThreads.get_tab_idx_from_control(scroll_container)
 	%tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
+	if new_tab:
+		self.current_tab = tab_idx
 
 
 
@@ -280,6 +290,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	# Remove the tab control from the TabContainer
 	container.remove_child(control) 
+	control.queue_redraw()
 	
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
@@ -345,8 +356,29 @@ func attach_file(the_file: String):
 		file_type = "image"
 		type= SingletonObject.note_type.IMAGE
 		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		new_memory.MemoryImage = Image.load_from_file(the_file)
+		var image: Image = Image.new()
+		var err: Error = OK
+		match file_ext:
+			"svg":
+				err = image.load_svg_from_buffer(file_data)
+			"jpeg":
+				err = image.load_jpg_from_buffer(file_data)
+			"jpg":
+				err = image.load_jpg_from_buffer(file_data)
+			"png":
+				err = image.load_png_from_buffer(file_data)
+			"bmp":
+				err = image.load_bmp_from_buffer(file_data)
+			"webp":
+				err = image.load_webp_from_buffer(file_data)
+			"tga":
+				err = image.load_tga_from_buffer(file_data)
+		if err == OK:
+				new_memory.MemoryImage = image
+				content = Marshalls.raw_to_base64(file_data)
+		else:
+			printerr("an error ocurrred while trying to load the image file %s" % file)
+			SingletonObject.ErrorDisplay("Error loading image", "an error ocurrred while trying to load the image file %s" % file)
 		content_type = "image/%s" % file_ext
 	elif file_ext in SingletonObject.supported_video_formats:
 		file_type = "video"
@@ -445,21 +477,16 @@ func _notification(what):
 var clicked: = -1 # this is used to tack double click to change the tab nama
 var temp_current_tab: = -1 # this is used to track the clicked tab when rearranged
 func _on_tab_clicked(tab: int):
-	#print("tab clicked: " + str(tab))
 	if clicked > -1:
 		var tab_title = get_tab_bar().get_tab_title(tab)
 		open_threads_popup(tab_title, tab)
 		return
-	#print("current tab: " + str(current_tab))
 	clicked = tab
 	temp_current_tab = tab
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = -1)
 
 
 func _on_active_tab_rearranged(idx_to: int) -> void:
-	#print("temp_current_tab tab: " + str(temp_current_tab))
-	#print("current tab: " + str(current_tab))
-	#print("rearranged to:" + str(idx_to))
 	var temp_threadList = SingletonObject.ThreadList
 	var chat_history_to_move: MemoryThread = SingletonObject.ThreadList[temp_current_tab]
 	temp_threadList.pop_at(temp_current_tab)

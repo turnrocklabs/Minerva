@@ -6,12 +6,11 @@
 [ext_resource type="Texture2D" uid="uid://c5kcyetd4isge" path="res://assets/icons/speaker-24.png" id="5_hiiy7"]
 
 [node name="AudioHBoxContainer" type="HBoxContainer" node_paths=PackedStringArray("audio_slider", "volume_slider", "audio_stream_player", "audio_timer", "play_button", "stop_button", "mute_button")]
-custom_minimum_size = Vector2(0, 100)
 anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 28.0
+offset_bottom = 32.0
 grow_horizontal = 2
-size_flags_vertical = 4
+size_flags_vertical = 6
 theme_override_constants/separation = 8
 script = ExtResource("1_ikrgo")
 audio_slider = NodePath("AudioSlider")
