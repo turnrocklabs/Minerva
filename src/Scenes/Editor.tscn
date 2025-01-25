@@ -97,13 +97,13 @@ tooltip_text = "Pass editor content to chat"
 
 [node name="WarningIcon" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
+tooltip_text = "Warning: New text is smaller than old."
 icon = ExtResource("5_blbtn")
 
 [node name="newTextIsBigger" type="Label" parent="VBoxContainer/ButtonsHBoxContainer"]
 visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.8, 0.301961, 1)
-text = "Warning: New text is smaller than old."
 
 [node name="keyWordDetected" type="Label" parent="VBoxContainer/ButtonsHBoxContainer"]
 visible = false
