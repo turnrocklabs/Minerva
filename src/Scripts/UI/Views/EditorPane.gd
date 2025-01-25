@@ -252,32 +252,18 @@ func check_incomplete_snippet(editor: Editor):
 		return
 
 	var new_text := editor.code_edit.text.strip_edges()
-	var old_text :String = editor.code_edit.get_meta("old_text", "")
+	var old_text :String = editor.code_edit.get_meta("old_text", editor.code_edit.text)
 
 	# Nodes for visual feedback (make sure these exist in your scene)
 	var smaller_and_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsSmalleAndIncoplete")
 	var text_is_smaller_node = Tabs.get_child(tab_idx).find_child("TextIsSmaller")
 	var text_is_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsIncoplete")
-	# Error handling for missing nodes
-	if smaller_and_incomplete_node == null:
-		print("Warning: 'TextIsSmalleAndIncoplete' node not found in tab.")
-		return
-	if text_is_smaller_node == null:
-		print("Warning: 'TextIsSmaller' node not found in tab.")
-		return
-	if text_is_incomplete_node == null:
-		print("Warning: 'TextIsIncoplete' node not found in tab.")
-		return
 
 	var old_size := old_text.length()
 	var new_size := new_text.length()
 
 	var isSmaller: bool = new_size < old_size
 
-	var lastline = new_text.to_lower().replace("[^a-zA-Z0-9 ]", "") # Clean the line
-
-	#var keywords = ["and so on", "rest of code", "etc", "and so forth", "and more", "and the rest", "continuing", "this pattern continues", "and so on and so forth", "and similar", "the list continues", "there are further examples", "snippet continued", "the full code includes", "the remaining code follows a similar pattern", "additional logic"]
-	print(_is_Completed)
 	var isIncoplete: bool = false
 	if _is_Completed == false:
 		isIncoplete = true
