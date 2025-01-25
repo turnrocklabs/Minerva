@@ -12,7 +12,7 @@ static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.s
 static var _unsaved_changes_file_icon: = preload("res://assets/icons/half_circle_left.svg")
 static var _unsaved_changes_associated_icon: = preload("res://assets/icons/half_circle_right.svg")
 static var _incoplete_snippet_icon: = preload("res://assets/icons/warning_circle.svg")
-
+var _is_Completed = true
 var current_layout: LAYOUT
 
 @onready var Tabs: TabContainer = $"./VBoxContainer/HBoxContainer/LeftControl/TabContainer"
@@ -23,6 +23,7 @@ var current_layout: LAYOUT
 
 @onready var _toggle_all_button: Button = %ToggleAllButton
 
+var counter_for_remove
 
 func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
@@ -229,6 +230,7 @@ func toggle_vertical_split() -> void:
 func update_tabs_icon() -> void:
 	var tab_count: = Tabs.get_tab_count()
 	var counter:= 0
+	counter_for_remove = counter
 	while counter < tab_count:
 		var editor = Tabs.get_tab_control(counter)
 		_on_editor_content_changed(editor) # call the below implementation to update the icon
@@ -240,50 +242,57 @@ func update_tabs_icon() -> void:
 		
 		counter += 1
 
-func check_incomplete_snippet(editor: Editor): 
-	if editor.type == Editor.Type.TEXT:
-		var tab_idx = Tabs.get_tab_idx_from_control(editor)
-		var new_text := editor.code_edit.text.strip_edges()
-		var old_text :String = editor.code_edit.get_meta("old_text", "") # Retrieve previous text
+func check_incomplete_snippet(editor: Editor):
+	print(SingletonObject.chat_completed)
+	if editor.type != Editor.Type.TEXT:
+		return
 
-		if old_text == "" : #first input, nothing to compare with
-			editor.code_edit.set_meta("old_text", new_text)
-			Tabs.get_child(tab_idx).find_child("WarningIcon").visible = false
-			Tabs.get_child(tab_idx).find_child("keyWordDetected").visible = false
-			Tabs.get_child(tab_idx).find_child("newTextIsBigger").visible = false  
-			return
-		
-		var old_size := old_text.length()
-		var new_size := new_text.length()
+	var tab_idx = Tabs.get_tab_idx_from_control(editor)
+	if tab_idx == -1: # Handle case where editor isn't in the tab container
+		return
 
-		if new_size < old_size: # Check if new text is 10% larger
-			Tabs.get_child(tab_idx).find_child("WarningIcon").visible = true
-			Tabs.get_child(tab_idx).find_child("newTextIsBigger").visible = true
+	var new_text := editor.code_edit.text.strip_edges()
+	var old_text :String = editor.code_edit.get_meta("old_text", "")
+
+	# Nodes for visual feedback (make sure these exist in your scene)
+	var smaller_and_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsSmalleAndIncoplete")
+	var text_is_smaller_node = Tabs.get_child(tab_idx).find_child("TextIsSmaller")
+	var text_is_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsIncoplete")
+	# Error handling for missing nodes
+	if smaller_and_incomplete_node == null:
+		print("Warning: 'TextIsSmalleAndIncoplete' node not found in tab.")
+		return
+	if text_is_smaller_node == null:
+		print("Warning: 'TextIsSmaller' node not found in tab.")
+		return
+	if text_is_incomplete_node == null:
+		print("Warning: 'TextIsIncoplete' node not found in tab.")
+		return
+
+	var old_size := old_text.length()
+	var new_size := new_text.length()
+
+	var isSmaller: bool = new_size < old_size
+
+	var lastline = new_text.to_lower().replace("[^a-zA-Z0-9 ]", "") # Clean the line
+
+	#var keywords = ["and so on", "rest of code", "etc", "and so forth", "and more", "and the rest", "continuing", "this pattern continues", "and so on and so forth", "and similar", "the list continues", "there are further examples", "snippet continued", "the full code includes", "the remaining code follows a similar pattern", "additional logic"]
+	print(_is_Completed)
+	var isIncoplete: bool = false
+	if _is_Completed == false:
+		isIncoplete = true
 			
-		else:
-			Tabs.get_child(tab_idx).find_child("newTextIsBigger").visible = false
-			Tabs.get_child(tab_idx).find_child("WarningIcon").visible = false
+	# Mutually exclusive visibility logic:
+	if isSmaller and isIncoplete:
+		smaller_and_incomplete_node.visible = true
+		text_is_smaller_node.visible = false
+		text_is_incomplete_node.visible = false
+	else:
+		smaller_and_incomplete_node.visible = false
+		text_is_smaller_node.visible = isSmaller
+		text_is_incomplete_node.visible = isIncoplete
 
-
-		var lastline = new_text.to_lower()
-		# Remove punctuation and non-alphanumeric characters
-		lastline = lastline.replace("[^a-zA-Z0-9 ]", "") 
-
-		var list_of_words = ["and so on", "rest of code", "etc", "and so forth", "and more",
-							 "and the rest", "continuing", "this pattern continues", "and so on and so forth",
-							 "and similar", "the list continues", "there are further examples", "snippet continued",
-							 "the full code includes", "the remaining code follows a similar pattern", "additional logic"] 
-
-		for word in list_of_words: #simplified loop
-			if lastline.ends_with(word.to_lower()):
-				Tabs.get_child(tab_idx).find_child("WarningIcon").visible = true
-				Tabs.get_child(tab_idx).find_child("keyWordDetected").visible = true
-				editor.code_edit.set_meta("old_text", new_text) # Store current text for next comparison. Crucial!
-				return #exit after finding a match
-
-		# If no keyword is found:
-		#Tabs.get_child(tab_idx).find_child("WarningIcon").visible = false
-		editor.code_edit.set_meta("old_text", new_text) # Store current text for the next comparison
+	editor.code_edit.set_meta("old_text", new_text) 
 
 func _on_editor_content_changed(editor: Editor):
 
@@ -338,8 +347,6 @@ func _on_editor_content_changed(editor: Editor):
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	Tabs.set_tab_icon(tab_idx, icon)
 	Tabs.set_tab_tooltip(tab_idx, tooltip)
-
-	check_incomplete_snippet(editor)
 	
 
 #region  Enable Editor Buttons
@@ -409,3 +416,6 @@ func _on_toggle_all_button_pressed() -> void:
 		_toggle_all_button.text = "Disable All"
 	else:
 		_toggle_all_button.text = "Enable All"
+
+func _close_error():
+	var tab_idx = Tabs.get_tab_idx_from_control(Tabs.get_tab_control(counter_for_remove))

@@ -168,8 +168,15 @@ func _ready():
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
-
-
+		
+	var text_is_smaller = $VBoxContainer/ButtonsHBoxContainer/TextIsSmaller
+	var text_is_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsIncoplete
+	var text_is_smaller_and_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsSmalleAndIncoplete
+	
+	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
+	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
+	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
+	
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
 
@@ -703,3 +710,6 @@ func _on_check_button_toggled(toggled_on: bool):
 			SingletonObject.DetachedNotes.append(item)
 
 	item.Enabled = toggled_on
+
+func _on_close_warrning(path):
+	path.visible = false;

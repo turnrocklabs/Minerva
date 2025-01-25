@@ -200,7 +200,7 @@ func _on_note_button_pressed():
 		
 		SingletonObject.NotesTab.add_image_note(caption_title, history_item.Images[0], history_item.Images[0].get_meta("caption", ""))
 	else:
-		SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text)
+		SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text,history_item.Complete)
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 

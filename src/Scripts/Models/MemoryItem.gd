@@ -64,6 +64,9 @@ var Order: int:
 var FilePath: String:
 	set(value): SingletonObject.save_state(false); FilePath = value;
 
+var isCompleted: bool:
+	set(value): SingletonObject.save_state(false); isCompleted = value;
+
 var OwningThread
 
 func hash_string(input: String) -> String:
