@@ -82,18 +82,15 @@ func clear_recent_projects() -> void:
 	config_file.erase_section("OpenRecent")
 	config_file.save(config_file_name)
 
-func remove_recent_project(index: int) -> void:
+func remove_recent_project(project_name: String) -> void:
 	if !has_recent_projects():
 		return
 
-	var recent_projects: Array = get_recent_projects()
-
-	if index < 0 or index >= recent_projects.size():
-		printerr("Invalid index for removing recent project.")
+	if !config_file.has_section_key("OpenRecent", project_name):
+		printerr("Project '" + project_name + "' not found in recent projects.")
 		return
 
-	var project_name_to_remove = recent_projects[index]  # Get the project NAME at the index
-	config_file.erase_section_key("OpenRecent", project_name_to_remove) # Remove by name (key)
+	config_file.erase_section_key("OpenRecent", project_name)
 	config_file.save(config_file_name)
 	
 
@@ -529,6 +526,7 @@ static var notes_scene: = preload("res://Scenes/Note.tscn")
 
 	
 func reorder_recent_project(firstIndex: int, secondIndex: int) -> void:
+
 	if !has_recent_projects():
 		return
 

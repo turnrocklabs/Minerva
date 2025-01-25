@@ -98,12 +98,13 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 		create_new_notes_tab(tab_name)
 
 ## add indexing system here
+var new_tab: bool = false
 func create_new_notes_tab(tab_name: String = "notes 1"):
 	var thread = MemoryThread.new()
 	thread.ThreadName = tab_name_to_use(tab_name)
 	var thread_memories: Array[MemoryItem] = []
 	thread.MemoryItemList = thread_memories
-
+	new_tab = true
 	SingletonObject.ThreadList.append(thread)
 	render_thread(thread)
 
@@ -235,8 +236,12 @@ func render_threads():
 		render_thread(thread)
 
 	# Restore the last active thread:
-	if self.get_child_count():
-		self.current_tab = clampi(last_thread, 0, self.get_child_count()-1)
+	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
+	if not new_tab:
+		self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
+	else:
+		self.current_tab = get_tab_count() - 1
+	new_tab = false
 
 static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
 func render_thread(thread_item: MemoryThread):
@@ -260,6 +265,8 @@ func render_thread(thread_item: MemoryThread):
 	%tcThreads.add_child(scroll_container)
 	var tab_idx = %tcThreads.get_tab_idx_from_control(scroll_container)
 	%tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
+	if new_tab:
+		self.current_tab = tab_idx
 
 
 
@@ -469,21 +476,16 @@ func _notification(what):
 var clicked: = -1 # this is used to tack double click to change the tab nama
 var temp_current_tab: = -1 # this is used to track the clicked tab when rearranged
 func _on_tab_clicked(tab: int):
-	#print("tab clicked: " + str(tab))
 	if clicked > -1:
 		var tab_title = get_tab_bar().get_tab_title(tab)
 		open_threads_popup(tab_title, tab)
 		return
-	#print("current tab: " + str(current_tab))
 	clicked = tab
 	temp_current_tab = tab
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = -1)
 
 
 func _on_active_tab_rearranged(idx_to: int) -> void:
-	#print("temp_current_tab tab: " + str(temp_current_tab))
-	#print("current tab: " + str(current_tab))
-	#print("rearranged to:" + str(idx_to))
 	var temp_threadList = SingletonObject.ThreadList
 	var chat_history_to_move: MemoryThread = SingletonObject.ThreadList[temp_current_tab]
 	temp_threadList.pop_at(temp_current_tab)

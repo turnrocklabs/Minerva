@@ -87,7 +87,7 @@ terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
 [node name="TopBar" type="Panel" parent="."]
 z_index = -2
-custom_minimum_size = Vector2(0, 40)
+custom_minimum_size = Vector2(0, 30)
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
