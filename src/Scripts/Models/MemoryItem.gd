@@ -77,6 +77,9 @@ var LastYSize: float = 0.0:
 ## Every time you add a field to the serializer be sure to add it to the SERIALIZER_FIELDS array at the top
 ###### ////////////////////////////////////////////////////////////////
 
+var isCompleted: bool:
+	set(value): SingletonObject.save_state(false); isCompleted = value;
+
 var OwningThread
 
 func hash_string(input: String) -> String:

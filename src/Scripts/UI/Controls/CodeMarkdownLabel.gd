@@ -66,6 +66,7 @@ func _on_replace_all_pressed():
 			
 			if code_edit_node:
 				code_edit_node.text = text_without_tags
+				ep.check_incomplete_snippet(active_tab_editor_node)
 				
 			else:
 				print("Error: CodeEdit node not found in active Text tab.")

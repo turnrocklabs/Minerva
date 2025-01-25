@@ -131,7 +131,7 @@ func clear_all_tabs():
 
 #region Add notes methods
 
-func add_note(user_title:String, user_content: String, _source: String = "") -> MemoryItem:
+func add_note(user_title:String, user_content: String,is_completed:bool = true, _source: String = "") -> MemoryItem:
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or current_tab < 0:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -148,6 +148,7 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
+	new_memory.isCompleted = is_completed
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
