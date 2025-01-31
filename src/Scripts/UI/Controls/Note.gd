@@ -345,16 +345,15 @@ func associate_editor(editor: Editor):
 func _on_edit_button_pressed():
 	var ep: EditorPane = SingletonObject.editor_container.editor_pane
 
-	# show the editor if it's hidden
+	# Show the editor if it's hidden
 	SingletonObject.main_ui.set_editor_pane_visible(true)
 
 	# Try to find editor that's already associated with memory_item
-	# this note is rendering so we don't end up duplicating them.
 	for i in range(ep.Tabs.get_tab_count()):
 		var tab_control = ep.Tabs.get_tab_control(i)
 		
 		if tab_control is Editor and tab_control.associated_object == self:
-			ep.Tabs.current_tab = i # change the current tab to that editor
+			ep.Tabs.current_tab = i # Change the current tab to that editor
 			return
 
 	var editor: Editor
@@ -364,15 +363,18 @@ func _on_edit_button_pressed():
 		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
-	#elif memory_item.Type == SingletonObject.note_type.VIDEO:
-		#
-		#editor = ep.add(Editor.Type.VIDEO, memory_item.FilePath, null, memory_item.Title)
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
-		editor.code_edit.text = memory_item.Content
-		ep.check_incomplete_snippet(editor)
-		ep._is_Completed = memory_item.isCompleted
 		
+		# Get the old text from the code_edit before replacing it
+		var old_text: String = editor.code_edit.text
+		
+		# Set the new text
+		editor.code_edit.text = memory_item.Content
+		
+		# Call check_incomplete_snippet with the correct old_text and new_text
+		ep.check_incomplete_snippet(editor, old_text, editor.code_edit.text)
+		ep._is_Completed = memory_item.isCompleted
 	
 	associate_editor(editor)
 

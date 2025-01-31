@@ -242,8 +242,10 @@ func update_tabs_icon() -> void:
 		
 		counter += 1
 
-func check_incomplete_snippet(editor: Editor):
-	print(SingletonObject.chat_completed)
+func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String):
+	print("Old Text: ", old_text)
+	print("New Text: ", new_text)
+
 	if editor.type != Editor.Type.TEXT:
 		return
 
@@ -251,10 +253,8 @@ func check_incomplete_snippet(editor: Editor):
 	if tab_idx == -1: # Handle case where editor isn't in the tab container
 		return
 
-	var new_text := editor.code_edit.text.strip_edges()
-	var old_text :String = editor.code_edit.get_meta("old_text", editor.code_edit.text)
-
 	# Nodes for visual feedback (make sure these exist in your scene)
+
 	var smaller_and_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsSmalleAndIncoplete")
 	var text_is_smaller_node = Tabs.get_child(tab_idx).find_child("TextIsSmaller")
 	var text_is_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsIncoplete")
@@ -263,14 +263,14 @@ func check_incomplete_snippet(editor: Editor):
 	var new_size := new_text.length()
 
 	var isSmaller: bool = new_size < old_size
-
 	var isIncoplete: bool = false
-	if _is_Completed == false:
+
+	if !SingletonObject.chat_completed:
 		isIncoplete = true
-			
+
 	# Mutually exclusive visibility logic:
 	if isSmaller and isIncoplete:
-		smaller_and_incomplete_node.visible = true
+		smaller_and_incomplete_node.visible = !SingletonObject.chat_completed
 		text_is_smaller_node.visible = false
 		text_is_incomplete_node.visible = false
 	else:
@@ -278,8 +278,9 @@ func check_incomplete_snippet(editor: Editor):
 		text_is_smaller_node.visible = isSmaller
 		text_is_incomplete_node.visible = isIncoplete
 
-	editor.code_edit.set_meta("old_text", new_text) 
-
+	# Update the old_text meta for future comparisons
+	editor.code_edit.set_meta("old_text", new_text)
+	
 func _on_editor_content_changed(editor: Editor):
 
 	var state: = editor.get_saved_state()
