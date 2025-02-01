@@ -48,6 +48,10 @@ var graphics_editor: GraphicsEditor
 @onready var jump_to_line_edit: LineEdit = %JumpToLineEdit
 @onready var jump_to_line_label: RichTextLabel = %JumpToLineLabel
 
+@onready var text_is_smaller = $VBoxContainer/ButtonsHBoxContainer/TextIsSmaller
+@onready var text_is_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsIncoplete
+@onready var text_is_smaller_and_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsSmalleAndIncoplete
+
 enum Type {
 	TEXT,
 	GRAPHICS,
@@ -168,10 +172,6 @@ func _ready():
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
-		
-	var text_is_smaller = $VBoxContainer/ButtonsHBoxContainer/TextIsSmaller
-	var text_is_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsIncoplete
-	var text_is_smaller_and_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsSmalleAndIncoplete
 	
 	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
 	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
@@ -428,6 +428,9 @@ func _on_reload_button_pressed() -> void:
 				_load_graphics_file(file)
 			Type.TEXT:
 				_load_text_file(file)
+				text_is_smaller.visible = false
+				text_is_incoplete.visible = false
+				text_is_smaller_and_incoplete.visible = false
 
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
@@ -634,9 +637,12 @@ func add_new_line() -> void:
 func undo_action():
 	if Type.TEXT != type:
 		return
+	
 	code_edit.undo()
 	code_edit.grab_focus()
-
+	text_is_smaller.visible = false
+	text_is_incoplete.visible = false
+	text_is_smaller_and_incoplete.visible = false
 
 func clear_text():
 	if Type.TEXT != type:
