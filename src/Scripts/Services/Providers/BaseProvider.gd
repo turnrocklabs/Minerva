@@ -15,6 +15,11 @@ var BASE_URL: String
 
 var provider_name:= "Unknown"
 var model_name:= "Unknown"
+var display_name: String:
+	get:
+		return display_name if not display_name.is_empty() else model_name
+	set(value):
+		display_name = value
 
 ## Model short name to be displayed in the chat message bubble
 var short_name = "NA"

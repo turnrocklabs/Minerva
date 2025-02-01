@@ -9,7 +9,7 @@ func _init():
 	BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 	PROVIDER = SingletonObject.API_PROVIDER.GOOGLE
 
-	model_name = "gemini-1.5-flash"
+	model_name = "gemini-2.0-flash"
 	short_name = "GV"
 	token_cost = 0
 
