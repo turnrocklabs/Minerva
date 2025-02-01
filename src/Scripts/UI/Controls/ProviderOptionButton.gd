@@ -25,7 +25,7 @@ func _ready():
 	for key in sorted_keys:
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance = script.new()
-		add_item("%s" % instance.model_name, key)
+		add_item("%s" % instance.display_name, key)
 
 func _on_item_selected(index: int):
 	var item_id = get_item_id(index)

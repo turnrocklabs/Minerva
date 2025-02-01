@@ -659,7 +659,7 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	if not provider_.is_inside_tree():
 		history.VBox.add_child(provider_)
 
-	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.model_name])
+	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.display_name])
 
 # when tab changes, set the provider to one that that chat tab is using
 func _on_tab_changed(tab: int):
