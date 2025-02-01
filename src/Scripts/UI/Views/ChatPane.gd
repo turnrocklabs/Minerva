@@ -499,7 +499,6 @@ func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.container = closed_tab_container 
 	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	closed_tab_container.remove_child(control)
-	control.queue_free()
 
 # Function to restore a deleted tab
 func restore_deleted_tab(tab_name: String):
@@ -513,8 +512,11 @@ func restore_deleted_tab(tab_name: String):
 		%tcChats.call_deferred("add_child", control_)#add_child(control_)
 		
 		# Set the tab index and restore the history
+		if tab != 0:
+			control_.name = "Chat " + str(tab)
+		else:
+			control_.name = "Chat"
 		set_current_tab(tab)
-		SingletonObject.ChatList[tab] = history
 		# Clear the deleted tab from the dictionary
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
