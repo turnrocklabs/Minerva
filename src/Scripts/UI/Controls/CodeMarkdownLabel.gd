@@ -2,6 +2,10 @@ class_name CodeMarkdownLabel
 extends PanelContainer
 
 
+signal created_text_note(index, memory_item_UUID)
+var linked_memory_item: String = ""
+var dict_index: String = ""
+
 func get_selected_text() -> String:
 	return %CodeLabel.get_selected_text()
 
@@ -22,13 +26,21 @@ func _copy_code_label():
 
 func _extract_code_label():
 	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
-	SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags)
+	if linked_memory_item == "":
+		linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
+		created_text_note.emit(dict_index, linked_memory_item)
+	else:
+		var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item, text_without_tags)
+		if return_memory == null:
+			linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
-static func create(code_text: String, syntax: String = "Plain Text") -> CodeMarkdownLabel:
+static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "") -> CodeMarkdownLabel:
 	# place the code label in panel container to change the background
 	var code_panel = preload("res://Scenes/CodeMarkdownLabel.tscn").instantiate()
-
+	code_panel.dict_index = index
+	if memory_item_UUID != "":
+		code_panel.linked_memory_item = memory_item_UUID
 	code_text[code_text.find("\n")] = ""
 	code_panel.get_node("%CodeLabel").text = code_text
 

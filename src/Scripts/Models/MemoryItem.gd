@@ -11,7 +11,11 @@ static var SERIALIZER_FIELDS = ["UUID" ,"Enabled", "File", "Locked", "Type", "Ti
 
 var UUID: String = "":
 	set(value):
-		SingletonObject.save_state(false); UUID = value
+		if UUID == "":
+			UUID = value
+			SingletonObject.save_state(false)
+		else: 
+			printerr("Tried to update UUID")
 
 var Enabled: bool = true:
 	set(value):
@@ -114,6 +118,7 @@ func Serialize() -> Dictionary:
 		b64_data_audio = Marshalls.variant_to_base64(Audio, true)
 
 	var save_dict:Dictionary = {
+		"UUID": UUID,
 		"Enabled": Enabled,
 		"File": File,
 		"Locked": Locked,
@@ -160,6 +165,9 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			# if file doesn't exist anymore, set it to null
 			if not FileAccess.file_exists(value):
 				value = null
+		elif prop == "UUID":
+			if value == "":
+				value = SingletonObject.generate_UUID()
 
 		
 		mi.set(prop, value)

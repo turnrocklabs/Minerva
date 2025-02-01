@@ -32,7 +32,6 @@ var expanded: bool = true:
 	set(value):
 		expanded = value
 		memory_item.Expanded = value
-		print(value)
 
 var last_min_size: float = 100.0:
 	set(value):
