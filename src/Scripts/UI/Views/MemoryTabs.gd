@@ -244,6 +244,9 @@ func render_threads():
 		self.current_tab = get_tab_count() - 1
 	new_tab = false
 
+	SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.UNSET)
+
+
 static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
 func render_thread(thread_item: MemoryThread):
 	# Create the ScrollContainer

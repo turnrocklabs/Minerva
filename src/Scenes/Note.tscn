@@ -93,6 +93,7 @@ focus_mode = 0
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 1
 text = "THis is a a title"
 placeholder_text = "Note Title"
 flat = true
