@@ -6,6 +6,7 @@ var MainThreadId
 var disable_notes_button
 ## initialize the box
 func _init(_parent, _threadId, _mem = null):
+
 	# we add separation between the children of the HBoxContainer
 	add_theme_constant_override("Separation", 12)
 	
@@ -68,14 +69,13 @@ func _notification(notification_type):
 		# When the drag is over, maybe the order of notes changed, so rerender them
 		NOTIFICATION_DRAG_END:
 			_update_memory_item_order()
-			#render_items()
-
-
-func render_note():
-	pass
+			
+			if SingletonObject.notes_draw_state != SingletonObject.NotesDrawState.DRAWING:
+				render_items()
 
 
 func render_items():
+
 	# Clear existing children
 	for child in get_children():
 		if child is Note:
