@@ -585,3 +585,11 @@ func reorder_recent_project(firstIndex: int, secondIndex: int) -> void:
 
 
 	config_file.save(config_file_name)
+
+# generate IDs for items: chat items, memory items and editor
+func generate_UUID() -> String:
+	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
+	rng.randomize() # Uses the current time to seed the random number generator
+	var random_number = rng.randi() # Generates a random integer
+	var hash256 = str(random_number).sha256_text()
+	return hash256

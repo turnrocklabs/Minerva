@@ -31,6 +31,7 @@ extends HBoxContainer
 @onready var text_edit: TextEdit = %MessageTextEdit
 
 
+
 #var expanded: bool = true:
 	#set(value):
 		#history_item.Expanded = value
@@ -63,7 +64,15 @@ var content: String:
 var history_item: ChatHistoryItem:
 	set(value):
 		history_item = value
+		if value.LinkedMemories.has("0"):
+			linked_memory_item_UUID = value.LinkedMemories.get("0")
 		render()
+
+var linked_memory_item_UUID: String = "":
+	set(value):
+		linked_memory_item_UUID = value
+		if history_item:
+			history_item.LinkedMemories["0"] = value
 
 ## Setting this property to true will set the loading state for the message
 ## and hide any other content except the loading label
@@ -268,12 +277,27 @@ func _on_clip_button_pressed():
 func _on_note_button_pressed():
 	if history_item.Images.size() > 0:
 		var caption_title: String = history_item.Images[0].get_meta("caption", "")
-		if caption_title.length() > 15:
+		if caption_title.length() > 24:
 			caption_title = caption_title.substr(0, 15) + "..."
 		
-		SingletonObject.NotesTab.add_image_note(caption_title, history_item.Images[0], history_item.Images[0].get_meta("caption", ""))
+		if linked_memory_item_UUID == "":
+			linked_memory_item_UUID = SingletonObject.NotesTab.\
+										add_image_note(caption_title, history_item.Images[0], history_item.Images[0].get_meta("caption", "")).UUID
+			
+		else:
+			var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item_UUID, history_item.Images[0])
+			if return_memory == null:
+				linked_memory_item_UUID = SingletonObject.NotesTab.\
+										add_image_note(caption_title, history_item.Images[0], history_item.Images[0].get_meta("caption", "")).UUID
 	else:
-		SingletonObject.NotesTab.add_note("Chat Note", label.markdown_text,history_item.Complete)
+		if linked_memory_item_UUID == "":
+			linked_memory_item_UUID = SingletonObject.NotesTab.\
+										add_note("Chat Note", label.markdown_text,history_item.Complete).UUID
+		else:
+			var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item_UUID, label.markdown_text)
+			if return_memory == null:
+				linked_memory_item_UUID = SingletonObject.NotesTab.\
+										add_note("Chat Note", label.markdown_text,history_item.Complete).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 
@@ -388,7 +412,10 @@ func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
 	return found
 
 
-signal code_labels_updated
+func update_linked_dict(dict_index: String, UUID: String) -> void:
+	history_item.LinkedMemories[dict_index] = UUID
+
+#signal code_labels_updated
 func _create_code_labels():
 	var segments: Array[TextSegment] = _extract_text_segments(TextSegment.new(label.text))
 
@@ -397,16 +424,24 @@ func _create_code_labels():
 	label.visible = false
 	
 	for child in message_labels_container.get_children(): child.queue_free()
-
+	
+	var indexes: int = history_item.Images.size()
+	indexes += 1
+	
 	for ts in segments:
 		var node: Node
 
 		if ts.syntax:
-			node = CodeMarkdownLabel.create(ts.content, ts.syntax)
+			var temp_UUID: String = ""
+			if history_item.LinkedMemories.has(str(indexes)):
+				temp_UUID = history_item.LinkedMemories.get(str(indexes))
+			node = CodeMarkdownLabel.create(ts.content, ts.syntax, str(indexes), temp_UUID)
+			node.created_text_note.connect(update_linked_dict)
+			indexes += 1
 		else:
 			# Maybe have this node as scene
 			node = RichTextLabel.new()
-			#node.threaded = true
+			node.threaded = true
 			node.fit_content = true
 			node.bbcode_enabled = true
 			node.selection_enabled = true
