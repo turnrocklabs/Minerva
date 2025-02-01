@@ -142,6 +142,7 @@ func add_note(user_title:String, user_content: String,is_completed:bool = true, 
 	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.TEXT
 	new_memory.ContentType = "text"
@@ -158,6 +159,8 @@ func add_note(user_title:String, user_content: String,is_completed:bool = true, 
 	return new_memory
 
 
+
+
 func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryItem:
 	if (SingletonObject.ThreadList == null) or current_tab < 1:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -168,6 +171,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryIte
 	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.AUDIO
 	new_memory.ContentType = "audio"
@@ -189,6 +193,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.IMAGE
 	new_memory.ContentType = "image"
@@ -206,6 +211,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 ## Creates a note without adding it to any thread.
 func create_note(title: String, type: SingletonObject.note_type = SingletonObject.note_type.TEXT) -> MemoryItem:
 	var new_memory: MemoryItem = MemoryItem.new()
+	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
 	new_memory.Type = type
 	new_memory.Title = title
@@ -214,6 +220,48 @@ func create_note(title: String, type: SingletonObject.note_type = SingletonObjec
 	return new_memory
 
 #endregion Add notes methods
+
+#region Update Notes methods
+
+func update_note(note_UUID: String, new_data: Variant) -> MemoryItem:
+	# we check for the note in the current thread so that we dont loop over all the tabs
+	if note_UUID == "" or new_data == null:
+		return null
+	var current_thread: MemoryThread = SingletonObject.ThreadList[current_tab]
+	if current_thread:
+		for item in current_thread.MemoryItemList:
+			if item.UUID == note_UUID:
+				print("found the item in the current thread")
+				return update_note_handler(item, new_data)
+	
+	# if the note is not found in the current thread we loop over all the tabs
+	var item: MemoryItem = get_memory_item(note_UUID)
+	if item:
+		return update_note_handler(item, new_data)
+		
+	printerr("memorty item not found :c")
+	return null
+
+
+func get_memory_item(memory_item_UUID: String) -> MemoryItem:
+	for thread: MemoryThread in SingletonObject.ThreadList:
+		for item: MemoryItem in thread.MemoryItemList:
+			if item.UUID == memory_item_UUID:
+				return item
+	return null
+
+
+func update_note_handler(item: MemoryItem, new_data: Variant) -> MemoryItem:
+	if item.Type == SingletonObject.note_type.TEXT:
+		item.Content = new_data as String
+	elif item.Type == SingletonObject.note_type.IMAGE:
+		item.MemoryImage = new_data as Image
+	elif item.Type == SingletonObject.note_type.AUDIO:
+		item.Audio = new_data as AudioStreamWAV
+	render_threads()
+	return item
+
+#endregion Update Notes methods
 
 ## Will delete the memory_item from the memory list
 func delete_note(memory_item: MemoryItem):

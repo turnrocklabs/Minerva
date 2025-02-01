@@ -1,11 +1,11 @@
-[gd_scene load_steps=26 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=27 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_1qp3n"]
 [ext_resource type="Texture2D" uid="uid://c48b7t07xvrlk" path="res://assets/icons/folder_up.svg" id="4_ycwhj"]
 [ext_resource type="Texture2D" uid="uid://dlwhgven8t3hj" path="res://assets/icons/folder_down.png" id="5_2k2ha"]
-[ext_resource type="Texture2D" uid="uid://c5gxq5cm5tpnk" path="res://assets/icons/autowrap_icon.png" id="5_7o203"]
+[ext_resource type="Texture2D" uid="uid://c5gxq5cm5tpnk" path="res://assets/icons/autowrap/autowrap_icon.png" id="5_7o203"]
 [ext_resource type="Texture2D" uid="uid://exoijpiwrvi0" path="res://assets/icons/warning_icon.svg" id="5_blbtn"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
@@ -237,8 +237,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 396.0
-offset_bottom = 136.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"bgPanel"
