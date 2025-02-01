@@ -41,37 +41,48 @@ static func create(code_text: String, syntax: String = "Plain Text") -> CodeMark
 
 
 func _on_replace_all_pressed():
-	# Get the reference to the EditorPane
-	var ep: EditorPane =  SingletonObject.editor_pane
-	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
+	# Get the EditorPane instance
+	var ep: EditorPane = SingletonObject.editor_pane
+	
+	# Parse and prepare the new text
+	var new_text: String = _parse_code_block(%CodeLabel.text)
 	print("Replacing all text in the text editor.")
 	
 	# Get the currently active tab
 	var active_tab_editor_node: Editor = ep.Tabs.get_current_tab_control()
 	
+	# If no active tab exists, create a new text editor tab
 	if ep.Tabs.get_tab_count() < 1:
-		active_tab_editor_node = ep.add(Editor.Type.TEXT, null ,%SyntaxLabel.text, null)
-		print("no active tab")
+		active_tab_editor_node = ep.add(Editor.Type.TEXT, null, %SyntaxLabel.text, null)
+		print("No active tab, created a new one.")
+	
+	# If the active tab is not a text editor, create a new text editor tab
 	elif active_tab_editor_node.type == Editor.Type.GRAPHICS:
-		active_tab_editor_node = ep.add(Editor.Type.TEXT, null ,%SyntaxLabel.text, null)
-		print("active tab not text")
+		active_tab_editor_node = ep.add(Editor.Type.TEXT, null, %SyntaxLabel.text, null)
+		print("Active tab is not a text editor, created a new text tab.")
 	
-	# Check if the active tab is an Editor and is a Text editor
-	
-	if active_tab_editor_node is Editor: #and (active_tab_editor_node.type != Editor.Type.GRAPHICS):
-		if active_tab_editor_node.type != Editor.Type.GRAPHICS:
-			if !active_tab_editor_node.file:
-				ep.Tabs.set_tab_title(ep.Tabs.get_current_tab(),  ep.editor_name_to_use(%SyntaxLabel.text))
-			var code_edit_node = active_tab_editor_node.code_edit
+	# Ensure the active tab is a text editor
+	if active_tab_editor_node is Editor and active_tab_editor_node.type == Editor.Type.TEXT:
+		# Update the tab title if no file is associated
+		if !active_tab_editor_node.file:
+			ep.Tabs.set_tab_title(ep.Tabs.get_current_tab(), ep.editor_name_to_use(%SyntaxLabel.text))
+		
+		# Get the CodeEdit node
+		var code_edit_node = active_tab_editor_node.code_edit
+		
+		if code_edit_node:
+			# Get the old text from the metadata
+			var old_text: String = code_edit_node.get_meta("old_text", code_edit_node.text)
 			
-			if code_edit_node:
-				code_edit_node.text = text_without_tags
-				ep.check_incomplete_snippet(active_tab_editor_node)
-				
-			else:
-				print("Error: CodeEdit node not found in active Text tab.")
-		else: 
-			print("Error: Active tab is not a Text editor.")
-		ep.update_tabs_icon()
+			# Set the new text
+			code_edit_node.text = new_text
+			
+			# Call check_incomplete_snippet with old_text and new_text
+			ep.check_incomplete_snippet(active_tab_editor_node, old_text, code_edit_node.text)
+		else:
+			print("Error: CodeEdit node not found in active Text tab.")
 	else:
-		print("Error: Active tab is not an Editor.")
+		print("Error: Active tab is not a Text editor.")
+	
+	# Update the tab icons
+	ep.update_tabs_icon()
