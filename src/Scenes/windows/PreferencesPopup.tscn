@@ -32,7 +32,7 @@ size_flags_horizontal = 4
 custom_minimum_size = Vector2(512, 0)
 layout_mode = 2
 size_flags_horizontal = 4
-theme_override_constants/separation = 15
+theme_override_constants/separation = 12
 
 [node name="APIKeysVBoxContainer" type="VBoxContainer" parent="v/SectionsContainer"]
 layout_mode = 2
@@ -194,8 +194,20 @@ clip_text = true
 fit_to_longest_item = false
 allow_reselect = true
 
-[node name="HSeparator3" type="HSeparator" parent="v"]
+[node name="HSeparator4" type="HSeparator" parent="v/SectionsContainer"]
 layout_mode = 2
+
+[node name="ExperimentalHBoxContainer" type="HBoxContainer" parent="v/SectionsContainer"]
+layout_mode = 2
+
+[node name="ExperimentalFeaturesLabel" type="Label" parent="v/SectionsContainer/ExperimentalHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Experimental Features:"
+
+[node name="ExperimentalCheckButton" type="CheckButton" parent="v/SectionsContainer/ExperimentalHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
 
 [node name="btnSavePrefs" type="Button" parent="v"]
 layout_mode = 2
