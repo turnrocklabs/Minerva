@@ -232,6 +232,7 @@ item_2/id = 2
 item_3/text = "Terminal"
 item_3/checkable = 1
 item_3/id = 10
+item_3/disabled = true
 item_4/id = 3
 item_4/separator = true
 item_5/text = "Zoom In Text"
@@ -388,6 +389,7 @@ icon_48 = ExtResource("22_av2ut")
 icon_68 = ExtResource("23_xw6gv")
 
 [node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 0
 tooltip_text = "create new graphics editor tab"
