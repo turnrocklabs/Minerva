@@ -226,4 +226,5 @@ icon_68 = ExtResource("5_346qj")
 [connection signal="toggled" from="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
 [connection signal="item_selected" from="v/SectionsContainer/ThemeVBoxContainer/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]
 [connection signal="item_selected" from="v/SectionsContainer/VBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
+[connection signal="toggled" from="v/SectionsContainer/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
 [connection signal="pressed" from="v/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]
