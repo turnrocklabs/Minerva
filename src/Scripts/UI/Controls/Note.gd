@@ -399,16 +399,6 @@ func _on_title_text_submitted(new_text: String) -> void:
 	if memory_item: memory_item.Title = new_text
 
 
-func _on_expand_button_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.is_pressed():
-		event = event as InputEventMouseButton
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			if resize_tween and resize_tween.is_running():
-				return
-			else:
-				expanded = !expanded
-
-
 var resize_tween: Tween
 func expand_note() -> void:
 	if control_type == null: return

@@ -19,7 +19,9 @@ func _new_project():
 	SingletonObject.initialize_chats(SingletonObject.Chats)
 	SingletonObject.editor_container.clear_editor_tabs() # deserialize empty files list, so it clears everything
 	save_path = ""
-	pass
+	
+	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
+	update_buffer_controls()
 
 
 func open_project(path: = ""):
@@ -207,6 +209,8 @@ func deserialize_project(data: Dictionary):
 	var current_chat_tab = data.get("active_chatindex", 0)
 	if SingletonObject.Chats.get_tab_count()-1 >= current_chat_tab:
 		SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
+	
+	update_buffer_controls()
 
 #endregion Serialize/Deserialize Project
 
@@ -308,3 +312,18 @@ func _on_exit_confirmation_dialog_confirmed():
 func _on_exit_confirmation_dialog_custom_action(action: StringName):
 	if action == "exit":
 		get_tree().quit()
+
+
+func update_buffer_controls() -> void:
+	if SingletonObject.Chats.get_tab_count() > 0:
+		SingletonObject.Chats.buffer_control_chats.hide()
+	else:
+		SingletonObject.Chats.buffer_control_chats.show()
+	if SingletonObject.NotesTab.get_tab_count() > 0:
+		SingletonObject.NotesTab.buffer_control_notes.hide()
+	else:
+		SingletonObject.NotesTab.buffer_control_notes.show()
+	if SingletonObject.editor_pane.Tabs.get_tab_count() > 0:
+		SingletonObject.editor_pane.buffer_control_editor.hide()
+	else:
+		SingletonObject.editor_pane.buffer_control_editor.show()
