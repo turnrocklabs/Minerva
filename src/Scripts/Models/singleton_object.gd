@@ -184,7 +184,6 @@ var undo: undoMain = undoMain.new()
 #Add AtT to use it through the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
 
-
 #region UI Scaling
 var initial_ui_scale: float = 1
 var min_ui_scale: = 0.8
@@ -317,6 +316,7 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 @onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
 @onready var editor_pane: EditorPane = editor_container.editor_pane if editor_container else null
 var editors: Array[Editor]
+var Is_code_completed:bool = true
 #endregion
 
 #region Common UI Tasks

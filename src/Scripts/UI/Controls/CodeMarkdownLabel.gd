@@ -1,6 +1,43 @@
 class_name CodeMarkdownLabel
 extends PanelContainer
+@onready var regex = RegEx.new()
+const REGEX_PATTERNS = {
+	# Matches TODO comments (e.g., // TODO:, # TODO:, /* TODO: */)
+	"TODO": r"(\/\/|#|\/\*)\s*TODO:.*",
 
+	# Matches FIXME comments (e.g., // FIXME:, # FIXME:, /* FIXME: */)
+	"FIXME": r"(\/\/|#|\/\*)\s*FIXME:.*",
+
+	# Matches placeholder comments (e.g., // ..., # ..., /* ... */)
+	"PLACEHOLDER": r"(\/\/|#|\/\*)\s*\.\.\..*",
+
+	# Matches incomplete functions (e.g., func foo() { ... }, def foo(): # ..., void foo() { // ... })
+	"INCOMPLETE_FUNCTION": r"(func|def|void|\w+)\s+\w+\s*\(.*?\)\s*[\{:]\s*(\/\/|#|\/\*)\s*\.\.\..*",
+
+	# Matches incomplete classes/structs (e.g., class Foo { ... }, struct Bar { // ... })
+	"INCOMPLETE_CLASS": r"(class|struct)\s+\w+\s*[\{:]\s*(\/\/|#|\/\*)\s*\.\.\..*",
+
+	# Matches any comment with "incomplete" in it (e.g., // This is incomplete, # incomplete, /* incomplete */)
+	"INCOMPLETE_COMMENT": r"(\/\/|#|\/\*)\s*.*incomplete.*",
+
+	# Matches unimplemented functions (e.g., func foo();, def foo(): pass, void foo();)
+	"UNIMPLEMENTED_FUNCTION": r"(func|def|void|\w+)\s+\w+\s*\(.*?\)\s*;\s*$",
+
+	# Matches unimplemented classes/structs (e.g., class Foo;, struct Bar;)
+	"UNIMPLEMENTED_CLASS": r"(class|struct)\s+\w+\s*;\s*$",
+
+	# Matches deprecated code (e.g., // DEPRECATED, # DEPRECATED, /* DEPRECATED */)
+	"DEPRECATED": r"(\/\/|#|\/\*)\s*DEPRECATED.*",
+
+	# Matches hacky code (e.g., // HACK, # HACK, /* HACK */)
+	"HACK": r"(\/\/|#|\/\*)\s*HACK.*",
+
+	# Matches temporary code (e.g., // TEMP, # TEMP, /* TEMP */)
+	"TEMP": r"(\/\/|#|\/\*)\s*TEMP.*",
+
+	# Matches debugging code (e.g., // DEBUG, # DEBUG, /* DEBUG */)
+	"DEBUG": r"(\/\/|#|\/\*)\s*DEBUG.*",
+}
 
 func get_selected_text() -> String:
 	return %CodeLabel.get_selected_text()
@@ -77,8 +114,17 @@ func _on_replace_all_pressed():
 			# Set the new text
 			code_edit_node.text = new_text
 			
+
+			for i in REGEX_PATTERNS:
+				var pattern = REGEX_PATTERNS[i]
+				regex.compile(pattern)
+				if regex.search(code_edit_node.text):
+					SingletonObject.Is_code_completed = false
+					print("it's andjksanodsajnop")
+					break
 			# Call check_incomplete_snippet with old_text and new_text
 			ep.check_incomplete_snippet(active_tab_editor_node, old_text, code_edit_node.text)
+			
 		else:
 			print("Error: CodeEdit node not found in active Text tab.")
 	else:
