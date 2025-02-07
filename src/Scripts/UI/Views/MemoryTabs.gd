@@ -5,6 +5,7 @@ extends TabContainer
 @onready var tcThreads = %tcThreads
 # just use current_tab
 # var ActiveThreadIndex: int:
+@onready var buffer_control_notes: Control = %BufferControlNotes
 
 var _drag_active := false
 # var _hovered_tab := -1
@@ -96,6 +97,9 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 		render_threads()
 	else:
 		create_new_notes_tab(tab_name)
+	
+	if get_tab_count() > 0:
+		buffer_control_notes.hide()
 
 ## add indexing system here
 var new_tab: bool = false
@@ -341,7 +345,11 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	# Remove the tab control from the TabContainer
 	container.remove_child(control) 
-	control.queue_redraw()
+	#control.queue_redraw()
+	
+	if get_tab_count() < 1:
+		buffer_control_notes.show()
+	
 	
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
