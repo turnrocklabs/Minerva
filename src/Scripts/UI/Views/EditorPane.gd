@@ -249,8 +249,6 @@ func update_tabs_icon() -> void:
 		counter += 1
 
 func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String):
-	print("Old Text: ", old_text)
-	print("New Text: ", new_text)
 
 	if editor.type != Editor.Type.TEXT:
 		return
@@ -271,12 +269,12 @@ func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String
 	var isSmaller: bool = new_size < old_size
 	var isIncoplete: bool = false
 
-	if !SingletonObject.chat_completed:
+	if !SingletonObject.Is_code_completed:
 		isIncoplete = true
 
 	# Mutually exclusive visibility logic:
 	if isSmaller and isIncoplete:
-		smaller_and_incomplete_node.visible = !SingletonObject.chat_completed
+		smaller_and_incomplete_node.visible = isIncoplete
 		text_is_smaller_node.visible = false
 		text_is_incomplete_node.visible = false
 	else:
@@ -286,6 +284,7 @@ func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String
 
 	# Update the old_text meta for future comparisons
 	editor.code_edit.set_meta("old_text", new_text)
+	SingletonObject.Is_code_completed = true
 	
 func _on_editor_content_changed(editor: Editor):
 

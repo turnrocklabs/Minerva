@@ -718,3 +718,9 @@ func _on_check_button_toggled(toggled_on: bool):
 
 func _on_close_warrning(path):
 	path.visible = false;
+
+
+func _on_find_button_pressed() -> void:
+	code_edit.highlight_all_occurrences = false
+	code_edit.set_search_text('')
+	find_string_container.visible = !find_string_container.visible
