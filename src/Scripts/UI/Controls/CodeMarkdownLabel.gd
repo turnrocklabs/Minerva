@@ -1,6 +1,8 @@
 class_name CodeMarkdownLabel
 extends PanelContainer
+
 @onready var regex = RegEx.new()
+
 const REGEX_PATTERNS = {
 	# Matches TODO comments (e.g., // TODO:, # TODO:, /* TODO: */)
 	"TODO": r"(\/\/|#|\/\*)\s*TODO:.*",
@@ -120,7 +122,6 @@ func _on_replace_all_pressed():
 				regex.compile(pattern)
 				if regex.search(code_edit_node.text):
 					SingletonObject.Is_code_completed = false
-					print("it's andjksanodsajnop")
 					break
 			# Call check_incomplete_snippet with old_text and new_text
 			ep.check_incomplete_snippet(active_tab_editor_node, old_text, code_edit_node.text)

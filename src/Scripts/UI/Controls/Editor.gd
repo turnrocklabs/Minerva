@@ -721,4 +721,6 @@ func _on_close_warrning(path):
 
 
 func _on_find_button_pressed() -> void:
-	find_string_container.show()
+	code_edit.highlight_all_occurrences = false
+	code_edit.set_search_text('')
+	find_string_container.visible = !find_string_container.visible

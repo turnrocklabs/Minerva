@@ -330,9 +330,10 @@ func attach_file(the_file: String):
 	if file == null:
 		SingletonObject.ErrorDisplay("File Error", "The file could not be opened.")
 		return
-
-	# Determine the file type
+		
 	var file_ext = the_file.get_extension().to_lower()
+	
+	# Determine the file type
 	@warning_ignore("unused_variable")
 	var file_type = ""
 	var content = ""
@@ -350,11 +351,11 @@ func attach_file(the_file: String):
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.File = the_file # associate the file with the new memory item
 	
-	if file_ext in SingletonObject.supported_text_formats:
-		file_type = "text"
-		content = file.get_as_text()
-		content_type = "text/plain"
+
+	if _is_text_file(the_file):
 		type = SingletonObject.note_type.TEXT
+		content_type = "text/plain"
+		content = file.get_as_text()
 	elif file_ext in SingletonObject.supported_image_formats:
 		file_type = "image"
 		type= SingletonObject.note_type.IMAGE
@@ -413,7 +414,7 @@ func attach_file(the_file: String):
 	else:
 		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
 		return
-	
+
 	# Create a new memory item
 	new_memory.Enabled = true
 	new_memory.Title = title
@@ -430,7 +431,25 @@ func attach_file(the_file: String):
 	file.close()
 	pass
 
+# helper func to check if the file is text
+func _is_text_file(file_path: String) -> bool:
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		return false
 
+	var is_text: bool = false
+	var buffer = file.get_buffer(1024)  # Read the first 1024 bytes
+	for byte in buffer:
+		# Check for non-text characters (control characters outside of \t, \n, \r)
+		if byte < 9 or (byte > 13 and byte < 32):
+			is_text = false
+			break
+		else:
+			is_text = true
+
+	file.close()
+	return is_text
+	
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	%tcThreads.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
