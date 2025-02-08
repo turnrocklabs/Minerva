@@ -32,7 +32,6 @@ var expanded: bool = true:
 	set(value):
 		expanded = value
 		memory_item.Expanded = value
-		print(value)
 
 var last_min_size: float = 100.0:
 	set(value):
@@ -398,16 +397,6 @@ func _on_hide_button_pressed():
 func _on_title_text_submitted(new_text: String) -> void:
 	label_node.release_focus()
 	if memory_item: memory_item.Title = new_text
-
-
-func _on_expand_button_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.is_pressed():
-		event = event as InputEventMouseButton
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			if resize_tween and resize_tween.is_running():
-				return
-			else:
-				expanded = !expanded
 
 
 var resize_tween: Tween
