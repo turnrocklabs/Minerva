@@ -600,7 +600,10 @@ func _on_tab_clicked(tab: int):
 # Loads a file and raises a signal to the singleton for the memory tabs
 # to attach a file.
 func _on_btn_attach_file_pressed():
-	%AttachFileDialog.popup_centered(Vector2i(700, 500))
+	var size_x: = get_viewport_rect().size.x * 0.70
+	var size_y: = 500
+	
+	%AttachFileDialog.popup_centered(Vector2(size_x, size_y))
 
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	%AttachFileDialog.exclusive = false
