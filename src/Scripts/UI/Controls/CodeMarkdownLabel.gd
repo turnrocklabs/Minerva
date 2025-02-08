@@ -1,8 +1,8 @@
 class_name CodeMarkdownLabel
 extends PanelContainer
 
-
 signal created_text_note(index, memory_item_UUID)
+signal update_expanded(index, is_expanded)
 var linked_memory_item: String = ""
 var dict_index: String = ""
 
@@ -17,6 +17,17 @@ var dict_index: String = ""
 
 var label_size: = 0
 var expanded: bool = true
+
+func _ready() -> void:
+	
+	if !expanded:
+		await get_tree().create_timer(0.05).timeout
+		code_label.fit_content = false
+		code_label.custom_minimum_size.y = 0
+		p_2.custom_minimum_size.y = 0
+		expand_button.rotation = deg_to_rad(-90.0)
+		expand_button.modulate = expand_icon_color
+		p_2.call_deferred("hide")	
 
 
 func get_selected_text() -> String:
@@ -48,7 +59,7 @@ func _extract_code_label():
 			linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
-static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "") -> CodeMarkdownLabel:
+static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "", expanded: bool = true) -> CodeMarkdownLabel:
 	# place the code label in panel container to change the background
 	var code_panel = preload("res://Scenes/CodeMarkdownLabel.tscn").instantiate()
 	code_panel.dict_index = index
@@ -58,7 +69,7 @@ static func create(code_text: String, syntax: String = "Plain Text", index: Stri
 	code_panel.get_node("%CodeLabel").text = code_text
 
 	code_panel.get_node("%SyntaxLabel").text = syntax
-
+	code_panel.expanded = expanded
 	code_panel.get_node("%CopyButton").pressed.connect(code_panel._copy_code_label)
 	code_panel.get_node("%ExtractButton").pressed.connect(code_panel._extract_code_label)
 	code_panel.get_node("%CodeLabel").finished.connect(code_panel._update_label_size)
@@ -122,11 +133,9 @@ func _on_expand_button_pressed() -> void:
 	expanded = !expanded
 	if !expanded:
 		contract_code()
-		print("code contracted")
 	else:
 		expand_code()
-		print("code expanded")
-	
+	update_expanded.emit(dict_index, expanded)
 
 var expand_tween: Tween
 func expand_code() -> void:
@@ -134,6 +143,7 @@ func expand_code() -> void:
 		expand_tween.kill()
 		return
 	p_2.show()
+	#code_label.fit_content = true
 	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
 	expand_tween.finished.connect(enable_expand_button)
 	expand_button.disabled = true
@@ -144,7 +154,7 @@ func expand_code() -> void:
 	expand_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
 	expand_tween.set_parallel()
 	expand_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
-	await expand_tween.finished
+	#await expand_tween.finished
 	#code_label.fit_content = true
 	
 
