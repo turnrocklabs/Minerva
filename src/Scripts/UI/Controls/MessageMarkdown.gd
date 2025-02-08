@@ -415,6 +415,10 @@ func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
 func update_linked_dict(dict_index: String, UUID: String) -> void:
 	history_item.LinkedMemories[dict_index] = UUID
 
+
+func update_expanded(dict_index: String, is_expanded: bool) -> void:
+	history_item.CodeLabelsState[dict_index] = is_expanded
+
 #signal code_labels_updated
 func _create_code_labels():
 	var segments: Array[TextSegment] = _extract_text_segments(TextSegment.new(label.text))
@@ -433,10 +437,14 @@ func _create_code_labels():
 
 		if ts.syntax:
 			var temp_UUID: String = ""
+			var temp_expanded: bool = true
 			if history_item.LinkedMemories.has(str(indexes)):
 				temp_UUID = history_item.LinkedMemories.get(str(indexes))
-			node = CodeMarkdownLabel.create(ts.content, ts.syntax, str(indexes), temp_UUID)
+			if history_item.CodeLabelsState.has(str(indexes)):
+				temp_expanded = history_item.CodeLabelsState.get(str(indexes))
+			node = CodeMarkdownLabel.create(ts.content, ts.syntax, str(indexes), temp_UUID, temp_expanded)
 			node.created_text_note.connect(update_linked_dict)
+			node.update_expanded.connect(update_expanded)
 			indexes += 1
 		else:
 			# Maybe have this node as scene
