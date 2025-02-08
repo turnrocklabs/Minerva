@@ -9,6 +9,7 @@ var container: TabContainer  # Store the TabContainer
 
 @onready var txt_main_user_input: TextEdit = %txtMainUserInput
 @onready var _provider_option_button: ProviderOptionButton = %ProviderOptionButton
+@onready var buffer_control_chats: Control = %BufferControlChats
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
@@ -55,6 +56,9 @@ func _on_new_chat():
 	render_history(history)
 
 	current_tab = get_tab_count()-1
+	
+	if get_tab_count() > 0:
+		buffer_control_chats.hide()
 
 
 ## Opens a chat tab if one isn't open yet
@@ -499,6 +503,10 @@ func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.container = closed_tab_container 
 	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	closed_tab_container.remove_child(control)
+	
+	if get_tab_count() < 1 :
+		buffer_control_chats.show()
+	
 
 # Function to restore a deleted tab
 func restore_deleted_tab(tab_name: String):
@@ -600,7 +608,10 @@ func _on_tab_clicked(tab: int):
 # Loads a file and raises a signal to the singleton for the memory tabs
 # to attach a file.
 func _on_btn_attach_file_pressed():
-	%AttachFileDialog.popup_centered(Vector2i(700, 500))
+	var size_x: = get_viewport_rect().size.x * 0.70
+	var size_y: = 500
+	
+	%AttachFileDialog.popup_centered(Vector2(size_x, size_y))
 
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	%AttachFileDialog.exclusive = false

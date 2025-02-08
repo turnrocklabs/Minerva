@@ -5,6 +5,7 @@ extends TabContainer
 @onready var tcThreads = %tcThreads
 # just use current_tab
 # var ActiveThreadIndex: int:
+@onready var buffer_control_notes: Control = %BufferControlNotes
 
 var _drag_active := false
 # var _hovered_tab := -1
@@ -96,6 +97,9 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 		render_threads()
 	else:
 		create_new_notes_tab(tab_name)
+	
+	if get_tab_count() > 0:
+		buffer_control_notes.hide()
 
 ## add indexing system here
 var new_tab: bool = false
@@ -341,7 +345,11 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	# Remove the tab control from the TabContainer
 	container.remove_child(control) 
-	control.queue_redraw()
+	#control.queue_redraw()
+	
+	if get_tab_count() < 1:
+		buffer_control_notes.show()
+	
 	
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
@@ -378,9 +386,10 @@ func attach_file(the_file: String):
 	if file == null:
 		SingletonObject.ErrorDisplay("File Error", "The file could not be opened.")
 		return
-
-	# Determine the file type
+		
 	var file_ext = the_file.get_extension().to_lower()
+	
+	# Determine the file type
 	@warning_ignore("unused_variable")
 	var file_type = ""
 	var content = ""
@@ -398,11 +407,11 @@ func attach_file(the_file: String):
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.File = the_file # associate the file with the new memory item
 	
-	if file_ext in SingletonObject.supported_text_formats:
-		file_type = "text"
-		content = file.get_as_text()
-		content_type = "text/plain"
+
+	if _is_text_file(the_file):
 		type = SingletonObject.note_type.TEXT
+		content_type = "text/plain"
+		content = file.get_as_text()
 	elif file_ext in SingletonObject.supported_image_formats:
 		file_type = "image"
 		type= SingletonObject.note_type.IMAGE
@@ -461,7 +470,7 @@ func attach_file(the_file: String):
 	else:
 		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
 		return
-	
+
 	# Create a new memory item
 	new_memory.Enabled = true
 	new_memory.Title = title
@@ -478,7 +487,25 @@ func attach_file(the_file: String):
 	file.close()
 	pass
 
+# helper func to check if the file is text
+func _is_text_file(file_path: String) -> bool:
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		return false
 
+	var is_text: bool = false
+	var buffer = file.get_buffer(1024)  # Read the first 1024 bytes
+	for byte in buffer:
+		# Check for non-text characters (control characters outside of \t, \n, \r)
+		if byte < 9 or (byte > 13 and byte < 32):
+			is_text = false
+			break
+		else:
+			is_text = true
+
+	file.close()
+	return is_text
+	
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	%tcThreads.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS

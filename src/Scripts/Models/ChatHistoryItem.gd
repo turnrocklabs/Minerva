@@ -19,7 +19,8 @@ static var SERIALIZER_FIELDS = [
 	"Visible",
 	"Expanded",
 	"LastYSize",
-	"LinkedMemories"
+	"LinkedMemories",
+	"CodeLabelsState"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -86,6 +87,8 @@ var LastYSize: float = 0.0:
 var LinkedMemories: Dictionary = {}:
 	set(value): SingletonObject.save_state(false); LinkedMemories = value
 
+var CodeLabelsState: Dictionary = {}:
+	set(value): SingletonObject.save_state(false); CodeLabelsState = value
 
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
@@ -169,7 +172,8 @@ func Serialize() -> Dictionary:
 		"Captions": captions_,
 		"Expanded": Expanded,
 		"LastYSize": LastYSize,
-		"LinkedMemories": LinkedMemories
+		"LinkedMemories": LinkedMemories,
+		"CodeLabelsState": CodeLabelsState
 	}
 	return save_dict
 
