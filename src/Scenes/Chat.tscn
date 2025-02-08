@@ -123,7 +123,8 @@ size_flags_vertical = 4
 [node name="AttachFileDialog" type="FileDialog" parent="."]
 unique_name_in_owner = true
 title = "Open File(s)"
-size = Vector2i(507, 180)
+initial_position = 4
+size = Vector2i(900, 180)
 ok_button_text = "Open"
 file_mode = 1
 access = 2
@@ -171,7 +172,16 @@ layout_mode = 2
 size_flags_vertical = 3
 split_offset = 280
 
-[node name="tcChats" type="TabContainer" parent="VBoxContainer3/VSplitContainer"]
+[node name="VBoxContainer2" type="VBoxContainer" parent="VBoxContainer3/VSplitContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="BufferControlChats" type="Control" parent="VBoxContainer3/VSplitContainer/VBoxContainer2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 27.5)
+layout_mode = 2
+
+[node name="tcChats" type="TabContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer2"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
@@ -293,21 +303,21 @@ mouse_filter = 1
 theme_override_font_sizes/font_size = 14
 text = "0.00¢"
 
-[connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_edit_title_dialog_confirmed"]
-[connection signal="text_submitted" from="EditTitleDialog/VBoxContainer/LineEdit" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_line_edit_text_submitted"]
-[connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_attach_file_dialog_files_selected"]
-[connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_new_chat"]
-[connection signal="child_order_changed" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_child_order_changed"]
-[connection signal="tab_changed" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_tab_changed"]
-[connection signal="tab_clicked" from="VBoxContainer3/VSplitContainer/tcChats" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_tab_clicked"]
-[connection signal="gui_input" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_gui_input"]
-[connection signal="text_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_text_changed"]
-[connection signal="text_set" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_txt_main_user_input_text_set"]
-[connection signal="provider_selected" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ProviderOptionButton" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_provider_option_button_provider_selected"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChatSettings" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_chat_settings_pressed"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_inspect_pressed"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_test_pressed"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnClear" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_clear_pressed"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_btn_microphone_pressed"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/AudioStop1" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_audio_stop_1_pressed"]
-[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/tcChats" method="_on_chat_pressed"]
+[connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_edit_title_dialog_confirmed"]
+[connection signal="text_submitted" from="EditTitleDialog/VBoxContainer/LineEdit" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_line_edit_text_submitted"]
+[connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_attach_file_dialog_files_selected"]
+[connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_new_chat"]
+[connection signal="child_order_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_child_order_changed"]
+[connection signal="tab_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_tab_changed"]
+[connection signal="tab_clicked" from="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_tab_clicked"]
+[connection signal="gui_input" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_txt_main_user_input_gui_input"]
+[connection signal="text_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_txt_main_user_input_text_changed"]
+[connection signal="text_set" from="VBoxContainer3/VSplitContainer/VBoxContainer/txtMainUserInput" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_txt_main_user_input_text_set"]
+[connection signal="provider_selected" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ProviderOptionButton" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_provider_option_button_provider_selected"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChatSettings" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_chat_settings_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnInspect" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_inspect_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnTest" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_test_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnClear" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_clear_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_microphone_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/AudioStop1" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_audio_stop_1_pressed"]
+[connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_chat_pressed"]

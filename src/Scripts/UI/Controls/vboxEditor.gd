@@ -193,3 +193,7 @@ func _on_add_graphics_editor_pressed() -> void:
 	SingletonObject.is_graph = true
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)
 	
+
+
+func _on_add_many_new_files_editor_pressed() -> void:
+	%ManyNewFilesDialogWindow.popup()

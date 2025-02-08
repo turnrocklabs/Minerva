@@ -22,6 +22,7 @@ var current_layout: LAYOUT
 @onready var BottomControl: Control = $"VBoxContainer/BottomControl"
 
 @onready var _toggle_all_button: Button = %ToggleAllButton
+@onready var buffer_control_editor: Control = %BufferControlEditor
 
 var counter_for_remove
 
@@ -68,6 +69,9 @@ func _on_close_tab(tab: int, container: TabContainer):
 	else:
 		container.remove_child(control)
 		SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
+	
+	if Tabs.get_tab_count() < 1:
+		buffer_control_editor.show()
 
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
@@ -133,6 +137,8 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	Tabs.add_child(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count()-1
 	
+	if Tabs.get_tab_count() > 0:
+		buffer_control_editor.hide()
 	if name_: 
 		var tab_name = editor_name_to_use(name_)
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
@@ -243,8 +249,6 @@ func update_tabs_icon() -> void:
 		counter += 1
 
 func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String):
-	print("Old Text: ", old_text)
-	print("New Text: ", new_text)
 
 	if editor.type != Editor.Type.TEXT:
 		return
@@ -265,12 +269,12 @@ func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String
 	var isSmaller: bool = new_size < old_size
 	var isIncoplete: bool = false
 
-	if !SingletonObject.chat_completed:
+	if !SingletonObject.Is_code_completed:
 		isIncoplete = true
 
 	# Mutually exclusive visibility logic:
 	if isSmaller and isIncoplete:
-		smaller_and_incomplete_node.visible = !SingletonObject.chat_completed
+		smaller_and_incomplete_node.visible = isIncoplete
 		text_is_smaller_node.visible = false
 		text_is_incomplete_node.visible = false
 	else:
@@ -280,6 +284,7 @@ func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String
 
 	# Update the old_text meta for future comparisons
 	editor.code_edit.set_meta("old_text", new_text)
+	SingletonObject.Is_code_completed = true
 	
 func _on_editor_content_changed(editor: Editor):
 
