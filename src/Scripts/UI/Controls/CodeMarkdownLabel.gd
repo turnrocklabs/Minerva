@@ -59,7 +59,7 @@ func _extract_code_label():
 			linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
-static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "", expanded: bool = true) -> CodeMarkdownLabel:
+static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "", expanded_value: bool = true) -> CodeMarkdownLabel:
 	# place the code label in panel container to change the background
 	var code_panel = preload("res://Scenes/CodeMarkdownLabel.tscn").instantiate()
 	code_panel.dict_index = index
@@ -69,7 +69,7 @@ static func create(code_text: String, syntax: String = "Plain Text", index: Stri
 	code_panel.get_node("%CodeLabel").text = code_text
 
 	code_panel.get_node("%SyntaxLabel").text = syntax
-	code_panel.expanded = expanded
+	code_panel.expanded = expanded_value
 	code_panel.get_node("%CopyButton").pressed.connect(code_panel._copy_code_label)
 	code_panel.get_node("%ExtractButton").pressed.connect(code_panel._extract_code_label)
 	code_panel.get_node("%CodeLabel").finished.connect(code_panel._update_label_size)
@@ -126,7 +126,7 @@ func _on_replace_all_pressed():
 
 func _update_label_size() -> void:
 	await get_tree().process_frame
-	label_size = code_label.size.y
+	label_size = int(code_label.size.y)
 
 
 func _on_expand_button_pressed() -> void:
