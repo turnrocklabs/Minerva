@@ -43,6 +43,11 @@ func _ready():
 	
 	SingletonObject.mic_changed.connect(set_microphone_option_menu)
 	set_microphone_option_menu(SingletonObject.get_microphone())
+	
+	if SingletonObject.config_has_saved_section("Experimental"):
+		var enable_exp: bool = SingletonObject.config_file.get_value("Experimental", "enabled")
+		_on_experimental_check_button_toggled(enable_exp)
+		$v/SectionsContainer/ExperimentalHBoxContainer/ExperimentalCheckButton.button_pressed = enable_exp
 
 func set_field_values():
 	_fields["first_name"].text = config_file.get_value("USER", "first_name", "Not")
@@ -132,3 +137,10 @@ func _on_microphones_item_selected(index: int) -> void:
 	SingletonObject.set_microphone(microphones.get_item_text(index))
 
 #endregion Mic preferences
+
+
+func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
+	#Experimental Features are stored as "Experimental" in config file
+	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
+	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
+	SingletonObject.save_to_config_file("Experimental", "enabled", toggled_on)
