@@ -49,10 +49,6 @@ project/assembly_name="AgentInator"
 
 enabled=PackedStringArray("res://addons/markdownlabel/plugin.cfg")
 
-[gui]
-
-theme/custom="res://assets/themes/blue_dark_mode.theme"
-
 [input]
 
 zoom_in={
