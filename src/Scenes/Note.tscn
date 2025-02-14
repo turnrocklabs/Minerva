@@ -113,6 +113,9 @@ icon = ExtResource("4_vm57c")
 layout_mode = 2
 icon = ExtResource("4_05ydn")
 
+[node name="Control2" type="Control" parent="PanelContainer/vBoxContainer/headHBoxContainer"]
+layout_mode = 2
+
 [node name="HSeparator" type="HSeparator" parent="PanelContainer/vBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
