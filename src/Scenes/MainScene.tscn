@@ -1,7 +1,7 @@
 [gd_scene load_steps=66 format=3 uid="uid://cw1ig4ql83b6a"]
 
+[ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_5g4ge"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
-[ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hd0de"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
@@ -41,12 +41,12 @@
 [ext_resource type="PackedScene" uid="uid://0ibvob5ejdhq" path="res://Scenes/IconsButton.tscn" id="25_yt5rh"]
 [ext_resource type="Texture2D" uid="uid://lka8ba6qwger" path="res://assets/icons/brush/brush-68._white.png" id="26_swy8f"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="27_hlu33"]
-[ext_resource type="Texture2D" uid="uid://8ia1252jycjp" path="res://assets/icons/file/many_files_24_new.png" id="28_btd62"]
+[ext_resource type="Texture2D" uid="uid://8ia1252jycjp" path="res://assets/icons/file/many_files_24_new.png" id="28_qncfk"]
+[ext_resource type="Texture2D" uid="uid://b041v4o6sa3fd" path="res://assets/icons/file/many_files_48_new.png" id="29_3uhrd"]
 [ext_resource type="Texture2D" uid="uid://rnoowdcewge8" path="res://assets/icons/undo_icons/undo_arrow_48.png" id="29_rqudt"]
-[ext_resource type="Texture2D" uid="uid://b041v4o6sa3fd" path="res://assets/icons/file/many_files_48_new.png" id="29_suht6"]
 [ext_resource type="Script" path="res://Scripts/DropScript.gd" id="30_1anci"]
-[ext_resource type="Texture2D" uid="uid://jtwgif8ev4lw" path="res://assets/icons/file/many_files_64_new.png" id="30_emj2h"]
 [ext_resource type="Texture2D" uid="uid://c6bgcn813bv5q" path="res://assets/icons/undo_icons/undo_arrow_64.png" id="30_i8mta"]
+[ext_resource type="Texture2D" uid="uid://jtwgif8ev4lw" path="res://assets/icons/file/many_files_64_new.png" id="30_jj3p5"]
 [ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="32_nebas"]
 [ext_resource type="Texture2D" uid="uid://bu8qmpvu3256b" path="res://assets/icons/backspace_icons/backspace_icon_48.png" id="33_u2ws1"]
 [ext_resource type="Texture2D" uid="uid://c4nsaahtb7v0k" path="res://assets/icons/backspace_icons/backspace_icon_68.png" id="34_eiycj"]
@@ -87,7 +87,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme = ExtResource("1_hd0de")
+theme = ExtResource("1_5g4ge")
 script = ExtResource("2_65hnk")
 terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
@@ -421,6 +421,7 @@ layout_mode = 2
 [node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane"]
 layout_mode = 2
@@ -442,7 +443,7 @@ vertical_alignment = 2
 [node name="AddFileEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 0
-tooltip_text = "create new text editor tab"
+tooltip_text = "Create new text editor tab"
 shortcut = SubResource("Shortcut_gb6ck")
 icon = ExtResource("18_mitgl")
 script = ExtResource("21_rnx1y")
@@ -452,10 +453,11 @@ icon_68 = ExtResource("23_xw6gv")
 
 [node name="AddManyNewFilesEditor" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" instance=ExtResource("25_yt5rh")]
 layout_mode = 2
-icon = ExtResource("28_btd62")
-icon_24 = ExtResource("28_btd62")
-icon_48 = ExtResource("29_suht6")
-icon_68 = ExtResource("30_emj2h")
+tooltip_text = "Create multiple text editor tabs"
+icon = ExtResource("28_qncfk")
+icon_24 = ExtResource("28_qncfk")
+icon_48 = ExtResource("29_3uhrd")
+icon_68 = ExtResource("30_jj3p5")
 
 [node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 visible = false
@@ -640,7 +642,6 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_type_variation = &"NotesTabContaine"
 theme_override_constants/icon_separation = 16
 drag_to_rearrange_enabled = true
 tab_focus_mode = 1
