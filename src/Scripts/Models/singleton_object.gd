@@ -33,26 +33,26 @@ func load_config_file() -> ConfigFile:
 # use this method to save any settings to the file
 func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
-	load_config_file()
+	config_file = load_config_file()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
 
 func config_has_saved_section(section: String) -> bool:
 	if !section: return false
-	load_config_file()
+	config_file = load_config_file()
 	return config_file.has_section(section)
 
 
 func config_clear_section(section: String)-> void:
 	if !section: return
-	load_config_file()
+	config_file = load_config_file()
 	config_file.erase_section(section)
 	config_file.save(config_file_name)
 
 
 #method for checking if the user has saved files
 func has_recent_projects() -> bool:
-	load_config_file()
+	config_file = load_config_file()
 	return config_file.has_section("OpenRecent")
 
 #method for adding the project to the open recent list
@@ -66,7 +66,7 @@ func save_recent_project(path: String):
 # this function returns an array with the files 
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
-	load_config_file()
+	config_file = load_config_file()
 	if has_recent_projects():
 		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
@@ -74,7 +74,7 @@ func get_recent_projects() -> Array:
 
 # method for getting the p0ath on disk of the specified project file
 func get_project_path(project_name: String) -> String:
-	load_config_file()
+	config_file = load_config_file()
 	return config_file.get_value("OpenRecent", project_name)
 
 # method for erasing all the recently opened projects
@@ -496,8 +496,8 @@ func set_theme(themeID: int) -> void:
 				root_control.theme = dark_theme
 				save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 			theme.WINDOWS_MODE:
-				var _windows_theme_request: = ResourceLoader.load_threaded_request("res://assets/themes/Windows.theme")
-				var windows_theme: = ResourceLoader.load_threaded_get("res://assets/themes/Windows.theme")
+				var _windows_theme_request: = ResourceLoader.load_threaded_request("res://assets/themes/windows_mode.theme")
+				var windows_theme: = ResourceLoader.load_threaded_get("res://assets/themes/windows_mode.theme")
 				root_control.theme = windows_theme
 				save_to_config_file("theme", "theme_enum", theme.WINDOWS_MODE)
 		theme_changed.emit(themeID)

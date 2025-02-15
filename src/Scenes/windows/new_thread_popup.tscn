@@ -60,6 +60,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Tab Name"
 max_length = 25
+clear_button_enabled = true
 caret_blink = true
 
 [node name="btnVoiceForNoteTab" type="Button" parent="VBoxContainer/HBoxTopRow"]
