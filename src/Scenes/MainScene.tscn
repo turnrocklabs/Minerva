@@ -41,11 +41,11 @@
 [ext_resource type="PackedScene" uid="uid://0ibvob5ejdhq" path="res://Scenes/IconsButton.tscn" id="25_yt5rh"]
 [ext_resource type="Texture2D" uid="uid://lka8ba6qwger" path="res://assets/icons/brush/brush-68._white.png" id="26_swy8f"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="27_hlu33"]
-[ext_resource type="Texture2D" uid="uid://lkw3qud7fij3" path="res://assets/icons/file/many_files_24.png" id="28_t8jkt"]
-[ext_resource type="Texture2D" uid="uid://b75twc6a5mlyd" path="res://assets/icons/file/many_files_48.png" id="29_jx30h"]
+[ext_resource type="Texture2D" uid="uid://8ia1252jycjp" path="res://assets/icons/file/many_files_24_new.png" id="28_btd62"]
 [ext_resource type="Texture2D" uid="uid://rnoowdcewge8" path="res://assets/icons/undo_icons/undo_arrow_48.png" id="29_rqudt"]
+[ext_resource type="Texture2D" uid="uid://b041v4o6sa3fd" path="res://assets/icons/file/many_files_48_new.png" id="29_suht6"]
 [ext_resource type="Script" path="res://Scripts/DropScript.gd" id="30_1anci"]
-[ext_resource type="Texture2D" uid="uid://dniyknwudb7j6" path="res://assets/icons/file/many_files_64.png" id="30_hne5l"]
+[ext_resource type="Texture2D" uid="uid://jtwgif8ev4lw" path="res://assets/icons/file/many_files_64_new.png" id="30_emj2h"]
 [ext_resource type="Texture2D" uid="uid://c6bgcn813bv5q" path="res://assets/icons/undo_icons/undo_arrow_64.png" id="30_i8mta"]
 [ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="32_nebas"]
 [ext_resource type="Texture2D" uid="uid://bu8qmpvu3256b" path="res://assets/icons/backspace_icons/backspace_icon_48.png" id="33_u2ws1"]
@@ -452,10 +452,10 @@ icon_68 = ExtResource("23_xw6gv")
 
 [node name="AddManyNewFilesEditor" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" instance=ExtResource("25_yt5rh")]
 layout_mode = 2
-icon = ExtResource("28_t8jkt")
-icon_24 = ExtResource("28_t8jkt")
-icon_48 = ExtResource("29_jx30h")
-icon_68 = ExtResource("30_hne5l")
+icon = ExtResource("28_btd62")
+icon_24 = ExtResource("28_btd62")
+icon_48 = ExtResource("29_suht6")
+icon_68 = ExtResource("30_emj2h")
 
 [node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 visible = false
