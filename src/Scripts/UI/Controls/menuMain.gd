@@ -27,7 +27,7 @@ func _on_file_index_pressed(index):
 				current_editor_tab.prompt_close(true)# shows file save pop up
 				
 			else: # this runs if the file has been saved already so the pop up for saving does not appear
-				current_editor_tab.save_file_to_disc(current_editor_tab.file) #calls save to disc fun
+				current_editor_tab.save_file_to_disc(current_editor_tab.file) #calls save to disc func
 				
 		3: #this match if for the save as... button
 			var tabs = SingletonObject.editor_container.editor_pane.Tabs

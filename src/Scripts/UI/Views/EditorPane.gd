@@ -152,6 +152,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 			tab_name = dir + "/" + file.get_file()
 
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
+		Tabs.set_tab_tooltip(Tabs.current_tab, file)
 		editor_node.tab_title = tab_name
 	else:
 		match type:
@@ -338,7 +339,7 @@ func _on_editor_content_changed(editor: Editor):
 
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	Tabs.set_tab_icon(tab_idx, icon)
-	Tabs.set_tab_tooltip(tab_idx, tooltip)
+	#Tabs.set_tab_tooltip(tab_idx, tooltip)
 	
 
 #region  Enable Editor Buttons
