@@ -258,6 +258,7 @@ func execute_chat():
 
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	# rerender the message wince we changed the history item
+	user_msg_node.first_time_message = true
 	user_msg_node.render()
 
 	# Add empty history item, to show the loading state
@@ -313,6 +314,8 @@ func execute_chat():
 		history.VBox.scroll_to_bottom()
 
 		model_msg_node.loading = false
+		print("this is executing")
+		model_msg_node.first_time_message = true
 	else:
 		model_msg_node.queue_free()
 
