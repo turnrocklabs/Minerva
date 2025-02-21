@@ -516,3 +516,8 @@ func _create_code_labels():
 	#else:
 		#resize_scroll_container.custom_minimum_size.y += difference
 		#last_custom_size_y = resize_scroll_container.custom_minimum_size.y
+
+
+func _on_unsplit_button_pressed() -> void:
+	#history_item.text_replacement()
+	get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().find_child("UnsplitedChatMessages").visible = true
