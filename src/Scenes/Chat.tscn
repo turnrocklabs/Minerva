@@ -189,7 +189,6 @@ custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_vertical = 3
 drag_to_rearrange_enabled = true
-deselect_enabled = true
 script = ExtResource("1_2uf7u")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer3/VSplitContainer"]
@@ -208,7 +207,7 @@ caret_blink = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 8
 
 [node name="ProviderOptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" instance=ExtResource("9_xd60x")]
 unique_name_in_owner = true

@@ -28,6 +28,7 @@ func initialize_disable_button() -> CheckButton:
 	disable_notes_button = CheckButton.new()
 	disable_notes_button.text = "Notes Enabled"
 	disable_notes_button.button_pressed = false
+	disable_notes_button.size_flags_horizontal = Control.SIZE_SHRINK_END
 	disable_notes_button.alignment = 2# we use a constant for the alignment (RIGHT)
 	disable_notes_button.toggled.connect(_on_toggled_disable_notes_button)
 	return disable_notes_button
