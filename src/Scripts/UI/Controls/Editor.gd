@@ -48,6 +48,10 @@ var graphics_editor: GraphicsEditor
 @onready var jump_to_line_edit: LineEdit = %JumpToLineEdit
 @onready var jump_to_line_label: RichTextLabel = %JumpToLineLabel
 
+@onready var text_is_smaller = $VBoxContainer/ButtonsHBoxContainer/TextIsSmaller
+@onready var text_is_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsIncoplete
+@onready var text_is_smaller_and_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsSmalleAndIncoplete
+
 enum Type {
 	TEXT,
 	GRAPHICS,
@@ -168,8 +172,11 @@ func _ready():
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
-
-
+	
+	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
+	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
+	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
+	
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
 
@@ -421,6 +428,9 @@ func _on_reload_button_pressed() -> void:
 				_load_graphics_file(file)
 			Type.TEXT:
 				_load_text_file(file)
+				text_is_smaller.visible = false
+				text_is_incoplete.visible = false
+				text_is_smaller_and_incoplete.visible = false
 
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
@@ -436,18 +446,14 @@ func _on_save_open_editor_tabs_button_pressed() -> void:
 func _on_code_edit_gui_input(event: InputEvent) -> void:
 	if event is InputEventKey:
 		if event.pressed and event.keycode == KEY_CTRL:
-			code_edit.set_process_input(false)
-			code_edit.set_process_unhandled_key_input(false)
+			%FindStringLineEdit.set_process_input(false)
+			%FindStringLineEdit.set_process_unhandled_key_input(false)
 		else:
-			code_edit.set_process_input(true)
-			code_edit.set_process_unhandled_key_input(true)
+			%FindStringLineEdit.set_process_input(true)
+			%FindStringLineEdit.set_process_unhandled_key_input(true)
 	if event.is_action_pressed("jump_to_line"):
-		code_edit.set_process_input(false)
-		code_edit.set_process_unhandled_key_input(false)
 		jump_to_line()
 	elif  event.is_action_pressed("find_string"):
-		code_edit.set_process_input(false)
-		code_edit.set_process_unhandled_key_input(false)
 		find_string_in_code_edit()
 	
 
@@ -479,6 +485,7 @@ func find_string_in_code_edit() -> void:
 		update_search(code_edit.get_selected_text())
 		find_string_line_edit.select_all()
 	else:
+		await get_tree().create_timer(0.1).timeout
 		find_string_line_edit.grab_focus()
 
 
@@ -627,9 +634,12 @@ func add_new_line() -> void:
 func undo_action():
 	if Type.TEXT != type:
 		return
+	
 	code_edit.undo()
 	code_edit.grab_focus()
-
+	text_is_smaller.visible = false
+	text_is_incoplete.visible = false
+	text_is_smaller_and_incoplete.visible = false
 
 func clear_text():
 	if Type.TEXT != type:
@@ -702,3 +712,12 @@ func _on_check_button_toggled(toggled_on: bool):
 			SingletonObject.DetachedNotes.append(item)
 
 	item.Enabled = toggled_on
+
+func _on_close_warrning(path):
+	path.visible = false;
+
+
+func _on_find_button_pressed() -> void:
+	code_edit.highlight_all_occurrences = false
+	code_edit.set_search_text('')
+	find_string_container.visible = !find_string_container.visible

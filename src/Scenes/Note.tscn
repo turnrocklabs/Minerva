@@ -24,7 +24,8 @@ grow_vertical = 2
 scale = Vector2(1, 1.00261)
 theme_override_constants/separation = 16
 script = ExtResource("1_bjbgn")
-resize_pixel_rate = 2
+expand_anim_duration = 0.7
+expand_transition_type = 5
 expand_icon_color = Color(0.160784, 0.772549, 1, 1)
 video_player_container = NodePath("PanelContainer/vBoxContainer/VideoVBoxContainer")
 
@@ -47,7 +48,7 @@ theme_override_constants/separation = 10
 [node name="DragTextureRect" type="TextureRect" parent="PanelContainer/vBoxContainer"]
 unique_name_in_owner = true
 z_index = 5
-custom_minimum_size = Vector2(0, 20)
+custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
 mouse_default_cursor_shape = 6
 texture = ExtResource("2_enjbp")
@@ -62,7 +63,7 @@ theme_override_constants/separation = 12
 custom_minimum_size = Vector2(24, 0)
 layout_mode = 2
 
-[node name="ExpandNoteButton" type="TextureRect" parent="PanelContainer/vBoxContainer/headHBoxContainer/Control"]
+[node name="ExpandButton" type="Button" parent="PanelContainer/vBoxContainer/headHBoxContainer/Control"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 8
@@ -70,17 +71,18 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -10.0
-offset_top = -10.0
-offset_right = 10.0
-offset_bottom = 10.0
+offset_left = -19.0
+offset_top = -15.0
+offset_right = 19.0
+offset_bottom = 15.0
 grow_horizontal = 2
 grow_vertical = 2
-pivot_offset = Vector2(12, 12)
-size_flags_horizontal = 4
-size_flags_vertical = 4
-texture = ExtResource("3_kmw2p")
-expand_mode = 1
+pivot_offset = Vector2(19, 15)
+focus_mode = 0
+icon = ExtResource("3_kmw2p")
+flat = true
+icon_alignment = 1
+expand_icon = true
 
 [node name="CheckButton" type="CheckButton" parent="PanelContainer/vBoxContainer/headHBoxContainer" groups=["NoteCheckButton"]]
 unique_name_in_owner = true
@@ -91,6 +93,7 @@ focus_mode = 0
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+mouse_filter = 1
 text = "THis is a a title"
 placeholder_text = "Note Title"
 flat = true
@@ -110,7 +113,11 @@ icon = ExtResource("4_vm57c")
 layout_mode = 2
 icon = ExtResource("4_05ydn")
 
+[node name="Control2" type="Control" parent="PanelContainer/vBoxContainer/headHBoxContainer"]
+layout_mode = 2
+
 [node name="HSeparator" type="HSeparator" parent="PanelContainer/vBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 mouse_filter = 1
 
@@ -136,9 +143,9 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "this is for the video notes"
 
-[node name="ResizeControl" type="Control" parent="PanelContainer"]
+[node name="ResizeControl" type="Control" parent="PanelContainer/vBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 7)
+custom_minimum_size = Vector2(0, 15)
 layout_mode = 2
 size_flags_vertical = 8
 mouse_default_cursor_shape = 9
@@ -149,10 +156,10 @@ visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_4vmi0")
 
-[connection signal="gui_input" from="PanelContainer/vBoxContainer/headHBoxContainer/Control/ExpandNoteButton" to="." method="_on_expand_note_button_gui_input"]
+[connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/Control/ExpandButton" to="." method="_on_expand_button_pressed"]
 [connection signal="toggled" from="PanelContainer/vBoxContainer/headHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="text_submitted" from="PanelContainer/vBoxContainer/headHBoxContainer/Title" to="." method="_on_title_text_submitted"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/vBoxContainer/headHBoxContainer/RemoveButton" to="." method="_on_remove_button_pressed"]
-[connection signal="gui_input" from="PanelContainer/ResizeControl" to="." method="_on_resize_control_gui_input"]
+[connection signal="gui_input" from="PanelContainer/vBoxContainer/ResizeControl" to="." method="_on_resize_control_gui_input"]

@@ -1,7 +1,7 @@
 extends Node
 
 #region global variables
-var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "gif", "bmp", "tiff", "svg"]
+var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "bmp", "svg", "webp"] # "gif", "tiff"
 var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm", "ogv"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
@@ -33,26 +33,26 @@ func load_config_file() -> ConfigFile:
 # use this method to save any settings to the file
 func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
-	load_config_file()
+	config_file = load_config_file()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
 
 func config_has_saved_section(section: String) -> bool:
 	if !section: return false
-	load_config_file()
+	config_file = load_config_file()
 	return config_file.has_section(section)
 
 
 func config_clear_section(section: String)-> void:
 	if !section: return
-	load_config_file()
+	config_file = load_config_file()
 	config_file.erase_section(section)
 	config_file.save(config_file_name)
 
 
 #method for checking if the user has saved files
 func has_recent_projects() -> bool:
-	load_config_file()
+	config_file = load_config_file()
 	return config_file.has_section("OpenRecent")
 
 #method for adding the project to the open recent list
@@ -66,7 +66,7 @@ func save_recent_project(path: String):
 # this function returns an array with the files 
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
-	load_config_file()
+	config_file = load_config_file()
 	if has_recent_projects():
 		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
@@ -74,7 +74,7 @@ func get_recent_projects() -> Array:
 
 # method for getting the p0ath on disk of the specified project file
 func get_project_path(project_name: String) -> String:
-	load_config_file()
+	config_file = load_config_file()
 	return config_file.get_value("OpenRecent", project_name)
 
 # method for erasing all the recently opened projects
@@ -106,6 +106,11 @@ enum note_type {
 	VIDEO
 }
 
+enum NotesDrawState {
+	UNSET,
+	DRAWING,
+}
+
 # this signals get used in memoryTabs.gd and new_thread_popup.gd 
 # for creating and updating notes tabs names
 @warning_ignore("unused_signal")
@@ -114,6 +119,11 @@ signal create_notes_tab(name: String)
 signal associated_notes_tab(tab_name, tab: Control)
 @warning_ignore("unused_signal")
 signal pop_up_new_tab
+
+@warning_ignore("unused_signal")
+signal notes_draw_state_changed(state: int)
+
+var notes_draw_state: int
 
 
 var ThreadList: Array[MemoryThread]#:  =[]
@@ -173,7 +183,6 @@ var Chats: ChatPane
 var undo: undoMain = undoMain.new()
 #Add AtT to use it through the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
-
 
 #region UI Scaling
 var initial_ui_scale: float = 1
@@ -265,6 +274,10 @@ func _ready():
 		#get_window().content_scale_factor = 0.7
 		#print("scale factor: 0.7")
 	
+	SingletonObject.notes_draw_state_changed.connect(
+		func(state: int):
+			notes_draw_state = state
+	)
 	
 	add_child(AtT)
 	add_child(undo)
@@ -303,6 +316,7 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 @onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
 @onready var editor_pane: EditorPane = editor_container.editor_pane if editor_container else null
 var editors: Array[Editor]
+var Is_code_completed:bool = true
 #endregion
 
 #region Common UI Tasks
@@ -336,6 +350,8 @@ enum API_MODEL_PROVIDERS {
 	CHAT_GPT_O1,
 	CHAT_GPT_O1_MINI,
 	CHAT_GPT_O1_PREVIEW,
+	CHAT_GPT_O3_MINI_MEDIUM,
+	CHAT_GPT_O3_MINI_HIGH,
 	CHAT_GPT_35_TURBO,
 	GOOGLE_VERTEX,
 	GOOGLE_VERTEX_PRO,
@@ -347,14 +363,16 @@ enum API_MODEL_PROVIDERS {
 var API_MODEL_PROVIDER_SCRIPTS = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
 	API_MODEL_PROVIDERS.CHAT_GPT_O1: ChatGPTo1,
-	API_MODEL_PROVIDERS.CHAT_GPT_O1_MINI: ChatGPTo1.Mini,
-	API_MODEL_PROVIDERS.CHAT_GPT_O1_PREVIEW: ChatGPTo1.Preview,
+	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_MEDIUM: ChatGPTo3.MiniMedium,
+	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_HIGH: ChatGPTo3.MiniHigh,
+	# API_MODEL_PROVIDERS.CHAT_GPT_O1_MINI: ChatGPTo1.Mini,
+	# API_MODEL_PROVIDERS.CHAT_GPT_O1_PREVIEW: ChatGPTo1.Preview,
 	API_MODEL_PROVIDERS.DALLE: DallE,
 	API_MODEL_PROVIDERS.CLAUDE_SONNET: ClaudeSonnet,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX: GoogleAi,
 	# API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	# API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
-	# API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
+	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value
@@ -478,8 +496,8 @@ func set_theme(themeID: int) -> void:
 				root_control.theme = dark_theme
 				save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
 			theme.WINDOWS_MODE:
-				var _windows_theme_request: = ResourceLoader.load_threaded_request("res://assets/themes/Windows.theme")
-				var windows_theme: = ResourceLoader.load_threaded_get("res://assets/themes/Windows.theme")
+				var _windows_theme_request: = ResourceLoader.load_threaded_request("res://assets/themes/windows_mode.theme")
+				var windows_theme: = ResourceLoader.load_threaded_get("res://assets/themes/windows_mode.theme")
 				root_control.theme = windows_theme
 				save_to_config_file("theme", "theme_enum", theme.WINDOWS_MODE)
 		theme_changed.emit(themeID)
@@ -567,3 +585,11 @@ func reorder_recent_project(firstIndex: int, secondIndex: int) -> void:
 
 
 	config_file.save(config_file_name)
+
+# generate IDs for items: chat items, memory items and editor
+func generate_UUID() -> String:
+	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
+	rng.randomize() # Uses the current time to seed the random number generator
+	var random_number = rng.randi() # Generates a random integer
+	var hash256 = str(random_number).sha256_text()
+	return hash256

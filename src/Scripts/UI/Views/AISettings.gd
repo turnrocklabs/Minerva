@@ -24,7 +24,7 @@ func _ready():
 	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance = script.new()
-		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.model_name], key)
+		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.display_name], key)
 
 
 func _on_provider_option_button_item_selected(index: int):

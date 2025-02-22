@@ -11,7 +11,8 @@ enum LAYOUT {HORIZONTAL, VERTICAL}
 static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
 static var _unsaved_changes_file_icon: = preload("res://assets/icons/half_circle_left.svg")
 static var _unsaved_changes_associated_icon: = preload("res://assets/icons/half_circle_right.svg")
-
+static var _incoplete_snippet_icon: = preload("res://assets/icons/warning_circle.svg")
+var _is_Completed = true
 var current_layout: LAYOUT
 
 @onready var Tabs: TabContainer = $"./VBoxContainer/HBoxContainer/LeftControl/TabContainer"
@@ -21,13 +22,14 @@ var current_layout: LAYOUT
 @onready var BottomControl: Control = $"VBoxContainer/BottomControl"
 
 @onready var _toggle_all_button: Button = %ToggleAllButton
+@onready var buffer_control_editor: Control = %BufferControlEditor
 
+var counter_for_remove
 
 func _ready():
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
 	SingletonObject.UpdateUnsavedTabIcon.connect(update_tabs_icon)
-	
 
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
@@ -67,6 +69,9 @@ func _on_close_tab(tab: int, container: TabContainer):
 	else:
 		container.remove_child(control)
 		SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
+	
+	if Tabs.get_tab_count() < 1:
+		buffer_control_editor.show()
 
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
@@ -132,6 +137,8 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	Tabs.add_child(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count()-1
 	
+	if Tabs.get_tab_count() > 0:
+		buffer_control_editor.hide()
 	if name_: 
 		var tab_name = editor_name_to_use(name_)
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
@@ -229,6 +236,7 @@ func toggle_vertical_split() -> void:
 func update_tabs_icon() -> void:
 	var tab_count: = Tabs.get_tab_count()
 	var counter:= 0
+	counter_for_remove = counter
 	while counter < tab_count:
 		var editor = Tabs.get_tab_control(counter)
 		_on_editor_content_changed(editor) # call the below implementation to update the icon
@@ -240,11 +248,47 @@ func update_tabs_icon() -> void:
 		
 		counter += 1
 
+func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String):
 
+	if editor.type != Editor.Type.TEXT:
+		return
+
+	var tab_idx = Tabs.get_tab_idx_from_control(editor)
+	if tab_idx == -1: # Handle case where editor isn't in the tab container
+		return
+
+	# Nodes for visual feedback (make sure these exist in your scene)
+
+	var smaller_and_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsSmalleAndIncoplete")
+	var text_is_smaller_node = Tabs.get_child(tab_idx).find_child("TextIsSmaller")
+	var text_is_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsIncoplete")
+
+	var old_size := old_text.length()
+	var new_size := new_text.length()
+
+	var isSmaller: bool = new_size < old_size
+	var isIncoplete: bool = false
+
+	if !SingletonObject.Is_code_completed:
+		isIncoplete = true
+
+	# Mutually exclusive visibility logic:
+	if isSmaller and isIncoplete:
+		smaller_and_incomplete_node.visible = isIncoplete
+		text_is_smaller_node.visible = false
+		text_is_incomplete_node.visible = false
+	else:
+		smaller_and_incomplete_node.visible = false
+		text_is_smaller_node.visible = isSmaller
+		text_is_incomplete_node.visible = isIncoplete
+
+	# Update the old_text meta for future comparisons
+	editor.code_edit.set_meta("old_text", new_text)
+	SingletonObject.Is_code_completed = true
+	
 func _on_editor_content_changed(editor: Editor):
 
 	var state: = editor.get_saved_state()
-
 	var icon: Texture2D
 	var tooltip: String = ""
 
@@ -290,11 +334,12 @@ func _on_editor_content_changed(editor: Editor):
 					tooltip = "\"%s\" unsaved" % associated_object_name
 				else:
 					tooltip = "Content unsaved"
-					
+	
 
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	Tabs.set_tab_icon(tab_idx, icon)
 	Tabs.set_tab_tooltip(tab_idx, tooltip)
+	
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
@@ -363,3 +408,6 @@ func _on_toggle_all_button_pressed() -> void:
 		_toggle_all_button.text = "Disable All"
 	else:
 		_toggle_all_button.text = "Enable All"
+
+func _close_error():
+	var tab_idx = Tabs.get_tab_idx_from_control(Tabs.get_tab_control(counter_for_remove))

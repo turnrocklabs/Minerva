@@ -1,4 +1,4 @@
-[gd_scene load_steps=26 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=30 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
@@ -6,15 +6,19 @@
 [ext_resource type="Texture2D" uid="uid://c48b7t07xvrlk" path="res://assets/icons/folder_up.svg" id="4_ycwhj"]
 [ext_resource type="Texture2D" uid="uid://dlwhgven8t3hj" path="res://assets/icons/folder_down.png" id="5_2k2ha"]
 [ext_resource type="Texture2D" uid="uid://c5gxq5cm5tpnk" path="res://assets/icons/autowrap/autowrap_icon.png" id="5_7o203"]
+[ext_resource type="Texture2D" uid="uid://exoijpiwrvi0" path="res://assets/icons/warning_icon.svg" id="5_blbtn"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
 [ext_resource type="Script" path="res://Scripts/UI/Views/icons_button.gd" id="6_jf4nm"]
+[ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="6_nkegi"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="7_clgig"]
 [ext_resource type="Texture2D" uid="uid://gwm8wy3mpotw" path="res://assets/icons/autowrap/autowrap_icon_48.png" id="7_sbudh"]
+[ext_resource type="Texture2D" uid="uid://dskn0gjd7h730" path="res://assets/icons/m_glass_icons/search_icon_48_no_bg.png" id="8_cgl7l"]
 [ext_resource type="Texture2D" uid="uid://b7e8ub4l1hynh" path="res://assets/icons/autowrap/autowrap_icon_68.png" id="8_mxr1i"]
 [ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="8_r334w"]
 [ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="9_65m80"]
+[ext_resource type="Texture2D" uid="uid://1qpbadp6okdw" path="res://assets/icons/m_glass_icons/search_icon_64_no_bg.png" id="9_iclxa"]
 [ext_resource type="Texture2D" uid="uid://cieg7eg003vd7" path="res://assets/icons/reload-icons/reload-48.svg" id="11_nrs0x"]
 [ext_resource type="Texture2D" uid="uid://dq5axtf0gpsp7" path="res://assets/icons/save_icons/save-all-48-white.png" id="12_jegqv"]
 [ext_resource type="Texture2D" uid="uid://cx8xu0burk3hm" path="res://assets/icons/reload-icons/reload-64.svg" id="12_yvsru"]
@@ -117,9 +121,43 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Pass editor content to chat"
 
+[node name="TextIsSmaller" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+visible = false
+layout_mode = 2
+tooltip_text = "Warning: New text is smaller than old."
+icon = ExtResource("5_blbtn")
+flat = true
+
+[node name="TextIsIncoplete" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+visible = false
+layout_mode = 2
+tooltip_text = "Warning: Bot response may be incomplete. Please verify."
+icon = ExtResource("5_blbtn")
+flat = true
+
+[node name="TextIsSmalleAndIncoplete" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+visible = false
+layout_mode = 2
+tooltip_text = "Warning: New text is smaller than old.
+Warning: Bot response may be incomplete. Please verify."
+icon = ExtResource("5_blbtn")
+flat = true
+
 [node name="FillerControl2" type="Control" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="FindButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "warps text that goes over the width of the editor"
+shortcut = SubResource("Shortcut_rmr81")
+shortcut_feedback = false
+icon = ExtResource("6_nkegi")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("6_nkegi")
+icon_48 = ExtResource("8_cgl7l")
+icon_68 = ExtResource("9_iclxa")
 
 [node name="AutowrapButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
@@ -214,8 +252,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 396.0
-offset_bottom = 136.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"bgPanel"
@@ -264,6 +302,7 @@ layout_mode = 2
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/NextMatchButton" to="." method="_on_next_match_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/FindStringContainer/HBoxContainer/CloseButon" to="." method="_on_close_button_pressed"]
 [connection signal="toggled" from="VBoxContainer/ButtonsHBoxContainer/CheckButton" to="." method="_on_check_button_toggled"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/FindButton" to="." method="_on_find_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/AutowrapButton" to="." method="toggle_autowrap"]
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/MicButton" to="." method="_on_mic_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]

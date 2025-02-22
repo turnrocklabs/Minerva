@@ -5,6 +5,7 @@ extends TabContainer
 @onready var tcThreads = %tcThreads
 # just use current_tab
 # var ActiveThreadIndex: int:
+@onready var buffer_control_notes: Control = %BufferControlNotes
 
 var _drag_active := false
 # var _hovered_tab := -1
@@ -96,6 +97,9 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 		render_threads()
 	else:
 		create_new_notes_tab(tab_name)
+	
+	if get_tab_count() > 0:
+		buffer_control_notes.hide()
 
 ## add indexing system here
 var new_tab: bool = false
@@ -124,13 +128,14 @@ func clear_all_tabs():
 	var children = %tcThreads.get_children()
 	for child in children:
 		%tcThreads.remove_child(child)
+		child.queue_free()
 	pass
 	
 
 
 #region Add notes methods
 
-func add_note(user_title:String, user_content: String, _source: String = "") -> MemoryItem:
+func add_note(user_title:String, user_content: String,is_completed:bool = true, _source: String = "") -> MemoryItem:
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or current_tab < 0:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -141,12 +146,14 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.TEXT
 	new_memory.ContentType = "text"
 	new_memory.Title = user_title
 	new_memory.Content = user_content
 	new_memory.Visible = true
+	new_memory.isCompleted = is_completed
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
@@ -154,6 +161,8 @@ func add_note(user_title:String, user_content: String, _source: String = "") -> 
 	render_threads()
 
 	return new_memory
+
+
 
 
 func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryItem:
@@ -166,6 +175,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryIte
 	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.AUDIO
 	new_memory.ContentType = "audio"
@@ -187,6 +197,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
 	new_memory.Type = SingletonObject.note_type.IMAGE
 	new_memory.ContentType = "image"
@@ -204,6 +215,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 ## Creates a note without adding it to any thread.
 func create_note(title: String, type: SingletonObject.note_type = SingletonObject.note_type.TEXT) -> MemoryItem:
 	var new_memory: MemoryItem = MemoryItem.new()
+	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
 	new_memory.Type = type
 	new_memory.Title = title
@@ -212,6 +224,48 @@ func create_note(title: String, type: SingletonObject.note_type = SingletonObjec
 	return new_memory
 
 #endregion Add notes methods
+
+#region Update Notes methods
+
+func update_note(note_UUID: String, new_data: Variant) -> MemoryItem:
+	# we check for the note in the current thread so that we dont loop over all the tabs
+	if note_UUID == "" or new_data == null:
+		return null
+	var current_thread: MemoryThread = SingletonObject.ThreadList[current_tab]
+	if current_thread:
+		for item in current_thread.MemoryItemList:
+			if item.UUID == note_UUID:
+				print("found the item in the current thread")
+				return update_note_handler(item, new_data)
+	
+	# if the note is not found in the current thread we loop over all the tabs
+	var item: MemoryItem = get_memory_item(note_UUID)
+	if item:
+		return update_note_handler(item, new_data)
+		
+	printerr("memorty item not found :c")
+	return null
+
+
+func get_memory_item(memory_item_UUID: String) -> MemoryItem:
+	for thread: MemoryThread in SingletonObject.ThreadList:
+		for item: MemoryItem in thread.MemoryItemList:
+			if item.UUID == memory_item_UUID:
+				return item
+	return null
+
+
+func update_note_handler(item: MemoryItem, new_data: Variant) -> MemoryItem:
+	if item.Type == SingletonObject.note_type.TEXT:
+		item.Content = new_data as String
+	elif item.Type == SingletonObject.note_type.IMAGE:
+		item.MemoryImage = new_data as Image
+	elif item.Type == SingletonObject.note_type.AUDIO:
+		item.Audio = new_data as AudioStreamWAV
+	render_threads()
+	return item
+
+#endregion Update Notes methods
 
 ## Will delete the memory_item from the memory list
 func delete_note(memory_item: MemoryItem):
@@ -241,6 +295,9 @@ func render_threads():
 	else:
 		self.current_tab = get_tab_count() - 1
 	new_tab = false
+
+	SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.UNSET)
+
 
 static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
 func render_thread(thread_item: MemoryThread):
@@ -288,6 +345,11 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	# Remove the tab control from the TabContainer
 	container.remove_child(control) 
+	#control.queue_redraw()
+	
+	if get_tab_count() < 1:
+		buffer_control_notes.show()
+	
 	
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
@@ -324,9 +386,10 @@ func attach_file(the_file: String):
 	if file == null:
 		SingletonObject.ErrorDisplay("File Error", "The file could not be opened.")
 		return
-
-	# Determine the file type
+		
 	var file_ext = the_file.get_extension().to_lower()
+	
+	# Determine the file type
 	@warning_ignore("unused_variable")
 	var file_type = ""
 	var content = ""
@@ -344,17 +407,38 @@ func attach_file(the_file: String):
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.File = the_file # associate the file with the new memory item
 	
-	if file_ext in SingletonObject.supported_text_formats:
-		file_type = "text"
-		content = file.get_as_text()
-		content_type = "text/plain"
+
+	if _is_text_file(the_file):
 		type = SingletonObject.note_type.TEXT
+		content_type = "text/plain"
+		content = file.get_as_text()
 	elif file_ext in SingletonObject.supported_image_formats:
 		file_type = "image"
 		type= SingletonObject.note_type.IMAGE
 		var file_data = file.get_buffer(file.get_length())
-		content = Marshalls.raw_to_base64(file_data)
-		new_memory.MemoryImage = Image.load_from_file(the_file)
+		var image: Image = Image.new()
+		var err: Error = OK
+		match file_ext:
+			"svg":
+				err = image.load_svg_from_buffer(file_data)
+			"jpeg":
+				err = image.load_jpg_from_buffer(file_data)
+			"jpg":
+				err = image.load_jpg_from_buffer(file_data)
+			"png":
+				err = image.load_png_from_buffer(file_data)
+			"bmp":
+				err = image.load_bmp_from_buffer(file_data)
+			"webp":
+				err = image.load_webp_from_buffer(file_data)
+			"tga":
+				err = image.load_tga_from_buffer(file_data)
+		if err == OK:
+				new_memory.MemoryImage = image
+				content = Marshalls.raw_to_base64(file_data)
+		else:
+			printerr("an error ocurrred while trying to load the image file %s" % file)
+			SingletonObject.ErrorDisplay("Error loading image", "an error ocurrred while trying to load the image file %s" % file)
 		content_type = "image/%s" % file_ext
 	elif file_ext in SingletonObject.supported_video_formats:
 		file_type = "video"
@@ -386,7 +470,7 @@ func attach_file(the_file: String):
 	else:
 		SingletonObject.ErrorDisplay("Unsupported File Type", "The file type is not supported.")
 		return
-	
+
 	# Create a new memory item
 	new_memory.Enabled = true
 	new_memory.Title = title
@@ -403,7 +487,25 @@ func attach_file(the_file: String):
 	file.close()
 	pass
 
+# helper func to check if the file is text
+func _is_text_file(file_path: String) -> bool:
+	var file = FileAccess.open(file_path, FileAccess.READ)
+	if file == null:
+		return false
 
+	var is_text: bool = false
+	var buffer = file.get_buffer(1024)  # Read the first 1024 bytes
+	for byte in buffer:
+		# Check for non-text characters (control characters outside of \t, \n, \r)
+		if byte < 9 or (byte > 13 and byte < 32):
+			is_text = false
+			break
+		else:
+			is_text = true
+
+	file.close()
+	return is_text
+	
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	%tcThreads.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS

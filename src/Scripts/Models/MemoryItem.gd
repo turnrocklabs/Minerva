@@ -7,7 +7,15 @@ extends RefCounted ## so I get memory management and signals.
 signal toggled(on: bool)
 
 
-static var SERIALIZER_FIELDS = ["Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order", "Expanded", "LastYSize"]
+static var SERIALIZER_FIELDS = ["UUID" ,"Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order", "Expanded", "LastYSize"]
+
+var UUID: String = "":
+	set(value):
+		if UUID == "":
+			UUID = value
+			SingletonObject.save_state(false)
+		else: 
+			printerr("Tried to update UUID")
 
 var Enabled: bool = true:
 	set(value):
@@ -73,6 +81,9 @@ var LastYSize: float = 0.0:
 ## Every time you add a field to the serializer be sure to add it to the SERIALIZER_FIELDS array at the top
 ###### ////////////////////////////////////////////////////////////////
 
+var isCompleted: bool:
+	set(value): SingletonObject.save_state(false); isCompleted = value;
+
 var OwningThread
 
 func hash_string(input: String) -> String:
@@ -107,6 +118,7 @@ func Serialize() -> Dictionary:
 		b64_data_audio = Marshalls.variant_to_base64(Audio, true)
 
 	var save_dict:Dictionary = {
+		"UUID": UUID,
 		"Enabled": Enabled,
 		"File": File,
 		"Locked": Locked,
@@ -153,6 +165,9 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			# if file doesn't exist anymore, set it to null
 			if not FileAccess.file_exists(value):
 				value = null
+		elif prop == "UUID":
+			if value == "":
+				value = SingletonObject.generate_UUID()
 
 		
 		mi.set(prop, value)

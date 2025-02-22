@@ -2,13 +2,14 @@ class_name ChatPane
 extends TabContainer
 
 
-var icActive = preload("res://assets/icons/Microphone_active.png")
+#var icActive = preload("res://assets/icons/Microphone_active.png")
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
 
 @onready var txt_main_user_input: TextEdit = %txtMainUserInput
 @onready var _provider_option_button: ProviderOptionButton = %ProviderOptionButton
+@onready var buffer_control_chats: Control = %BufferControlChats
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
@@ -55,6 +56,9 @@ func _on_new_chat():
 	render_history(history)
 
 	current_tab = get_tab_count()-1
+	
+	if get_tab_count() > 0:
+		buffer_control_chats.hide()
 
 
 ## Opens a chat tab if one isn't open yet
@@ -499,6 +503,10 @@ func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.container = closed_tab_container 
 	SingletonObject.undo.store_deleted_tab(tab, control,"left")
 	closed_tab_container.remove_child(control)
+	
+	if get_tab_count() < 1 :
+		buffer_control_chats.show()
+	
 
 # Function to restore a deleted tab
 func restore_deleted_tab(tab_name: String):
@@ -512,8 +520,11 @@ func restore_deleted_tab(tab_name: String):
 		%tcChats.call_deferred("add_child", control_)#add_child(control_)
 		
 		# Set the tab index and restore the history
+		if tab != 0:
+			control_.name = "Chat " + str(tab)
+		else:
+			control_.name = "Chat"
 		set_current_tab(tab)
-		SingletonObject.ChatList[tab] = history
 		# Clear the deleted tab from the dictionary
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
 
@@ -538,7 +549,8 @@ func _on_btn_test_pressed():
 
 func clear_all_chats():
 	for child in get_children():
-		call_deferred("remove_child", child)#remove_child(child)
+		remove_child(child)
+		child.queue_free()
 
 
 func update_token_estimation():
@@ -596,7 +608,10 @@ func _on_tab_clicked(tab: int):
 # Loads a file and raises a signal to the singleton for the memory tabs
 # to attach a file.
 func _on_btn_attach_file_pressed():
-	%AttachFileDialog.popup_centered(Vector2i(700, 500))
+	var size_x: = get_viewport_rect().size.x * 0.70
+	var size_y: = 500
+	
+	%AttachFileDialog.popup_centered(Vector2(size_x, size_y))
 
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	%AttachFileDialog.exclusive = false
@@ -655,7 +670,7 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	if not provider_.is_inside_tree():
 		history.VBox.add_child(provider_)
 
-	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.model_name])
+	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.display_name])
 
 # when tab changes, set the provider to one that that chat tab is using
 func _on_tab_changed(tab: int):

@@ -9,7 +9,7 @@
 [node name="PreferencesPopup" type="Window"]
 title = "Preferences"
 initial_position = 4
-size = Vector2i(570, 490)
+size = Vector2i(570, 500)
 unresizable = true
 min_size = Vector2i(570, 490)
 script = ExtResource("1_snp1b")
@@ -32,7 +32,7 @@ size_flags_horizontal = 4
 custom_minimum_size = Vector2(512, 0)
 layout_mode = 2
 size_flags_horizontal = 4
-theme_override_constants/separation = 15
+theme_override_constants/separation = 12
 
 [node name="APIKeysVBoxContainer" type="VBoxContainer" parent="v/SectionsContainer"]
 layout_mode = 2
@@ -194,8 +194,20 @@ clip_text = true
 fit_to_longest_item = false
 allow_reselect = true
 
-[node name="HSeparator3" type="HSeparator" parent="v"]
+[node name="HSeparator4" type="HSeparator" parent="v/SectionsContainer"]
 layout_mode = 2
+
+[node name="ExperimentalHBoxContainer" type="HBoxContainer" parent="v/SectionsContainer"]
+layout_mode = 2
+
+[node name="ExperimentalFeaturesLabel" type="Label" parent="v/SectionsContainer/ExperimentalHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Experimental Features:"
+
+[node name="ExperimentalCheckButton" type="CheckButton" parent="v/SectionsContainer/ExperimentalHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
 
 [node name="btnSavePrefs" type="Button" parent="v"]
 layout_mode = 2
@@ -214,4 +226,5 @@ icon_68 = ExtResource("5_346qj")
 [connection signal="toggled" from="v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
 [connection signal="item_selected" from="v/SectionsContainer/ThemeVBoxContainer/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]
 [connection signal="item_selected" from="v/SectionsContainer/VBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
+[connection signal="toggled" from="v/SectionsContainer/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
 [connection signal="pressed" from="v/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]
