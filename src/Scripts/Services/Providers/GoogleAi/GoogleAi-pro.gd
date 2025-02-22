@@ -88,6 +88,15 @@ func wrap_memory(item: MemoryItem) -> Variant:
 				"data": Marshalls.raw_to_base64(file_content)
 			}
 		}
+	elif item.Type == SingletonObject.note_type.AUDIO and SingletonObject.google_supported_audio_formats.has(item.File.get_extension()):
+		var file_content = FileAccess.get_file_as_bytes(item.File)
+		var audio_mime: String = SingletonObject.google_supported_audio_formats.get(item.File.get_extension())
+		return {
+			"inline_data": {
+				"data": Marshalls.raw_to_base64(file_content),
+				"mime_type": audio_mime
+			}
+	}
 	else:
 		var output = "Given this background information:\n\n"
 		output += "### Reference Information ###\n"

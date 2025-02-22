@@ -314,7 +314,6 @@ func execute_chat():
 		history.VBox.scroll_to_bottom()
 
 		model_msg_node.loading = false
-		print("this is executing")
 		model_msg_node.first_time_message = true
 	else:
 		model_msg_node.queue_free()
