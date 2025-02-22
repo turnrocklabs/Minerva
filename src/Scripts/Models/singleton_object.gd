@@ -1,6 +1,29 @@
 extends Node
 
 #region global variables
+#	Suported video format MIME types by GoogleAI see: https://ai.google.dev/gemini-api/docs/vision?lang=python
+var google_supported_video_formats: = { 
+	"mp4": "video/mp4", 
+	"mpeg": "video/mpeg", 
+	"mov": "video/mov",
+	"avi": "video/avi", 
+	"x-flv": "video/x-flv", 
+	"mpg":  "video/mpg",
+	"webm": "video/webm",
+	"wmv": "video/wmv",
+	"3gpp": "video/3gpp"
+}
+# Suported audio format MIME types by GoogleAI see: https://ai.google.dev/gemini-api/docs/audio?lang=python
+var google_supported_audio_formats: = { 
+	"wav": "audio/wav",
+	"mp3": "audio/mp3",
+	"aiff": "audio/aiff",
+	"aac": "audio/aac",
+	"ogg": "audio/ogg",
+	"flac": "audio/flac"
+}
+
+# this are the formats that we support in this app
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "bmp", "svg", "webp"] # "gif", "tiff"
 var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm", "ogv"]
@@ -216,63 +239,7 @@ func set_ui_scale(new_scale: float) -> void:
 
 #endregion UI Scaling
 
-##region Buttons/Icons scaling
-#var buttons_array: Array = []
-#
-#func get_all_children(in_node, array := []) -> Array:
-	#array.push_back(in_node)
-	#for child in in_node.get_children():
-		#array = get_all_children(child, array)
-	#return array
-#
-#
-#func fill_buttons_array() -> void:
-	#for element in get_all_children(get_tree().get_root()):
-		#if element is BaseButton:
-			#buttons_array.append(element)
-#
-#var buttons_scale: float = 1.0
-#var max_buttons_scale: float = 3.0
-#var min_buttons_scale: float = 1.0
-#
-#func change_buttons_zoom(factor: float) -> void:
-	#for button: Button in buttons_array:
-		#if button.icon:
-			#if factor == 0.5:
-				#button.custom_minimum_size.x = button.size.x + 24
-			#else:
-				#button.custom_minimum_size.x = button.size.x - 24
-			##buttons_scale += factor
-			##button.scale = Vector2(buttons_scale, buttons_scale)
-#
-##endregion Buttons/Icons scaling
-
 func _ready():
-	#we call this function to get all the buttons in the scene tree
-	#fill_buttons_array()
-	#change_buttons_zoom(0.5)
-	#print(buttons_array.size())
-	#for button in buttons_array:
-		#print(button.name)
-	
-	
-	#var screen_size = DisplayServer.screen_get_size()
-	#var dpi = DisplayServer.screen_get_dpi()
-	#print("screen size: " + str(screen_size))
-	#print("dpi: "+ str(dpi))
-	#var new_scale: float = screen_size.y / 1080
-	#
-	#print("scale: " + str(new_scale))
-	#if dpi > 140:
-		#get_window().content_scale_factor = new_scale
-		#print("dpi is above 140, new scale factor is now: " + str(new_scale))
-	#
-	#if screen_size.y > 1200:
-		#get_window().content_scale_factor = 1.3
-		#print("scale factor: 1.3")
-	#if screen_size.y < 900:
-		#get_window().content_scale_factor = 0.7
-		#print("scale factor: 0.7")
 	
 	SingletonObject.notes_draw_state_changed.connect(
 		func(state: int):
@@ -296,7 +263,14 @@ func _ready():
 	var mic_selected = get_microphone()
 	if mic_selected:
 		set_microphone(mic_selected)
+		
+	
+	chat_notification_player = AudioStreamPlayer.new()
+	chat_notification_player.stream = load("res://assets/Audio/notification-2-269292.mp3")
+	chat_notification_player.bus = "AudioNotesBus"
+	get_tree().root.call_deferred("add_child", chat_notification_player)
 
+var chat_notification_player: AudioStreamPlayer
 
 func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories
