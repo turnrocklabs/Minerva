@@ -283,6 +283,7 @@ func save():
 			graphics_editor.is_image_saved = true
 			SingletonObject.UpdateUnsavedTabIcon.emit()
 			pass # TODO: implement for graphics files
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 ## Returns the bitmask of the saved state for the editor.
