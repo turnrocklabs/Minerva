@@ -1,6 +1,19 @@
 extends Node
 
 #region global variables
+#	Suported video format MIME types by GoogleAI see: https://ai.google.dev/gemini-api/docs/vision?lang=python
+var google_supported_video_formats: = { "mp4": "video/mp4", 
+										"mpeg": "video/mpeg", 
+										"mov": "video/mov",
+										"avi": "video/avi", 
+										"x-flv": "video/x-flv", 
+										"mpg":  "video/mpg",
+										"webm": "video/webm",
+										"wmv": "video/wmv",
+										"3gpp": "video/3gpp"
+										}
+
+# this are the formats that we support in this app
 var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "bmp", "svg", "webp"] # "gif", "tiff"
 var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm", "ogv"]
