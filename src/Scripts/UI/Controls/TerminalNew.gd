@@ -17,6 +17,7 @@ var _viewport_start: int = 0
 var _cursor_pos: Vector2i = Vector2i(1, 1):
 	set(value):
 		_cursor_pos = value
+		print(value)
 		cursor_layer.pos = _cursor_pos
 		cursor_layer.queue_redraw()
 
@@ -431,7 +432,7 @@ class CursorLayer extends Control:
 	func _draw() -> void:
 
 		if cursor_visible:
-			var draw_pos = Vector2((pos.y-1) * terminal.char_width, (pos.x) * terminal.line_height)
+			var draw_pos = Vector2((pos.y) * terminal.char_width, (pos.x) * terminal.line_height)
 			draw_string(terminal.font, draw_pos, CURSOR_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size)
 			custom_minimum_size.y = draw_pos.y
 
