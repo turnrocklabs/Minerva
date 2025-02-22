@@ -75,7 +75,7 @@ func _parse_code_block(input: String) -> String:
 	# Adjusted regex to ignore [lb] and [rb] and still remove other bbcode
 	var temp_regex = RegEx.new()
 	temp_regex.compile("\\[(?!lb\\]|rb\\]).*?\\]")
-	var text_without_tags = regex.sub(input, "", true)
+	var text_without_tags = temp_regex.sub(input, "", true)
 
 	# Replacing [lb] and [rb] with [ and ]
 	text_without_tags = text_without_tags.replace("[lb]", "[").replace("[rb]", "]")
