@@ -517,7 +517,7 @@ func restore_deleted_tab(tab_name: String):
 		var data = SingletonObject.undo.deleted_tabs[tab_name]
 		var tab = data["tab"]
 		var control_ = data["control"]
-		var history = data["history"]
+		#var history = data["history"]
 		data["timer"].stop()
 		#Add the control back to the TabContainer
 		%tcChats.call_deferred("add_child", control_)#add_child(control_)
