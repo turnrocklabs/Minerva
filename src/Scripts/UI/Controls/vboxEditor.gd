@@ -67,8 +67,9 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				image.load_png_from_buffer(buffer)
 				var layer = Layer.create(image, "layer " + str(counter))
 				#layer.texture = texture
-				graphics_editor.loaded_layers.append(layer)
-				counter +=1
+				if graphics_editor != null:
+					graphics_editor.loaded_layers.append(layer)
+					counter +=1
 		
 		editor_instances.append(editor_inst)
 	
