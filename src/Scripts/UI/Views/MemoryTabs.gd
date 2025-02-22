@@ -478,7 +478,7 @@ func attach_file(the_file: String):
 	new_memory.ContentType = content_type
 	new_memory.Type = type
 	new_memory.Visible = true
-	new_memory.FilePath = the_file
+	
 
 	# Append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)

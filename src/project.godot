@@ -31,6 +31,10 @@ driver/enable_input=true
 
 SingletonObject="*res://Scripts/Models/singleton_object.gd"
 
+[debug]
+
+gdscript/warnings/unassigned_variable=0
+
 [display]
 
 window/size/viewport_width=1920

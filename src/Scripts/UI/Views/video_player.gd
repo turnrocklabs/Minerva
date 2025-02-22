@@ -8,7 +8,7 @@ class_name VideoPlayer extends Control
 @onready var timer: Timer = %SliderTimer
 @onready var play_button: Button = %PlayButton
 @onready var label: Label = %RunningTimeLabel
-@onready var color_rect: ColorRect = %ColorRect
+@onready var color_rect: ColorRect = %ControlsRect
 @onready var controls_timer: Timer = %ControlsTimer
 @onready var volume_button: Button = %VolumeButton
 @onready var volume_rect: ColorRect = %VolumeRect
@@ -30,7 +30,7 @@ var video_path: String:
 	set(value):
 		video_path = value
 		if video_stream_player:
-			var video_resource
+			var video_resource: VideoStream
 			if video_path.get_extension() == ".ogv":
 				video_resource = VideoStreamTheora.new()
 				video_resource.file = value
@@ -47,10 +47,6 @@ func _ready() -> void:
 		h_slider.max_value = video_stream_player.get_stream_length()
 		h_slider.value = 0
 		volume_h_slider.value = video_stream_player.volume
-	#if visible:
-		#video_stream_player.play()
-		#await get_tree().create_timer(0.02).timeout
-		#video_stream_player.paused = true
 
 
 func update_time_label() -> void:
