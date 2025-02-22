@@ -386,6 +386,7 @@ func save_file_to_disc(path: String):
 	tab_title = path.get_file()
 	var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
 	SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
+	SingletonObject.editor_pane.Tabs.set_tab_tooltip(idx, path)
 
 #region bottom of the pane buttons
 

@@ -198,6 +198,8 @@ func deserialize_project(data: Dictionary):
 		SingletonObject.editor_pane.Tabs.add_child(editor)
 		var tab_idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
 		SingletonObject.editor_pane.Tabs.set_tab_title(tab_idx, editor.tab_title)
+		if editor.file:
+			SingletonObject.editor_pane.Tabs.set_tab_tooltip(tab_idx, editor.file)
 	
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 

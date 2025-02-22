@@ -23,6 +23,7 @@ mute_button = NodePath("MuteButton")
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="."]
 unique_name_in_owner = true
+bus = &"AudioNotesBus"
 
 [node name="Control" type="Control" parent="."]
 layout_mode = 2
