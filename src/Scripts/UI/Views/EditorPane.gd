@@ -294,25 +294,54 @@ func _on_editor_content_changed(editor: Editor):
 
 	var state: = editor.get_saved_state()
 	var icon: Texture2D
+	var tooltip: String = ""
+
+	var associated_object_name: String
+
+	if editor.associated_object:
+		associated_object_name = str(editor.associated_object)
+
 	match state & (Editor.FILE_SAVED | Editor.ASSOCIATED_OBJECT_SAVED):
 		Editor.FILE_SAVED:
 			# the file is saved, check if we have an associated object that's not marked as saved
 			if editor.associated_object:
 				icon = _unsaved_changes_associated_icon
+				tooltip = "File saved, \"%s\" unsaved" % associated_object_name
 			# else we just have a file that's saved
 			else:
 				icon = null
+				tooltip = "File saved"
+
 		Editor.ASSOCIATED_OBJECT_SAVED:
 			# the associated_object is saved, but not the file
+
 			icon = _unsaved_changes_file_icon
+			if editor.file:
+				tooltip = "File unsaved, \"%s\" saved" % associated_object_name
+			# else we just have an associated object that's saved
+			else:
+				tooltip = "No File, Note saved"
+
 		# both are saved
 		Editor.FILE_SAVED | Editor.ASSOCIATED_OBJECT_SAVED:
 			icon = null
+			tooltip = "File and \"%s\" saved" % associated_object_name
+
 		0: # nothing is saved in this case
 			icon = _unsaved_changes_icon
+			if editor.file and editor.associated_object:
+				tooltip = "File and \"%s\" unsaved" % associated_object_name
+			else:
+				if editor.file:
+					tooltip = "File unsaved"
+				elif editor.associated_object:
+					tooltip = "\"%s\" unsaved" % associated_object_name
+				else:
+					tooltip = "Content unsaved"
+
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	Tabs.set_tab_icon(tab_idx, icon)
-	
+	#Tabs.set_tab_tooltip(tab_idx, tooltip)
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
