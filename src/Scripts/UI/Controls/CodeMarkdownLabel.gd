@@ -73,8 +73,8 @@ func get_selected_text() -> String:
 
 func _parse_code_block(input: String) -> String:
 	# Adjusted regex to ignore [lb] and [rb] and still remove other bbcode
-	var regex = RegEx.new()
-	regex.compile("\\[(?!lb\\]|rb\\]).*?\\]")
+	var temp_regex = RegEx.new()
+	temp_regex.compile("\\[(?!lb\\]|rb\\]).*?\\]")
 	var text_without_tags = regex.sub(input, "", true)
 
 	# Replacing [lb] and [rb] with [ and ]

@@ -71,14 +71,32 @@ func wrap_memory(item: MemoryItem) -> Variant:
 
 	# Return either string for text notes or dictionary for image notes
 
-	if item.MemoryImage:
+	if item.Type == SingletonObject.note_type.IMAGE:
 		return {
 			"inline_data": {
 				"mime_type": "image/png",
 				"data": Marshalls.raw_to_base64(item.MemoryImage.save_png_to_buffer())
 			}
 		}
-	
+	elif item.Type == SingletonObject.note_type.VIDEO and SingletonObject.google_supported_video_formats.has(item.Content.get_extension()):
+		# item.Content only contains the file path for the video
+		var file_content: = FileAccess.get_file_as_bytes(item.Content)
+		var video_mime: String = SingletonObject.google_supported_video_formats.get(item.Content.get_extension())
+		return {
+			"inline_data": {
+				"mime_type": video_mime,
+				"data": Marshalls.raw_to_base64(file_content)
+			}
+		}
+	elif item.Type == SingletonObject.note_type.AUDIO and SingletonObject.google_supported_audio_formats.has(item.File.get_extension()):
+		var file_content = FileAccess.get_file_as_bytes(item.File)
+		var audio_mime: String = SingletonObject.google_supported_audio_formats.get(item.File.get_extension())
+		return {
+			"inline_data": {
+				"data": Marshalls.raw_to_base64(file_content),
+				"mime_type": audio_mime
+			}
+	}
 	else:
 		var output = "Given this background information:\n\n"
 		output += "### Reference Information ###\n"

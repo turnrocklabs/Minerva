@@ -121,6 +121,7 @@ func _provider_updated():
 
 func _on_response_arrived(item: ChatHistoryItem):
 	print("Response arrived for %s (%s)" % [self, item])
+	SingletonObject.chat_notification_player.play()
 	if rendered_node:
 		# Set the history_item again to trigger the setter
 		rendered_node.history_item = self

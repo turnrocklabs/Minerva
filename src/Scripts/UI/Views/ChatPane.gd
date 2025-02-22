@@ -258,6 +258,7 @@ func execute_chat():
 
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	# rerender the message wince we changed the history item
+	user_msg_node.first_time_message = true
 	user_msg_node.render()
 
 	# Add empty history item, to show the loading state
@@ -313,6 +314,7 @@ func execute_chat():
 		history.VBox.scroll_to_bottom()
 
 		model_msg_node.loading = false
+		model_msg_node.first_time_message = true
 	else:
 		model_msg_node.queue_free()
 
@@ -514,7 +516,7 @@ func restore_deleted_tab(tab_name: String):
 		var data = SingletonObject.undo.deleted_tabs[tab_name]
 		var tab = data["tab"]
 		var control_ = data["control"]
-		var history = data["history"]
+		#var history = data["history"]
 		data["timer"].stop()
 		#Add the control back to the TabContainer
 		%tcChats.call_deferred("add_child", control_)#add_child(control_)
