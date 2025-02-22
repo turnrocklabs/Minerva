@@ -157,7 +157,7 @@ func add_note(user_title:String, user_content: String,is_completed:bool = true, 
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
-
+	buffer_control_notes.hide()
 	render_threads()
 
 	return new_memory
@@ -185,6 +185,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryIte
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
+	buffer_control_notes.hide()
 	render_threads()
 	return new_memory
 
@@ -208,6 +209,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
+	buffer_control_notes.hide()
 	render_threads()
 	return new_memory
 
@@ -478,7 +480,7 @@ func attach_file(the_file: String):
 	new_memory.ContentType = content_type
 	new_memory.Type = type
 	new_memory.Visible = true
-	new_memory.FilePath = the_file
+	
 
 	# Append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)

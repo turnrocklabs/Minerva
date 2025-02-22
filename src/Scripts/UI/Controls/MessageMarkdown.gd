@@ -19,6 +19,8 @@ extends HBoxContainer
 @export var max_note_size_limit: float = 400.0
 @export var min_note_size_limit: float = 30.0
 
+@export_category("Code Label vars")
+@export var max_lines_expanded_code_segment: int = 6
 
 @onready var expand_button: Button = %ExpandButton
 @onready var resize_scroll_container: ScrollContainer = %ResizeScrollContainer
@@ -47,6 +49,7 @@ extends HBoxContainer
 			##if resize_scroll_container:
 				##resize_scroll_container.custom_minimum_size.y = value
 
+var first_time_message: bool = true
 
 ## Content of this message in markdown, returns `label.text`
 ## Setting this property will update the history item and rerender the note
@@ -369,7 +372,7 @@ class TextSegment:
 
 var _regex = RegEx.new()
 func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
-	_regex.compile(r"(\[code(?: syntax=(?P<syntax>.*?))?\])(?P<content>(.|\n)*?)(\[\/code\])")
+	_regex.compile(r"(\[code(?: syntax=(?P<syntax>.*?))?\])(?P<content>(.|\-{3}|\n)*?)(\[\/code\])")
 
 	var found: Array[TextSegment] = []
 
@@ -442,6 +445,9 @@ func _create_code_labels():
 				temp_UUID = history_item.LinkedMemories.get(str(indexes))
 			if history_item.CodeLabelsState.has(str(indexes)):
 				temp_expanded = history_item.CodeLabelsState.get(str(indexes))
+				first_time_message = false
+			elif first_time_message and ts.content.split("\n").size() >= max_lines_expanded_code_segment:
+				temp_expanded = false
 			node = CodeMarkdownLabel.create(ts.content, ts.syntax, str(indexes), temp_UUID, temp_expanded)
 			node.created_text_note.connect(update_linked_dict)
 			node.update_expanded.connect(update_expanded)
