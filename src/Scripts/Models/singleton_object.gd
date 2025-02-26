@@ -28,6 +28,10 @@ var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "bmp", "
 var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm", "ogv"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
+
+var experimental_enabled: bool = false
+signal toggle_experimental(enabled)
+
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false
@@ -116,7 +120,6 @@ func remove_recent_project(project_name: String) -> void:
 	config_file.erase_section_key("OpenRecent", project_name)
 	config_file.save(config_file_name)
 	
-
 
 #endregion Config File
 
@@ -263,11 +266,16 @@ func _ready():
 	var mic_selected = get_microphone()
 	if mic_selected:
 		set_microphone(mic_selected)
-		
 	
+	# this is for when you toggle experimental features
+	toggle_experimental.connect(toggle_experimental_actions)
+	terminal_input_event = InputMap.action_get_events("ui_terminal")
+	
+	# Here we create, load and add the audioPlayer for the notification sound on bot response
 	chat_notification_player = AudioStreamPlayer.new()
 	chat_notification_player.stream = load("res://assets/Audio/notification-2-269292.mp3")
 	chat_notification_player.bus = "AudioNotesBus"
+	chat_notification_player.volume_db = 11
 	get_tree().root.call_deferred("add_child", chat_notification_player)
 
 var chat_notification_player: AudioStreamPlayer
@@ -567,3 +575,15 @@ func generate_UUID() -> String:
 	var random_number = rng.randi() # Generates a random integer
 	var hash256 = str(random_number).sha256_text()
 	return hash256
+
+var terminal_input_event: Array[InputEvent]
+var view_menu: PopupMenu
+var add_graphics_button: Button
+func toggle_experimental_actions(enable: bool) -> void:
+	if !enable:
+		if InputMap.has_action("ui_terminal"):
+			InputMap.action_erase_events("ui_terminal")
+	else:
+		for i in terminal_input_event:
+			InputMap.action_add_event("ui_terminal", i)
+	SingletonObject.save_to_config_file("Experimental", "enabled", enable)

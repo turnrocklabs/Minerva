@@ -81,13 +81,7 @@ func _ready():
 	recentList = popUpRecent.find_child("RecentList")
 	popUpRecent.close_requested.connect(popUpClose)
 	
-	#_rebuild_recent_projects_ui()
-	# Create the new submenu
-	file_submenu.name = "file_submenu"
-	file_submenu.add_item("New File")
-	file_submenu.add_item("New Graphics")
-	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
-
+	
 	# Create package project submenu
 	var package_submenu: = PopupMenu.new()
 	package_submenu.name = "Package Project"
@@ -97,14 +91,35 @@ func _ready():
 	
 	%Project.add_child(package_submenu)
 	%Project.add_submenu_item("Package Project", package_submenu.name, 0)
-
-
+	# Add the shortcut for the new project button
+	var new_project_shortcut = Shortcut.new()
+	var new_project_input_event = InputEventAction.new()
+	new_project_input_event.action = "new_project"
+	new_project_shortcut.events.append(new_project_input_event)
+	%Project.set_item_shortcut(0, new_project_shortcut, true)
+	# Add the shortcut for the Open project button
+	var open_project_shortcut = Shortcut.new()
+	var open_project_input_event = InputEventAction.new()
+	open_project_input_event.action = "open_project"
+	open_project_shortcut.events.append(open_project_input_event)
+	%Project.set_item_shortcut(1, open_project_shortcut, true)
+	#_rebuild_recent_projects_ui()
+	# Create the new submenu
+	file_submenu.name = "file_submenu"
+	file_submenu.add_item("New File")
+	file_submenu.add_item("New Graphics")
+	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
 	# Add the "New" submenu to the top of the "File" menu
 	%File.add_child(file_submenu)
 	%File.add_submenu_item("New", "file_submenu", 0)  # Note the index 0 here
 
 	# Add the rest of the "File" menu items
 	%File.add_item("Open", 1)
+	var open_file_shortcut = Shortcut.new()
+	var input_event = InputEventAction.new()
+	input_event.action = "open_file"
+	open_file_shortcut.events.append(input_event)
+	%File.set_item_shortcut(1,open_file_shortcut, true)
 	%File.add_item("Save", 2)
 	%File.add_item("Save As", 3)
 	%File.add_item("Preferences", 4)
