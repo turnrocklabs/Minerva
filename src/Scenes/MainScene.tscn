@@ -276,6 +276,7 @@ title = "File"
 size = Vector2i(123, 143)
 
 [node name="View" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
+unique_name_in_owner = true
 title = "View"
 size = Vector2i(211, 425)
 hide_on_item_selection = false
@@ -460,6 +461,7 @@ icon_48 = ExtResource("29_3uhrd")
 icon_68 = ExtResource("30_jj3p5")
 
 [node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_horizontal = 0

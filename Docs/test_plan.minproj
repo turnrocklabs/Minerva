@@ -6,11 +6,17 @@
 			"HistoryItemList": [
 				{
 					"Captions": [],
+					"CodeLabelsState": {
+
+					},
 					"EstimatedTokenCost": 2,
 					"Expanded": true,
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"LastYSize": 28,
+					"LinkedMemories": {
+
+					},
 					"Message": "Hi",
 					"ModelName": "gpt-4o",
 					"ModelShortName": "O4",
@@ -22,11 +28,17 @@
 				},
 				{
 					"Captions": [],
+					"CodeLabelsState": {
+
+					},
 					"EstimatedTokenCost": 0,
 					"Expanded": true,
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"LastYSize": 28,
+					"LinkedMemories": {
+
+					},
 					"Message": "Hello! How can I assist you today?",
 					"ModelName": "gpt-4o",
 					"ModelShortName": "O4",
@@ -38,11 +50,17 @@
 				},
 				{
 					"Captions": [],
+					"CodeLabelsState": {
+
+					},
 					"EstimatedTokenCost": 11,
 					"Expanded": true,
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"LastYSize": 28,
+					"LinkedMemories": {
+
+					},
 					"Message": "hi",
 					"ModelName": "",
 					"ModelShortName": "",
@@ -54,11 +72,17 @@
 				},
 				{
 					"Captions": [],
+					"CodeLabelsState": {
+
+					},
 					"EstimatedTokenCost": 0,
 					"Expanded": true,
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"LastYSize": 28,
+					"LinkedMemories": {
+
+					},
 					"Message": "Hello! How can I help you today?",
 					"ModelName": "gpt-4o",
 					"ModelShortName": "O4",
@@ -76,7 +100,20 @@
 			"TopP": 1
 		}
 	],
-	"Editors": [],
+	"Editors": [
+		{
+			"content": "- test cases for when an edtor is Note but not a file\n- test when a change is undone \n- test when a file is reloaded from disc\n- Editor glyph should not be a half circle if it is saved as a note but has never been a file and the same for when a editor has been saved but never has been a note ",
+			"file": "/home/vampiresqu1d/Documents/godot/Minerva/src/tab 1.txt",
+			"name": "tab 1.txt",
+			"type": 0
+		},
+		{
+			"content": "",
+			"file": "",
+			"name": "tab 2",
+			"type": 0
+		}
+	],
 	"ThreadList": [
 		{
 			"MemoryItemList": [
@@ -96,6 +133,7 @@
 					"Pinned": false,
 					"Title": "Tabs",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -120,6 +158,7 @@
 					"Pinned": false,
 					"Title": "Typed note",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -138,6 +177,7 @@
 					"Pinned": false,
 					"Title": "voice notes",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -156,6 +196,7 @@
 					"Pinned": false,
 					"Title": "Edit Notes",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -174,6 +215,7 @@
 					"Pinned": false,
 					"Title": "New note features",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -192,6 +234,7 @@
 					"Pinned": false,
 					"Title": "resize notes",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -205,7 +248,7 @@
 					"Content": "Create a long text response from the AI and begin doing the following drags. \nFirst, drag a small section from the top to the bottom, the whole thing. \nSecond, drag a single paragraph from the top over to the editor. \nThird, grab a single paragraph from the middle over to the editor. \nLast, drag a single paragraph from the bottom, dragging up, and then taking that over to the editor.",
 					"ContentType": "",
 					"Enabled": false,
-					"Expanded": true,
+					"Expanded": false,
 					"File": "",
 					"ImageCaption": "",
 					"LastYSize": 100,
@@ -216,6 +259,7 @@
 					"Pinned": false,
 					"Title": "Drag Text from chat to editor",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -223,7 +267,7 @@
 					"Content": "- Open a small PNG file.\n- Open a large jpg image file.",
 					"ContentType": "",
 					"Enabled": false,
-					"Expanded": true,
+					"Expanded": false,
 					"File": "",
 					"ImageCaption": "",
 					"LastYSize": 100,
@@ -234,6 +278,7 @@
 					"Pinned": false,
 					"Title": "Open an image file",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -241,7 +286,7 @@
 					"Content": "- Open a new text file and write text into it, then save it. \n- Open a new image file, draw something into it, and save it.",
 					"ContentType": "",
 					"Enabled": false,
-					"Expanded": true,
+					"Expanded": false,
 					"File": "",
 					"ImageCaption": "",
 					"LastYSize": 100,
@@ -252,6 +297,7 @@
 					"Pinned": false,
 					"Title": "New Files",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -259,7 +305,7 @@
 					"Content": "- Edit a text file and save it.\n- Edit an image file and save it.",
 					"ContentType": "",
 					"Enabled": false,
-					"Expanded": true,
+					"Expanded": false,
 					"File": "",
 					"ImageCaption": "",
 					"LastYSize": 100,
@@ -270,6 +316,7 @@
 					"Pinned": false,
 					"Title": "Edit and save",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -277,7 +324,7 @@
 					"Content": "Make a text file.\nChange the text file outside app.\nReload text file.\nAsk AI a question about the change.\n\nVerify:\n- AI knows of changed content.\n- Editor doesn't mark file as \"changed\" for saving.\n- Can quit app without getting a \"save changed files\" dialog.",
 					"ContentType": "",
 					"Enabled": false,
-					"Expanded": true,
+					"Expanded": false,
 					"File": "",
 					"ImageCaption": "",
 					"LastYSize": 100,
@@ -288,6 +335,26 @@
 					"Pinned": false,
 					"Title": "Reload text content",
 					"Type": 0,
+					"UUID": "",
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "- test cases for when an edtor is Note but not a file\n- test when a change is undone \n- test when a file is reloaded from disc\n- Editor glyph should not be a half circle if it is saved as a note but has never been a file and the same for when a editor has been saved but never has been a note ",
+					"ContentType": "text",
+					"Enabled": false,
+					"Expanded": true,
+					"File": "",
+					"ImageCaption": "",
+					"LastYSize": 100,
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 5,
+					"OwningThread": "3db47982026b34d240be80c1af1b80b245fb21e5d315b9321f83a3de9c6a077c",
+					"Pinned": false,
+					"Title": "tab 1",
+					"Type": 0,
+					"UUID": "24174297e15153834ffbfc3a707822dd3ecebc222f6f4a3b6bc2d6200be8eba9",
 					"Visible": true
 				}
 			],
@@ -312,6 +379,7 @@
 					"Pinned": false,
 					"Title": "typed chats",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -336,6 +404,7 @@
 					"Pinned": false,
 					"Title": "change model",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -354,6 +423,7 @@
 					"Pinned": false,
 					"Title": "Preferences",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -372,6 +442,7 @@
 					"Pinned": false,
 					"Title": "Google AI",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -396,6 +467,7 @@
 					"Pinned": false,
 					"Title": "DallE Edit",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -414,6 +486,7 @@
 					"Pinned": false,
 					"Title": "Dall-E Generation",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -432,6 +505,7 @@
 					"Pinned": false,
 					"Title": "CanvasExpansion",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -450,6 +524,7 @@
 					"Pinned": false,
 					"Title": "Draw with each brushes",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -468,6 +543,7 @@
 					"Pinned": false,
 					"Title": "Layers and image layers",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -486,6 +562,7 @@
 					"Pinned": false,
 					"Title": "Incert a Layer with existing graphic",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -504,6 +581,7 @@
 					"Pinned": false,
 					"Title": "Test layers resizing",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -528,6 +606,7 @@
 					"Pinned": false,
 					"Title": "Run command",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -546,6 +625,7 @@
 					"Pinned": false,
 					"Title": "Analyze output",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -570,6 +650,7 @@
 					"Pinned": false,
 					"Title": "Different Mics",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -594,6 +675,7 @@
 					"Pinned": false,
 					"Title": "Open Text Files",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -612,6 +694,7 @@
 					"Pinned": false,
 					"Title": "Open Graphics Files",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -630,6 +713,7 @@
 					"Pinned": false,
 					"Title": "Edit Files",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -648,6 +732,7 @@
 					"Pinned": false,
 					"Title": "Open a project.",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -666,6 +751,7 @@
 					"Pinned": false,
 					"Title": "Save project",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -690,6 +776,7 @@
 					"Pinned": false,
 					"Title": "Open Clean",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -708,6 +795,7 @@
 					"Pinned": false,
 					"Title": "Close Clean",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -726,6 +814,7 @@
 					"Pinned": false,
 					"Title": "No Debuggter issues",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				},
 				{
@@ -744,6 +833,7 @@
 					"Pinned": false,
 					"Title": "Split editor windows",
 					"Type": 0,
+					"UUID": "",
 					"Visible": true
 				}
 			],
@@ -752,8 +842,8 @@
 		}
 	],
 	"active_chatindex": 0,
-	"active_editor_index": -1,
-	"active_notes_index": 1,
+	"active_editor_index": 0,
+	"active_notes_index": 2,
 	"default_provider": 0,
 	"last_tab_index": 0
 }

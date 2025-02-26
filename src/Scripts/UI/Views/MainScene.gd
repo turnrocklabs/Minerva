@@ -115,8 +115,7 @@ func _gui_input(event):
 		zoom_ui(1)
 		
 		accept_event()
-
-	if event.is_action_released("zoom_out", true):
+	elif event.is_action_released("zoom_out", true):
 		zoom_ui(-1)
 		
 		accept_event()
