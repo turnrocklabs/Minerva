@@ -164,3 +164,8 @@ func populate_output_devices_button() -> void:
 		if device == output_device_button.get_item_text(i):
 			output_device_button.select(i)
 			break
+
+
+func _on_output_device_button_item_selected(index: int) -> void:
+	var device: = output_device_button.get_item_text(index)
+	SingletonObject.output_device_changed.emit(device)
