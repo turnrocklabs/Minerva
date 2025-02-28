@@ -103,7 +103,13 @@ func _ready():
 	open_project_input_event.action = "open_project"
 	open_project_shortcut.events.append(open_project_input_event)
 	%Project.set_item_shortcut(1, open_project_shortcut, true)
-	#_rebuild_recent_projects_ui()
+	# Add the shortcut for the Save project button
+	var save_project_shortcut = Shortcut.new()
+	var save_project_input_event = InputEventAction.new()
+	save_project_input_event.action = "save_project"
+	save_project_shortcut.events.append(save_project_input_event)
+	%Project.set_item_shortcut(2, save_project_shortcut, true)
+	
 	# Create the new submenu
 	file_submenu.name = "file_submenu"
 	file_submenu.add_item("New File")
@@ -123,6 +129,12 @@ func _ready():
 	%File.add_item("Save", 2)
 	%File.add_item("Save As", 3)
 	%File.add_item("Preferences", 4)
+	# Add the shortcut for the preferences popup
+	var preferences_shortcut = Shortcut.new()
+	var preferences_input_event = InputEventAction.new()
+	preferences_input_event.action = "preferences"
+	preferences_shortcut.events.append(preferences_input_event)
+	%File.set_item_shortcut(4, preferences_shortcut, true)
 
 
 func _on_project_index_pressed(index):
