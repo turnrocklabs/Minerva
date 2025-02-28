@@ -256,6 +256,7 @@ func _ready():
 	# this is for when you toggle experimental features
 	toggle_experimental.connect(toggle_experimental_actions)
 	terminal_input_event = InputMap.action_get_events("ui_terminal")
+	output_device_changed.connect(set_output_device)
 	
 	# Here we create, load and add the audioPlayer for the notification sound on bot response
 	chat_notification_player = AudioStreamPlayer.new()
@@ -604,9 +605,11 @@ func toggle_experimental_actions(enable: bool) -> void:
 	else:
 		for i in terminal_input_event:
 			InputMap.action_add_event("ui_terminal", i)
-	SingletonObject.save_to_config_file("Experimental", "enabled", enable)
+	save_to_config_file("Experimental", "enabled", enable)
 
 #region Output Device
+
+signal output_device_changed(device: String)
 
 func get_output_device() -> String:
 	if config_has_saved_section("AudioSettings"):
@@ -618,6 +621,7 @@ func get_output_device() -> String:
 func set_output_device(device: String) -> void:
 	if device in AudioServer.get_output_device_list():
 		AudioServer.output_device = device
+		save_to_config_file("AudioSettings", "OutputDevice",  device)
 
 
 #endregion Output Device

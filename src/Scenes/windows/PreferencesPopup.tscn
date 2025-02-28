@@ -222,6 +222,7 @@ text = "Output Device:"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+clip_text = true
 fit_to_longest_item = false
 
 [node name="HSeparator4" type="HSeparator" parent="MarginContainer/v/SectionsContainer"]
@@ -265,5 +266,6 @@ icon_68 = ExtResource("5_346qj")
 [connection signal="toggled" from="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
 [connection signal="item_selected" from="MarginContainer/v/SectionsContainer/ThemeVBoxContainer/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]
 [connection signal="item_selected" from="MarginContainer/v/SectionsContainer/AudioVBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
+[connection signal="item_selected" from="MarginContainer/v/SectionsContainer/AudioVBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]
 [connection signal="toggled" from="MarginContainer/v/SectionsContainer/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
 [connection signal="pressed" from="MarginContainer/v/HBoxContainer/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]
