@@ -33,6 +33,9 @@ func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 #region Methods for toggling notes
 
 func Disable_All():
+	for i in get_tree().get_nodes_in_group("ToggleTabs"):
+		i = i as CheckButton
+		i.button_pressed = false
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
