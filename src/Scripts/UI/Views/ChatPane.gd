@@ -231,6 +231,7 @@ func execute_chat():
 
 		var mdl_msg_node: = history.VBox.add_history_item(mdl_history_item)
 		mdl_msg_node.regeneratable = false
+		mdl_msg_node.focus_mode = Control.FOCUS_NONE
 		mdl_msg_node.render()
 
 		mdl_msg_node.set_edit()
@@ -255,7 +256,7 @@ func execute_chat():
 
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
-
+	history.VBox.scroll_to_bottom()
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	# rerender the message wince we changed the history item
 	user_msg_node.first_time_message = true
@@ -315,9 +316,14 @@ func execute_chat():
 		user_history_item.response_arrived.emit(chi)
 
 		history.VBox.scroll_to_bottom()
-
+		
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
+		await get_tree().process_frame
+		user_msg_node.grab_focus()
+		await get_tree().process_frame
+		user_msg_node.release_focus()
+		user_msg_node.focus_mode = Control.FOCUS_NONE
 	else:
 		model_msg_node.queue_free()
 

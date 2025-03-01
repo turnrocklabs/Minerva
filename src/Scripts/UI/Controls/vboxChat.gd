@@ -39,7 +39,7 @@ func _ready():
 	)
 
 	image_activated.connect(_on_image_activated)
-
+	scroll_container.follow_focus = true
 	add_child(chat_history.provider)
 
 
@@ -90,7 +90,7 @@ func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
 
 	add_child(msg_node)
 
-	scroll_to_bottom()
+	#scroll_to_bottom()
 
 	# scroll_container.ensure_control_visible(msg_node)
 
