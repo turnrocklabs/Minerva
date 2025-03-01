@@ -286,8 +286,7 @@ func _ready():
 	
 	set_output_device(get_output_device())
 	
-	
-	toggle_experimental_actions(config_file.get_value("Experimental", "enabled", false))
+	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
 	
 
 
