@@ -20,7 +20,8 @@ static var SERIALIZER_FIELDS = [
 	"Expanded",
 	"LastYSize",
 	"LinkedMemories",
-	"CodeLabelsState"
+	"CodeLabelsState",
+	"isMerged"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -89,6 +90,9 @@ var LinkedMemories: Dictionary = {}:
 
 var CodeLabelsState: Dictionary = {}:
 	set(value): SingletonObject.save_state(false); CodeLabelsState = value
+	
+var isMerged: bool = false:
+	set(value): SingletonObject.save_state(false); isMerged = value
 
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
@@ -174,7 +178,8 @@ func Serialize() -> Dictionary:
 		"Expanded": Expanded,
 		"LastYSize": LastYSize,
 		"LinkedMemories": LinkedMemories,
-		"CodeLabelsState": CodeLabelsState
+		"CodeLabelsState": CodeLabelsState,
+		"isMerged": isMerged
 	}
 	return save_dict
 
@@ -246,6 +251,15 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 
 ## Merges two history items together
 func merge(item: ChatHistoryItem) -> void:
-	Message = "%s\n%s" % [Message, item.Message]
+	 
+	#Stored_messages.insert(0,Message)
+	#Stored_messages.append(item.Message)
+	
+	var separator = "\u200B\u200C\u200D"  # Комбинация невидимых символов
+	Message = "%s%s%s" % [Message, separator, item.Message]
 	InjectedNotes.append_array(item.InjectedNotes)
 	Complete = Complete and item.Complete
+	isMerged = true
+	
+func text_replacement():
+	Message = "text holder"

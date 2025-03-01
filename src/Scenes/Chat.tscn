@@ -1,4 +1,4 @@
-[gd_scene load_steps=31 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=34 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
@@ -26,6 +26,9 @@
 [ext_resource type="Texture2D" uid="uid://dd64jugx3u72c" path="res://assets/icons/send_icons/send_icon_24_no_bg.png" id="20_0uhqe"]
 [ext_resource type="Texture2D" uid="uid://datcnfkvibyog" path="res://assets/icons/send_icons/send_icon_48_no_bg.png" id="21_ut25t"]
 [ext_resource type="Texture2D" uid="uid://vmgpf2cn6t4n" path="res://assets/icons/send_icons/send_icon_64_no_bg.png" id="22_my2cu"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/UnsplitedChatMessages.gd" id="27_jeocu"]
+[ext_resource type="Texture2D" uid="uid://54susds7lngy" path="res://assets/icons/check_mark16.webp" id="28_t8wf8"]
+[ext_resource type="Texture2D" uid="uid://mdhtonlhq6kh" path="res://assets/icons/cancel16.webp" id="29_7cvmh"]
 
 [sub_resource type="InputEventAction" id="InputEventAction_f28tr"]
 action = &"record_audio"
@@ -205,7 +208,7 @@ caret_blink = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 8
 
 [node name="ProviderOptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" instance=ExtResource("9_xd60x")]
 unique_name_in_owner = true
@@ -302,6 +305,50 @@ mouse_filter = 1
 theme_override_font_sizes/font_size = 14
 text = "0.00¢"
 
+[node name="UnsplitedChatMessages" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0.14902, 0.188235, 0.941176)
+script = ExtResource("27_jeocu")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UnsplitedChatMessages"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="UnsplitedChatMessages/VBoxContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="ApplyChanges" type="Button" parent="UnsplitedChatMessages/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+icon = ExtResource("28_t8wf8")
+
+[node name="CancelChanges" type="Button" parent="UnsplitedChatMessages/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+text = "
+"
+icon = ExtResource("29_7cvmh")
+icon_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="UnsplitedChatMessages/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="MessagesHolder" type="VBoxContainer" parent="UnsplitedChatMessages/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_edit_title_dialog_confirmed"]
 [connection signal="text_submitted" from="EditTitleDialog/VBoxContainer/LineEdit" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_line_edit_text_submitted"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_attach_file_dialog_files_selected"]
@@ -320,3 +367,5 @@ text = "0.00¢"
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_microphone_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/AudioStop1" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_audio_stop_1_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_chat_pressed"]
+[connection signal="pressed" from="UnsplitedChatMessages/VBoxContainer/HBoxContainer2/ApplyChanges" to="UnsplitedChatMessages" method="_on_apply_changes_pressed"]
+[connection signal="pressed" from="UnsplitedChatMessages/VBoxContainer/HBoxContainer2/CancelChanges" to="UnsplitedChatMessages" method="_on_cancel_changes_pressed"]

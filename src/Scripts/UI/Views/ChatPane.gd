@@ -322,7 +322,9 @@ func execute_chat():
 		model_msg_node.queue_free()
 
 # TODO: check if changing the active tab during the request causes any trouble
+signal my_signal(value)
 
+	
 ## This function takes `partial_chi` and prompts model to finish the response
 ## merging the new and the initial response into one and returning it.
 func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
@@ -346,7 +348,6 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 
 	# var chi = ChatHistoryItem.new()
 	# chi.Role = ChatHistoryItem.ChatRole.MODEL
-
 	# # merge the two responses
 	# chi.Message = "%s %s" % [partial_chi.Message, bot_response.text]
 
@@ -402,11 +403,20 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 	if item_index < history.HistoryItemList.size()-1:
 		next = history.HistoryItemList[item_index+1]
 
+	# Removing this conditional check causes issues with instruction tuning, 
+	# violating the expected User/Assistant/User/Assistant order.  
+	# This block ensures that adjacent messages from the same role are merged,  
+	# maintaining structured conversation flow.  
+	#  
+	# TODO: Implement an Unsplit function to reverse the merging process,  
+	# allowing split messages to be recombined into a single entry.
+	
 	if previous and next and previous.Role == next.Role:
 		previous.merge(next)
+		previous.rendered_node.find_child("UnsplitButton").visible = true
 		remove_chat_history_item(next, history, false)
-		previous.rendered_node.history_item = previous # force rerender
-
+		previous.rendered_node.history_item = previous
+			
 	history.HistoryItemList.erase(item)
 
 
