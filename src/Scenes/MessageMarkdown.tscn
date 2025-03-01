@@ -1,9 +1,9 @@
-[gd_scene load_steps=30 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=31 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_2tyhp"]
 [ext_resource type="Script" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://csqrj7og1y1gj" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://cehuifk5s457j" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Texture2D" uid="uid://b6acurykmusyp" path="res://assets/icons/split.png" id="3_7l37a"]
 [ext_resource type="Script" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_p2uud"]
@@ -106,6 +106,7 @@ offset_right = -1531.0
 offset_bottom = -911.0
 grow_horizontal = 2
 grow_vertical = 2
+focus_mode = 2
 theme = SubResource("Theme_ca11y")
 script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
