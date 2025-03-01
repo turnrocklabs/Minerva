@@ -30,7 +30,7 @@ extends HBoxContainer
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var text_edit: TextEdit = %MessageTextEdit
 
-
+var is_unsplit_edit = false
 
 #var expanded: bool = true:
 	#set(value):
@@ -106,7 +106,8 @@ var images: Array[ChatImage]:
 
 
 func _ready() -> void:
-	#code_labels_updated.connect(_on_code_labels_updated)
+	if  history_item.isMerged:
+		%UnsplitButton.visible = true
 	render()
 
 #
@@ -339,8 +340,8 @@ var _pressed: = false
 func _on_gui_input(event: InputEvent):
 	if event is InputEventMouseButton:
 		_pressed = event.is_pressed()
-		if not _pressed:
-			get_parent().message_selection.emit(self, false)
+		#if not _pressed:
+			#get_parent().message_selection.emit(self, false)
 		return
 	
 	#if event is InputEventMouseMotion and !resize_dragging:
@@ -517,7 +518,29 @@ func _create_code_labels():
 		#resize_scroll_container.custom_minimum_size.y += difference
 		#last_custom_size_y = resize_scroll_container.custom_minimum_size.y
 
+var messages = preload("res://Scenes/MessageMarkdown.tscn")
+var richTextLabel = RichTextLabel.new()
 
 func _on_unsplit_button_pressed() -> void:
-	#history_item.text_replacement()
-	get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().find_child("UnsplitedChatMessages").visible = true
+	SingletonObject.current_message = self
+	
+	var split_parts: Array = history_item.Message.split("\u200B\u200C\u200D", false)
+	var my_UnsplitMessages = get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().find_child("UnsplitedChatMessages")
+	var MessagesHolder = my_UnsplitMessages.find_child("MessagesHolder")
+	
+	for part in split_parts:
+		var message_instance = messages.instantiate()
+		message_instance.find_child("UnsplitButton").visible = false
+		message_instance.find_child("HideButton").visible = false
+		message_instance.find_child("PanelContainer").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		
+		var new_history_item = ChatHistoryItem.new()
+		new_history_item.Message = part.strip_edges()
+		new_history_item.Role = history_item.Role
+		new_history_item.ModelName = history_item.ModelName
+		new_history_item.ModelShortName = history_item.ModelShortName
+		
+		message_instance.history_item = new_history_item
+		MessagesHolder.add_child(message_instance)
+	
+	my_UnsplitMessages.visible = true

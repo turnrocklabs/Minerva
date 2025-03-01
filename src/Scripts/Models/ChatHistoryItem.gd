@@ -178,7 +178,7 @@ func Serialize() -> Dictionary:
 		"LastYSize": LastYSize,
 		"LinkedMemories": LinkedMemories,
 		"CodeLabelsState": CodeLabelsState,
-		"isMerged":isMerged
+		"isMerged": isMerged
 	}
 	return save_dict
 
@@ -254,9 +254,11 @@ func merge(item: ChatHistoryItem) -> void:
 	#Stored_messages.insert(0,Message)
 	#Stored_messages.append(item.Message)
 	
-	Message = "%s\n%s" % [Message, item.Message]
+	var separator = "\u200B\u200C\u200D"  # Комбинация невидимых символов
+	Message = "%s%s%s" % [Message, separator, item.Message]
 	InjectedNotes.append_array(item.InjectedNotes)
 	Complete = Complete and item.Complete
+	isMerged = true
 	
 func text_replacement():
 	Message = "text holder"

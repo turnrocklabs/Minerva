@@ -6,67 +6,95 @@
 			"HistoryItemList": [
 				{
 					"Captions": [],
+					"CodeLabelsState": {
+
+					},
 					"EstimatedTokenCost": 2,
 					"Expanded": true,
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"LastYSize": 28,
+					"LinkedMemories": {
+
+					},
 					"Message": "Hi",
-					"ModelName": "gpt-4o",
-					"ModelShortName": "O4",
+					"ModelName": "gemini-2.0-pro-exp-02-05",
+					"ModelShortName": "GP",
 					"Order": 0,
 					"Role": 0,
 					"TokenCost": 8,
 					"Type": 0,
-					"Visible": true
+					"Visible": true,
+					"isMerged": false
 				},
 				{
 					"Captions": [],
+					"CodeLabelsState": {
+
+					},
 					"EstimatedTokenCost": 0,
 					"Expanded": true,
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"LastYSize": 28,
+					"LinkedMemories": {
+
+					},
 					"Message": "Hello! How can I assist you today?",
-					"ModelName": "gpt-4o",
-					"ModelShortName": "O4",
+					"ModelName": "gemini-2.0-pro-exp-02-05",
+					"ModelShortName": "GP",
 					"Order": 0,
 					"Role": 2,
 					"TokenCost": 9,
 					"Type": 0,
-					"Visible": true
+					"Visible": true,
+					"isMerged": false
 				},
 				{
 					"Captions": [],
+					"CodeLabelsState": {
+
+					},
 					"EstimatedTokenCost": 11,
 					"Expanded": true,
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"LastYSize": 28,
+					"LinkedMemories": {
+
+					},
 					"Message": "hi",
-					"ModelName": "",
-					"ModelShortName": "",
+					"ModelName": "gemini-2.0-pro-exp-02-05",
+					"ModelShortName": "GP",
 					"Order": 0,
 					"Role": 0,
 					"TokenCost": 26,
 					"Type": 0,
-					"Visible": true
+					"Visible": true,
+					"isMerged": false
 				},
 				{
 					"Captions": [],
+					"CodeLabelsState": {
+
+					},
 					"EstimatedTokenCost": 0,
 					"Expanded": true,
 					"Images": [],
 					"InjectedNotes": "HAAAAAAAAAA=",
 					"LastYSize": 28,
+					"LinkedMemories": {
+
+					},
 					"Message": "Hello! How can I help you today?",
-					"ModelName": "gpt-4o",
-					"ModelShortName": "O4",
+					"ModelName": "gemini-2.0-pro-exp-02-05",
+					"ModelShortName": "GP",
 					"Order": 0,
 					"Role": 2,
 					"TokenCost": 9,
 					"Type": 0,
-					"Visible": true
+					"Visible": true,
+					"isMerged": false
 				}
 			],
 			"HistoryName": "Chat 1",
@@ -96,6 +124,7 @@
 					"Pinned": false,
 					"Title": "Tabs",
 					"Type": 0,
+					"UUID": "b98890c81d477db20625b8d90fa75ffc399233a385e5efa07df49173a10ebe34",
 					"Visible": true
 				}
 			],
@@ -120,6 +149,7 @@
 					"Pinned": false,
 					"Title": "Typed note",
 					"Type": 0,
+					"UUID": "45ed34826fc7ea2ecb5f276eb4d2c3eb426210e0e003ff9b0b07af06fc44b2b3",
 					"Visible": true
 				},
 				{
@@ -138,6 +168,7 @@
 					"Pinned": false,
 					"Title": "voice notes",
 					"Type": 0,
+					"UUID": "a45208729cc2a55383068f2924bc31f0a2f16f691380eb4ddb2941d764a07910",
 					"Visible": true
 				},
 				{
@@ -156,6 +187,7 @@
 					"Pinned": false,
 					"Title": "Edit Notes",
 					"Type": 0,
+					"UUID": "789ab411a54bec7ea7acef3f14449c55ffc9cb888284e587e715aebfaf940c0b",
 					"Visible": true
 				},
 				{
@@ -174,6 +206,7 @@
 					"Pinned": false,
 					"Title": "New note features",
 					"Type": 0,
+					"UUID": "80fce913b54b3d53b565cfae8fcba20f158fe0a78408140bc08b289261aa4dc5",
 					"Visible": true
 				},
 				{
@@ -192,6 +225,7 @@
 					"Pinned": false,
 					"Title": "resize notes",
 					"Type": 0,
+					"UUID": "d3dc7105c8a7fcaf8a28d548f93ad86c2ba0427da70a66d7fa46331f7eaf3150",
 					"Visible": true
 				}
 			],
@@ -216,6 +250,7 @@
 					"Pinned": false,
 					"Title": "Drag Text from chat to editor",
 					"Type": 0,
+					"UUID": "1ddae74cea484d8e68f84b6bbd4bb131b7fc8ecde076e4451b580ca8edcf8854",
 					"Visible": true
 				},
 				{
@@ -234,6 +269,7 @@
 					"Pinned": false,
 					"Title": "Open an image file",
 					"Type": 0,
+					"UUID": "95a32b9c828b819c229f5fdddce794d4bb23910afeda0960f764fef3e2279365",
 					"Visible": true
 				},
 				{
@@ -252,6 +288,7 @@
 					"Pinned": false,
 					"Title": "New Files",
 					"Type": 0,
+					"UUID": "c1505c4fe32f9dd6b0e54199511e01f338c635a5e4852b23b5e793391af3ffe8",
 					"Visible": true
 				},
 				{
@@ -270,6 +307,7 @@
 					"Pinned": false,
 					"Title": "Edit and save",
 					"Type": 0,
+					"UUID": "3d359f0a4719f93367c8b0d0b1c349c829a2c44338a23f607a090307cb9b2dbc",
 					"Visible": true
 				},
 				{
@@ -288,6 +326,7 @@
 					"Pinned": false,
 					"Title": "Reload text content",
 					"Type": 0,
+					"UUID": "221c3c37aa87dd1bd923c47ca6ff2a798c923bc0175aadc08d5f52b11e5a8826",
 					"Visible": true
 				}
 			],
@@ -312,6 +351,26 @@
 					"Pinned": false,
 					"Title": "typed chats",
 					"Type": 0,
+					"UUID": "bda6fde237f95733b9ec972e04aa35218d71fed8e513cf81b4385aaa2e25c858",
+					"Visible": true
+				},
+				{
+					"Audio": null,
+					"Content": "1.Create a chat tab, add several messages, combine the green messages, edit them, and save the changes. Repeat the same process for the blue messages. Then, try combining and editing both green and blue messages at the same time in the same window.\n2.Create and merge several messages, enter edit mode, and delete everything. Observe what happens.\n3.Merge messages, edit the merged content, save the file, and reopen it. Then, enter edit mode again to verify the changes.\n4.Create and merge messages, enter edit mode, make edits, and then press Cancel to see what happens.\n5.Create and merge several messages, enter edit mode, try to do some action outside of edit mode area",
+					"ContentType": "",
+					"Enabled": false,
+					"Expanded": true,
+					"File": "",
+					"ImageCaption": "",
+					"LastYSize": 213,
+					"Locked": false,
+					"MemoryImage": null,
+					"Order": 1,
+					"OwningThread": "48b25cf2b360b31922f14a0c3876bb8ddc9934eb349301cb98bb223c60e6773e",
+					"Pinned": false,
+					"Title": "Combine chats",
+					"Type": 0,
+					"UUID": "116103d40055f4998ad9d01211eeb021c2829aeb64086eae9aa8faac0c6ee3d0",
 					"Visible": true
 				}
 			],
@@ -336,6 +395,7 @@
 					"Pinned": false,
 					"Title": "change model",
 					"Type": 0,
+					"UUID": "80c347a173b111593d13a8be72b1d41c44245cf3a812eb6ec39bc02deb70d0d3",
 					"Visible": true
 				},
 				{
@@ -354,6 +414,7 @@
 					"Pinned": false,
 					"Title": "Preferences",
 					"Type": 0,
+					"UUID": "2c20fbaf3c9a3b39a17a4c05fa17ff2c567d168a42cc11a2e1033e55b3e531c5",
 					"Visible": true
 				},
 				{
@@ -372,6 +433,7 @@
 					"Pinned": false,
 					"Title": "Google AI",
 					"Type": 0,
+					"UUID": "4dca0c6ae890fe9e67b8fd1b4170a1f2693973df14e0c8348fd434ffd706d161",
 					"Visible": true
 				}
 			],
@@ -396,6 +458,7 @@
 					"Pinned": false,
 					"Title": "DallE Edit",
 					"Type": 0,
+					"UUID": "89d343bac0d023024673c47a1a70712a7a1b5f7f1eebc48fd8e54555e4fdd43d",
 					"Visible": true
 				},
 				{
@@ -414,6 +477,7 @@
 					"Pinned": false,
 					"Title": "Dall-E Generation",
 					"Type": 0,
+					"UUID": "127066b1ac8071609b967adf8e7e7a8d736ebb3bcfde7d5dd34cc77f908dd12b",
 					"Visible": true
 				},
 				{
@@ -432,6 +496,7 @@
 					"Pinned": false,
 					"Title": "CanvasExpansion",
 					"Type": 0,
+					"UUID": "d074b831b881143ac8be1028e75110b7399f0d3c9ba632df835ee8ee347caa90",
 					"Visible": true
 				},
 				{
@@ -450,6 +515,7 @@
 					"Pinned": false,
 					"Title": "Draw with each brushes",
 					"Type": 0,
+					"UUID": "646516327dd2b8d522d701a6f2e90956a84a456889596ec2724b13d90c1eb095",
 					"Visible": true
 				},
 				{
@@ -468,6 +534,7 @@
 					"Pinned": false,
 					"Title": "Layers and image layers",
 					"Type": 0,
+					"UUID": "c735bd1ac9ad5dd524ab1f606eafdab583292aac7e04fa65aeba6c6bdd587ded",
 					"Visible": true
 				},
 				{
@@ -486,6 +553,7 @@
 					"Pinned": false,
 					"Title": "Incert a Layer with existing graphic",
 					"Type": 0,
+					"UUID": "5f2e92c14085863d80dbdeddf1eb082f2c7c17299c9b43ff0824bbd076958b12",
 					"Visible": true
 				},
 				{
@@ -504,6 +572,7 @@
 					"Pinned": false,
 					"Title": "Test layers resizing",
 					"Type": 0,
+					"UUID": "c19607d5500e8d74fb6201aa19a9fb5ebad81c3e7b86f424bed9b73664eff2af",
 					"Visible": true
 				}
 			],
@@ -528,6 +597,7 @@
 					"Pinned": false,
 					"Title": "Run command",
 					"Type": 0,
+					"UUID": "2b19b510e02dbf1403064dea03bed43b8ee83681d5900565c3329e8dd3496b88",
 					"Visible": true
 				},
 				{
@@ -546,6 +616,7 @@
 					"Pinned": false,
 					"Title": "Analyze output",
 					"Type": 0,
+					"UUID": "9f7723edbc4ea7cbe7a14f6eeb7577815bfce5c7f4bc3c424520df6b5bb10a7d",
 					"Visible": true
 				}
 			],
@@ -570,6 +641,7 @@
 					"Pinned": false,
 					"Title": "Different Mics",
 					"Type": 0,
+					"UUID": "cec0bd9eba17b28212544388e9cfd293a92075eb60cec81affdfcc476a5d49bb",
 					"Visible": true
 				}
 			],
@@ -594,6 +666,7 @@
 					"Pinned": false,
 					"Title": "Open Text Files",
 					"Type": 0,
+					"UUID": "5298f97eda0e61c391850c3afa056057c9f3c5d56942ae064e65b329c1570f5f",
 					"Visible": true
 				},
 				{
@@ -612,6 +685,7 @@
 					"Pinned": false,
 					"Title": "Open Graphics Files",
 					"Type": 0,
+					"UUID": "4ae85bacbdf5167a19813a9f2c0c3023bd7ec98f3ea28ee3264ed550f109e8b9",
 					"Visible": true
 				},
 				{
@@ -630,6 +704,7 @@
 					"Pinned": false,
 					"Title": "Edit Files",
 					"Type": 0,
+					"UUID": "a3873ef160bd467adb1b9c78fdf09d889da2af6be6213589dc4204fccac528de",
 					"Visible": true
 				},
 				{
@@ -648,6 +723,7 @@
 					"Pinned": false,
 					"Title": "Open a project.",
 					"Type": 0,
+					"UUID": "d72a58801532230beaa03052ddea613aa659517002e170f711996a309eba7a1f",
 					"Visible": true
 				},
 				{
@@ -666,6 +742,7 @@
 					"Pinned": false,
 					"Title": "Save project",
 					"Type": 0,
+					"UUID": "f5c6244ba085195663592de4dea49887b21cf33f70cb6fbbb14669774bcfc199",
 					"Visible": true
 				}
 			],
@@ -690,6 +767,7 @@
 					"Pinned": false,
 					"Title": "Open Clean",
 					"Type": 0,
+					"UUID": "3011844a5132aa8f01800a00d6dab1a3c7f9232b8f721412b88a2a9d124212dd",
 					"Visible": true
 				},
 				{
@@ -708,6 +786,7 @@
 					"Pinned": false,
 					"Title": "Close Clean",
 					"Type": 0,
+					"UUID": "acce3ce65a8dcbdd820d473d47735b905bd5c22a1724dcd20ecd3b8799724479",
 					"Visible": true
 				},
 				{
@@ -726,6 +805,7 @@
 					"Pinned": false,
 					"Title": "No Debuggter issues",
 					"Type": 0,
+					"UUID": "d7fb92496d13961f343bce1c9a5edd2a1848a1da724b189cd792402ae93e0e62",
 					"Visible": true
 				},
 				{
@@ -744,6 +824,7 @@
 					"Pinned": false,
 					"Title": "Split editor windows",
 					"Type": 0,
+					"UUID": "199c964a2f91a7d823a7de299044f5326f853c23141c7f3738ef12e26700ee72",
 					"Visible": true
 				}
 			],
@@ -753,7 +834,7 @@
 	],
 	"active_chatindex": 0,
 	"active_editor_index": -1,
-	"active_notes_index": 1,
+	"active_notes_index": 3,
 	"default_provider": 0,
 	"last_tab_index": 0
 }

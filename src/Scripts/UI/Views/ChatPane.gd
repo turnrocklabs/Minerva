@@ -408,10 +408,9 @@ func remove_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null
 	
 	if previous and next and previous.Role == next.Role:
 		previous.merge(next)
+		previous.rendered_node.find_child("UnsplitButton").visible = true
 		remove_chat_history_item(next, history, false)
 		previous.rendered_node.history_item = previous
-		for i in previous.rendered_node.history_item.Stored_messages:
-			print(i)
 			
 	history.HistoryItemList.erase(item)
 

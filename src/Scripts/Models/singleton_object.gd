@@ -168,6 +168,7 @@ func get_thread(thread_id: String) -> MemoryThread:
 #region Chats
 @warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)
+var current_message: MessageMarkdown = null
 
 var ChatList: Array[ChatHistory]:
 	set(value):
