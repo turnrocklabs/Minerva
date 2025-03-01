@@ -60,7 +60,8 @@ layout_mode = 2
 size_flags_horizontal = 10
 theme_override_constants/separation = 10
 
-[node name="EditButton" type="Button" parent="v/p/h/HBoxContainer"]
+[node name="EditButton" type="Button" parent="v/p/h/HBoxContainer" groups=["Experimental"]]
+unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Edit image"
 icon = ExtResource("2_0hlvg")

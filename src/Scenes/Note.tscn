@@ -104,7 +104,7 @@ layout_mode = 2
 tooltip_text = "Hide this note"
 icon = ExtResource("3_x4kas")
 
-[node name="EditButton" type="Button" parent="PanelContainer/vBoxContainer/headHBoxContainer"]
+[node name="EditButton" type="Button" parent="PanelContainer/vBoxContainer/headHBoxContainer" groups=["Experimental"]]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("4_vm57c")

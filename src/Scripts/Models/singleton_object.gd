@@ -605,6 +605,9 @@ func toggle_experimental_actions(enable: bool) -> void:
 	else:
 		for i in terminal_input_event:
 			InputMap.action_add_event("ui_terminal", i)
+	for i in get_tree().get_nodes_in_group("Experimental"):
+		i = i as Control
+		i.visible = enable
 	save_to_config_file("Experimental", "enabled", enable)
 
 #region Output Device
@@ -621,7 +624,8 @@ func get_output_device() -> String:
 func set_output_device(device: String) -> void:
 	if device in AudioServer.get_output_device_list():
 		AudioServer.output_device = device
-		save_to_config_file("AudioSettings", "OutputDevice",  device)
+		if get_output_device() != device:
+			save_to_config_file("AudioSettings", "OutputDevice",  device)
 
 
 #endregion Output Device

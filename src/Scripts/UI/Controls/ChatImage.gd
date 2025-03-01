@@ -40,6 +40,12 @@ var dict_index: String = ""
 					_mask_button.visible = image.has_meta("mask")
 			)
 
+func _ready() -> void:
+	if !SingletonObject.experimental_enabled:
+		%EditButton.visible = false
+
+
+
 func _resize_image_to_fit(max_width: int, max_height: int):
 	# Get the original size of the image
 	var original_size = Vector2(image.get_width(), image.get_height())
