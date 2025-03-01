@@ -61,6 +61,8 @@ var memory_item: MemoryItem:
 			description_node.text = value.Content
 			control_type = description_node
 		if memory_item.Type == SingletonObject.note_type.IMAGE:
+			
+			%EditButton.visible = SingletonObject.experimental_enabled
 			if value.MemoryImage:
 				var image_controls_inst: = SingletonObject.image_controls_scene.instantiate()
 				image_controls_inst.memory_item = value
@@ -171,8 +173,6 @@ func _ready():
 		func(text):
 			if memory_item: memory_item.Title = text
 	)
-	
-	
 
 
 func _exit_tree() -> void:

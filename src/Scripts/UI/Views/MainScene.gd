@@ -16,14 +16,15 @@ var min_diff_font_size: = 4
 var max_diff_font_size: = 8
 
 func _ready() -> void:
-	if theme.has_default_font_size():
-		min_font_size = theme.default_font_size - min_diff_font_size
-		max_font_size = theme.default_font_size + max_diff_font_size
-		current_font_size = theme.default_font_size
-	else:
-		min_font_size = ThemeDB.fallback_font_size - min_diff_font_size
-		max_font_size = ThemeDB.fallback_font_size + max_diff_font_size
-		current_font_size =ThemeDB.fallback_font_size
+	if theme:
+		if theme.has_default_font_size():
+			min_font_size = theme.default_font_size - min_diff_font_size
+			max_font_size = theme.default_font_size + max_diff_font_size
+			current_font_size = theme.default_font_size
+		else:
+			min_font_size = ThemeDB.fallback_font_size - min_diff_font_size
+			max_font_size = ThemeDB.fallback_font_size + max_diff_font_size
+			current_font_size =ThemeDB.fallback_font_size
 	
 	_default_zoom = current_font_size
 
@@ -115,8 +116,7 @@ func _gui_input(event):
 		zoom_ui(1)
 		
 		accept_event()
-
-	if event.is_action_released("zoom_out", true):
+	elif event.is_action_released("zoom_out", true):
 		zoom_ui(-1)
 		
 		accept_event()
