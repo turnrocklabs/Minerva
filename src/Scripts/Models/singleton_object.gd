@@ -28,6 +28,10 @@ var supported_image_formats: PackedStringArray = ["png", "jpg", "jpeg", "bmp", "
 var supported_text_formats: PackedStringArray = ["txt", "rs", "toml", "md", "json", "xml", "csv", "log", "py", "cs", "minproj", "gd", "tscn", "godot", "go", "java"]
 var supported_video_formats: PackedStringArray = ["mp4", "mov", "avi", "mkv", "webm", "ogv"]
 var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
+
+var experimental_enabled: bool = false
+signal toggle_experimental(enabled)
+
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false
@@ -56,26 +60,27 @@ func load_config_file() -> ConfigFile:
 # use this method to save any settings to the file
 func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
-	config_file = load_config_file()
+	#config_file = load_config_file()
 	config_file.set_value(section, field, value)
 	config_file.save(config_file_name)
+	
 
 func config_has_saved_section(section: String) -> bool:
 	if !section: return false
-	config_file = load_config_file()
+	
 	return config_file.has_section(section)
 
 
 func config_clear_section(section: String)-> void:
 	if !section: return
-	config_file = load_config_file()
+	
 	config_file.erase_section(section)
 	config_file.save(config_file_name)
 
 
 #method for checking if the user has saved files
 func has_recent_projects() -> bool:
-	config_file = load_config_file()
+	
 	return config_file.has_section("OpenRecent")
 
 #method for adding the project to the open recent list
@@ -89,7 +94,7 @@ func save_recent_project(path: String):
 # this function returns an array with the files 
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
-	config_file = load_config_file()
+	
 	if has_recent_projects():
 		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
@@ -97,7 +102,7 @@ func get_recent_projects() -> Array:
 
 # method for getting the p0ath on disk of the specified project file
 func get_project_path(project_name: String) -> String:
-	config_file = load_config_file()
+	
 	return config_file.get_value("OpenRecent", project_name)
 
 # method for erasing all the recently opened projects
@@ -116,7 +121,6 @@ func remove_recent_project(project_name: String) -> void:
 	config_file.erase_section_key("OpenRecent", project_name)
 	config_file.save(config_file_name)
 	
-
 
 #endregion Config File
 
@@ -248,27 +252,42 @@ func _ready():
 	
 	add_child(AtT)
 	add_child(undo)
+	
+	# this is for when you toggle experimental features
+	toggle_experimental.connect(toggle_experimental_actions)
+	terminal_input_event = InputMap.action_get_events("ui_terminal")
+	output_device_changed.connect(set_output_device)
+	
+	# Here we create, load and add the audioPlayer for the notification sound on bot response
+	chat_notification_player = AudioStreamPlayer.new()
+	chat_notification_player.stream = load("res://assets/Audio/notification-2-269292.mp3")
+	chat_notification_player.bus = "AudioNotesBus"
+	chat_notification_player.volume_db = 12
+	get_tree().root.call_deferred("add_child", chat_notification_player)
+	
 	#TODO add ui scale to the config file and retrieve it on app load
-	load_config_file()
+	var err = config_file.load(config_file_name)
+	if err != OK:
+		return null
+	
+	var theme_enum = get_theme_enum()
+	if theme_enum > -1:
+		set_theme(theme_enum)
 	
 	if config_has_saved_section("LastSavedPath"):
 		last_saved_path = config_file.get_section_keys("LastSavedPath")[0]
 	else:
 		last_saved_path = "/"
 	
-	var theme_enum = get_theme_enum()
-	if theme_enum > -1:
-		set_theme(theme_enum)
-	
 	var mic_selected = get_microphone()
 	if mic_selected:
 		set_microphone(mic_selected)
-		
 	
-	chat_notification_player = AudioStreamPlayer.new()
-	chat_notification_player.stream = load("res://assets/Audio/notification-2-269292.mp3")
-	chat_notification_player.bus = "AudioNotesBus"
-	get_tree().root.call_deferred("add_child", chat_notification_player)
+	set_output_device(get_output_device())
+	
+	toggle_experimental_actions(config_file.get_value("Experimental", "enabled"))
+	
+
 
 var chat_notification_player: AudioStreamPlayer
 
@@ -452,29 +471,30 @@ signal theme_changed(theme_enum)
 
 
 func get_theme_enum() -> int:
-	return config_file.get_value("theme", "theme_enum",0)
+	if config_has_saved_section("theme"):
+		return config_file.get_value("theme", "theme_enum",0)
+	else:
+		return theme.DARK_MODE
 
 
 func set_theme(themeID: int) -> void:
+	if get_theme_enum() == themeID:
+		return
 	var root_control: Control = get_tree().current_scene
-	if get_theme_enum() != themeID:
-		match themeID:
-			theme.LIGHT_MODE:
-				var _light_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/light_mode.theme")
-				var light_theme: = ResourceLoader.load_threaded_get("res://assets/themes/light_mode.theme")
-				root_control.theme = light_theme
-				save_to_config_file("theme", "theme_enum", theme.LIGHT_MODE)
-			theme.DARK_MODE:
-				var _dark_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/blue_dark_mode.theme")
-				var dark_theme: = ResourceLoader.load_threaded_get("res://assets/themes/blue_dark_mode.theme")
-				root_control.theme = dark_theme
-				save_to_config_file("theme", "theme_enum", theme.DARK_MODE)
-			theme.WINDOWS_MODE:
-				var _windows_theme_request: = ResourceLoader.load_threaded_request("res://assets/themes/windows_mode.theme")
-				var windows_theme: = ResourceLoader.load_threaded_get("res://assets/themes/windows_mode.theme")
-				root_control.theme = windows_theme
-				save_to_config_file("theme", "theme_enum", theme.WINDOWS_MODE)
-		theme_changed.emit(themeID)
+	var new_theme: Theme
+	match themeID:
+		theme.LIGHT_MODE:
+			var _light_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/light_mode.theme")
+			new_theme = ResourceLoader.load_threaded_get("res://assets/themes/light_mode.theme")
+		theme.DARK_MODE:
+			var _dark_theme_status: = ResourceLoader.load_threaded_request("res://assets/themes/blue_dark_mode.theme")
+			new_theme = ResourceLoader.load_threaded_get("res://assets/themes/blue_dark_mode.theme")
+		theme.WINDOWS_MODE:
+			var _windows_theme_request: = ResourceLoader.load_threaded_request("res://assets/themes/windows_mode.theme")
+			new_theme = ResourceLoader.load_threaded_get("res://assets/themes/windows_mode.theme")
+	root_control.theme = new_theme
+	save_to_config_file("theme", "theme_enum", themeID)
+	theme_changed.emit(themeID)
 
 #endregion Theme change
 
@@ -513,10 +533,16 @@ static var audio_contols_scene: = preload("res://Scenes/audio_note_controls.tscn
 static var image_controls_scene: = preload("res://Scenes/image_note_controls.tscn")
 static var notes_scene: = preload("res://Scenes/Note.tscn")
 
-
 #endregion Prealoaded static scenes
 
-	
+#region ChatNotification Player
+func play_chat_notification() -> void:
+	await get_tree().create_timer(0.25).timeout
+	chat_notification_player.play()
+
+
+#endregion ChatNotification Player
+
 func reorder_recent_project(firstIndex: int, secondIndex: int) -> void:
 
 	if !has_recent_projects():
@@ -567,3 +593,39 @@ func generate_UUID() -> String:
 	var random_number = rng.randi() # Generates a random integer
 	var hash256 = str(random_number).sha256_text()
 	return hash256
+
+var terminal_input_event: Array[InputEvent]
+var view_menu: PopupMenu
+var add_graphics_button: Button
+func toggle_experimental_actions(enable: bool) -> void:
+	if !enable:
+		if InputMap.has_action("ui_terminal"):
+			InputMap.action_erase_events("ui_terminal")
+	else:
+		for i in terminal_input_event:
+			InputMap.action_add_event("ui_terminal", i)
+	for i in get_tree().get_nodes_in_group("Experimental"):
+		i = i as Control
+		i.visible = enable
+	experimental_enabled = enable
+	save_to_config_file("Experimental", "enabled", enable)
+
+#region Output Device
+
+signal output_device_changed(device: String)
+
+func get_output_device() -> String:
+	if config_has_saved_section("AudioSettings"):
+		return config_file.get_value("AudioSettings", "OutputDevice",  "Default")
+	else:
+		return "Default"
+
+
+func set_output_device(device: String) -> void:
+	if device in AudioServer.get_output_device_list():
+		AudioServer.output_device = device
+		if get_output_device() != device:
+			save_to_config_file("AudioSettings", "OutputDevice",  device)
+
+
+#endregion Output Device
