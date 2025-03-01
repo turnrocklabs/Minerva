@@ -1,7 +1,7 @@
 [gd_scene load_steps=10 format=3 uid="uid://d2o42sf0wonia"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/video_player.gd" id="1_hk33a"]
-[ext_resource type="Texture2D" uid="uid://cb0sgp25gcypd" path="res://assets/icons/pause_icons/pause-24.png" id="3_ese75"]
+[ext_resource type="Texture2D" uid="uid://bi2d1wriixcyu" path="res://assets/icons/play_icons/play-24.png" id="2_5v7o7"]
 [ext_resource type="Texture2D" uid="uid://bryqv0bvklds8" path="res://assets/icons/skip_video_icons/skip_back-10.png" id="4_0tdjm"]
 [ext_resource type="Texture2D" uid="uid://c5kcyetd4isge" path="res://assets/icons/speaker-24.png" id="4_21b1o"]
 [ext_resource type="Texture2D" uid="uid://3nr1cj5728cp" path="res://assets/icons/screenshot/screenshot-24.png" id="4_sunu6"]
@@ -21,8 +21,8 @@ size_flags_vertical = 3
 focus_mode = 1
 script = ExtResource("1_hk33a")
 video_stream_player = NodePath("PanelContainer/AspectRatioContainer/VideoStreamPlayer")
-h_slider = NodePath("PanelContainer/ColorRect/MarginContainer/HBoxContainer/HSlider")
-volume_h_slider = NodePath("PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect/VolumeHSlider")
+h_slider = NodePath("PanelContainer/ControlsRect/MarginContainer/HBoxContainer/HSlider")
+volume_h_slider = NodePath("PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect/VolumeHSlider")
 
 [node name="PanelContainer" type="PanelContainer" parent="."]
 clip_contents = true
@@ -43,8 +43,8 @@ ratio = 1.9
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 1
-autoplay = true
 expand = true
+buffering_msec = 600
 bus = &"VideoBus"
 
 [node name="SliderTimer" type="Timer" parent="PanelContainer/AspectRatioContainer/VideoStreamPlayer"]
@@ -52,14 +52,14 @@ unique_name_in_owner = true
 wait_time = 0.125
 autostart = true
 
-[node name="ColorRect" type="ColorRect" parent="PanelContainer"]
+[node name="ControlsRect" type="ColorRect" parent="PanelContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_vertical = 8
 color = Color(0.196078, 0.196078, 0.196078, 0.627451)
 
-[node name="MarginContainer" type="MarginContainer" parent="PanelContainer/ColorRect"]
+[node name="MarginContainer" type="MarginContainer" parent="PanelContainer/ControlsRect"]
 layout_mode = 1
 anchors_preset = 14
 anchor_top = 0.5
@@ -76,29 +76,29 @@ theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 15
 theme_override_constants/margin_bottom = 10
 
-[node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/ColorRect/MarginContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/ControlsRect/MarginContainer"]
 layout_mode = 2
 mouse_filter = 0
 theme_override_constants/separation = 10
 
-[node name="PlayButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="PlayButton" type="Button" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 mouse_default_cursor_shape = 2
-icon = ExtResource("3_ese75")
+icon = ExtResource("2_5v7o7")
 flat = true
 
-[node name="VolumeHBoxContainer" type="HBoxContainer" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="VolumeHBoxContainer" type="HBoxContainer" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 4
 
-[node name="VolumeButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer"]
+[node name="VolumeButton" type="Button" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("4_21b1o")
 flat = true
 
-[node name="VolumeRect" type="ColorRect" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton"]
+[node name="VolumeRect" type="ColorRect" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
@@ -106,13 +106,13 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -17.0
-offset_top = -154.0
+offset_top = -150.0
 offset_right = 16.0
-offset_bottom = -11.0
+offset_bottom = -7.0
 grow_horizontal = 2
 color = Color(0.196078, 0.196078, 0.196078, 0.627451)
 
-[node name="VolumeHSlider" type="HSlider" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect"]
+[node name="VolumeHSlider" type="HSlider" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect"]
 unique_name_in_owner = true
 clip_contents = true
 custom_minimum_size = Vector2(130, 0)
@@ -133,31 +133,31 @@ max_value = 1.0
 step = 0.02
 scrollable = false
 
-[node name="VolumeControlsTimer" type="Timer" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton"]
+[node name="VolumeControlsTimer" type="Timer" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton"]
 unique_name_in_owner = true
 one_shot = true
 
-[node name="BackButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="BackButton" type="Button" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
 icon = ExtResource("4_0tdjm")
 flat = true
 
-[node name="FordButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="FordButton" type="Button" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
 icon = ExtResource("5_x62rg")
 flat = true
 
-[node name="FrameBackButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="FrameBackButton" type="Button" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
 icon = ExtResource("6_eka47")
 flat = true
 
-[node name="FrameFordButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="FrameFordButton" type="Button" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
 icon = ExtResource("7_7icuc")
 flat = true
 
-[node name="HSlider" type="HSlider" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="HSlider" type="HSlider" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -166,23 +166,23 @@ step = 0.042
 value = 29.316
 scrollable = false
 
-[node name="RunningTimeLabel" type="Label" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="RunningTimeLabel" type="Label" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "00:00"
 
-[node name="ScreenshotButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="ScreenshotButton" type="Button" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 layout_mode = 2
 icon = ExtResource("4_sunu6")
 flat = true
 
-[node name="FullscreenButton" type="Button" parent="PanelContainer/ColorRect/MarginContainer/HBoxContainer"]
+[node name="FullscreenButton" type="Button" parent="PanelContainer/ControlsRect/MarginContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("5_kw031")
 flat = true
 
-[node name="ControlsTimer" type="Timer" parent="PanelContainer/ColorRect"]
+[node name="ControlsTimer" type="Timer" parent="PanelContainer/ControlsRect"]
 unique_name_in_owner = true
 wait_time = 2.0
 autostart = true
@@ -193,28 +193,28 @@ autostart = true
 [connection signal="gui_input" from="PanelContainer/AspectRatioContainer" to="." method="_on_gui_input"]
 [connection signal="gui_input" from="PanelContainer/AspectRatioContainer/VideoStreamPlayer" to="." method="_on_gui_input"]
 [connection signal="timeout" from="PanelContainer/AspectRatioContainer/VideoStreamPlayer/SliderTimer" to="." method="_on_slider_timer_timeout"]
-[connection signal="gui_input" from="PanelContainer/ColorRect" to="." method="_on_gui_input"]
-[connection signal="mouse_entered" from="PanelContainer/ColorRect" to="." method="_on_color_rect_mouse_entered"]
-[connection signal="mouse_exited" from="PanelContainer/ColorRect" to="." method="_on_color_rect_mouse_exited"]
-[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/PlayButton" to="." method="toggle_pause"]
-[connection signal="mouse_entered" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton" to="." method="_on_volume_button_mouse_entered"]
-[connection signal="mouse_exited" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton" to="." method="_on_color_rect_mouse_exited"]
-[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton" to="." method="_on_volume_button_pressed"]
-[connection signal="mouse_entered" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect" to="." method="_on_color_rect_mouse_entered"]
-[connection signal="mouse_exited" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect" to="." method="_on_color_rect_mouse_exited"]
-[connection signal="mouse_entered" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_color_rect_mouse_entered"]
-[connection signal="mouse_exited" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_color_rect_mouse_exited"]
-[connection signal="value_changed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_volume_h_slider_value_changed"]
-[connection signal="timeout" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeControlsTimer" to="." method="_on_volume_controls_timer_timeout"]
-[connection signal="mouse_entered" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/BackButton" to="." method="_on_color_rect_mouse_entered"]
-[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/BackButton" to="." method="_on_back_button_pressed"]
-[connection signal="mouse_entered" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FordButton" to="." method="_on_color_rect_mouse_entered"]
-[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FordButton" to="." method="_on_ford_button_pressed"]
-[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FrameBackButton" to="." method="_on_frame_back_button_pressed"]
-[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FrameFordButton" to="." method="_on_frame_ford_button_pressed"]
-[connection signal="drag_ended" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_ended"]
-[connection signal="drag_started" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_started"]
-[connection signal="mouse_entered" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_color_rect_mouse_entered"]
-[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/ScreenshotButton" to="." method="_on_screenshot_button_pressed"]
-[connection signal="pressed" from="PanelContainer/ColorRect/MarginContainer/HBoxContainer/FullscreenButton" to="." method="_on_fullscreen_button_pressed"]
-[connection signal="timeout" from="PanelContainer/ColorRect/ControlsTimer" to="." method="_on_controls_timer_timeout"]
+[connection signal="gui_input" from="PanelContainer/ControlsRect" to="." method="_on_gui_input"]
+[connection signal="mouse_entered" from="PanelContainer/ControlsRect" to="." method="_on_color_rect_mouse_entered"]
+[connection signal="mouse_exited" from="PanelContainer/ControlsRect" to="." method="_on_color_rect_mouse_exited"]
+[connection signal="pressed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/PlayButton" to="." method="toggle_pause"]
+[connection signal="mouse_entered" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton" to="." method="_on_volume_button_mouse_entered"]
+[connection signal="mouse_exited" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton" to="." method="_on_color_rect_mouse_exited"]
+[connection signal="pressed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton" to="." method="_on_volume_button_pressed"]
+[connection signal="mouse_entered" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect" to="." method="_on_color_rect_mouse_entered"]
+[connection signal="mouse_exited" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect" to="." method="_on_color_rect_mouse_exited"]
+[connection signal="mouse_entered" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_color_rect_mouse_entered"]
+[connection signal="mouse_exited" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_color_rect_mouse_exited"]
+[connection signal="value_changed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeRect/VolumeHSlider" to="." method="_on_volume_h_slider_value_changed"]
+[connection signal="timeout" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/VolumeHBoxContainer/VolumeButton/VolumeControlsTimer" to="." method="_on_volume_controls_timer_timeout"]
+[connection signal="mouse_entered" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/BackButton" to="." method="_on_color_rect_mouse_entered"]
+[connection signal="pressed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/BackButton" to="." method="_on_back_button_pressed"]
+[connection signal="mouse_entered" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/FordButton" to="." method="_on_color_rect_mouse_entered"]
+[connection signal="pressed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/FordButton" to="." method="_on_ford_button_pressed"]
+[connection signal="pressed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/FrameBackButton" to="." method="_on_frame_back_button_pressed"]
+[connection signal="pressed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/FrameFordButton" to="." method="_on_frame_ford_button_pressed"]
+[connection signal="drag_ended" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_ended"]
+[connection signal="drag_started" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_h_slider_drag_started"]
+[connection signal="mouse_entered" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/HSlider" to="." method="_on_color_rect_mouse_entered"]
+[connection signal="pressed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/ScreenshotButton" to="." method="_on_screenshot_button_pressed"]
+[connection signal="pressed" from="PanelContainer/ControlsRect/MarginContainer/HBoxContainer/FullscreenButton" to="." method="_on_fullscreen_button_pressed"]
+[connection signal="timeout" from="PanelContainer/ControlsRect/ControlsTimer" to="." method="_on_controls_timer_timeout"]

@@ -11,8 +11,11 @@ enum LAYOUT {HORIZONTAL, VERTICAL}
 static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
 static var _unsaved_changes_file_icon: = preload("res://assets/icons/half_circle_left.svg")
 static var _unsaved_changes_associated_icon: = preload("res://assets/icons/half_circle_right.svg")
+@warning_ignore("unused_variable")
 static var _incoplete_snippet_icon: = preload("res://assets/icons/warning_circle.svg")
+@warning_ignore("unused_variable")
 var _is_Completed = true
+
 var current_layout: LAYOUT
 
 @onready var Tabs: TabContainer = $"./VBoxContainer/HBoxContainer/LeftControl/TabContainer"
@@ -152,6 +155,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 			tab_name = dir + "/" + file.get_file()
 
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
+		Tabs.set_tab_tooltip(Tabs.current_tab, file)
 		editor_node.tab_title = tab_name
 	else:
 		match type:
@@ -310,7 +314,7 @@ func _on_editor_content_changed(editor: Editor):
 
 		Editor.ASSOCIATED_OBJECT_SAVED:
 			# the associated_object is saved, but not the file
-			
+
 			icon = _unsaved_changes_file_icon
 			if editor.file:
 				tooltip = "File unsaved, \"%s\" saved" % associated_object_name
@@ -334,12 +338,10 @@ func _on_editor_content_changed(editor: Editor):
 					tooltip = "\"%s\" unsaved" % associated_object_name
 				else:
 					tooltip = "Content unsaved"
-	
 
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	Tabs.set_tab_icon(tab_idx, icon)
-	Tabs.set_tab_tooltip(tab_idx, tooltip)
-	
+	#Tabs.set_tab_tooltip(tab_idx, tooltip)
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
@@ -410,4 +412,5 @@ func _on_toggle_all_button_pressed() -> void:
 		_toggle_all_button.text = "Enable All"
 
 func _close_error():
-	var tab_idx = Tabs.get_tab_idx_from_control(Tabs.get_tab_control(counter_for_remove))
+	pass
+	#var tab_idx = Tabs.get_tab_idx_from_control(Tabs.get_tab_control(counter_for_remove))
