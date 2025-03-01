@@ -284,6 +284,9 @@ func execute_chat():
 		bot_response = await history.provider.generate_content(history_list)
 
 	# we made the prompt, disable the notes now
+	for i in get_tree().get_nodes_in_group("ToggleTabs"):
+		i = i as CheckButton
+		i.button_pressed = false
 	SingletonObject.NotesTab.Disable_All()
 
 	# Create history item from bot response
