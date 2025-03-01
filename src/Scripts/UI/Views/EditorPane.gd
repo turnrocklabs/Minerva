@@ -171,7 +171,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	
 	return editor_node
 	
-func open_editors() -> Array[Editor]:
+func get_open_editors() -> Array[Editor]:
 	var editors: Array[Editor] = []
 	for child in self.Tabs.get_children():
 		if not child is Editor: continue
@@ -400,16 +400,15 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 
 var _last_state: = false
 
-func _on_toggle_all_button_pressed() -> void:
-	_last_state = not _last_state
+func _on_toggle_all_button_toggled(toggled_on: bool) -> void:
+	for editor in get_open_editors():
+		editor.toggle(toggled_on)
 	
-	for editor in open_editors():
-		editor.toggle(_last_state)
-	
-	if _last_state:
+	if toggled_on:
 		_toggle_all_button.text = "Disable All"
 	else:
 		_toggle_all_button.text = "Enable All"
+
 
 func _close_error():
 	pass

@@ -19,7 +19,7 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 func serialize() -> Array:
 	var editors_serialized: Array[Dictionary] = []
 	var tab_idx:= 0
-	for editor in editor_pane.open_editors():
+	for editor in editor_pane.get_open_editors():
 		var content
 		match editor.type:
 			editor.Type.TEXT:
@@ -78,7 +78,7 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 
 
 func clear_editor_tabs():
-	for editor in editor_pane.open_editors():
+	for editor in editor_pane.get_open_editors():
 		editor.queue_free()
 
 
