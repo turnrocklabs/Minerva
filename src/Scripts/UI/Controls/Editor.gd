@@ -283,6 +283,7 @@ func save():
 			graphics_editor.is_image_saved = true
 			SingletonObject.UpdateUnsavedTabIcon.emit()
 			pass # TODO: implement for graphics files
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 ## Returns the bitmask of the saved state for the editor.
@@ -386,6 +387,7 @@ func save_file_to_disc(path: String):
 	tab_title = path.get_file()
 	var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
 	SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
+	SingletonObject.editor_pane.Tabs.set_tab_tooltip(idx, path)
 
 #region bottom of the pane buttons
 
