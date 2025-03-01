@@ -200,8 +200,8 @@ func _on_check_button_toggled(toggled_on: bool, btn: CheckButton):
 					item.Content += line_part
 
 		item.toggled.connect(
-			(func(on: bool, btn: CheckButton):
-				btn.button_pressed = on).bind(btn)
+			(func(on: bool, button: CheckButton):
+				button.button_pressed = on).bind(btn)
 		)
 
 		btn.set_meta("memory_item", item)
@@ -622,14 +622,14 @@ class TextLayer extends Control:
 							break
 
 						# if this is the case, devide the string into two and insert the modifier inbetween
-						var p1: String = line_part.substr(0, at.y-total-1)
-						var p2: String = line_part.substr(at.y-total-1)
+						var part1: String = line_part.substr(0, at.y-total-1)
+						var part2: String = line_part.substr(at.y-total-1)
 
 						line_content.remove_at(i)
 
-						line_content.insert(i, p2)
+						line_content.insert(i, part2)
 						line_content.insert(i, part)
-						line_content.insert(i, p1)
+						line_content.insert(i, part1)
 
 						break
 					

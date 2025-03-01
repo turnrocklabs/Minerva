@@ -259,8 +259,9 @@ func _setup_model_message():
 
 
 ## Instantiates new message node
+static var message_scene = preload("res://Scenes/MessageMarkdown.tscn")
 static func new_message() -> MessageMarkdown:
-	var msg: MessageMarkdown = preload("res://Scenes/MessageMarkdown.tscn").instantiate()
+	var msg: MessageMarkdown = message_scene.instantiate()
 	return msg
 
 
@@ -524,6 +525,7 @@ func _create_code_labels():
 		#resize_scroll_container.custom_minimum_size.y += difference
 		#last_custom_size_y = resize_scroll_container.custom_minimum_size.y
 
+
 var messages = preload("res://Scenes/MessageMarkdown.tscn")
 var richTextLabel = RichTextLabel.new()
 
@@ -550,3 +552,8 @@ func _on_unsplit_button_pressed() -> void:
 		MessagesHolder.add_child(message_instance)
 	
 	my_UnsplitMessages.visible = true
+
+
+func _on_extract_editor_button_pressed() -> void:
+	SingletonObject.editor_pane.update_current_text_tab("chat response" , history_item.Message)
+

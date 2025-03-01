@@ -118,7 +118,7 @@ func display_text(display_text: String) -> void:
 
 #region Private methods:
 func _update() -> void:
-	if markdown_text:
+	if markdown_text and markdown_text is String:
 		text = _convert_markdown(markdown_text)
 	queue_redraw()
 

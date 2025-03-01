@@ -19,7 +19,7 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 func serialize() -> Array:
 	var editors_serialized: Array[Dictionary] = []
 	var tab_idx:= 0
-	for editor in editor_pane.open_editors():
+	for editor in editor_pane.get_open_editors():
 		var content
 		match editor.type:
 			editor.Type.TEXT:
@@ -78,7 +78,7 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 
 
 func clear_editor_tabs():
-	for editor in editor_pane.open_editors():
+	for editor in editor_pane.get_open_editors():
 		editor.queue_free()
 
 
@@ -156,6 +156,7 @@ func _on_new_line_button_pressed() -> void:
 			current_tab.get_node("NoteEditor").add_new_line()
 		else:
 			current_tab.add_new_line()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 func _on_back_space_button_pressed() -> void:
@@ -165,6 +166,7 @@ func _on_back_space_button_pressed() -> void:
 			current_tab.get_node("NoteEditor").delete_chars()
 		else:
 			current_tab.delete_chars()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 func _on_clear_button_pressed():
@@ -174,6 +176,7 @@ func _on_clear_button_pressed():
 			current_tab.get_node("NoteEditor").clear_text()
 		else:
 			current_tab.clear_text()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 func _on_undo_button_pressed():
@@ -183,6 +186,7 @@ func _on_undo_button_pressed():
 			current_tab.get_node("NoteEditor").undo_action()
 		else:
 			current_tab.undo_action()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 func _on_add_file_editor_pressed() -> void:
