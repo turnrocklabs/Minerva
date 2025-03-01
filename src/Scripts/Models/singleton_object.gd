@@ -607,6 +607,7 @@ func toggle_experimental_actions(enable: bool) -> void:
 	for i in get_tree().get_nodes_in_group("Experimental"):
 		i = i as Control
 		i.visible = enable
+	experimental_enabled = enable
 	save_to_config_file("Experimental", "enabled", enable)
 
 #region Output Device
