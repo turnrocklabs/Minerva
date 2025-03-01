@@ -289,7 +289,8 @@ func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String
 	# Update the old_text meta for future comparisons
 	editor.code_edit.set_meta("old_text", new_text)
 	SingletonObject.Is_code_completed = true
-	
+
+
 func _on_editor_content_changed(editor: Editor):
 
 	var state: = editor.get_saved_state()
@@ -414,3 +415,32 @@ func _on_toggle_all_button_pressed() -> void:
 func _close_error():
 	pass
 	#var tab_idx = Tabs.get_tab_idx_from_control(Tabs.get_tab_control(counter_for_remove))
+
+
+func update_current_text_tab(new_title: String, new_text: String) -> void:
+	# Get the currently active tab
+	var active_tab_editor_node: Editor = Tabs.get_current_tab_control()
+	var code_edit_node: CodeEdit
+	
+	# If no active tab exists, create a new text editor tab
+	if Tabs.get_tab_count() < 1:
+		active_tab_editor_node = add(Editor.Type.TEXT, null, editor_name_to_use(new_title), null)
+		print("No active tab, created a new one.")
+	# Ensure the active tab is a text editor
+	elif active_tab_editor_node is Editor and active_tab_editor_node.type == Editor.Type.TEXT:
+		# Update the tab title if no file is associated
+		if !active_tab_editor_node.file:
+			Tabs.set_tab_title(Tabs.get_current_tab(), editor_name_to_use(new_title))
+	# If the active tab is not a text editor, create a new text editor tab
+	elif active_tab_editor_node.type == Editor.Type.GRAPHICS and SingletonObject.experimental_enabled:
+		active_tab_editor_node = add(Editor.Type.TEXT, null, editor_name_to_use(new_title), null)
+		print("Active tab is not a text editor")
+		if !SingletonObject.experimental_enabled:
+			printerr("Graphics editor is not enabled")
+	# Get the CodeEdit node
+	code_edit_node = active_tab_editor_node.code_edit
+	if code_edit_node:
+			# Set the new text
+			code_edit_node.text = new_text
+	
+	update_tabs_icon()
