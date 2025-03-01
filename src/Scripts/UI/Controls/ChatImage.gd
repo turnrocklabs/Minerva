@@ -41,8 +41,8 @@ var dict_index: String = ""
 			)
 
 func _ready() -> void:
-	if !SingletonObject.experimental_enabled:
-		%EditButton.visible = false
+	
+	%EditButton.visible = SingletonObject.experimental_enabled
 
 
 
