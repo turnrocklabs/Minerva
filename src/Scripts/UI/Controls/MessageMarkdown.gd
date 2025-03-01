@@ -556,4 +556,3 @@ func _on_unsplit_button_pressed() -> void:
 
 func _on_extract_editor_button_pressed() -> void:
 	SingletonObject.editor_pane.update_current_text_tab("chat response" , history_item.Message)
-
