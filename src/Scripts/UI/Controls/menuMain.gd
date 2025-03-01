@@ -289,9 +289,9 @@ func _add_recent_project_ui(index: int, item: String):
 	exitBtn.pressed.connect(_on_remove_recent_single.bind(newRecentButtons.get_meta("project_path")))
 
 	recentList.add_child(newRecentButtons) # Add the *new instance* to the VboxContainer
-	
-	
-func _on_open_recent_project(index: int, itemText:String):
+
+# no idea why this has the index parameter added _ to it to avoid warning
+func _on_open_recent_project(_index: int, itemText:String):
 	# The "Clear Recent Projects" button should be handled separately, not within this function.  Add this logic to the PopupMenu where that button resides. 
 	SingletonObject.OpenRecentProject.emit(itemText)
 	popUpRecent.visible = false

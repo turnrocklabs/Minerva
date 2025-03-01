@@ -62,7 +62,7 @@ func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
 	#config_file = load_config_file()
 	config_file.set_value(section, field, value)
-	var err = config_file.save(config_file_name)
+	config_file.save(config_file_name)
 	
 
 func config_has_saved_section(section: String) -> bool:
@@ -272,7 +272,6 @@ func _ready():
 	
 	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
-		print(theme_enum)
 		set_theme(theme_enum)
 	
 	if config_has_saved_section("LastSavedPath"):

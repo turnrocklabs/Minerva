@@ -1,4 +1,0 @@
-- test cases for when an edtor is Note but not a file
-- test when a change is undone 
-- test when a file is reloaded from disc
-- Editor glyph should not be a half circle if it is saved as a note but has never been a file and the same for when a editor has been saved but never has been a note 
