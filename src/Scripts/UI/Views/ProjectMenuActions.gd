@@ -26,6 +26,7 @@ func _new_project():
 
 func open_project(path: = ""):
 	if path.is_empty():
+		%fdgOpenProject.title = "Open a Project File"
 		%fdgOpenProject.popup_centered(Vector2i(800, 600))
 		return
 	
