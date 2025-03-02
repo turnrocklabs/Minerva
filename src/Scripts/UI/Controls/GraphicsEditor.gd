@@ -331,20 +331,21 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 func _gui_input(event: InputEvent):
 	var active_layer = _mask_layer if _masking else _draw_layer
 	var layer_local_pos
+	
 	if active_layer:
-		# Get global mouse position first
-		var global_mouse_pos = get_global_mouse_position()
-
+		# Get correct position directly from the event
+		var input_position = event.position
+		
 		# Transform to layers container local position
-		var layers_container_local_pos = _layers_container.get_global_transform().affine_inverse() * global_mouse_pos
-
-		# Transform from layers container local position to active layer local position.
+		var layers_container_local_pos = _layers_container.get_global_transform().affine_inverse() * get_global_transform() * input_position
+		
+		# Transform from layers container local position to active layer local position
 		layer_local_pos = active_layer.get_global_transform().affine_inverse() * _layers_container.get_global_transform() * layers_container_local_pos
-
 	else: 
 		return
+		
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		#Get color at clicked position and Update the ColorPickerButton
+		# Get color at clicked position and Update the ColorPickerButton
 		if active_layer:
 			color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
 
@@ -377,11 +378,12 @@ func _gui_input(event: InputEvent):
 
 		if layer and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:  
-				_rotation_pivot = _layers_container.get_local_mouse_position()
+				_rotation_pivot = _layers_container.get_global_transform().affine_inverse() * get_global_transform() * event.position
 				layer.pivot_offset = _rotation_pivot - layer.position
 
 		elif layer and event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT: 
-			var angle = (_layers_container.get_local_mouse_position() - _rotation_pivot).angle()
+			var mouse_pos = _layers_container.get_global_transform().affine_inverse() * get_global_transform() * event.position
+			var angle = (mouse_pos - _rotation_pivot).angle()
 			layer.rotation = angle
 
 		elif event is InputEventKey and event.pressed and event.keycode == KEY_ENTER:
@@ -395,12 +397,12 @@ func _gui_input(event: InputEvent):
 
 	if layer_being_transferred: 
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
-			var current_mouse_position = _layers_container.get_local_mouse_position()
+			var current_mouse_position = _layers_container.get_global_transform().affine_inverse() * get_global_transform() * event.position
 			layer_being_transferred.position = current_mouse_position - prev_mouse_position
 			return
 		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				prev_mouse_position = _layers_container.get_local_mouse_position() - layer_being_transferred.position 
+				prev_mouse_position = _layers_container.get_global_transform().affine_inverse() * get_global_transform() * event.position - layer_being_transferred.position 
 			else: 
 				layer_being_transferred = null 
 			return
@@ -408,7 +410,7 @@ func _gui_input(event: InputEvent):
 	if zoomIn or zoomOut:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			var zoom_factor = 1.1 if zoomIn else 0.9 
-			var zoom_center = _layers_container.get_local_mouse_position() 
+			var zoom_center = _layers_container.get_global_transform().affine_inverse() * get_global_transform() * event.position
 
 			var zoom_offset = zoom_center * (1 - zoom_factor)
 
@@ -416,13 +418,12 @@ func _gui_input(event: InputEvent):
 			_layers_container.position += zoom_offset
 
 		if event is InputEventMouseMotion and %MgIcon.visible == true:
-			var local_position_temp = _layers_container.get_local_mouse_position()
+			var local_position_temp = _layers_container.get_global_transform().affine_inverse() * get_global_transform() * event.position
 			var global_position_temp = _layers_container.position + local_position_temp * _layers_container.scale
 			%MgIcon.offset = Vector2(-20,20)
 			%MgIcon.position = global_position_temp
 			drawing = false
 			Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
-
 
 	if editing_speech_bubbles and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		is_image_saved = false
@@ -434,7 +435,9 @@ func _gui_input(event: InputEvent):
 		layers_buttons()
 		var new_bubble = Bubble.instantiate()
 		new_layer.add_child(new_bubble)
-		new_bubble.move(new_layer.get_local_mouse_position())
+		
+		var bubble_position = new_layer.get_global_transform().affine_inverse() * get_global_transform() * event.position
+		new_bubble.move(bubble_position)
 		_if_cloud(3,0)
 		editing_speech_bubbles = false
 
@@ -461,7 +464,7 @@ func _gui_input(event: InputEvent):
 					image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
 
 		_last_pos = layer_local_pos 
-		active_layer.update() 
+		active_layer.update()
 		
 		
 		
