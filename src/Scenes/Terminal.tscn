@@ -1,6 +1,6 @@
 [gd_scene load_steps=4 format=3 uid="uid://vpf0a1bogbnc"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Controls/TerminalNew.gd" id="1_pj6ef"]
+[ext_resource type="Script" uid="uid://qeinli4wmr10" path="res://Scripts/UI/Controls/TerminalNew.gd" id="1_pj6ef"]
 [ext_resource type="Texture2D" uid="uid://bciwxioqljluk" path="res://assets/icons/spinner_progress.png" id="2_dkh1c"]
 [ext_resource type="FontFile" uid="uid://bq3q6ljtjj8da" path="res://assets/fonts/CascadiaCode/CascadiaMono.ttf" id="2_ig0cq"]
 
