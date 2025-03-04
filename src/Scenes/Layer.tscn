@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://dtmfl6ka08xyo"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Controls/Layer.gd" id="1_b4wdj"]
+[ext_resource type="Script" uid="uid://7opc6ku48vq0" path="res://Scripts/UI/Controls/Layer.gd" id="1_b4wdj"]
 
 [node name="Layer" type="TextureRect"]
 anchors_preset = 15
