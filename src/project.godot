@@ -58,6 +58,10 @@ enabled=PackedStringArray("res://addons/markdownlabel/plugin.cfg")
 Experimental=""
 ToggleTabs=""
 
+[gui]
+
+theme/custom="uid://cr3k2fgiaguik"
+
 [input]
 
 zoom_in={
