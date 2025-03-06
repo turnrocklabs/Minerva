@@ -47,7 +47,7 @@
 [ext_resource type="Script" uid="uid://yrtcflmpovr5" path="res://Scripts/DropScript.gd" id="30_1anci"]
 [ext_resource type="Texture2D" uid="uid://c6bgcn813bv5q" path="res://assets/icons/undo_icons/undo_arrow_64.png" id="30_i8mta"]
 [ext_resource type="Texture2D" uid="uid://jtwgif8ev4lw" path="res://assets/icons/file/many_files_64_new.png" id="30_jj3p5"]
-[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="32_nebas"]
+[ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icons/backspace_icon.png" id="32_nebas"]
 [ext_resource type="Texture2D" uid="uid://bu8qmpvu3256b" path="res://assets/icons/backspace_icons/backspace_icon_48.png" id="33_u2ws1"]
 [ext_resource type="Texture2D" uid="uid://c4nsaahtb7v0k" path="res://assets/icons/backspace_icons/backspace_icon_68.png" id="34_eiycj"]
 [ext_resource type="Texture2D" uid="uid://bit2mc7dcdd4p" path="res://assets/icons/new_line_icons/new_line_icon_48.png" id="36_hfhsg"]
