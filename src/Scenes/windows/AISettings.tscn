@@ -5,7 +5,7 @@
 
 [node name="AISettings" type="Window"]
 initial_position = 4
-size = Vector2i(648, 520)
+size = Vector2i(648, 590)
 unresizable = true
 script = ExtResource("1_2377q")
 
