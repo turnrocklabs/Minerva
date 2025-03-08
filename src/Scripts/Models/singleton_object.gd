@@ -261,7 +261,7 @@ func _ready():
 	
 	# Here we create, load and add the audioPlayer for the notification sound on bot response
 	chat_notification_player = AudioStreamPlayer.new()
-	chat_notification_player.stream = load("res://assets/Audio/notification-2-269292.mp3")
+	chat_notification_player.stream = load("res://assets/Audio/notification-new.mp3")
 	chat_notification_player.bus = "AudioNotesBus"
 	chat_notification_player.volume_db = 12
 	get_tree().root.call_deferred("add_child", chat_notification_player)
