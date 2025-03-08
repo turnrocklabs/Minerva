@@ -293,7 +293,7 @@ func render_threads():
 	# Restore the last active thread:
 	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
 	if not new_tab:
-		self.current_tab = clampi( last_thread, -1, self.get_child_count()-1)
+		self.current_tab = clampi( last_thread, -1, get_tab_count() -1)
 	else:
 		self.current_tab = get_tab_count() - 1
 	new_tab = false
