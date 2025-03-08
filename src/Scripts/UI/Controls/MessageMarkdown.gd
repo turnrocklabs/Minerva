@@ -374,7 +374,7 @@ class TextSegment:
 
 var _regex = RegEx.new()
 func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
-	_regex.compile(r"(\[code(?: syntax=(?P<syntax>.*?))?\])(?P<content>(.|\-{3}|\n)*?)(\[\/code\])")
+	_regex.compile(r"(\[code(?: syntax=(?P<syntax>.*?))?\])(?P<content>(.|\-{3}&\n|\n)*?)(\[\/code\])")
 
 	var found: Array[TextSegment] = []
 
