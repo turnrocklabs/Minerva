@@ -420,6 +420,8 @@ func expand_note() -> void:
 	
 	video_label.show()
 	resize_drag_control.show()
+	%HSeparator.show()
+	%BufferControl.hide()
 	control_type.show()
 
 
@@ -443,6 +445,8 @@ func contract_note() -> void:
 	await resize_tween.finished
 	video_label.hide()
 	control_type.hide()
+	%HSeparator.hide()
+	%BufferControl.show()
 	resize_drag_control.hide()
 	
 
