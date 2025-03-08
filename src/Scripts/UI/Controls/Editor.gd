@@ -461,6 +461,8 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 
 
 func toggle_autowrap() -> void:
+	if code_edit == null:
+		return
 	if code_edit.wrap_mode != TextEdit.LINE_WRAPPING_BOUNDARY:
 		code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	if code_edit.autowrap_mode == TextServer.AutowrapMode.AUTOWRAP_OFF:
