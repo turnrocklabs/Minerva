@@ -14,12 +14,12 @@ config/name="AgentInator"
 config/tags=PackedStringArray("desktop")
 run/main_scene="res://Scenes/MainScene.tscn"
 run/enable_alt_space_menu=true
-config/features=PackedStringArray("4.3", "Forward Plus")
+config/features=PackedStringArray("4.4", "Forward Plus")
 run/max_fps=50
 run/low_processor_mode=true
 boot_splash/bg_color=Color(0.0784314, 0.0784314, 0.0784314, 1)
-boot_splash/image="res://handshake_logo_green.png"
 boot_splash/fullsize=false
+boot_splash/image="res://handshake_logo_green.png"
 config/icon="res://handshake_logo_green.png"
 config/windows_native_icon="res://icon.ico"
 
