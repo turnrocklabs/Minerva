@@ -146,6 +146,10 @@ func set_message_loading(loading_: bool):
 ## This function will rerender the messaged using set `history_item`.
 ## Either call this function or set the `history_item` which setter will trigger it.
 func render() -> void:
+	if history_item.isMerged:
+		%UnsplitButton.visible = true
+	else:
+		%UnsplitButton.visible = false
 	if not (history_item and is_node_ready()): return
 
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: 
