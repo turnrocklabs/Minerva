@@ -293,7 +293,7 @@ func render_threads():
 	# Restore the last active thread:
 	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
 	if not new_tab:
-		self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
+		self.current_tab = clampi( last_thread, -1, get_tab_count() -1)
 	else:
 		self.current_tab = get_tab_count() - 1
 	new_tab = false
@@ -458,9 +458,7 @@ func attach_file(the_file: String):
 			mp3AudioStream.data = buffer
 			new_memory.Audio = mp3AudioStream
 		if file_ext == "wav":
-			var wavAudioStream = AudioStreamWAV.new()
-			wavAudioStream.data = buffer
-			wavAudioStream.format = AudioStreamWAV.FORMAT_8_BITS
+			var wavAudioStream = AudioStreamWAV.load_from_buffer(buffer)
 			new_memory.Audio = wavAudioStream
 		if file_ext == "ogg":
 			var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)

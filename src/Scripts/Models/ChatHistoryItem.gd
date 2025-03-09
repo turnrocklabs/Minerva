@@ -251,15 +251,34 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 
 ## Merges two history items together
 func merge(item: ChatHistoryItem) -> void:
-	 
-	#Stored_messages.insert(0,Message)
-	#Stored_messages.append(item.Message)
+	if Message and item.Message and Images.is_empty() and item.Images.is_empty():
+		# Merge text messages
+		var separator = "\u200B\u200C\u200D"  # Combination of invisible characters
+		Message = "%s%s%s" % [Message, separator, item.Message]
+		InjectedNotes.append_array(item.InjectedNotes)
+		Complete = Complete and item.Complete
+		isMerged = true
+	elif Images and item.Images and Message.is_empty() and item.Message.is_empty():
+		# Merge images
+		Images.append_array(item.Images)
+		InjectedNotes.append_array(item.InjectedNotes)
+		Complete = Complete and item.Complete
+		isMerged = true
+	elif (Message or item.Message) and (Images or item.Images):
+		# Merge both text and images
+		if Message and item.Message:
+			var separator = "\u200B\u200C\u200D"
+			Message = "%s%s%s" % [Message, separator, item.Message]
+		elif item.Message:
+			Message = item.Message  # If only one has text, set it
+		
+		if Images and item.Images:
+			Images.append_array(item.Images)
+		elif item.Images:
+			Images = item.Images  # If only one has images, set it
+
+		InjectedNotes.append_array(item.InjectedNotes)
+		Complete = Complete and item.Complete
+		isMerged = true
+
 	
-	var separator = "\u200B\u200C\u200D"  # Комбинация невидимых символов
-	Message = "%s%s%s" % [Message, separator, item.Message]
-	InjectedNotes.append_array(item.InjectedNotes)
-	Complete = Complete and item.Complete
-	isMerged = true
-	
-func text_replacement():
-	Message = "text holder"

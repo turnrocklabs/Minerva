@@ -273,6 +273,13 @@ func _ready():
 	transcription_notification_player.volume_db = 12
 	get_tree().root.call_deferred("add_child", transcription_notification_player)
 	
+	# Here we create, load and add the audioPlayer for the notification sound on bot response
+	transcription_notification_player = AudioStreamPlayer.new()
+	transcription_notification_player.stream = load("res://assets/Audio/transcription_sound.mp3")
+	transcription_notification_player.bus = "AudioNotesBus"
+	transcription_notification_player.volume_db = 12
+	get_tree().root.call_deferred("add_child", transcription_notification_player)
+	
 	#TODO add ui scale to the config file and retrieve it on app load
 	var err = config_file.load(config_file_name)
 	if err != OK:
@@ -299,7 +306,6 @@ func _ready():
 
 var chat_notification_player: AudioStreamPlayer
 var transcription_notification_player: AudioStreamPlayer
-
 func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = []):
 	ChatList = chat_histories
 	Chats = _chats

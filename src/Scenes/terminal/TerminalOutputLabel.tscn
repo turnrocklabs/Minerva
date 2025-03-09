@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://vbrp0ldvvef8"]
 
-[ext_resource type="Script" path="res://Scripts/Terminal/terminal_output_label.gd" id="1_bhduo"]
+[ext_resource type="Script" uid="uid://c2q6qdrm6uluq" path="res://Scripts/Terminal/terminal_output_label.gd" id="1_bhduo"]
 
 [node name="TerminalOutputLabel" type="Control"]
 layout_mode = 3

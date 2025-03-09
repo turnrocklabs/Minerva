@@ -127,6 +127,7 @@ func _on_request_completed(_result, response_code, _headers, body):
 			btn.disabled = false
 			btn.modulate = Color.WHITE
 			btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+			SingletonObject.transcription_notification_player.play()
 		else:
 			print("Unexpected response format:", response_json)
 	else:
