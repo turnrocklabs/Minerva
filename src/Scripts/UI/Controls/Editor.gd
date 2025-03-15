@@ -82,7 +82,6 @@ var file: String:
 var type: Type
 var _file_saved := false
 
-var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
 
@@ -153,11 +152,6 @@ func _ready():
 	
 	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS
 	
-	#set the text formats that are supported we add a "*" to the start of every ext
-	for ext in SingletonObject.supported_text_formats:
-		ext = "*." +ext 
-		supported_text_exts.append(ext)
-	$FileDialog.filters = supported_text_exts
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
@@ -183,6 +177,11 @@ func update_last_path(new_path: String) -> void:
 
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
+	if fa_object == null:
+				var error: = error_string(FileAccess.get_open_error())
+				push_warning(error)
+				SingletonObject.ErrorDisplay("Couldn't open file", error)
+				return
 	if fa_object:
 		#file_path = file
 		code_edit.text = fa_object.get_as_text()
@@ -236,7 +235,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
 		if type == Type.TEXT:
-			line_edit.text = tab_title + "." + SingletonObject.supported_text_formats[0]
+			line_edit.text = tab_title + ".txt"# + SingletonObject.supported_text_formats[0]
 		else:
 			line_edit.text = tab_title
 		$FileDialog.popup_centered(Vector2i(700, 500))
@@ -364,6 +363,11 @@ func save_file_to_disc(path: String):
 	match type:
 		Type.TEXT:
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
+			if save_file == null:
+				var error: = error_string(FileAccess.get_open_error())
+				push_warning(error)
+				SingletonObject.ErrorDisplay("Couldn't open file", error)
+				return
 			save_file.store_string(code_edit.text)
 			code_edit.tag_saved_version()
 			code_edit.saved_content = code_edit.text # update the saved content
