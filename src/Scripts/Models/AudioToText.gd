@@ -132,3 +132,4 @@ func _on_request_completed(_result, response_code, _headers, body):
 			print("Unexpected response format:", response_json)
 	else:
 		print("Error:", response_code, "Response:", body.get_string_from_utf8())
+	SingletonObject.transcription_notification_player.play()

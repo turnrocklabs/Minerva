@@ -5,7 +5,7 @@ extends Window
 
 func _ready():
 	close_requested.connect(hide)
-	exclusive = true
+	#exclusive = true
 	transient = true
 
 	var panel = Panel.new()
