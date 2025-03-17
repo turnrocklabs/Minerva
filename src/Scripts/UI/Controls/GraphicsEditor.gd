@@ -626,17 +626,13 @@ func LayerVisible(Hbox: HBoxContainer):
 	var hbox_index = %LayersList.get_children().find(Hbox)
 	var layer = _layers_container.get_child(hbox_index)
 	
-	# Переключаем видимость слоя
 	layer.visible = !layer.visible
 
-	# Если слой снова видимый, вызываем _resize_layers для исправления отступа
 	if layer.visible:
-		_resize_layers()  # Вызываем функцию для исправления отступа
+		_resize_layers()
 
-	# Получаем кнопку видимости из HBoxContainer
 	var VisibleButton = Hbox.get_child(1)  # Предполагаем, что это второй элемент
-
-	# Обновляем иконку в зависимости от видимости
+	
 	if layer.visible:
 		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")  # Путь к иконке видимости
 	else:
