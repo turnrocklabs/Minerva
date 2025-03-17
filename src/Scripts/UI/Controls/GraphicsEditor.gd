@@ -459,6 +459,7 @@ func _gui_input(event: InputEvent):
 			if _last_pos.x != layer_local_pos.x or _last_pos.y != layer_local_pos.y:
 				for line_pixel in bresenham_line(_last_pos, layer_local_pos):
 					image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
+					
 
 		_last_pos = layer_local_pos 
 		active_layer.update() 
@@ -623,18 +624,19 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 
 func LayerVisible(Hbox: HBoxContainer):
 	var hbox_index = %LayersList.get_children().find(Hbox)
-	var VisibleOfBox = _layers_container.get_child(hbox_index)
-	VisibleOfBox.visible = !VisibleOfBox.visible
+	var layer = _layers_container.get_child(hbox_index)
+	
+	layer.visible = !layer.visible
 
-	# Get the VisibleButton from the HBoxContainer
-	var VisibleButton = Hbox.get_child(1)  # Assuming it's the second child
+	if layer.visible:
+		_resize_layers()
 
-	# Toggle the icon based on visibility
-	if VisibleOfBox.visible:
-		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")  # Replace with your visible icon path
+	var VisibleButton = Hbox.get_child(1)  # Предполагаем, что это второй элемент
+	
+	if layer.visible:
+		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")  # Путь к иконке видимости
 	else:
-		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_not_visible.png")   # Replace with your hidden icon path
-
+		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_not_visible.png")  # Путь к иконке невидимости
 
 func _on_brushes_item_selected(index):
 	# drawing if the index is 0
@@ -751,29 +753,29 @@ func _on_zoom_out_pressed() -> void:
 		%MgIcon.visible = false
 
 func _on_mg_pressed() -> void:
-	# Define your default size here 
-	var default_size := Vector2(800, 800) 
+	# Reset the scale of the layers container
+	_layers_container.scale = Vector2.ONE
 
-	# Iterate through each layer in the container
+	# Calculate the correct position to reset the offset
+	var current_scale = _layers_container.scale
+	var current_position = _layers_container.position
+
+	# Reset the position to account for the accumulated offset
+	_layers_container.position = Vector2.ZERO
+
+	# Optionally, reset the position of each layer to their original positions
 	for layer in _layers_container.get_children():
 		if layer is Layer:
-			# Resize the layer's image 
-			layer.image.resize(default_size.x, default_size.y, Image.INTERPOLATE_BILINEAR)
+			layer.position = Vector2.ZERO
 
-			# Update the layer to reflect the changes
-			layer.update()
-			
+	# Hide the magnifying glass icon and reset zoom states
 	%MgIcon.visible = false
 	zoomIn = false
 	zoomOut = false
-	
-	zoom_in_button.modulate = Color.WHITE
-	zoom_out_button.modulate = Color.WHITE 
 
-	# Optionally, reset the zoom and position of the LayersContainer 
-	_layers_container.scale = Vector2.ONE
-	_layers_container.position = Vector2.ZERO
-	
+	# Reset button colors
+	zoom_in_button.modulate = Color.WHITE
+	zoom_out_button.modulate = Color.WHITE
 	
 func _transfer(Hbox: HBoxContainer) -> void:
 	var hbox_index = %LayersList.get_children().find(Hbox)

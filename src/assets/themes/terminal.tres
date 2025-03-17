@@ -2,6 +2,7 @@
 
 [ext_resource type="FontFile" uid="uid://cji80mlue4vhf" path="res://addons/markdownlabel/assets/fonts/Fira_Code/static/FiraCode-Regular.ttf" id="1_a62c1"]
 
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_lxph6"]
 bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
 
