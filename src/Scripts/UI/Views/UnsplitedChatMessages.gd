@@ -36,7 +36,6 @@ func _on_apply_changes_pressed() -> void:
 	var current_message = SingletonObject.current_message
 	var all_messages = get_all_messages()
 	var all_images = get_all_images()
-	
 	if all_messages.size() + all_images.size() == 1:
 		current_message.history_item.isMerged = false
 	

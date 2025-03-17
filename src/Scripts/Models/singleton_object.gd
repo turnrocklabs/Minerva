@@ -272,7 +272,7 @@ func _ready():
 	transcription_notification_player.bus = "AudioNotesBus"
 	transcription_notification_player.volume_db = 12
 	get_tree().root.call_deferred("add_child", transcription_notification_player)
-	
+
 	#TODO add ui scale to the config file and retrieve it on app load
 	var err = config_file.load(config_file_name)
 	if err != OK:

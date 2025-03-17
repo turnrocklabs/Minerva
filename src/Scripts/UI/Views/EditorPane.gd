@@ -341,7 +341,8 @@ func _on_editor_content_changed(editor: Editor):
 					_tooltip = "Content unsaved"
 	
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
-	Tabs.set_tab_icon(tab_idx, icon)
+	if Tabs.get_tab_count() > 0:
+		Tabs.set_tab_icon(tab_idx, icon)
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
