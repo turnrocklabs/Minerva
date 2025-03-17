@@ -40,7 +40,6 @@ func _on_apply_changes_pressed() -> void:
 	if all_messages.size() + all_images.size() == 1:
 		current_message.history_item.isMerged = false
 	
-	
 	var combined_message = ""
 	
 	# Only process if there are messages or images
