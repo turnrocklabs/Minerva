@@ -547,7 +547,6 @@ func _on_unsplit_button_pressed() -> void:
 	# Handle text messages if they exist
 	if history_item.Message:
 		split_and_display_text_messages(history_item.Message, messages_holder)
-	
 	# Handle images if they exist
 	if history_item.Images:
 		split_and_display_images(history_item.Images, messages_holder)
@@ -575,6 +574,9 @@ func split_and_display_text_messages(message: String, messages_holder: Node) -> 
 		var new_history_item = create_history_item_for_text(part.strip_edges())
 		message_instance.history_item = new_history_item
 		messages_holder.add_child(message_instance)
+		if part == " ":
+			print("epty part is: ", part)
+			message_instance.visible = false
 
 
 # Helper function to split and display images
