@@ -82,6 +82,31 @@ func scroll_to_bottom():
 	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().max_value
 
 
+func scroll_to_top() -> void:
+	# wait for message to update the scroll container dimensions
+	await scroll_container.get_v_scroll_bar().changed
+
+	# scroll to bottom
+	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().min_value
+
+
+func ensure_node_is_visible(node: Control) -> void:
+	
+	var scroll_to: int = 0
+	for i  in get_children():
+		if node == i:
+			break
+		else:
+			if i is Control:
+				scroll_to += i.size.y
+	var size = scroll_container.size
+	var other_rect: Rect2 = Rect2(Vector2.ZERO, node.size)
+	
+	var diff: int = other_rect.size.y 
+	var svroll_max = scroll_container.get_v_scroll_bar().max_value
+	scroll_container.scroll_vertical = scroll_to
+
+
 ## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
 func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
 	var msg_node = MessageMarkdown.new_message()

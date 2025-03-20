@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://bdgef0ru6o5ux"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Views/AISettings.gd" id="1_2377q"]
+[ext_resource type="Script" uid="uid://d1kitjy4mnpya" path="res://Scripts/UI/Views/AISettings.gd" id="1_2377q"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="2_bfm0p"]
 
 [node name="AISettings" type="Window"]
