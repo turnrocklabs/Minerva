@@ -458,9 +458,8 @@ func attach_file(the_file: String):
 			mp3AudioStream.data = buffer
 			new_memory.Audio = mp3AudioStream
 		if file_ext == "wav":
-			var wavAudioStream = AudioStreamWAV.new()
-			wavAudioStream.data = buffer
-			wavAudioStream.format = AudioStreamWAV.FORMAT_8_BITS
+			var wavAudioStream = AudioStreamWAV.load_from_buffer(buffer)
+			wavAudioStream
 			new_memory.Audio = wavAudioStream
 		if file_ext == "ogg":
 			var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)

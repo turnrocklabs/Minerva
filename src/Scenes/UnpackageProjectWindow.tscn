@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3 uid="uid://dkq6u46fmhw60"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Controls/UnpackageProjectWindow.gd" id="1_f7ydb"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/FileTree.gd" id="2_5sr6y"]
+[ext_resource type="Script" uid="uid://cmo4bi2nmaaoa" path="res://Scripts/UI/Controls/UnpackageProjectWindow.gd" id="1_f7ydb"]
+[ext_resource type="Script" uid="uid://cm5sc1561athh" path="res://Scripts/UI/Controls/FileTree.gd" id="2_5sr6y"]
 [ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="3_bh03k"]
 
 [node name="UnpackageProjectWindow" type="Window"]

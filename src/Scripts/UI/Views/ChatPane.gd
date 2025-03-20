@@ -14,6 +14,7 @@ var container: TabContainer  # Store the TabContainer
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
+var latest_msg: Control
 
 ## add new chat 
 func _on_new_chat():
@@ -268,6 +269,8 @@ func execute_chat():
 	dummy_item.provider = history.provider
 	
 	var model_msg_node = history.VBox.add_history_item(dummy_item)
+	model_msg_node.resized.connect(print_this)
+	latest_msg = model_msg_node
 	model_msg_node.loading = true
 
 	
@@ -314,18 +317,20 @@ func execute_chat():
 
 		## Inform the user history item that the response has arrived
 		user_history_item.response_arrived.emit(chi)
-
-		history.VBox.scroll_to_bottom()
+		
 		
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
-		await get_tree().process_frame
-		user_msg_node.grab_focus()
-		await get_tree().process_frame
-		user_msg_node.release_focus()
-		user_msg_node.focus_mode = Control.FOCUS_NONE
 	else:
 		model_msg_node.queue_free()
+
+func print_this() -> void:
+	if latest_msg == null:
+		return
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	#history.VBox.ensure_node_is_visible(latest_msg)
+	latest_msg.grab_focus()
+	print(latest_msg.size)
 
 # TODO: check if changing the active tab during the request causes any trouble
 signal my_signal(value)
@@ -471,6 +476,7 @@ func render_history(chat_history: ChatHistory):
 	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
+	scroll_container.follow_focus
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
