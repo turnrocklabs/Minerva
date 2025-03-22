@@ -262,6 +262,7 @@ label_settings = SubResource("LabelSettings_3dxq6")
 
 [node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
+focus_mode = 2
 theme_type_variation = &"chatRichTextLabel"
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
 bbcode_enabled = true
