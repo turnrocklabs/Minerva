@@ -12,8 +12,9 @@ var Bubble = preload("res://Scenes/CloudControl.tscn")
 @onready var dialog_clouds: OptionButton = %DialogClouds
 @onready var bubble_radius: HSlider = %BubbleRadius
 @onready var apply_mask_button: Button = %ApplyMaskButton
-@onready var _brush_slider: HSlider = %BrushHSlider
+@onready var _brush_slider: VSlider = %BrushHSlider
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
+@onready var brush_size_text:TextEdit = %BrushSize
 
 @onready var zoom_in_button: Button = %ZoomInButton
 @onready var zoom_out_button: Button = %ZoomOutButton
@@ -93,6 +94,7 @@ var layer_undo_histories = {} # Dictionary to store undo histories for each laye
 
 
 func _ready():
+	brush_size_text.text = str(brush_size)
 	DisplayServer.cursor_set_custom_image(circle_cursor, DisplayServer.CURSOR_POINTING_HAND, circle_cursor.get_size()/2)
 	if SingletonObject.is_picture:
 		var hbox: HBoxContainer = add_new_pic.get_vbox().get_child(0)
@@ -467,8 +469,13 @@ func _gui_input(event: InputEvent):
 		
 		
 		
-func _on_h_slider_value_changed(value):
-	brush_size = value
+func _on_h_slider_value_changed(value: float) -> void:
+	brush_size = int(value)
+	brush_size_text.text = str(brush_size)
+	brush_size_text.set_caret_column(brush_size_text.text.length())
+	if brush_size == 0:
+		%BrushSize.text = "1"
+	
 
 func _on_mask(toggled_on: bool):
 	_masking = toggled_on
@@ -555,7 +562,7 @@ func _on_add_layer_pressed():
 	var new_layer_size = previous_layer.image.get_size()
 	
 	create_image(new_layer_size)
-
+	
 func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	# Find the index of the HBoxContainer within LayersList
 	var hbox_index = %LayersList.get_children().find(Hbox)
@@ -626,17 +633,19 @@ func LayerVisible(Hbox: HBoxContainer):
 	var hbox_index = %LayersList.get_children().find(Hbox)
 	var layer = _layers_container.get_child(hbox_index)
 	
+	# Toggle visibility of the layer
 	layer.visible = !layer.visible
 
+	# Update the visibility button icon
+	var VisibleButton = Hbox.get_child(1)
 	if layer.visible:
-		_resize_layers()
-
-	var VisibleButton = Hbox.get_child(1)  # Предполагаем, что это второй элемент
-	
-	if layer.visible:
-		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")  # Путь к иконке видимости
+		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")
 	else:
-		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_not_visible.png")  # Путь к иконке невидимости
+		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_not_visible.png")
+
+	# Ensure the layer's size and content remain unchanged
+	layer.custom_minimum_size = layer.image.get_size()
+	layer.update()
 
 func _on_brushes_item_selected(index):
 	# drawing if the index is 0
@@ -715,6 +724,12 @@ func _on_hand_pressed() -> void:
 		%MgIcon.visible = false
 
 func _on_zoom_in_pressed() -> void:
+	# Store the visibility state of ALL layers
+	var visibility_states = {}
+	for layer in _layers_container.get_children():
+		if layer is Layer or layer is TextureRect:  # Include all relevant layer types
+			visibility_states[layer] = layer.visible
+
 	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
@@ -732,8 +747,18 @@ func _on_zoom_in_pressed() -> void:
 	else:
 		zoom_in_button.modulate = Color.WHITE 
 		%MgIcon.visible = false
-	
+
+	# Restore the visibility state of ALL layers
+	for layer in visibility_states:
+		layer.visible = visibility_states[layer]
+
 func _on_zoom_out_pressed() -> void:
+	# Store the visibility state of ALL layers
+	var visibility_states = {}
+	for layer in _layers_container.get_children():
+		if layer is Layer or layer is TextureRect:  # Include all relevant layer types
+			visibility_states[layer] = layer.visible
+
 	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
@@ -751,6 +776,10 @@ func _on_zoom_out_pressed() -> void:
 	else:
 		zoom_out_button.modulate = Color.WHITE 
 		%MgIcon.visible = false
+
+	# Restore the visibility state of ALL layers
+	for layer in visibility_states:
+		layer.visible = visibility_states[layer]
 
 func _on_mg_pressed() -> void:
 	# Reset the scale of the layers container
@@ -1173,6 +1202,42 @@ func _on_scroll_container_mouse_exited() -> void:
 	DisplayServer.cursor_set_shape(DisplayServer.CURSOR_ARROW)
 
 
-func _on_scroll_container_mouse_entered() -> void:
-	if (erasing or drawing):
-		DisplayServer.cursor_set_shape(DisplayServer.CURSOR_POINTING_HAND)
+func _on_brush_size_text_changed() -> void:
+	# Remove any non-numeric characters
+	var new_text = ""
+	for character in brush_size_text.text:
+		if character.is_valid_int():
+			new_text += character
+	
+	# Update the text to only contain numbers
+	brush_size_text.text = new_text
+	brush_size_text.set_caret_column(new_text.length())  # Move cursor to the end
+
+	# Limit the text length to 2 characters
+	if brush_size_text.text.length() > 2:
+		brush_size_text.text = brush_size_text.text.substr(0, 2)
+		brush_size_text.set_caret_column(2)
+	
+	# Ensure the number is within the range 0-15 and update brush_size
+	if brush_size_text.text.is_valid_int():
+		var value = brush_size_text.text.to_int()
+		if value < 0:
+			brush_size = 0
+			brush_size_text.text = "0"
+			brush_size_text.set_caret_column(1)
+		elif value > 15:
+			brush_size = 15
+			brush_size_text.text = "15"
+			brush_size_text.set_caret_column(2)
+		elif value == 0:
+			brush_size_text.text = "1"
+		else:
+			brush_size = value  # Update brush_size with the valid value
+	else:
+		# If the text is not a valid integer, clear it and set brush_size to 0
+		brush_size = 0
+		brush_size_text.text = ""
+		brush_size_text.set_caret_column(0)
+	
+	# Debug: Print the updated brush_size
+	print("Updated brush_size: ", brush_size)
