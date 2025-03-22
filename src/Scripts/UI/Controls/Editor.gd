@@ -82,6 +82,7 @@ var file: String:
 var type: Type
 var _file_saved := false
 
+var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
 
