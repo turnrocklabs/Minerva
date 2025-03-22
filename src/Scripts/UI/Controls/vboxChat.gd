@@ -39,7 +39,7 @@ func _ready():
 	)
 
 	image_activated.connect(_on_image_activated)
-	scroll_container.follow_focus = true
+	
 	add_child(chat_history.provider)
 
 
@@ -86,25 +86,33 @@ func scroll_to_top() -> void:
 	# wait for message to update the scroll container dimensions
 	await scroll_container.get_v_scroll_bar().changed
 
-	# scroll to bottom
+	# scroll to top
 	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().min_value
 
 
 func ensure_node_is_visible(node: Control) -> void:
-	
+	await scroll_container.get_v_scroll_bar().changed
+
 	var scroll_to: int = 0
-	for i  in get_children():
+	# Calculate the total height of all nodes above the target node
+	for i in get_children():
 		if node == i:
 			break
 		else:
 			if i is Control:
 				scroll_to += i.size.y
-	var size = scroll_container.size
-	var other_rect: Rect2 = Rect2(Vector2.ZERO, node.size)
-	
-	var diff: int = other_rect.size.y 
-	var svroll_max = scroll_container.get_v_scroll_bar().max_value
-	scroll_container.scroll_vertical = scroll_to
+				
+	var visible_height = scroll_container.size.y
+	var node_height = node.size.y
+
+	if node_height > visible_height:
+		scroll_container.scroll_vertical = scroll_to
+	else:
+		var center_position = scroll_to - (visible_height - node_height) / 2
+		# Clamp the scroll position between min and max values
+		var max_scroll = scroll_container.get_v_scroll_bar().max_value
+		scroll_container.scroll_vertical = clamp(center_position, 0, max_scroll)
+
 
 
 ## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 

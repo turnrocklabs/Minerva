@@ -269,7 +269,7 @@ func execute_chat():
 	dummy_item.provider = history.provider
 	
 	var model_msg_node = history.VBox.add_history_item(dummy_item)
-	model_msg_node.resized.connect(print_this)
+	var last_label_index: int= model_msg_node.message_labels_container.get_child_count()
 	latest_msg = model_msg_node
 	model_msg_node.loading = true
 
@@ -318,7 +318,8 @@ func execute_chat():
 		## Inform the user history item that the response has arrived
 		user_history_item.response_arrived.emit(chi)
 		
-		
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(model_msg_node)
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
 	else:

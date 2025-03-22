@@ -106,7 +106,6 @@ offset_right = -1531.0
 offset_bottom = -911.0
 grow_horizontal = 2
 grow_vertical = 2
-focus_mode = 2
 theme = SubResource("Theme_ca11y")
 script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
@@ -263,13 +262,14 @@ label_settings = SubResource("LabelSettings_3dxq6")
 
 [node name="MarkdownLabel" type="RichTextLabel" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
-focus_mode = 2
 theme_type_variation = &"chatRichTextLabel"
 theme_override_fonts/mono_font = ExtResource("2_uss7y")
 bbcode_enabled = true
 text = " "
 fit_content = true
+context_menu_enabled = true
 threaded = true
+progress_bar_delay = 200
 selection_enabled = true
 script = ExtResource("2_5cmtk")
 h1 = SubResource("Resource_de4hw")
