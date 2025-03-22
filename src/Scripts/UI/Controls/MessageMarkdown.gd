@@ -259,6 +259,7 @@ func _setup_model_message():
 	else:
 		label.markdown_text = history_item.Message
 		style.bg_color = bot_message_color
+	await get_tree().process_frame
 
 
 

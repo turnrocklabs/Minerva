@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://cm04rhfy18me7"]
 
-[ext_resource type="Script" uid="uid://ca3xmx8l0ge7x" path="res://Scripts/UI/Controls/BezierCurve.gd" id="1_3ftwq"]
+[ext_resource type="Script" uid="uid://tfgyfbd4fxwg" path="res://Scripts/UI/Controls/BezierCurve.gd" id="1_3ftwq"]
 
 [node name="BezierCurve" type="Control"]
 layout_mode = 3

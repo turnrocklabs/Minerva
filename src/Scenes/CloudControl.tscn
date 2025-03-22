@@ -1,9 +1,9 @@
 [gd_scene load_steps=6 format=3 uid="uid://dmb0k4rdw2p8y"]
 
-[ext_resource type="Script" uid="uid://dxhu5nelvwnts" path="res://Scripts/UI/Controls/CloudControl.gd" id="1_ha15r"]
+[ext_resource type="Script" uid="uid://b7lo5e5su2vmr" path="res://Scripts/UI/Controls/CloudControl.gd" id="1_ha15r"]
 [ext_resource type="Texture2D" uid="uid://bwn1v2wcbaegc" path="res://assets/icons/resizer_se.svg" id="2_jl5my"]
 [ext_resource type="Texture2D" uid="uid://bfbaum4y6o8qn" path="res://assets/icons/resizer_nw.svg" id="3_xkjvb"]
-[ext_resource type="Script" uid="uid://ca3xmx8l0ge7x" path="res://Scripts/UI/Controls/BezierCurve.gd" id="4_63mbq"]
+[ext_resource type="Script" uid="uid://tfgyfbd4fxwg" path="res://Scripts/UI/Controls/BezierCurve.gd" id="4_63mbq"]
 [ext_resource type="Texture2D" uid="uid://b25k6drncexmw" path="res://assets/icons/hand_mover.png" id="5_al3dx"]
 
 [node name="CloudControl" type="ColorRect"]

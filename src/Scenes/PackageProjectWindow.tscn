@@ -1,11 +1,11 @@
 [gd_scene load_steps=7 format=3 uid="uid://bxmpb31w1mmhm"]
 
-[ext_resource type="Script" uid="uid://bgqxuuli7s5hp" path="res://Scripts/UI/Controls/PackageProjectWindow.gd" id="1_0sxx4"]
+[ext_resource type="Script" uid="uid://bowrf47ph5g3y" path="res://Scripts/UI/Controls/PackageProjectWindow.gd" id="1_0sxx4"]
 [ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="2_23fol"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="2_ayi6r"]
 [ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="2_wnlyi"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file/file.svg" id="3_kmt8e"]
-[ext_resource type="Script" uid="uid://bpqhhl44bko53" path="res://Scripts/UI/Controls/FileTree.gd" id="4_8s7vc"]
+[ext_resource type="Script" uid="uid://cm5sc1561athh" path="res://Scripts/UI/Controls/FileTree.gd" id="4_8s7vc"]
 
 [node name="PackageProjectWindow" type="Window" node_paths=PackedStringArray("destination_label", "package_files_tree", "file_dialog", "dialog", "info_label")]
 position = Vector2i(0, 36)

@@ -253,7 +253,7 @@ func _ready():
 	
 	add_child(AtT)
 	add_child(undo)
-	
+	supported_text_formats.sort()
 	# this is for when you toggle experimental features
 	toggle_experimental.connect(toggle_experimental_actions)
 	terminal_input_event = InputMap.action_get_events("ui_terminal")
