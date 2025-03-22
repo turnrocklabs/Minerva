@@ -332,7 +332,7 @@
 				{
 					"Audio": null,
 					"Content": "-In the editor, create a new file, save it, and hover over the file tab. It should display the file's path on the disk.\n-Generate multiple chat responses, extract the code to the editor, save the file, and check if the file's path is displayed correctly.\n-Create several files in the editor and save each file in different locations.\n-Attempt to relocate the saved files and observe what happens.",
-					"ContentType": "",
+					"ContentType": "text",
 					"Enabled": false,
 					"Expanded": true,
 					"File": "",
@@ -375,7 +375,7 @@
 				},
 				{
 					"Audio": null,
-					"Content": "1.Create a chat tab, add several messages, combine the green messages, edit them, and save the changes. Repeat the same process for the blue messages. Then, try combining and editing both green and blue messages simultaneously in the same window.\n2.Create and merge several messages, enter edit mode, and delete all content. Observe the outcome.\n3.Merge messages, edit the merged content, save the file, and reopen it. Then, enter edit mode again to verify that the changes were saved correctly.\n4.Create and merge messages, enter edit mode, make edits, and then press Cancel to see if the changes are discarded.\n5.Create and merge several messages, enter edit mode, and attempt to perform an action outside of the edit mode area to observe the system's response.\n6.Create two images and merge them into a single file.\n7.Create 3-5 images and 3-5 text messages, then merge them in a random order.",
+					"Content": "1.Create a chat tab, add several messages, combine the green messages, edit them, and save the changes. Repeat the same process for the blue messages. Then, try combining and editing both green and blue messages at the same time in the same window.\n2.Create and merge several messages, enter edit mode, and delete everything. Observe what happens.\n3.Merge messages, edit the merged content, save the file, and reopen it. Then, enter edit mode again to verify the changes.\n4.Create and merge messages, enter edit mode, make edits, and then press Cancel to see what happens.\n5.Create and merge several messages, enter edit mode, try to do some action outside of edit mode area",
 					"ContentType": "",
 					"Enabled": false,
 					"Expanded": true,
@@ -853,7 +853,7 @@
 	],
 	"active_chatindex": 0,
 	"active_editor_index": -1,
-	"active_notes_index": 3,
+	"active_notes_index": 2,
 	"default_provider": 0,
 	"last_tab_index": 0
 }

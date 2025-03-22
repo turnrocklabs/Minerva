@@ -1,8 +1,8 @@
 [gd_scene load_steps=7 format=3 uid="uid://cw3evmjw7dh16"]
 
-[ext_resource type="Script" uid="uid://c0eehds55to2n" path="res://Scripts/UI/Controls/new_thread_popup.gd" id="1_gxqic"]
+[ext_resource type="Script" uid="uid://cr5ghcmvan7u7" path="res://Scripts/UI/Controls/new_thread_popup.gd" id="1_gxqic"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="2_pyuyo"]
-[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="3_edsys"]
+[ext_resource type="Script" uid="uid://63wcsxjjtlug" path="res://Scripts/UI/Views/icons_button.gd" id="3_edsys"]
 [ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow_icons/create_arrow.png" id="3_ncgrc"]
 [ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="4_s7ycu"]
 [ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="5_a74rp"]

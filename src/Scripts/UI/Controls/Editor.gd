@@ -152,6 +152,11 @@ func _ready():
 	
 	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS
 	
+	#set the text formats that are supported we add a "*" to the start of every ext
+	for ext in SingletonObject.supported_text_formats:
+		ext = "*." +ext 
+		supported_text_exts.insert(0, ext)
+	$FileDialog.filters = supported_text_exts
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = $FileDialog.get_vbox().get_child(0)
@@ -235,7 +240,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 		($FileDialog as FileDialog).title = "Save \"%s\" editor" % tab_title
 		var line_edit: LineEdit = $FileDialog.get_line_edit()
 		if type == Type.TEXT:
-			line_edit.text = tab_title + ".txt"# + SingletonObject.supported_text_formats[0]
+			line_edit.text = tab_title# + "." + SingletonObject.supported_text_formats[0]
 		else:
 			line_edit.text = tab_title
 		$FileDialog.popup_centered(Vector2i(700, 500))
