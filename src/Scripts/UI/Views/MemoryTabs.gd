@@ -461,7 +461,6 @@ func attach_file(the_file: String):
 			new_memory.Audio = mp3AudioStream
 		if file_ext == "wav":
 			var wavAudioStream = AudioStreamWAV.load_from_buffer(buffer)
-			wavAudioStream
 			new_memory.Audio = wavAudioStream
 		if file_ext == "ogg":
 			var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)
@@ -497,7 +496,8 @@ func _is_text_file(file_path: String) -> bool:
 		return false
 
 	var is_text: bool = false
-	var buffer = file.get_buffer(1024)  # Read the first 1024 bytes
+	var buffer: = file.get_buffer(1024)  # Read the first 1024 bytes
+	if buffer.is_empty(): return true
 	for byte in buffer:
 		# Check for non-text characters (control characters outside of \t, \n, \r)
 		if byte < 9 or (byte > 13 and byte < 32):

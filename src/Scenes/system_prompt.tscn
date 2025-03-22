@@ -1,6 +1,7 @@
 [gd_scene load_steps=2 format=3 uid="uid://bpj336qyc0vse"]
 
 [ext_resource type="Script" uid="uid://d1llk7rpbvi78" path="res://Scripts/UI/Views/system_prompt.gd" id="1_4jqs5"]
+[ext_resource type="Script" uid="uid://d2eqta65hxj16" path="res://Scripts/UI/Views/system_prompt.gd" id="1_4jqs5"]
 
 [node name="PersistentWindow" type="Window"]
 title = "System Prompt"

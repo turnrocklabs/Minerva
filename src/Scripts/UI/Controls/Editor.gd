@@ -82,7 +82,6 @@ var file: String:
 var type: Type
 var _file_saved := false
 
-var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
 
@@ -183,6 +182,11 @@ func update_last_path(new_path: String) -> void:
 
 func _load_text_file(filename: String):
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
+	if fa_object == null:
+				var error: = error_string(FileAccess.get_open_error())
+				push_warning(error)
+				SingletonObject.ErrorDisplay("Couldn't open file", error)
+				return
 	if fa_object:
 		#file_path = file
 		code_edit.text = fa_object.get_as_text()
@@ -364,6 +368,11 @@ func save_file_to_disc(path: String):
 	match type:
 		Type.TEXT:
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
+			if save_file == null:
+				var error: = error_string(FileAccess.get_open_error())
+				push_warning(error)
+				SingletonObject.ErrorDisplay("Couldn't open file", error)
+				return
 			save_file.store_string(code_edit.text)
 			code_edit.tag_saved_version()
 			code_edit.saved_content = code_edit.text # update the saved content
@@ -461,6 +470,8 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 
 
 func toggle_autowrap() -> void:
+	if code_edit == null:
+		return
 	if code_edit.wrap_mode != TextEdit.LINE_WRAPPING_BOUNDARY:
 		code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	if code_edit.autowrap_mode == TextServer.AutowrapMode.AUTOWRAP_OFF:
