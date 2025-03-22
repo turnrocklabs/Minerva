@@ -60,6 +60,7 @@ tooltip_text = "tool selection dropdown"
 selected = 0
 item_count = 5
 popup/item_0/icon = ExtResource("2_qxyqe")
+popup/item_0/id = 0
 popup/item_1/icon = ExtResource("2_tkvqr")
 popup/item_1/id = 1
 popup/item_2/icon = ExtResource("4_82rro")
@@ -69,21 +70,16 @@ popup/item_3/id = 3
 popup/item_4/icon = ExtResource("6_x0pyw")
 popup/item_4/id = 4
 
-[node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
+editor_description = "Brush color"
 layout_mode = 2
 size_flags_vertical = 4
-tooltip_text = "brush styles"
-selected = 0
-fit_to_longest_item = false
-item_count = 4
-popup/item_0/icon = ExtResource("5_nifhk")
-popup/item_1/icon = ExtResource("5_qs5mm")
-popup/item_1/id = 1
-popup/item_2/icon = ExtResource("7_e5qpb")
-popup/item_2/id = 2
-popup/item_3/icon = ExtResource("5_f2f1e")
-popup/item_3/id = 3
+tooltip_text = "active color for drawing"
+focus_mode = 0
+theme_override_constants/h_separation = 12
+text = "Color"
+icon_alignment = 1
 
 [node name="DialogClouds" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
@@ -93,6 +89,7 @@ size_flags_vertical = 4
 selected = 0
 item_count = 3
 popup/item_0/text = "Speech"
+popup/item_0/id = 0
 popup/item_1/text = "Thought"
 popup/item_1/id = 1
 popup/item_2/text = "Plain"
@@ -127,11 +124,11 @@ size_flags_vertical = 4
 tooltip_text = "Apply created mask"
 text = "Apply"
 
-[node name="BrushHSlider" type="HSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+[node name="BrushHSlider" type="VSlider" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
 editor_description = "Brush sizes
 "
-custom_minimum_size = Vector2(150, 0)
+custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Brush Size"
@@ -139,20 +136,34 @@ max_value = 15.0
 value = 5.0
 rounded = true
 
-[node name="ColorPickerButton" type="ColorPickerButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
-unique_name_in_owner = true
-editor_description = "Brush color"
-layout_mode = 2
-size_flags_vertical = 4
-tooltip_text = "active color for drawing"
-focus_mode = 0
-theme_override_constants/h_separation = 12
-text = "Color"
-icon_alignment = 1
-
 [node name="Control" type="Control" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 visible = false
 layout_mode = 2
+
+[node name="BrushSize" type="TextEdit" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(37.47, 37.305)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+text = "12"
+
+[node name="PenAdditionalTools" type="OptionButton" parent="VBoxContainer/MarginContainer/HFlowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "brush styles"
+selected = 0
+fit_to_longest_item = false
+item_count = 4
+popup/item_0/icon = ExtResource("5_nifhk")
+popup/item_0/id = 0
+popup/item_1/icon = ExtResource("5_qs5mm")
+popup/item_1/id = 1
+popup/item_2/icon = ExtResource("7_e5qpb")
+popup/item_2/id = 2
+popup/item_3/icon = ExtResource("5_f2f1e")
+popup/item_3/id = 3
 
 [node name="Hand" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
@@ -321,12 +332,13 @@ file_mode = 0
 access = 2
 
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/Brushes" to="." method="_on_brushes_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/DialogClouds" to="." method="_on_option_button_item_selected"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyTail" to="." method="_on_apply_tail_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BubbleRadius" to="." method="_on_bubble_radius_value_changed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/ApplyMaskButton" to="." method="_on_apply_mask_button_pressed"]
 [connection signal="value_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushHSlider" to="." method="_on_h_slider_value_changed"]
+[connection signal="text_changed" from="VBoxContainer/MarginContainer/HFlowContainer/BrushSize" to="." method="_on_brush_size_text_changed"]
+[connection signal="item_selected" from="VBoxContainer/MarginContainer/HFlowContainer/PenAdditionalTools" to="." method="_on_additional_tools_item_selected"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Hand" to="." method="_on_hand_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/Mg" to="." method="_on_mg_pressed"]
 [connection signal="pressed" from="VBoxContainer/MarginContainer/HFlowContainer/Zoom/VBoxContainer/ZoomInButton" to="." method="_on_zoom_in_pressed"]

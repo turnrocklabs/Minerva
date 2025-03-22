@@ -2,6 +2,7 @@
 
 [ext_resource type="Theme" uid="uid://cdp8qvjvdfebe" path="res://assets/themes/terminal.tres" id="1_1nu0h"]
 [ext_resource type="Script" uid="uid://tk6ctvhuqd4n" path="res://Scripts/UI/Controls/TerminalTabContainer.gd" id="1_n8p1u"]
+[ext_resource type="Script" uid="uid://cx6uc4dxji6i8" path="res://Scripts/UI/Controls/TerminalTabContainer.gd" id="1_n8p1u"]
 
 [node name="TerminalTabContainer" type="VBoxContainer" node_paths=PackedStringArray("_tab_bar", "_controls_container")]
 anchors_preset = 15

@@ -109,21 +109,11 @@ func _on_open_files(files: PackedStringArray):
 func open_file(filename: String):
 	## Determine the file type, create a control for that type (CodeEdit/TextureRect)
 	## Then add the new control to the active_container
-
-	# var new_control: Control
-
 	## Determine file type
 	if _is_graphics_file(filename):
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
 		editor_pane.add(Editor.Type.GRAPHICS, filename)
-		# new_control = TextureRect.new()
-		# new_control.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED # keep the image at center
-
-		# var image = Image.load_from_file(filename)
-		# var texture_item = ImageTexture.create_from_image(image)
-		# new_control.texture = texture_item
-
 	else:
 		editor_pane.add(Editor.Type.TEXT, filename)
 		# new_control = CodeEdit.new()

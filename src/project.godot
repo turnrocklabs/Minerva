@@ -60,7 +60,7 @@ ToggleTabs=""
 
 [gui]
 
-theme/custom="res://assets/themes/blue_dark_mode.theme"
+theme/custom="uid://cr3k2fgiaguik"
 
 [input]
 

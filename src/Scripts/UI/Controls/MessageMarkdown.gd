@@ -146,6 +146,10 @@ func set_message_loading(loading_: bool):
 ## This function will rerender the messaged using set `history_item`.
 ## Either call this function or set the `history_item` which setter will trigger it.
 func render() -> void:
+	if history_item.isMerged:
+		%UnsplitButton.visible = true
+	else:
+		%UnsplitButton.visible = false
 	if not (history_item and is_node_ready()): return
 
 	if history_item.Role == ChatHistoryItem.ChatRole.USER: 
@@ -375,7 +379,7 @@ class TextSegment:
 
 var _regex = RegEx.new()
 func _extract_text_segments(text: TextSegment) -> Array[TextSegment]:
-	_regex.compile(r"(\[code(?: syntax=(?P<syntax>.*?))?\])(?P<content>(.|\-{3}|\n)*?)(\[\/code\])")
+	_regex.compile(r"(\[code(?: syntax=(?P<syntax>.*?))?\])(?P<content>(.|\-{3}&\n|\n)*?)(\[\/code\])")
 
 	var found: Array[TextSegment] = []
 
@@ -531,29 +535,87 @@ var messages = preload("res://Scenes/MessageMarkdown.tscn")
 var richTextLabel = RichTextLabel.new()
 
 func _on_unsplit_button_pressed() -> void:
+	# Set the current message in the SingletonObject
 	SingletonObject.current_message = self
 	
-	var split_parts: Array = history_item.Message.split("\u200B\u200C\u200D", false)
-	var my_UnsplitMessages = get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().find_child("UnsplitedChatMessages")
-	var MessagesHolder = my_UnsplitMessages.find_child("MessagesHolder")
+	# Get references to the UnsplitedChatMessages and MessagesHolder nodes
+	var unsplit_messages_container = get_unsplit_messages_container()
+	var messages_holder = unsplit_messages_container.find_child("MessagesHolder")
 	
-	for part in split_parts:
-		var message_instance = messages.instantiate()
-		message_instance.find_child("UnsplitButton").visible = false
-		message_instance.find_child("HideButton").visible = false
-		message_instance.find_child("PanelContainer").size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		
-		var new_history_item = ChatHistoryItem.new()
-		new_history_item.Message = part.strip_edges()
-		new_history_item.Role = history_item.Role
-		new_history_item.ModelName = history_item.ModelName
-		new_history_item.ModelShortName = history_item.ModelShortName
-		
-		message_instance.history_item = new_history_item
-		MessagesHolder.add_child(message_instance)
+	# Clear existing children in MessagesHolder (optional, depending on your use case)
+	clear_messages_holder(messages_holder)
 	
-	my_UnsplitMessages.visible = true
+	# Handle text messages if they exist
+	if history_item.Message:
+		split_and_display_text_messages(history_item.Message, messages_holder)
+	# Handle images if they exist
+	if history_item.Images:
+		split_and_display_images(history_item.Images, messages_holder)
+	
+	# Make the UnsplitedChatMessages section visible
+	unsplit_messages_container.visible = true
 
+
+# Helper function to get the UnsplitedChatMessages container
+func get_unsplit_messages_container() -> Node:
+	return get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().get_parent().find_child("UnsplitedChatMessages")
+
+
+# Helper function to clear all children in the MessagesHolder
+func clear_messages_holder(messages_holder: Node) -> void:
+	for child in messages_holder.get_children():
+		child.queue_free()
+
+
+# Helper function to split and display text messages
+func split_and_display_text_messages(message: String, messages_holder: Node) -> void:
+	var split_parts: Array = message.split("\u200B\u200C\u200D", false)  # Split by the invisible separator
+	for part in split_parts:
+		var message_instance = create_message_instance()
+		var new_history_item = create_history_item_for_text(part.strip_edges())
+		message_instance.history_item = new_history_item
+		messages_holder.add_child(message_instance)
+		if part == " ":
+			print("epty part is: ", part)
+			message_instance.visible = false
+
+
+# Helper function to split and display images
+func split_and_display_images(images: Array, messages_holder: Node) -> void:
+	for image in images:
+		var message_instance = create_message_instance()
+		var new_history_item = create_history_item_for_image(image)
+		message_instance.history_item = new_history_item
+		messages_holder.add_child(message_instance)
+
+
+# Helper function to create a new message instance
+func create_message_instance() -> Node:
+	var message_instance = messages.instantiate()
+	message_instance.find_child("UnsplitButton").visible = false
+	message_instance.find_child("HideButton").visible = false
+	message_instance.find_child("PanelContainer").size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return message_instance
+
+
+# Helper function to create a ChatHistoryItem for text
+func create_history_item_for_text(text: String) -> ChatHistoryItem:
+	var new_history_item = ChatHistoryItem.new()
+	new_history_item.Message = text
+	new_history_item.Role = history_item.Role
+	new_history_item.ModelName = history_item.ModelName
+	new_history_item.ModelShortName = history_item.ModelShortName
+	return new_history_item
+
+
+# Helper function to create a ChatHistoryItem for an image
+func create_history_item_for_image(image) -> ChatHistoryItem:
+	var new_history_item = ChatHistoryItem.new()
+	new_history_item.Images.append(image)
+	new_history_item.Role = history_item.Role
+	new_history_item.ModelName = history_item.ModelName
+	new_history_item.ModelShortName = history_item.ModelShortName
+	return new_history_item
 
 func _on_extract_editor_button_pressed() -> void:
 	SingletonObject.editor_pane.update_current_text_tab("chat response" , history_item.Message)
