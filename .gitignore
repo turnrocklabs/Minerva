@@ -1,6 +1,9 @@
 # Godot 4+ specific ignores
 .godot/
 .vscode/
+*.uid
+*.so.*
+*.so
 
 # docker stuff
 .env
