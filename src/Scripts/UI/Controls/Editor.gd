@@ -156,7 +156,7 @@ func _ready():
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
 		ext = "*." +ext 
-		supported_text_exts.insert(0, ext)
+		supported_text_exts.append(ext)
 	$FileDialog.filters = supported_text_exts
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
