@@ -183,6 +183,7 @@ func _input(event):
 	):
 		# mouse is outside of chat tab control
 		# we check if it's under
+		_text_selection = true
 		if scroll_container.get_local_mouse_position().y > scroll_container.get_rect().size.y:
 			# scroll factor will be positive number thats difference in
 			# mouse position and bottom of the chat tab
@@ -193,6 +194,7 @@ func _input(event):
 
 	else:
 		_scroll_factor = 0
+		_text_selection = false
 
 
 ## When image is activated, deactivate all other images as only one at the time can be active
