@@ -135,7 +135,12 @@ func _ready():
 	preferences_input_event.action = "preferences"
 	preferences_shortcut.events.append(preferences_input_event)
 	%File.set_item_shortcut(4, preferences_shortcut, true)
-
+	
+	var terminal_shortcut = Shortcut.new()
+	var terminal_input_event = InputEventAction.new()
+	terminal_input_event.action = "ui_terminal"
+	terminal_shortcut.events.append(terminal_input_event)
+	%View.set_item_shortcut(3, terminal_shortcut, true)
 
 func _on_project_index_pressed(index):
 	match index:
