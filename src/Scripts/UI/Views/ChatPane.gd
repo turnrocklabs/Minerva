@@ -269,7 +269,7 @@ func execute_chat():
 	dummy_item.provider = history.provider
 	
 	var model_msg_node = history.VBox.add_history_item(dummy_item)
-	var last_label_index: int= model_msg_node.message_labels_container.get_child_count()
+	#var last_label_index: int= model_msg_node.message_labels_container.get_child_count()
 	latest_msg = model_msg_node
 	model_msg_node.loading = true
 
@@ -328,13 +328,13 @@ func execute_chat():
 func print_this() -> void:
 	if latest_msg == null:
 		return
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	#var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	#history.VBox.ensure_node_is_visible(latest_msg)
 	latest_msg.grab_focus()
 	print(latest_msg.size)
 
 # TODO: check if changing the active tab during the request causes any trouble
-signal my_signal(value)
+#signal my_signal(value)
 
 	
 ## This function takes `partial_chi` and prompts model to finish the response
@@ -477,7 +477,7 @@ func render_history(chat_history: ChatHistory):
 	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
-	scroll_container.follow_focus
+	#scroll_container.follow_focus
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
