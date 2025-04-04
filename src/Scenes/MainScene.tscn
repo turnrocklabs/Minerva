@@ -279,7 +279,7 @@ size = Vector2i(123, 143)
 [node name="View" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 unique_name_in_owner = true
 title = "View"
-size = Vector2i(211, 425)
+size = Vector2i(211, 427)
 hide_on_item_selection = false
 hide_on_checkable_item_selection = false
 item_count = 19
