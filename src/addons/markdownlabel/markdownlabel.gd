@@ -165,6 +165,7 @@ func _convert_markdown(source_text = "") -> String:
 	var within_backtick_block := false
 	var within_tilde_block := false
 	var within_code_block := false
+	var within_dash_block := false
 	var current_code_block_char_count: int
 	_within_table = false
 	_table_row = -1
@@ -173,7 +174,7 @@ func _convert_markdown(source_text = "") -> String:
 	for line in lines:
 		line = line.trim_suffix("\r")
 		_debug("Parsing line: '%s'" % line)
-		within_code_block = within_tilde_block or within_backtick_block
+		within_code_block = within_tilde_block or within_backtick_block or within_dash_block
 		if iline > 0 and _line_break:
 			_converted_text += "\n"
 			_current_paragraph += 1
@@ -187,6 +188,14 @@ func _convert_markdown(source_text = "") -> String:
 					_converted_text += "[/code]"
 					within_backtick_block = false
 					_debug("... closing backtick block")
+					continue
+			elif  within_dash_block:
+				if line.strip_edges().length() >= current_code_block_char_count:
+					_converted_text = _converted_text.trim_suffix("\n")
+					_current_paragraph -= 1
+					_converted_text += "[/code]"
+					within_dash_block = false
+					_debug("... closing dash block")
 					continue
 			else:
 				# append the syntax to the code tag
@@ -206,9 +215,34 @@ func _convert_markdown(source_text = "") -> String:
 					within_tilde_block = false
 					_debug("... closing tilde block")
 					continue
+			elif  within_dash_block:
+				if line.strip_edges().length() >= current_code_block_char_count:
+					_converted_text = _converted_text.trim_suffix("\n")
+					_current_paragraph -= 1
+					_converted_text += "[/code]"
+					within_dash_block = false
+					_debug("... closing dash block")
+					continue
+		elif not within_dash_block and _denotes_fenced_code_block(line,"-"):
+			if within_tilde_block:
+				if line.strip_edges().length() >= current_code_block_char_count:
+					_converted_text = _converted_text.trim_suffix("\n")
+					_current_paragraph -= 1
+					_converted_text += "[/code]"
+					within_tilde_block = false
+					_debug("... closing tilde block")
+					continue
+			elif within_backtick_block:
+				if line.strip_edges().length() >= current_code_block_char_count:
+					_converted_text = _converted_text.trim_suffix("\n")
+					_current_paragraph -= 1
+					_converted_text += "[/code]"
+					within_backtick_block = false
+					_debug("... closing backtick block")
+					continue
 			else:
 				# append the syntax to the code tag
-				var syntax = line.replace("```", "").strip_edges()
+				var syntax = "code"#line.replace("```", "").strip_edges()
 				_converted_text += "[code syntax=%s]" % syntax
 				within_tilde_block = true
 				current_code_block_char_count = line.strip_edges().length()
