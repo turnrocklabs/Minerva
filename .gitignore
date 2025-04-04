@@ -2,6 +2,9 @@
 .godot/
 .vscode/
 *.uid
+*.so.*
+*.so
+
 # docker stuff
 .env
 
