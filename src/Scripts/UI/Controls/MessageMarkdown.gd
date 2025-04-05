@@ -581,8 +581,8 @@ func split_and_display_text_messages(message: String, messages_holder: Node) -> 
 
 
 # Helper function to split and display images
-func split_and_display_images(images: Array, messages_holder: Node) -> void:
-	for image in images:
+func split_and_display_images(images_list: Array, messages_holder: Node) -> void:
+	for image in images_list:
 		var message_instance = create_message_instance()
 		var new_history_item = create_history_item_for_image(image)
 		message_instance.history_item = new_history_item
