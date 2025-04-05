@@ -130,7 +130,8 @@ enum note_type {
 	TEXT,
 	AUDIO, 
 	IMAGE,
-	VIDEO
+	VIDEO,
+	BINARY
 }
 
 enum NotesDrawState {
