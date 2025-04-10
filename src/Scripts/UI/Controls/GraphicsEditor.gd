@@ -785,9 +785,9 @@ func _on_mg_pressed() -> void:
 	# Reset the scale of the layers container
 	_layers_container.scale = Vector2.ONE
 
-	# Calculate the correct position to reset the offset
-	var current_scale = _layers_container.scale
-	var current_position = _layers_container.position
+	## Calculate the correct position to reset the offset
+	#var current_scale = _layers_container.scale
+	#var current_position = _layers_container.position
 
 	# Reset the position to account for the accumulated offset
 	_layers_container.position = Vector2.ZERO

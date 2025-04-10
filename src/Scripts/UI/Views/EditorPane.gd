@@ -14,7 +14,7 @@ static var _unsaved_changes_associated_icon: = preload("res://assets/icons/half_
 #@warning_ignore("unused_variable")
 #static var _incoplete_snippet_icon: = preload("res://assets/icons/warning_circle.svg")
 @warning_ignore("unused_variable")
-var _is_Completed = true
+var _is_Completed
 
 var current_layout: LAYOUT
 
@@ -30,6 +30,8 @@ var current_layout: LAYOUT
 var counter_for_remove
 
 func _ready():
+	_last_state = false
+	_is_Completed = true
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
 	SingletonObject.UpdateUnsavedTabIcon.connect(update_tabs_icon)
@@ -399,7 +401,7 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 ### End Reference Information ###
 
 
-var _last_state: = false
+var _last_state
 
 func _on_toggle_all_button_toggled(toggled_on: bool) -> void:
 	for editor in get_open_editors():
