@@ -91,8 +91,11 @@ func scroll_to_top() -> void:
 
 
 func ensure_node_is_visible(node: Control) -> void:
+	
+	# Wait for the scroll bar to update
 	await scroll_container.get_v_scroll_bar().changed
-
+	# Wait for the next frame to ensure the node is added to the scene
+	await get_tree().process_frame
 	var scroll_to: int = 0
 	# Calculate the total height of all nodes above the target node
 	for i in get_children():

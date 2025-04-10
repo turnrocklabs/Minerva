@@ -172,7 +172,9 @@ func _on_replace_all_pressed():
 
 
 func _update_label_size() -> void:
+	#await get_tree().process_frame
 	await get_tree().process_frame
+	
 	label_size = int(code_label.size.y)
 
 
@@ -194,7 +196,7 @@ func expand_code() -> void:
 	expand_tween.finished.connect(enable_expand_button)
 	expand_button.disabled = true
 	if label_size == 0:
-		await _update_label_size()
+		_update_label_size()
 	expand_tween.tween_property(code_label, "custom_minimum_size:y", label_size, expand_anim_duration)
 	expand_tween.set_parallel()
 	expand_tween.tween_property(p_2, "custom_minimum_size:y", label_size, expand_anim_duration)
@@ -210,6 +212,8 @@ func contract_code() -> void:
 		return
 	code_label.fit_content = false
 	code_label.custom_minimum_size.y = label_size
+	if label_size == 0:
+		label_size = int(code_label.size.y)
 	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
 	expand_tween.finished.connect(enable_expand_button)
 	expand_button.disabled = true

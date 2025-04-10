@@ -222,7 +222,7 @@ func _convert_markdown(source_text = "") -> String:
 					_current_paragraph -= 1
 					_converted_text += "[/code]"
 					within_dash_block = false
-					_debug("... closing tilde block")
+					_debug("... closing dash block")
 					continue
 			else:
 				# append the syntax to the code tag
@@ -579,7 +579,7 @@ func _reset_escaped_chars(_text: String,code:=false) -> String:
 func _debug(string: String):
 	if not _debug_mode:
 		return
-	print(string)
+	#print(string)
 
 func _denotes_fenced_code_block(line: String, character: String) -> bool:
 	# print("checking for a fenced code block. Line: ", line, " , character: ", character)
