@@ -172,9 +172,7 @@ func _on_replace_all_pressed():
 
 
 func _update_label_size() -> void:
-	#await get_tree().process_frame
 	await get_tree().process_frame
-	
 	label_size = int(code_label.size.y)
 
 
