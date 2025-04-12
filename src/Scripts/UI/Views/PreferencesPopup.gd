@@ -148,14 +148,13 @@ func _on_microphones_item_selected(index: int) -> void:
 
 
 func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
-	#Experimental Features are stored as "Experimental" in config file
-	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
-	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
-	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".disabled = !toggled_on
-	%HSplitButton.visible = toggled_on
-	%HSplitButton.disabled = !toggled_on
-	%VSplitButton.visible = toggled_on
-	%VSplitButton.disabled = !toggled_on
+	# Experimental Features are stored as "Experimental" in config file and there is a global group label
+	%View.set_item_disabled(3, !toggled_on)
+	for node in get_tree().get_nodes_in_group("Experimental"):
+		if node is Control:
+			node.visible = toggled_on
+		if node is Button:
+			node.disabled = !toggled_on
 	SingletonObject.toggle_experimental.emit(toggled_on)
 
 
