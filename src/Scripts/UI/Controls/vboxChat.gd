@@ -91,8 +91,11 @@ func scroll_to_top() -> void:
 
 
 func ensure_node_is_visible(node: Control) -> void:
+	
+	# Wait for the scroll bar to update
 	await scroll_container.get_v_scroll_bar().changed
-
+	# Wait for the next frame to ensure the node is added to the scene
+	await get_tree().process_frame
 	var scroll_to: int = 0
 	# Calculate the total height of all nodes above the target node
 	for i in get_children():
@@ -163,31 +166,32 @@ var _text_selection:= false
 # will check if theres open chat tab and apply the scroll factor to selected tab
 func _process(delta: float):
 	if _text_selection: # only if text selection is active for any rich text label
-		scroll_container.scroll_vertical += _scroll_factor*3*delta
+		scroll_container.scroll_vertical += _scroll_factor*5*delta
 
 func _input(event):
-	if event is InputEventMouseButton: pass
-		# scroll_container.visible = true
 
 	if not event is InputEventMouseMotion: return
 
 	# Check if is text *probably* being currently selected
 	# by checking if mouse is currently pressed
 	# and that mouse is outside of the chat tab control
-
+	#event = event as InputEventMouseButton
 	if (
 		Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and
 		not scroll_container.get_rect().has_point(scroll_container.get_local_mouse_position())
 		and scroll_container.get_local_mouse_position().x > scroll_container.get_rect().position.x
 		and scroll_container.get_local_mouse_position().x < scroll_container.get_rect().size.x
+		and Input.get_action_strength("draw") > 0.2
 	):
 		# mouse is outside of chat tab control
 		# we check if it's under
-		_text_selection = true
+		if !_text_selection:
+			_text_selection = true
+		
 		if scroll_container.get_local_mouse_position().y > scroll_container.get_rect().size.y:
 			# scroll factor will be positive number thats difference in
 			# mouse position and bottom of the chat tab
-			_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y
+			_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y 
 		# or above it
 		else:
 			_scroll_factor = scroll_container.get_local_mouse_position().y
