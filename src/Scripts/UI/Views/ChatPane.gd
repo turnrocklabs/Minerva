@@ -490,7 +490,6 @@ func render_history(chat_history: ChatHistory):
 
 	# set the scroll container name and add it to the pane.
 	var _name = chat_history.HistoryName
-	#scroll_container.name = _name
 	%tcChats.add_child(scroll_container)
 	var tab_idx = %tcChats.get_tab_idx_from_control(scroll_container)
 	%tcChats.set_tab_title(tab_idx, _name)
