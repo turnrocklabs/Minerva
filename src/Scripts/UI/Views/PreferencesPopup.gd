@@ -151,6 +151,11 @@ func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
 	#Experimental Features are stored as "Experimental" in config file
 	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
 	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
+	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".disabled = !toggled_on
+	%HSplitButton.visible = toggled_on
+	%HSplitButton.disabled = !toggled_on
+	%VSplitButton.visible = toggled_on
+	%VSplitButton.disabled = !toggled_on
 	SingletonObject.toggle_experimental.emit(toggled_on)
 
 

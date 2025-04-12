@@ -270,6 +270,7 @@ text = " "
 fit_content = true
 context_menu_enabled = true
 selection_enabled = true
+deselect_on_focus_loss_enabled = false
 script = ExtResource("2_5cmtk")
 h1 = SubResource("Resource_de4hw")
 h2 = SubResource("Resource_s8if8")
