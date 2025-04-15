@@ -97,10 +97,10 @@ func _extract_code_label():
 			linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
-static var code_markdopwn_label: = preload("res://Scenes/CodeMarkdownLabel.tscn")
+static var code_markdown_label: = preload("res://Scenes/CodeMarkdownLabel.tscn")
 static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "", expanded_value: bool = true) -> CodeMarkdownLabel:
 	# place the code label in panel container to change the background
-	var code_panel = code_markdopwn_label.instantiate()
+	var code_panel = code_markdown_label.instantiate()
 	code_panel.dict_index = index
 	if memory_item_UUID != "":
 		code_panel.linked_memory_item = memory_item_UUID
