@@ -162,43 +162,40 @@ func render_items():
 var _scroll_factor:= 0.0
 var _text_selection:= false
 
-
 # will check if theres open chat tab and apply the scroll factor to selected tab
 func _process(delta: float):
 	if _text_selection: # only if text selection is active for any rich text label
 		scroll_container.scroll_vertical += _scroll_factor*5*delta
 
+
 func _input(event):
-
-	if not event is InputEventMouseMotion: return
-
+	if event is InputEventMouseMotion: 
+	
+		if ( _text_selection 
+		and scroll_container.global_position.y > get_global_mouse_position().y 
+		or scroll_container.global_position.y + scroll_container.size.y < get_global_mouse_position().y ):
+			if scroll_container.get_local_mouse_position().y > scroll_container.get_rect().size.y:
+				# scroll factor will be positive number thats difference in
+				# mouse position and bottom of the chat tab
+				_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y 
+			# or above it
+			else:
+				_scroll_factor = scroll_container.get_local_mouse_position().y
 	# Check if is text *probably* being currently selected
 	# by checking if mouse is currently pressed
 	# and that mouse is outside of the chat tab control
-	#event = event as InputEventMouseButton
-	if (
-		Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and
-		not scroll_container.get_rect().has_point(scroll_container.get_local_mouse_position())
-		and scroll_container.get_local_mouse_position().x > scroll_container.get_rect().position.x
-		and scroll_container.get_local_mouse_position().x < scroll_container.get_rect().size.x
-		and Input.get_action_strength("draw") > 0.2
-	):
-		# mouse is outside of chat tab control
-		# we check if it's under
-		if !_text_selection:
+	
+	elif event is InputEventMouseButton:
+		if (
+			event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed()
+			and scroll_container.get_rect().has_point(scroll_container.get_local_mouse_position())
+			and event.get_action_strength("draw") > 0.2
+		):
 			_text_selection = true
-		
-		if scroll_container.get_local_mouse_position().y > scroll_container.get_rect().size.y:
-			# scroll factor will be positive number thats difference in
-			# mouse position and bottom of the chat tab
-			_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y 
-		# or above it
-		else:
-			_scroll_factor = scroll_container.get_local_mouse_position().y
-
-	else:
-		_scroll_factor = 0
-		_text_selection = false
+			_scroll_factor = 0
+		elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
+			_scroll_factor = 0
+			_text_selection = false
 
 
 ## When image is activated, deactivate all other images as only one at the time can be active

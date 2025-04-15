@@ -248,6 +248,8 @@ func execute_chat():
 	user_history_item.Message = CheckUnderscores
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 
+	var files_for_multi_message = check_for_mutiple_files_input(CheckUnderscores)
+	
 	%txtMainUserInput.text = ""
 	
 	# make a chat request
@@ -271,18 +273,16 @@ func execute_chat():
 	var model_msg_node = history.VBox.add_history_item(dummy_item)
 	#var last_label_index: int= model_msg_node.message_labels_container.get_child_count()
 	latest_msg = model_msg_node
-	model_msg_node.loading = true
-
+	model_msg_node.loading = true 
 	
-	var optional_params = {
-		"temperature": history.Temperature,
-		"top_p": history.TopP,
-		"presence_penalty": history.PresencePenalty,
-		"frequency_penalty": history.FrequencyPenalty,
-	}
-
 	var bot_response
 	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is DallE:
+		var optional_params = {
+			"temperature": history.Temperature,
+			"top_p": history.TopP,
+			"presence_penalty": history.PresencePenalty,
+			"frequency_penalty": history.FrequencyPenalty,
+		}
 		bot_response = await history.provider.generate_content(history_list, optional_params)
 	else:
 		bot_response = await history.provider.generate_content(history_list)
@@ -325,18 +325,18 @@ func execute_chat():
 	else:
 		model_msg_node.queue_free()
 
-func print_this() -> void:
-	if latest_msg == null:
-		return
-	#var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	#history.VBox.ensure_node_is_visible(latest_msg)
-	latest_msg.grab_focus()
-	print(latest_msg.size)
+func check_for_mutiple_files_input(input: String) -> Array[String]:
+	var files: Array[String] = []
+	for line in input.split("\n"):
+		if line.get_extension() != "":
+			files.append(line.get_file())
+	return files
+
 
 # TODO: check if changing the active tab during the request causes any trouble
 #signal my_signal(value)
 
-	
+
 ## This function takes `partial_chi` and prompts model to finish the response
 ## merging the new and the initial response into one and returning it.
 func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
@@ -469,8 +469,6 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 				previous_item.Visible = false
 				previous_item.rendered_node.render()
 
-	
-
 
 func render_history(chat_history: ChatHistory):
 	
@@ -499,7 +497,6 @@ func render_history(chat_history: ChatHistory):
 		vboxChat.add_history_item(item)
 
 
-
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
@@ -525,6 +522,7 @@ func _on_note_toggled(_note: Note, _on: bool):
 func _on_note_changed(_note: Note,):
 	update_token_estimation()
 
+
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.control = closed_tab_container.get_tab_control(tab)
 	self.container = closed_tab_container 
@@ -533,7 +531,7 @@ func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	
 	if get_tab_count() < 1 :
 		buffer_control_chats.show()
-	
+
 
 # Function to restore a deleted tab
 func restore_deleted_tab(tab_name: String):
@@ -671,6 +669,7 @@ func _on_btn_microphone_pressed():
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
 	SingletonObject.AtT.btnStop = %AudioStop1
 
+
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
 	SingletonObject.ChatList = []  # Clear the existing list
@@ -683,7 +682,6 @@ func _on_child_order_changed():
 
 func _on_system_button_pressed() -> void:
 	%SystemPrompt.popup()
-
 
 
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
