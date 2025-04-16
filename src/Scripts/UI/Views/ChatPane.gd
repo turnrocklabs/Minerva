@@ -247,8 +247,13 @@ func execute_chat():
 	var CheckUnderscores = %txtMainUserInput.text.replace("_",r"\_")
 	user_history_item.Message = CheckUnderscores
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
-
-	var files_for_multi_message = check_for_mutiple_files_input(CheckUnderscores)
+	
+	
+	if check_for_create_files(CheckUnderscores) and get_file_names_in_message(CheckUnderscores).size() > 1:
+		pass
+	else:
+		#do something else
+		pass
 	
 	%txtMainUserInput.text = ""
 	
@@ -325,7 +330,14 @@ func execute_chat():
 	else:
 		model_msg_node.queue_free()
 
-func check_for_mutiple_files_input(input: String) -> Array[String]:
+func check_for_create_files(input: String) -> bool:
+	if input.split("\n")[0].to_lower().contains("create"):
+		return true
+	else:
+		return false
+
+
+func get_file_names_in_message(input: String) -> Array[String]:
 	var files: Array[String] = []
 	for line in input.split("\n"):
 		if line.get_extension() != "":
@@ -334,8 +346,6 @@ func check_for_mutiple_files_input(input: String) -> Array[String]:
 
 
 # TODO: check if changing the active tab during the request causes any trouble
-#signal my_signal(value)
-
 
 ## This function takes `partial_chi` and prompts model to finish the response
 ## merging the new and the initial response into one and returning it.
