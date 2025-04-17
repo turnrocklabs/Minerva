@@ -262,11 +262,11 @@ func execute_chat():
 
 		# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 		history.HistoryItemList.append(user_history_item)
-		await get_tree().create_timer(0.1).timeout
-		history.VBox.scroll_to_bottom()
+		
 		user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
-		# rerender the message wince we changed the history item
+		# rerender the message since we changed the history item
 		user_msg_node.first_time_message = true
+		history.VBox.ensure_node_is_visible(user_msg_node)
 		user_msg_node.render()
 
 		# Add empty history item, to show the loading state
@@ -325,11 +325,12 @@ func execute_chat():
 		else:
 			model_msg_node.queue_free()
 	
-	# we made the prompt, disable the notes now
+	# we made the prompt, disable the notes now (movec this to the end of the method because of the multiple messages)
 	for i in get_tree().get_nodes_in_group("ToggleTabs"):
 		i = i as CheckButton
 		i.button_pressed = false
 	SingletonObject.NotesTab.Disable_All()
+
 
 func check_for_create_files(input: String) -> bool:
 	if input.split("\n")[0].to_lower().contains("create"):
@@ -486,9 +487,9 @@ func render_history(chat_history: ChatHistory):
 	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
-	#scroll_container.follow_focus
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	
 
 	# create a derived VBoxContainer for chats and add to the scroll container
 	var vboxChat: VBoxChat = VBoxChat.new(self)

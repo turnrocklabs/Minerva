@@ -73,19 +73,29 @@ func _messages_list_changed():
 	
 	last_message.editable = true
 
+var scroll_tween: Tween
+var scroll_time: float = 0.8
+
+func kill_scroll_tween() -> void:
+	if scroll_tween:
+		scroll_tween.kill()
 
 func scroll_to_bottom():
 	# wait for message to update the scroll container dimensions
 	await scroll_container.get_v_scroll_bar().changed
 	# scroll to bottom
-	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().max_value
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_container.get_v_scroll_bar().max_value, scroll_time)
 
 
 func scroll_to_top() -> void:
 	# wait for message to update the scroll container dimensions
 	await scroll_container.get_v_scroll_bar().changed
 	# scroll to top
-	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().min_value
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_container.get_v_scroll_bar().min_value, scroll_time)
 
 
 func ensure_node_is_visible(node: Control) -> void:
@@ -105,14 +115,16 @@ func ensure_node_is_visible(node: Control) -> void:
 				
 	var visible_height = scroll_container.size.y
 	var node_height = node.size.y
-
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	
 	if node_height > visible_height:
-		scroll_container.scroll_vertical = scroll_to
+		scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_to, scroll_time)
 	else:
 		var center_position = scroll_to - (visible_height - node_height) / 2
 		# Clamp the scroll position between min and max values
 		var max_scroll = scroll_container.get_v_scroll_bar().max_value
-		scroll_container.scroll_vertical = clamp(center_position, 0, max_scroll)
+		scroll_tween.tween_property(scroll_container, "scroll_vertical", clamp(center_position, 0, max_scroll), scroll_time)
 
 
 
