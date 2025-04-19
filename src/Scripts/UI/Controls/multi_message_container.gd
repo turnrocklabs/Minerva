@@ -1,10 +1,8 @@
 class_name MultiMessageContainer extends Control
 
 
+@onready var slider_container: SliderContainer = %SliderContainer
 
-
-func _on_child_entered_tree(node: Node) -> void:
-	node.reparent(%SliderContainer)
 
 
 func _on_prev_button_pressed() -> void:

@@ -33,6 +33,12 @@ func _position_children_immediately() -> void:
 			child.position = target_pos
 			child.scale = Vector2(target_scale, target_scale)
 			child.pivot_offset = child.size / 2
+			if i == active_child_index:
+				child.modulate = Color(1.0, 1.0, 1.0, 1.0)
+				child.z_index = 10
+			else:
+				child.modulate = Color(0.8, 0.8, 0.8, 1.0)
+				child.z_index = 0
 
 func _calculate_child_position(child_index: int) -> Vector2:
 	var relative_index = child_index - active_child_index

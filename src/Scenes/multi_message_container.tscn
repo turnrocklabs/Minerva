@@ -43,6 +43,30 @@ text = "R"
 unique_name_in_owner = true
 layout_mode = 2
 
-[connection signal="child_entered_tree" from="." to="." method="_on_child_entered_tree"]
+[node name="Panel" type="Panel" parent="VBoxContainer/SliderContainer"]
+z_index = 10
+custom_minimum_size = Vector2(150, 100)
+layout_mode = 2
+
+[node name="Panel2" type="Panel" parent="VBoxContainer/SliderContainer"]
+modulate = Color(0.8, 0.8, 0.8, 1)
+custom_minimum_size = Vector2(150, 100)
+layout_mode = 2
+
+[node name="Panel3" type="Panel" parent="VBoxContainer/SliderContainer"]
+modulate = Color(0.8, 0.8, 0.8, 1)
+custom_minimum_size = Vector2(150, 100)
+layout_mode = 2
+
+[node name="Panel4" type="Panel" parent="VBoxContainer/SliderContainer"]
+modulate = Color(0.8, 0.8, 0.8, 1)
+custom_minimum_size = Vector2(150, 100)
+layout_mode = 2
+
+[node name="Panel5" type="Panel" parent="VBoxContainer/SliderContainer"]
+modulate = Color(0.8, 0.8, 0.8, 1)
+custom_minimum_size = Vector2(150, 100)
+layout_mode = 2
+
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/PrevButton" to="." method="_on_prev_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/NextButton" to="." method="_on_next_button_pressed"]
