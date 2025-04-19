@@ -146,7 +146,7 @@ func _on_replace_all_pressed():
 		
 		# Get the CodeEdit node
 		var code_edit_node = active_tab_editor_node.code_edit
-		
+		active_tab_editor_node.update_code_hightlighter(%SyntaxLabel.text)
 		if code_edit_node:
 			# Get the old text from the metadata
 			var old_text: String = code_edit_node.get_meta("old_text", code_edit_node.text)
@@ -154,6 +154,7 @@ func _on_replace_all_pressed():
 			# Set the new text
 			code_edit_node.text = new_text
 			
+			#code_edit_node.syntax_highlighter = Editor.get_code_highlighter(ep.editor_name_to_use(%SyntaxLabel.text))
 
 			for i in REGEX_PATTERNS:
 				var pattern = REGEX_PATTERNS[i]

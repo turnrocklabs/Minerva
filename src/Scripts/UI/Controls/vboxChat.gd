@@ -129,12 +129,13 @@ func ensure_node_is_visible(node: Control) -> void:
 
 
 ## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
-func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
+func add_history_item(item: ChatHistoryItem, add_as_child: bool = true) -> MessageMarkdown:
 	var msg_node = MessageMarkdown.new_message()
 	msg_node.history_item = item
 	item.rendered_node = msg_node
 
-	add_child(msg_node)
+	if add_as_child:
+		add_child(msg_node)
 
 	#scroll_to_bottom()
 

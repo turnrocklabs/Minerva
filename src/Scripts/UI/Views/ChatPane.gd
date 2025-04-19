@@ -220,7 +220,7 @@ func execute_chat():
 	
 	if multiple_messages and file_names.size() > 1:
 		number_of_messages = file_names.size()
-	
+		
 	for i in number_of_messages:
 		
 		var user_history_item: = ChatHistoryItem.new()
@@ -259,7 +259,7 @@ func execute_chat():
 		var history_list: = create_prompt(user_history_item)
 
 		var user_msg_node: = history.VBox.add_history_item(user_history_item)
-
+		
 		# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 		history.HistoryItemList.append(user_history_item)
 		
@@ -275,7 +275,6 @@ func execute_chat():
 		dummy_item.provider = history.provider
 		
 		var model_msg_node = history.VBox.add_history_item(dummy_item)
-		
 		latest_msg = model_msg_node
 		model_msg_node.loading = true 
 		
@@ -324,7 +323,6 @@ func execute_chat():
 			model_msg_node.first_time_message = true
 		else:
 			model_msg_node.queue_free()
-	
 	# we made the prompt, disable the notes now (movec this to the end of the method because of the multiple messages)
 	for i in get_tree().get_nodes_in_group("ToggleTabs"):
 		i = i as CheckButton
