@@ -59,8 +59,227 @@ enum Type {
 	NOTE_EDITOR,
 	VIDEO
 }
-
-const code_highlight_keywords: ={
+const code_highlight_keywords = {
+	"python": {
+		"if": "#FF9C9C",
+		"else": "#FF9C9C",
+		"elif": "#FF9C9C",
+		"while": "#FFB38A",
+		"for": "#FFB38A",
+		"break": "#FF8FB1",
+		"continue": "#FF8FB1",
+		"return": "#FFA07A",
+		"def": "#87CEEB",
+		"class": "#87CEEB",
+		"lambda": "#98FB98",
+		"import": "#DDA0DD",
+		"from": "#DDA0DD",
+		"as": "#DDA0DD",
+		"try": "#FFD700",
+		"except": "#FFD700",
+		"finally": "#FFD700",
+		"raise": "#FFA500",
+		"with": "#00CED1",
+		"async": "#40E0D0",
+		"await": "#40E0D0",
+		"True": "#98FB98",
+		"False": "#FF6B6B",
+		"None": "#D3D3D3",
+		"and": "#87CEFA",
+		"or": "#87CEFA",
+		"not": "#87CEFA",
+		"is": "#87CEFA",
+		"in": "#87CEFA",
+		"global": "#DDA0DD",
+		"nonlocal": "#DDA0DD",
+		"pass": "#B0C4DE",
+		"assert": "#FFA07A",
+		"del": "#FF6B6B",
+		"yield": "#98FB98"
+		},
+	"javascript": {
+		"var": "#87CEEB",
+		"let": "#87CEEB",
+		"const": "#87CEEB",
+		"if": "#FF9C9C",
+		"else": "#FF9C9C",
+		"for": "#FFB38A",
+		"while": "#FFB38A",
+		"do": "#FFB38A",
+		"switch": "#FF9C9C",
+		"case": "#FF9C9C",
+		"break": "#FF8FB1",
+		"continue": "#FF8FB1",
+		"return": "#FFA07A",
+		"default": "#FF9C9C",
+		"function": "#98FB98",
+		"class": "#98FB98",
+		"constructor": "#98FB98",
+		"extends": "#90EE90",
+		"new": "#98FB98",
+		"import": "#DDA0DD",
+		"export": "#DDA0DD",
+		"from": "#DDA0DD",
+		"try": "#FFD700",
+		"catch": "#FFD700",
+		"finally": "#FFD700",
+		"throw": "#FFA500",
+		"this": "#00CED1",
+		"super": "#40E0D0",
+		"async": "#8A2BE2",
+		"await": "#8A2BE2",
+		"true": "#98FB98",
+		"false": "#FF6B6B",
+		"null": "#D3D3D3",
+		"undefined": "#D3D3D3"
+		},
+	"typescript": {
+		"var": "#87CEEB",
+		"let": "#87CEEB",
+		"const": "#87CEEB",
+		"if": "#FF9C9C",
+		"else": "#FF9C9C",
+		"for": "#FFB38A",
+		"while": "#FFB38A",
+		"do": "#FFB38A",
+		"switch": "#FF9C9C",
+		"case": "#FF9C9C",
+		"break": "#FF8FB1",
+		"continue": "#FF8FB1",
+		"return": "#FFA07A",
+		"default": "#FF9C9C",
+		"function": "#98FB98",
+		"class": "#98FB98",
+		"constructor": "#98FB98",
+		"extends": "#90EE90",
+		"new": "#98FB98",
+		"import": "#DDA0DD",
+		"export": "#DDA0DD",
+		"from": "#DDA0DD",
+		"try": "#FFD700",
+		"catch": "#FFD700",
+		"finally": "#FFD700",
+		"throw": "#FFA500",
+		"this": "#00CED1",
+		"super": "#40E0D0",
+		"async": "#8A2BE2",
+		"await": "#8A2BE2",
+		"true": "#98FB98",
+		"false": "#FF6B6B",
+		"null": "#D3D3D3",
+		"undefined": "#D3D3D3",
+		"type": "#E6A8D7",
+		"interface": "#E6A8D7",
+		"implements": "#E6A8D7",
+		"namespace": "#DDA0DD",
+		"enum": "#E6A8D7",
+		"private": "#FFB6C1",
+		"protected": "#FFB6C1",
+		"public": "#FFB6C1",
+		"readonly": "#FFB6C1",
+		"as": "#40E0D0",
+		"instanceof": "#40E0D0",
+		"typeof": "#40E0D0",
+		"any": "#FFD700",
+		"void": "#FFD700",
+		"never": "#FFD700",
+		"unknown": "#FFD700"
+		},
+	"rust": {
+		"let": "#87CEEB",
+		"const": "#87CEEB",
+		"static": "#87CEEB",
+		"type": "#87CEEB",
+		"if": "#FF9C9C",
+		"else": "#FF9C9C",
+		"match": "#FF9C9C",
+		"loop": "#FFB38A",
+		"while": "#FFB38A",
+		"for": "#FFB38A",
+		"break": "#FF8FB1",
+		"continue": "#FF8FB1",
+		"return": "#FFA07A",
+		"fn": "#98FB98",
+		"mod": "#98FB98",
+		"use": "#90EE90",
+		"pub": "#98FB98",
+		"mut": "#DDA0DD",
+		"ref": "#DDA0DD",
+		"move": "#DDA0DD",
+		"impl": "#FFD700",
+		"trait": "#FFD700",
+		"where": "#FFD700",
+		"lifetime": "#FFA500",
+		"struct": "#00CED1",
+		"enum": "#40E0D0",
+		"union": "#40E0D0",
+		"async": "#8A2BE2",
+		"await": "#8A2BE2",
+		"unsafe": "#FF6B6B",
+		"dyn": "#FF6B6B"
+		},
+	"java": {
+		"var": "#87CEEB",
+		"final": "#87CEEB",
+		"static": "#87CEEB",
+		"if": "#FF9C9C",
+		"else": "#FF9C9C",
+		"for": "#FFB38A",
+		"while": "#FFB38A",
+		"do": "#FFB38A",
+		"switch": "#FF9C9C",
+		"case": "#FF9C9C",
+		"break": "#FF8FB1",
+		"continue": "#FF8FB1",
+		"return": "#FFA07A",
+		"class": "#98FB98",
+		"interface": "#98FB98",
+		"extends": "#90EE90",
+		"implements": "#90EE90",
+		"new": "#98FB98",
+		"public": "#FFB6C1",
+		"private": "#FFB6C1",
+		"protected": "#FFB6C1",
+		"package": "#FFB6C1",
+		"try": "#FFD700",
+		"catch": "#FFD700",
+		"finally": "#FFD700",
+		"throw": "#FFA500",
+		"throws": "#FFA500",
+		"this": "#00CED1",
+		"super": "#40E0D0",
+		"void": "#40E0D0",
+		"int": "#DDA0DD",
+		"long": "#DDA0DD",
+		"float": "#DDA0DD",
+		"double": "#DDA0DD",
+		"boolean": "#DDA0DD",
+		"char": "#DDA0DD",
+		"byte": "#DDA0DD",
+		"short": "#DDA0DD",
+		"true": "#98FB98",
+		"false": "#FF6B6B",
+		"null": "#D3D3D3"
+		}
+	}
+const color_groups: Dictionary = {
+		"colorGroups": {
+		"controlFlow": "#FF9C9C",
+		"loops": "#FFB38A",
+		"functions": "#98FB98",
+		"types": "#87CEEB",
+		"modules": "#DDA0DD",
+		"errorHandling": "#FFD700",
+		"async": "#8A2BE2",
+		"booleanTrue": "#98FB98",
+		"booleanFalse": "#FF6B6B",
+		"null": "#D3D3D3",
+		"accessModifiers": "#FFB6C1",
+		"objectRelated": "#00CED1"
+		}
+	}
+	
+const syntaxHighlightColors: ={
 	"python_keywords": {
 		"if": "#C792EA",
 		"else": "#C792EA",
@@ -342,6 +561,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 					code_highlighter.number_color = Color.FLORAL_WHITE
 					code_highlighter.symbol_color = Color.AQUAMARINE
 					code_highlighter.function_color = Color.DEEP_PINK
+					code_highlighter.member_keyword_colors = color_groups.get("colorGroups")
 					code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
 					new_code_edit.syntax_highlighter = code_highlighter
 			
@@ -370,8 +590,8 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 
 
 static func get_keywords_colors(lang: String) -> Dictionary:
-	if code_highlight_keywords.has(lang.rstrip("01234567890!#$%&/()=") + "_keywords"):
-		return code_highlight_keywords.get(lang.rstrip("01234567890!#$%&/()=") + "_keywords")
+	if code_highlight_keywords.has(lang.rstrip("01234567890!#$%&/()=") ):
+		return code_highlight_keywords.get(lang.rstrip("01234567890!#$%&/()=") )
 	else:
 		return {}
 
@@ -381,12 +601,12 @@ func update_code_hightlighter(lang: String) -> void:
 	if !lang_keywords.is_empty():
 		var code_highlighter: = CodeHighlighter.new()
 		code_highlighter.keyword_colors = lang_keywords
+		code_highlighter.member_keyword_colors = color_groups.get("colorGroups")
 		code_highlighter.number_color = Color.FLORAL_WHITE
 		code_highlighter.symbol_color = Color.AQUAMARINE
 		code_highlighter.function_color = Color.DEEP_PINK
 		code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
 		code_edit.syntax_highlighter = code_highlighter
-
 
 
 func toggle(on: bool) -> void:
@@ -426,7 +646,8 @@ func _ready():
 	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
 	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
 	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
-	
+
+
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
 
