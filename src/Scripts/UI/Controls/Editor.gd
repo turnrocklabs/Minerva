@@ -60,6 +60,231 @@ enum Type {
 	VIDEO
 }
 
+const code_highlight_keywords: ={
+	"python_keywords": {
+		"if": "#C792EA",
+		"else": "#C792EA",
+		"elif": "#C792EA",
+		"while": "#C792EA",
+		"for": "#C792EA",
+		"break": "#FF8B92",
+		"continue": "#FF8B92",
+		"return": "#FF8B92",
+		"yield": "#FF8B92",
+		"and": "#7FDBCA",
+		"or": "#7FDBCA",
+		"not": "#7FDBCA",
+		"is": "#7FDBCA",
+		"in": "#7FDBCA",
+		"def": "#82AAFF",
+		"class": "#82AAFF",
+		"lambda": "#82AAFF",
+		"import": "#FFA07A",
+		"from": "#FFA07A",
+		"as": "#FFA07A",
+		"try": "#FFD700",
+		"except": "#FFD700",
+		"finally": "#FFD700",
+		"raise": "#FFD700",
+		"with": "#80CBC4",
+		"async": "#80CBC4",
+		"await": "#80CBC4",
+		"True": "#A8FF60",
+		"False": "#FF9CAC",
+		"None": "#B2CCD6",
+		"global": "#F07178",
+		"nonlocal": "#F07178",
+		"pass": "#B2CCD6",
+		"assert": "#C792EA",
+		"del": "#FF8B92"
+	},
+
+	"javascript_keywords": {
+		"var": "#7FDBCA",
+		"let": "#7FDBCA",
+		"const": "#7FDBCA",
+		"if": "#C792EA",
+		"else": "#C792EA",
+		"switch": "#C792EA",
+		"case": "#C792EA",
+		"break": "#C792EA",
+		"default": "#C792EA",
+		"while": "#C792EA",
+		"do": "#C792EA",
+		"for": "#C792EA",
+		"continue": "#C792EA",
+		"function": "#82AAFF",
+		"class": "#82AAFF",
+		"constructor": "#82AAFF",
+		"extends": "#82AAFF",
+		"new": "#82AAFF",
+		"import": "#FFA07A",
+		"export": "#FFA07A",
+		"from": "#FFA07A",
+		"try": "#FFD700",
+		"catch": "#FFD700",
+		"finally": "#FFD700",
+		"throw": "#FFD700",
+		"this": "#FF8B92",
+		"super": "#FF8B92",
+		"delete": "#FF8B92",
+		"async": "#80CBC4",
+		"await": "#80CBC4",
+		"typeof": "#F07178",
+		"instanceof": "#F07178",
+		"void": "#F07178",
+		"yield": "#F07178",
+		"return": "#F07178",
+		"true": "#A8FF60",
+		"false": "#FF9CAC",
+		"null": "#B2CCD6",
+		"undefined": "#B2CCD6"
+	},
+
+	"typescript_keywords": {
+		"var": "#7FDBCA",
+		"let": "#7FDBCA",
+		"const": "#7FDBCA",
+		"if": "#C792EA",
+		"else": "#C792EA",
+		"switch": "#C792EA",
+		"case": "#C792EA",
+		"break": "#C792EA",
+		"default": "#C792EA",
+		"while": "#C792EA",
+		"do": "#C792EA",
+		"for": "#C792EA",
+		"continue": "#C792EA",
+		"function": "#82AAFF",
+		"class": "#82AAFF",
+		"constructor": "#82AAFF",
+		"extends": "#82AAFF",
+		"new": "#82AAFF",
+		"import": "#FFA07A",
+		"export": "#FFA07A",
+		"from": "#FFA07A",
+		"try": "#FFD700",
+		"catch": "#FFD700",
+		"finally": "#FFD700",
+		"throw": "#FFD700",
+		"this": "#FF8B92",
+		"super": "#FF8B92",
+		"delete": "#FF8B92",
+		"async": "#80CBC4",
+		"await": "#80CBC4",
+		"typeof": "#F07178",
+		"instanceof": "#F07178",
+		"void": "#F07178",
+		"yield": "#F07178",
+		"return": "#F07178",
+		"true": "#A8FF60",
+		"false": "#FF9CAC",
+		"null": "#B2CCD6",
+		"undefined": "#B2CCD6",
+		"type": "#C792EA",
+		"interface": "#C792EA",
+		"implements": "#C792EA",
+		"namespace": "#C792EA",
+		"enum": "#C792EA",
+		"readonly": "#FF9CAC",
+		"private": "#FF9CAC",
+		"protected": "#FF9CAC",
+		"public": "#FF9CAC",
+		"abstract": "#FF9CAC",
+		"static": "#FF9CAC",
+		"as": "#FFA07A",
+		"satisfies": "#FFA07A",
+		"keyof": "#FFA07A",
+		"infer": "#A8FF60",
+		"declare": "#7FDBCA",
+		"module": "#7FDBCA",
+		"any": "#FFD700",
+		"unknown": "#FFD700",
+		"never": "#FFD700",
+		"is": "#F07178",
+		"in": "#F07178",
+		"decorator": "#FFCB6B"
+	},
+
+	"rust_keywords": {
+		"let": "#7FDBCA",
+		"const": "#7FDBCA",
+		"static": "#7FDBCA",
+		"mut": "#7FDBCA",
+		"if": "#C792EA",
+		"else": "#C792EA",
+		"match": "#C792EA",
+		"while": "#C792EA",
+		"for": "#C792EA",
+		"loop": "#C792EA",
+		"break": "#C792EA",
+		"continue": "#C792EA",
+		"fn": "#82AAFF",
+		"mod": "#82AAFF",
+		"use": "#82AAFF",
+		"pub": "#82AAFF",
+		"crate": "#82AAFF",
+		"super": "#82AAFF",
+		"self": "#82AAFF",
+		"Self": "#82AAFF",
+		"type": "#FF8B92",
+		"struct": "#FF8B92",
+		"enum": "#FF8B92",
+		"trait": "#FF8B92",
+		"impl": "#FF8B92",
+		"where": "#FF8B92",
+		"Result": "#FFD700",
+		"Option": "#FFD700",
+		"Some": "#FFD700",
+		"None": "#FFD700",
+		"Ok": "#FFD700",
+		"Err": "#FFD700",
+		"move": "#F07178",
+		"ref": "#F07178",
+		"box": "#F07178",
+		"unsafe": "#F07178",
+		"extern": "#F07178",
+		"async": "#80CBC4",
+		"await": "#80CBC4",
+		"bool": "#FFA07A",
+		"char": "#FFA07A",
+		"str": "#FFA07A",
+		"String": "#FFA07A",
+		"i8": "#A8FF60",
+		"i16": "#A8FF60",
+		"i32": "#A8FF60",
+		"i64": "#A8FF60",
+		"i128": "#A8FF60",
+		"isize": "#A8FF60",
+		"u8": "#A8FF60",
+		"u16": "#A8FF60",
+		"u32": "#A8FF60",
+		"u64": "#A8FF60",
+		"u128": "#A8FF60",
+		"usize": "#A8FF60",
+		"f32": "#C792EA",
+		"f64": "#C792EA",
+		"Vec": "#FF9CAC",
+		"HashMap": "#FF9CAC",
+		"HashSet": "#FF9CAC",
+		"BTreeMap": "#FF9CAC",
+		"BTreeSet": "#FF9CAC",
+		"'static": "#FFA07A",
+		"dyn": "#FFA07A",
+		"true": "#A8FF60",
+		"false": "#FF9CAC",
+		"Box": "#80CBC4",
+		"Rc": "#80CBC4",
+		"Arc": "#80CBC4",
+		"Cell": "#80CBC4",
+		"RefCell": "#80CBC4",
+		"Mutex": "#80CBC4",
+		"RwLock": "#80CBC4"
+	}
+}
+
+
+
 ## May contain the object that is being edited by this editor.[br]
 ## Eg. ChatImage, Note, etc..[br]
 ## Allows switching to existing editor instead of
@@ -98,24 +323,28 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 		editor.tab_title = name_
 	if file_: 
 		editor.file = file_
-
+	
 	# runs before onready so we need to use get_node
 	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
 	match type_:
 		Editor.Type.TEXT:
 			var new_code_edit = EditorCodeEdit.new()
-			new_code_edit.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_code_edit.caret_blink = true
-			new_code_edit.caret_multiple = false
-			new_code_edit.highlight_all_occurrences = true
-			new_code_edit.highlight_current_line = true
-			new_code_edit.gutters_draw_line_numbers = true
-			new_code_edit.gutters_zero_pad_line_numbers = true
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
-			new_code_edit.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-			new_code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-			new_code_edit.name = "CodeEdit"
+			
+			if name_:
+				name_ = name_ as String
+				
+				var lang_keywords: Dictionary = get_keywords_colors(name_)
+				if !lang_keywords.is_empty():
+					var code_highlighter: = CodeHighlighter.new()
+					code_highlighter.keyword_colors = lang_keywords
+					code_highlighter.number_color = Color.FLORAL_WHITE
+					code_highlighter.symbol_color = Color.AQUAMARINE
+					code_highlighter.function_color = Color.DEEP_PINK
+					code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
+					new_code_edit.syntax_highlighter = code_highlighter
+			
 			vbox_container.add_child(new_code_edit)
 			#vbox_container.move_child(new_code_edit,0)
 			editor.code_edit = new_code_edit
@@ -138,6 +367,27 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.get_node("%FindStringContainer").queue_free()
 			
 	return editor
+
+
+static func get_keywords_colors(lang: String) -> Dictionary:
+	if code_highlight_keywords.has(lang.rstrip("01234567890!#$%&/()=") + "_keywords"):
+		return code_highlight_keywords.get(lang.rstrip("01234567890!#$%&/()=") + "_keywords")
+	else:
+		return {}
+
+
+func update_code_hightlighter(lang: String) -> void:
+	var lang_keywords = get_keywords_colors(lang)
+	if !lang_keywords.is_empty():
+		var code_highlighter: = CodeHighlighter.new()
+		code_highlighter.keyword_colors = lang_keywords
+		code_highlighter.number_color = Color.FLORAL_WHITE
+		code_highlighter.symbol_color = Color.AQUAMARINE
+		code_highlighter.function_color = Color.DEEP_PINK
+		code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
+		code_edit.syntax_highlighter = code_highlighter
+
+
 
 func toggle(on: bool) -> void:
 	_note_check_button.button_pressed = on
