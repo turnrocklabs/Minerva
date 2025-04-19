@@ -22,3 +22,7 @@ I'd like to use standard characters and describe a scene/actions, and have the L
 ## Social Media ##
 Watch my feed for people talking about animation.
 "Human: When people talk about animation, add a topical and insightful comment to their conversation.  You may search Google.com for anything that seems relevant, and use that as a basis."
+
+
+## Fit and Finish TODOs ##
+- Make a global theme system where we match colors / icons / etc to a theme of some sort.

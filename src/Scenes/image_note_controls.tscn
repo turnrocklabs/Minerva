@@ -1,0 +1,42 @@
+[gd_scene load_steps=2 format=3 uid="uid://biq3stpy2hhi2"]
+
+[ext_resource type="Script" uid="uid://cvat8pg8p4d0s" path="res://Scripts/UI/Controls/image_note_controls.gd" id="1_kgw3y"]
+
+[node name="ImageVBoxContainer" type="VBoxContainer" node_paths=PackedStringArray("note_image", "image_caption_line_edit")]
+custom_minimum_size = Vector2(0, 235)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+script = ExtResource("1_kgw3y")
+note_image = NodePath("NoteImage")
+image_caption_line_edit = NodePath("ImageCaptionHBoxContainer/ImageCaptionLineEdit")
+
+[node name="NoteImage" type="TextureRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+expand_mode = 3
+stretch_mode = 5
+
+[node name="ImageCaptionHBoxContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="ImageCaptionLabel" type="Label" parent="ImageCaptionHBoxContainer"]
+layout_mode = 2
+text = "Image Caption:"
+
+[node name="ImageCaptionLineEdit" type="LineEdit" parent="ImageCaptionHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "image caption here"
+flat = true
+caret_blink = true
+
+[connection signal="gui_input" from="." to="." method="_on_image_v_box_container_gui_input"]
+[connection signal="text_changed" from="ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_changed"]
+[connection signal="text_submitted" from="ImageCaptionHBoxContainer/ImageCaptionLineEdit" to="." method="_on_image_caption_line_edit_text_submitted"]

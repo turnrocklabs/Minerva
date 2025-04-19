@@ -1,0 +1,99 @@
+[gd_scene load_steps=4 format=3 uid="uid://glhetvuf7rmf"]
+
+[ext_resource type="Texture2D" uid="uid://dbpw1psm65yd2" path="res://handshake_logo_green.png" id="1_8e08g"]
+[ext_resource type="Script" uid="uid://b2lbf6c2uongo" path="res://Scripts/license_agreement_panel.gd" id="1_50kvl"]
+[ext_resource type="Script" uid="uid://b6b2oyqntau6b" path="res://Scripts/UI/Controls/MarkdownLabelEx.gd" id="3_l6njv"]
+
+[node name="LicenseAgreementPanel" type="Window"]
+auto_translate_mode = 1
+title = "License Agreement"
+initial_position = 2
+size = Vector2i(600, 550)
+popup_window = true
+script = ExtResource("1_50kvl")
+
+[node name="Panel" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"bgPanel"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+custom_minimum_size = Vector2(0, 100)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Control" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+
+[node name="Control2" type="Control" parent="VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+texture = ExtResource("1_8e08g")
+expand_mode = 3
+
+[node name="RichTextLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+bbcode_enabled = true
+text = "
+[pulse]HUMAN TEAM MACHINE[/pulse]"
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer2"]
+custom_minimum_size = Vector2(10, 0)
+layout_mode = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="LicenseScriptMarkdownLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer2/PanelContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 2
+bbcode_enabled = true
+threaded = true
+selection_enabled = true
+script = ExtResource("3_l6njv")
+
+[node name="Control2" type="Control" parent="VBoxContainer/HBoxContainer2"]
+custom_minimum_size = Vector2(10, 0)
+layout_mode = 2
+
+[node name="Control2" type="Control" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="Button" type="Button" parent="VBoxContainer/CenterContainer"]
+layout_mode = 2
+text = "Ok"
+
+[node name="Control4" type="Control" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]
+[connection signal="pressed" from="VBoxContainer/CenterContainer/Button" to="." method="_on_button_pressed"]

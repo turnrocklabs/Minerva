@@ -1,0 +1,172 @@
+[gd_scene load_steps=4 format=3 uid="uid://dkq6u46fmhw60"]
+
+[ext_resource type="Script" uid="uid://cmo4bi2nmaaoa" path="res://Scripts/UI/Controls/UnpackageProjectWindow.gd" id="1_f7ydb"]
+[ext_resource type="Script" uid="uid://cm5sc1561athh" path="res://Scripts/UI/Controls/FileTree.gd" id="2_5sr6y"]
+[ext_resource type="Script" uid="uid://devidfdbgro87" path="res://Scripts/UI/Controls/UnpackageProjectWindow.gd" id="1_f7ydb"]
+[ext_resource type="Script" uid="uid://bpqhhl44bko53" path="res://Scripts/UI/Controls/FileTree.gd" id="2_5sr6y"]
+[ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="3_bh03k"]
+
+[node name="UnpackageProjectWindow" type="Window"]
+initial_position = 2
+size = Vector2i(800, 600)
+script = ExtResource("1_f7ydb")
+
+[node name="Panel" type="Panel" parent="."]
+z_index = -10
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Dialog" type="AcceptDialog" parent="."]
+unique_name_in_owner = true
+
+[node name="LoadPackageFileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Open a File"
+size = Vector2i(600, 400)
+ok_button_text = "Open"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.minpackage")
+
+[node name="FilesPathFileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Open a Directory"
+size = Vector2i(600, 400)
+ok_button_text = "Select Current Folder"
+file_mode = 2
+access = 2
+
+[node name="ProjectPathFileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Select Project File Destination"
+size = Vector2i(600, 400)
+access = 2
+filters = PackedStringArray("*.minproj")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 15
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 15
+
+[node name="v" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/v"]
+layout_mode = 2
+
+[node name="v" type="VBoxContainer" parent="MarginContainer/v/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="h" type="HBoxContainer" parent="MarginContainer/v/MarginContainer/v"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/v/MarginContainer/v/h"]
+visible = false
+layout_mode = 2
+text = "Package Path"
+
+[node name="PackageLineEdit" type="LineEdit" parent="MarginContainer/v/MarginContainer/v/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Package Path:"
+
+[node name="LoadPackageButton" type="Button" parent="MarginContainer/v/MarginContainer/v"]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "Load Package"
+
+[node name="PackagePathInfoLabel" type="Label" parent="MarginContainer/v/MarginContainer/v"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="MarginContainer2" type="MarginContainer" parent="MarginContainer/v"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="v" type="VBoxContainer" parent="MarginContainer/v/MarginContainer2"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="FilesTree" type="Tree" parent="MarginContainer/v/MarginContainer2/v"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+hide_root = true
+script = ExtResource("2_5sr6y")
+
+[node name="h" type="HBoxContainer" parent="MarginContainer/v/MarginContainer2/v"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="v" type="VBoxContainer" parent="MarginContainer/v/MarginContainer2/v/h"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ProjectPathLabel" type="Label" parent="MarginContainer/v/MarginContainer2/v/h/v"]
+layout_mode = 2
+text = "Project export path:"
+
+[node name="FilesPathLabel" type="Label" parent="MarginContainer/v/MarginContainer2/v/h/v"]
+layout_mode = 2
+text = "Files export path:     "
+
+[node name="v2" type="VBoxContainer" parent="MarginContainer/v/MarginContainer2/v/h"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="h" type="HBoxContainer" parent="MarginContainer/v/MarginContainer2/v/h/v2"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ProjectPathLineEdit" type="LineEdit" parent="MarginContainer/v/MarginContainer2/v/h/v2/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ProjectPathChangeButton" type="Button" parent="MarginContainer/v/MarginContainer2/v/h/v2/h"]
+layout_mode = 2
+icon = ExtResource("3_bh03k")
+
+[node name="h2" type="HBoxContainer" parent="MarginContainer/v/MarginContainer2/v/h/v2"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="FilesPathLineEdit" type="LineEdit" parent="MarginContainer/v/MarginContainer2/v/h/v2/h2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FilesPathChangeButton" type="Button" parent="MarginContainer/v/MarginContainer2/v/h/v2/h2"]
+layout_mode = 2
+icon = ExtResource("3_bh03k")
+
+[node name="ExportButton" type="Button" parent="MarginContainer/v/MarginContainer2/v"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Export"
+
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]
+[connection signal="file_selected" from="LoadPackageFileDialog" to="." method="_on_load_package_file_dialog_file_selected"]
+[connection signal="dir_selected" from="FilesPathFileDialog" to="." method="_on_files_path_file_dialog_dir_selected"]
+[connection signal="file_selected" from="ProjectPathFileDialog" to="." method="_on_project_path_file_dialog_file_selected"]
+[connection signal="text_changed" from="MarginContainer/v/MarginContainer/v/h/PackageLineEdit" to="." method="_on_package_line_edit_text_changed"]
+[connection signal="pressed" from="MarginContainer/v/MarginContainer/v/LoadPackageButton" to="." method="_on_load_package_button_pressed"]
+[connection signal="text_changed" from="MarginContainer/v/MarginContainer2/v/h/v2/h/ProjectPathLineEdit" to="." method="_on_project_path_line_edit_text_changed"]
+[connection signal="pressed" from="MarginContainer/v/MarginContainer2/v/h/v2/h/ProjectPathChangeButton" to="." method="_on_project_path_change_button_pressed"]
+[connection signal="text_changed" from="MarginContainer/v/MarginContainer2/v/h/v2/h2/FilesPathLineEdit" to="." method="_on_files_path_line_edit_text_changed"]
+[connection signal="pressed" from="MarginContainer/v/MarginContainer2/v/h/v2/h2/FilesPathChangeButton" to="." method="_on_files_path_change_button_pressed"]
+[connection signal="pressed" from="MarginContainer/v/MarginContainer2/v/ExportButton" to="." method="_on_export_button_pressed"]
