@@ -9,6 +9,8 @@ extends PersistentWindow
 @onready var connect_button: Button = %CoreConnetButton
 @onready var service_selection_window: ServiceSelection = %ServiceSelection
 
+@onready var hcp_password: LineEdit = %lePassword
+
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
 	SingletonObject.API_PROVIDER.OPENAI: "openai",
@@ -24,8 +26,10 @@ const PROVIDERS = {
 	"anthropic": %leAnthropic,
 	"openai": %leOpenAI,
 
-	"auto_connect": %leConnectAuto,
-	"core_url": %leCoreUrl,
+	"hcp_auto_connect": %leConnectAuto,
+	"hcp_url": %leCoreUrl,
+	"hcp_username": %leUsername,
+	"hcp_password": %lePassword,
 }
 
 @onready var theme_option_button: OptionButton = %ThemeOptionButton
@@ -93,6 +97,11 @@ func set_field_values():
 	_fields["anthropic"].text = config_file.get_value("API KEYS", "anthropic", "")
 	_fields["openai"].text = config_file.get_value("API KEYS", "openai", "")
 
+	_fields["hcp_url"].text = config_file.get_value("HCP", "url", "")
+	_fields["hcp_auto_connect"].button_pressed = config_file.get_value("HCP", "auto_connect", false)
+	_fields["hcp_username"].text = config_file.get_value("HCP", "username", "")
+	_fields["hcp_password"].text = config_file.get_value("HCP", "password", "")
+
 
 
 func _on_btn_save_prefs_pressed():
@@ -102,6 +111,11 @@ func _on_btn_save_prefs_pressed():
 	config_file.set_value("API KEYS", "google_vertex", _fields["google_vertex"].text)
 	config_file.set_value("API KEYS", "anthropic", _fields["anthropic"].text)
 	config_file.set_value("API KEYS", "openai", _fields["openai"].text)
+
+	config_file.set_value("HCP", "url", _fields["hcp_url"].text)
+	config_file.set_value("HCP", "username", _fields["hcp_username"].text)
+	config_file.set_value("HCP", "password", _fields["hcp_password"].text)
+	config_file.set_value("HCP", "auto_connect", _fields["hcp_auto_connect"].button_pressed)
 	
 	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 	
@@ -226,3 +240,9 @@ var selected_action: Action
 func _on_service_selection_service_selected(service: Service, action: Action) -> void:
 	selected_service = service
 	selected_action = action
+
+	Core.service_selected.emit(service, action)
+
+
+func _on_password_checkbox_toggled(toggled_on:bool) -> void:
+	hcp_password.secret = not toggled_on

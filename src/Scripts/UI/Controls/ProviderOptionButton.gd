@@ -10,8 +10,8 @@ func _ready():
 	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
 
 	# we'll add the human provider at the bottom
-	var human: = SingletonObject.API_MODEL_PROVIDERS.HUMAN
-	sorted_keys.erase(human)
+	sorted_keys.erase(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
+	sorted_keys.erase(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
 
 	# sort the provider keys by initializing the provider class and comparing the token_cost for each one of them
 	sorted_keys.sort_custom(
@@ -19,7 +19,7 @@ func _ready():
 			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
 	)
 
-	sorted_keys.append(human)
+	sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
 
 	# display the sorted providers
 	for key in sorted_keys:
@@ -27,20 +27,37 @@ func _ready():
 		var instance = script.new()
 		add_item("%s" % instance.display_name, key)
 
-	# add special button for core services
-	# add_item("Core", 999)
+	Core.service_selected.connect(_on_hcp_service_selected)
 
 func _on_item_selected(index: int):
-	var item_id = get_item_id(index)
-
-	# if item_id == 999:
-		
-	# 	# SingletonObject.preferences_popup
-
-	# 	return
-
-	var provider_object: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
+	var provider_object: = get_provider_from_id(get_item_id(index))
 
 	provider_selected.emit(provider_object)
 
 	# SingletonObject.Chats.set_provider(provider_object)
+
+func get_provider_from_id(item_id: int) -> BaseProvider:
+
+	var provider_object: BaseProvider
+
+
+	if get_item_metadata(item_id) is Array:
+		provider_object = CoreProvider.new.callv(get_item_metadata(item_id))
+	else:
+		provider_object = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
+
+	print("The result provider is: ", provider_object.model_name)
+
+	return provider_object
+
+func _on_hcp_service_selected(service: Service, action: Action):
+	add_separator()
+
+	var idx: = item_count
+
+	var item_name = "%s..." % service.name.left(20) if service.name.length() > 17 else service.name 
+
+	add_item(item_name, idx)
+	set_item_tooltip(idx, service.name)
+	set_item_metadata(idx, [service, action])
+	prints("added hcp item at index:", idx)

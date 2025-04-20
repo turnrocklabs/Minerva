@@ -261,7 +261,7 @@ func decode_u32(data, offset):
 	return value
 
 func _handle_message(data, binary_data = null):
-	# print("Received message: ", JSON.stringify(data))
+	print("Received message: ", JSON.stringify(data))
 	var cmd = data.get("cmd", "")
 	var topic = data.get("topic", "")
 	var entity_type = data.get("entity_type", "")
@@ -287,7 +287,7 @@ func _handle_message(data, binary_data = null):
 
 	elif cmd == "response":
 		if topic == TOPIC_DISCOVERY:
-			var services = data.get("params", {}).get("result", [])
+			var services = data.get("params", {}).get("result", {}).get("services", [])
 			for service in services:
 				var params = service.get("params", {})
 
@@ -316,14 +316,15 @@ func _handle_message(data, binary_data = null):
 	
 	message_received.emit(data)
 
-func register_with_core():
+func register_with_core(auth_token: String):
 	var entity_type_str = "human_agent" if _entity_type == EntityType.HUMAN_AGENT else "software_agent" if _entity_type == EntityType.SOFTWARE_AGENT else "service"
 	var register_msg = {
 		"cmd": "register",
 		"entity_type": entity_type_str,
 		"topic": TOPIC_SYSTEM,
 		"params": {
-			"secret": minerva_secret,
+			# "secret": minerva_secret,
+			"auth": auth_token,
 			"client_id": client_id,
 			"topics": [TOPIC_SYSTEM, TOPIC_DISCOVERY, client_id]
 		}
