@@ -342,7 +342,7 @@ func ErrorDisplay(error_title:String, error_message: String):
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, TURNROCK }
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
@@ -359,6 +359,7 @@ enum API_MODEL_PROVIDERS {
 	GOOGLE_VERTEX_PRO,
 	DALLE,
 	CLAUDE_SONNET,
+	TURNROCK,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -375,6 +376,7 @@ var API_MODEL_PROVIDER_SCRIPTS = {
 	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	# API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
+	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value

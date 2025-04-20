@@ -27,8 +27,17 @@ func _ready():
 		var instance = script.new()
 		add_item("%s" % instance.display_name, key)
 
+	# add special button for core services
+	# add_item("Core", 999)
+
 func _on_item_selected(index: int):
 	var item_id = get_item_id(index)
+
+	# if item_id == 999:
+		
+	# 	# SingletonObject.preferences_popup
+
+	# 	return
 
 	var provider_object: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
 

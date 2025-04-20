@@ -4,6 +4,11 @@ extends PersistentWindow
 
 @onready var output_device_button: OptionButton = %OutputDeviceButton
 
+@onready var connection_label: Label = %ConnectionLabel
+@onready var connection_texture_rect: TextureRect = %ConnectionTextureRect
+@onready var connect_button: Button = %CoreConnetButton
+@onready var service_selection_window: ServiceSelection = %ServiceSelection
+
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
 	SingletonObject.API_PROVIDER.OPENAI: "openai",
@@ -18,6 +23,9 @@ const PROVIDERS = {
 	"google_vertex": %leGoogleVertex,
 	"anthropic": %leAnthropic,
 	"openai": %leOpenAI,
+
+	"auto_connect": %leConnectAuto,
+	"core_url": %leCoreUrl,
 }
 
 @onready var theme_option_button: OptionButton = %ThemeOptionButton
@@ -54,6 +62,29 @@ func _ready():
 	
 	populate_output_devices_button()
 
+	# core tab stuff
+	Core.client.connection_established.connect(
+		func():
+			connection_label.text = "You are connected to core"
+			connection_texture_rect.texture = preload("res://.godot/imported/check_mark16.webp-ee4b5638509d469382c7cad2d0cf364b.ctex")
+			connect_button.disabled = true
+	)
+
+	Core.client.connection_error.connect(
+		func(error: int):
+			connection_label.text = "Error while trying to connect to core (%s)" % error_string(error)
+			connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
+			connect_button.disabled = false
+	)
+
+	Core.client.connection_closed.connect(
+		func():
+			connection_label.text = "You are not connected to core"
+			connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
+			connect_button.disabled = false
+	)
+
+
 func set_field_values():
 	_fields["first_name"].text = config_file.get_value("USER", "first_name", "Not")
 	_fields["last_name"].text = config_file.get_value("USER", "last_name", "Available")
@@ -77,7 +108,7 @@ func _on_btn_save_prefs_pressed():
 	hide()
 
 func _on_about_to_popup():
-	set_field_values()
+	set_field_values()	
 	theme_option_button.selected = SingletonObject.get_theme_enum()
 	set_microphone_option_menu(SingletonObject.get_microphone())
 	populate_output_devices_button()
@@ -173,3 +204,25 @@ func populate_output_devices_button() -> void:
 func _on_output_device_button_item_selected(index: int) -> void:
 	var device: = output_device_button.get_item_text(index)
 	SingletonObject.output_device_changed.emit(device)
+
+
+func _on_core_connet_button_pressed() -> void:
+	var connected: = await Core.start()
+
+	print("Core connection:")
+	print(connected)
+
+
+func _on_select_services_button_pressed() -> void:
+	var services: = await Core.fetch_services()
+
+	service_selection_window.set_services(services)
+	
+	service_selection_window.popup_centered()
+
+var selected_service: Service
+var selected_action: Action
+
+func _on_service_selection_service_selected(service: Service, action: Action) -> void:
+	selected_service = service
+	selected_action = action

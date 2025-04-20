@@ -1,0 +1,48 @@
+[gd_scene load_steps=3 format=3 uid="uid://b47xkyujp2kep"]
+
+[ext_resource type="Script" path="res://Scripts/Services/Providers/Core/dynamic_ui/image/image.gd" id="1_ep1eq"]
+[ext_resource type="Texture2D" uid="uid://bbl6ih4xfy8yi" path="res://icon.svg" id="2_q2vr7"]
+
+[node name="Image" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_ep1eq")
+
+[node name="Label" type="Label" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Image Field"
+
+[node name="FileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Open a File"
+size = Vector2i(1000, 500)
+ok_button_text = "Open"
+file_mode = 0
+access = 2
+use_native_dialog = true
+
+[node name="FieldName" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="."]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+texture = ExtResource("2_q2vr7")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="Button" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Select"
+
+[connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]
+[connection signal="pressed" from="Button" to="." method="_on_button_pressed"]

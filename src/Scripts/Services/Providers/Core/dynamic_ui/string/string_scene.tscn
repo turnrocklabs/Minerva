@@ -1,0 +1,29 @@
+[gd_scene load_steps=2 format=3 uid="uid://d2lse6dmype6p"]
+
+[ext_resource type="Script" path="res://Scripts/Services/Providers/Core/dynamic_ui/string/string.gd" id="1_m3wwg"]
+
+[node name="String" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_m3wwg")
+
+[node name="FieldName" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RichTextLabel" type="RichTextLabel" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+focus_mode = 2
+fit_content = true
+selection_enabled = true
+
+[node name="LineEdit" type="LineEdit" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2

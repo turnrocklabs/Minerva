@@ -1,0 +1,40 @@
+[gd_scene load_steps=2 format=3 uid="uid://c31svembq30u3"]
+
+[ext_resource type="Script" path="res://Scripts/Services/Providers/Core/dynamic_ui/file/file.gd" id="1_j3nru"]
+
+[node name="File" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_j3nru")
+
+[node name="FileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Open a File"
+size = Vector2i(1000, 500)
+ok_button_text = "Open"
+file_mode = 0
+access = 2
+use_native_dialog = true
+
+[node name="FieldName" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="FileLabel" type="Label" parent="HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FileSelectButton" type="Button" parent="HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Select"
+
+[connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]
+[connection signal="pressed" from="HBoxContainer/FileSelectButton" to="." method="_on_file_select_button_pressed"]
