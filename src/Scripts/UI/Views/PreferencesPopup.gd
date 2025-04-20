@@ -10,6 +10,7 @@ extends PersistentWindow
 @onready var service_selection_window: ServiceSelection = %ServiceSelection
 
 @onready var hcp_password: LineEdit = %lePassword
+@onready var hcp_url: LineEdit = %leCoreUrl
 
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
@@ -221,9 +222,9 @@ func _on_output_device_button_item_selected(index: int) -> void:
 
 
 func _on_core_connet_button_pressed() -> void:
-	var connected: = await Core.start()
+	var connected: = await Core.start(hcp_url.text)
 
-	print("Core connection:")
+	print("Core connection on url: ", hcp_url.text)
 	print(connected)
 
 
