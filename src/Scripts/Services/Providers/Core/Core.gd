@@ -1,5 +1,6 @@
 extends Node
 
+signal service_selected(service: Service, action: Action)
 
 @onready var _client_script: = preload("res://Scripts/Services/Providers/Core/core_client.gd")
 var registered: = false
@@ -16,7 +17,7 @@ func _ready() -> void:
 
 	client = cn
 
-func start(url: String = "ws://127.0.0.1:3030/connect") -> bool:
+func start(url: String = "ws://127.0.0.1:3030/connect", auth_token: String = "test") -> bool:
 
 	var connected: = client.connect_to_core(url)
 
@@ -24,7 +25,10 @@ func start(url: String = "ws://127.0.0.1:3030/connect") -> bool:
 		return false
 
 	await client.connection_established
-	client.register_with_core()
+	client.register_with_core(
+		"test_token"
+	)
+
 
 	return true
 
@@ -41,7 +45,7 @@ func fetch_services() -> Array[Service]:
 
 	if not msg: return []
 
-	var services_array: Array = msg.get("params", {}).get("result", [])
+	var services_array: Array = msg.get("params", {}).get("result", {}).get("services", [])
 
 	services.clear()
 	for srvc_dta in services_array:

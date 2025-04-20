@@ -1,11 +1,13 @@
-[gd_scene load_steps=8 format=3 uid="uid://booxo77json0y"]
+[gd_scene load_steps=10 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" uid="uid://byhq7f6bjmjjo" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
 [ext_resource type="PackedScene" uid="uid://6ruj0babh2sd" path="res://Scripts/UI/Controls/service_selection.tscn" id="2_6m13a"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="2_yfedb"]
 [ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_7voe0"]
 [ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="4_0f5nr"]
+[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="4_nlyvs"]
 [ext_resource type="Texture2D" uid="uid://dmhyo26833yx8" path="res://assets/icons/save_icons/save-64-white.png" id="5_346qj"]
 
 [node name="PreferencesPopup" type="Window"]
@@ -258,75 +260,133 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 
-[node name="Core" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+[node name="HCP" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 layout_mode = 2
 metadata/_tab_index = 1
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Core"]
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP"]
+layout_mode = 2
+theme_override_constants/margin_top = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer"]
 custom_minimum_size = Vector2(512, 0)
 layout_mode = 2
 size_flags_horizontal = 4
+theme_override_constants/separation = 10
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer"]
+[node name="ConnectionLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+layout_mode = 2
+bbcode_enabled = true
+text = "[b]Connection[/b]"
+fit_content = true
+shortcut_keys_enabled = false
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="leCoreUrl" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
-text = "Core URL:"
+text = "Instance URL:"
 
-[node name="LineEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer/HBoxContainer"]
+[node name="leCoreUrl" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="leConnectAuto" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer/HBoxContainer2"]
-unique_name_in_owner = true
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
 text = "Auto Connect:"
 
-[node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer/HBoxContainer2"]
+[node name="leConnectAuto" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 2
 
-[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer"]
+[node name="AuthLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+layout_mode = 2
+bbcode_enabled = true
+text = "[b]Auth[/b]"
+fit_content = true
+shortcut_keys_enabled = false
+
+[node name="HBoxContainer4" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="ConnectionLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer/HBoxContainer3"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer4"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Username:"
+
+[node name="leUsername" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer4"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer5" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer5"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Password:"
+
+[node name="lePassword" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer5"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.9
+secret = true
+
+[node name="PasswordCheckbox" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer5"]
+layout_mode = 2
+theme_override_icons/checked = ExtResource("3_7voe0")
+theme_override_icons/unchecked = ExtResource("4_nlyvs")
+
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+
+[node name="CoreConnetButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Connect"
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ConnectionLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 1
 text = "You are not connected to core"
 
-[node name="ConnectionTextureRect" type="TextureRect" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer/HBoxContainer3"]
+[node name="ConnectionTextureRect" type="TextureRect" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 texture = ExtResource("2_yfedb")
 
-[node name="CoreConnetButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "Connect"
-
-[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer"]
-custom_minimum_size = Vector2(0, 10)
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
 
-[node name="ItemList" type="ItemList" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer"]
+[node name="ItemList" type="ItemList" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
 auto_height = true
 
-[node name="SelectServicesButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer"]
+[node name="SelectServicesButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
 text = "Select Services"
 
@@ -359,6 +419,7 @@ icon_68 = ExtResource("5_346qj")
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/General/SectionsContainer/AudioVBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/General/SectionsContainer/AudioVBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/General/SectionsContainer/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
-[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
-[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Core/VBoxContainer/SelectServicesButton" to="." method="_on_select_services_button_pressed"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer5/PasswordCheckbox" to="." method="_on_password_checkbox_toggled"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/SelectServicesButton" to="." method="_on_select_services_button_pressed"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]

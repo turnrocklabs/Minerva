@@ -41,13 +41,19 @@ func _on_new_chat():
 	# If there are no open chat tabs, use provider from the dropdown as the provider
 	if SingletonObject.ChatList.is_empty():
 		var p_id = _provider_option_button.get_selected_id()
-		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
+		print("Selected if is: ", p_id)
+		provider_obj = _provider_option_button.get_provider_from_id(p_id)
+		print("WE ARE HERE")
 	
 	# if we're opening a new chat, by default select the first provider from the dropdown menu
 	else:
 		var first_provider: = _provider_option_button.get_item_id(0) as SingletonObject.API_MODEL_PROVIDERS
 
 		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[first_provider].new()
+
+	print("alo bre:")
+	print(provider_obj)
+	print(provider_obj.model_name)
 
 	# use the provider currently set on this object
 	var history: ChatHistory = ChatHistory.new(provider_obj)
@@ -280,7 +286,7 @@ func execute_chat():
 		"presence_penalty": history.PresencePenalty,
 		"frequency_penalty": history.FrequencyPenalty,
 	}
-
+	
 	var bot_response
 	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is DallE:
 		bot_response = await history.provider.generate_content(history_list, optional_params)

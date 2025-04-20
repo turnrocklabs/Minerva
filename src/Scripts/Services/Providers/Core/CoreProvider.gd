@@ -1,9 +1,10 @@
 class_name CoreProvider
 extends BaseProvider
 
+var service: Service
+var action: Action
 
-
-func _init():
+func _init(service_: Service = null, action_: Action = null):
 	provider_name = "TurnRock"
 	BASE_URL = "ws://localhost:3030" # TODO: change this
 	PROVIDER = SingletonObject.API_PROVIDER.TURNROCK
@@ -11,6 +12,9 @@ func _init():
 	model_name = "core"
 	short_name = "C"
 	token_cost = 0.000015
+
+	service = service_
+	action = action_
 
 func _parse_request_results(response: Dictionary) -> BotResponse:
 	var bot_response:= BotResponse.new()
