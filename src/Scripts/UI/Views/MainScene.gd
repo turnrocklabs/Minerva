@@ -33,7 +33,6 @@ func _ready() -> void:
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
 
-
 var MAX: = 20
 
 
@@ -242,3 +241,7 @@ func _on_project_mouse_exited() -> void:
 
 func _on_add_layer_pressed() -> void:
 	pass # Replace with function body.
+
+
+func _on_btn_drawer_pressed() -> void:
+	%Drawer.popup_centered()

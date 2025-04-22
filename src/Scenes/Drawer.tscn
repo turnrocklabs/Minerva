@@ -1,0 +1,98 @@
+[gd_scene load_steps=6 format=3 uid="uid://d2mp2pdnnufm8"]
+
+[ext_resource type="Script" uid="uid://cgbf8yxnoy3hq" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_lx1ul"]
+[ext_resource type="Script" uid="uid://b5a3on4upogyp" path="res://Scripts/Drawer_add_shelf.gd" id="2_fhdnw"]
+[ext_resource type="Script" uid="uid://dot3lroghkjdf" path="res://Scripts/UI/Views/DrawerTabs.gd" id="3_6nrfe"]
+[ext_resource type="PackedScene" uid="uid://brm1w121bm61d" path="res://Scenes/windows/new_shelf_popup.tscn" id="3_syybj"]
+[ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="4_krlqx"]
+
+[node name="Drawer" type="Window"]
+position = Vector2i(0, 36)
+size = Vector2i(460, 440)
+script = ExtResource("1_lx1ul")
+metadata/_custom_type_script = "uid://cgbf8yxnoy3hq"
+
+[node name="LayerBG" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("2_fhdnw")
+
+[node name="LayersMenu" type="ScrollContainer" parent="LayerBG"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+follow_focus = true
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="LayerBG/LayersMenu"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="LayerBG/LayersMenu/MarginContainer"]
+layout_mode = 2
+
+[node name="LayersHolder" type="VBoxContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 0
+alignment = 1
+
+[node name="Name" type="Label" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder"]
+layout_mode = 2
+text = "Drawer"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder"]
+layout_mode = 2
+alignment = 2
+
+[node name="AddShelv" type="Button" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+mouse_filter = 1
+mouse_default_cursor_shape = 2
+text = "Add a shelf"
+
+[node name="AddNote" type="Button" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+mouse_filter = 1
+mouse_default_cursor_shape = 2
+text = "Add a note"
+
+[node name="tcThreads2" type="TabContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/icon_separation = 16
+drag_to_rearrange_enabled = true
+tab_focus_mode = 1
+script = ExtResource("3_6nrfe")
+
+[node name="new_shelf_popup" parent="." instance=ExtResource("3_syybj")]
+unique_name_in_owner = true
+visible = false
+
+[node name="CreateNewNote" parent="." instance=ExtResource("4_krlqx")]
+unique_name_in_owner = true
+visible = false
+
+[connection signal="pressed" from="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer/AddShelv" to="LayerBG" method="_on_add_shelv_pressed"]
+[connection signal="pressed" from="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer/AddNote" to="LayerBG" method="_on_add_note_pressed"]
+[connection signal="tab_clicked" from="LayerBG/LayersMenu/MarginContainer/VBoxContainer/tcThreads2" to="LayerBG" method="_on_shelf_container_tab_clicked"]
