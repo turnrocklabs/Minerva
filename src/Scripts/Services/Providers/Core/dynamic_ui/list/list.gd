@@ -68,7 +68,7 @@ func update_output(data: Array) -> void:
 			i += 1
 
 func _create_new_list_item():
-	var controls: = DynamicUIGenerator.process_parameters(_field_params, _is_input)
+	var controls: = SingletonObject.Chats.dynamic_ui_generator.process_parameters(_field_params, _is_input)
 
 	var list_item_container: = ListItemContainer.create(self)
 
