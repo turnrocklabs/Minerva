@@ -1,7 +1,7 @@
 class_name NumberField
 extends VBoxContainer
 
-static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/number/number.tscn")
+static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/number/Number.tscn")
 
 
 @onready var _field_name_label: Label = %FieldName
