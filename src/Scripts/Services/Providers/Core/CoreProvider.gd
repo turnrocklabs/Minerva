@@ -40,7 +40,7 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 	return bot_response
 
 
-func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
+func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}):
 	
 
 	if not SingletonObject.preferences_popup.selected_action:

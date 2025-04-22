@@ -37,9 +37,9 @@ func _on_item_selected(index: int):
 	# SingletonObject.Chats.set_provider(provider_object)
 
 func get_provider_from_id(item_id: int) -> BaseProvider:
+	if item_id == -1: return null
 
 	var provider_object: BaseProvider
-
 
 	if get_item_metadata(item_id) is Array:
 		provider_object = CoreProvider.new.callv(get_item_metadata(item_id))
@@ -49,6 +49,9 @@ func get_provider_from_id(item_id: int) -> BaseProvider:
 	print("The result provider is: ", provider_object.model_name)
 
 	return provider_object
+
+func get_selected_provider() -> BaseProvider:
+	return get_provider_from_id(get_selected_id()) if selected != -1 else null
 
 func _on_hcp_service_selected(service: Service, action: Action):
 	add_separator()
