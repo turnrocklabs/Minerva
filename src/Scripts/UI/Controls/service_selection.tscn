@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://6ruj0babh2sd"]
+[gd_scene load_steps=2 format=3 uid="uid://dcbs3juhmi10w"]
 
-[ext_resource type="Script" uid="uid://b2rtsxapd5juo" path="res://Scripts/UI/Controls/service_selection.gd" id="1_lvev7"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/service_selection.gd" id="1_lvev7"]
 
 [node name="ServiceSelection" type="Window"]
 title = "Service Selection"
