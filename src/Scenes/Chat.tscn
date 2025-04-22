@@ -89,8 +89,19 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+theme_type_variation = &"InspectPrompt"
 placeholder_text = "Prompt Here"
+editable = false
+emoji_menu_enabled = false
+virtual_keyboard_enabled = false
+middle_mouse_paste_enabled = false
+empty_selection_clipboard_enabled = false
+wrap_mode = 1
+scroll_smooth = true
+draw_tabs = true
 line_folding = true
+gutters_draw_line_numbers = true
+gutters_zero_pad_line_numbers = true
 
 [node name="btnCloseInspector" type="Button" parent="InspectorPopup/VBoxContainer"]
 layout_mode = 2
