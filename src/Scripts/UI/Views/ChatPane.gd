@@ -11,6 +11,8 @@ var container: TabContainer  # Store the TabContainer
 @onready var _provider_option_button: ProviderOptionButton = %ProviderOptionButton
 @onready var buffer_control_chats: Control = %BufferControlChats
 
+@onready var dynamic_ui_generator: DynamicUIGenerator = %DynamicUIGenerator
+
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
@@ -695,6 +697,15 @@ func _on_system_button_pressed() -> void:
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	update_token_estimation()
 
+	if provider_ is CoreProvider:
+		
+		var o_params: = (provider_ as CoreProvider).action.input_parameters
+
+		var _controls: = dynamic_ui_generator.process_parameters(o_params)
+		txt_main_user_input.visible = false
+	else:
+		txt_main_user_input.visible = true
+
 	if SingletonObject.ChatList.is_empty(): return
 
 	var history = SingletonObject.ChatList[current_tab]
@@ -704,6 +715,7 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		history.VBox.add_child(provider_)
 
 	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.display_name])
+
 
 # when tab changes, set the provider to one that that chat tab is using
 func _on_tab_changed(tab: int):
