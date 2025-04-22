@@ -44,19 +44,13 @@ func _on_new_chat():
 	# If there are no open chat tabs, use provider from the dropdown as the provider
 	if SingletonObject.ChatList.is_empty():
 		var p_id = _provider_option_button.get_selected_id()
-		print("Selected if is: ", p_id)
 		provider_obj = _provider_option_button.get_provider_from_id(p_id)
-		print("WE ARE HERE")
 	
 	# if we're opening a new chat, by default select the first provider from the dropdown menu
 	else:
 		var first_provider: = _provider_option_button.get_item_id(0) as SingletonObject.API_MODEL_PROVIDERS
 
 		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[first_provider].new()
-
-	print("alo bre:")
-	print(provider_obj)
-	print(provider_obj.model_name)
 
 	# use the provider currently set on this object
 	var history: ChatHistory = ChatHistory.new(provider_obj)
@@ -212,7 +206,7 @@ func execute_hcp_chat():
 	ensure_chat_open()
 
 	var user_history_item: = ChatHistoryItem.new()
-	user_history_item.Message = "test"
+	user_history_item.HcpData = dynamic_ui_generator.get_user_input(dynamic_ui_container)
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
@@ -221,6 +215,8 @@ func execute_hcp_chat():
 	
 	history.HistoryItemList.append(user_history_item)
 	
+	var history_list: = create_prompt(user_history_item)
+
 	# rerender the message since we changed the history item
 	user_msg_node.first_time_message = true
 	history.VBox.ensure_node_is_visible(user_msg_node)
@@ -233,8 +229,9 @@ func execute_hcp_chat():
 	
 	model_msg_node.loading = true 
 
+	var hcp_provider: CoreProvider = history.provider
 
-	var bot_response: = await history.provider.generate_content([])
+	var bot_response = await hcp_provider.generate_content(history_list)
 
 
 	var chi = ChatHistoryItem.new()

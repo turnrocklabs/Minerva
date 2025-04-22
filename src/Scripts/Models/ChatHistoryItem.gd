@@ -8,6 +8,7 @@ static var SERIALIZER_FIELDS = [
 	"Role",
 	"InjectedNotes",
 	"Message",
+	"HcpData",
 	"Images",
 	"Captions",
 	"Order",
@@ -35,6 +36,9 @@ var Role: ChatRole:
 
 var InjectedNotes: Array[Variant]:
 	set(value): SingletonObject.save_state(false); InjectedNotes = value
+
+var HcpData: Dictionary:
+	set(value): SingletonObject.save_state(false); HcpData = value
 
 var Message: String:
 	set(value): SingletonObject.save_state(false); Message = value
@@ -166,6 +170,7 @@ func Serialize() -> Dictionary:
 		"Role": Role,
 		"InjectedNotes": Marshalls.variant_to_base64(InjectedNotes),
 		"Message": Message,
+		"HcpData": HcpData,
 		"Order": Order,
 		"Type": Type,
 		"ModelName": ModelName,

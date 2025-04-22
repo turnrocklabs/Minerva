@@ -109,7 +109,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	var content: = [
 		{
 			"type": "text",
-			"text": chat_item.Message
+			"text": "%s\nHcp Data: %s" % [chat_item.Message, chat_item.HcpData]
 		},
 	]
 
