@@ -7,6 +7,8 @@ signal toggled(on: bool)
 ## This signal is emitted each time the underlying memory item has been updated.
 signal changed()
 
+var isDrawer:bool = false
+
 @export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
 @export var expand_ease_type: Tween.EaseType = Tween.EASE_OUT
