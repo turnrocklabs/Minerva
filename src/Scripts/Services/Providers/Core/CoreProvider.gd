@@ -40,7 +40,7 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 	return bot_response
 
 
-func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}):
+func generate_content(prompt: Array[Variant], _additional_params: Dictionary={}):
 	
 
 	if not SingletonObject.preferences_popup.selected_action:
@@ -50,7 +50,7 @@ func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}
 
 	var topic = SingletonObject.preferences_popup.selected_action.topic
 
-	var msg = await Core.send_message(topic, {"prompt": "Hi"}).receive()
+	var msg = await Core.send_message(topic, prompt.back()).receive()
 	
 	if not msg:
 		var bot_response:= BotResponse.new()
@@ -64,41 +64,10 @@ func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}
 	return item
 
 
+# TODO: make other chat messages somehow be sent to the hcp request
+# maybe a special field definition to mark it as "notes" or previous messages content...
 func Format(chat_item: ChatHistoryItem) -> Variant:
-	var role: String
-
-	match chat_item.Role:
-		ChatHistoryItem.ChatRole.USER:
-			role = "user"
-		ChatHistoryItem.ChatRole.ASSISTANT:
-			role = "assistant"
-		ChatHistoryItem.ChatRole.SYSTEM:
-			role = "system"
-		ChatHistoryItem.ChatRole.MODEL:
-			role = "assistant"
-	
-	# Get all image captions in array of strings
-	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
-	var image_captions: String
-
-	# if there are images, construct the image captions into one string for prompt
-	if not image_captions_array.is_empty():
-		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
-	
-	var text_notes = chat_item.InjectedNotes.filter(func(note): return note is String)
-
-	var text = """
-		%s
-		%s
-		%s
-	""" % [image_captions, "\n".join(text_notes), chat_item.Message]
-
-	text = text.strip_edges()
-
-	return {
-		"role": role,
-		"content": text
-	}
+	return chat_item.HcpData
 
 
 func wrap_memory(item: MemoryItem) -> Variant:

@@ -102,7 +102,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		%s
 		%s
 		%s
-	""" % [image_captions, "\n".join(text_notes), chat_item.Message]
+		HCP Data: %s
+	""" % [image_captions, "\n".join(text_notes), chat_item.Message, chat_item.HcpData]
 
 	text = text.strip_edges()
 

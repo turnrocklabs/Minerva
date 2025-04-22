@@ -40,7 +40,21 @@ func process_parameters(parameters: Dictionary, input: = true) -> Array[Control]
 	
 	return controls
 
+func get_user_input(input_container: Control) -> Dictionary:
+	var data: Dictionary
 
+	print("\n\n")
+	for child in input_container.get_children():
+		if child.has_method("get_user_data"):
+			var child_data = child.get_user_data()
+
+			var field_name = child.get_meta("field_name")
+
+			data[field_name] = child_data
+
+	print(data)
+
+	return data
 
 
 # func generate_ui(requirements, is_input, parent_param = ""):
