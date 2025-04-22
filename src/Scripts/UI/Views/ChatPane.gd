@@ -12,6 +12,7 @@ var container: TabContainer  # Store the TabContainer
 @onready var buffer_control_chats: Control = %BufferControlChats
 
 @onready var dynamic_ui_generator: DynamicUIGenerator = %DynamicUIGenerator
+@onready var dynamic_ui_container: Container = %DynamicUIContainer
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
@@ -206,13 +207,84 @@ func regenerate_response(chi: ChatHistoryItem):
 func _on_chat_pressed():
 	execute_chat()
 
+# TODO: this and execute_chat should probably be unified
+func execute_hcp_chat():
+	ensure_chat_open()
+
+	var user_history_item: = ChatHistoryItem.new()
+	user_history_item.Message = "test"
+	user_history_item.Role = ChatHistoryItem.ChatRole.USER
+
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+
+	var user_msg_node: = history.VBox.add_history_item(user_history_item)
+	
+	history.HistoryItemList.append(user_history_item)
+	
+	# rerender the message since we changed the history item
+	user_msg_node.first_time_message = true
+	history.VBox.ensure_node_is_visible(user_msg_node)
+	user_msg_node.render()
+
+	var dummy_item = ChatHistoryItem.new()
+	dummy_item.Role = ChatHistoryItem.ChatRole.MODEL
+	dummy_item.provider = history.provider
+	var model_msg_node = history.VBox.add_history_item(dummy_item)
+	
+	model_msg_node.loading = true 
+
+
+	var bot_response: = await history.provider.generate_content([])
+
+
+	var chi = ChatHistoryItem.new()
+		
+	if bot_response != null: 
+		chi.Id = bot_response.id
+		chi.Role = ChatHistoryItem.ChatRole.MODEL
+		chi.Message = bot_response.text
+		chi.Error = bot_response.error
+		chi.provider = history.provider
+		chi.Complete = bot_response.complete
+		chi.TokenCost = bot_response.completion_tokens
+		if bot_response.image:
+			chi.Images = ([bot_response.image] as Array[Image])
+
+		# Update user message node
+		user_history_item.TokenCost = bot_response.prompt_tokens
+		user_msg_node.render()
+
+		# Change the history item and the message node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
+
+		## Inform the user history item that the response has arrived
+		user_history_item.response_arrived.emit(chi)
+		
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(model_msg_node)
+		model_msg_node.loading = false
+		model_msg_node.first_time_message = true
+	else:
+		model_msg_node.queue_free()
+
 
 func execute_chat():
+
+	if SingletonObject.Chats._provider_option_button.get_selected_provider() is CoreProvider:
+		execute_hcp_chat()
+		return
+	
 	if %txtMainUserInput.text.is_empty(): return
+	
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
-	
+
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if history.provider is CoreProvider:
+		execute_hcp_chat()
+		return
+	
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 	
 	# Create User message, clear input, clear text box
@@ -709,10 +781,19 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		
 		var o_params: = (provider_ as CoreProvider).action.input_parameters
 
-		var _controls: = dynamic_ui_generator.process_parameters(o_params)
+		var controls: = dynamic_ui_generator.process_parameters(o_params)
+		
+		for ch in dynamic_ui_container.get_children():
+			ch.queue_free()
+
+		for ctrl in controls:
+			dynamic_ui_container.add_child(ctrl)
+
 		txt_main_user_input.visible = false
+		dynamic_ui_container.visible = true
 	else:
 		txt_main_user_input.visible = true
+		dynamic_ui_container.visible = false
 
 	if SingletonObject.ChatList.is_empty(): return
 
