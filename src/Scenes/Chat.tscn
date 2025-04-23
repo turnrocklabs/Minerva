@@ -306,7 +306,6 @@ icon_68 = ExtResource("22_my2cu")
 clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 10
-theme_override_constants/separation = 16
 
 [node name="EstimatedTokensLabel" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
