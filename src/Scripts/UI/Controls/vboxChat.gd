@@ -14,6 +14,8 @@ signal message_selection(message: MessageMarkdown, active: bool)
 @warning_ignore("unused_signal")
 signal image_activated(image: ChatImage, active: bool)
 
+# Add this to your existing signals
+signal multi_message_updated(container: MultiMessageContainer, index: int)
 
 @onready var scroll_container = get_parent() as ScrollContainer
 
@@ -75,9 +77,8 @@ func _messages_list_changed():
 
 var scroll_tween: Tween
 var scroll_time: float = 0.8
-
 func kill_scroll_tween() -> void:
-	if scroll_tween:
+	if scroll_tween and scroll_tween.is_running():
 		scroll_tween.kill()
 
 func scroll_to_bottom():
@@ -125,7 +126,6 @@ func ensure_node_is_visible(node: Control) -> void:
 		# Clamp the scroll position between min and max values
 		var max_scroll = scroll_container.get_v_scroll_bar().max_value
 		scroll_tween.tween_property(scroll_container, "scroll_vertical", clamp(center_position, 0, max_scroll), scroll_time)
-
 
 
 ## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
@@ -220,3 +220,45 @@ func _on_image_activated(chat_image: ChatImage, active: bool):
 		for c_image: ChatImage in chi.rendered_node.images:
 			if c_image == chat_image: c_image.active = active
 			else: c_image.active = false
+
+
+# Update the existing add_multi_message function
+func add_multi_message(messages: Array) -> MultiMessageContainer:
+	var multi_message_container: MultiMessageContainer = MultiMessageContainer.new()
+	await multi_message_container.ready
+
+	if messages == null or messages.size() < 1:
+		return multi_message_container
+
+	for i in messages:
+		i = i as ChatHistoryItem
+		var msg_node = MessageMarkdown.new_message()
+		msg_node.history_item = i
+		i.rendered_node = msg_node
+		
+		multi_message_container.add_item(msg_node)
+
+	# Connect the message_updated signal
+	multi_message_container.message_updated.connect(
+		func(index: int): 
+			multi_message_updated.emit(multi_message_container, index)
+	)
+
+	add_child(multi_message_container)
+	return multi_message_container
+
+# Add new function to update a specific message in a multi-message container
+func update_multi_message(container: MultiMessageContainer, index: int, new_history_item: ChatHistoryItem) -> void:
+	container.update_message(index, new_history_item)
+
+# Add new function to create a multi-message container from a single message
+func create_multi_message_from(history_item: ChatHistoryItem) -> MultiMessageContainer:
+	var messages = [history_item]
+	return await add_multi_message(messages)
+
+# Add new function to add a message to existing container
+func add_to_multi_message(container: MultiMessageContainer, history_item: ChatHistoryItem) -> void:
+	var msg_node = MessageMarkdown.new_message()
+	msg_node.history_item = history_item
+	history_item.rendered_node = msg_node
+	container.add_item(msg_node)

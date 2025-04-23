@@ -92,10 +92,7 @@ func _on_sort_children() -> void:
 	for i in get_child_count():
 		var child = get_child(i)
 		if child is Control:
-			# Maintain the child's original size
-			var original_size = child.size
-			child.size = original_size
-			child.pivot_offset = original_size / 2
+			child.pivot_offset = child.size / 2
 	
 	if not Engine.is_editor_hint():
 		_position_children_immediately()
