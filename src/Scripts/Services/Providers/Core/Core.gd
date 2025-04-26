@@ -6,6 +6,7 @@ signal service_selected(service: Service, action: Action)
 var registered: = false
 
 var client: CoreClient
+var http_request: = HTTPRequest.new()
 
 var services: Array[Service]
 
@@ -17,7 +18,40 @@ func _ready() -> void:
 
 	client = cn
 
-func start(url: String = "ws://127.0.0.1:3030/connect", auth_token: String = "test") -> bool:
+	add_child(http_request)
+
+func start(url: String = "ws://127.0.0.1:3030/connect", username: String = "", password: String = "") -> bool:
+
+	if not OS.has_environment("MINERVA_REST_BRIDGE"):
+		push_error("No evnironment variable 'MINERVA_REST_BRIDGE' set. Can't connect to the core.")
+		return false
+
+	var err: = http_request.request(
+		OS.get_environment("MINERVA_REST_BRIDGE"),
+		PackedStringArray([
+			"Content-Type: application/json"
+		]),
+		HTTPClient.METHOD_POST,
+		JSON.stringify({
+			"username": username,
+			"password": password
+		})
+	)
+
+	if err != OK:
+		push_error("Request failed: %s" % error_string(err))
+		return false
+
+	var results: Array = await http_request.request_completed
+
+	var response_data = JSON.parse_string(results[3].get_string_from_utf8())
+
+
+	print(response_data)
+
+	var token = response_data["params"]["result"]["token"]
+
+	print(token)
 
 	var connected: = client.connect_to_core(url)
 
@@ -25,9 +59,7 @@ func start(url: String = "ws://127.0.0.1:3030/connect", auth_token: String = "te
 		return false
 
 	await client.connection_established
-	client.register_with_core(
-		"test_token"
-	)
+	client.register_with_core(token)
 
 
 	return true
@@ -71,6 +103,8 @@ class AwaitMessage extends RefCounted:
 
 	var _received_message = null
 	var _stop: = false
+
+	signal message_received(msg: Dictionary)
 
 	func _init(client_: CoreClient) -> void:
 		client = client_
@@ -116,7 +150,18 @@ class AwaitMessage extends RefCounted:
 		while not _stop and not _received_message:
 			await client.get_tree().process_frame
 		
+		# Not sure if we need to disconnect the signal here
+
 		return _received_message
+
+	func receive_all() -> Signal:
+		client.message_received.connect(
+			func(data: Dictionary):
+				if _check_message(data):
+					message_received.emit(data)
+		)
+
+		return message_received
 
 	func with_timeout(timeout_: float) -> AwaitMessage:
 		timeout = timeout_
