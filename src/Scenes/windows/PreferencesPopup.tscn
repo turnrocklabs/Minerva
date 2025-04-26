@@ -382,9 +382,11 @@ texture = ExtResource("2_yfedb")
 custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
 
-[node name="ItemList" type="ItemList" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+[node name="CoreErrorItemList" type="ItemList" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
-auto_height = true
+size_flags_vertical = 3
 
 [node name="SelectServicesButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2

@@ -9,7 +9,9 @@ extends PersistentWindow
 @onready var connect_button: Button = %CoreConnetButton
 @onready var service_selection_window: ServiceSelection = %ServiceSelection
 
+@onready var core_error_item_list: ItemList = %CoreErrorItemList
 @onready var hcp_password: LineEdit = %lePassword
+@onready var hcp_username: LineEdit = %leUsername
 @onready var hcp_url: LineEdit = %leCoreUrl
 
 # maps API_PROVIDERs to their config file field name
@@ -222,10 +224,40 @@ func _on_output_device_button_item_selected(index: int) -> void:
 
 
 func _on_core_connet_button_pressed() -> void:
-	var connected: = await Core.start(hcp_url.text)
+	var connected: = await Core.start(
+		hcp_url.text,
+		hcp_username.text,
+		hcp_password.text,
+	)
 
 	print("Core connection on url: ", hcp_url.text)
 	print(connected)
+
+	if connected:
+		var msg_received: = (
+			Core
+				.await_message()
+				.with_cmd("error")
+				.with_topic("system")
+				.receive_all()
+		)
+
+		msg_received.connect(
+			func(msg: Dictionary):
+				print("GOT MESSAGE: ", msg)
+				var err: String
+
+				if msg["params"].has("error_code"):
+					err = "%s: %s" % [msg["params"]["error_code"], msg["params"]["error"]]
+				else:
+					err = msg["params"]["error"]
+				
+				core_error_item_list.add_item(
+					err,
+					preload("res://.godot/imported/warning_icon.svg-0d14ac513b8003b886b4926b52005686.ctex"),
+					false
+				)
+		)
 
 
 func _on_select_services_button_pressed() -> void:

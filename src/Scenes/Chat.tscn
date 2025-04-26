@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://c3a6vi1r0mr1d" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/windows/AISettings.tscn" id="1_qlmlm"]
-[ext_resource type="Script" path="res://Scripts/Services/Providers/Core/dynamic_ui_generator.gd" id="1_rtmbh"]
+[ext_resource type="Script" uid="uid://bacj2oiqcjig0" path="res://Scripts/Services/Providers/Core/dynamic_ui_generator.gd" id="1_rtmbh"]
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="3_pputi"]
 [ext_resource type="Texture2D" uid="uid://cvb2vnkv4fpn5" path="res://assets/icons/plus_icons/add_48.svg" id="5_1cevo"]
 [ext_resource type="Texture2D" uid="uid://bk13anfwduwom" path="res://assets/icons/plus_icons/add_68.svg" id="6_gmsd4"]
