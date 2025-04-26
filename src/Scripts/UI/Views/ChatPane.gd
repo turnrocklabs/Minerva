@@ -3,6 +3,7 @@ extends TabContainer
 
 
 #var icActive = preload("res://assets/icons/Microphone_active.png")
+const MultiMessageContainerScene = preload("res://Scenes/multi_message_container.tscn")
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -450,8 +451,8 @@ func execute_parallel_chat(text_input: String) -> void:
 	var file_names: = get_file_names_in_message(text_input)
 	var first_line: = text_input.split("\n")[0]
 	
-	usr_messages_container = MultiMessageContainer.new()
-	mdl_messages_container = MultiMessageContainer.new()
+	usr_messages_container = MultiMessageContainerScene.instantiate() 
+	mdl_messages_container = MultiMessageContainerScene.instantiate() 
 	history.VBox.add_child(mdl_messages_container)
 	history.VBox.add_child(usr_messages_container)
 	
