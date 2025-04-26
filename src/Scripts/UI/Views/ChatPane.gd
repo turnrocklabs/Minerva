@@ -445,17 +445,15 @@ var bot_responses: Array[ChatHistoryItem] = []
 func execute_parallel_chat(text_input: String) -> void:
 	if text_input.is_empty(): return
 	ensure_chat_open()
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]	
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	# Check if we need to do chain of messages
 	var file_names: = get_file_names_in_message(text_input)
 	var first_line: = text_input.split("\n")[0]
 	
 	usr_messages_container = MultiMessageContainer.new()
+	mdl_messages_container = MultiMessageContainer.new()
+	history.VBox.add_child(mdl_messages_container)
 	history.VBox.add_child(usr_messages_container)
-	
-	usr_messages_container = MultiMessageContainer.new()
-	history.VBox.add_child(usr_messages_container)
-	
 	
 	for i in file_names.size():
 		inputs.append(first_line + "\n" + file_names[i])
@@ -463,14 +461,11 @@ func execute_parallel_chat(text_input: String) -> void:
 	var task_id = WorkerThreadPool.add_group_task(create_message_new, inputs.size())
 	
 	WorkerThreadPool.wait_for_group_task_completion(task_id)
-	# Create a thread for each message
-	#for i in range(inputs.size()):
-		#var thread: = Thread.new()
-		#thread.start(create_message_new.bind(i))
-		#active_threads.append(thread)
-		#await get_tree().process_frame
+	
+	print(bot_responses.size())
 	
 	while bot_responses.size() > 0 and usr_chat_hist_items.size() > 0:
+		print("entering while loop")
 		if usr_messages_container.is_node_ready() and mdl_messages_container.is_node_ready():
 			var usr_msg_node: = history.VBox.add_history_item(usr_chat_hist_items[0], false)
 			var mdl_msg_node: = history.VBox.add_history_item(bot_responses[0], false)
@@ -484,14 +479,17 @@ func execute_parallel_chat(text_input: String) -> void:
 				mdl_msg_node.regeneratable = false
 				mdl_msg_node.render()
 				mdl_msg_node.set_edit()
-				
 			else:
 				usr_msg_node.render()
 				usr_messages_container.add_item(usr_msg_node)
 				mdl_messages_container.add_item(mdl_msg_node)
+			await get_tree().create_timer(0.3).timeout
 			usr_chat_hist_items.remove_at(0)
 			bot_responses.remove_at(0)
+		else:
+			print("nodes are not ready")
 	
+
 	inputs.clear()
 	usr_chat_hist_items.clear()
 	bot_responses.clear()
@@ -553,9 +551,10 @@ func create_message_new(inputs_idx: int) -> void:
 
 		# Update user message node
 		user_history_item.TokenCost = bot_response.prompt_tokens
-
+		mutex.lock()
 		history.HistoryItemList.append(chi)
-
+		bot_responses.append(chi)
+		mutex.unlock()
 		## Inform the user history item that the response has arrived
 		user_history_item.response_arrived.emit(chi)
 		
