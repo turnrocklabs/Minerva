@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://blnidauh4wv7v"]
 
-[ext_resource type="Script" uid="uid://dtnlkyb53e45e" path="res://Scripts/UI/Controls/multi_message_container.gd" id="1_qgdmi"]
-[ext_resource type="Script" uid="uid://c014abn8bg8me" path="res://Scripts/UI/Controls/slider_container.gd" id="2_qgdmi"]
+[ext_resource type="Script" uid="uid://b021dbuhv4svg" path="res://Scripts/UI/Controls/multi_message_container.gd" id="1_qgdmi"]
+[ext_resource type="Script" uid="uid://idc5tbb1ta6r" path="res://Scripts/UI/Controls/slider_container.gd" id="2_qgdmi"]
 
 [node name="MultiMessageContainer" type="MarginContainer"]
 anchors_preset = 15
@@ -39,7 +39,6 @@ unique_name_in_owner = true
 layout_mode = 2
 script = ExtResource("2_qgdmi")
 active_child_index = -1
-metadata/_custom_type_script = "uid://c014abn8bg8me"
 
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/PrevButton" to="." method="_on_prev_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/NextButton" to="." method="_on_next_button_pressed"]
