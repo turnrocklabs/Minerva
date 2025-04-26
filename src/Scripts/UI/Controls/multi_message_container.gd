@@ -2,11 +2,10 @@ class_name MultiMessageContainer extends MarginContainer
 
 signal message_updated(message_index: int)
 
-@export var slider_container: SliderContainer
+@onready var slider_container: SliderContainer = %SliderContainer
 
 var current_index: int = 0
 var messages: Array[ChatHistoryItem] = []
-
 
 
 func add_item(node: Control) -> void:

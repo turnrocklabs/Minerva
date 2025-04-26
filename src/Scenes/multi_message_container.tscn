@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://dtnlkyb53e45e" path="res://Scripts/UI/Controls/multi_message_container.gd" id="1_qgdmi"]
 [ext_resource type="Script" uid="uid://c014abn8bg8me" path="res://Scripts/UI/Controls/slider_container.gd" id="2_qgdmi"]
 
-[node name="MultiMessageContainer" type="MarginContainer" node_paths=PackedStringArray("slider_container")]
+[node name="MultiMessageContainer" type="MarginContainer"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -16,7 +16,6 @@ theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 5
 theme_override_constants/margin_bottom = 5
 script = ExtResource("1_qgdmi")
-slider_container = NodePath("VBoxContainer/SliderContainer")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
 layout_mode = 2
@@ -37,11 +36,10 @@ text = "R"
 
 [node name="SliderContainer" type="Container" parent="VBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
 script = ExtResource("2_qgdmi")
+active_child_index = -1
+metadata/_custom_type_script = "uid://c014abn8bg8me"
 
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/PrevButton" to="." method="_on_prev_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/NextButton" to="." method="_on_next_button_pressed"]
