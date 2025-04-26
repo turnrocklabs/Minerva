@@ -174,17 +174,19 @@ func _on_disable_notes_button_pressed() -> void:
 
 #region help menu
 
-var license_agreement_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
-var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 
-var about_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
-var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
+
+
 func _on_help_id_pressed(id: int) -> void:
 	match id:
 		0:# id for the About option
+			ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
+			var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
 			var about_scene_inst = about_scene.instantiate()
 			call_deferred("add_child", about_scene_inst)
 		1:# id for the license Agreement 
+			ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
+			var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 			var license_scene_inst = license_scene.instantiate()
 			call_deferred("add_child", license_scene_inst)
 
