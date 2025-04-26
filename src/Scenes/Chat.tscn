@@ -1,4 +1,4 @@
-[gd_scene load_steps=34 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=35 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" uid="uid://bl3o8akse3agn" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" uid="uid://bed3pqcrplxx8" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
@@ -46,6 +46,8 @@ key_label = 4194309
 
 [sub_resource type="Shortcut" id="Shortcut_4b3s7"]
 events = [SubResource("InputEventKey_rh3fk")]
+
+[sub_resource type="ImageTexture" id="ImageTexture_qs864"]
 
 [node name="Chats" type="Control"]
 layout_mode = 3
@@ -213,7 +215,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_vertical = 3
-placeholder_text = "Hello there!"
+placeholder_text = "Hello there! (press [CTRL + ENTER] to send)"
 wrap_mode = 1
 caret_blink = true
 
@@ -291,6 +293,7 @@ icon_48 = ExtResource("17_0g7mq")
 icon_68 = ExtResource("18_libyp")
 
 [node name="btnChat" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer" node_paths=PackedStringArray("shortcut_context")]
+visible = false
 layout_mode = 2
 tooltip_text = "Send Message"
 shortcut_context = NodePath("../../txtMainUserInput")
@@ -301,6 +304,23 @@ script = ExtResource("8_rhvdc")
 icon_24 = ExtResource("20_0uhqe")
 icon_48 = ExtResource("21_ut25t")
 icon_68 = ExtResource("22_my2cu")
+
+[node name="SendMessageButton" type="OptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_icons/icon = ExtResource("20_0uhqe")
+theme_override_icons/arrow = SubResource("ImageTexture_qs864")
+text_overrun_behavior = 2
+clip_text = true
+fit_to_longest_item = false
+allow_reselect = true
+item_count = 3
+popup/item_0/text = "Send Chat"
+popup/item_0/id = 0
+popup/item_1/text = "Send Parallel"
+popup/item_1/id = 1
+popup/item_2/text = "Send Sequential"
+popup/item_2/id = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 clip_contents = true
@@ -377,5 +397,6 @@ size_flags_vertical = 3
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_microphone_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/AudioStop1" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_audio_stop_1_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_chat_pressed"]
+[connection signal="item_selected" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/SendMessageButton" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_send_message_button_item_selected"]
 [connection signal="pressed" from="UnsplitedChatMessages/VBoxContainer/HBoxContainer2/ApplyChanges" to="UnsplitedChatMessages" method="_on_apply_changes_pressed"]
 [connection signal="pressed" from="UnsplitedChatMessages/VBoxContainer/HBoxContainer2/CancelChanges" to="UnsplitedChatMessages" method="_on_cancel_changes_pressed"]

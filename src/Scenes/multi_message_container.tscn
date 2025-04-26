@@ -1,10 +1,9 @@
 [gd_scene load_steps=3 format=3 uid="uid://blnidauh4wv7v"]
 
 [ext_resource type="Script" uid="uid://dtnlkyb53e45e" path="res://Scripts/UI/Controls/multi_message_container.gd" id="1_qgdmi"]
-[ext_resource type="PackedScene" uid="uid://6eyoeca7pnqu" path="res://Scenes/slider_container.tscn" id="2_qgdmi"]
+[ext_resource type="Script" uid="uid://c014abn8bg8me" path="res://Scripts/UI/Controls/slider_container.gd" id="2_qgdmi"]
 
-[node name="MultiMessageContainer" type="Control"]
-layout_mode = 3
+[node name="MultiMessageContainer" type="MarginContainer" node_paths=PackedStringArray("slider_container")]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -12,15 +11,15 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
 script = ExtResource("1_qgdmi")
+slider_container = NodePath("VBoxContainer/SliderContainer")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+layout_mode = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -36,10 +35,13 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "R"
 
-[node name="SliderContainer" parent="VBoxContainer" instance=ExtResource("2_qgdmi")]
+[node name="SliderContainer" type="Container" parent="VBoxContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 100)
 layout_mode = 2
-offset_distance = 150.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("2_qgdmi")
 
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/PrevButton" to="." method="_on_prev_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/NextButton" to="." method="_on_next_button_pressed"]

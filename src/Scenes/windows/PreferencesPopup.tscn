@@ -9,7 +9,7 @@
 [node name="PreferencesPopup" type="Window"]
 title = "Preferences"
 initial_position = 4
-size = Vector2i(580, 570)
+size = Vector2i(580, 600)
 unresizable = true
 min_size = Vector2i(580, 570)
 script = ExtResource("1_snp1b")

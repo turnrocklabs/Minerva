@@ -358,7 +358,7 @@ func _on_edit_button_pressed():
 	var editor: Editor
 
 	if  memory_item.Type == SingletonObject.note_type.IMAGE:
-		SingletonObject.is_graph = true
+		SingletonObject.is_graph = true # this lines should be moved to the correct node rather that them being on SingletonObject
 		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
 		await editor.ready

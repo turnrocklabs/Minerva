@@ -48,4 +48,3 @@ func estimate_tokens_from_prompt(_input: Array[Variant]):
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
-
