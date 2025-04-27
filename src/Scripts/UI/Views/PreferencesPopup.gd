@@ -244,7 +244,6 @@ func _on_core_connet_button_pressed() -> void:
 
 		msg_received.connect(
 			func(msg: Dictionary):
-				print("GOT MESSAGE: ", msg)
 				var err: String
 
 				if msg["params"].has("error_code"):
