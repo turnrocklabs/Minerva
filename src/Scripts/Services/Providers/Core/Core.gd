@@ -24,6 +24,7 @@ func start(url: String = "ws://127.0.0.1:3030/connect", username: String = "", p
 
 	if not OS.has_environment("MINERVA_REST_BRIDGE"):
 		push_error("No evnironment variable 'MINERVA_REST_BRIDGE' set. Can't connect to the core.")
+		SingletonObject.ErrorDisplay("Error", "No evnironment variable 'MINERVA_REST_BRIDGE' set. Can't connect to the core.")
 		return false
 
 	var err: = http_request.request(
@@ -40,6 +41,7 @@ func start(url: String = "ws://127.0.0.1:3030/connect", username: String = "", p
 
 	if err != OK:
 		push_error("Request failed: %s" % error_string(err))
+		SingletonObject.ErrorDisplay("Request failed", error_string(err))
 		return false
 
 	var results: Array = await http_request.request_completed
@@ -56,6 +58,7 @@ func start(url: String = "ws://127.0.0.1:3030/connect", username: String = "", p
 	var connected: = client.connect_to_core(url)
 
 	if not connected:
+		SingletonObject.ErrorDisplay("Connection failed", "Couldn't connect to the core")
 		return false
 
 	await client.connection_established
