@@ -73,7 +73,6 @@ func disable_notes_in_tab():
 #endregion Methods for toggling notes
 
 func open_threads_popup(tab_name: String = "", tab = null):
-	
 	var update = tab != null
 	
 	# set metadata so we can determine should we create new or update existing and which tab, when we click the button in the popup
@@ -87,20 +86,21 @@ func _on_new_pressed():
 	open_threads_popup()
 
 
-func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
+func _on_btn_create_thread_pressed(isDrawerNote:bool,tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
+	if !isDrawerNote:
+		if tab_name == "":
+			tab_name = "notes " + str(%tcThreads.get_tab_count() + 1)
 	
-	if tab_name == "":
-		tab_name = "notes " + str(%tcThreads.get_tab_count() + 1)
+		if tab_ref:
+			tab_ref.get_meta("thread").ThreadName = tab_name
+			render_threads()
+		else:
+			create_new_notes_tab(tab_name)
 	
-	if tab_ref:
-		tab_ref.get_meta("thread").ThreadName = tab_name
-		render_threads()
-	else:
-		create_new_notes_tab(tab_name)
 	
-	if get_tab_count() > 0:
-		buffer_control_notes.hide()
+		if get_tab_count() > 0:
+			buffer_control_notes.hide()
 
 ## add indexing system here
 var new_tab: bool = false

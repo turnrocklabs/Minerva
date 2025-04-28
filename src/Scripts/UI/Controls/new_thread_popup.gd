@@ -33,7 +33,12 @@ func _on_btn_voice_for_note_tab_pressed():
 
 
 func _on_btn_create_thread_pressed() -> void:
-	SingletonObject.create_notes_tab.emit(%txtNewTabName.text, tab_reference)
+	var thread_main = get_parent().find_child("NewThreadPopup")
+	var thread_drawer = get_parent().find_child("DrawerThreadPopup") 
+	if thread_main != null:
+		SingletonObject.create_notes_tab.emit(false,%txtNewTabName.text, tab_reference)
+	elif thread_drawer != null:
+		SingletonObject.create_notes_tab.emit(true,%txtNewTabName.text, tab_reference)
 	call_deferred("hide")
 
 
