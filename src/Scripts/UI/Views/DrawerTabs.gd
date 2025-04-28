@@ -1,7 +1,7 @@
 class_name DrawerTabs
 extends TabContainer
 
-@onready var tcThreads = %tcThreads2
+@onready var tcThreads = %tcThreadsDrawer
 # just use current_tab
 # var ActiveThreadIndex: int:
 @onready var buffer_control_notes: Control = %BufferControlNotes
@@ -87,20 +87,20 @@ func _on_new_pressed():
 	open_threads_popup()
 
 
-func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
+func _on_btn_create_thread_pressed(isDrawerNote:bool,tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
+	if isDrawerNote:
+		if tab_name == "":
+			tab_name = "notes " + str(%tcThreadsDrawer.get_tab_count() + 1)
 	
-	if tab_name == "":
-		tab_name = "notes " + str(%tcThreads2.get_tab_count() + 1)
+		if tab_ref:
+			tab_ref.get_meta("thread").ThreadName = tab_name
+			render_threads()
+		else:
+			create_new_notes_tab(tab_name)
 	
-	if tab_ref:
-		tab_ref.get_meta("thread").ThreadName = tab_name
-		render_threads()
-	else:
-		create_new_notes_tab(tab_name)
-	
-	if get_tab_count() > 0:
-		buffer_control_notes.hide()
+		if get_tab_count() > 0:
+			buffer_control_notes.hide()
 
 ## add indexing system here
 var new_tab: bool = false
@@ -126,9 +126,9 @@ func tab_name_to_use(proposed_name: String) -> String:
 
 
 func clear_all_tabs():
-	var children = %tcThreads2.get_children()
+	var children = %tcThreadsDrawer.get_children()
 	for child in children:
-		%tcThreads2.remove_child(child)
+		%tcThreadsDrawer.remove_child(child)
 		child.queue_free()
 	pass
 	
@@ -285,7 +285,7 @@ func render_threads():
 	var last_thread = self.current_tab
 
 	# we must delete existing noted so creating new project works
-	for c in %tcThreads2.get_children():
+	for c in %tcThreadsDrawer.get_children():
 		c.queue_free()
 	
 	for thread in SingletonObject.DrawerThreadList:
@@ -320,12 +320,12 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.add_child(vboxMemoryList)
 	#scroll_container.follow_focus = true
 	
-	# Get %tcThreads2 by its unique name and add the ScrollContainer as its new child (tab)
+	# Get %tcThreadsDrawer by its unique name and add the ScrollContainer as its new child (tab)
 	#scroll_container.name = thread_item.ThreadName
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
-	%tcThreads2.add_child(scroll_container)
-	var tab_idx = %tcThreads2.get_tab_idx_from_control(scroll_container)
-	%tcThreads2.set_tab_title(tab_idx, thread_item.ThreadName)
+	%tcThreadsDrawer.add_child(scroll_container)
+	var tab_idx = %tcThreadsDrawer.get_tab_idx_from_control(scroll_container)
+	%tcThreadsDrawer.set_tab_title(tab_idx, thread_item.ThreadName)
 	if new_tab:
 		self.current_tab = tab_idx
 
@@ -530,8 +530,8 @@ func _is_text_file(file_path: String) -> bool:
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	
-	%tcThreads2.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
-	%tcThreads2.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreads2))
+	%tcThreadsDrawer.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+	%tcThreadsDrawer.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreadsDrawer))
 		
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS

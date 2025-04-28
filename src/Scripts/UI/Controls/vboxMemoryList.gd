@@ -122,6 +122,12 @@ func _memory_thread_find(thread_id: String) -> MemoryThread:
 		func(t: MemoryThread):
 			return t.ThreadId == thread_id
 	).pop_front()
+	
+func _drawer_thread_find(thread_id: String) -> MemoryThread:
+	return SingletonObject.DrawerThreadList.filter(
+		func(t: MemoryThread):
+			return t.ThreadId == thread_id
+	).pop_front()
 
 # We can also drop the Note in a VBoxMemoryList
 func _can_drop_data(_at_position: Vector2, data):
@@ -131,9 +137,24 @@ func _can_drop_data(_at_position: Vector2, data):
 func _drop_data(_at_position: Vector2, data):
 	if not data is Note: return
 
+	# Find which type of thread we're dropping into
 	var target_thread = _memory_thread_find(MainThreadId)
+	var target_drawer_thread = _drawer_thread_find(MainThreadId)
+	
+	# Find where the note is coming from
 	var dragged_note_thread = _memory_thread_find(data.memory_item.OwningThread)
+	var dragged_note_drawer_thread = _drawer_thread_find(data.memory_item.OwningThread)
 
-	dragged_note_thread.MemoryItemList.erase(data.memory_item)
-	target_thread.MemoryItemList.insert(0, data.memory_item)
-	data.memory_item.OwningThread = target_thread.ThreadId
+	# Remove from original location first
+	if dragged_note_thread:
+		dragged_note_thread.MemoryItemList.erase(data.memory_item)
+	elif dragged_note_drawer_thread:
+		dragged_note_drawer_thread.MemoryItemList.erase(data.memory_item)
+
+	# Add to new location
+	if target_thread:
+		target_thread.MemoryItemList.insert(0, data.memory_item)
+		data.memory_item.OwningThread = target_thread.ThreadId
+	elif target_drawer_thread:
+		target_drawer_thread.MemoryItemList.insert(0, data.memory_item)
+		data.memory_item.OwningThread = target_drawer_thread.ThreadId
