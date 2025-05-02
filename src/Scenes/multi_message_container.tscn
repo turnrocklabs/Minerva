@@ -37,6 +37,7 @@ text = "R"
 [node name="SliderContainer" type="Container" parent="VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
 script = ExtResource("2_qgdmi")
 active_child_index = -1
 

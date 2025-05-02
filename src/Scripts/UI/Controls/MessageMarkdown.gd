@@ -40,15 +40,12 @@ var expanded: bool = true:
 			history_item.Expanded = value
 		expanded = value
 
-
 var last_custom_size_y: float = 100.0:
 	set(value):
 		if value > 0:
 			last_custom_size_y = value
 			if history_item:
 				history_item.LastYSize = value
-			#if resize_scroll_container:
-				#resize_scroll_container.custom_minimum_size.y = value
 
 var first_time_message: bool = true
 
@@ -450,15 +447,13 @@ func _create_code_labels():
 
 
 func _on_expand_button_pressed() -> void:
-	print("expand button pressed")
 	expanded = !expanded
 	if expanded:
 		expand_message()
 	else:
 		contract_message()
-	
 
-var expand_tween: Tween
+#var expand_tween: Tween
 #var last_min_size: = 0
 func expand_message() -> void:
 	v_box_container.visible = true
