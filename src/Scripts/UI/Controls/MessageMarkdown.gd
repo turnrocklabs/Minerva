@@ -34,20 +34,21 @@ extends HBoxContainer
 
 var is_unsplit_edit = false
 
-#var expanded: bool = true:
-	#set(value):
-		#history_item.Expanded = value
-		#expanded = value
+var expanded: bool = true:
+	set(value):
+		if history_item:
+			history_item.Expanded = value
+		expanded = value
 
 
-#var last_custom_size_y: float = 100.0:
-	#set(value):
-		#if value > 0:
-			#last_custom_size_y = value
-			#if history_item:
-				#history_item.LastYSize = value
-			##if resize_scroll_container:
-				##resize_scroll_container.custom_minimum_size.y = value
+var last_custom_size_y: float = 100.0:
+	set(value):
+		if value > 0:
+			last_custom_size_y = value
+			if history_item:
+				history_item.LastYSize = value
+			#if resize_scroll_container:
+				#resize_scroll_container.custom_minimum_size.y = value
 
 var first_time_message: bool = true
 
@@ -112,25 +113,18 @@ func _ready() -> void:
 	if  history_item.isMerged:
 		%UnsplitButton.visible = true
 	render()
-
-#
-#func _on_code_labels_updated() -> void:
-	#call_deferred("deferred_labels_updated")
-	#
-#
-#func deferred_labels_updated()-> void:
-	#await  get_tree().process_frame
-	#resize_scroll_container.custom_minimum_size.y = message_labels_container.size.y + images_grid_container.size.y + 5
-	#
-	#last_custom_size_y = message_labels_container.size.y + images_grid_container.size.y + 5
-	#max_note_size_limit = message_labels_container.size.y + images_grid_container.size.y + 5
-
-
-#var last_mouse_posistion_y: float = 0.0
-#func _process(_delta: float) -> void:
-	#if resize_dragging:
-		#_resize_vertical(get_global_mouse_position().y, last_mouse_posistion_y)
-	#last_mouse_posistion_y = get_global_mouse_position().y
+	
+	if get_parent() is SliderContainer:
+		%LeftCardButton.visible = true
+		%RightCardButton.visible = true
+		right_control.visible = false
+	await get_tree().process_frame
+	if first_time_message:
+		last_custom_size_y = size.y
+	expanded = history_item.Expanded
+	if !expanded:
+		contract_message()
+	
 
 
 ## sets loading label visibility to `loading_` and toggles_controls
@@ -157,10 +151,6 @@ func render() -> void:
 		
 	else: 
 		_setup_model_message()
-		#await get_tree().process_frame
-		#resize_scroll_container.size.y = message_labels_container.size.y + images_grid_container.size.y + 5
-		#last_custom_size_y = message_labels_container.size.y + images_grid_container.size.y + 5
-		#max_note_size_limit = message_labels_container.size.y + images_grid_container.size.y + 5
 
 	visible = history_item.Visible
 
@@ -170,12 +160,7 @@ func render() -> void:
 
 	_create_code_labels()
 	
-	#if history_item.Role == ChatHistoryItem.ChatRole.USER:
-		#await get_tree().process_frame
-		#resize_scroll_container.custom_minimum_size.y = label.size.y + 5
-		#last_custom_size_y = label.size.y + 5
-		#max_note_size_limit = label.size.y + 5
-		#images_grid_container.hide()
+
 
 func set_edit(on: = true) -> void:
 	%MessageLabelsContainer.visible = not on
@@ -345,12 +330,6 @@ func _on_gui_input(event: InputEvent):
 		#if not _pressed:
 			#get_parent().message_selection.emit(self, false)
 		return
-	
-	#if event is InputEventMouseMotion and !resize_dragging:
-		#for ch in %MessageLabelsContainer.get_children(): # ch is either RichTextLabel or CodeMarkdownLabel
-			#if not ch.get_selected_text().is_empty():
-				#get_parent().message_selection.emit(self, true)
-
 
 
 ## Class that represents a message text segment
@@ -467,12 +446,46 @@ func _create_code_labels():
 			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
 		
 		message_labels_container.add_child(node)
-		#code_labels_updated.emit()
 
 
-#var resize_tween: Tween
+
+func _on_expand_button_pressed() -> void:
+	print("expand button pressed")
+	expanded = !expanded
+	if expanded:
+		expand_message()
+	else:
+		contract_message()
+	
+
+var expand_tween: Tween
 #var last_min_size: = 0
-#func _on_expand_button_toggled(toggled_on: bool) -> void:
+func expand_message() -> void:
+	v_box_container.visible = true
+	expand_button.rotation = deg_to_rad(0.0)
+	expand_button.modulate = Color.WHITE
+	#message_labels_container.visible = true
+	#expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
+	#expand_tween.finished.connect(enable_expand_button)
+	#expand_tween.tween_property(message_labels_container, "custom_minimum_size:y", last_custom_size_y, expand_anim_duration)
+	#expand_tween.set_parallel()
+	#expand_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
+	#expand_tween.set_parallel()
+	#expand_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
+
+
+func contract_message() -> void:
+	#if expand_tween and expand_tween.is_running():
+			#expand_tween.kill()
+			#return
+	v_box_container.visible = false
+	expand_button.rotation = deg_to_rad(-90.0)
+	expand_button.modulate = expand_icon_color
+
+func enable_expand_button() -> void:
+	expand_button.disabled = false
+
+#func Ocnd_button_toggled(toggled_on: bool) -> void:
 	#if resize_tween and resize_tween.is_running():
 			#resize_tween.kill()
 			#return
@@ -497,34 +510,8 @@ func _create_code_labels():
 		#resize_scroll_container.hide()
 		#resize_drag_control.hide()
 	#expanded = toggled_on
-#
-#
-#var resize_dragging: bool = false
-#func _on_resize_control_gui_input(event: InputEvent) -> void:
-	#if expanded:
-		#if event is InputEventMouseButton:
-			#if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
-				#resize_dragging = true
-				#set_process(true)
-			#elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
-				#resize_dragging = false
-				#set_process(false)
-				#last_mouse_posistion_y = 0.0
-#
-#
-#func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
-	#var difference: float = current_mouse_pos_y - last_mouse_pos_y
-	#
-	#if resize_scroll_container.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:
-		#resize_scroll_container.custom_minimum_size.y = min_note_size_limit
-	#elif resize_scroll_container.custom_minimum_size.y + difference > max_note_size_limit and max_note_size_limit != 0:
-		#resize_scroll_container.custom_minimum_size.y = max_note_size_limit
-	#else:
-		#resize_scroll_container.custom_minimum_size.y += difference
-		#last_custom_size_y = resize_scroll_container.custom_minimum_size.y
 
 
-var messages = preload("res://Scenes/MessageMarkdown.tscn")
 var richTextLabel = RichTextLabel.new()
 
 func _on_unsplit_button_pressed() -> void:
@@ -584,7 +571,7 @@ func split_and_display_images(images_list: Array, messages_holder: Node) -> void
 
 # Helper function to create a new message instance
 func create_message_instance() -> Node:
-	var message_instance = messages.instantiate()
+	var message_instance = message_scene.instantiate()
 	message_instance.find_child("UnsplitButton").visible = false
 	message_instance.find_child("HideButton").visible = false
 	message_instance.find_child("PanelContainer").size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -612,3 +599,13 @@ func create_history_item_for_image(image) -> ChatHistoryItem:
 
 func _on_extract_editor_button_pressed() -> void:
 	SingletonObject.editor_pane.update_current_text_tab("chat response" , history_item.Message)
+
+
+func _on_left_card_button_pressed() -> void:
+	var slider = get_parent() as SliderContainer
+	slider.previous_child()
+
+
+func _on_right_card_button_pressed() -> void:
+	var slider = get_parent() as SliderContainer
+	slider.next_child()
