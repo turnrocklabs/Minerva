@@ -36,7 +36,9 @@ func _position_children_immediately() -> void:
 			if i == active_child_index:
 				child.modulate = Color(1.0, 1.0, 1.0, 1.0)
 				child.z_index = 10
+				child.mouse_filter = Control.MOUSE_FILTER_PASS
 			else:
+				child.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				child.modulate = Color(0.8, 0.8, 0.8, 1.0)
 				child.z_index = 0
 
@@ -121,3 +123,8 @@ func wrap(value: int, min_value: int, max_value: int) -> int:
 	if result < 0:
 		result += range_size
 	return result + min_value
+
+
+func _on_child_entered_tree(node: Node) -> void:
+	if node is Control:
+		node.pivot_offset = node.size/2

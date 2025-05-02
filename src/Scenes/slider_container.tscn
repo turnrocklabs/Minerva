@@ -11,3 +11,6 @@ grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 script = ExtResource("1_ypr63")
+offset_distance = 400.0
+
+[connection signal="child_entered_tree" from="." to="." method="_on_child_entered_tree"]
