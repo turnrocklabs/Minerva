@@ -6,7 +6,8 @@ extends Panel
 
 
 func _on_add_shelv_pressed() -> void:
-	SingletonObject.DrawerTab.open_threads_popup()
+	$"../DrawerThreadPopup".show()
+	SingletonObject.DrawerTab.isDrawer = true
 	
 func _on_add_note_pressed() -> void:
 	$"../CreateNewNote".isDrawer = true
