@@ -31,7 +31,7 @@ func _init(optional_threadId = null):
 # serialize the contents into a single structure
 func Serialize() -> Dictionary:
 	var serialized_memories: Array[Dictionary] = []
-
+	print(serialized_memories)
 	for memory_item: MemoryItem in MemoryItemList:
 		var serialized_memory = memory_item.Serialize()
 		serialized_memories.append(serialized_memory)

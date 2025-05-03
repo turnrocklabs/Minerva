@@ -83,8 +83,8 @@ func open_threads_popup(tab_name: String = "", tab = null):
 
 
 func _on_new_pressed():
-	open_threads_popup()
-
+	#open_threads_popup()
+	%NewThreadPopup.show()
 
 func _on_btn_create_thread_pressed(isDrawerNote:bool,tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
@@ -549,21 +549,40 @@ func _ready():
 # if we are dragging a note above a tab, we can drop it there
 func _can_drop_data(at_position: Vector2, data):
 	var tab_idx = get_tab_idx_at_point(at_position)
-
-	return tab_idx != -1 and data is Note
+	
+	#return tab_idx != -1 and data is Note
+	return data is Note
 
 # find out which tab we are above
 # and get it's vboxMemoryList control (which is the only child of the scroll container)
 # then call it's _drop_data so it handles the Note by just appending it and removing it from the old thread
 func _drop_data(at_position: Vector2, data):
-	if not data is Note: return
-
+	if not data is Note: 
+		return
+	
+	# If no tabs exist, create a new one
+	if get_tab_count() <= 0:
+		create_new_notes_tab("Note 1")
+	
+	# Get tab index - if no tab at position, use current tab
 	var tab_idx = get_tab_idx_at_point(at_position)
-
+	if tab_idx == -1:
+		tab_idx = current_tab
+	
+	# Safety check - should never happen but just in case
+	if tab_idx == -1 or tab_idx >= get_tab_count():
+		return
+	
 	var control = get_tab_control(tab_idx)
-
-	var vbox_memory_list = control.get_child(0)
-
+	if not control:
+		return
+	
+	# Get the VBox container - add safety check
+	var vbox_memory_list = control.get_child(0) if control.get_child_count() > 0 else null
+	if not vbox_memory_list or not vbox_memory_list.has_method("_drop_data"):
+		return
+	
+	# Call the drop method
 	vbox_memory_list._drop_data(at_position, data)
 	current_tab = tab_idx
 	
