@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3 uid="uid://d2mp2pdnnufm8"]
+[gd_scene load_steps=8 format=3 uid="uid://d2mp2pdnnufm8"]
 
 [ext_resource type="Script" uid="uid://cgbf8yxnoy3hq" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_lx1ul"]
 [ext_resource type="Script" uid="uid://b5a3on4upogyp" path="res://Scripts/Drawer_add_shelf.gd" id="2_fhdnw"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" uid="uid://dfx5jx0c4suhd" path="res://Scripts/UI/Views/DrawerTabs.gd" id="3_6nrfe"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="4_krlqx"]
 [ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/windows/new_thread_popup.tscn" id="5_6nrfe"]
+[ext_resource type="Script" uid="uid://cddhx45uptxa0" path="res://Scripts/UI/Controls/vboxChat.gd" id="7_5gaco"]
 
 [node name="Drawer" type="Window"]
 position = Vector2i(0, 36)
@@ -91,13 +92,6 @@ mouse_filter = 1
 mouse_default_cursor_shape = 2
 text = "Add a note"
 
-[node name="OPen" type="Button" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer"]
-layout_mode = 2
-focus_mode = 0
-mouse_filter = 1
-mouse_default_cursor_shape = 2
-text = "load"
-
 [node name="VBoxContainer" type="VBoxContainer" parent="LayerBG/LayersMenu/MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -124,8 +118,57 @@ visible = false
 [node name="DrawerThreadPopup" parent="." instance=ExtResource("5_6nrfe")]
 visible = false
 
+[node name="CloseActions" type="Window" parent="."]
+size = Vector2i(460, 100)
+visible = false
+script = ExtResource("1_lx1ul")
+metadata/_custom_type_script = "uid://cgbf8yxnoy3hq"
+
+[node name="ColorRect" type="ColorRect" parent="CloseActions"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0.156863, 0.14902, 1)
+
+[node name="VBoxChat" type="VBoxContainer" parent="CloseActions"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("7_5gaco")
+metadata/_custom_type_script = "uid://cddhx45uptxa0"
+
+[node name="Label" type="Label" parent="CloseActions/VBoxChat"]
+layout_mode = 2
+text = "Unsaved changes will be lost. Continue?"
+horizontal_alignment = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="CloseActions/VBoxChat"]
+layout_mode = 2
+
+[node name="Save" type="Button" parent="CloseActions/VBoxChat/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Save"
+
+[node name="Close" type="Button" parent="CloseActions/VBoxChat/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Close"
+
+[node name="Exit" type="Button" parent="CloseActions/VBoxChat/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Exit"
+
+[connection signal="about_to_popup" from="." to="Drawer_manager" method="_on_drawer_about_to_popup"]
 [connection signal="pressed" from="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer/SaveData" to="Drawer_manager" method="_on_save_data_pressed"]
 [connection signal="pressed" from="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer/AddShelv" to="LayerBG" method="_on_add_shelv_pressed"]
 [connection signal="pressed" from="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer/AddNote" to="LayerBG" method="_on_add_note_pressed"]
-[connection signal="pressed" from="LayerBG/LayersMenu/MarginContainer/VBoxContainer/LayersHolder/HBoxContainer/OPen" to="Drawer_manager" method="_on_o_pen_pressed"]
 [connection signal="tab_clicked" from="LayerBG/LayersMenu/MarginContainer/VBoxContainer/VBoxContainer/tcThreadsDrawer" to="LayerBG" method="_on_shelf_container_tab_clicked"]
+[connection signal="pressed" from="CloseActions/VBoxChat/HBoxContainer/Save" to="Drawer_manager" method="_on_save_pressed"]
+[connection signal="pressed" from="CloseActions/VBoxChat/HBoxContainer/Close" to="Drawer_manager" method="_on_close_pressed"]
+[connection signal="pressed" from="CloseActions/VBoxChat/HBoxContainer/Exit" to="Drawer_manager" method="_on_exit_pressed"]

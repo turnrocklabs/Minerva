@@ -1,7 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://cy5q0i5xtn6qk"]
 
-[ext_resource type="Script" uid="uid://bed3pqcrplxx8" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_4eeli"]
-[ext_resource type="Script" uid="uid://dgvwmbh8gl2xv" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_4eeli"]
+[ext_resource type="Script" uid="uid://cgbf8yxnoy3hq" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_4eeli"]
 
 [node name="PersistentWindow" type="Window"]
 position = Vector2i(0, 36)
