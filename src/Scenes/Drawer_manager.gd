@@ -2,18 +2,19 @@ extends Control
 class_name ThreadedNotesManager
 
 var data_path: String = "res://Lib/Drawer/drawer_data.json"
+var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
 
 func _on_save_data_pressed() -> void:
 	save_notes(data_path)
 
 func save_notes(path: String = "") -> void:
 	var notes_data = serialize_notes()
-	print("Data to save: ", notes_data)
 	
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	if file:
 		file.store_line(JSON.stringify(notes_data, "\t"))
 		file.close()
+		last_saved_data = notes_data  # Update last saved data
 		print("Notes saved successfully to: ", path)
 	else:
 		push_error("Failed to save notes to ", path, ". Error: ", FileAccess.get_open_error())
@@ -30,11 +31,37 @@ func load_notes(path: String) -> void:
 		
 		var json = JSON.parse_string(json_text)
 		if json is Dictionary:
+			last_saved_data = json  # Store loaded data for comparison
 			deserialize_notes(json)
 		else:
 			push_error("Failed to parse JSON data from ", path)
 	else:
 		push_error("Failed to open file ", path, ". Error: ", FileAccess.get_open_error())
+
+# New function to get current data from memory
+func get_current_data() -> Dictionary:
+	return serialize_notes()
+
+# New function to get saved data from file
+func get_saved_data(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		push_error("File does not exist: ", path)
+		return {}
+	
+	var file = FileAccess.open(path, FileAccess.READ)
+	if file:
+		var json_text = file.get_as_text()
+		file.close()
+		
+		var json = JSON.parse_string(json_text)
+		if json is Dictionary:
+			return json
+		else:
+			push_error("Failed to parse JSON data from ", path)
+			return {}
+	else:
+		push_error("Failed to open file ", path, ". Error: ", FileAccess.get_open_error())
+		return {}
 
 func serialize_notes() -> Dictionary:
 	var notes_data: Array[Dictionary] = []
@@ -174,18 +201,74 @@ func deserialize_notes(data: Dictionary) -> void:
 		SingletonObject.DrawerTab.clear_all_tabs()
 		SingletonObject.DrawerTab.render_threads()
 
-
 func _on_drawer_about_to_popup() -> void:
 	load_notes(data_path)
 	
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and $"..".close_requested:
-		$"../CloseActions".popup_centered()
+		# Compare current data with last saved data
+		var current_data = get_current_data()
+		var has_changes = not compare_data(current_data, last_saved_data)
+		
+		if has_changes:
+			$"../CloseActions".popup_centered()
+		else:
+			$"..".hide()
 
+# New function to compare two data sets
+func compare_data(data1: Dictionary, data2: Dictionary) -> bool:
+	# Simple comparison - you might want to make this more sophisticated
+	# For example, by comparing only the relevant fields
+	
+	# Quick check for empty data
+	if data1.is_empty() or data2.is_empty():
+		return false
+	
+	# Compare basic structure
+	if data1.get("note_count", 0) != data2.get("note_count", 0):
+		return false
+	
+	# Compare each thread and memory item
+	if data1.has("notes") and data2.has("notes"):
+		var notes1 = data1["notes"]
+		var notes2 = data2["notes"]
+		
+		if notes1.size() != notes2.size():
+			return false
+			
+		for i in notes1.size():
+			var thread1 = notes1[i]
+			var thread2 = notes2[i]
+			
+			# Compare thread properties
+			if thread1.get("ThreadId") != thread2.get("ThreadId") or \
+			   thread1.get("ThreadName") != thread2.get("ThreadName"):
+				return false
+				
+			# Compare memory items
+			var items1 = thread1.get("MemoryItemList", [])
+			var items2 = thread2.get("MemoryItemList", [])
+			
+			if items1.size() != items2.size():
+				return false
+				
+			for j in items1.size():
+				var item1 = items1[j]
+				var item2 = items2[j]
+				
+				# Compare key properties of memory items
+				if item1.get("UUID") != item2.get("UUID") or \
+				   item1.get("Title") != item2.get("Title") or \
+				   item1.get("Content") != item2.get("Content") or \
+				   item1.get("Type") != item2.get("Type"):
+					return false
+	
+	return true
 
 func _on_save_pressed() -> void:
 	save_notes(data_path)
-
+	$"..".hide()
+	$"../CloseActions".hide()
 
 func _on_close_pressed() -> void:
 	$"../CloseActions".hide()

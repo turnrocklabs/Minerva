@@ -10,7 +10,7 @@
 [ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/windows/PreferencesPopup.tscn" id="3_3hcc1"]
 [ext_resource type="Script" uid="uid://cgbf8yxnoy3hq" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" uid="uid://c82bdp2gkabex" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
-[ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://Scenes/PersistentWindow.tscn" id="3_xdign"]
+[ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="3_xdign"]
 [ext_resource type="Script" uid="uid://2t2ngcpqj1yw" path="res://Scripts/many_new_files_window.gd" id="4_0j15c"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 [ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/windows/new_thread_popup.tscn" id="5_gujhn"]

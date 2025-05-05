@@ -4,13 +4,28 @@ extends RefCounted
 static var SERIALIZER_FIELDS = ["ThreadId", "ThreadName", "MemoryItemList"]
 
 var ThreadId: String:
-	set(value): SingletonObject.save_state(false); ThreadId = value
+	set(value):
+		if SingletonObject.DrawerThreadList: 
+			SingletonObject.save_state(true); 
+		else:
+			SingletonObject.save_state(false); 
+		ThreadId = value
 
 var ThreadName: String:
-	set(value): SingletonObject.save_state(false); ThreadName = value
+	set(value):
+		if SingletonObject.DrawerThreadList: 
+			SingletonObject.save_state(true); 
+		else:
+			SingletonObject.save_state(false); 
+		ThreadName = value
 
 var MemoryItemList: Array[MemoryItem]:
-	set(value): SingletonObject.save_state(false); MemoryItemList = value
+	set(value):
+		if SingletonObject.DrawerThreadList: 
+			SingletonObject.save_state(true); 
+		else:
+			SingletonObject.save_state(false);  
+		MemoryItemList = value
 
 
 # initialize with a new ThreadId

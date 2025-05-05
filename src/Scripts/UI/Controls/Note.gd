@@ -297,14 +297,15 @@ func _drop_data(_at_position: Vector2, data) -> void:
 	elif _lower_separator.visible:
 		insert_index = target_pos + 1
 
-	# Remove from source first
-	var current_index = source_thread.MemoryItemList.find(data.memory_item)
-	if current_index >= 0:
-		source_thread.MemoryItemList.remove_at(current_index)
-		
-		# Adjust index if moving within same thread
-		if source_thread == target_thread and current_index < insert_index:
-			insert_index -= 1
+	# Only remove from source if moving within the same thread
+	if source_thread == target_thread:
+		var current_index = source_thread.MemoryItemList.find(data.memory_item)
+		if current_index >= 0:
+			source_thread.MemoryItemList.remove_at(current_index)
+			
+			# Adjust index if moving within same thread
+			if current_index < insert_index:
+				insert_index -= 1
 
 	# Insert into target
 	if insert_index >= 0 and insert_index <= target_thread.MemoryItemList.size():
@@ -314,7 +315,6 @@ func _drop_data(_at_position: Vector2, data) -> void:
 	# Hide separators
 	_upper_separator.visible = false
 	_lower_separator.visible = false
-
 func _on_check_button_toggled(toggled_on: bool) -> void:
 	if memory_item:
 		memory_item.Enabled = toggled_on
