@@ -5,7 +5,6 @@ extends TabContainer
 # just use current_tab
 # var ActiveThreadIndex: int:
 @onready var buffer_control_notes: Control = %BufferControlNotes
-
 var _drag_active := true
 # var _hovered_tab := -1
 # var _hover_timer
@@ -166,15 +165,15 @@ func add_note(user_title:String,isDrawer:bool, user_content: String,is_completed
 
 
 
-func add_audio_note(note_title: String, note_audio: AudioStreamWAV,isDrawer:bool = false) -> MemoryItem:
-	if (SingletonObject.ThreadList == null) or current_tab < 1:
-		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
-		#return
-		await create_new_notes_tab()
+func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:bool = false) -> MemoryItem:
+	# Check if we need to create a new tab
+	if SingletonObject.ThreadList.is_empty() or current_tab < 0:
+		create_new_notes_tab("Notes 1")  # Don't use await here
 	
-	var active_thread : MemoryThread = SingletonObject.ThreadList[self.current_tab]
+	# Now get the active thread
+	var active_thread : MemoryThread = SingletonObject.ThreadList[current_tab]
 	
-	# Create a memory item.
+	# Create a memory item
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.UUID = SingletonObject.generate_UUID()
 	new_memory.Enabled = false
@@ -559,7 +558,6 @@ func _can_drop_data(at_position: Vector2, data):
 func _drop_data(at_position: Vector2, data):
 	if not data is Note: 
 		return
-	
 	# If no tabs exist, create a new one
 	if get_tab_count() <= 0:
 		create_new_notes_tab("Note 1")
