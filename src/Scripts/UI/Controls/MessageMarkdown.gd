@@ -250,6 +250,9 @@ func _setup_model_message():
 	var continue_btn = get_node("%ContinueButton") as Button
 	continue_btn.visible = not history_item.Complete
 	
+	# we can't edit model messages
+	# %EditButton.visible = false
+
 	if history_item.Error:
 		label.text = "An error occurred:\n%s" % history_item.Error
 		style.bg_color = error_message_color
@@ -259,11 +262,13 @@ func _setup_model_message():
 	await get_tree().process_frame
 
 
+
 ## Instantiates new message node
 static var message_scene = preload("res://Scenes/MessageMarkdown.tscn")
 static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = message_scene.instantiate()
 	return msg
+
 
 
 # Continues the generation of the response
@@ -272,6 +277,8 @@ func _on_continue_button_pressed():
 		loading = true
 		history_item = await SingletonObject.Chats.continue_response(history_item)
 		loading = false
+
+
 
 func _on_clip_button_pressed():
 	DisplayServer.clipboard_set(label.markdown_text + "\n")
