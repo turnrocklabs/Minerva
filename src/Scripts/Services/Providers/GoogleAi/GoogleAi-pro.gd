@@ -9,7 +9,7 @@ func _init():
 	BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 	PROVIDER = SingletonObject.API_PROVIDER.GOOGLE
 
-	model_name = "gemini-2.5-pro-preview-03-25"
+	model_name = "gemini-2.5-pro-exp-03-25"
 	short_name = "GP"
 	token_cost = 1.25 / 1_000_000 # https://claude101.com/claude-3-5-sonnet/
 
