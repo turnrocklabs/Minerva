@@ -67,7 +67,6 @@ func save_to_config_file(section: String, field: String, value):
 
 func config_has_saved_section(section: String) -> bool:
 	if !section: return false
-	
 	return config_file.has_section(section)
 
 

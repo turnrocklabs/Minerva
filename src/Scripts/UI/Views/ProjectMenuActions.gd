@@ -111,6 +111,7 @@ func save_editor_panes(skip_selecting_items: bool = false):
 		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 		item_list.clear()
 		for editor in unsaved_editors:
+			editor
 			var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
 			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(idx)
 			var item_idx = item_list.add_item(tab_title)
