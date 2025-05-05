@@ -115,6 +115,7 @@ func _ready() -> void:
 		%LeftCardButton.visible = true
 		%RightCardButton.visible = true
 		right_control.visible = false
+		left_control.visible = false
 	await get_tree().process_frame
 	if first_time_message:
 		last_custom_size_y = size.y
@@ -203,7 +204,8 @@ func _setup_user_message() -> void:
 
 func _setup_model_message():
 	#%RightMarginControl.visible = true
-	left_control.visible = true
+	if get_parent() is not SliderContainer:
+		left_control.visible = true
 	left_control.get_node("PanelContainer/Label").text = history_item.ModelShortName
 	left_control.get_node("PanelContainer").tooltip_text = history_item.ModelName
 

@@ -3,7 +3,7 @@ extends TabContainer
 
 
 #var icActive = preload("res://assets/icons/Microphone_active.png")
-const MultiMessageContainerScene = preload("res://Scenes/multi_message_container.tscn")
+#const MultiMessageContainerScene = preload("res://Scenes/multi_message_container.tscn")
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -294,6 +294,7 @@ func execute_regular_chat(text: String) -> void:
 	if bot_response != null: 
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
+		chi.provider = bot_response.provider
 		chi.Message = bot_response.text
 		chi.Error = bot_response.error
 		chi.Complete = bot_response.complete
@@ -407,6 +408,7 @@ func execute_sequential_chat(text_input: String) -> void:
 		if bot_response != null: 
 			chi.Id = bot_response.id
 			chi.Role = ChatHistoryItem.ChatRole.MODEL
+			chi.provider = bot_response.provider
 			chi.Message = bot_response.text
 			chi.Error = bot_response.error
 			chi.Complete = bot_response.complete
@@ -440,6 +442,7 @@ var usr_messages_container: SliderContainer
 var mdl_messages_container: SliderContainer
 var usr_chat_hist_items: Array[ChatHistoryItem] = []
 var bot_responses: Array[ChatHistoryItem] = []
+var parallel_chat_UUID: String = ""
 signal thread_bot_response_completed
 func execute_parallel_chat(text_input: String) -> void:
 	if text_input.is_empty(): return
@@ -452,6 +455,7 @@ func execute_parallel_chat(text_input: String) -> void:
 	history.VBox.add_child(usr_messages_container)
 	history.VBox.add_child(mdl_messages_container)
 	
+	parallel_chat_UUID = SingletonObject.generate_UUID()
 	var task_id = WorkerThreadPool.add_group_task(create_message_new, inputs.size())
 	
 	WorkerThreadPool.wait_for_group_task_completion(task_id)
@@ -459,8 +463,14 @@ func execute_parallel_chat(text_input: String) -> void:
 
 func _on_thread_bot_response_completed() -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	var user_msg = usr_chat_hist_items.pop_front()
-	var bot_response = bot_responses.pop_front()
+	var user_msg: ChatHistoryItem = usr_chat_hist_items.pop_front()
+	var bot_response: ChatHistoryItem = bot_responses.pop_front()
+	
+	#user_msg.SliderContainerId = parallel_chat_UUID
+	bot_response.SliderContainerId = parallel_chat_UUID
+	if bot_responses.is_empty() and usr_chat_hist_items.is_empty():
+		parallel_chat_UUID = ""
+	
 	var usr_msg_node: = history.VBox.add_history_item(user_msg, false)
 	var mdl_msg_node: = history.VBox.add_history_item(bot_response, false)
 	if user_msg.provider is HumanProvider:
@@ -478,6 +488,34 @@ func _on_thread_bot_response_completed() -> void:
 		usr_messages_container.add_child(usr_msg_node)
 		mdl_messages_container.add_child(mdl_msg_node)
 
+func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> void:
+	if chat_hist_item == null:
+		return
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	var user_msg: ChatHistoryItem = usr_chat_hist_items.pop_front()
+	var bot_response: ChatHistoryItem = chat_hist_item
+	
+	#user_msg.SliderContainerId = parallel_chat_UUID
+	bot_response.SliderContainerId = parallel_chat_UUID
+	if bot_responses.is_empty() and usr_chat_hist_items.is_empty():
+		parallel_chat_UUID = ""
+	
+	var usr_msg_node: = history.VBox.add_history_item(user_msg, false)
+	var mdl_msg_node: = history.VBox.add_history_item(bot_response, false)
+	if user_msg.provider is HumanProvider:
+		
+		usr_messages_container.add_child(usr_msg_node)
+		usr_msg_node.regeneratable = false
+		usr_msg_node.render()
+		
+		mdl_messages_container.add_child(mdl_msg_node)
+		mdl_msg_node.regeneratable = false
+		mdl_msg_node.render()
+		mdl_msg_node.set_edit()
+	else:
+		usr_msg_node.render()
+		usr_messages_container.add_child(usr_msg_node)
+		mdl_messages_container.add_child(mdl_msg_node)
 
 func create_message_new(inputs_idx: int) -> void:
 	print("paralel messages idx:" + str(inputs_idx))
@@ -491,7 +529,7 @@ func create_message_new(inputs_idx: int) -> void:
 												ChatHistoryItem.ChatRole.USER, 
 												message,
 												history.provider)
-	
+	user_history_item.response_arrived.connect(_on_thread_bot_response_arrived)
 	mutex.lock()
 	history.HistoryItemList.append(user_history_item)
 	mutex.unlock()
@@ -532,6 +570,7 @@ func create_message_new(inputs_idx: int) -> void:
 	if bot_response != null: 
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
+		chi.provider = bot_response.provider
 		chi.Message = bot_response.text
 		chi.Error = bot_response.error
 		chi.Complete = bot_response.complete
@@ -547,9 +586,9 @@ func create_message_new(inputs_idx: int) -> void:
 	mutex.unlock()
 	## Inform the user history item that the response has arrived
 	user_history_item.response_arrived.emit(chi)
-		
-		
-	thread_bot_response_completed.emit()
+	
+	
+	#thread_bot_response_completed.emit()
 	# we nned to create the request and add the items to the messages container 
 	#and then update them after the resquest arrives
 
