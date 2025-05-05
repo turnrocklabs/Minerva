@@ -106,6 +106,8 @@ offset_right = -1531.0
 offset_bottom = -911.0
 grow_horizontal = 2
 grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
 theme = SubResource("Theme_ca11y")
 script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
@@ -158,6 +160,7 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 4
 theme_override_styles/panel = SubResource("StyleBoxFlat_hjfue")
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer"]

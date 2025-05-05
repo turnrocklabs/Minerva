@@ -21,7 +21,8 @@ static var SERIALIZER_FIELDS = [
 	"LastYSize",
 	"LinkedMemories",
 	"CodeLabelsState",
-	"isMerged"
+	"isMerged",
+	"SliderContainerId" # if 2 or more items share the same ID they get put in the same SliderContainer
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -94,6 +95,9 @@ var CodeLabelsState: Dictionary = {}:
 var isMerged: bool = false:
 	set(value): SingletonObject.save_state(false); isMerged = value
 
+var SliderContainerId: String = "":
+	set(value): SingletonObject.save_state(false); SliderContainerId = value
+
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
 
@@ -110,8 +114,7 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _te
 		self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
 	elif not _provider == null:
 		self.provider = _provider
-	else:
-		self.provider = HumanProvider.new()
+	
 	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
 	rng.randomize() # Uses the current time to seed the random number generator
 	var random_number = rng.randi() # Generates a random integer
@@ -182,7 +185,8 @@ func Serialize() -> Dictionary:
 		"LastYSize": LastYSize,
 		"LinkedMemories": LinkedMemories,
 		"CodeLabelsState": CodeLabelsState,
-		"isMerged": isMerged
+		"isMerged": isMerged,
+		"SliderContainerId": SliderContainerId
 	}
 	return save_dict
 
