@@ -468,7 +468,7 @@ func _on_resize_control_gui_input(event: InputEvent) -> void:
 
 
 func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
-	#if control_type == null: return
+	if control_type == null: return
 	var difference: float = current_mouse_pos_y - last_mouse_pos_y
 	
 	if control_type.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:
