@@ -4,7 +4,8 @@ extends Window
 
 
 func _ready():
-	close_requested.connect(hide)
+	if $".".name != "Drawer":
+		close_requested.connect(hide)
 	#exclusive = true
 	transient = true
 
