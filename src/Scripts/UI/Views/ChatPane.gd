@@ -436,7 +436,6 @@ func execute_sequential_chat(text_input: String) -> void:
 
 
 var mutex: Mutex = Mutex.new()
-var active_threads: Array[Thread] = []
 var inputs: Array[String] = []
 var usr_messages_container: SliderContainer
 var mdl_messages_container: SliderContainer
@@ -451,9 +450,13 @@ func execute_parallel_chat(text_input: String) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	# Check if we need to do chain of messages
 	inputs = get_separated_messages(text_input)
-	usr_messages_container = SliderContainer.new()
+	var user_history_item: = ChatHistoryItem.new()
+	user_history_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
+											ChatHistoryItem.ChatRole.USER, 
+											text_input,
+											history.provider)
 	mdl_messages_container = SliderContainer.new()
-	history.VBox.add_child(usr_messages_container)
+	history.VBox.add_history_item(user_history_item)
 	history.VBox.add_child(mdl_messages_container)
 	
 	user_parallel_chat_UUID = SingletonObject.generate_UUID()
@@ -462,33 +465,6 @@ func execute_parallel_chat(text_input: String) -> void:
 	
 	WorkerThreadPool.wait_for_group_task_completion(task_id)
 
-
-func _on_thread_bot_response_completed() -> void:
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	var user_msg: ChatHistoryItem = usr_chat_hist_items.pop_front()
-	var bot_response: ChatHistoryItem = bot_responses.pop_front()
-	
-	#user_msg.SliderContainerId = parallel_chat_UUID
-	bot_response.SliderContainerId = parallel_chat_UUID
-	if bot_responses.is_empty() and usr_chat_hist_items.is_empty():
-		parallel_chat_UUID = ""
-	
-	var usr_msg_node: = history.VBox.add_history_item(user_msg, false)
-	var mdl_msg_node: = history.VBox.add_history_item(bot_response, false)
-	if user_msg.provider is HumanProvider:
-		
-		usr_messages_container.add_child(usr_msg_node)
-		usr_msg_node.regeneratable = false
-		usr_msg_node.render()
-		
-		mdl_messages_container.add_child(mdl_msg_node)
-		mdl_msg_node.regeneratable = false
-		mdl_msg_node.render()
-		mdl_msg_node.set_edit()
-	else:
-		usr_msg_node.render()
-		usr_messages_container.add_child(usr_msg_node)
-		mdl_messages_container.add_child(mdl_msg_node)
 
 func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> void:
 	if chat_hist_item == null:
@@ -772,10 +748,18 @@ func render_history(chat_history: ChatHistory):
 		if item.SliderContainerId == "": 
 			vboxChat.add_history_item(item)
 		elif slider_containers.has(item.SliderContainerId):
+			#if item.Role == ChatHistoryItem.ChatRole.USER:
+				#var message: = slider_containers.get(item.SliderContainerId) as MessageMarkdown
+				#message.label.text = message.label.text + item.Message 
+			#else:
 			var slider = slider_containers.get(item.SliderContainerId) as SliderContainer
 			slider.add_child(vboxChat.add_history_item(item, false))
 			await get_tree().process_frame
 		else:
+			#if item.Role == ChatHistoryItem.ChatRole.USER:
+				#var message: = vboxChat.add_history_item(item)
+				#slider_containers.set(item.SliderContainerId, message)
+			#else:
 			var new_slider_cont = SliderContainer.new()
 			new_slider_cont.add_child(vboxChat.add_history_item(item, false))
 			vboxChat.add_child(new_slider_cont)
@@ -798,7 +782,6 @@ func _ready():
 
 	SingletonObject.note_toggled.connect(_on_note_toggled)
 	SingletonObject.note_changed.connect(_on_note_changed)
-	thread_bot_response_completed.connect(_on_thread_bot_response_completed)
 
 
 # if a note is enabled/disabled recalculate the token cost
