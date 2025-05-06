@@ -1,7 +1,7 @@
 extends Control
 class_name Drawer_manager
 
-var data_path: String = "res://Lib/Drawer/drawer_data.json"
+var data_path: String = "user://drawer_data.json"
 var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
 
 func _on_save_data_pressed() -> void:
@@ -11,13 +11,14 @@ func save_notes(path: String = "") -> void:
 	var notes_data = serialize_notes()
 	
 	var file = FileAccess.open(path, FileAccess.WRITE)
-	if file:
-		file.store_line(JSON.stringify(notes_data, "\t"))
-		file.close()
-		last_saved_data = notes_data  # Update last saved data
-		print("Notes saved successfully to: ", path)
-	else:
-		push_error("Failed to save notes to ", path, ". Error: ", FileAccess.get_open_error())
+	if file != null:
+		if file:
+			file.store_line(JSON.stringify(notes_data, "\t"))
+			file.close()
+			last_saved_data = notes_data  # Update last saved data
+			print("Notes saved successfully to: ", path)
+		else:
+			push_error("Failed to save notes to ", path, ". Error: ", FileAccess.get_open_error())
 
 func load_notes(path: String) -> void:
 	if not FileAccess.file_exists(path):
