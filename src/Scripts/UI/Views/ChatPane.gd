@@ -442,6 +442,7 @@ var usr_messages_container: SliderContainer
 var mdl_messages_container: SliderContainer
 var usr_chat_hist_items: Array[ChatHistoryItem] = []
 var bot_responses: Array[ChatHistoryItem] = []
+var user_parallel_chat_UUID: String = ""
 var parallel_chat_UUID: String = ""
 signal thread_bot_response_completed
 func execute_parallel_chat(text_input: String) -> void:
@@ -455,6 +456,7 @@ func execute_parallel_chat(text_input: String) -> void:
 	history.VBox.add_child(usr_messages_container)
 	history.VBox.add_child(mdl_messages_container)
 	
+	user_parallel_chat_UUID = SingletonObject.generate_UUID()
 	parallel_chat_UUID = SingletonObject.generate_UUID()
 	var task_id = WorkerThreadPool.add_group_task(create_message_new, inputs.size())
 	
@@ -495,9 +497,10 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 	var user_msg: ChatHistoryItem = usr_chat_hist_items.pop_front()
 	var bot_response: ChatHistoryItem = chat_hist_item
 	
-	#user_msg.SliderContainerId = parallel_chat_UUID
+	user_msg.SliderContainerId = user_parallel_chat_UUID
 	bot_response.SliderContainerId = parallel_chat_UUID
 	if bot_responses.is_empty() and usr_chat_hist_items.is_empty():
+		user_parallel_chat_UUID = ""
 		parallel_chat_UUID = ""
 	
 	var usr_msg_node: = history.VBox.add_history_item(user_msg, false)
@@ -763,9 +766,21 @@ func render_history(chat_history: ChatHistory):
 	var tab_idx = %tcChats.get_tab_idx_from_control(scroll_container)
 	%tcChats.set_tab_title(tab_idx, _name)
 	
-	
+	var slider_containers: = {}
 	for item in chat_history.HistoryItemList:
-		vboxChat.add_history_item(item)
+		# if the SliderContainerId if empty it means is a stand alone item and we just add it
+		if item.SliderContainerId == "": 
+			vboxChat.add_history_item(item)
+		elif slider_containers.has(item.SliderContainerId):
+			var slider = slider_containers.get(item.SliderContainerId) as SliderContainer
+			slider.add_child(vboxChat.add_history_item(item, false))
+			await get_tree().process_frame
+		else:
+			var new_slider_cont = SliderContainer.new()
+			new_slider_cont.add_child(vboxChat.add_history_item(item, false))
+			vboxChat.add_child(new_slider_cont)
+			slider_containers.set(item.SliderContainerId, new_slider_cont)
+			await get_tree().process_frame
 
 
 # Called when the node enters the scene tree for the first time.

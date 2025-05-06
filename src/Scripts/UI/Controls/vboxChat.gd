@@ -135,7 +135,7 @@ func add_history_item(item: ChatHistoryItem, add_as_child: bool = true) -> Messa
 	item.rendered_node = msg_node
 
 	if add_as_child:
-		call_deferred("add_child", msg_node)
+		add_child(msg_node)
 
 	#scroll_to_bottom()
 
