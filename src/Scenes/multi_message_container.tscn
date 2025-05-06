@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://blnidauh4wv7v"]
 
 [ext_resource type="Script" uid="uid://dtnlkyb53e45e" path="res://Scripts/UI/Controls/multi_message_container.gd" id="1_qgdmi"]
-[ext_resource type="Script" uid="uid://c014abn8bg8me" path="res://Scripts/UI/Controls/slider_container.gd" id="2_qgdmi"]
+[ext_resource type="PackedScene" uid="uid://6eyoeca7pnqu" path="res://Scenes/slider_container.tscn" id="2_qgdmi"]
 
 [node name="MultiMessageContainer" type="MarginContainer"]
 anchors_preset = 15
@@ -17,49 +17,10 @@ theme_override_constants/margin_right = 5
 theme_override_constants/margin_bottom = 5
 script = ExtResource("1_qgdmi")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="."]
+[node name="Control" type="Control" parent="."]
+z_index = 5
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 8
-
-[node name="PrevButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="SliderContainer" parent="." instance=ExtResource("2_qgdmi")]
 unique_name_in_owner = true
 layout_mode = 2
-text = "L"
-
-[node name="NextButton" type="Button" parent="VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "R"
-
-[node name="SliderContainer" type="Container" parent="VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-script = ExtResource("2_qgdmi")
-active_child_index = -1
-
-[node name="Panel" type="Panel" parent="VBoxContainer/SliderContainer"]
-custom_minimum_size = Vector2(500, 1000)
-layout_mode = 2
-
-[node name="Panel2" type="Panel" parent="VBoxContainer/SliderContainer"]
-custom_minimum_size = Vector2(500, 1000)
-layout_mode = 2
-
-[node name="Panel3" type="Panel" parent="VBoxContainer/SliderContainer"]
-custom_minimum_size = Vector2(500, 1000)
-layout_mode = 2
-
-[node name="Panel4" type="Panel" parent="VBoxContainer/SliderContainer"]
-custom_minimum_size = Vector2(500, 1000)
-layout_mode = 2
-
-[node name="Panel5" type="Panel" parent="VBoxContainer/SliderContainer"]
-custom_minimum_size = Vector2(500, 1000)
-layout_mode = 2
-
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/PrevButton" to="." method="_on_prev_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/NextButton" to="." method="_on_next_button_pressed"]

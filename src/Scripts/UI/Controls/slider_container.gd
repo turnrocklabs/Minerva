@@ -24,6 +24,7 @@ func _init() -> void:
 func _ready() -> void:
 	_position_children_immediately()
 
+
 func _position_children_immediately() -> void:
 	for i in get_child_count():
 		var child = get_child(i)
@@ -36,7 +37,7 @@ func _position_children_immediately() -> void:
 			if i == active_child_index:
 				child.modulate = Color(1.0, 1.0, 1.0, 1.0)
 				child.z_index = 10
-				child.mouse_filter = Control.MOUSE_FILTER_PASS
+				child.mouse_filter = Control.MOUSE_FILTER_STOP
 			else:
 				child.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				child.modulate = Color(0.8, 0.8, 0.8, 1.0)
