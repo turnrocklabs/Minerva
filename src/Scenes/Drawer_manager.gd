@@ -1,5 +1,5 @@
 extends Control
-class_name ThreadedNotesManager
+class_name Drawer_manager
 
 var data_path: String = "res://Lib/Drawer/drawer_data.json"
 var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
