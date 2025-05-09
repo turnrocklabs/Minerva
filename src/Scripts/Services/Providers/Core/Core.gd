@@ -27,8 +27,10 @@ func start(url: String = "ws://127.0.0.1:3030/connect", username: String = "", p
 		SingletonObject.ErrorDisplay("Error", "No evnironment variable 'MINERVA_REST_BRIDGE' set. Can't connect to the core.")
 		return false
 
+	var login_url: = "%s/login" % OS.get_environment("MINERVA_REST_BRIDGE")
+
 	var err: = http_request.request(
-		OS.get_environment("MINERVA_REST_BRIDGE"),
+		login_url,
 		PackedStringArray([
 			"Content-Type: application/json"
 		]),
@@ -46,7 +48,19 @@ func start(url: String = "ws://127.0.0.1:3030/connect", username: String = "", p
 
 	var results: Array = await http_request.request_completed
 
+	var response_code: int = results[1]
 	var response_data = JSON.parse_string(results[3].get_string_from_utf8())
+
+	# FIXME: rest bridge returns code 200 sometimes when the request was
+	if response_code > 299 or response_code < 200 :
+		var req_err = "Unknown error"
+
+		# sometimes the code is in data field or in the params/error if its a service error
+		req_err = response_data.get("data", req_err) 
+		req_err = response_data.get("params", {}).get("error", req_err)
+
+		SingletonObject.ErrorDisplay("Request failed", req_err)
+		return false
 
 
 	print(response_data)

@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://booxo77json0y"]
+[gd_scene load_steps=11 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" uid="uid://byhq7f6bjmjjo" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
 [ext_resource type="PackedScene" uid="uid://dcbs3juhmi10w" path="res://Scripts/UI/Controls/service_selection.tscn" id="2_6m13a"]
@@ -6,6 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="2_yfedb"]
 [ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_7voe0"]
+[ext_resource type="PackedScene" uid="uid://ci2nbjiei8up1" path="res://Scenes/windows/hcp_logs.tscn" id="3_nlyvs"]
 [ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="4_0f5nr"]
 [ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="4_nlyvs"]
 [ext_resource type="Texture2D" uid="uid://dmhyo26833yx8" path="res://assets/icons/save_icons/save-64-white.png" id="5_346qj"]
@@ -19,6 +20,10 @@ min_size = Vector2i(580, 570)
 script = ExtResource("1_snp1b")
 
 [node name="ServiceSelection" parent="." instance=ExtResource("2_6m13a")]
+unique_name_in_owner = true
+visible = false
+
+[node name="HcpLogs" parent="." instance=ExtResource("3_nlyvs")]
 unique_name_in_owner = true
 visible = false
 
@@ -378,6 +383,12 @@ unique_name_in_owner = true
 layout_mode = 2
 texture = ExtResource("2_yfedb")
 
+[node name="HcpLogsButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "See all HCP logs"
+text = "See logs"
+
 [node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
@@ -423,5 +434,6 @@ icon_68 = ExtResource("5_346qj")
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/General/SectionsContainer/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer5/PasswordCheckbox" to="." method="_on_password_checkbox_toggled"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HcpLogsButton" to="." method="_on_hcp_logs_button_pressed"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/SelectServicesButton" to="." method="_on_select_services_button_pressed"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]
