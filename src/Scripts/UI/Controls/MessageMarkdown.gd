@@ -16,8 +16,9 @@ extends HBoxContainer
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
 @export var expand_ease_type: Tween.EaseType = Tween.EASE_OUT
 @export var expand_icon_color: Color = Color.WHITE
-@export var max_note_size_limit: float = 400.0
-@export var min_note_size_limit: float = 30.0
+@export var custom_starting_size: = 740.0
+@export var max_message_size_limit: float = 400.0
+@export var min_message_size_limit: float = 30.0
 
 @export_category("Code Label vars")
 @export var max_lines_expanded_code_segment: int = 6
@@ -27,23 +28,23 @@ extends HBoxContainer
 @onready var message_labels_container: VBoxContainer = %MessageLabelsContainer
 @onready var resize_drag_control: Control = %ResizeDragControl
 @onready var images_grid_container: GridContainer = %ImagesGridContainer
-@onready var v_box_container: VBoxContainer = %VBoxContainer
+@onready var v_box_container: VBoxContainer = %MainVBoxContainer
 
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var text_edit: TextEdit = %MessageTextEdit
 
 var is_unsplit_edit = false
 
-var expanded: bool = true:
+var _expanded: bool = true:
 	set(value):
 		if history_item:
 			history_item.Expanded = value
-		expanded = value
+		_expanded = value
 
-var last_custom_size_y: float = 100.0:
+var _last_custom_size_y: float = 0.0:
 	set(value):
 		if value > 0:
-			last_custom_size_y = value
+			_last_custom_size_y = value
 			if history_item:
 				history_item.LastYSize = value
 
@@ -111,18 +112,41 @@ func _ready() -> void:
 		%UnsplitButton.visible = true
 	render()
 	
+	await get_tree().process_frame
 	if get_parent() is SliderContainer:
 		%LeftCardButton.visible = true
 		%RightCardButton.visible = true
 		right_control.visible = false
 		left_control.visible = false
-	await get_tree().process_frame
-	if first_time_message:
-		last_custom_size_y = size.y
-	expanded = history_item.Expanded
-	if !expanded:
+	
+	# This resizes the scroll container
+	max_message_size_limit = v_box_container.size.y
+	if images_grid_container.get_child_count() != 0 and message_labels_container.get_child_count() == 0:
+		resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
+	else:
+		if first_time_message:
+			var items_size: = v_box_container.size.y
+			if items_size > custom_starting_size:
+				items_size = custom_starting_size
+			_last_custom_size_y = items_size
+			resize_scroll_container.custom_minimum_size.y = items_size
+		else:
+			if _last_custom_size_y != 0:
+				resize_scroll_container.custom_minimum_size.y = _last_custom_size_y
+			else:
+				resize_scroll_container.custom_minimum_size.y = custom_starting_size
+				_last_custom_size_y = custom_starting_size
+	
+	# Make  the controls invisible if they are empty
+	if images_grid_container.get_child_count() == 0:
+		images_grid_container.visible = false
+	if message_labels_container.get_child_count() == 0:
+		message_labels_container.visible = false
+	_expanded = history_item.Expanded
+	if !_expanded:
 		contract_message()
 	
+	_enable_input()
 
 
 ## sets loading label visibility to `loading_` and toggles_controls
@@ -240,7 +264,7 @@ func _setup_model_message():
 	else:
 		label.markdown_text = history_item.Message
 		style.bg_color = bot_message_color
-	await get_tree().process_frame
+	#await get_tree().process_frame
 
 
 ## Instantiates new message node
@@ -447,69 +471,44 @@ func _create_code_labels():
 		message_labels_container.add_child(node)
 
 
-
 func _on_expand_button_pressed() -> void:
-	expanded = !expanded
-	if expanded:
+	_expanded = !_expanded
+	if _expanded:
 		expand_message()
 	else:
 		contract_message()
 
-#var expand_tween: Tween
-#var last_min_size: = 0
+
+var expand_tween: Tween
 func expand_message() -> void:
-	v_box_container.visible = true
-	expand_button.rotation = deg_to_rad(0.0)
-	expand_button.modulate = Color.WHITE
-	#message_labels_container.visible = true
-	#expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
-	#expand_tween.finished.connect(enable_expand_button)
-	#expand_tween.tween_property(message_labels_container, "custom_minimum_size:y", last_custom_size_y, expand_anim_duration)
-	#expand_tween.set_parallel()
-	#expand_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
-	#expand_tween.set_parallel()
-	#expand_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
+	if _last_custom_size_y == 0:
+		_last_custom_size_y = custom_starting_size
+	resize_scroll_container.visible = true
+	_animate_expand(_last_custom_size_y, 0.0, Color.WHITE)
 
 
 func contract_message() -> void:
-	#if expand_tween and expand_tween.is_running():
-			#expand_tween.kill()
-			#return
-	v_box_container.visible = false
-	expand_button.rotation = deg_to_rad(-90.0)
-	expand_button.modulate = expand_icon_color
+	_animate_expand(0.0, -90.0, expand_icon_color)
+	await get_tree().create_timer(expand_anim_duration- 0.24).timeout
+	resize_scroll_container.visible = false
 
-func enable_expand_button() -> void:
+
+func _animate_expand(new_size: float, new_rotation: float, new_icon_color: Color) -> Tween:
+	if expand_tween and expand_tween.is_running():
+			expand_tween.kill()
+	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
+	expand_tween.finished.connect(_enable_expand_button)
+	expand_tween.tween_property(resize_scroll_container, "custom_minimum_size:y", new_size, expand_anim_duration)
+	expand_tween.set_parallel()
+	expand_tween.tween_property(expand_button,"rotation", deg_to_rad(new_rotation), expand_anim_duration)
+	expand_tween.set_parallel()
+	expand_tween.tween_property(expand_button, "modulate", new_icon_color, expand_anim_duration)
+	return expand_tween
+
+
+func _enable_expand_button() -> void:
 	expand_button.disabled = false
 
-#func Ocnd_button_toggled(toggled_on: bool) -> void:
-	#if resize_tween and resize_tween.is_running():
-			#resize_tween.kill()
-			#return
-	#if toggled_on:
-		#resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
-		#resize_tween.tween_property(resize_scroll_container, "custom_minimum_size:y", last_custom_size_y, expand_anim_duration)
-		#resize_tween.set_parallel()
-		#resize_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
-		#resize_tween.set_parallel()
-		#resize_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
-		#resize_drag_control.show()
-		#resize_scroll_container.show()
-	#else:
-		#resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
-		#last_custom_size_y = resize_scroll_container.custom_minimum_size.y
-		#resize_tween.tween_property(resize_scroll_container, "custom_minimum_size:y", 0, expand_anim_duration)
-		#resize_tween.set_parallel()
-		#resize_tween.tween_property(expand_button,"rotation", deg_to_rad(-90.0), expand_anim_duration)
-		#resize_tween.set_parallel()
-		#resize_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
-		#await resize_tween.finished
-		#resize_scroll_container.hide()
-		#resize_drag_control.hide()
-	#expanded = toggled_on
-
-
-var richTextLabel = RichTextLabel.new()
 
 func _on_unsplit_button_pressed() -> void:
 	# Set the current message in the SingletonObject
@@ -606,3 +605,40 @@ func _on_left_card_button_pressed() -> void:
 func _on_right_card_button_pressed() -> void:
 	var slider = get_parent() as SliderContainer
 	slider.next_child()
+
+
+func _block_input() -> void:
+	%BlockInputControl.visible = true
+	%BlockInputControl.mouse_filter = MOUSE_FILTER_STOP
+
+
+func _enable_input() -> void:
+	%BlockInputControl.visible = false
+	%BlockInputControl.mouse_filter = MOUSE_FILTER_IGNORE
+
+
+var _resize_dragging: bool = false
+var _last_mouse_posistion_y: float = 0.0
+func _on_resize_control_gui_input(event: InputEvent) -> void:
+	if _expanded:
+		if event is InputEventMouseButton:
+			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
+				_resize_dragging = true
+			elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
+				_resize_dragging = false
+	if event is InputEventMouseMotion and _resize_dragging:
+		_resize_vertical(get_global_mouse_position().y, _last_mouse_posistion_y)
+	
+	_last_mouse_posistion_y = get_global_mouse_position().y
+
+
+func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
+	var difference: float = current_mouse_pos_y - last_mouse_pos_y
+	
+	if resize_scroll_container.custom_minimum_size.y + difference < min_message_size_limit and min_message_size_limit != 0:
+		resize_scroll_container.custom_minimum_size.y = min_message_size_limit
+	elif resize_scroll_container.custom_minimum_size.y + difference > max_message_size_limit and max_message_size_limit != 0:
+		resize_scroll_container.custom_minimum_size.y = max_message_size_limit
+	else:
+		resize_scroll_container.custom_minimum_size.y += difference
+		_last_custom_size_y = resize_scroll_container.custom_minimum_size.y

@@ -107,7 +107,7 @@ offset_bottom = -911.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
-size_flags_vertical = 4
+size_flags_vertical = 3
 theme = SubResource("Theme_ca11y")
 script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
@@ -160,7 +160,6 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 4
 theme_override_styles/panel = SubResource("StyleBoxFlat_hjfue")
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer"]
@@ -301,30 +300,34 @@ bbcode_enabled = true
 text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
 threaded = true
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
-unique_name_in_owner = true
-clip_contents = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="ImagesGridContainer" type="GridContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/VBoxContainer"]
-unique_name_in_owner = true
-clip_contents = true
-layout_mode = 2
-
 [node name="ResizeScrollContainer" type="ScrollContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
-size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Control" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_right = 10
+
+[node name="MainVBoxContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer/MainVBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ImagesGridContainer" type="GridContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer/MainVBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Control" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
 
 [node name="MessageTextEdit" type="TextEdit" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
@@ -354,7 +357,6 @@ icon = ExtResource("16_rwt48")
 
 [node name="ResizeDragControl" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
-visible = false
 custom_minimum_size = Vector2(0, 15)
 layout_mode = 2
 mouse_default_cursor_shape = 9
@@ -380,6 +382,11 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+
+[node name="BlockInputControl" type="Control" parent="MarginContainer"]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [connection signal="gui_input" from="." to="." method="_on_gui_input"]
