@@ -328,7 +328,6 @@ func execute_sequential_chat(text_input: String) -> void:
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 	# Check if we need to do chain of messages
 	inputs = get_separated_messages(text_input)
-	var number_of_messages: = 0
 	print(inputs)
 	#var multiple_messages: = check_for_create_files(text_input)
 	#var first_line: = text_input.split("\n")[0]
@@ -443,20 +442,15 @@ var usr_chat_hist_items: Array[ChatHistoryItem] = []
 var bot_responses: Array[ChatHistoryItem] = []
 var user_parallel_chat_UUID: String = ""
 var parallel_chat_UUID: String = ""
-signal thread_bot_response_completed
 func execute_parallel_chat(text_input: String) -> void:
 	if text_input.is_empty(): return
 	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	# Check if we need to do chain of messages
 	inputs = get_separated_messages(text_input)
-	var user_history_item: = ChatHistoryItem.new()
-	user_history_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
-											ChatHistoryItem.ChatRole.USER, 
-											text_input,
-											history.provider)
+	usr_messages_container = SliderContainer.new()
 	mdl_messages_container = SliderContainer.new()
-	history.VBox.add_history_item(user_history_item)
+	history.VBox.add_child(usr_messages_container)
 	history.VBox.add_child(mdl_messages_container)
 	
 	user_parallel_chat_UUID = SingletonObject.generate_UUID()
