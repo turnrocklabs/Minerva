@@ -16,6 +16,7 @@ on:
     paths:
       - "src/**"
     branches:
+      - main
       - user/milos/feature/terminal
 
 jobs:
@@ -42,9 +43,7 @@ jobs:
 
   build-windows:
     needs: check-gdextension
-    if: |
-      needs.check-gdextension.outputs.should_build == 'true' &&
-      (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
@@ -92,9 +91,7 @@ jobs:
 
   build-linux:
     needs: check-gdextension
-    if: |
-      needs.check-gdextension.outputs.should_build == 'true' &&
-      (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -151,19 +148,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      
-      - name: Download Previous Artifacts
-        if: needs.check-gdextension.outputs.should_build != 'true'
-        uses: dawidd6/action-download-artifact@v3
-        with:
-          workflow: build.yml
-          workflow_conclusion: success
-          name: terminal-*
-          path: src/bin/
-          if_no_artifact_found: ignore
+        with:  
+          submodules: 'true'
       
       - name: Download Current Artifacts
-        if: needs.check-gdextension.outputs.should_build == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: terminal-*
@@ -206,20 +194,22 @@ jobs:
           mkdir -p .godot/editor
           chmod -R 777 .godot
           
-      - name: Export Project
+      - name: Export Project  
         working-directory: src
         run: |
-          # Ensure build directory exists
+          # Ensure build directory exists and print directory structure
           mkdir -p build
+
+          timeout 20s "godot" --headless --import || true
           
           if [ "${{ github.event.inputs.platform }}" = "windows" ]; then
             godot --headless --export-debug "Windows Desktop" build/Minerva.exe
           elif [ "${{ github.event.inputs.platform }}" = "linux" ]; then
-            godot --headless --export-debug "Linux/X11" build/Minerva.x86_64
+            godot --headless --export-debug "Linux Release" build/Minerva.x86_64
           else
-            # For 'all' option or push events, export both but sequentially
-            godot --headless --export-debug "Windows Desktop" build/Minerva.exe &&
-            godot --headless --export-debug "Linux/X11" build/Minerva.x86_64
+            # For 'all' option or push events, export both
+            godot --headless --export-debug "Windows Desktop" build/Minerva.exe
+            godot --headless --export-debug "Linux Release" build/Minerva.x86_64 
           fi
           
       - name: Upload Builds
