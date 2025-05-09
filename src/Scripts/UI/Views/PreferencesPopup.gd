@@ -13,6 +13,7 @@ extends PersistentWindow
 @onready var hcp_password: LineEdit = %lePassword
 @onready var hcp_username: LineEdit = %leUsername
 @onready var hcp_url: LineEdit = %leCoreUrl
+@onready var hcp_logs_window: PersistentWindow = %HcpLogs
 
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
@@ -278,3 +279,7 @@ func _on_service_selection_service_selected(service: Service, action: Action) ->
 
 func _on_password_checkbox_toggled(toggled_on:bool) -> void:
 	hcp_password.secret = not toggled_on
+
+
+func _on_hcp_logs_button_pressed() -> void:
+	hcp_logs_window.popup_centered()
