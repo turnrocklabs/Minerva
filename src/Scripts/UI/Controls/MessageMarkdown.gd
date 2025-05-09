@@ -59,6 +59,7 @@ var content: String:
 		content = value
 		history_item.Message = value
 		history_item = history_item # so the setter is triggered
+		_update_sizes()
 	get: return label.text
 
 
@@ -82,6 +83,7 @@ var loading:= false:
 	set(value):
 		set_message_loading(value)
 		loading = value
+		_update_sizes()
 
 ## Enables the edit button for this node if it's displaying a user message.
 ## Changing this property for non user messages has no effect.
@@ -118,24 +120,12 @@ func _ready() -> void:
 		%RightCardButton.visible = true
 		right_control.visible = false
 		left_control.visible = false
-	
-	# This resizes the scroll container
-	max_message_size_limit = v_box_container.size.y
-	if images_grid_container.get_child_count() != 0 and message_labels_container.get_child_count() == 0:
-		resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
-	else:
-		if first_time_message:
-			var items_size: = v_box_container.size.y
-			if items_size > custom_starting_size:
-				items_size = custom_starting_size
-			_last_custom_size_y = items_size
-			resize_scroll_container.custom_minimum_size.y = items_size
+		if v_box_container.size.y > custom_starting_size:
+			max_message_size_limit = custom_starting_size
 		else:
-			if _last_custom_size_y != 0:
-				resize_scroll_container.custom_minimum_size.y = _last_custom_size_y
-			else:
-				resize_scroll_container.custom_minimum_size.y = custom_starting_size
-				_last_custom_size_y = custom_starting_size
+			max_message_size_limit = v_box_container.size.y
+	
+	_setup_sizes()
 	
 	# Make  the controls invisible if they are empty
 	if images_grid_container.get_child_count() == 0:
@@ -157,6 +147,8 @@ func set_message_loading(loading_: bool):
 	%ImagesGridContainer.visible = not loading_
 
 	_toggle_controls(not loading_)
+	await get_tree().process_frame
+	_update_sizes()
 
 
 ## This function will rerender the messaged using set `history_item`.
@@ -481,8 +473,11 @@ func _on_expand_button_pressed() -> void:
 
 var expand_tween: Tween
 func expand_message() -> void:
-	if _last_custom_size_y == 0:
-		_last_custom_size_y = custom_starting_size
+	
+	if v_box_container.size.y > max_message_size_limit:
+			max_message_size_limit = v_box_container.size.y
+	if _last_custom_size_y == 0 or _last_custom_size_y < 100:
+		_last_custom_size_y = max_message_size_limit
 	resize_scroll_container.visible = true
 	_animate_expand(_last_custom_size_y, 0.0, Color.WHITE)
 
@@ -642,3 +637,29 @@ func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> vo
 	else:
 		resize_scroll_container.custom_minimum_size.y += difference
 		_last_custom_size_y = resize_scroll_container.custom_minimum_size.y
+
+
+func _setup_sizes() -> void:
+	# This resizes the scroll container
+	max_message_size_limit = v_box_container.size.y
+	if images_grid_container.get_child_count() != 0 and message_labels_container.get_child_count() == 0:
+		resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
+	else:
+		if first_time_message:
+			var items_size: = v_box_container.size.y
+			if items_size > custom_starting_size:
+				items_size = custom_starting_size
+			_last_custom_size_y = items_size
+			resize_scroll_container.custom_minimum_size.y = items_size
+		else:
+			if _last_custom_size_y != 0:
+				resize_scroll_container.custom_minimum_size.y = _last_custom_size_y
+			else:
+				resize_scroll_container.custom_minimum_size.y = custom_starting_size
+				_last_custom_size_y = custom_starting_size
+
+
+func _update_sizes() -> void:
+	resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
+	if v_box_container.size.y < max_message_size_limit:
+		max_message_size_limit = v_box_container.size.y
