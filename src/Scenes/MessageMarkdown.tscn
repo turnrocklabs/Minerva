@@ -107,7 +107,7 @@ offset_bottom = -911.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
+size_flags_vertical = 0
 theme = SubResource("Theme_ca11y")
 script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
@@ -123,6 +123,7 @@ expand_icon_color = Color(0.270588, 0.317647, 0.772549, 1)
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 0
 theme_override_constants/margin_left = 7
 theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 7
@@ -357,7 +358,7 @@ icon = ExtResource("16_rwt48")
 
 [node name="ResizeDragControl" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 15)
+custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
 mouse_default_cursor_shape = 9
 
