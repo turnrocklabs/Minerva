@@ -1,10 +1,10 @@
 [gd_scene load_steps=11 format=3 uid="uid://booxo77json0y"]
 
-[ext_resource type="Script" uid="uid://byhq7f6bjmjjo" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
+[ext_resource type="Script" uid="uid://b02us2hre5m42" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
 [ext_resource type="PackedScene" uid="uid://dcbs3juhmi10w" path="res://Scripts/UI/Controls/service_selection.tscn" id="2_6m13a"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="2_yfedb"]
-[ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
+[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_7voe0"]
 [ext_resource type="PackedScene" uid="uid://ci2nbjiei8up1" path="res://Scenes/windows/hcp_logs.tscn" id="3_nlyvs"]
 [ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="4_0f5nr"]
@@ -192,6 +192,7 @@ vertical_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+selected = 0
 allow_reselect = true
 item_count = 3
 popup/item_0/text = "Light Mode"
@@ -282,7 +283,7 @@ theme_override_constants/separation = 10
 [node name="ConnectionLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
 bbcode_enabled = true
-text = "[b]Connection[/b]"
+text = "[b]Core WebSocket Connection[/b]"
 fit_content = true
 shortcut_keys_enabled = false
 
@@ -293,12 +294,13 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
-text = "Instance URL:"
+text = "Core URL:"
 
 [node name="leCoreUrl" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+placeholder_text = "ws://..."
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -321,9 +323,47 @@ layout_mode = 2
 [node name="AuthLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
 bbcode_enabled = true
-text = "[b]Auth[/b]"
+text = "[b]Authentication[/b]"
 fit_content = true
 shortcut_keys_enabled = false
+
+[node name="AuthPresetHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="AuthPresetLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/AuthPresetHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Endpoint Preset:"
+vertical_alignment = 1
+
+[node name="AuthPresetOptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/AuthPresetHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 3
+popup/item_0/text = "Production (turnrock.ai)"
+popup/item_0/id = 0
+popup/item_1/text = "Localhost (4040)"
+popup/item_1/id = 1
+popup/item_2/text = "Custom"
+popup/item_2/id = 2
+
+[node name="AuthBaseUrlHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="AuthBaseUrlLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/AuthBaseUrlHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Base URI:"
+
+[node name="leAuthBaseUrl" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/AuthBaseUrlHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "https://..."
 
 [node name="HBoxContainer4" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -367,7 +407,7 @@ layout_mode = 2
 [node name="CoreConnetButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Connect"
+text = "Connect / Authenticate"
 
 [node name="HBoxContainer3" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -432,6 +472,7 @@ icon_68 = ExtResource("5_346qj")
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/General/SectionsContainer/AudioVBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/General/SectionsContainer/AudioVBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/General/SectionsContainer/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
+[connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/AuthPresetHBox/AuthPresetOptionButton" to="." method="_on_auth_preset_option_button_item_selected"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HBoxContainer5/PasswordCheckbox" to="." method="_on_password_checkbox_toggled"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/HCP/MarginContainer/VBoxContainer/HcpLogsButton" to="." method="_on_hcp_logs_button_pressed"]
