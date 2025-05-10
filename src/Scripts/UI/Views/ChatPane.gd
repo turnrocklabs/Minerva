@@ -742,18 +742,10 @@ func render_history(chat_history: ChatHistory):
 		if item.SliderContainerId == "": 
 			vboxChat.add_history_item(item)
 		elif slider_containers.has(item.SliderContainerId):
-			#if item.Role == ChatHistoryItem.ChatRole.USER:
-				#var message: = slider_containers.get(item.SliderContainerId) as MessageMarkdown
-				#message.label.text = message.label.text + item.Message 
-			#else:
 			var slider = slider_containers.get(item.SliderContainerId) as SliderContainer
 			slider.add_child(vboxChat.add_history_item(item, false))
 			await get_tree().process_frame
 		else:
-			#if item.Role == ChatHistoryItem.ChatRole.USER:
-				#var message: = vboxChat.add_history_item(item)
-				#slider_containers.set(item.SliderContainerId, message)
-			#else:
 			var new_slider_cont = SliderContainer.new()
 			new_slider_cont.add_child(vboxChat.add_history_item(item, false))
 			vboxChat.add_child(new_slider_cont)

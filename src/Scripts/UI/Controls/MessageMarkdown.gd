@@ -137,7 +137,6 @@ func _ready() -> void:
 		contract_message()
 	
 	_enable_input()
-	#images_grid_container.resized.connect(_update_sizes)
 	v_box_container.resized.connect(_update_sizes)
 
 
