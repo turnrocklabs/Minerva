@@ -67,7 +67,6 @@ func save_to_config_file(section: String, field: String, value):
 
 func config_has_saved_section(section: String) -> bool:
 	if !section: return false
-	
 	return config_file.has_section(section)
 
 
@@ -142,7 +141,7 @@ enum NotesDrawState {
 # this signals get used in memoryTabs.gd and new_thread_popup.gd 
 # for creating and updating notes tabs names
 @warning_ignore("unused_signal")
-signal create_notes_tab(name: String)
+signal create_notes_tab(state:bool,name: String)
 @warning_ignore("unused_signal")
 signal associated_notes_tab(tab_name, tab: Control)
 @warning_ignore("unused_signal")
@@ -158,11 +157,13 @@ var ThreadList: Array[MemoryThread]#:  =[]
 	#set(value):
 		## save_state(false)
 		#ThreadList = value
+var DrawerThreadList: Array[MemoryThread]#:  =[]
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
 var DetachedNotes: Array[MemoryItem]
 
 var NotesTab: MemoryTabs
+var DrawerTab: DrawerTabs
 ##reorder array
 func initialize_notes(threads: Array[MemoryThread] = []):
 	ThreadList = threads
@@ -350,7 +351,6 @@ enum API_MODEL_PROVIDERS {
 	HUMAN,
 	CHAT_GPT_4O,
 	CHAT_GPT_O1,
-	CHAT_GPT_O3,
 	CHAT_GPT_O1_MINI,
 	CHAT_GPT_O1_PREVIEW,
 	CHAT_GPT_O3_MINI_MEDIUM,
@@ -369,13 +369,12 @@ var API_MODEL_PROVIDER_SCRIPTS = {
 	API_MODEL_PROVIDERS.CHAT_GPT_O1: ChatGPTo1,
 	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_MEDIUM: ChatGPTo3.MiniMedium,
 	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_HIGH: ChatGPTo3.MiniHigh,
-	API_MODEL_PROVIDERS.CHAT_GPT_O3: ChatGPTo3.O3,
 	# API_MODEL_PROVIDERS.CHAT_GPT_O1_MINI: ChatGPTo1.Mini,
 	# API_MODEL_PROVIDERS.CHAT_GPT_O1_PREVIEW: ChatGPTo1.Preview,
 	API_MODEL_PROVIDERS.DALLE: DallE,
 	API_MODEL_PROVIDERS.CLAUDE_SONNET: ClaudeSonnet,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX: GoogleAi,
-	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
+	# API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	# API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
 	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1

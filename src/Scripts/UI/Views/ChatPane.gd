@@ -202,6 +202,8 @@ func _on_chat_pressed():
 
 func _on_send_message_button_item_selected(index: int) -> void:
 	if %txtMainUserInput.text.is_empty(): return
+
+	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 	%SendMessageButton.selected = -1
 	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
@@ -415,13 +417,13 @@ func execute_sequential_chat(text_input: String) -> void:
 			if bot_response.image:
 				chi.Images = ([bot_response.image] as Array[Image])
 
-			# Update user message node
-			user_history_item.TokenCost = bot_response.prompt_tokens
-			user_msg_node.render()
+		# Update user message node
+		user_history_item.TokenCost = bot_response.prompt_tokens
+		user_msg_node.render()
 
-			# Change the history item and the message node will update itself
-			model_msg_node.history_item = chi
-			history.HistoryItemList.append(chi)
+		# Change the history item and the message node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
 
 			## Inform the user history item that the response has arrived
 			user_history_item.response_arrived.emit(chi)
@@ -580,7 +582,9 @@ func get_separated_messages(input: String) -> Array[String]:
 	return _inputs
 
 # TODO: check if changing the active tab during the request causes any trouble
+#signal my_signal(value)
 
+	
 ## This function takes `partial_chi` and prompts model to finish the response
 ## merging the new and the initial response into one and returning it.
 func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
@@ -713,15 +717,17 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 				previous_item.Visible = false
 				previous_item.rendered_node.render()
 
+	
+
 
 func render_history(chat_history: ChatHistory):
 	
 	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
+	#scroll_container.follow_focus
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	
 
 	# create a derived VBoxContainer for chats and add to the scroll container
 	var vboxChat: VBoxChat = VBoxChat.new(self)
@@ -732,6 +738,7 @@ func render_history(chat_history: ChatHistory):
 
 	# set the scroll container name and add it to the pane.
 	var _name = chat_history.HistoryName
+	#scroll_container.name = _name
 	%tcChats.add_child(scroll_container)
 	var tab_idx = %tcChats.get_tab_idx_from_control(scroll_container)
 	%tcChats.set_tab_title(tab_idx, _name)
@@ -778,7 +785,6 @@ func _on_note_toggled(_note: Note, _on: bool):
 func _on_note_changed(_note: Note,):
 	update_token_estimation()
 
-
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.control = closed_tab_container.get_tab_control(tab)
 	self.container = closed_tab_container 
@@ -787,7 +793,7 @@ func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	
 	if get_tab_count() < 1 :
 		buffer_control_chats.show()
-
+	
 
 # Function to restore a deleted tab
 func restore_deleted_tab(tab_name: String):
@@ -925,7 +931,6 @@ func _on_btn_microphone_pressed():
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
 	SingletonObject.AtT.btnStop = %AudioStop1
 
-
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
 	SingletonObject.ChatList = []  # Clear the existing list
@@ -938,6 +943,7 @@ func _on_child_order_changed():
 
 func _on_system_button_pressed() -> void:
 	%SystemPrompt.popup()
+
 
 
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):

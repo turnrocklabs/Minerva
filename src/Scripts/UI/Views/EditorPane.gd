@@ -131,7 +131,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	for editor: Editor in Tabs.get_children():
 		if not editor is Editor: 
 			continue
-		if (file and editor.file == file) or (associated_object != null and editor.associated_object == associated_object):
+		if editor.file == file or (associated_object != null and editor.associated_object == associated_object):
 			Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
 			return editor
 	
