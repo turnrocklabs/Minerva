@@ -276,7 +276,7 @@ func execute_regular_chat(text: String) -> void:
 	
 	var bot_response
 	# Append the optional parameters for OpenAI models, send request and wait for the response
-	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is DallE:
+	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and (not history.provider is DallE and not history.provider is GPTImage1):
 		var optional_params = {
 			"temperature": history.Temperature,
 			"top_p": history.TopP,

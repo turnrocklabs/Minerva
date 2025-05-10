@@ -360,6 +360,7 @@ enum API_MODEL_PROVIDERS {
 	GOOGLE_VERTEX_PRO,
 	DALLE,
 	CLAUDE_SONNET,
+	GPT_IMAGE_1
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -377,6 +378,7 @@ var API_MODEL_PROVIDER_SCRIPTS = {
 	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	# API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
+	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value

@@ -137,6 +137,8 @@ func _ready() -> void:
 		contract_message()
 	
 	_enable_input()
+	#images_grid_container.resized.connect(_update_sizes)
+	v_box_container.resized.connect(_update_sizes)
 
 
 ## sets loading label visibility to `loading_` and toggles_controls
@@ -186,7 +188,9 @@ func set_edit(on: = true) -> void:
 	text_edit.visible = on
 
 func _update_tokens_cost() -> void:
-	var price = history_item.provider.token_cost * history_item.TokenCost
+	var price: float = 0.0
+	if history_item.provider != null:
+		price = history_item.provider.token_cost * history_item.TokenCost
 
 	tokens_cost.visible = true
 	if history_item.EstimatedTokenCost:
