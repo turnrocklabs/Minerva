@@ -7,6 +7,8 @@ signal toggled(on: bool)
 ## This signal is emitted each time the underlying memory item has been updated.
 signal changed()
 
+var isDrawer:bool = false
+
 @export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
 @export var expand_ease_type: Tween.EaseType = Tween.EASE_OUT
@@ -262,56 +264,57 @@ func _can_drop_data(at_position: Vector2, data) -> bool:
 	return true
 	
 
-func _memory_thread_find(thread_id: String) -> MemoryThread:
-	return SingletonObject.ThreadList.filter(
+func _memory_thread_find(thread_id: String, note_type) -> MemoryThread:
+	return note_type.filter(
 		func(t: MemoryThread):
 			return t.ThreadId == thread_id
 	).pop_front()
 
 
 func _drop_data(_at_position: Vector2, data) -> void:
-	data = data as Note
-	# dragged note should be moved to thread where 'self' is 
-	# at 'insert_index'
-	var insert_index: int
-
+	if not data is Note: return
 	if data == self: return
 
-	# thread where dragged note is currently
-	var dragged_note_thread := _memory_thread_find(data.memory_item.OwningThread)
+	# Combine all possible thread locations
+	var all_threads = SingletonObject.ThreadList + SingletonObject.DrawerThreadList
 	
-	# if dragged note and the note we're dropping on to are not in same tabs
-	# it means we have to deal with two different MemoryThreads
-	if memory_item.OwningThread != data.memory_item.OwningThread:
-		
-		var target_note_thread := _memory_thread_find(memory_item.OwningThread)
+	# Find current and target threads
+	var target_thread = all_threads.filter(
+		func(t): return t.ThreadId == memory_item.OwningThread
+	).front()
+	var source_thread = all_threads.filter(
+		func(t): return t.ThreadId == data.memory_item.OwningThread
+	).front()
 
-		if _upper_separator.visible:
-			insert_index = target_note_thread.MemoryItemList.find(memory_item)
-		elif _lower_separator.visible:
-			insert_index = target_note_thread.MemoryItemList.find(memory_item)+1
-		
-		if dragged_note_thread.MemoryItemList.has(data.memory_item):
-			dragged_note_thread.MemoryItemList.erase(data.memory_item)
-		if insert_index >= 0 and insert_index <= dragged_note_thread.MemoryItemList.size():
-			target_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
+	if not target_thread or not source_thread:
+		return
 
-		data.memory_item.OwningThread = target_note_thread.ThreadId
-	
-	else:
-		if dragged_note_thread.MemoryItemList.has(data.memory_item):
-			dragged_note_thread.MemoryItemList.erase(data.memory_item)
+	# Calculate insert position
+	var target_pos = target_thread.MemoryItemList.find(memory_item)
+	var insert_index = target_pos
+	if _upper_separator.visible:
+		insert_index = target_pos
+	elif _lower_separator.visible:
+		insert_index = target_pos + 1
 
-		if _upper_separator.visible:
-			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)
-		elif _lower_separator.visible:
-			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)+1
-		
-		if insert_index >= 0 and insert_index <= dragged_note_thread.MemoryItemList.size():
-			dragged_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
-	#data.queue_free()
+	# Only remove from source if moving within the same thread
+	if source_thread == target_thread:
+		var current_index = source_thread.MemoryItemList.find(data.memory_item)
+		if current_index >= 0:
+			source_thread.MemoryItemList.remove_at(current_index)
+			
+			# Adjust index if moving within same thread
+			if current_index < insert_index:
+				insert_index -= 1
 
+	# Insert into target
+	if insert_index >= 0 and insert_index <= target_thread.MemoryItemList.size():
+		target_thread.MemoryItemList.insert(insert_index, data.memory_item)
+		data.memory_item.OwningThread = target_thread.ThreadId
 
+	# Hide separators
+	_upper_separator.visible = false
+	_lower_separator.visible = false
 func _on_check_button_toggled(toggled_on: bool) -> void:
 	if memory_item:
 		memory_item.Enabled = toggled_on
@@ -466,7 +469,7 @@ func _on_resize_control_gui_input(event: InputEvent) -> void:
 
 
 func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
-	if control_type == null: return
+	#if control_type == null: return
 	var difference: float = current_mouse_pos_y - last_mouse_pos_y
 	
 	if control_type.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:

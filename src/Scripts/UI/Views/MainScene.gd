@@ -36,7 +36,6 @@ func _ready() -> void:
 	
 	project_name_label.text = ""
 
-
 var MAX: = 20
 
 
@@ -247,3 +246,7 @@ func _on_project_mouse_exited() -> void:
 
 func _on_add_layer_pressed() -> void:
 	pass # Replace with function body.
+
+
+func _on_btn_drawer_pressed() -> void:
+	%Drawer.popup_centered()

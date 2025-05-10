@@ -1,7 +1,7 @@
 [gd_scene load_steps=34 format=3 uid="uid://gux15c8l66u7"]
 
-[ext_resource type="Script" uid="uid://bl3o8akse3agn" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
-[ext_resource type="Script" uid="uid://bed3pqcrplxx8" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
+[ext_resource type="Script" uid="uid://ts71mamdkh6n" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
+[ext_resource type="Script" uid="uid://cgbf8yxnoy3hq" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/windows/AISettings.tscn" id="1_qlmlm"]
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="3_pputi"]
 [ext_resource type="Texture2D" uid="uid://cvb2vnkv4fpn5" path="res://assets/icons/plus_icons/add_48.svg" id="5_1cevo"]
@@ -10,7 +10,7 @@
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="7_pery3"]
 [ext_resource type="Texture2D" uid="uid://lmmhfyqj83jd" path="res://assets/icons/gear_icons/gears_icon_48_no_bg.png" id="8_0o5iw"]
-[ext_resource type="Script" uid="uid://63wcsxjjtlug" path="res://Scripts/UI/Views/icons_button.gd" id="8_rhvdc"]
+[ext_resource type="Script" uid="uid://dw58oubsm6sto" path="res://Scripts/UI/Views/icons_button.gd" id="8_rhvdc"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/eraser/ink_eraser_off.svg" id="9_4ngla"]
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
 [ext_resource type="Texture2D" uid="uid://dskn0gjd7h730" path="res://assets/icons/m_glass_icons/search_icon_48_no_bg.png" id="9_wd4ss"]
@@ -84,19 +84,8 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_type_variation = &"InspectPrompt"
 placeholder_text = "Prompt Here"
-editable = false
-emoji_menu_enabled = false
-virtual_keyboard_enabled = false
-middle_mouse_paste_enabled = false
-empty_selection_clipboard_enabled = false
-wrap_mode = 1
-scroll_smooth = true
-draw_tabs = true
 line_folding = true
-gutters_draw_line_numbers = true
-gutters_zero_pad_line_numbers = true
 
 [node name="btnCloseInspector" type="Button" parent="InspectorPopup/VBoxContainer"]
 layout_mode = 2
