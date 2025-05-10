@@ -90,7 +90,7 @@ terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
 [node name="TopBar" type="Panel" parent="."]
 z_index = -2
-custom_minimum_size = Vector2(0, 30)
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
@@ -344,6 +344,19 @@ item_0/icon = ExtResource("10_nl4h3")
 item_0/id = 0
 item_1/text = "License Agreement ..."
 item_1/id = 1
+
+[node name="Control" type="Control" parent="VBoxRoot/HBoxContainer"]
+custom_minimum_size = Vector2(15, 0)
+layout_mode = 2
+
+[node name="ProjectNameLabel" type="RichTextLabel" parent="VBoxRoot/HBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+bbcode_enabled = true
+text = "[pulse][shake]New Project *[/shake][/pulse]"
+vertical_alignment = 1
+threaded = true
 
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxRoot"]
 unique_name_in_owner = true
