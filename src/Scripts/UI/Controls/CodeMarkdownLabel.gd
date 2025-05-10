@@ -227,7 +227,7 @@ func contract_code() -> void:
 	expand_tween.set_parallel()
 	expand_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
 	
-	await expand_tween.finished	
+	await get_tree().create_timer(expand_anim_duration - 0.24).timeout
 	p_2.hide()
 
 

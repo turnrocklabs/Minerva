@@ -5,6 +5,7 @@ var drag_start_position = Vector2()
 
 @export  var terminal_container: TerminalTabContainer
 #variables where writing out notes Head and description
+@onready var project_name_label: RichTextLabel = %ProjectNameLabel
 
 #these variables are for changing only the font size of the UI
 var _default_zoom: int
@@ -32,6 +33,8 @@ func _ready() -> void:
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
+	
+	project_name_label.text = ""
 
 
 var MAX: = 20
