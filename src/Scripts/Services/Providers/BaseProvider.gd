@@ -116,8 +116,10 @@ class RequestResults extends RefCounted:
 ## This function will return array of 
 func make_request(url: String, method: int, body: Variant = "", headers: Array[String]= []) -> RequestResults:
 	# setup request object for the delta endpoint and append API key
-	var http_request = active_request
-	http_request.use_threads = true
+	var http_request = HTTPRequest.new()
+	#http_request.use_threads = true
+	call_deferred("add_child", http_request)
+	await http_request.ready
 
 	if len(API_KEY) != 0:
 		#add_child(http_request)
@@ -134,7 +136,7 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	else:
 		print("HTTPRequest is not part of the scene tree.")
 
-	var error: int
+	var error = FAILED
 
 	if body is PackedByteArray:
 		error = http_request.request_raw(url, headers, method, body)
@@ -143,8 +145,8 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 
 	
 	if error != OK:
-		SingletonObject.ErrorDisplay("Error", "An error occurred during the HTTP request: %s" % error)
-		push_error("An error occurred during the HTTP request: %s" % error)
+		SingletonObject.call_deferred("ErrorDisplay", "Error", "An error occurred during the HTTP request: %s" % error)#ErrorDisplay("Error", "An error occurred during the HTTP request: %s" % error)
+		#push_error("An error occurred during the HTTP request: %s" % error)
 		return RequestResults.from_error("Unexpected error occurred")
 	
 

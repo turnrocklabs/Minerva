@@ -217,7 +217,7 @@ func override_save(save_function: Callable) -> void:
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straight away
-func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_this_path: String = "") -> bool:
+func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_this_path: String = "") -> bool:	
 	#var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 	if open_in_this_path != "":
 		$FileDialog.current_path = open_in_this_path
