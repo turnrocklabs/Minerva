@@ -90,7 +90,7 @@ terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
 [node name="TopBar" type="Panel" parent="."]
 z_index = -2
-custom_minimum_size = Vector2(0, 40)
+custom_minimum_size = Vector2(0, 38)
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
@@ -354,7 +354,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(250, 0)
 layout_mode = 2
 bbcode_enabled = true
-text = "[pulse][shake]New Project *[/shake][/pulse]"
+text = "[pulse][shake]New Project*[/shake][/pulse]"
 vertical_alignment = 1
 threaded = true
 
