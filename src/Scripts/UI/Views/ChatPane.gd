@@ -417,13 +417,13 @@ func execute_sequential_chat(text_input: String) -> void:
 			if bot_response.image:
 				chi.Images = ([bot_response.image] as Array[Image])
 
-		# Update user message node
-		user_history_item.TokenCost = bot_response.prompt_tokens
-		user_msg_node.render()
+			# Update user message node
+			user_history_item.TokenCost = bot_response.prompt_tokens
+			user_msg_node.render()
 
-		# Change the history item and the message node will update itself
-		model_msg_node.history_item = chi
-		history.HistoryItemList.append(chi)
+			# Change the history item and the message node will update itself
+			model_msg_node.history_item = chi
+			history.HistoryItemList.append(chi)
 
 			## Inform the user history item that the response has arrived
 			user_history_item.response_arrived.emit(chi)
@@ -434,7 +434,6 @@ func execute_sequential_chat(text_input: String) -> void:
 			model_msg_node.first_time_message = true
 		else:
 			model_msg_node.queue_free()
-
 
 var mutex: Mutex = Mutex.new()
 var inputs: Array[String] = []

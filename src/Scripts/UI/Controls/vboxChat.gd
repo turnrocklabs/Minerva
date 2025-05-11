@@ -31,7 +31,7 @@ func _init(_parent):
 	self.name = _parent.name + "_VBoxChat"
 	self.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	self.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	pass
+
 
 func _ready():
 	self.size = self.Parent.size
@@ -84,22 +84,27 @@ func kill_scroll_tween() -> void:
 func scroll_to_bottom():
 	# wait for message to update the scroll container dimensions
 	await scroll_container.get_v_scroll_bar().changed
-
 	# scroll to bottom
-	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().max_value
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_container.get_v_scroll_bar().max_value, scroll_time)
 
 
 func scroll_to_top() -> void:
 	# wait for message to update the scroll container dimensions
 	await scroll_container.get_v_scroll_bar().changed
-
 	# scroll to top
-	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().min_value
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_container.get_v_scroll_bar().min_value, scroll_time)
 
 
 func ensure_node_is_visible(node: Control) -> void:
+	
+	# Wait for the scroll bar to update
 	await scroll_container.get_v_scroll_bar().changed
-
+	# Wait for the next frame to ensure the node is added to the scene
+	await get_tree().process_frame
 	var scroll_to: int = 0
 	# Calculate the total height of all nodes above the target node
 	for i in get_children():
@@ -111,9 +116,11 @@ func ensure_node_is_visible(node: Control) -> void:
 				
 	var visible_height = scroll_container.size.y
 	var node_height = node.size.y
-
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	
 	if node_height > visible_height:
-		scroll_container.scroll_vertical = scroll_to
+		scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_to, scroll_time)
 	else:
 		var center_position = scroll_to - (visible_height - node_height) / 2
 		# Clamp the scroll position between min and max values
@@ -122,12 +129,13 @@ func ensure_node_is_visible(node: Control) -> void:
 
 
 ## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
-func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
+func add_history_item(item: ChatHistoryItem, add_as_child: bool = true) -> MessageMarkdown:
 	var msg_node = MessageMarkdown.new_message()
 	msg_node.history_item = item
 	item.rendered_node = msg_node
 
-	add_child(msg_node)
+	if add_as_child:
+		add_child(msg_node)
 
 	#scroll_to_bottom()
 
@@ -164,43 +172,43 @@ func render_items():
 # scroll further the mouse is outside the control
 var _scroll_factor:= 0.0
 var _text_selection:= false
-
-
 # will check if theres open chat tab and apply the scroll factor to selected tab
 func _process(delta: float):
 	if _text_selection: # only if text selection is active for any rich text label
-		scroll_container.scroll_vertical += _scroll_factor*3*delta
+		scroll_container.scroll_vertical += _scroll_factor*(5*delta)
+
 
 func _input(event):
-	if event is InputEventMouseButton: pass
-		# scroll_container.visible = true
-
-	if not event is InputEventMouseMotion: return
-
+	if event is InputEventMouseMotion: 
+		if scroll_container.get_rect().has_point(event.position):
+			_scroll_factor = 0
+			return
+		if ( _text_selection 
+		and scroll_container.global_position.y > get_global_mouse_position().y 
+		or scroll_container.global_position.y + scroll_container.size.y < get_global_mouse_position().y ):
+			if scroll_container.get_local_mouse_position().y > scroll_container.position.y + scroll_container.get_rect().size.y:
+				# scroll factor will be positive number thats difference in
+				# mouse position and bottom of the chat tab
+				_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y 
+			# or above it
+			elif scroll_container.get_local_mouse_position().y < scroll_container.position.y:
+				_scroll_factor = scroll_container.get_local_mouse_position().y
+		return
 	# Check if is text *probably* being currently selected
 	# by checking if mouse is currently pressed
 	# and that mouse is outside of the chat tab control
-
-	if (
-		Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and
-		not scroll_container.get_rect().has_point(scroll_container.get_local_mouse_position())
-		and scroll_container.get_local_mouse_position().x > scroll_container.get_rect().position.x
-		and scroll_container.get_local_mouse_position().x < scroll_container.get_rect().size.x
-	):
-		# mouse is outside of chat tab control
-		# we check if it's under
-		_text_selection = true
-		if scroll_container.get_local_mouse_position().y > scroll_container.get_rect().size.y:
-			# scroll factor will be positive number thats difference in
-			# mouse position and bottom of the chat tab
-			_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y
-		# or above it
-		else:
-			_scroll_factor = scroll_container.get_local_mouse_position().y
-
-	else:
-		_scroll_factor = 0
-		_text_selection = false
+	
+	elif event is InputEventMouseButton:
+		if (
+			event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed()
+			and scroll_container.get_rect().has_point(scroll_container.get_local_mouse_position())
+			and event.get_action_strength("draw") > 0.2
+		):
+			_text_selection = true
+			_scroll_factor = 0
+		elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
+			_scroll_factor = 0
+			_text_selection = false
 
 
 ## When image is activated, deactivate all other images as only one at the time can be active

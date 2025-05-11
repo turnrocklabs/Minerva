@@ -144,8 +144,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 21
-script = ExtResource("7_5gaco")
-metadata/_custom_type_script = "uid://cddhx45uptxa0"
 
 [node name="Label" type="Label" parent="CloseActions/VBoxChat"]
 layout_mode = 2

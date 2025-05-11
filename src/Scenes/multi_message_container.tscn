@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://blnidauh4wv7v"]
 
-[ext_resource type="Script" uid="uid://dtnlkyb53e45e" path="res://Scripts/UI/Controls/multi_message_container.gd" id="1_qgdmi"]
+[ext_resource type="Script" uid="uid://b021dbuhv4svg" path="res://Scripts/UI/Controls/multi_message_container.gd" id="1_qgdmi"]
 [ext_resource type="PackedScene" uid="uid://6eyoeca7pnqu" path="res://Scenes/slider_container.tscn" id="2_qgdmi"]
 
 [node name="MultiMessageContainer" type="MarginContainer"]
