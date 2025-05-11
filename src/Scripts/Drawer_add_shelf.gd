@@ -1,7 +1,7 @@
 extends Panel
 
 @onready var note = preload("res://Scenes/Note.tscn")
-@onready var containerShelf = %ShelfContainer
+@onready var containerShelf = get_owner().get_node("%tcThreadsDrawer")
 
 
 
