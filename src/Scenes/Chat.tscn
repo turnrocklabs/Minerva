@@ -24,10 +24,9 @@
 [ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="15_t0aqa"]
 [ext_resource type="Texture2D" uid="uid://dflw78ayjikvx" path="res://assets/icons/stop_icons/stop-sign-48.png" id="17_0g7mq"]
 [ext_resource type="Texture2D" uid="uid://bvxolgw4msf57" path="res://assets/icons/stop_icons/stop-sign-68.png" id="18_libyp"]
-[ext_resource type="Texture2D" uid="uid://dd64jugx3u72c" path="res://assets/icons/send_icons/send_icon_24_no_bg.png" id="20_0uhqe"]
-[ext_resource type="Texture2D" uid="uid://datcnfkvibyog" path="res://assets/icons/send_icons/send_icon_48_no_bg.png" id="21_ut25t"]
-[ext_resource type="Texture2D" uid="uid://vmgpf2cn6t4n" path="res://assets/icons/send_icons/send_icon_64_no_bg.png" id="22_my2cu"]
+[ext_resource type="Script" uid="uid://cqa0adukk04nh" path="res://Scripts/UI/Views/multi_send_button.gd" id="24_qs864"]
 [ext_resource type="Script" uid="uid://dp7swt2flw1ui" path="res://Scripts/UI/Views/UnsplitedChatMessages.gd" id="27_jeocu"]
+[ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="27_rtmbh"]
 [ext_resource type="Texture2D" uid="uid://54susds7lngy" path="res://assets/icons/check_mark16.webp" id="28_t8wf8"]
 [ext_resource type="Texture2D" uid="uid://mdhtonlhq6kh" path="res://assets/icons/cancel16.webp" id="29_7cvmh"]
 
@@ -47,6 +46,8 @@ key_label = 4194309
 
 [sub_resource type="Shortcut" id="Shortcut_4b3s7"]
 events = [SubResource("InputEventKey_rh3fk")]
+
+[sub_resource type="ImageTexture" id="ImageTexture_qs864"]
 
 [node name="Chats" type="Control"]
 layout_mode = 3
@@ -89,19 +90,8 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-theme_type_variation = &"InspectPrompt"
 placeholder_text = "Prompt Here"
-editable = false
-emoji_menu_enabled = false
-virtual_keyboard_enabled = false
-middle_mouse_paste_enabled = false
-empty_selection_clipboard_enabled = false
-wrap_mode = 1
-scroll_smooth = true
-draw_tabs = true
 line_folding = true
-gutters_draw_line_numbers = true
-gutters_zero_pad_line_numbers = true
 
 [node name="btnCloseInspector" type="Button" parent="InspectorPopup/VBoxContainer"]
 layout_mode = 2
@@ -223,7 +213,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_vertical = 3
-placeholder_text = "Hello there!"
+placeholder_text = "Hello there! (press [CTRL + ENTER] to send)"
 wrap_mode = 1
 caret_blink = true
 
@@ -307,16 +297,44 @@ shortcut_context = NodePath("../../txtMainUserInput")
 shortcut = SubResource("Shortcut_4b3s7")
 icon = ExtResource("7_51nod")
 icon_alignment = 1
-script = ExtResource("8_rhvdc")
-icon_24 = ExtResource("20_0uhqe")
-icon_48 = ExtResource("21_ut25t")
-icon_68 = ExtResource("22_my2cu")
+script = ExtResource("24_qs864")
+
+[node name="Control" type="Control" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat"]
+show_behind_parent = true
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+mouse_filter = 2
+
+[node name="SendMessageButton" type="OptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat/Control"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+offset_left = 14.0
+offset_top = 4.0
+offset_right = 36.0
+offset_bottom = 34.0
+mouse_filter = 1
+theme_override_icons/icon = ExtResource("27_rtmbh")
+theme_override_icons/arrow = SubResource("ImageTexture_qs864")
+text_overrun_behavior = 2
+clip_text = true
+icon_alignment = 1
+expand_icon = true
+fit_to_longest_item = false
+allow_reselect = true
+item_count = 3
+popup/item_0/text = "Send Chat"
+popup/item_0/id = 0
+popup/item_1/text = "Send Parallel"
+popup/item_1/id = 1
+popup/item_2/text = "Send Sequential"
+popup/item_2/id = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 10
-theme_override_constants/separation = 16
 
 [node name="EstimatedTokensLabel" type="Label" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
@@ -387,6 +405,11 @@ size_flags_vertical = 3
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnClear" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_clear_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnMicrophone" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_microphone_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/AudioStop1" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_audio_stop_1_pressed"]
+[connection signal="mouse_entered" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" method="_on_mouse_entered"]
+[connection signal="mouse_exited" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" method="_on_mouse_exited"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_chat_pressed"]
+[connection signal="item_selected" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat/Control/SendMessageButton" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_send_message_button_item_selected"]
+[connection signal="mouse_entered" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat/Control/SendMessageButton" to="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" method="_on_send_message_button_mouse_entered"]
+[connection signal="mouse_exited" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat/Control/SendMessageButton" to="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/btnChat" method="_on_send_message_button_mouse_exited"]
 [connection signal="pressed" from="UnsplitedChatMessages/VBoxContainer/HBoxContainer2/ApplyChanges" to="UnsplitedChatMessages" method="_on_apply_changes_pressed"]
 [connection signal="pressed" from="UnsplitedChatMessages/VBoxContainer/HBoxContainer2/CancelChanges" to="UnsplitedChatMessages" method="_on_cancel_changes_pressed"]

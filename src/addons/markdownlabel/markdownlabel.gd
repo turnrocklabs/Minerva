@@ -118,7 +118,7 @@ func display_text(display_text: String) -> void:
 
 #region Private methods:
 func _update() -> void:
-	if markdown_text and markdown_text is String and markdown_text.length() >= 0:
+	if markdown_text and markdown_text is String and markdown_text.length() > 0:
 		text = _convert_markdown(markdown_text)
 	queue_redraw()
 
@@ -165,7 +165,6 @@ func _convert_markdown(source_text = "") -> String:
 	var within_backtick_block := false
 	var within_tilde_block := false
 	var within_code_block := false
-	var within_dash_block: = false
 	var current_code_block_char_count: int
 	_within_table = false
 	_table_row = -1
@@ -180,7 +179,7 @@ func _convert_markdown(source_text = "") -> String:
 			_current_paragraph += 1
 			_line_break = true
 		iline+=1
-		if (not within_tilde_block or not within_dash_block) and _denotes_fenced_code_block(line,"`"):
+		if not within_tilde_block and _denotes_fenced_code_block(line,"`"):
 			if within_backtick_block:
 				if line.strip_edges().length() >= current_code_block_char_count:
 					_converted_text = _converted_text.trim_suffix("\n")
@@ -198,7 +197,7 @@ func _convert_markdown(source_text = "") -> String:
 				current_code_block_char_count = _get_codeblock_char_count(line, "`")
 				_debug("... opening backtick block")
 				continue
-		elif (not within_backtick_block or not within_dash_block) and _denotes_fenced_code_block(line,"~"):
+		elif not within_backtick_block and _denotes_fenced_code_block(line,"~"):
 			if within_tilde_block:
 				if line.strip_edges().length() >= current_code_block_char_count:
 					_converted_text = _converted_text.trim_suffix("\n")
@@ -214,23 +213,6 @@ func _convert_markdown(source_text = "") -> String:
 				within_tilde_block = true
 				current_code_block_char_count = line.strip_edges().length()
 				_debug("... opening tilde block")
-				continue
-		elif (not within_backtick_block or not within_tilde_block) and _denotes_fenced_code_block(line,"-"):
-			if within_dash_block:
-				if line.strip_edges().length() >= current_code_block_char_count:
-					_converted_text = _converted_text.trim_suffix("\n")
-					_current_paragraph -= 1
-					_converted_text += "[/code]"
-					within_dash_block = false
-					_debug("... closing dash block")
-					continue
-			else:
-				# append the syntax to the code tag
-				var syntax = ""#line.replace("```", "").strip_edges()
-				_converted_text += "[code]"# % syntax
-				within_dash_block = true
-				current_code_block_char_count = line.strip_edges().length()
-				_debug("... opening dash block")
 				continue
 		if within_code_block: #ignore any formatting inside code block
 			_converted_text += _escape_bbcode(line)
@@ -579,7 +561,7 @@ func _reset_escaped_chars(_text: String,code:=false) -> String:
 func _debug(string: String):
 	if not _debug_mode:
 		return
-	#print(string)
+	print(string)
 
 func _denotes_fenced_code_block(line: String, character: String) -> bool:
 	# print("checking for a fenced code block. Line: ", line, " , character: ", character)

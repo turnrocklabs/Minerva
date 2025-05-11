@@ -47,7 +47,7 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api
-func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
+func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 
 	var request_body = {
 		"model": model_name,

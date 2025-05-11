@@ -3,8 +3,7 @@
 [ext_resource type="Script" uid="uid://b021dbuhv4svg" path="res://Scripts/UI/Controls/multi_message_container.gd" id="1_qgdmi"]
 [ext_resource type="PackedScene" uid="uid://6eyoeca7pnqu" path="res://Scenes/slider_container.tscn" id="2_qgdmi"]
 
-[node name="MultiMessaeContainer" type="Control"]
-layout_mode = 3
+[node name="MultiMessageContainer" type="MarginContainer"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -12,61 +11,16 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
 script = ExtResource("1_qgdmi")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="."]
-layout_mode = 1
-anchors_preset = 14
-anchor_top = 0.5
-anchor_right = 1.0
-anchor_bottom = 0.5
-offset_top = -93.0
-offset_bottom = 93.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+[node name="Control" type="Control" parent="."]
+z_index = 5
 layout_mode = 2
-size_flags_horizontal = 8
 
-[node name="PrevButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="SliderContainer" parent="." instance=ExtResource("2_qgdmi")]
 unique_name_in_owner = true
 layout_mode = 2
-text = "L"
-
-[node name="NextButton" type="Button" parent="VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "R"
-
-[node name="SliderContainer" parent="VBoxContainer" instance=ExtResource("2_qgdmi")]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="Panel" type="Panel" parent="VBoxContainer/SliderContainer"]
-z_index = 10
-custom_minimum_size = Vector2(150, 100)
-layout_mode = 2
-
-[node name="Panel2" type="Panel" parent="VBoxContainer/SliderContainer"]
-modulate = Color(0.8, 0.8, 0.8, 1)
-custom_minimum_size = Vector2(150, 100)
-layout_mode = 2
-
-[node name="Panel3" type="Panel" parent="VBoxContainer/SliderContainer"]
-modulate = Color(0.8, 0.8, 0.8, 1)
-custom_minimum_size = Vector2(150, 100)
-layout_mode = 2
-
-[node name="Panel4" type="Panel" parent="VBoxContainer/SliderContainer"]
-modulate = Color(0.8, 0.8, 0.8, 1)
-custom_minimum_size = Vector2(150, 100)
-layout_mode = 2
-
-[node name="Panel5" type="Panel" parent="VBoxContainer/SliderContainer"]
-modulate = Color(0.8, 0.8, 0.8, 1)
-custom_minimum_size = Vector2(150, 100)
-layout_mode = 2
-
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/PrevButton" to="." method="_on_prev_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/NextButton" to="." method="_on_next_button_pressed"]

@@ -5,6 +5,7 @@ var drag_start_position = Vector2()
 
 @export  var terminal_container: TerminalTabContainer
 #variables where writing out notes Head and description
+@onready var project_name_label: RichTextLabel = %ProjectNameLabel
 
 #these variables are for changing only the font size of the UI
 var _default_zoom: int
@@ -32,7 +33,8 @@ func _ready() -> void:
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
-
+	
+	project_name_label.text = ""
 
 var MAX: = 20
 
@@ -174,17 +176,19 @@ func _on_disable_notes_button_pressed() -> void:
 
 #region help menu
 
-var license_agreement_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
-var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 
-var about_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
-var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
+
+
 func _on_help_id_pressed(id: int) -> void:
 	match id:
 		0:# id for the About option
+			ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
+			var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
 			var about_scene_inst = about_scene.instantiate()
 			call_deferred("add_child", about_scene_inst)
 		1:# id for the license Agreement 
+			ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
+			var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 			var license_scene_inst = license_scene.instantiate()
 			call_deferred("add_child", license_scene_inst)
 
@@ -242,3 +246,7 @@ func _on_project_mouse_exited() -> void:
 
 func _on_add_layer_pressed() -> void:
 	pass # Replace with function body.
+
+
+func _on_btn_drawer_pressed() -> void:
+	%Drawer.popup_centered()

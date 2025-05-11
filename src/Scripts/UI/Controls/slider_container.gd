@@ -12,7 +12,7 @@ signal active_child_changed(index: int)
 			_animate_children()
 			active_child_changed.emit(active_child_index)
 
-@export var offset_distance: float = 30.0  # Distance between cards
+@export var offset_distance: float = 100.0  # Distance between cards
 @export var transition_duration: float = 0.3
 @export var inactive_scale: float = 0.8  # Scale for inactive children
 
@@ -21,8 +21,10 @@ var _current_tween: Tween
 func _init() -> void:
 	sort_children.connect(_on_sort_children)
 
+
 func _ready() -> void:
 	_position_children_immediately()
+
 
 func _position_children_immediately() -> void:
 	for i in get_child_count():
@@ -32,33 +34,47 @@ func _position_children_immediately() -> void:
 			var target_scale = _calculate_child_scale(i)
 			child.position = target_pos
 			child.scale = Vector2(target_scale, target_scale)
-			child.pivot_offset = child.size / 2
+			child.pivot_offset = Vector2(child.size.x/2, 0)
 			if i == active_child_index:
 				child.modulate = Color(1.0, 1.0, 1.0, 1.0)
 				child.z_index = 10
+				child.mouse_filter = Control.MOUSE_FILTER_STOP
+				if child is MessageMarkdown:
+					child._enable_input()
 			else:
+				child.mouse_filter = Control.MOUSE_FILTER_PASS
 				child.modulate = Color(0.8, 0.8, 0.8, 1.0)
 				child.z_index = 0
+				if child is MessageMarkdown:
+					child._block_input()
+
 
 func _calculate_child_position(child_index: int) -> Vector2:
 	var relative_index = child_index - active_child_index
-	# Center position calculation
+	# Center position calculation for X
 	var center_x = (size.x - get_child(child_index).size.x) / 2
-	var center_y = (size.y - get_child(child_index).size.y) / 2
+	
+	# For Y, active child should be at the top
+	var y_position = 0.0
+	if child_index != active_child_index:
+		# Inactive children positioned below the active child
+		y_position = offset_distance / 3
 	
 	# Apply offset based on relative position to active child
 	var x_offset = relative_index * offset_distance
 	
-	return Vector2(center_x + x_offset, center_y)
+	return Vector2(center_x + x_offset, y_position)
+
 
 func _calculate_child_scale(child_index: int) -> float:
 	return 1.0 if child_index == active_child_index else inactive_scale
+
 
 func _animate_children() -> void:
 	if _current_tween:
 		_current_tween.kill()
 	
-	_current_tween = create_tween()
+	_current_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_current_tween.set_parallel(true)
 	
 	for i in get_child_count():
@@ -69,36 +85,39 @@ func _animate_children() -> void:
 			if i == active_child_index:
 				child.modulate = Color(1.0, 1.0, 1.0, 1.0)
 				child.z_index = 10
+				child.mouse_filter = Control.MOUSE_FILTER_STOP
+				if child is MessageMarkdown:
+					child._enable_input()
 			else:
 				child.modulate = Color(0.8, 0.8, 0.8, 1.0)
 				child.z_index = 0
+				child.mouse_filter = Control.MOUSE_FILTER_PASS
+				if child is MessageMarkdown:
+					child._block_input()
 			# Position animation
 			_current_tween.tween_property(
 				child,
 				"position",
 				target_pos,
-				transition_duration
-			).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+				transition_duration)
 			
 			# Scale animation
 			_current_tween.tween_property(
 				child,
 				"scale",
 				Vector2(target_scale, target_scale),
-				transition_duration
-			).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+				transition_duration)
+
 
 func _on_sort_children() -> void:
 	for i in get_child_count():
 		var child = get_child(i)
 		if child is Control:
-			# Maintain the child's original size
-			var original_size = child.size
-			child.size = original_size
-			child.pivot_offset = original_size / 2
+			child.pivot_offset = Vector2(child.size.x/2, 0)
 	
 	if not Engine.is_editor_hint():
 		_position_children_immediately()
+
 
 func _get_minimum_size() -> Vector2:
 	var min_size := Vector2.ZERO
@@ -109,18 +128,15 @@ func _get_minimum_size() -> Vector2:
 			min_size.y = max(min_size.y, child_min_size.y)
 	return min_size
 
+
 func next_child() -> void:
 	active_child_index += 1
+
 
 func previous_child() -> void:
 	active_child_index -= 1
 
-func wrap(value: int, min_value: int, max_value: int) -> int:
-	var range_size = max_value - min_value
-	if range_size == 0:
-		return min_value
-	var result = value - min_value
-	result = result % range_size
-	if result < 0:
-		result += range_size
-	return result + min_value
+
+func _on_child_entered_tree(node: Node) -> void:
+	if node is Control:
+		node.resized.connect(_animate_children)

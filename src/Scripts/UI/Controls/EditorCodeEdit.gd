@@ -18,3 +18,4 @@ func _ready() -> void:
 	wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	name = "CodeEdit"
 	line_folding = true
+	editable = true

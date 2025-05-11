@@ -93,7 +93,6 @@ func _is_graphics_file(filename: String) -> bool:
 	return false
 
 func _on_open_files(files: PackedStringArray):
-	print("aaaaaaaaaaaaaa")
 	for filename in files:
 		open_file(filename)
 	SingletonObject.save_state(false)

@@ -59,16 +59,14 @@ var expanded: bool = true
 
 func _ready() -> void:
 	
-	await get_tree().create_timer(0.05).timeout
-	_update_label_size()
 	if !expanded:
+		await get_tree().create_timer(0.05).timeout
 		code_label.fit_content = false
 		code_label.custom_minimum_size.y = 0
 		p_2.custom_minimum_size.y = 0
 		expand_button.rotation = deg_to_rad(-90.0)
 		expand_button.modulate = expand_icon_color
 		p_2.call_deferred("hide")
-
 
 func get_selected_text() -> String:
 	return %CodeLabel.get_selected_text()
@@ -91,18 +89,18 @@ func _copy_code_label():
 func _extract_code_label():
 	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
 	if linked_memory_item == "":
-		linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
+		linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text,false, text_without_tags).UUID
 		created_text_note.emit(dict_index, linked_memory_item)
 	else:
 		var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item, text_without_tags)
 		if return_memory == null:
-			linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
+			linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text,false, text_without_tags).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
-static var code_markdown_label: = preload("res://Scenes/CodeMarkdownLabel.tscn")
+static var code_markdopwn_label: = preload("res://Scenes/CodeMarkdownLabel.tscn")
 static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "", expanded_value: bool = true) -> CodeMarkdownLabel:
 	# place the code label in panel container to change the background
-	var code_panel = code_markdown_label.instantiate()
+	var code_panel = code_markdopwn_label.instantiate()
 	code_panel.dict_index = index
 	if memory_item_UUID != "":
 		code_panel.linked_memory_item = memory_item_UUID
@@ -146,7 +144,7 @@ func _on_replace_all_pressed():
 		
 		# Get the CodeEdit node
 		var code_edit_node = active_tab_editor_node.code_edit
-		active_tab_editor_node.update_code_hightlighter(%SyntaxLabel.text)
+		
 		if code_edit_node:
 			# Get the old text from the metadata
 			var old_text: String = code_edit_node.get_meta("old_text", code_edit_node.text)
@@ -154,7 +152,6 @@ func _on_replace_all_pressed():
 			# Set the new text
 			code_edit_node.text = new_text
 			
-			#code_edit_node.syntax_highlighter = Editor.get_code_highlighter(ep.editor_name_to_use(%SyntaxLabel.text))
 
 			for i in REGEX_PATTERNS:
 				var pattern = REGEX_PATTERNS[i]
@@ -192,13 +189,12 @@ func expand_code() -> void:
 	if expand_tween and expand_tween.is_running():
 		expand_tween.kill()
 		return
-	if label_size == 0 or label_size > int(code_label.size.y):
-		_update_label_size()
-	
 	p_2.show()
 	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
 	expand_tween.finished.connect(enable_expand_button)
 	expand_button.disabled = true
+	if label_size == 0:
+		await _update_label_size()
 	expand_tween.tween_property(code_label, "custom_minimum_size:y", label_size, expand_anim_duration)
 	expand_tween.set_parallel()
 	expand_tween.tween_property(p_2, "custom_minimum_size:y", label_size, expand_anim_duration)
@@ -212,8 +208,6 @@ func contract_code() -> void:
 	if expand_tween and expand_tween.is_running():
 		expand_tween.kill()
 		return
-	if label_size == 0 or label_size > int(code_label.size.y):
-		_update_label_size()
 	code_label.fit_content = false
 	code_label.custom_minimum_size.y = label_size
 	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
@@ -227,7 +221,7 @@ func contract_code() -> void:
 	expand_tween.set_parallel()
 	expand_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
 	
-	await expand_tween.finished	
+	await get_tree().create_timer(expand_anim_duration - 0.24).timeout
 	p_2.hide()
 
 

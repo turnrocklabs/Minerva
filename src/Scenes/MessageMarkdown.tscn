@@ -2,19 +2,19 @@
 
 [ext_resource type="Script" uid="uid://dw7ttrabgb5ig" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_2tyhp"]
-[ext_resource type="Script" uid="uid://dbap0gqox0ty1" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://drkyos7dgp0df" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="Script" uid="uid://c1lqsdshqrr7g" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
+[ext_resource type="FontFile" uid="uid://by7y1xd78nqmu" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Texture2D" uid="uid://b6acurykmusyp" path="res://assets/icons/split.png" id="3_7l37a"]
-[ext_resource type="Script" uid="uid://dcx7crs23nf4" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
+[ext_resource type="Script" uid="uid://cxxqn6igea3k5" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_p2uud"]
 [ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/clipboard_icons/content_copy.svg" id="4_3sl4b"]
-[ext_resource type="Script" uid="uid://d0sin64i4v3op" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
+[ext_resource type="Script" uid="uid://dk4avigqghngi" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="4_qpk4n"]
-[ext_resource type="Script" uid="uid://dlok0dv1tq2bf" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
-[ext_resource type="Script" uid="uid://bayuh2vafablg" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
+[ext_resource type="Script" uid="uid://drg4msqxieo6t" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
+[ext_resource type="Script" uid="uid://0u1365u806qa" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
 [ext_resource type="Texture2D" uid="uid://uoecrgwhfrqq" path="res://assets/icons/replace_icons/replace_icon_white.png" id="6_aa7ls"]
-[ext_resource type="Script" uid="uid://dfr1w7u3jgni3" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
-[ext_resource type="Script" uid="uid://bsi6dexoofpe6" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="8_ywchm"]
+[ext_resource type="Script" uid="uid://cg5ugnhlksdyj" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
+[ext_resource type="Script" uid="uid://brs0d6nsvspkp" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="8_ywchm"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="10_6uibh"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="10_h3jau"]
 [ext_resource type="Texture2D" uid="uid://dr5q0d4id5wst" path="res://assets/icons/arrow_right.svg" id="12_tbvqb"]
@@ -106,6 +106,8 @@ offset_right = -1531.0
 offset_bottom = -911.0
 grow_horizontal = 2
 grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
 theme = SubResource("Theme_ca11y")
 script = ExtResource("1_5rvwm")
 left_control = NodePath("MarginContainer/HBoxContainer/LeftSplitter")
@@ -116,11 +118,12 @@ bot_message_color = Color(0, 0.780392, 0.270588, 1)
 error_message_color = Color(0.737255, 0, 0.109804, 1)
 expand_anim_duration = 0.6
 expand_transition_type = 5
-expand_icon_color = Color(0.176471, 0.184314, 0.192157, 1)
+expand_icon_color = Color(0.270588, 0.317647, 0.772549, 1)
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 0
 theme_override_constants/margin_left = 7
 theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 7
@@ -158,7 +161,6 @@ horizontal_alignment = 1
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-mouse_filter = 1
 theme_override_styles/panel = SubResource("StyleBoxFlat_hjfue")
 
 [node name="v" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer"]
@@ -170,7 +172,6 @@ layout_mode = 2
 theme_override_constants/separation = 10
 
 [node name="ResizeControl" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v/h"]
-visible = false
 custom_minimum_size = Vector2(32, 0)
 layout_mode = 2
 
@@ -191,11 +192,22 @@ grow_horizontal = 2
 grow_vertical = 2
 pivot_offset = Vector2(22, 16)
 focus_mode = 0
-toggle_mode = true
-button_pressed = true
 icon = ExtResource("2_2tyhp")
 flat = true
 icon_alignment = 1
+
+[node name="LeftCardButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "L
+"
+
+[node name="RightCardButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "R"
 
 [node name="ContinueButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h" groups=["controls"]]
 unique_name_in_owner = true
@@ -270,7 +282,6 @@ text = " "
 fit_content = true
 context_menu_enabled = true
 selection_enabled = true
-deselect_on_focus_loss_enabled = false
 script = ExtResource("2_5cmtk")
 h1 = SubResource("Resource_de4hw")
 h2 = SubResource("Resource_s8if8")
@@ -289,30 +300,34 @@ bbcode_enabled = true
 text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
 threaded = true
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
-unique_name_in_owner = true
-clip_contents = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="ImagesGridContainer" type="GridContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/VBoxContainer"]
-unique_name_in_owner = true
-clip_contents = true
-layout_mode = 2
-
 [node name="ResizeScrollContainer" type="ScrollContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
-size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Control" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_right = 10
+
+[node name="MainVBoxContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer/MainVBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ImagesGridContainer" type="GridContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer/MainVBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Control" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
 
 [node name="MessageTextEdit" type="TextEdit" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
@@ -342,8 +357,7 @@ icon = ExtResource("16_rwt48")
 
 [node name="ResizeDragControl" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(0, 15)
+custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
 mouse_default_cursor_shape = 9
 
@@ -370,8 +384,15 @@ visible = false
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 
+[node name="BlockInputControl" type="Control" parent="MarginContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
 [connection signal="gui_input" from="." to="." method="_on_gui_input"]
-[connection signal="toggled" from="MarginContainer/HBoxContainer/PanelContainer/v/h/ResizeControl/ExpandButton" to="." method="_on_expand_button_toggled"]
+[connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/ResizeControl/ExpandButton" to="." method="_on_expand_button_pressed"]
+[connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/LeftCardButton" to="." method="_on_left_card_button_pressed"]
+[connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/RightCardButton" to="." method="_on_right_card_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/UnsplitButton" to="." method="_on_unsplit_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/HideButton" to="." method="_on_hide_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/EditButton" to="." method="_on_edit_button_pressed"]

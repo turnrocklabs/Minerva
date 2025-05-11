@@ -1,17 +1,17 @@
-[gd_scene load_steps=63 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=68 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Script" uid="uid://de2uyvmvju8y2" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
+[ext_resource type="Script" uid="uid://d28gxyadpltsf" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
-[ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
-[ext_resource type="Script" uid="uid://xj3syc210tqo" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
+[ext_resource type="Script" uid="uid://df01c23qrpt71" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
+[ext_resource type="Script" uid="uid://dubvdein1okth" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
-[ext_resource type="Script" uid="uid://tw56pjd3v28f" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
+[ext_resource type="Script" uid="uid://dslveoaldvc6v" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
 [ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/windows/PreferencesPopup.tscn" id="3_3hcc1"]
-[ext_resource type="Script" uid="uid://dgvwmbh8gl2xv" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
-[ext_resource type="Script" uid="uid://c2endsksj28na" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
+[ext_resource type="Script" uid="uid://bed3pqcrplxx8" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
+[ext_resource type="Script" uid="uid://mdn8n3pjrjxa" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://Scenes/PersistentWindow.tscn" id="3_xdign"]
-[ext_resource type="Script" uid="uid://d3sp7ex2jnsc2" path="res://Scripts/many_new_files_window.gd" id="4_0j15c"]
+[ext_resource type="Script" uid="uid://enk3c5lidc0h" path="res://Scripts/many_new_files_window.gd" id="4_0j15c"]
 [ext_resource type="PackedScene" uid="uid://c8fq2jqnwlncg" path="res://Scenes/EditorPane.tscn" id="4_826g6"]
 [ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/windows/new_thread_popup.tscn" id="5_gujhn"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="7_rdia2"]
@@ -23,13 +23,17 @@
 [ext_resource type="Texture2D" uid="uid://xl40e2ggwr7" path="res://assets/icons/zoom_icons/zoom_reset.svg" id="11_i5ytf"]
 [ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icons/new_line_icon.png" id="11_p11dv"]
 [ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_icons/undo_arrow.png" id="11_srtkx"]
-[ext_resource type="Script" uid="uid://dge3cj0ar0mj6" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/add.svg" id="12_6jk4t"]
+[ext_resource type="Texture2D" uid="uid://d0trvye6gvmku" path="res://assets/icons/Microphone_statick.jpg" id="13_2lo4v"]
+[ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload.svg" id="13_xhsmd"]
+[ext_resource type="Script" uid="uid://cv117t6pm7lf7" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
+[ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="14_sknqf"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file/file.svg" id="18_mitgl"]
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="20_cqinw"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="20_n1ygu"]
 [ext_resource type="Texture2D" uid="uid://deboh0lwmv7f7" path="res://assets/icons/paperclip_icons/paperclip_icon_24_no_bg.png" id="21_0ds70"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/eraser/ink_eraser_off.svg" id="21_akf3o"]
-[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="21_rnx1y"]
+[ext_resource type="Script" uid="uid://63wcsxjjtlug" path="res://Scripts/UI/Views/icons_button.gd" id="21_rnx1y"]
 [ext_resource type="Texture2D" uid="uid://bnn2c6bwu3w0e" path="res://assets/icons/file/file_24.svg" id="21_wcf3l"]
 [ext_resource type="Texture2D" uid="uid://cde1opucpvcqd" path="res://assets/icons/file/file_48.svg" id="22_av2ut"]
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
@@ -41,7 +45,7 @@
 [ext_resource type="Texture2D" uid="uid://8ia1252jycjp" path="res://assets/icons/file/many_files_24_new.png" id="28_qncfk"]
 [ext_resource type="Texture2D" uid="uid://b041v4o6sa3fd" path="res://assets/icons/file/many_files_48_new.png" id="29_3uhrd"]
 [ext_resource type="Texture2D" uid="uid://rnoowdcewge8" path="res://assets/icons/undo_icons/undo_arrow_48.png" id="29_rqudt"]
-[ext_resource type="Script" uid="uid://yrtcflmpovr5" path="res://Scripts/DropScript.gd" id="30_1anci"]
+[ext_resource type="Script" uid="uid://34gp4lt2oiw7" path="res://Scripts/DropScript.gd" id="30_1anci"]
 [ext_resource type="Texture2D" uid="uid://c6bgcn813bv5q" path="res://assets/icons/undo_icons/undo_arrow_64.png" id="30_i8mta"]
 [ext_resource type="Texture2D" uid="uid://jtwgif8ev4lw" path="res://assets/icons/file/many_files_64_new.png" id="30_jj3p5"]
 [ext_resource type="Texture2D" uid="uid://0qjd86qhe1as" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="32_nebas"]
@@ -56,7 +60,9 @@
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="40_056ov"]
 [ext_resource type="Texture2D" uid="uid://cvb2vnkv4fpn5" path="res://assets/icons/plus_icons/add_48.svg" id="41_jftao"]
 [ext_resource type="Texture2D" uid="uid://bk13anfwduwom" path="res://assets/icons/plus_icons/add_68.svg" id="42_l3jum"]
+[ext_resource type="Texture2D" uid="uid://c3yhv44gc4qdl" path="res://assets/icons/drawer.png" id="47_dn1w2"]
 [ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
+[ext_resource type="PackedScene" uid="uid://d2mp2pdnnufm8" path="res://Scenes/Drawer.tscn" id="60_pa4y5"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -90,7 +96,7 @@ terminal_container = NodePath("VBoxRoot/VSplitContainer/TerminalTabContainer")
 
 [node name="TopBar" type="Panel" parent="."]
 z_index = -2
-custom_minimum_size = Vector2(0, 30)
+custom_minimum_size = Vector2(0, 38)
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
@@ -221,9 +227,8 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 16.0
-offset_right = -16.0
-offset_bottom = -12.0
+offset_left = 9.0
+offset_right = -8.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 20
@@ -346,6 +351,57 @@ item_0/id = 0
 item_1/text = "License Agreement ..."
 item_1/id = 1
 
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxRoot"]
+visible = false
+layout_mode = 2
+
+[node name="Control" type="Control" parent="VBoxRoot/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 16
+
+[node name="AddFileEditor" type="Button" parent="VBoxRoot/HBoxContainer2/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "create new text editor tab"
+icon = ExtResource("18_mitgl")
+
+[node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/HBoxContainer2/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "create new graphics editor tab"
+icon = ExtResource("12_6jk4t")
+
+[node name="Button" type="Button" parent="VBoxRoot/HBoxContainer2/HBoxContainer"]
+layout_mode = 2
+icon = ExtResource("13_xhsmd")
+
+[node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxRoot/HBoxContainer2/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "save all unsaved and open editor tabs"
+icon = ExtResource("14_sknqf")
+
+[node name="Control2" type="Control" parent="VBoxRoot/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="VBoxRoot/HBoxContainer"]
+custom_minimum_size = Vector2(15, 0)
+layout_mode = 2
+
+[node name="ProjectNameLabel" type="RichTextLabel" parent="VBoxRoot/HBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+bbcode_enabled = true
+text = "[pulse][shake]New Project*[/shake][/pulse]"
+vertical_alignment = 1
+threaded = true
+
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxRoot"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -392,7 +448,6 @@ size_flags_vertical = 3
 theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer"]
-custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 theme_override_constants/separation = 10
 
@@ -422,8 +477,9 @@ icon_24 = ExtResource("28_qncfk")
 icon_48 = ExtResource("29_3uhrd")
 icon_68 = ExtResource("30_jj3p5")
 
-[node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["Experimental"]]
+[node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_horizontal = 0
 tooltip_text = "create new graphics editor tab"
@@ -481,16 +537,14 @@ icon_24 = ExtResource("11_p11dv")
 icon_48 = ExtResource("36_hfhsg")
 icon_68 = ExtResource("37_toq4t")
 
-[node name="HSplitButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["Experimental"]]
-unique_name_in_owner = true
+[node name="HButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 horizontal panes"
 icon = SubResource("CanvasTexture_o30k1")
 icon_alignment = 1
 script = ExtResource("21_rnx1y")
 
-[node name="VSplitButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["Experimental"]]
-unique_name_in_owner = true
+[node name="VButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
@@ -534,7 +588,6 @@ size_flags_stretch_ratio = 0.5
 theme_override_constants/separation = 16
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane"]
-custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 size_flags_vertical = 0
 theme_override_constants/separation = 10
@@ -554,6 +607,13 @@ size_flags_horizontal = 10
 tooltip_text = "Disable all notes in all current tabs"
 text = "Enable All"
 flat = true
+
+[node name="btnDrawer" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+tooltip_text = "Creates a new note in current active tab"
+text = "Drawer"
+icon = ExtResource("47_dn1w2")
 
 [node name="btnCreateNote" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
 layout_mode = 2
@@ -681,6 +741,10 @@ grow_vertical = 2
 unique_name_in_owner = true
 visible = false
 
+[node name="Drawer" parent="." instance=ExtResource("60_pa4y5")]
+unique_name_in_owner = true
+visible = false
+
 [connection signal="about_to_popup" from="ManyNewFilesDialogWindow" to="ManyNewFilesDialogWindow" method="_on_about_to_popup"]
 [connection signal="text_submitted" from="ManyNewFilesDialogWindow/Panel/MarginContainer/VBoxContainer/HBoxContainer/NewFilesLineEdit" to="ManyNewFilesDialogWindow" method="_on_new_files_line_edit_text_submitted"]
 [connection signal="pressed" from="ManyNewFilesDialogWindow/Panel/MarginContainer/VBoxContainer/HBoxContainer/Button" to="ManyNewFilesDialogWindow" method="_on_button_pressed"]
@@ -696,6 +760,9 @@ visible = false
 [connection signal="id_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_id_pressed"]
 [connection signal="index_pressed" from="VBoxRoot/HBoxContainer/menuMain/View" to="VBoxRoot/HBoxContainer/menuMain" method="_on_view_index_pressed"]
 [connection signal="id_pressed" from="VBoxRoot/HBoxContainer/menuMain/Help" to="." method="_on_help_id_pressed"]
+[connection signal="pressed" from="VBoxRoot/HBoxContainer2/HBoxContainer/AddFileEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_file_editor_pressed"]
+[connection signal="pressed" from="VBoxRoot/HBoxContainer2/HBoxContainer/AddGraphicsEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_graphics_editor_pressed"]
+[connection signal="pressed" from="VBoxRoot/HBoxContainer2/HBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddFileEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_file_editor_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddManyNewFilesEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_many_new_files_editor_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_add_graphics_editor_pressed"]
@@ -704,9 +771,10 @@ visible = false
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/UndoButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_undo_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/BackSpaceButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_back_space_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/NewLineButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_new_line_button_pressed"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HSplitButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VSplitButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/DisableNotesButton" to="." method="_on_disable_notes_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnDrawer" to="." method="_on_btn_drawer_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachment_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" method="_on_new_pressed"]
