@@ -1,0 +1,397 @@
+[
+  {
+    "id": "google_gemini_2_5_flash_preview_04_17",
+    "provider_enum_key": "GOOGLE",
+    "api_base_url": "https://generativelanguage.googleapis.com/v1beta/models",
+    "display_name": "Gemini 2.5 Flash (04-17)",
+    "model_name_config": "gemini-2.5-flash-preview-04-17",
+    "short_name_ui": "G2.5Fp",
+    "token_cost_usd_per_million_total": 0.70,
+    "cost_note": "Example: $0.35/million input, $1.05/million output.",
+    "headers": [
+      {"name": "Content-Type", "value": "application/json"}
+    ],
+    "chat_endpoint": "{model_name_config}:generateContent?key={API_KEY}",
+    "chat_http_method": "POST",
+    "action_type": "json_chat",
+    "request_body_structure": {
+      "contents_field": "contents"
+    },
+    "response_parsing": {
+      "text_parts_array_path": "candidates[0].content.parts",
+      "text_parts_item_text_key": "text",
+      "error_path": "error.message",
+      "input_tokens_path": "usageMetadata.promptTokenCount",
+      "output_tokens_path": "usageMetadata.candidatesTokenCount",
+      "stop_reason_path": "candidates[0].finishReason"
+    },
+    "formatting_rules": {
+      "format_type": "google_chat",
+      "role_map": { "USER": "user", "ASSISTANT": "model", "SYSTEM": "system_handler_google_api", "MODEL": "model" },
+      "google_system_role_indicator": "system_handler_google_api",
+      "parts_array_text_field": "text",
+      "media_handling_rules": {
+        "inline_data_key": "inline_data",
+        "mime_type_key": "mime_type",
+        "data_key": "data",
+        "image_mime_type": "image/png"
+      }
+    },
+    "memory_wrap_rules": {
+      "text_prefix": "Given this background information:\n\n### Reference Information ###\n",
+      "text_suffix": "\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+      "image_handling_type": "google_inline_data"
+    },
+    "token_estimation_rules": {
+      "type": "simple_word_count", "multiplier": 1.335,
+      "type_from_prompt": "sum_text_tokens",
+      "prompt_parts_array_key": "parts",
+      "prompt_text_key_in_item": "text"
+    }
+  },
+  {
+    "id": "google_gemini_2_5_pro_preview_05_06",
+    "provider_enum_key": "GOOGLE",
+    "api_base_url": "https://generativelanguage.googleapis.com/v1beta/models",
+    "display_name": "Gemini 2.5 Pro (05-06)",
+    "model_name_config": "gemini-2.5-pro-preview-05-06",
+    "short_name_ui": "G2.5Pp",
+    "token_cost_usd_per_million_total": 7.00,
+    "cost_note": "Example: $3.5/million input, $10.5/million output.",
+    "headers": [
+      {"name": "Content-Type", "value": "application/json"}
+    ],
+    "chat_endpoint": "{model_name_config}:generateContent?key={API_KEY}",
+    "chat_http_method": "POST",
+    "action_type": "json_chat",
+    "request_body_structure": {
+      "contents_field": "contents"
+    },
+    "response_parsing": {
+      "text_parts_array_path": "candidates[0].content.parts",
+      "text_parts_item_text_key": "text",
+      "error_path": "error.message",
+      "input_tokens_path": "usageMetadata.promptTokenCount",
+      "output_tokens_path": "usageMetadata.candidatesTokenCount",
+      "stop_reason_path": "candidates[0].finishReason"
+    },
+    "formatting_rules": {
+      "format_type": "google_chat",
+      "role_map": { "USER": "user", "ASSISTANT": "model", "SYSTEM": "system_handler_google_api", "MODEL": "model" },
+      "google_system_role_indicator": "system_handler_google_api",
+      "parts_array_text_field": "text",
+      "media_handling_rules": {
+        "inline_data_key": "inline_data",
+        "mime_type_key": "mime_type",
+        "data_key": "data",
+        "image_mime_type": "image/png"
+      }
+    },
+    "memory_wrap_rules": {
+      "text_prefix": "Given this background information:\n\n### Reference Information ###\n",
+      "text_suffix": "\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+      "image_handling_type": "google_inline_data"
+    },
+    "token_estimation_rules": {
+      "type": "simple_word_count", "multiplier": 1.335,
+      "type_from_prompt": "sum_text_tokens",
+      "prompt_parts_array_key": "parts",
+      "prompt_text_key_in_item": "text"
+    }
+  },
+  {
+    "id": "anthropic_claude_3_7_sonnet_20250219",
+    "provider_enum_key": "ANTHROPIC",
+    "api_base_url": "https://api.anthropic.com/v1",
+    "display_name": "Claude 3.7 Sonnet (20250219)",
+    "model_name_config": "claude-3-7-sonnet-20250219",
+    "short_name_ui": "C3.7S",
+    "token_cost_usd_per_million_total": 15.00,
+    "cost_note": "Example: $3/million input, $15/million output tokens.",
+    "headers": [
+      {"name": "Content-Type", "value": "application/json"},
+      {"name": "x-api-key", "value": "{API_KEY}"},
+      {"name": "anthropic-version", "value": "2023-06-01"}
+    ],
+    "chat_endpoint": "/messages",
+    "chat_http_method": "POST",
+    "action_type": "json_chat",
+    "request_body_structure": {
+      "model_field": "model",
+      "messages_field": "messages",
+      "max_tokens_field": "max_tokens",
+      "default_max_tokens": 8000,
+      "system_prompt_field": "system"
+    },
+    "response_parsing": {
+      "id_path": "id",
+      "text_path": "content[0].text",
+      "error_path": "error.message",
+      "input_tokens_path": "usage.input_tokens",
+      "output_tokens_path": "usage.output_tokens",
+      "stop_reason_path": "stop_reason",
+      "stop_reason_max_tokens_value": "max_tokens"
+    },
+    "formatting_rules": {
+      "format_type": "anthropic_chat",
+      "role_map": { "USER": "user", "ASSISTANT": "assistant", "SYSTEM": "user", "MODEL": "assistant" },
+      "content_array_item_type_field": "type",
+      "content_array_item_type_text_value": "text",
+      "content_array_item_text_field": "text",
+      "image_handling_rules": {
+        "type_value": "image",
+        "data_key": "source",
+        "source_type_value": "base64",
+        "mime_type": "image/png"
+      }
+    },
+    "memory_wrap_rules": {
+      "text_prefix": "Given this background information:\n\n### Reference Information ###\n",
+      "text_suffix": "\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+      "image_handling_type": "passthrough"
+    },
+    "token_estimation_rules": {
+      "type": "simple_word_count", "multiplier": 1.335,
+      "type_from_prompt": "sum_text_tokens",
+      "prompt_text_key_secondary_array": "content",
+      "prompt_text_key_in_item": "text"
+    }
+  },
+  {
+    "id": "openai_gpt_4_1_20250414",
+    "provider_enum_key": "OPENAI",
+    "api_base_url": "https://api.openai.com/v1",
+    "display_name": "GPT-4.1 (20250414)",
+    "model_name_config": "gpt-4.1-2025-04-14",
+    "short_name_ui": "O4.1",
+    "token_cost_usd_per_million_total": 20.00,
+    "cost_note": "Example: $10/million input, $30/million output tokens.",
+    "headers": [
+      {"name": "Content-Type", "value": "application/json"},
+      {"name": "Authorization", "value": "Bearer {API_KEY}"}
+    ],
+    "chat_endpoint": "/chat/completions",
+    "chat_http_method": "POST",
+    "action_type": "json_chat",
+    "request_body_structure": {
+      "model_field": "model",
+      "messages_field": "messages",
+      "max_tokens_field": "max_tokens",
+      "default_max_tokens": 8192
+    },
+    "response_parsing": {
+      "id_path": "id",
+      "text_path": "choices[0].message.content",
+      "error_path": "error.message",
+      "input_tokens_path": "usage.prompt_tokens",
+      "output_tokens_path": "usage.completion_tokens",
+      "stop_reason_path": "choices[0].finish_reason",
+      "stop_reason_max_tokens_value": "length"
+    },
+    "formatting_rules": {
+      "format_type": "openai_chat_array_content",
+      "role_map": { "USER": "user", "ASSISTANT": "assistant", "SYSTEM": "system", "MODEL": "assistant" },
+      "content_array_item_type_field": "type",
+      "content_array_item_type_text_value": "text",
+      "content_array_item_text_field": "text",
+      "image_handling_rules": {
+        "type_value": "image_url",
+        "data_key": "image_url",
+        "mime_type": "image/png"
+      }
+    },
+    "memory_wrap_rules": {
+      "text_prefix": "Given this background information:\n\n### Reference Information ###\n",
+      "text_suffix": "\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+      "image_handling_type": "passthrough"
+    },
+    "token_estimation_rules": {
+      "type": "simple_word_count", "multiplier": 1.335,
+      "type_from_prompt": "sum_text_tokens",
+      "prompt_text_key_primary": "content",
+      "prompt_text_key_secondary_array": "content",
+      "prompt_text_key_in_item": "text"
+    }
+  },
+  {
+    "id": "openai_o3_20250416",
+    "provider_enum_key": "OPENAI",
+    "api_base_url": "https://api.openai.com/v1",
+    "display_name": "O3 (20250416)",
+    "model_name_config": "o3-2025-04-16",
+    "short_name_ui": "O3",
+    "token_cost_usd_per_million_total": 25.00,
+    "cost_note": "Example: Pricing for O3 models varies.",
+    "headers": [
+      {"name": "Content-Type", "value": "application/json"},
+      {"name": "Authorization", "value": "Bearer {API_KEY}"}
+    ],
+    "chat_endpoint": "/chat/completions",
+    "chat_http_method": "POST",
+    "action_type": "json_chat",
+    "request_body_structure": {
+      "model_field": "model",
+      "messages_field": "messages",
+      "max_tokens_field": "max_tokens",
+      "default_max_tokens": 8192
+    },
+    "response_parsing": {
+      "id_path": "id",
+      "text_path": "choices[0].message.content",
+      "error_path": "error.message",
+      "input_tokens_path": "usage.prompt_tokens",
+      "output_tokens_path": "usage.completion_tokens",
+      "stop_reason_path": "choices[0].finish_reason",
+      "stop_reason_max_tokens_value": "length"
+    },
+    "formatting_rules": {
+      "format_type": "openai_chat_array_content",
+      "role_map": { "USER": "user", "ASSISTANT": "assistant", "SYSTEM": "system", "MODEL": "assistant" },
+      "content_array_item_type_field": "type",
+      "content_array_item_type_text_value": "text",
+      "content_array_item_text_field": "text",
+      "image_handling_rules": {
+        "type_value": "image_url",
+        "data_key": "image_url",
+        "mime_type": "image/png"
+      }
+    },
+    "memory_wrap_rules": {
+      "text_prefix": "Given this background information:\n\n### Reference Information ###\n",
+      "text_suffix": "\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+      "image_handling_type": "passthrough"
+    },
+    "token_estimation_rules": {
+      "type": "simple_word_count", "multiplier": 1.335,
+      "type_from_prompt": "sum_text_tokens",
+      "prompt_text_key_primary": "content",
+      "prompt_text_key_secondary_array": "content",
+      "prompt_text_key_in_item": "text"
+    }
+  },
+  {
+    "id": "openai_o4_mini_20250416",
+    "provider_enum_key": "OPENAI",
+    "api_base_url": "https://api.openai.com/v1",
+    "display_name": "O4 Mini (20250416)",
+    "model_name_config": "o4-mini-2025-04-16",
+    "short_name_ui": "O4M",
+    "token_cost_usd_per_million_total": 1.00,
+    "cost_note": "Example: $0.5/million input, $1.5/million output.",
+    "headers": [
+      {"name": "Content-Type", "value": "application/json"},
+      {"name": "Authorization", "value": "Bearer {API_KEY}"}
+    ],
+    "chat_endpoint": "/chat/completions",
+    "chat_http_method": "POST",
+    "action_type": "json_chat",
+    "request_body_structure": {
+      "model_field": "model",
+      "messages_field": "messages",
+      "max_tokens_field": "max_tokens",
+      "default_max_tokens": 8192
+    },
+    "response_parsing": {
+      "id_path": "id",
+      "text_path": "choices[0].message.content",
+      "error_path": "error.message",
+      "input_tokens_path": "usage.prompt_tokens",
+      "output_tokens_path": "usage.completion_tokens",
+      "stop_reason_path": "choices[0].finish_reason",
+      "stop_reason_max_tokens_value": "length"
+    },
+    "formatting_rules": {
+      "format_type": "openai_chat_array_content",
+      "role_map": { "USER": "user", "ASSISTANT": "assistant", "SYSTEM": "system", "MODEL": "assistant" },
+      "content_array_item_type_field": "type",
+      "content_array_item_type_text_value": "text",
+      "content_array_item_text_field": "text",
+      "image_handling_rules": {
+        "type_value": "image_url",
+        "data_key": "image_url",
+        "mime_type": "image/png"
+      }
+    },
+    "memory_wrap_rules": {
+      "text_prefix": "Given this background information:\n\n### Reference Information ###\n",
+      "text_suffix": "\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+      "image_handling_type": "passthrough"
+    },
+    "token_estimation_rules": {
+      "type": "simple_word_count", "multiplier": 1.335,
+      "type_from_prompt": "sum_text_tokens",
+      "prompt_text_key_primary": "content",
+      "prompt_text_key_secondary_array": "content",
+      "prompt_text_key_in_item": "text"
+    }
+  },
+  {
+    "id": "openai_gpt_image_1",
+    "provider_enum_key": "OPENAI",
+    "api_base_url": "https://api.openai.com/v1/images",
+    "display_name": "GPT Image 1",
+    "model_name_config": "gpt-image-1",
+    "short_name_ui": "IMG1",
+    "token_cost_usd_per_million_total": 0.0,
+    "cost_per_action_usd": 0.04,
+    "cost_note": "Example: $0.04 per image generation.",
+    "headers": [
+      {"name": "Content-Type", "value": "application/json"},
+      {"name": "Authorization", "value": "Bearer {API_KEY}"}
+    ],
+    "chat_endpoint": "/generations",
+    "chat_http_method": "POST",
+    "action_type": "json_image_generation",
+    "request_body_structure": {
+      "model_field": "model",
+      "prompt_field_external": "prompt",
+      "n_field": "n", "default_n": 1,
+      "size_field": "size", "default_size": "1024x1024",
+      "response_format_field": "response_format", "default_response_format": "b64_json"
+    },
+    "response_parsing": {
+      "image_b64_json_path": "data[0].b64_json",
+      "image_revised_prompt_path": "data[0].revised_prompt",
+      "error_path": "error.message"
+    },
+    "formatting_rules": {
+      "format_type": "dalle_image_prompt",
+      "prompt_field": "prompt"
+    },
+    "memory_wrap_rules": {
+      "text_prefix": "Image generation prompt based on:\n",
+      "text_suffix": ""
+    },
+    "token_estimation_rules": {
+      "type": "fixed_cost_per_call", "fixed_cost": 0
+    }
+  },
+  {
+    "id": "human_provider",
+    "provider_enum_key": "NONE",
+    "api_base_url": "",
+    "display_name": "Human",
+    "model_name_config": "human",
+    "short_name_ui": "HU",
+    "token_cost_usd_per_million_total": 0.0,
+    "cost_note": "Free.",
+    "headers": [],
+    "chat_endpoint": "",
+    "chat_http_method": "",
+    "action_type": "local_human",
+    "request_body_structure": {},
+    "response_parsing": {},
+    "formatting_rules": {
+      "format_type": "human_passthrough",
+      "role_map": {}
+    },
+    "memory_wrap_rules": {
+      "text_prefix": "Given this background information:\n\n### Reference Information ###\n",
+      "text_suffix": "\n### End Reference Information ###\n\nRespond to the user's message: \n\n",
+      "image_handling_type": "passthrough"
+    },
+    "token_estimation_rules": {
+      "type": "fixed_cost_per_call", "fixed_cost": 0
+    }
+  }
+]

@@ -46,6 +46,15 @@ var is_crayon
 var is_marker
 #endregion global variables
 
+# --- Loadable-provider system ------------------------------------
+const LOADED_PROVIDERS_JSON_PATH : String = "res://data/providers.json"
+const LoadableRestProvider      = preload("res://Scripts/Services/Providers/LoadableRestProvider.gd")
+
+# Holds all providers read from JSON  (id  ->  instance)
+var _loaded_providers : Dictionary = {}
+
+signal loaded_providers_updated    # emitted after JSON is (re)loaded
+
 #region Config File
 var config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
@@ -245,7 +254,66 @@ func set_ui_scale(new_scale: float) -> void:
 
 #endregion UI Scaling
 
+func _load_providers_from_json(path := LOADED_PROVIDERS_JSON_PATH) -> void:
+	# wipe previous ones
+	for p in _loaded_providers.values():
+		if p is Node and p.is_inside_tree():
+			p.queue_free()
+	_loaded_providers.clear()
+
+	if !FileAccess.file_exists(path):
+		push_warning("Provider JSON not found: %s" % path)
+		loaded_providers_updated.emit()
+		return
+
+	var txt := FileAccess.get_file_as_string(path)
+	var parser := JSON.new()
+	if parser.parse(txt) != OK:
+		push_error("Provider JSON parse error: %s" % parser.get_error_message())
+		loaded_providers_updated.emit()
+		return
+
+	if typeof(parser.data) != TYPE_ARRAY:
+		push_error("Provider JSON root must be an array.")
+		loaded_providers_updated.emit()
+		return
+
+	for entry in parser.data:
+		if typeof(entry) != TYPE_DICTIONARY or !entry.has("id"):
+			continue
+		var id : String = entry["id"]
+		var inst      = LoadableRestProvider.new(entry)
+		add_child(inst)                    # let its HTTPRequest work
+		_loaded_providers[id] = inst
+
+	loaded_providers_updated.emit()
+
+func get_loaded_provider_by_id(id:String) -> LoadableRestProvider:
+	return _loaded_providers.get(id, null)
+
+func get_loaded_provider_display_list() -> Array:
+	# Array of {name,id,cost} dictionaries (sorted lowest cost first)
+	var out := []
+	for id in _loaded_providers:
+		var p = _loaded_providers[id]
+		out.append({
+			"name" : "%s (%s)" % [p.display_name, p.short_name],
+			"id"   : id,
+			"cost" : p.token_cost
+		})
+	out.sort_custom(func(a,b):
+		return a.cost < b.cost or (a.cost == b.cost and a.name < b.name))
+	return out
+
+func get_default_loaded_chat_provider() -> LoadableRestProvider:
+	var lst = get_loaded_provider_display_list()
+	if lst.is_empty():
+		return null
+	else:
+		return get_loaded_provider_by_id(lst[0].id)
+
 func _ready():
+	_load_providers_from_json()
 	
 	SingletonObject.notes_draw_state_changed.connect(
 		func(state: int):
@@ -342,7 +410,7 @@ func ErrorDisplay(error_title:String, error_message: String):
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, TURNROCK }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, TURNROCK, NONE }
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
