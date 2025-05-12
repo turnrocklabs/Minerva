@@ -204,7 +204,7 @@ func _process(_delta):
 	if resize_dragging:
 		_resize_vertical(get_global_mouse_position().y, last_mouse_posistion_y)
 	
-	last_mouse_posistion_y = get_global_mouse_position().y
+		last_mouse_posistion_y = get_global_mouse_position().y
 	if not _upper_separator.visible and not _lower_separator.visible: return
 	
 	if not get_global_rect().has_point(get_global_mouse_position()):
