@@ -84,6 +84,8 @@ func open_threads_popup(tab_name: String = "", tab = null):
 func _on_new_pressed():
 	#open_threads_popup()
 	%NewThreadPopup.show()
+	
+	
 
 func _on_btn_create_thread_pressed(isDrawerNote:bool,tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
