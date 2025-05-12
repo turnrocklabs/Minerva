@@ -191,6 +191,7 @@ gd	fdgjjg[/code]"
 fit_content = true
 scroll_active = false
 context_menu_enabled = true
+threaded = true
 selection_enabled = true
 script = ExtResource("2_t10nn")
 markdown_text = "```python

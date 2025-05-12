@@ -14,6 +14,8 @@ signal message_selection(message: MessageMarkdown, active: bool)
 @warning_ignore("unused_signal")
 signal image_activated(image: ChatImage, active: bool)
 
+# Add this to your existing signals
+signal multi_message_updated(container: MultiMessageContainer, index: int)
 
 @onready var scroll_container = get_parent() as ScrollContainer
 
@@ -29,7 +31,7 @@ func _init(_parent):
 	self.name = _parent.name + "_VBoxChat"
 	self.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	self.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	pass
+
 
 func _ready():
 	self.size = self.Parent.size
@@ -73,26 +75,36 @@ func _messages_list_changed():
 	
 	last_message.editable = true
 
+var scroll_tween: Tween
+var scroll_time: float = 0.8
+func kill_scroll_tween() -> void:
+	if scroll_tween and scroll_tween.is_running():
+		scroll_tween.kill()
 
 func scroll_to_bottom():
 	# wait for message to update the scroll container dimensions
 	await scroll_container.get_v_scroll_bar().changed
-
 	# scroll to bottom
-	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().max_value
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_container.get_v_scroll_bar().max_value, scroll_time)
 
 
 func scroll_to_top() -> void:
 	# wait for message to update the scroll container dimensions
 	await scroll_container.get_v_scroll_bar().changed
-
 	# scroll to top
-	scroll_container.scroll_vertical =  scroll_container.get_v_scroll_bar().min_value
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_container.get_v_scroll_bar().min_value, scroll_time)
 
 
 func ensure_node_is_visible(node: Control) -> void:
+	
+	# Wait for the scroll bar to update
 	await scroll_container.get_v_scroll_bar().changed
-
+	# Wait for the next frame to ensure the node is added to the scene
+	await get_tree().process_frame
 	var scroll_to: int = 0
 	# Calculate the total height of all nodes above the target node
 	for i in get_children():
@@ -104,24 +116,26 @@ func ensure_node_is_visible(node: Control) -> void:
 				
 	var visible_height = scroll_container.size.y
 	var node_height = node.size.y
-
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+	
 	if node_height > visible_height:
-		scroll_container.scroll_vertical = scroll_to
+		scroll_tween.tween_property(scroll_container, "scroll_vertical", scroll_to, scroll_time)
 	else:
 		var center_position = scroll_to - (visible_height - node_height) / 2
 		# Clamp the scroll position between min and max values
 		var max_scroll = scroll_container.get_v_scroll_bar().max_value
-		scroll_container.scroll_vertical = clamp(center_position, 0, max_scroll)
-
+		scroll_tween.tween_property(scroll_container, "scroll_vertical", clamp(center_position, 0, max_scroll), scroll_time)
 
 
 ## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
-func add_history_item(item: ChatHistoryItem) -> MessageMarkdown:
+func add_history_item(item: ChatHistoryItem, add_as_child: bool = true) -> MessageMarkdown:
 	var msg_node = MessageMarkdown.new_message()
 	msg_node.history_item = item
 	item.rendered_node = msg_node
 
-	add_child(msg_node)
+	if add_as_child:
+		add_child(msg_node)
 
 	#scroll_to_bottom()
 
@@ -158,43 +172,43 @@ func render_items():
 # scroll further the mouse is outside the control
 var _scroll_factor:= 0.0
 var _text_selection:= false
-
-
 # will check if theres open chat tab and apply the scroll factor to selected tab
 func _process(delta: float):
 	if _text_selection: # only if text selection is active for any rich text label
-		scroll_container.scroll_vertical += _scroll_factor*3*delta
+		scroll_container.scroll_vertical += _scroll_factor*(5*delta)
+
 
 func _input(event):
-	if event is InputEventMouseButton: pass
-		# scroll_container.visible = true
-
-	if not event is InputEventMouseMotion: return
-
+	if event is InputEventMouseMotion: 
+		if scroll_container.get_rect().has_point(event.position):
+			_scroll_factor = 0
+			return
+		if ( _text_selection 
+		and scroll_container.global_position.y > get_global_mouse_position().y 
+		or scroll_container.global_position.y + scroll_container.size.y < get_global_mouse_position().y ):
+			if scroll_container.get_local_mouse_position().y > scroll_container.position.y + scroll_container.get_rect().size.y:
+				# scroll factor will be positive number thats difference in
+				# mouse position and bottom of the chat tab
+				_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y 
+			# or above it
+			elif scroll_container.get_local_mouse_position().y < scroll_container.position.y:
+				_scroll_factor = scroll_container.get_local_mouse_position().y
+		return
 	# Check if is text *probably* being currently selected
 	# by checking if mouse is currently pressed
 	# and that mouse is outside of the chat tab control
-
-	if (
-		Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and
-		not scroll_container.get_rect().has_point(scroll_container.get_local_mouse_position())
-		and scroll_container.get_local_mouse_position().x > scroll_container.get_rect().position.x
-		and scroll_container.get_local_mouse_position().x < scroll_container.get_rect().size.x
-	):
-		# mouse is outside of chat tab control
-		# we check if it's under
-		_text_selection = true
-		if scroll_container.get_local_mouse_position().y > scroll_container.get_rect().size.y:
-			# scroll factor will be positive number thats difference in
-			# mouse position and bottom of the chat tab
-			_scroll_factor = scroll_container.get_local_mouse_position().y - scroll_container.get_rect().size.y
-		# or above it
-		else:
-			_scroll_factor = scroll_container.get_local_mouse_position().y
-
-	else:
-		_scroll_factor = 0
-		_text_selection = false
+	
+	elif event is InputEventMouseButton:
+		if (
+			event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed()
+			and scroll_container.get_rect().has_point(scroll_container.get_local_mouse_position())
+			and event.get_action_strength("draw") > 0.2
+		):
+			_text_selection = true
+			_scroll_factor = 0
+		elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
+			_scroll_factor = 0
+			_text_selection = false
 
 
 ## When image is activated, deactivate all other images as only one at the time can be active
@@ -206,3 +220,45 @@ func _on_image_activated(chat_image: ChatImage, active: bool):
 		for c_image: ChatImage in chi.rendered_node.images:
 			if c_image == chat_image: c_image.active = active
 			else: c_image.active = false
+
+
+# Update the existing add_multi_message function
+func add_multi_message(messages: Array) -> MultiMessageContainer:
+	var multi_message_container: MultiMessageContainer = MultiMessageContainer.new()
+	await multi_message_container.ready
+
+	if messages == null or messages.size() < 1:
+		return multi_message_container
+
+	for i in messages:
+		i = i as ChatHistoryItem
+		var msg_node = MessageMarkdown.new_message()
+		msg_node.history_item = i
+		i.rendered_node = msg_node
+		
+		multi_message_container.add_item(msg_node)
+
+	# Connect the message_updated signal
+	multi_message_container.message_updated.connect(
+		func(index: int): 
+			multi_message_updated.emit(multi_message_container, index)
+	)
+
+	add_child(multi_message_container)
+	return multi_message_container
+
+# Add new function to update a specific message in a multi-message container
+func update_multi_message(container: MultiMessageContainer, index: int, new_history_item: ChatHistoryItem) -> void:
+	container.update_message(index, new_history_item)
+
+# Add new function to create a multi-message container from a single message
+func create_multi_message_from(history_item: ChatHistoryItem) -> MultiMessageContainer:
+	var messages = [history_item]
+	return await add_multi_message(messages)
+
+# Add new function to add a message to existing container
+func add_to_multi_message(container: MultiMessageContainer, history_item: ChatHistoryItem) -> void:
+	var msg_node = MessageMarkdown.new_message()
+	msg_node.history_item = history_item
+	history_item.rendered_node = msg_node
+	container.add_item(msg_node)
