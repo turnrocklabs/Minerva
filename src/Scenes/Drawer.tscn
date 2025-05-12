@@ -1,21 +1,20 @@
 [gd_scene load_steps=11 format=3 uid="uid://d2mp2pdnnufm8"]
 
-[ext_resource type="Script" uid="uid://cgbf8yxnoy3hq" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_lx1ul"]
-[ext_resource type="Script" uid="uid://b5a3on4upogyp" path="res://Scripts/Drawer_add_shelf.gd" id="2_fhdnw"]
-[ext_resource type="Script" uid="uid://ckhxefbpsawqp" path="res://Scenes/Drawer_manager.gd" id="2_gr8q8"]
-[ext_resource type="Script" uid="uid://dfx5jx0c4suhd" path="res://Scripts/UI/Views/DrawerTabs.gd" id="3_6nrfe"]
+[ext_resource type="Script" uid="uid://c04kwjcgbeeb7" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_lx1ul"]
+[ext_resource type="Script" uid="uid://bpmwuclohwpd2" path="res://Scripts/Drawer_add_shelf.gd" id="2_fhdnw"]
+[ext_resource type="Script" uid="uid://cny46nwdm5g8d" path="res://Scenes/Drawer_manager.gd" id="2_gr8q8"]
+[ext_resource type="Script" uid="uid://p3524g5d47bb" path="res://Scripts/UI/Views/DrawerTabs.gd" id="3_6nrfe"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="4_krlqx"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_nefrs"]
 [ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/windows/new_thread_popup.tscn" id="5_6nrfe"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="5_6rcta"]
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="6_i8r7k"]
-[ext_resource type="Script" uid="uid://cddhx45uptxa0" path="res://Scripts/UI/Controls/vboxChat.gd" id="7_5gaco"]
+[ext_resource type="Script" uid="uid://ct1ipcgva4nh7" path="res://Scripts/UI/Controls/vboxChat.gd" id="7_5gaco"]
 
 [node name="Drawer" type="Window"]
 position = Vector2i(0, 36)
 size = Vector2i(650, 700)
 script = ExtResource("1_lx1ul")
-metadata/_custom_type_script = "uid://cgbf8yxnoy3hq"
 
 [node name="Drawer_manager" type="Control" parent="."]
 unique_name_in_owner = true
@@ -127,7 +126,6 @@ visible = false
 size = Vector2i(460, 100)
 visible = false
 script = ExtResource("1_lx1ul")
-metadata/_custom_type_script = "uid://cgbf8yxnoy3hq"
 
 [node name="ColorRect" type="ColorRect" parent="CloseActions"]
 anchors_preset = 15
@@ -145,7 +143,6 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 21
 script = ExtResource("7_5gaco")
-metadata/_custom_type_script = "uid://cddhx45uptxa0"
 
 [node name="Label" type="Label" parent="CloseActions/VBoxChat"]
 layout_mode = 2
