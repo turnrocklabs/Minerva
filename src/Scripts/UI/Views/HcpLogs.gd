@@ -10,6 +10,7 @@ func _ready() -> void:
 	super()
 	Core.client.message_received.connect(_on_message_received)
 
+var _received_data: Array[Dictionary] = []
 
 func _on_message_received(msg: Dictionary) -> void:
 
@@ -24,13 +25,9 @@ func _on_message_received(msg: Dictionary) -> void:
 			brief = msg.get("params", {}).get("error", "Unknown error")
 			color = Color.DARK_RED
 		"response":
-			brief = msg.get("params", {}).get("result", {})
 			color = Color.DARK_GREEN
 		"request":
-			brief = msg.get("params", {}).get("data", {})
 			color = Color.DARK_ORANGE
-		_:
-			brief = ""
 
 	var log_line = "%s from %s: %s" % [
 		msg.get("cmd", "NA"),
@@ -44,15 +41,18 @@ func _on_message_received(msg: Dictionary) -> void:
 		color.to_html(),
 		time,
 		log_line,
-		JSON.stringify(msg, "\t"),
+		_received_data.size(),
 	]
+
+	_received_data.append(msg)
 
 	_rich_text_label.append_text(log_string)
 
-	log_fa.store_line("%s - %s" % [time, log_line])
+	log_fa.store_line("%s - %s\n%s" % [time, log_line, JSON.stringify(msg, "\t")])
 
 
 func _on_rich_text_label_meta_clicked(meta: Variant) -> void:
-	_text_edit.text = str(meta)
+	var msg = _received_data[int(meta)]
+	_text_edit.text = JSON.stringify(msg, "\t")
 
 	_text_edit.visible = true
