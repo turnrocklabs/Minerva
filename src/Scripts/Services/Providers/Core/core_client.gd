@@ -369,8 +369,7 @@ func send_message_to_core(message):
 	# print("Sending message: ", json_string)
 	_client.send_text(json_string)
 
-
-func send_message(topic, params: Dictionary) -> String:
+func send_message(topic, data: Dictionary, auth_token: String = "") -> String:
 	var request_id = generate_unique_request_id()
 	var message = {
 		"cmd": "request",
@@ -379,7 +378,8 @@ func send_message(topic, params: Dictionary) -> String:
 		"params": {
 			"client_id": client_id,
 			"request_id": request_id,
-			"data": params
+			"auth": auth_token,
+			"data": data
 		}
 	}
 

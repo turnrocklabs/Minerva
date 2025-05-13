@@ -1,10 +1,10 @@
 [gd_scene load_steps=11 format=3 uid="uid://booxo77json0y"]
 
-[ext_resource type="Script" uid="uid://b02us2hre5m42" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
+[ext_resource type="Script" uid="uid://byhq7f6bjmjjo" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
 [ext_resource type="PackedScene" uid="uid://dcbs3juhmi10w" path="res://Scripts/UI/Controls/service_selection.tscn" id="2_6m13a"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="2_yfedb"]
-[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
+[ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_7voe0"]
 [ext_resource type="PackedScene" uid="uid://ci2nbjiei8up1" path="res://Scenes/windows/hcp_logs.tscn" id="3_nlyvs"]
 [ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="4_0f5nr"]
@@ -14,7 +14,7 @@
 [node name="PreferencesPopup" type="Window"]
 title = "Preferences"
 initial_position = 4
-size = Vector2i(580, 620)
+size = Vector2i(580, 700)
 unresizable = true
 min_size = Vector2i(580, 570)
 script = ExtResource("1_snp1b")
