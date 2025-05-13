@@ -148,7 +148,6 @@ func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteHead
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForHeader
-	#%btnVoiceForHeader.icon = icActive
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
 	SingletonObject.AtT.btnStop = %StopButton3
@@ -157,7 +156,6 @@ func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForNoteTab
-	#%btnVoiceForNoteTab.icon = icActive
 	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 	%AudioStopButton2.visible = true
 	SingletonObject.AtT.btnStop = %AudioStopButton2
@@ -234,18 +232,6 @@ func _input(event):
 			
 				
 				
-
-
-func _on_project_mouse_entered() -> void:
-	print("aaaaaaaaaaaaa")
-
-
-func _on_project_mouse_exited() -> void:
-	pass # Replace with function body.
-
-
-func _on_add_layer_pressed() -> void:
-	pass # Replace with function body.
 
 
 func _on_btn_drawer_pressed() -> void:
