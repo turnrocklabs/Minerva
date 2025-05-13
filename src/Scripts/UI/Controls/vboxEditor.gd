@@ -19,7 +19,7 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 func serialize() -> Array:
 	var editors_serialized: Array[Dictionary] = []
 	var tab_idx:= 0
-	for editor in editor_pane.open_editors():
+	for editor in editor_pane.get_open_editors():
 		var content
 		match editor.type:
 			editor.Type.TEXT:
@@ -49,13 +49,14 @@ func serialize() -> Array:
 static func deserialize(editors_array: Array) -> Array[Editor]:
 	# first clear all open editors
 	#var data: Array = editors_array_dic.get("editors_array")
-	var editor_insts: Array[Editor] = []
+	var editor_instances: Array[Editor] = []
 	for editor_ser in editors_array:
 		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
 		editor_inst.tab_title = editor_ser.get("name")
 		
 		if editor_inst.type == Editor.Type.TEXT:
-			editor_inst.get_node("%CodeEdit").text = editor_ser.get("content")
+			
+			editor_inst.code_edit.text = editor_ser.get("content")
 		elif editor_inst.type == Editor.Type.GRAPHICS:
 			var graphics_editor: GraphicsEditor = editor_inst.get_node("%GraphicsEditor")
 			var counter = 1
@@ -66,17 +67,18 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				image.load_png_from_buffer(buffer)
 				var layer = Layer.create(image, "layer " + str(counter))
 				#layer.texture = texture
-				graphics_editor.loaded_layers.append(layer)
-				counter +=1
+				if graphics_editor != null:
+					graphics_editor.loaded_layers.append(layer)
+					counter +=1
 		
-		editor_insts.append(editor_inst)
+		editor_instances.append(editor_inst)
 	
-	return editor_insts
+	return editor_instances
 
 
 
 func clear_editor_tabs():
-	for editor in editor_pane.open_editors():
+	for editor in editor_pane.get_open_editors():
 		editor.queue_free()
 
 
@@ -90,8 +92,9 @@ func _is_graphics_file(filename: String) -> bool:
 	# If it doesn't match the above, it's not considered a graphics file
 	return false
 
-func _on_open_file(filename:String):
-	open_file(filename)
+func _on_open_files(files: PackedStringArray):
+	for filename in files:
+		open_file(filename)
 	SingletonObject.save_state(false)
 
 
@@ -106,21 +109,11 @@ func _on_open_file(filename:String):
 func open_file(filename: String):
 	## Determine the file type, create a control for that type (CodeEdit/TextureRect)
 	## Then add the new control to the active_container
-
-	# var new_control: Control
-
 	## Determine file type
 	if _is_graphics_file(filename):
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
 		editor_pane.add(Editor.Type.GRAPHICS, filename)
-		# new_control = TextureRect.new()
-		# new_control.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED # keep the image at center
-
-		# var image = Image.load_from_file(filename)
-		# var texture_item = ImageTexture.create_from_image(image)
-		# new_control.texture = texture_item
-
 	else:
 		editor_pane.add(Editor.Type.TEXT, filename)
 		# new_control = CodeEdit.new()
@@ -153,6 +146,7 @@ func _on_new_line_button_pressed() -> void:
 			current_tab.get_node("NoteEditor").add_new_line()
 		else:
 			current_tab.add_new_line()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 func _on_back_space_button_pressed() -> void:
@@ -162,6 +156,7 @@ func _on_back_space_button_pressed() -> void:
 			current_tab.get_node("NoteEditor").delete_chars()
 		else:
 			current_tab.delete_chars()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 func _on_clear_button_pressed():
@@ -171,6 +166,7 @@ func _on_clear_button_pressed():
 			current_tab.get_node("NoteEditor").clear_text()
 		else:
 			current_tab.clear_text()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 func _on_undo_button_pressed():
@@ -180,6 +176,7 @@ func _on_undo_button_pressed():
 			current_tab.get_node("NoteEditor").undo_action()
 		else:
 			current_tab.undo_action()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 func _on_add_file_editor_pressed() -> void:
@@ -191,3 +188,7 @@ func _on_add_graphics_editor_pressed() -> void:
 	SingletonObject.is_graph = true
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)
 	
+
+
+func _on_add_many_new_files_editor_pressed() -> void:
+	%ManyNewFilesDialogWindow.popup()

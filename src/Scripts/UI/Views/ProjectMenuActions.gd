@@ -19,11 +19,14 @@ func _new_project():
 	SingletonObject.initialize_chats(SingletonObject.Chats)
 	SingletonObject.editor_container.clear_editor_tabs() # deserialize empty files list, so it clears everything
 	save_path = ""
-	pass
+	
+	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
+	update_buffer_controls()
 
 
 func open_project(path: = ""):
 	if path.is_empty():
+		%fdgOpenProject.title = "Open a Project File"
 		%fdgOpenProject.popup_centered(Vector2i(800, 600))
 		return
 	
@@ -99,7 +102,7 @@ func save_project():
 
 
 # this function checks if there are unsaved editor panes and saves them
-func save_editorpanes(skip_selecting_items: bool = false):
+func save_editor_panes(skip_selecting_items: bool = false):
 	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
 		# if the state is unsaved or we have unsaved editors open
 	if not SingletonObject.saved_state or unsaved_editors:
@@ -108,8 +111,9 @@ func save_editorpanes(skip_selecting_items: bool = false):
 		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 		item_list.clear()
 		for editor in unsaved_editors:
-			var indx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
-			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(indx)
+			editor
+			var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
+			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(idx)
 			var item_idx = item_list.add_item(tab_title)
 			item_list.set_item_metadata(item_idx, editor)
 		
@@ -171,7 +175,12 @@ func deserialize_project(data: Dictionary):
 
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("default_provider", 0))
-	SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index]
+	if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
+		SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index]
+	else:
+		# Fallback to second defined model, skipping the human provider
+		SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.values()[1]
+
 
 	var chats: Array[ChatHistory] = []
 	for chat_data in data.get("ChatList", []):
@@ -191,6 +200,8 @@ func deserialize_project(data: Dictionary):
 		SingletonObject.editor_pane.Tabs.add_child(editor)
 		var tab_idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
 		SingletonObject.editor_pane.Tabs.set_tab_title(tab_idx, editor.tab_title)
+		if editor.file:
+			SingletonObject.editor_pane.Tabs.set_tab_tooltip(tab_idx, editor.file)
 	
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 
@@ -202,6 +213,8 @@ func deserialize_project(data: Dictionary):
 	var current_chat_tab = data.get("active_chatindex", 0)
 	if SingletonObject.Chats.get_tab_count()-1 >= current_chat_tab:
 		SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
+	
+	update_buffer_controls()
 
 #endregion Serialize/Deserialize Project
 
@@ -230,7 +243,7 @@ func _ready():
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)
-	SingletonObject.SaveOpenEditorTabs.connect( save_editorpanes.bind(true))
+	SingletonObject.SaveOpenEditorTabs.connect( save_editor_panes.bind(true))
 	SingletonObject.UpdateLastSavePath.connect(update_last_save_path)
 
 #region FDG Dialog
@@ -276,7 +289,7 @@ func open_project_given_path(project_path: String) -> int:
 	# Why deferred?
 	# If not some of the deserialized object alter the state after this function ends
 	# even tho we called deserialize above. Probably because the nodes are not added
-	# to the hierarchy untill the idle time, when they call set_state(false).
+	# to the hierarchy until the idle time, when they call set_state(false).
 	# So we just delay this call to that idle time also.
 	SingletonObject.call_deferred("save_state", true)
 	
@@ -288,7 +301,7 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		save_editorpanes()
+		save_editor_panes()
 
 
 func _on_exit_confirmation_dialog_canceled():
@@ -303,3 +316,18 @@ func _on_exit_confirmation_dialog_confirmed():
 func _on_exit_confirmation_dialog_custom_action(action: StringName):
 	if action == "exit":
 		get_tree().quit()
+
+
+func update_buffer_controls() -> void:
+	if SingletonObject.Chats.get_tab_count() > 0:
+		SingletonObject.Chats.buffer_control_chats.hide()
+	else:
+		SingletonObject.Chats.buffer_control_chats.show()
+	if SingletonObject.NotesTab.get_tab_count() > 0:
+		SingletonObject.NotesTab.buffer_control_notes.hide()
+	else:
+		SingletonObject.NotesTab.buffer_control_notes.show()
+	if SingletonObject.editor_pane.Tabs.get_tab_count() > 0:
+		SingletonObject.editor_pane.buffer_control_editor.hide()
+	else:
+		SingletonObject.editor_pane.buffer_control_editor.show()

@@ -84,4 +84,5 @@ func _on_timer_timeout():
 		deleted_tabs.erase(last_deleted_tab_name)
 		
 		# Remove the control from the scene
-		control_to_delete.queue_free()
+		if control_to_delete != null:
+			control_to_delete.queue_free()

@@ -15,6 +15,11 @@ var BASE_URL: String
 
 var provider_name:= "Unknown"
 var model_name:= "Unknown"
+var display_name: String:
+	get:
+		return display_name if not display_name.is_empty() else model_name
+	set(value):
+		display_name = value
 
 ## Model short name to be displayed in the chat message bubble
 var short_name = "NA"
@@ -28,12 +33,12 @@ var active_request: HTTPRequest
 
 #region METHODS TO REIMPLEMENT
 
-# moved chat_response signal to SignletonObject
+# moved chat_response signal to SingletonObject
 
 ## This function will generate the model response for given `prompt`
 ## `additional_params` will be added to the request payload
 func generate_content(_prompt: Array[Variant], _additional_params: Dictionary={}) -> BotResponse:
-	await get_tree().process_frame # This line is just to supress the 'not a coroutine' warning
+	await get_tree().process_frame # This line is just to suppress the 'not a coroutine' warning
 	push_error("generate_content method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
@@ -111,8 +116,10 @@ class RequestResults extends RefCounted:
 ## This function will return array of 
 func make_request(url: String, method: int, body: Variant = "", headers: Array[String]= []) -> RequestResults:
 	# setup request object for the delta endpoint and append API key
-	var http_request = active_request
-	http_request.use_threads = true
+	var http_request = HTTPRequest.new()
+	#http_request.use_threads = true
+	call_deferred("add_child", http_request)
+	await http_request.ready
 
 	if len(API_KEY) != 0:
 		#add_child(http_request)
@@ -129,7 +136,7 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	else:
 		print("HTTPRequest is not part of the scene tree.")
 
-	var error: int
+	var error = FAILED
 
 	if body is PackedByteArray:
 		error = http_request.request_raw(url, headers, method, body)
@@ -138,8 +145,8 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 
 	
 	if error != OK:
-		SingletonObject.ErrorDisplay("Error", "An error occurred during the HTTP request: %s" % error)
-		push_error("An error occurred during the HTTP request: %s" % error)
+		SingletonObject.call_deferred("ErrorDisplay", "Error", "An error occurred during the HTTP request: %s" % error)#ErrorDisplay("Error", "An error occurred during the HTTP request: %s" % error)
+		#push_error("An error occurred during the HTTP request: %s" % error)
 		return RequestResults.from_error("Unexpected error occurred")
 	
 

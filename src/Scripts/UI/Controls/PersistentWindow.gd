@@ -4,8 +4,9 @@ extends Window
 
 
 func _ready():
-	close_requested.connect(hide)
-	exclusive = true
+	if $".".name != "Drawer":
+		close_requested.connect(hide)
+	#exclusive = true
 	transient = true
 
 	var panel = Panel.new()

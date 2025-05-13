@@ -111,7 +111,7 @@ func _StopConverting():
 	# Reset the button and other UI elements
 	btn.disabled = false
 	btn.modulate = Color.WHITE
-	btn.icon = ResourceLoader.load("res://assets/icons/icons8-microphone-24.png")
+	btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
 	if btnStop != null:
 		btnStop.disabled = true
 
@@ -126,8 +126,10 @@ func _on_request_completed(_result, response_code, _headers, body):
 			FieldForFilling.text += " " + transcription
 			btn.disabled = false
 			btn.modulate = Color.WHITE
-			btn.icon = ResourceLoader.load("res://assets/icons/icons8-microphone-24.png")
+			btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+			SingletonObject.transcription_notification_player.play()
 		else:
 			print("Unexpected response format:", response_json)
 	else:
 		print("Error:", response_code, "Response:", body.get_string_from_utf8())
+	SingletonObject.transcription_notification_player.play()

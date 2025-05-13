@@ -1,6 +1,9 @@
 class_name PreferencesPopup
 extends PersistentWindow
 
+
+@onready var output_device_button: OptionButton = %OutputDeviceButton
+
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
 	SingletonObject.API_PROVIDER.OPENAI: "openai",
@@ -29,13 +32,13 @@ func _ready():
 	var res_code = config_file.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 	match res_code:
 		ERR_FILE_NOT_FOUND:
-			# populare config file with default settings
+			# popular config file with default settings
 			config_file.set_value("API KEYS", "google_vertex", "")
 			config_file.set_value("API KEYS", "anthropic", "")
 			config_file.set_value("API KEYS", "openai", "")
 
 			config_file.set_value("USER", "first_name", "Not")
-			config_file.set_value("USER", "last_name", "Avaivable")
+			config_file.set_value("USER", "last_name", "Available")
 	set_field_values()
 	
 	SingletonObject.theme_changed.connect(set_theme_option_menu)
@@ -43,10 +46,17 @@ func _ready():
 	
 	SingletonObject.mic_changed.connect(set_microphone_option_menu)
 	set_microphone_option_menu(SingletonObject.get_microphone())
+	
+	if SingletonObject.config_has_saved_section("Experimental"):
+		var enable_exp: bool = SingletonObject.config_file.get_value("Experimental", "enabled")
+		_on_experimental_check_button_toggled(enable_exp)
+		%ExperimentalCheckButton.button_pressed = enable_exp
+	
+	populate_output_devices_button()
 
 func set_field_values():
 	_fields["first_name"].text = config_file.get_value("USER", "first_name", "Not")
-	_fields["last_name"].text = config_file.get_value("USER", "last_name", "Avaivable")
+	_fields["last_name"].text = config_file.get_value("USER", "last_name", "Available")
 	
 	_fields["google_vertex"].text = config_file.get_value("API KEYS", "google_vertex", "")
 	_fields["anthropic"].text = config_file.get_value("API KEYS", "anthropic", "")
@@ -68,6 +78,9 @@ func _on_btn_save_prefs_pressed():
 
 func _on_about_to_popup():
 	set_field_values()
+	theme_option_button.selected = SingletonObject.get_theme_enum()
+	set_microphone_option_menu(SingletonObject.get_microphone())
+	populate_output_devices_button()
 
 func get_api_key(provider: SingletonObject.API_PROVIDER) -> String:
 	return config_file.get_value("API KEYS", PROVIDERS[provider], "")
@@ -132,3 +145,27 @@ func _on_microphones_item_selected(index: int) -> void:
 	SingletonObject.set_microphone(microphones.get_item_text(index))
 
 #endregion Mic preferences
+
+
+func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
+	#Experimental Features are stored as "Experimental" in config file
+	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
+	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
+	SingletonObject.toggle_experimental.emit(toggled_on)
+
+
+func populate_output_devices_button() -> void:
+	output_device_button.clear()
+	for item in AudioServer.get_output_device_list():
+		output_device_button.add_item(item)
+	
+	var device = SingletonObject.get_output_device()
+	for i in output_device_button.get_item_count():
+		if device == output_device_button.get_item_text(i):
+			output_device_button.select(i)
+			break
+
+
+func _on_output_device_button_item_selected(index: int) -> void:
+	var device: = output_device_button.get_item_text(index)
+	SingletonObject.output_device_changed.emit(device)

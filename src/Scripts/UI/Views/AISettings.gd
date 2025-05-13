@@ -24,7 +24,7 @@ func _ready():
 	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance = script.new()
-		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.model_name], key)
+		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.display_name], key)
 
 
 func _on_provider_option_button_item_selected(index: int):
@@ -65,20 +65,20 @@ func _on_about_to_popup() -> void:
 		%TopPHSlider.value = current_chat_tab_ref.TopP
 		%TopPValueLabel.text = str(current_chat_tab_ref.TopP)
 		
-		%FreqHSlider.value = current_chat_tab_ref.FrecuencyPenalty
-		%FreqPenSliderValueLabel.text = str(current_chat_tab_ref.FrecuencyPenalty)
+		%FreqHSlider.value = current_chat_tab_ref.FrequencyPenalty
+		%FreqPenSliderValueLabel.text = str(current_chat_tab_ref.FrequencyPenalty)
 		
 		%PresenceHSlider.value = current_chat_tab_ref.PresencePenalty
 		%PresPenSliderValueLabel.text = str(current_chat_tab_ref.PresencePenalty)
 		
 
 
-func _on_record_sytem_prompt_button_pressed() -> void:
+func _on_record_system_prompt_button_pressed() -> void:
 	%SystemPromptTextEdit.text = ""
 	SingletonObject.AtT.FieldForFilling = %SystemPromptTextEdit
 	SingletonObject.AtT._StartConverting()
-	SingletonObject.AtT.btn = %RecordSytemPromptButton
-	%RecordSytemPromptButton.modulate = Color(Color.LIME_GREEN)
+	SingletonObject.AtT.btn = %RecordSystemPromptButton
+	%RecordSystemPromptButton.modulate = Color(Color.LIME_GREEN)
 
 
 #region Slider functs
@@ -114,8 +114,8 @@ func update_current_tab_param(param_enum: int, value: float) -> void:
 				current_chat_tab_ref.TopP = value
 				print("TopP: " + str(current_chat_tab_ref.TopP))
 			GPT_params.FreqPenalty:
-				current_chat_tab_ref.FrecuencyPenalty = value
-				print("FrecuencyPenalty: " + str(current_chat_tab_ref.FrecuencyPenalty))
+				current_chat_tab_ref.FrequencyPenalty = value
+				print("FrequencyPenalty: " + str(current_chat_tab_ref.FrequencyPenalty))
 			GPT_params.PresPenalty:
 				current_chat_tab_ref.PresencePenalty = value
 				print("PresencePenalty: " + str(current_chat_tab_ref.PresencePenalty))

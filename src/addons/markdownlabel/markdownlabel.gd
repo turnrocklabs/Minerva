@@ -17,8 +17,8 @@ extends RichTextLabel
 ## @tutorial(Github repository): https://github.com/daenvil/MarkdownLabel
 
 const _ESCAPE_PLACEHOLDER := ";$\uFFFD:%s$;"
-const _ESCAPEABLE_CHARACTERS := "\\*_~`[]()\"<>#-+.!"
-const _ESCAPEABLE_CHARACTERS_REGEX := "[\\\\\\*\\_\\~`\\[\\]\\(\\)\\\"\\<\\>#\\-\\+\\.\\!]"
+const _ESCAPABLE_CHARACTERS := "\\*_~`[]()\"<>#-+.!"
+const _ESCAPABLE_CHARACTERS_REGEX := "[\\\\\\*\\_\\~`\\[\\]\\(\\)\\\"\\<\\>#\\-\\+\\.\\!]"
 
 #region Public:
 ## The text to be displayed in Markdown format.
@@ -118,7 +118,8 @@ func display_text(display_text: String) -> void:
 
 #region Private methods:
 func _update() -> void:
-	text = _convert_markdown(markdown_text)
+	if markdown_text and markdown_text is String and markdown_text.length() > 0:
+		text = _convert_markdown(markdown_text)
 	queue_redraw()
 
 func _set_markdown_text(new_text: String):
@@ -220,7 +221,7 @@ func _convert_markdown(source_text = "") -> String:
 		var _processed_line = line
 		
 		# Escape characters:
-		regex.compile("\\\\"+_ESCAPEABLE_CHARACTERS_REGEX)
+		regex.compile("\\\\"+_ESCAPABLE_CHARACTERS_REGEX)
 		while true:
 			var result := regex.search(_processed_line)
 			if not result:
@@ -543,7 +544,7 @@ func _escape_bbcode(source: String) -> String:
 
 func _escape_chars(_text: String) -> String:
 	var escaped_text = _text
-	for _char in _ESCAPEABLE_CHARACTERS:
+	for _char in _ESCAPABLE_CHARACTERS:
 		if not _char in _escaped_characters_map:
 			_escaped_characters_map[_char] = _escaped_characters_map.size()
 		escaped_text = escaped_text.replacen(_char,_ESCAPE_PLACEHOLDER % _escaped_characters_map[_char])
@@ -551,7 +552,7 @@ func _escape_chars(_text: String) -> String:
 
 func _reset_escaped_chars(_text: String,code:=false) -> String:
 	var unescaped_text := _text
-	for _char in _ESCAPEABLE_CHARACTERS:
+	for _char in _ESCAPABLE_CHARACTERS:
 		if not _char in _escaped_characters_map:
 			continue
 		unescaped_text = unescaped_text.replacen(_ESCAPE_PLACEHOLDER%_escaped_characters_map[_char],"\\"+_char if code else _char)

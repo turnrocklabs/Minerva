@@ -5,10 +5,13 @@ extends PanelContainer
 
 @warning_ignore("unused_signal")
 signal image_active_state_changed(active: bool)
-
+signal created_image_note(index, memory_item_UUID)
 const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 @onready var _save_dialog = %SaveFileDialog as FileDialog
 @onready var _mask_button = %MaskButton as Button
+
+var linked_memory_item: String = ""
+var dict_index: String = ""
 
 @export var image: Image:
 	set(value):
@@ -37,6 +40,12 @@ const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 					_mask_button.visible = image.has_meta("mask")
 			)
 
+func _ready() -> void:
+	
+	%EditButton.visible = SingletonObject.experimental_enabled
+
+
+
 func _resize_image_to_fit(max_width: int, max_height: int):
 	# Get the original size of the image
 	var original_size = Vector2(image.get_width(), image.get_height())
@@ -52,9 +61,12 @@ func _resize_image_to_fit(max_width: int, max_height: int):
 		%TextureRect.texture = ImageTexture.create_from_image(image)
 
 
-static func create(image_: Image) -> ChatImage:
-	var node = _scene.instantiate()
+static func create(image_: Image, image_index: int = 0, memory_item_UUID: String = "") -> ChatImage:
+	var node: ChatImage = _scene.instantiate()
 	node.image = image_
+	if memory_item_UUID != "":
+		node.linked_memory_item = memory_item_UUID
+		node.dict_index = str(image_index)
 	node._resize_image_to_fit(1000, 800)  # Use the same dimensions here
 	return node
 
@@ -71,19 +83,26 @@ func _on_save_file_dialog_file_selected(path: String):
 		)
 
 func _on_edit_button_pressed():
-	var caption_title: String = image.get_meta("caption", "")
-	if caption_title.length() > 15:
-		caption_title = caption_title.substr(0, 15) + "..."
+	#var caption_title: String = image.get_meta("caption", "")
+	#if caption_title.length() > 15:
+		#caption_title = caption_title.substr(0, 15) + "..."
 	SingletonObject.is_masking = true
 	SingletonObject.is_picture = true
-	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, null, caption_title, self)
+	var editor: = SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS, null, "Graphic Note", self)
 	editor.graphics_editor.setup_from_image(image)
 	
 
 
 
 func _on_note_button_pressed():
-	var caption_title: String = image.get_meta("caption", "")
+	#var caption_title: String = image.get_meta("caption", "")
 	#if caption_title.length() > 25:
 		#caption_title = caption_title.substr(0, 25) + "..."
-	SingletonObject.NotesTab.add_image_note(caption_title, image, image.get_meta("caption", ""))
+	if linked_memory_item == "":
+		var return_memory = SingletonObject.NotesTab.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
+		created_image_note.emit(dict_index, return_memory.UUID)
+	else:
+		var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item, image)
+		if return_memory == null:
+			return_memory = SingletonObject.NotesTab.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
+			created_image_note.emit(dict_index, return_memory.UUID)
