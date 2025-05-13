@@ -3,16 +3,18 @@ class_name GraphicsEditor
 extends PanelContainer
 
 signal masking_ended()
+var circle_cursor: =  preload("res://assets/icons/cursor_circle.png")
 
 var Bubble = preload("res://Scenes/CloudControl.tscn")
-#region onready control declarationss
+#region onready control declarations
 @onready var pen_additional_tools: OptionButton = %PenAdditionalTools
 @onready var brushes: OptionButton = %Brushes
 @onready var dialog_clouds: OptionButton = %DialogClouds
 @onready var bubble_radius: HSlider = %BubbleRadius
 @onready var apply_mask_button: Button = %ApplyMaskButton
-@onready var _brush_slider: HSlider = %BrushHSlider
+@onready var _brush_slider: VSlider = %BrushHSlider
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
+@onready var brush_size_text:TextEdit = %BrushSize
 
 @onready var zoom_in_button: Button = %ZoomInButton
 @onready var zoom_out_button: Button = %ZoomOutButton
@@ -33,7 +35,7 @@ var selectedLayer: String
 var selectedIndex: int
 var loaded_layers: Array[Layer]
 var layer_number = 1 #we might not need this variable anymore and just use layers.size()
-var layers_array: Array[Layer] # we put every layer we create here except fot the transpaency layer
+var layers_array: Array[Layer] # we put every layer we create here except fot the transparency layer
 
 var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
 
@@ -44,15 +46,15 @@ var image: Image:
 var drawing:bool = false
 var drawing_brush_active: = true
 var erasing:bool = false
-var clouding:bool = false
+var editing_speech_bubbles:bool = false
 var zoomIn:bool = false
 var zoomOut:bool = false
 
 var view_tool_active: bool = false
 var prev_mouse_position: Vector2
-var transfering:bool = false
-var layer_being_transfered: Layer = null  # Store the layer being transferred
-var active_transfer_button: Button = null  # Store the active butto
+var transferring:bool = false
+var layer_being_transferred: Layer = null  # Store the layer being transferred
+var active_transfer_button: Button = null  # Store the active button
 
 var _rotating: bool = false
 var _rotation_pivot: Vector2 = Vector2.ZERO
@@ -92,6 +94,8 @@ var layer_undo_histories = {} # Dictionary to store undo histories for each laye
 
 
 func _ready():
+	brush_size_text.text = str(brush_size)
+	DisplayServer.cursor_set_custom_image(circle_cursor, DisplayServer.CURSOR_POINTING_HAND, circle_cursor.get_size()/2)
 	if SingletonObject.is_picture:
 		var hbox: HBoxContainer = add_new_pic.get_vbox().get_child(0)
 		hbox.set("theme_override_constants/separation", 14)
@@ -114,9 +118,9 @@ func _ready():
 	
 		# Initialize undo history
 		#undo_history.append(_draw_layer.image.duplicate())
-		SingletonObject.is_Brush = false
+		SingletonObject.is_brush = false
 		SingletonObject.is_square = false
-		SingletonObject.is_cryon = false
+		SingletonObject.is_crayon = false
 	
 		_can_resize = true 
 		
@@ -173,10 +177,18 @@ func _calculate_resized_dimensions(original_size: Vector2, max_size: Vector2) ->
 
 
 func setup_from_image(image_: Image):
+	if image_ == null: return
 	var new_size = _calculate_resized_dimensions(image_.get_size(), Vector2(%CenterContainer.size))
 	var size_x = clamp(new_size.x, 1, INF)
 	var size_y = clamp(new_size.y, 1, INF)
-	image_.resize( new_size.x, new_size.y)
+	
+	if size_x != 1 and size_y != 1: 
+		image_.resize(size_x, size_y)
+	else:
+		if %CenterContainer.size.x > 0 and %CenterContainer.size.y > 0:
+			image_.resize(%CenterContainer.size.x, %CenterContainer.size.y)
+		
+	
 
 	for ch in _layers_container.get_children(): 
 		ch.queue_free()
@@ -196,6 +208,7 @@ func setup_from_image(image_: Image):
 
 	layer_undo_histories[_draw_layer.name] = []
 	layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
+	
 	
 # Similar updates to the function setup_from_created_image
 func setup_from_created_image(image_: Image):
@@ -299,13 +312,13 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 
 ## Checks if given pixel is within the image and draws it using `set_pixelv`
 func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int):
-	if SingletonObject.is_Brush:
+	if SingletonObject.is_brush:
 		Brush_draw(target_image, pos, color, point_size)
 		
 	elif SingletonObject.is_square:
 		draw_square(target_image, pos, color, point_size)
 		
-	elif SingletonObject.is_cryon:
+	elif SingletonObject.is_crayon:
 		Crayon_draw(target_image, pos, color, point_size)
 		
 	else:
@@ -315,29 +328,38 @@ func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int
 					target_image.set_pixelv(pixel, _background_images[_draw_layer].get_pixelv(pixel))  
 				elif not erasing:
 					target_image.set_pixelv(pixel, color) 
-				
+
+
 func _gui_input(event: InputEvent):
 	var active_layer = _mask_layer if _masking else _draw_layer
 	var layer_local_pos
 	if active_layer:
-		layer_local_pos = active_layer.get_local_mouse_position()
+		# Get global mouse position first
+		var global_mouse_pos = get_global_mouse_position()
+
+		# Transform to layers container local position
+		var layers_container_local_pos = _layers_container.get_global_transform().affine_inverse() * global_mouse_pos
+
+		# Transform from layers container local position to active layer local position.
+		layer_local_pos = active_layer.get_global_transform().affine_inverse() * _layers_container.get_global_transform() * layers_container_local_pos
+
 	else: 
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		
 		#Get color at clicked position and Update the ColorPickerButton
-		color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
-		
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool and drawing_brush_active:
-		flood_fill(active_layer.image, layer_local_pos, brush_color) 
-		active_layer.update()
-		fill_tool = false
-		is_image_saved = false
-		SingletonObject.UpdateUnsavedTabIcon.emit()
-		%Brushes.select(0)
-		%PenAdditionalTools.visible = true
-	
-	
+		if active_layer:
+			color_picker_button.color = active_layer.image.get_pixelv(layer_local_pos)
+
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed and fill_tool:
+		if active_layer:
+			flood_fill(active_layer.image, layer_local_pos, brush_color) 
+			active_layer.update()
+			fill_tool = false
+			is_image_saved = false
+			SingletonObject.UpdateUnsavedTabIcon.emit()
+			%Brushes.select(0)
+			%PenAdditionalTools.visible = true
+
 	# Early exit if view tool is active
 	if view_tool_active:
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
@@ -350,37 +372,39 @@ func _gui_input(event: InputEvent):
 			if event.pressed:
 				prev_mouse_position = event.position
 			return
-		
-	if _rotating and not null:
-		var hbox_index = %LayersList.get_children().find(active_transfer_button.get_parent())
-		var layer = _layers_container.get_child(hbox_index)
 
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+	if _rotating:
+		var hbox_index = %LayersList.get_children().find(active_transfer_button.get_parent())
+		var layer = _layers_container.get_child(hbox_index) if hbox_index != -1 else null
+
+		if layer and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:  
 				_rotation_pivot = _layers_container.get_local_mouse_position()
 				layer.pivot_offset = _rotation_pivot - layer.position
 
-		elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT: 
+		elif layer and event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT: 
 			var angle = (_layers_container.get_local_mouse_position() - _rotation_pivot).angle()
 			layer.rotation = angle
 
 		elif event is InputEventKey and event.pressed and event.keycode == KEY_ENTER:
 			_rotating = false
-			active_transfer_button.modulate = Color.WHITE
+			if active_transfer_button:
+				active_transfer_button.modulate = Color.WHITE
 			active_transfer_button = null
-			layer.pivot_offset = Vector2.ZERO
+			if layer:
+				layer.pivot_offset = Vector2.ZERO
 		return
 
-	if layer_being_transfered: 
+	if layer_being_transferred: 
 		if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_LEFT:
 			var current_mouse_position = _layers_container.get_local_mouse_position()
-			layer_being_transfered.position = current_mouse_position - prev_mouse_position
+			layer_being_transferred.position = current_mouse_position - prev_mouse_position
 			return
 		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				prev_mouse_position = _layers_container.get_local_mouse_position() - layer_being_transfered.position 
+				prev_mouse_position = _layers_container.get_local_mouse_position() - layer_being_transferred.position 
 			else: 
-				layer_being_transfered = null 
+				layer_being_transferred = null 
 			return
 
 	if zoomIn or zoomOut:
@@ -392,55 +416,43 @@ func _gui_input(event: InputEvent):
 
 			_layers_container.scale *= Vector2.ONE * zoom_factor
 			_layers_container.position += zoom_offset
-			
+
 		if event is InputEventMouseMotion and %MgIcon.visible == true:
-			# Correctly calculate the position relative to the zoom level and container position
 			var local_position_temp = _layers_container.get_local_mouse_position()
 			var global_position_temp = _layers_container.position + local_position_temp * _layers_container.scale
 			%MgIcon.offset = Vector2(-20,20)
 			%MgIcon.position = global_position_temp
 			drawing = false
 			Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND)
-			
-			
-	if clouding and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		# 1. Create a new layer
+
+
+	if editing_speech_bubbles and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		is_image_saved = false
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 		var new_layer_image = Image.create(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8) 
-		new_layer_image.fill(Color(0, 0, 0, 0)) # Fill with transparent
+		new_layer_image.fill(Color(0, 0, 0, 0)) 
 		var new_layer = _create_layer(new_layer_image)
 		_background_images[new_layer] = new_layer_image.duplicate()
-
-		# 2. Add layer button to UI 
 		layers_buttons()
-
-		# 3. Instantiate and add the bubble to the NEW layer
 		var new_bubble = Bubble.instantiate()
 		new_layer.add_child(new_bubble)
 		new_bubble.move(new_layer.get_local_mouse_position())
 		_if_cloud(3,0)
-		clouding = false
+		editing_speech_bubbles = false
 
 	# Handle drawing actions
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
+			if event.pressed and drawing_brush_active:
 				drawing = true
 				_draw_begin = true
 			else:
 				drawing = false
-				
-			#layer_undo_histories[_draw_layer.name].append(_draw_layer.image.duplicate())
 
 	if event is InputEventMouseMotion and drawing:
 		is_image_saved = false
 		SingletonObject.UpdateUnsavedTabIcon.emit()
-		# Get mouse position relative to the active layer
-		layer_local_pos = active_layer.get_global_transform().affine_inverse() * get_global_transform_with_canvas() * event.position
-
-		# --- No manual offset calculation needed here ---
-		if %LayersList.get_child_count() > 0:
+		if active_layer:
 			if _draw_begin:  
 				_last_pos = layer_local_pos 
 				image_draw(active_layer.image, layer_local_pos, brush_color, brush_size * event.pressure)
@@ -449,15 +461,21 @@ func _gui_input(event: InputEvent):
 			if _last_pos.x != layer_local_pos.x or _last_pos.y != layer_local_pos.y:
 				for line_pixel in bresenham_line(_last_pos, layer_local_pos):
 					image_draw(active_layer.image, line_pixel, brush_color, brush_size * event.pressure)
+					
 
 		_last_pos = layer_local_pos 
 		active_layer.update() 
+		
+		
+		
+		
+func _on_h_slider_value_changed(value: float) -> void:
+	brush_size = int(value)
+	brush_size_text.text = str(brush_size)
+	brush_size_text.set_caret_column(brush_size_text.text.length())
+	if brush_size == 0:
+		%BrushSize.text = "1"
 	
-
-
-
-func _on_h_slider_value_changed(value):
-	brush_size = value
 
 func _on_mask(toggled_on: bool):
 	_masking = toggled_on
@@ -468,7 +486,7 @@ func _on_mask(toggled_on: bool):
 	if toggled_on:
 		# Create a temporary mask for background and foreground
 		#var bgd_img = Image.new() # no need for creating an image like this we are creating it with create_empty
-		# Image.create() is depricated use Image.create_empty() instead
+		# Image.create() is deprecated use Image.create_empty() instead
 		var bgd_img = Image.create_empty(_draw_layer.image.get_width(), _draw_layer.image.get_height(), false, Image.FORMAT_RGBA8)
 		bgd_img.fill(masking_color)
 		var background_mask_layer = _create_layer(bgd_img, INTERNAL_MODE_BACK)
@@ -487,7 +505,7 @@ func _on_mask(toggled_on: bool):
 		_mask_layer = null
 		_draw_layer.visible = true
 
-#make it like signal,probably through SingeltonObject
+#make it like signal,probably through SingletonObject
 func _on_apply_mask_button_pressed():
 	if _mask_layer and _draw_layer:
 		# Use the mask layer image to mask the draw layer image
@@ -544,7 +562,7 @@ func _on_add_layer_pressed():
 	var new_layer_size = previous_layer.image.get_size()
 	
 	create_image(new_layer_size)
-
+	
 func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	# Find the index of the HBoxContainer within LayersList
 	var hbox_index = %LayersList.get_children().find(Hbox)
@@ -564,7 +582,7 @@ func RemoveLayer(Hbox:HBoxContainer, _index:int):
 	erasing = false
 	view_tool_active = false
 	_on_mask(false)
-	clouding = false
+	editing_speech_bubbles = false
 	zoomIn =false
 	zoomOut = false
 	_rotating = false
@@ -613,34 +631,36 @@ func selectButton(btn: Button, Hbox: HBoxContainer):
 
 func LayerVisible(Hbox: HBoxContainer):
 	var hbox_index = %LayersList.get_children().find(Hbox)
-	var VisibleOfBox = _layers_container.get_child(hbox_index)
-	VisibleOfBox.visible = !VisibleOfBox.visible
+	var layer = _layers_container.get_child(hbox_index)
+	
+	# Toggle visibility of the layer
+	layer.visible = !layer.visible
 
-	# Get the VisibleButton from the HBoxContainer
-	var VisibleButton = Hbox.get_child(1)  # Assuming it's the second child
-
-	# Toggle the icon based on visibility
-	if VisibleOfBox.visible:
-		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")  # Replace with your visible icon path
+	# Update the visibility button icon
+	var VisibleButton = Hbox.get_child(1)
+	if layer.visible:
+		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")
 	else:
-		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_not_visible.png")   # Replace with your hidden icon path
+		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_not_visible.png")
 
+	# Ensure the layer's size and content remain unchanged
+	layer.custom_minimum_size = layer.image.get_size()
+	layer.update()
 
 func _on_brushes_item_selected(index):
 	# drawing if the index is 0
 	drawing_brush_active = (index == 0) or (index == 1)
-
+	
 	#off other tools not drawing
 	%MgIcon.visible = false
 	erasing = false
 	view_tool_active = false
 	_on_mask(false)
-	clouding = false
+	editing_speech_bubbles = false
 	zoomIn = false
 	zoomOut = false
 	zoom_in_button.modulate = Color.WHITE
 	zoom_out_button.modulate = Color.WHITE
-	
 	dialog_clouds.hide()
 	%PenAdditionalTools.visible = false
 	%ApplyMaskButton.visible = false
@@ -655,7 +675,7 @@ func _on_brushes_item_selected(index):
 			%ApplyMaskButton.visible = true
 		3:
 			dialog_clouds.show()
-			clouding = true
+			editing_speech_bubbles = true
 			#%ApplyTail.visible = true
 		4:
 			fill_tool = true
@@ -665,7 +685,7 @@ func _on_option_button_item_selected(index):
 	erasing = false
 	view_tool_active = false
 	_on_mask(false)
-	clouding = true
+	editing_speech_bubbles = true
 	
 	%MgIcon.visible = false
 	zoomIn = false
@@ -678,7 +698,7 @@ func _on_option_button_item_selected(index):
 		0:
 			SingletonObject.CloudType = CloudControl.Type.ELLIPSE
 		1:
-			SingletonObject.CloudType = CloudControl.Type.CLOUD
+			SingletonObject.CloudType = CloudControl.Type.SPEECH_BUBBLE
 		2:
 			SingletonObject.CloudType = CloudControl.Type.RECTANGLE
 
@@ -688,7 +708,7 @@ func _on_hand_pressed() -> void:
 	
 	erasing = false
 	_on_mask(false)
-	clouding = false
+	editing_speech_bubbles = false
 	zoomIn = false
 	zoomOut = false
 	dialog_clouds.hide()
@@ -704,11 +724,17 @@ func _on_hand_pressed() -> void:
 		%MgIcon.visible = false
 
 func _on_zoom_in_pressed() -> void:
+	# Store the visibility state of ALL layers
+	var visibility_states = {}
+	for layer in _layers_container.get_children():
+		if layer is Layer or layer is TextureRect:  # Include all relevant layer types
+			visibility_states[layer] = layer.visible
+
 	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
 	view_tool_active = false
-	clouding = false
+	editing_speech_bubbles = false
 	zoomOut = false 
 	dialog_clouds.hide()
 
@@ -721,13 +747,23 @@ func _on_zoom_in_pressed() -> void:
 	else:
 		zoom_in_button.modulate = Color.WHITE 
 		%MgIcon.visible = false
-	
+
+	# Restore the visibility state of ALL layers
+	for layer in visibility_states:
+		layer.visible = visibility_states[layer]
+
 func _on_zoom_out_pressed() -> void:
+	# Store the visibility state of ALL layers
+	var visibility_states = {}
+	for layer in _layers_container.get_children():
+		if layer is Layer or layer is TextureRect:  # Include all relevant layer types
+			visibility_states[layer] = layer.visible
+
 	# Toggle other tools off
 	erasing = false
 	_on_mask(false)
 	view_tool_active = false
-	clouding = false
+	editing_speech_bubbles = false
 	zoomIn = false 
 	dialog_clouds.hide()
 
@@ -741,30 +777,34 @@ func _on_zoom_out_pressed() -> void:
 		zoom_out_button.modulate = Color.WHITE 
 		%MgIcon.visible = false
 
-func _on_mg_pressed() -> void:
-	# Define your default size here 
-	var default_size := Vector2(800, 800) 
+	# Restore the visibility state of ALL layers
+	for layer in visibility_states:
+		layer.visible = visibility_states[layer]
 
-	# Iterate through each layer in the container
+func _on_mg_pressed() -> void:
+	# Reset the scale of the layers container
+	_layers_container.scale = Vector2.ONE
+
+	## Calculate the correct position to reset the offset
+	#var current_scale = _layers_container.scale
+	#var current_position = _layers_container.position
+
+	# Reset the position to account for the accumulated offset
+	_layers_container.position = Vector2.ZERO
+
+	# Optionally, reset the position of each layer to their original positions
 	for layer in _layers_container.get_children():
 		if layer is Layer:
-			# Resize the layer's image 
-			layer.image.resize(default_size.x, default_size.y, Image.INTERPOLATE_BILINEAR)
+			layer.position = Vector2.ZERO
 
-			# Update the layer to reflect the changes
-			layer.update()
-			
+	# Hide the magnifying glass icon and reset zoom states
 	%MgIcon.visible = false
 	zoomIn = false
 	zoomOut = false
-	
-	zoom_in_button.modulate = Color.WHITE
-	zoom_out_button.modulate = Color.WHITE 
 
-	# Optionally, reset the zoom and position of the LayersContainer 
-	_layers_container.scale = Vector2.ONE
-	_layers_container.position = Vector2.ZERO
-	
+	# Reset button colors
+	zoom_in_button.modulate = Color.WHITE
+	zoom_out_button.modulate = Color.WHITE
 	
 func _transfer(Hbox: HBoxContainer) -> void:
 	var hbox_index = %LayersList.get_children().find(Hbox)
@@ -775,7 +815,7 @@ func _transfer(Hbox: HBoxContainer) -> void:
 		# Deactivate if the same button is pressed again
 		active_transfer_button.modulate = Color.WHITE
 		active_transfer_button = null
-		layer_being_transfered = null 
+		layer_being_transferred = null 
 	else:
 		# Deactivate the previous button
 		if active_transfer_button:
@@ -788,7 +828,7 @@ func _transfer(Hbox: HBoxContainer) -> void:
 		# Activate the new button
 		active_transfer_button = transfer_button
 		active_transfer_button.modulate = Color.LIME_GREEN
-		layer_being_transfered = _layers_container.get_child(hbox_index)
+		layer_being_transferred = _layers_container.get_child(hbox_index)
 		prev_mouse_position = _layers_container.get_local_mouse_position()
 		
 		
@@ -842,7 +882,7 @@ func _scale(Hbox: HBoxContainer) -> void:
 		active_transfer_button = scale_button
 		active_transfer_button.modulate = Color.LIME_GREEN 
 		
-func _on_arrowleft_pressed() -> void:
+func _on_arrow_left_pressed() -> void:
 	_resize_layers(true, true)  # Increase width by 10%, center horizontally
 	# --- Move the selected layer after resizing ---
 	if _draw_layer is Layer:
@@ -984,21 +1024,21 @@ func _on_add_new_pic_file_selected(path: String) -> void:
 	add_new_pic.hide()  # Close the file dialog
 
 
-func _on_add_imagelayer_pressed() -> void:
+func _on_add_image_layer_pressed() -> void:
 	add_new_pic.show()
 
 
 func _on_additional_tools_item_selected(index: int) -> void:
-	SingletonObject.is_cryon = false
-	SingletonObject.is_Brush = false
+	SingletonObject.is_crayon = false
+	SingletonObject.is_brush = false
 	SingletonObject.is_square = false
 	match index:
 		1:
-			SingletonObject.is_Brush = true
+			SingletonObject.is_brush = true
 		2:
 			SingletonObject.is_square = true
 		3:
-			SingletonObject.is_cryon = true
+			SingletonObject.is_crayon = true
 
 
 func Brush_draw(target_image: Image, pos: Vector2, color: Color, radius: int):
@@ -1117,10 +1157,10 @@ func _if_cloud(whatToUse: int, bubble_size: float):
 						cloud_control.circle_radius = bubble_size
 						cloud_control.set_circle_radius(bubble_size)
 					if whatToUse == 2:
-						cloud_control.CancleEditing()
+						cloud_control.CancelEditing()
 					if whatToUse == 4:
 						cloud_control.ApplyEditing()
-					if cloud_control.type == CloudControl.Type.CLOUD:
+					if cloud_control.type == CloudControl.Type.SPEECH_BUBBLE:
 						%ApplyTail.visible = true
 						bubble_radius.visible = true
 					else:  # Ellipse or Rectangle
@@ -1134,10 +1174,10 @@ func _if_cloud(whatToUse: int, bubble_size: float):
 				
 
 
-func _on_buble_radius_value_changed(value: float) -> void:
+func _on_bubble_radius_value_changed(value: float) -> void:
 	_if_cloud(1,value)
 
-# this funciton is for hidint the layers pop up when clicking out of it
+# this function is for hiding the layers pop up when clicking out of it
 func _input(event: InputEvent) -> void:
 	if popup_panel.visible:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -1151,8 +1191,53 @@ func _input(event: InputEvent) -> void:
 				
 			var popup_size_limit = layers_menu.global_position + layers_menu.size
 			
-			# we dont really need to create this variales but the if statement if wvery lng otherwise
+			# we don't really need to create these variables but the if statement if very long otherwise
 			var layers_x: int = int(layers_menu.global_position.x)
 			var layers_y: int = int(layers_menu.global_position.y)
 			if (event_x < layers_x or event_x > popup_size_limit.x) or (event_y < layers_y or event_y > popup_size_limit.y):
 				popup_panel.hide()
+
+
+func _on_scroll_container_mouse_exited() -> void:
+	DisplayServer.cursor_set_shape(DisplayServer.CURSOR_ARROW)
+
+
+func _on_brush_size_text_changed() -> void:
+	# Remove any non-numeric characters
+	var new_text = ""
+	for character in brush_size_text.text:
+		if character.is_valid_int():
+			new_text += character
+	
+	# Update the text to only contain numbers
+	brush_size_text.text = new_text
+	brush_size_text.set_caret_column(new_text.length())  # Move cursor to the end
+
+	# Limit the text length to 2 characters
+	if brush_size_text.text.length() > 2:
+		brush_size_text.text = brush_size_text.text.substr(0, 2)
+		brush_size_text.set_caret_column(2)
+	
+	# Ensure the number is within the range 0-15 and update brush_size
+	if brush_size_text.text.is_valid_int():
+		var value = brush_size_text.text.to_int()
+		if value < 0:
+			brush_size = 0
+			brush_size_text.text = "0"
+			brush_size_text.set_caret_column(1)
+		elif value > 15:
+			brush_size = 15
+			brush_size_text.text = "15"
+			brush_size_text.set_caret_column(2)
+		elif value == 0:
+			brush_size_text.text = "1"
+		else:
+			brush_size = value  # Update brush_size with the valid value
+	else:
+		# If the text is not a valid integer, clear it and set brush_size to 0
+		brush_size = 0
+		brush_size_text.text = ""
+		brush_size_text.set_caret_column(0)
+	
+	# Debug: Print the updated brush_size
+	print("Updated brush_size: ", brush_size)

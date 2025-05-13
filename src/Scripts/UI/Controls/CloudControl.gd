@@ -9,7 +9,7 @@ const POINT_RADIUS: = 10
 
 enum Type {
 	ELLIPSE,
-	CLOUD,
+	SPEECH_BUBBLE,
 	RECTANGLE,
 }
 
@@ -19,12 +19,20 @@ var text: String
 
 
 var circle_radius
+
+## Offset from the top left corner
+const MOVER_OFFSET = Vector2(30, 0)
+
 @onready var _lower_resizer: Control = %LowerBottomResizer
 @onready var _upper_resizer: Control = %UpperLeftResizer
+@onready var _mover: Control = %Mover
 @onready var _text_edit: TextEdit = %TextEdit
 @onready var _bezier_curve: BezierCurve = %BezierCurve
 
+## To move the whole speech bubble
+var _moving := false
 
+## To move points
 var _drag_start_position: Vector2
 var _dragging: = false:
 	set(value):
@@ -41,12 +49,25 @@ var font_size: = ThemeDB.fallback_font_size
 ## When not in editing mode the scene is rendered in final form.
 var editing: = true:
 	set(value):
-		editing = value
-		# _text_edit.visible = editing
-		# _lower_resizer.visible = editing
-		# _upper_resizer.visible = editing
-		_bezier_curve.visible = editing
+		_text_edit.visible = value
+		_lower_resizer.visible = value
+		_upper_resizer.visible = value
+		_mover.visible = value
+		_bezier_curve.visible = value
 
+		# if value changed
+		if editing != value:
+			editing = value
+
+			# only capture mouse when editing
+			mouse_filter = MOUSE_FILTER_PASS if value else MOUSE_FILTER_IGNORE
+			var layer = get_parent()
+			if is_instance_valid(layer) and layer is Layer:
+				layer.mouse_filter = MOUSE_FILTER_PASS if value else MOUSE_FILTER_IGNORE
+
+			# ask other bubbles to redraw themselves
+			for other_bubble in _find_other_bubbles():
+				other_bubble.queue_redraw()
 
 ## There are two control nodes that are used for resizing the speech bubble react.[br]
 ## This variable hold the active one during the drag.
@@ -56,8 +77,8 @@ var _active_resizer: Control
 ## The type of the tail determines the way it's rendered on screen.
 var tail: Tail
 
-## Bounding rectange which contains the [member ellipse] that defines the speech bubble.
-# var get_rect(): Rect2
+## Bounding rectangle which contains the [member ellipse] that defines the speech bubble.
+var _bubble_rect: Rect2
 
 ## Polygon that defines the speech bubble
 var bubble_poly: PackedVector2Array
@@ -73,6 +94,7 @@ static func create(type_: Type = Type.ELLIPSE) -> CloudControl:
 
 func set_bounding_rect(rect: Rect2) -> void:
 	_upper_resizer.position = rect.position
+	_mover.position = rect.position + MOVER_OFFSET
 	_lower_resizer.position = rect.end
 	queue_redraw()
 
@@ -83,21 +105,22 @@ func move(to: Vector2):
 
 	_upper_resizer.position = to + current_offset / 2
 	_lower_resizer.position = to - current_offset / 2
-	
-
+	_mover.position = _upper_resizer.position + MOVER_OFFSET
 
 # region Tails
 
 func _create_tail() -> PackedVector2Array:
 
-	# Take the resizer control positions to create the rectange that will contain the speech bubble
-	# var rect_start: = _upper_resizer.position + _upper_resizer.pivot_offset
-	# var rect_size: = _lower_resizer.position + _lower_resizer.pivot_offset - rect_start
+	# Take the resizer control positions to create the rectangle that will contain the speech bubble
+	var rect_start: = _upper_resizer.position + _upper_resizer.pivot_offset
+	var rect_size: = _lower_resizer.position + _lower_resizer.pivot_offset - rect_start
+
+	_bubble_rect = Rect2(rect_start, rect_size)
 
 	if type == Type.ELLIPSE:
-			return create_ellipse(get_rect())
-	elif type == Type.CLOUD:
-			return cloud_bubble(get_rect())
+			return create_ellipse(_bubble_rect)
+	elif type == Type.SPEECH_BUBBLE:
+			return create_speech_bubble(_bubble_rect)
 	elif type == Type.RECTANGLE:
 			return PackedVector2Array([
 				get_rect().position,
@@ -130,6 +153,9 @@ class Tail:
 	func add_point(point) -> void:
 		points.append(point)
 
+	func remove_point(point) -> void:
+		points.erase(point)
+
 	## Draws the final form of the tail.
 	func draw() -> void:
 		push_error("NotImplemented: method draw of object %s is not implemented" % get_script().resource_path.get_file())
@@ -141,8 +167,8 @@ class Tail:
 	func draw_editing() -> void:
 		push_error("NotImplemented: method draw_editing of object %s is not implemented" % get_script().resource_path.get_file())
 
-	## Returns [memeber Tail.points] where Vector2's are untouched
-	## and integers are convertes to Vector2 in the context of the [member CloudControl.bubble_poly].
+	## Returns [member Tail.points] where Vector2's are untouched
+	## and integers are converted to Vector2 in the context of the [member CloudControl.bubble_poly].
 	func get_points_vector_array() -> PackedVector2Array:
 		var points_: = PackedVector2Array()
 		
@@ -210,6 +236,12 @@ class CurvedTriangleTail:
 		
 		var position = point if point is Vector2 else control.bubble_poly[point]
 		control._bezier_curve.create_point(position)
+
+	func remove_point(point):
+		var position = point if point is Vector2 else control.bubble_poly[point]
+		control._bezier_curve.destroy_point(position)
+
+		super(point)
 	
 	func get_polygon():
 		var poly: = PackedVector2Array()
@@ -269,8 +301,8 @@ class BubbleTail:
 # Request redraw in response to changes
 func _ready():
 	circle_radius = 50
-	if SingletonObject.CloudType == Type.CLOUD:
-		type = Type.CLOUD
+	if SingletonObject.CloudType == Type.SPEECH_BUBBLE:
+		type = Type.SPEECH_BUBBLE
 	elif SingletonObject.CloudType == Type.ELLIPSE:
 		type = Type.ELLIPSE
 	elif SingletonObject.CloudType == Type.RECTANGLE:
@@ -299,17 +331,32 @@ func _draw() -> void:
 	# Create a ellipse thats contained within the given rectangle
 	bubble_poly = _create_tail()
 	
+	# Find other bubbles outside the for loop
+	var other_bubbles := _find_other_bubbles()
+
 	var polys := Geometry2D.merge_polygons(bubble_poly, tail.get_polygon())
-	
 	for poly in polys:
-		draw_colored_polygon(Geometry2D.offset_polygon(poly, 3)[0], Color.BLACK)
+		# *** Draw outline of the bubble ***
+
+		# Expand bubble and tail combined shape by 3 pixels
+		var outline = Geometry2D.offset_polygon(poly, 3)[0]
+
+		# Remove other bubbles' bubble_poly
+		for other_bubble in other_bubbles:
+			if !other_bubble.editing:
+				outline = Geometry2D.clip_polygons(outline, other_bubble.bubble_poly)[0]
+
+		# Fraw outline
+		draw_colored_polygon(outline, Color.BLACK)
+
+		# *** Fill inside in the bubble ***
 		draw_colored_polygon(poly, Color.WHITE)
 		
 	# draw_polyline(ellipse, Color.BLACK, 7, true)
 	
 	# tail.draw()
 	
-	# Get the rectangle thats completly within the speech bubble ellipse
+	# Get the rectangle thats completely within the speech bubble ellipse
 	# and defines the area there text can be in
 	var text_rect: = get_rectangle_in_ellipse(get_rect())
 	
@@ -374,11 +421,12 @@ func _draw_editing_tail() -> void:
 
 # region Input Handling
 
-# func _get_drag_data(at_position: Vector2) -> Variant:
-# 	if (
-# 		_upper_resizer.get_rect().has_point(at_position) or
-# 		_lower_resizer.get_rect().has_point(at_position)
-# 	): return null
+func _get_drag_data(at_position: Vector2) -> Variant:
+	if (
+		_upper_resizer.get_rect().has_point(at_position) or
+		_lower_resizer.get_rect().has_point(at_position) or
+		_mover.get_rect().has_point(at_position)
+	): return null
 
 # 	# Check if we pressed on existing tail point
 # 	var points_arr: = tail.get_points_vector_array()
@@ -404,8 +452,14 @@ func _draw_editing_tail() -> void:
 ## Index of point inside the [member Tail.points] that the user is currently dragging
 var _drag_point_idx: = -1
 
-func handle_event(event: InputEvent) -> void:
-	return
+func _gui_input(event: InputEvent) -> void:
+	if _dragging and event is InputEventMouseMotion and event.pressure:
+		_lower_resizer.position += event.relative
+		_upper_resizer.position += event.relative
+		_mover.position += event.relative
+	else:
+		_dragging = false
+
 	if not editing: return
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -417,6 +471,7 @@ func handle_event(event: InputEvent) -> void:
 		else:
 			_active_resizer = null
 			_drag_point_idx = -1
+			_moving = false
 
 			# if the mouse is released, check if we are on same place or we dragged the mouse
 
@@ -424,7 +479,8 @@ func handle_event(event: InputEvent) -> void:
 				# if the mouse is pressed outside of the resizers
 				if not (
 					_upper_resizer.get_rect().has_point(event.position) or
-					_lower_resizer.get_rect().has_point(event.position)
+					_lower_resizer.get_rect().has_point(event.position) or
+					_mover.get_rect().has_point(event.position)
 				):
 					
 					# if we didn't click on any points, add a new one
@@ -438,13 +494,49 @@ func handle_event(event: InputEvent) -> void:
 						if event.position.distance_to(closest_point) < 60 and not Input.is_physical_key_pressed(KEY_SHIFT):
 							# var ratio: = get_closest_point_distance_ratio(bubble_poly, closest_point)
 							tail.add_point(idx)
-						else:
+						elif tail.points.size()>0: # don't allow the first point to be outside the ellipse
 							tail.add_point(event.position)
 
 			queue_redraw()
 			accept_event()
-	
-	if event is InputEventMouseMotion:			
+
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.is_pressed() and tail.points.size()>0:
+		var points = tail.get_points_vector_array()
+		var closest_idx = 0
+		var min_distance = points[closest_idx].distance_to(event.position)
+		for idx in tail.points.size():
+			var distance = points[idx].distance_to(event.position)
+			if distance < min_distance:
+				closest_idx = idx
+				min_distance = distance
+		if min_distance < 60:
+			tail.remove_point(tail.points[closest_idx])
+
+	if event is InputEventMouseMotion:
+		# if we're dragging the resizer, move it to the mouse position
+		if _active_resizer:
+			# var offset: Vector2 = event.relative
+
+			var estimated_position = _active_resizer.position + event.relative
+
+			# lower resizer can't be above the upper one
+			if _active_resizer == _lower_resizer:
+				if estimated_position.x < _upper_resizer.position.x:
+					estimated_position.x = _upper_resizer.position.x
+
+				if estimated_position.y < _upper_resizer.position.y:
+					estimated_position.y = _upper_resizer.position.y
+			# and upper can't be under the lower one
+			elif _active_resizer == _upper_resizer:
+				if estimated_position.x > _lower_resizer.position.x:
+					estimated_position.x = _lower_resizer.position.x
+
+				if estimated_position.y > _lower_resizer.position.y:
+					estimated_position.y = _lower_resizer.position.y
+			
+			_active_resizer.position = estimated_position
+			_mover.position = _upper_resizer.position + MOVER_OFFSET
+			
 		# if we're moving the mouse, pressing the mouse button and dragging the point
 		# update that points position.
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _drag_point_idx != -1:
@@ -459,9 +551,13 @@ func handle_event(event: InputEvent) -> void:
 				tail.points[_drag_point_idx] = idx
 			else:
 				tail.points[_drag_point_idx] = event.position
-			
-			queue_redraw()
-			accept_event()
+
+		# moving the whole speech bubble using the mover handle
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _moving:
+			_move_bubble(event.relative)
+
+		queue_redraw()
+		accept_event()
 
 ## If we press enter, switch between editing states
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -483,7 +579,7 @@ func _on_upper_left_resizer_button_down() -> void:
 
 # region Speech Bubble
 
-func cloud_bubble(rect: Rect2) -> PackedVector2Array:
+func create_speech_bubble(rect: Rect2) -> PackedVector2Array:
 	var ellipse_poly: = create_ellipse(rect.grow(-circle_radius))
 
 	var cloud: = ellipse_poly.duplicate()
@@ -535,18 +631,18 @@ func create_ellipse(rect: Rect2, num_segments: int = 360) -> PackedVector2Array:
 
 	return ellipse_points
 
-## Returns the shrinken [parameter ellipse] given it's [paramenter center] and a [parameter factor].[br]
+## Returns the shrunken [parameter ellipse] given it's [parameter center] and a [parameter factor].[br]
 func shrink_ellipse(ellipse: PackedVector2Array, center: Vector2, amount: float) -> PackedVector2Array:
-	var shrinked := PackedVector2Array()
-	shrinked.resize(ellipse.size())
+	var shrunk := PackedVector2Array()
+	shrunk.resize(ellipse.size())
 	for i in ellipse.size():
 		var to_center: = center - ellipse[i]
 		var dist_to_center: = to_center.length()
 		# Don't move more than distance to center
 		var safe_amount: = minf(amount, dist_to_center)
 		var dir: = to_center.normalized()
-		shrinked[i] = ellipse[i] + (dir * safe_amount)
-	return shrinked
+		shrunk[i] = ellipse[i] + (dir * safe_amount)
+	return shrunk
 
 func create_circle(center: Vector2, radius: float, resolution: int = 32) -> PackedVector2Array:
 	var circle: = PackedVector2Array()
@@ -579,8 +675,8 @@ func get_bezier_curve(p1: Vector2, p2: Vector2, control_points: Array, steps: in
 	return bezier_curve
 
 
-## Gets biggest possible rectangle thats completly contained withing the ellipse.[br]
-## Ellipse is defined by the smallest rectange that containes it. 
+## Gets biggest possible rectangle thats completely contained withing the ellipse.[br]
+## Ellipse is defined by the smallest rectangle that contains it. 
 func get_rectangle_in_ellipse(rect: Rect2) -> Rect2:
 	# Calculate the center of the ellipse
 	var center = rect.position + rect.size / 2
@@ -601,7 +697,7 @@ func get_rectangle_in_ellipse(rect: Rect2) -> Rect2:
 
 
 ## @experimental
-## Simmilar to [method get_rectangle_in_ellipse], but retruned array of [parameter num_slices] rectangles,
+## Similar to [method get_rectangle_in_ellipse], but returned array of [parameter num_slices] rectangles,
 ## that tries to fill the ellipse as much as possible.[br]
 ## Calling this with [parameter num_slices] set to 1 should yield same results as [method get_rectangle_in_ellipse].
 func get_rectangles_in_ellipse(rect: Rect2, num_slices: int = 4) -> Array:
@@ -633,7 +729,7 @@ func get_rectangles_in_ellipse(rect: Rect2, num_slices: int = 4) -> Array:
 	
 	return rectangles
 
-## Given the [parameter mouse_position] returnes the closest point to it on the ellipse.
+## Given the [parameter mouse_position] returns the closest point to it on the ellipse.
 func get_closest_ellipse_line(mouse_position: Vector2) -> int:
 	if bubble_poly.is_empty(): return -1
 
@@ -678,9 +774,9 @@ func get_closest_polyline_position(polygon: PackedVector2Array, pos: Vector2) ->
 		var a = polygon[i]
 		var b = polygon[i+1 if i < polygon.size()-1 else 0]
 
-		var cpts: = Geometry2D.get_closest_point_to_segment(pos, a, b)
-		if pos.distance_squared_to(cpts) < pos.distance_squared_to(closest):
-			closest = cpts
+		var points: = Geometry2D.get_closest_point_to_segment(pos, a, b)
+		if pos.distance_squared_to(points) < pos.distance_squared_to(closest):
+			closest = points
 	
 	return closest
 
@@ -728,14 +824,51 @@ func toggle_editing_state() -> void:
 
 func set_circle_radius(new_radius: float) -> void:
 	circle_radius = new_radius
-	cloud_bubble(get_rect()) # Recalculate the cloud shape
+	create_speech_bubble(_bubble_rect) # Recalculate the cloud shape
 	queue_redraw() # Tell Godot to redraw the CloudControl 
 	
 	
-func CancleEditing():
+func CancelEditing():
 	editing = not editing
 	queue_redraw()
 
 func ApplyEditing():
 	editing = false
 	queue_redraw()
+
+
+func _on_mover_button_down() -> void:
+	_moving = true
+	get_viewport().set_input_as_handled()
+
+func _find_other_bubbles() -> Array[CloudControl]:
+	var other_bubbles: Array[CloudControl] = []
+	var layer = get_parent()
+	if is_instance_valid(layer) and layer is Layer:
+		var layer_container = layer.get_parent()
+		for other_layer in layer_container.get_children():
+			if other_layer != layer:
+				for child in other_layer.get_children():
+					if is_instance_valid(child) and child is CloudControl:
+						other_bubbles.append(child)
+	return other_bubbles
+
+# move the whole speech bubble
+func _move_bubble(offset: Vector2) -> void:
+	# move the textbox and ellipse
+	set_bounding_rect(Rect2(
+		_upper_resizer.position + offset,
+		_lower_resizer.position - _upper_resizer.position
+	))
+
+	# move the fixed points
+	for idx in tail.points.size():
+		var point = tail.points[idx]
+		if point is Vector2:
+			tail.points[idx] += offset
+
+	# move the control points
+	for point in tail.control._bezier_curve.points:
+		point.position += offset
+		point.control_point_out += offset
+		point.control_point_in += offset

@@ -11,6 +11,10 @@ enum LAYOUT {HORIZONTAL, VERTICAL}
 static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
 static var _unsaved_changes_file_icon: = preload("res://assets/icons/half_circle_left.svg")
 static var _unsaved_changes_associated_icon: = preload("res://assets/icons/half_circle_right.svg")
+#@warning_ignore("unused_variable")
+#static var _incoplete_snippet_icon: = preload("res://assets/icons/warning_circle.svg")
+@warning_ignore("unused_variable")
+var _is_Completed
 
 var current_layout: LAYOUT
 
@@ -20,13 +24,17 @@ var current_layout: LAYOUT
 @onready var RightControl: Control = $"VBoxContainer/HBoxContainer/RightControl"
 @onready var BottomControl: Control = $"VBoxContainer/BottomControl"
 
+@onready var _toggle_all_button: Button = %ToggleAllButton
+@onready var buffer_control_editor: Control = %BufferControlEditor
 
+var counter_for_remove
 
 func _ready():
+	_last_state = false
+	_is_Completed = true
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
 	SingletonObject.UpdateUnsavedTabIcon.connect(update_tabs_icon)
-	
 
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
@@ -66,6 +74,9 @@ func _on_close_tab(tab: int, container: TabContainer):
 	else:
 		container.remove_child(control)
 		SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
+	
+	if Tabs.get_tab_count() < 1:
+		buffer_control_editor.show()
 
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
@@ -131,6 +142,8 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	Tabs.add_child(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count()-1
 	
+	if Tabs.get_tab_count() > 0:
+		buffer_control_editor.hide()
 	if name_: 
 		var tab_name = editor_name_to_use(name_)
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
@@ -144,6 +157,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 			tab_name = dir + "/" + file.get_file()
 
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
+		Tabs.set_tab_tooltip(Tabs.current_tab, file)
 		editor_node.tab_title = tab_name
 	else:
 		match type:
@@ -159,7 +173,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	
 	return editor_node
 	
-func open_editors() -> Array[Editor]:
+func get_open_editors() -> Array[Editor]:
 	var editors: Array[Editor] = []
 	for child in self.Tabs.get_children():
 		if not child is Editor: continue
@@ -228,6 +242,7 @@ func toggle_vertical_split() -> void:
 func update_tabs_icon() -> void:
 	var tab_count: = Tabs.get_tab_count()
 	var counter:= 0
+	counter_for_remove = counter
 	while counter < tab_count:
 		var editor = Tabs.get_tab_control(counter)
 		_on_editor_content_changed(editor) # call the below implementation to update the icon
@@ -239,14 +254,50 @@ func update_tabs_icon() -> void:
 		
 		counter += 1
 
+func check_incomplete_snippet(editor: Editor, old_text: String, new_text: String):
+
+	if editor.type != Editor.Type.TEXT:
+		return
+
+	var tab_idx = Tabs.get_tab_idx_from_control(editor)
+	if tab_idx == -1: # Handle case where editor isn't in the tab container
+		return
+
+	# Nodes for visual feedback (make sure these exist in your scene)
+
+	var smaller_and_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsSmalleAndIncoplete")
+	var text_is_smaller_node = Tabs.get_child(tab_idx).find_child("TextIsSmaller")
+	var text_is_incomplete_node = Tabs.get_child(tab_idx).find_child("TextIsIncoplete")
+
+	var old_size := old_text.length()
+	var new_size := new_text.length()
+
+	var isSmaller: bool = new_size < old_size
+	var isIncoplete: bool = false
+
+	if !SingletonObject.Is_code_completed:
+		isIncoplete = true
+
+	# Mutually exclusive visibility logic:
+	if isSmaller and isIncoplete:
+		smaller_and_incomplete_node.visible = isIncoplete
+		text_is_smaller_node.visible = false
+		text_is_incomplete_node.visible = false
+	else:
+		smaller_and_incomplete_node.visible = false
+		text_is_smaller_node.visible = isSmaller
+		text_is_incomplete_node.visible = isIncoplete
+
+	# Update the old_text meta for future comparisons
+	editor.code_edit.set_meta("old_text", new_text)
+	SingletonObject.Is_code_completed = true
+
 
 func _on_editor_content_changed(editor: Editor):
 
 	var state: = editor.get_saved_state()
-	print(state)
-
 	var icon: Texture2D
-	var tooltip: String = ""
+	var _tooltip: String = ""
 
 	var associated_object_name: String
 
@@ -258,40 +309,42 @@ func _on_editor_content_changed(editor: Editor):
 			# the file is saved, check if we have an associated object that's not marked as saved
 			if editor.associated_object:
 				icon = _unsaved_changes_associated_icon
-				tooltip = "File saved, \"%s\" unsaved" % associated_object_name
+				_tooltip = "File saved, \"%s\" unsaved" % associated_object_name
 			# else we just have a file that's saved
 			else:
 				icon = null
-				tooltip = "File saved"
+				_tooltip = "File saved"
 
 		Editor.ASSOCIATED_OBJECT_SAVED:
-			# the associated_object is saved, check if we have a file that's not marked as saved
+			# the associated_object is saved, but not the file
+
+			icon = _unsaved_changes_file_icon
 			if editor.file:
-				icon = _unsaved_changes_file_icon
-				tooltip = "File unsaved, \"%s\" saved" % associated_object_name
+				_tooltip = "File unsaved, \"%s\" saved" % associated_object_name
 			# else we just have an associated object that's saved
 			else:
-				icon = null
-				tooltip = "Note saved"
+				_tooltip = "No File, Note saved"
 
 		# both are saved
 		Editor.FILE_SAVED | Editor.ASSOCIATED_OBJECT_SAVED:
 			icon = null
-			tooltip = "File and \"%s\" saved" % associated_object_name
+			_tooltip = "File and \"%s\" saved" % associated_object_name
 
 		0: # nothing is saved in this case
 			icon = _unsaved_changes_icon
 			if editor.file and editor.associated_object:
-				tooltip = "File and \"%s\" unsaved" % associated_object_name
+				_tooltip = "File and \"%s\" unsaved" % associated_object_name
 			else:
 				if editor.file:
-					tooltip = "File unsaved"
+					_tooltip = "File unsaved"
+				elif editor.associated_object:
+					_tooltip = "\"%s\" unsaved" % associated_object_name
 				else:
-					tooltip = "\"%s\" unsaved" % associated_object_name
-
+					_tooltip = "Content unsaved"
+	
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
-	Tabs.set_tab_icon(tab_idx, icon)
-	Tabs.set_tab_tooltip(tab_idx, tooltip)
+	if Tabs.get_tab_count() > 0:
+		Tabs.set_tab_icon(tab_idx, icon)
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
@@ -346,3 +399,49 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 #endregion  Enable Editor Buttons
 ###
 ### End Reference Information ###
+
+
+var _last_state
+
+func _on_toggle_all_button_toggled(toggled_on: bool) -> void:
+	for editor in get_open_editors():
+		editor.toggle(toggled_on)
+	
+	if toggled_on:
+		_toggle_all_button.text = "Disable All"
+	else:
+		_toggle_all_button.text = "Enable All"
+
+
+func _close_error():
+	pass
+	#var tab_idx = Tabs.get_tab_idx_from_control(Tabs.get_tab_control(counter_for_remove))
+
+
+func update_current_text_tab(new_title: String, new_text: String) -> void:
+	# Get the currently active tab
+	var active_tab_editor_node: Editor = Tabs.get_current_tab_control()
+	var code_edit_node: CodeEdit
+	
+	# If no active tab exists, create a new text editor tab
+	if Tabs.get_tab_count() < 1:
+		active_tab_editor_node = add(Editor.Type.TEXT, null, editor_name_to_use(new_title), null)
+		print("No active tab, created a new one.")
+	# Ensure the active tab is a text editor
+	elif active_tab_editor_node is Editor and active_tab_editor_node.type == Editor.Type.TEXT:
+		# Update the tab title if no file is associated
+		if !active_tab_editor_node.file:
+			Tabs.set_tab_title(Tabs.get_current_tab(), editor_name_to_use(new_title))
+	# If the active tab is not a text editor, create a new text editor tab
+	elif active_tab_editor_node.type == Editor.Type.GRAPHICS and SingletonObject.experimental_enabled:
+		active_tab_editor_node = add(Editor.Type.TEXT, null, editor_name_to_use(new_title), null)
+		print("Active tab is not a text editor")
+		if !SingletonObject.experimental_enabled:
+			printerr("Graphics editor is not enabled")
+	# Get the CodeEdit node
+	code_edit_node = active_tab_editor_node.code_edit
+	if code_edit_node:
+			# Set the new text
+			code_edit_node.text = new_text
+	
+	update_tabs_icon()

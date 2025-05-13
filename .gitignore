@@ -1,6 +1,9 @@
 # Godot 4+ specific ignores
 .godot/
 .vscode/
+*.uid
+*.so.*
+*.so
 
 # docker stuff
 .env
@@ -11,3 +14,10 @@
 # binary files
 *.wav
 *.wav.import
+*.tmp
+
+# gdextension
+bin/
+*.obj
+*.os
+*.dblite

@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://bbu6grgjnwrvw"]
 
 [ext_resource type="Theme" uid="uid://cdp8qvjvdfebe" path="res://assets/themes/terminal.tres" id="1_1nu0h"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/TerminalTabContainer.gd" id="1_n8p1u"]
+[ext_resource type="Script" uid="uid://tk6ctvhuqd4n" path="res://Scripts/UI/Controls/TerminalTabContainer.gd" id="1_n8p1u"]
 
 [node name="TerminalTabContainer" type="VBoxContainer" node_paths=PackedStringArray("_tab_bar", "_controls_container")]
 anchors_preset = 15
@@ -34,6 +34,7 @@ flat = true
 layout_mode = 2
 size_flags_vertical = 3
 
+[connection signal="visibility_changed" from="." to="." method="_on_visibility_changed"]
 [connection signal="tab_changed" from="h/TabBar" to="." method="_on_tab_bar_tab_changed"]
 [connection signal="tab_close_pressed" from="h/TabBar" to="." method="_on_tab_bar_tab_close_pressed"]
 [connection signal="pressed" from="h/NewTabButton" to="." method="_on_new_tab_button_pressed"]

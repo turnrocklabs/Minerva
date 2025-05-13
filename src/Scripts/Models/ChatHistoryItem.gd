@@ -17,9 +17,15 @@ static var SERIALIZER_FIELDS = [
 	"EstimatedTokenCost",
 	"TokenCost",
 	"Visible",
+	"Expanded",
+	"LastYSize",
+	"LinkedMemories",
+	"CodeLabelsState",
+	"isMerged",
+	"SliderContainerId" # if 2 or more items share the same ID they get put in the same SliderContainer
 ]
 
-# This signal is to be emited when new message in the history list is added
+# This signal is to be emitted when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
 
 var Id: String:
@@ -72,21 +78,45 @@ var provider: BaseProvider:
 		_provider_updated()
 		provider = value
 
+var Expanded: bool = true:
+	set(value): SingletonObject.save_state(false); Expanded = value
+
+var LastYSize: float = 0.0:
+	set(value): SingletonObject.save_state(false); LastYSize = value
+
+#this  filed is for saving the UUID of the memoryItems with its respective code label
+#{codeLabelIndex: int, MemoryItemUUID: String}
+var LinkedMemories: Dictionary = {}:
+	set(value): SingletonObject.save_state(false); LinkedMemories = value
+
+var CodeLabelsState: Dictionary = {}:
+	set(value): SingletonObject.save_state(false); CodeLabelsState = value
+	
+var isMerged: bool = false:
+	set(value): SingletonObject.save_state(false); isMerged = value
+
+var SliderContainerId: String = "":
+	set(value): SingletonObject.save_state(false); SliderContainerId = value
+
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
 
 
-func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER):
+func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _text: String = "", _provider: BaseProvider = null):
 	self.Type = _type
 	self.Role = _role
-	self.Message = ""
+	self.Message = _text
 	self.Complete = true
 
 	# take provider from active tab as one used, if there is one
 	# otherwise the code that initializes this object should set the provider
 	if not SingletonObject.ChatList.is_empty():
 		self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
-
+	elif not _provider == null:
+		self.provider = _provider
+	else:
+		self.provider = HumanProvider.new()
+	
 	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
 	rng.randomize() # Uses the current time to seed the random number generator
 	var random_number = rng.randi() # Generates a random integer
@@ -106,6 +136,7 @@ func _on_response_arrived(item: ChatHistoryItem):
 	if rendered_node:
 		# Set the history_item again to trigger the setter
 		rendered_node.history_item = self
+	SingletonObject.play_chat_notification()
 
 
 func format(callback: Callable) -> String:
@@ -152,6 +183,12 @@ func Serialize() -> Dictionary:
 		"TokenCost": TokenCost,
 		"Images": images_,
 		"Captions": captions_,
+		"Expanded": Expanded,
+		"LastYSize": LastYSize,
+		"LinkedMemories": LinkedMemories,
+		"CodeLabelsState": CodeLabelsState,
+		"isMerged": isMerged,
+		"SliderContainerId": SliderContainerId
 	}
 	return save_dict
 
@@ -223,6 +260,34 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 
 ## Merges two history items together
 func merge(item: ChatHistoryItem) -> void:
-	Message = "%s\n%s" % [Message, item.Message]
-	InjectedNotes.append_array(item.InjectedNotes)
-	Complete = Complete and item.Complete
+	if Message and item.Message and Images.is_empty() and item.Images.is_empty():
+		# Merge text messages
+		var separator = "\u200B\u200C\u200D"  # Combination of invisible characters
+		Message = "%s%s%s" % [Message, separator, item.Message]
+		InjectedNotes.append_array(item.InjectedNotes)
+		Complete = Complete and item.Complete
+		isMerged = true
+	elif Images and item.Images and Message.is_empty() and item.Message.is_empty():
+		# Merge images
+		Images.append_array(item.Images)
+		InjectedNotes.append_array(item.InjectedNotes)
+		Complete = Complete and item.Complete
+		isMerged = true
+	elif (Message or item.Message) and (Images or item.Images):
+		# Merge both text and images
+		if Message and item.Message:
+			var separator = "\u200B\u200C\u200D"
+			Message = "%s%s%s" % [Message, separator, item.Message]
+		elif item.Message:
+			Message = item.Message  # If only one has text, set it
+		
+		if Images and item.Images:
+			Images.append_array(item.Images)
+		elif item.Images:
+			Images = item.Images  # If only one has images, set it
+
+		InjectedNotes.append_array(item.InjectedNotes)
+		Complete = Complete and item.Complete
+		isMerged = true
+
+	

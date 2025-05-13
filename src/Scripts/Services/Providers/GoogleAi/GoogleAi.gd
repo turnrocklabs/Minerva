@@ -9,7 +9,7 @@ func _init():
 	BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 	PROVIDER = SingletonObject.API_PROVIDER.GOOGLE
 
-	model_name = "gemini-1.5-flash"
+	model_name = "gemini-2.0-flash"
 	short_name = "GV"
 	token_cost = 0
 
@@ -49,7 +49,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	var body_stringified: String = JSON.stringify(request_body)
 	
 	# Print full request body for debugging
-	print("Request Body: ", body_stringified)
+	#print("Request Body: ", body_stringified)
 	print("Sending request to: %s" % "%s/%s:generateContent?key=%s" % [BASE_URL, model_name, API_KEY])
 	
 	var response: RequestResults = await make_request(
@@ -71,14 +71,32 @@ func wrap_memory(item: MemoryItem) -> Variant:
 
 	# Return either string for text notes or dictionary for image notes
 
-	if item.MemoryImage:
+	if item.Type == SingletonObject.note_type.IMAGE:
 		return {
 			"inline_data": {
 				"mime_type": "image/png",
 				"data": Marshalls.raw_to_base64(item.MemoryImage.save_png_to_buffer())
 			}
 		}
-	
+	elif item.Type == SingletonObject.note_type.VIDEO and SingletonObject.google_supported_video_formats.has(item.File.get_extension()):
+		# item.Content only contains the file path for the video
+		var file_content: = FileAccess.get_file_as_bytes(item.File)
+		var video_mime: String = SingletonObject.google_supported_video_formats.get(item.File.get_extension())
+		return {
+			"inline_data": {
+				"mime_type": video_mime,
+				"data": Marshalls.raw_to_base64(file_content)
+			}
+		}
+	elif item.Type == SingletonObject.note_type.AUDIO and SingletonObject.google_supported_audio_formats.has(item.File.get_extension()):
+		var file_content = FileAccess.get_file_as_bytes(item.File)
+		var audio_mime: String = SingletonObject.google_supported_audio_formats.get(item.File.get_extension())
+		return {
+			"inline_data": {
+				"data": Marshalls.raw_to_base64(file_content),
+				"mime_type": audio_mime
+			}
+		}
 	else:
 		var output = "Given this background information:\n\n"
 		output += "### Reference Information ###\n"

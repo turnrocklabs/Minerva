@@ -1,9 +1,13 @@
 extends Control
 
-@export  var terminal_container: TerminalTabContainer
-#varibles where weadding out notes Head and descriptionn
+var is_dragging = false
+var drag_start_position = Vector2()
 
-#these varables are for changing only the font size of the UI
+@export  var terminal_container: TerminalTabContainer
+#variables where writing out notes Head and description
+@onready var project_name_label: RichTextLabel = %ProjectNameLabel
+
+#these variables are for changing only the font size of the UI
 var _default_zoom: int
 var min_font_size:int 
 var max_font_size: int
@@ -13,14 +17,15 @@ var min_diff_font_size: = 4
 var max_diff_font_size: = 8
 
 func _ready() -> void:
-	if theme.has_default_font_size():
-		min_font_size = theme.default_font_size - min_diff_font_size
-		max_font_size = theme.default_font_size + max_diff_font_size
-		current_font_size = theme.default_font_size
-	else:
-		min_font_size = ThemeDB.fallback_font_size - min_diff_font_size
-		max_font_size = ThemeDB.fallback_font_size + max_diff_font_size
-		current_font_size =ThemeDB.fallback_font_size
+	if theme:
+		if theme.has_default_font_size():
+			min_font_size = theme.default_font_size - min_diff_font_size
+			max_font_size = theme.default_font_size + max_diff_font_size
+			current_font_size = theme.default_font_size
+		else:
+			min_font_size = ThemeDB.fallback_font_size - min_diff_font_size
+			max_font_size = ThemeDB.fallback_font_size + max_diff_font_size
+			current_font_size =ThemeDB.fallback_font_size
 	
 	_default_zoom = current_font_size
 
@@ -28,12 +33,13 @@ func _ready() -> void:
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
-
+	
+	project_name_label.text = ""
 
 var MAX: = 20
 
 
-func _recrusive_theme_change(node: Control, callback: Callable) -> void:
+func _recursive_theme_change(node: Control, callback: Callable) -> void:
 	var _to_process: Array[Node] = [node]
 
 	var counter: = 1
@@ -84,16 +90,16 @@ func zoom_ui(factor: int):
 
 	current_font_size = clamp(current_font_size + factor, min_font_size, max_font_size)
 	
-	_recrusive_theme_change(self, _set_node_font_size.bind(current_font_size))
+	_recursive_theme_change(self, _set_node_font_size.bind(current_font_size))
 
 
 	# if current_font_size + factor >= min_font_size and current_font_size + factor <= max_font_size:
 	# 	if theme.has_default_font_size():
-	# 		_recrusive_theme_change(self, "add_theme_font_size_override", ["font_size", current_font_size + factor])
+	# 		_recursive_theme_change(self, "add_theme_font_size_override", ["font_size", current_font_size + factor])
 	# 		# theme.default_font_size += factor
 	# 		current_font_size = current_font_size + factor
 	# 	else:
-	# 		_recrusive_theme_change(self, "add_theme_font_size_override", ["font_size", ThemeDB.fallback_font_size + factor])
+	# 		_recursive_theme_change(self, "add_theme_font_size_override", ["font_size", ThemeDB.fallback_font_size + factor])
 	# 		# theme.default_font_size = ThemeDB.fallback_font_size + factor
 	# 		current_font_size = ThemeDB.fallback_font_size + factor
 
@@ -101,9 +107,9 @@ func zoom_ui(factor: int):
 func reset_zoom():
 	current_font_size = _default_zoom
 
-	_recrusive_theme_change(self, _set_node_font_size.bind(current_font_size))
+	_recursive_theme_change(self, _set_node_font_size.bind(current_font_size))
 
-	# _recrusive_theme_change(self, _reset_node_font_size)
+	# _recursive_theme_change(self, _reset_node_font_size)
 
 
 func _gui_input(event):
@@ -112,17 +118,10 @@ func _gui_input(event):
 		zoom_ui(1)
 		
 		accept_event()
-
-	if event.is_action_released("zoom_out", true):
+	elif event.is_action_released("zoom_out", true):
 		zoom_ui(-1)
 		
 		accept_event()
-
-
-func _input(event):
-	if event.is_action_released("ui_terminal", true):
-		terminal_container.visible = not terminal_container.visible
-
 
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
@@ -133,7 +132,7 @@ func _on_button_pressed() -> void:
 	%PreferencesPopup.popup_centered()
 
 #btn attachment for notes
-func _on_btn_add_attachement_pressed():
+func _on_btn_add_attachment_pressed():
 	SingletonObject.Chats._on_btn_attach_file_pressed()
 
 
@@ -149,7 +148,6 @@ func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteHead
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForHeader
-	#%btnVoiceForHeader.icon = icActive
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
 	SingletonObject.AtT.btnStop = %StopButton3
@@ -158,7 +156,6 @@ func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForNoteTab
-	#%btnVoiceForNoteTab.icon = icActive
 	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 	%AudioStopButton2.visible = true
 	SingletonObject.AtT.btnStop = %AudioStopButton2
@@ -177,17 +174,19 @@ func _on_disable_notes_button_pressed() -> void:
 
 #region help menu
 
-var license_agreement_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
-var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 
-var about_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
-var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
+
+
 func _on_help_id_pressed(id: int) -> void:
 	match id:
 		0:# id for the About option
+			ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
+			var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
 			var about_scene_inst = about_scene.instantiate()
 			call_deferred("add_child", about_scene_inst)
 		1:# id for the license Agreement 
+			ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
+			var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 			var license_scene_inst = license_scene.instantiate()
 			call_deferred("add_child", license_scene_inst)
 
@@ -196,7 +195,7 @@ func _on_help_id_pressed(id: int) -> void:
 
 func _on_save_open_editor_tabs_button_pressed() -> void:
 	SingletonObject.SaveOpenEditorTabs.emit()
-
+	print("saved")
 
 func _on_audio_stop_button_2_pressed() -> void:
 	SingletonObject.AtT._StopConverting()
@@ -208,3 +207,32 @@ func _on_stop_button_3_pressed() -> void:
 
 func _on_stop_button_4_pressed() -> void:
 	SingletonObject.AtT._StopConverting()
+	
+
+func _input(event):
+	if event.is_action_released("ui_terminal", true):
+		terminal_container.visible = not terminal_container.visible
+	# Detect mouse button press to start drag
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			drag_start_position = event.position
+			is_dragging = false
+		else:
+			is_dragging = false
+			await get_tree().process_frame
+			%DropForNode.visible = false
+
+	# Detect mouse motion to confirm dragging
+	elif event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		if not is_dragging:
+			if get_viewport().gui_get_drag_data() != null: # Minimum distance to count as a drag
+				if typeof(get_viewport().gui_get_drag_data()) == TYPE_STRING:
+					is_dragging = true
+					%DropForNode.visible = true
+			
+				
+				
+
+
+func _on_btn_drawer_pressed() -> void:
+	%Drawer.popup_centered()
