@@ -6,10 +6,10 @@
 [ext_resource type="Script" uid="uid://p3524g5d47bb" path="res://Scripts/UI/Views/DrawerTabs.gd" id="3_6nrfe"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="4_krlqx"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_nefrs"]
-[ext_resource type="PackedScene" uid="uid://cw3evmjw7dh16" path="res://Scenes/windows/new_thread_popup.tscn" id="5_6nrfe"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="5_6rcta"]
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="6_i8r7k"]
 [ext_resource type="Script" uid="uid://ct1ipcgva4nh7" path="res://Scripts/UI/Controls/vboxChat.gd" id="7_5gaco"]
+[ext_resource type="PackedScene" uid="uid://c5ovagni0xeqo" path="res://Scenes/windows/new_thread_popup_drawer.tscn" id="9_nefrs"]
 
 [node name="Drawer" type="Window"]
 position = Vector2i(0, 36)
@@ -119,7 +119,7 @@ script = ExtResource("3_6nrfe")
 unique_name_in_owner = true
 visible = false
 
-[node name="DrawerThreadPopup" parent="." instance=ExtResource("5_6nrfe")]
+[node name="NewThreadPopupDrawer" parent="." instance=ExtResource("9_nefrs")]
 visible = false
 
 [node name="CloseActions" type="Window" parent="."]

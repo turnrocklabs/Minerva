@@ -80,7 +80,7 @@ func open_threads_popup(tab_name: String = "", tab = null):
 	if update:
 		SingletonObject.associated_notes_tab.emit(tab_name, get_child(tab))
 	else: 
-		SingletonObject.pop_up_new_tab.emit()
+		SingletonObject.pop_up_new_drawer_tab.emit()
 
 
 func _on_new_pressed():
@@ -576,14 +576,6 @@ func _notification(what):
 
 var clicked: = -1 # this is used to tack double click to change the tab nama
 var temp_current_tab: = -1 # this is used to track the clicked tab when rearranged
-func _on_tab_clicked(tab: int):
-	if clicked > -1:
-		var tab_title = get_tab_bar().get_tab_title(tab)
-		open_threads_popup(tab_title, tab)
-		return
-	clicked = tab
-	temp_current_tab = tab
-	get_tree().create_timer(0.4).timeout.connect(func(): clicked = -1)
 
 
 func _on_active_tab_rearranged(idx_to: int) -> void:
