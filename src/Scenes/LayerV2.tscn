@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://dfffqwg0xyekp"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Controls/LayerV2.gd" id="1_fehm3"]
+[ext_resource type="Script" uid="uid://c2tgvvt6056bo" path="res://Scripts/UI/Controls/LayerV2.gd" id="1_fehm3"]
 [ext_resource type="Texture2D" uid="uid://bj0b5cmrbfma" path="res://addons/markdownlabel/assets/screenshot.png" id="2_ac76k"]
 
 [node name="LayerV2" type="Control"]

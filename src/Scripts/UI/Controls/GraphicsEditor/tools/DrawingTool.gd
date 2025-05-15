@@ -22,15 +22,18 @@ var brush_size: int:
 	get:
 		return int(_brush_size_slider.value)
 
-
-
-var _last_drawing_position: Vector2
-
 var drawing: = false
+var _last_drawing_position: Vector2
+var _current_stroke_points = []
+var _last_pressure: float = 1.0
+var _smoothed_pressure: float = -1.0
+var _pressure_smoothing_factor: float = 0.3
+
+# Performance optimizations
+var _circle_cache = {}  # Cache circular brush patterns
+var _max_cached_radius = 100
 
 func _ready() -> void:
-	
-	# each time the tool is changed to this one, update the custom cursor
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
 			if tool_ == self:
@@ -41,84 +44,194 @@ func _ready() -> void:
 				)
 	)
 
-	# when the brush size changed update the cursor
 	_brush_size_slider.value_changed.connect(
 		func(value: float):
 			editor.set_custom_cursor(create_fast_circle_image(int(value)), Input.CursorShape.CURSOR_ARROW, Vector2.ONE * value)
 	)
+	
+	# Pre-cache common brush sizes
+	for r in range(1, min(30, _max_cached_radius)):
+		_get_cached_circle_pixels(r)
 
 func handle_input_event(event: InputEvent) -> void:
 	event = editor.active_layer.localize_input(event)
 
 	if event is InputEventMouseButton:
-
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.is_pressed():
-				drawing = true
-				_last_drawing_position = event.position
-				image_draw(editor.active_layer.image, event.position, brush_color, brush_size)
-				editor.queue_redraw()
+				_start_stroke(event)
 			else:
-				drawing = false
+				_end_stroke()
 
-	if event is InputEventMouseMotion and drawing:
+	elif event is InputEventMouseMotion and drawing:
+		_add_stroke_point(event)
 
-		for line_pixel in bresenham_line(_last_drawing_position, event.position):
-			image_draw(editor.active_layer.image, line_pixel, brush_color, brush_size)
+func _start_stroke(event: InputEvent) -> void:
+	drawing = true
+	_last_drawing_position = event.position
+	_smoothed_pressure = -1.0
+	_current_stroke_points = []
+	
+	# Add first point
+	_add_stroke_point(event)
+
+func _add_stroke_point(event: InputEvent) -> void:
+	var pos = event.position
+	var pressure = event.pressure if event is InputEventMouseMotion else 1.0
+	
+	# Smooth pressure
+	pressure = clamp(pressure, 0.0, 1.0)
+	if _smoothed_pressure < 0.0:
+		_smoothed_pressure = pressure
+	else:
+		_smoothed_pressure = lerp(_smoothed_pressure, pressure, _pressure_smoothing_factor)
+	
+	# Record the point
+	_current_stroke_points.append({
+		"pos": pos,
+		"pressure": _smoothed_pressure
+	})
+	
+	# If moving too fast, add intermediate points to ensure a continuous line
+	var distance = _last_drawing_position.distance_to(pos)
+	if distance > brush_size * 0.5:  # Add more points if moving faster than half the brush size
+		var steps = ceil(distance / (brush_size * 0.25))  # Adjust divisor to control density
+		for i in range(1, steps):
+			var t = float(i) / steps
+			var lerp_pos = _last_drawing_position.lerp(pos, t)
+			var lerp_pressure = _smoothed_pressure  # Use current pressure for interpolated points
+			
+			# Draw a single stamp at this position
+			_draw_brush_stamp(
+				editor.active_layer.image,
+				lerp_pos,
+				brush_color,
+				brush_size * lerp_pressure
+			)
+	
+	# Draw the actual point
+	_draw_brush_stamp(
+		editor.active_layer.image,
+		pos,
+		brush_color,
+		brush_size * _smoothed_pressure
+	)
+	
+	_last_drawing_position = pos
+	editor.queue_redraw()
+
+func _end_stroke() -> void:
+	drawing = false
+	_smoothed_pressure = -1.0
+	_current_stroke_points = []
+
+# Optimized brush stamp drawing - draws a circle at a single point
+func _draw_brush_stamp(target_image: Image, center: Vector2, color: Color, diameter: float) -> void:
+	# Get the layer's actual scale factor by comparing the image size vs control size
+	var layer_scale_x = editor.active_layer.size.x / float(target_image.get_width())
+	var layer_scale_y = editor.active_layer.size.y / float(target_image.get_height())
+	var layer_scale = Vector2(layer_scale_x, layer_scale_y)
+	
+	# Apply the image zoom factor (was already in your code)
+	center *= editor.active_layer.image_zoom_factor
+	
+	# IMPORTANT FIX: Apply the layer's scale to the diameter
+	diameter *= editor.active_layer.image_zoom_factor
+	diameter /= ((layer_scale.x + layer_scale.y) / 2.0)  # Use average scale as the factor
+	
+	var radius = int(ceil(diameter * 0.5))
+	if radius < 1:
+		radius = 1
 		
-		_last_drawing_position = event.position
-		editor.queue_redraw()
+	# Get cached pixel pattern for this radius
+	var pixels = _get_cached_circle_pixels(radius)
+	
+	# Calculate integer center position
+	var center_x = int(center.x)
+	var center_y = int(center.y)
+	
+	# Apply the stamp pattern to the image
+	var img_width = target_image.get_width()
+	var img_height = target_image.get_height()
+	
+	for offset in pixels:
+		var x = center_x + offset.x
+		var y = center_y + offset.y
+		
+		if x >= 0 and x < img_width and y >= 0 and y < img_height:
+			var alpha_factor = offset.z  # Z component stores alpha factor
+			
+			if alpha_factor >= 0.99:
+				# Fast path for solid pixels
+				target_image.set_pixel(x, y, color)
+			else:
+				# Alpha blending for edge pixels
+				var new_color = color
+				new_color.a *= alpha_factor
+				
+				if new_color.a > 0.01:
+					var existing_color = target_image.get_pixel(x, y)
+					var blended_color = _blend_colors(existing_color, new_color)
+					target_image.set_pixel(x, y, blended_color)
+	
 
-
-
-## Checks if given pixel is within the image and draws it using `set_pixelv`
-func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int):
-	pos *= editor.active_layer.image_zoom_factor
-	print("pos: ", pos)
-	for pixel in get_circle_pixels(pos, point_size):
-		if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
-			target_image.set_pixelv(pixel, color) 
-
-
-func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
-	var pixels = PackedVector2Array()
-
-	var x1 = int(start.x)
-	var y1 = int(start.y)
-	var x2 = int(end.x)
-	var y2 = int(end.y)
-
-	var dx = abs(x2 - x1)
-	var dy = abs(y2 - y1)
-	var sx = 1 if x1 < x2 else -1
-	var sy = 1 if y1 < y2 else -1
-	var err = dx - dy
-
-	while true:
-		pixels.append(Vector2(x1, y1))
-		if x1 == x2 and y1 == y2:
-			break
-		var e2 = 2 * err
-		if e2 > -dy:
-			err -= dy
-			x1 += sx
-		if e2 < dx:
-			err += dx
-			y1 += sy
-
+# Get or create cached circle pixel pattern
+func _get_cached_circle_pixels(radius: int) -> Array:
+	# Clamp radius to reasonable limits
+	radius = min(radius, _max_cached_radius)
+	
+	# Return cached pattern if available
+	if _circle_cache.has(radius):
+		return _circle_cache[radius]
+	
+	# Generate new pattern
+	var pixels = []
+	var r_squared = radius * radius
+	
+	for x in range(-radius, radius + 1):
+		for y in range(-radius, radius + 1):
+			var dist_squared = x*x + y*y
+			if dist_squared <= r_squared:
+				var alpha_factor = 1.0
+				
+				# Add anti-aliasing at the edges
+				if dist_squared > (radius-1) * (radius-1):
+					var dist = sqrt(dist_squared)
+					alpha_factor = max(0.0, 1.0 - (dist - (radius-1)))
+				
+				# Store x, y offset and alpha factor in Vector3
+				pixels.append(Vector3(x, y, alpha_factor))
+	
+	# Cache the pattern
+	_circle_cache[radius] = pixels
 	return pixels
 
-func get_circle_pixels(center: Vector2, radius: int) -> PackedVector2Array:
-	var pixels = PackedVector2Array()
-	for x in range(center.x - radius, center.x + radius + 1):
-		for y in range(center.y - radius, center.y + radius + 1):
-			if (x - center.x) * (x - center.x) + (y - center.y) * (y - center.y) <= radius * radius:
-				pixels.append(Vector2(x, y))
-	return pixels
+# Fast color blending
+func _blend_colors(bottom: Color, top: Color) -> Color:
+	if top.a >= 0.99:
+		return top
+	
+	if top.a <= 0.01:
+		return bottom
+		
+	# Pre-calculate alpha values for speed
+	var one_minus_top_a = 1.0 - top.a
+	var bottom_factor = bottom.a * one_minus_top_a
+	
+	# Calculate final alpha
+	var a = 1.0 - one_minus_top_a * (1.0 - bottom.a)
+	if a < 0.01:
+		return Color(0, 0, 0, 0)
+	
+	# Calculate final RGB
+	var inv_a = 1.0 / a
+	var r = (top.r * top.a + bottom.r * bottom_factor) * inv_a
+	var g = (top.g * top.a + bottom.g * bottom_factor) * inv_a
+	var b = (top.b * top.a + bottom.b * bottom_factor) * inv_a
+	
+	return Color(r, g, b, a)
 
-
-
-
+# Circle cursor methods (unchanged)
 func create_fast_circle_image(radius: int, line_color: Color = Color(1, 1, 1, 1)) -> Image:
 	var size = radius * 2 + 1
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
@@ -130,10 +243,6 @@ func create_fast_circle_image(radius: int, line_color: Color = Color(1, 1, 1, 1)
 	var x = radius
 	var y = 0
 	var decision = 1 - radius
-	
-	# Slightly transparent color for anti-aliasing
-	var aa_color = line_color
-	aa_color.a = 0.5
 	
 	while x >= y:
 		# Main pixels

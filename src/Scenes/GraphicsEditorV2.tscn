@@ -1,13 +1,13 @@
 [gd_scene load_steps=9 format=3 uid="uid://drcf5pucshg1x"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
+[ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
 [ext_resource type="ButtonGroup" uid="uid://da3bhcsoc4ruq" path="res://assets/data/GraphicsEditorToolsButtonGroup.tres" id="2_ymijy"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DrawingTool.gd" id="2_yti2r"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PaneTool.gd" id="3_42ubw"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EraserTool.gd" id="4_146eo"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TransformTool.gd" id="5_sc07q"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SpeechBubbleTool.gd" id="6_g8cav"]
+[ext_resource type="Script" uid="uid://ub4ntbcjuw4" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DrawingTool.gd" id="2_yti2r"]
+[ext_resource type="Script" uid="uid://i5o2j3imd6hw" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PaneTool.gd" id="3_42ubw"]
+[ext_resource type="Script" uid="uid://cp1wg0srxc8hs" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EraserTool.gd" id="4_146eo"]
+[ext_resource type="Script" uid="uid://detvnetf4keir" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TransformTool.gd" id="5_sc07q"]
+[ext_resource type="Script" uid="uid://ek2a4h3bujgd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SpeechBubbleTool.gd" id="6_g8cav"]
 
 [node name="GraphicsEditorV2" type="PanelContainer"]
 anchors_preset = 15
@@ -158,11 +158,12 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LayersContainer" type="CenterContainer" parent="h/v/ScrollContainer"]
+[node name="LayersContainer" type="Control" parent="h/v/ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+mouse_filter = 1
 
 [node name="ScrollContainer" type="ScrollContainer" parent="h"]
 layout_mode = 2
