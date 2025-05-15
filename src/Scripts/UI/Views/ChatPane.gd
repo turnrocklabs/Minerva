@@ -449,10 +449,13 @@ func execute_parallel_chat(text_input: String) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	# Check if we need to do chain of messages
 	inputs = get_separated_messages(text_input)
+	var multi_message_container:  = MultiMessageContainer.new()
 	usr_messages_container = SliderContainer.new()
 	mdl_messages_container = SliderContainer.new()
-	history.VBox.add_child(usr_messages_container)
-	history.VBox.add_child(mdl_messages_container)
+	multi_message_container.add_child(usr_messages_container)
+	multi_message_container.add_child(mdl_messages_container)
+	history.VBox.add_child(multi_message_container)
+	#history.VBox.add_child(mdl_messages_container)
 	
 	user_parallel_chat_UUID = SingletonObject.generate_UUID()
 	parallel_chat_UUID = SingletonObject.generate_UUID()

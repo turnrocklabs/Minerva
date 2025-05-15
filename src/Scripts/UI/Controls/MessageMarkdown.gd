@@ -137,7 +137,6 @@ func _ready() -> void:
 		contract_message()
 	
 	_enable_input()
-	v_box_container.resized.connect(_update_sizes)
 
 
 ## sets loading label visibility to `loading_` and toggles_controls
@@ -187,9 +186,7 @@ func set_edit(on: = true) -> void:
 	text_edit.visible = on
 
 func _update_tokens_cost() -> void:
-	var price: float = 0.0
-	if history_item.provider != null:
-		price = history_item.provider.token_cost * history_item.TokenCost
+	var price = history_item.provider.token_cost * history_item.TokenCost
 
 	tokens_cost.visible = true
 	if history_item.EstimatedTokenCost:
@@ -253,9 +250,6 @@ func _setup_model_message():
 	var continue_btn = get_node("%ContinueButton") as Button
 	continue_btn.visible = not history_item.Complete
 	
-	# we can't edit model messages
-	# %EditButton.visible = false
-
 	if history_item.Error:
 		label.text = "An error occurred:\n%s" % history_item.Error
 		style.bg_color = error_message_color
@@ -265,13 +259,11 @@ func _setup_model_message():
 	#await get_tree().process_frame
 
 
-
 ## Instantiates new message node
 static var message_scene = preload("res://Scenes/MessageMarkdown.tscn")
 static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = message_scene.instantiate()
 	return msg
-
 
 
 # Continues the generation of the response
@@ -280,8 +272,6 @@ func _on_continue_button_pressed():
 		loading = true
 		history_item = await SingletonObject.Chats.continue_response(history_item)
 		loading = false
-
-
 
 func _on_clip_button_pressed():
 	DisplayServer.clipboard_set(label.markdown_text + "\n")
@@ -305,12 +295,12 @@ func _on_note_button_pressed():
 	else:
 		if linked_memory_item_UUID == "":
 			linked_memory_item_UUID = SingletonObject.NotesTab.\
-										add_note("Chat Note",false, label.markdown_text,history_item.Complete).UUID
+										add_note("Chat Note", false, label.markdown_text,history_item.Complete).UUID
 		else:
 			var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item_UUID, label.markdown_text)
 			if return_memory == null:
 				linked_memory_item_UUID = SingletonObject.NotesTab.\
-										add_note("Chat Note",false,label.markdown_text,history_item.Complete).UUID
+										add_note("Chat Note", false, label.markdown_text,history_item.Complete).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 
