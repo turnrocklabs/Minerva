@@ -479,6 +479,7 @@ func expand_message() -> void:
 	if _last_custom_size_y == 0 or _last_custom_size_y < 100:
 		_last_custom_size_y = max_message_size_limit
 	resize_scroll_container.visible = true
+	resize_drag_control.visible = true
 	_animate_expand(_last_custom_size_y, 0.0, Color.WHITE)
 
 
@@ -486,6 +487,7 @@ func contract_message() -> void:
 	_animate_expand(0.0, -90.0, expand_icon_color)
 	await get_tree().create_timer(expand_anim_duration- 0.24).timeout
 	resize_scroll_container.visible = false
+	resize_drag_control.visible = false
 
 
 func _animate_expand(new_size: float, new_rotation: float, new_icon_color: Color) -> Tween:
