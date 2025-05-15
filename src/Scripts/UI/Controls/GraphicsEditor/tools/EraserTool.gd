@@ -14,14 +14,14 @@ var brush_size: int:
 	get:
 		return int(_brush_size_slider.value)
 
-
-
 var _last_drawing_position: Vector2
-
 var drawing: = false
 
+# Performance optimizations
+var _circle_cache = {}  # Cache circular brush patterns
+var _max_cached_radius = 100
+
 func _ready() -> void:
-	# each time the tool is changed to this one, update the custom cursor
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
 			if tool_ == self:
@@ -32,44 +32,90 @@ func _ready() -> void:
 				)
 	)
 
-	# when the brush size changed update the cursor
 	_brush_size_slider.value_changed.connect(
 		func(value: float):
 			editor.set_custom_cursor(create_fast_circle_image(int(value)), Input.CursorShape.CURSOR_ARROW, Vector2.ONE * value)
 	)
+	
+	# Pre-cache common brush sizes
+	for r in range(1, min(30, _max_cached_radius)):
+		_get_cached_circle_pixels(r)
 
 func handle_input_event(event: InputEvent) -> void:
 	event = editor.active_layer.localize_input(event)
 
 	if event is InputEventMouseButton:
-
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.is_pressed():
 				drawing = true
 				_last_drawing_position = event.position
-				image_draw(editor.active_layer.image, event.position, brush_color, brush_size)
+				_erase_stamp(editor.active_layer.image, event.position, brush_size)
 				editor.queue_redraw()
 			else:
 				drawing = false
 
 	if event is InputEventMouseMotion and drawing:
-
-		for line_pixel in bresenham_line(_last_drawing_position, event.position):
-			image_draw(editor.active_layer.image, line_pixel, brush_color, int(brush_size))
+		# If moving too fast, add intermediate points to ensure a continuous line
+		var distance = _last_drawing_position.distance_to(event.position)
+		if distance > brush_size * 0.5:  # Add more points if moving faster than half the brush size
+			var steps = ceil(distance / (brush_size * 0.25))  # Adjust divisor to control density
+			for i in range(1, steps):
+				var t = float(i) / steps
+				var lerp_pos = _last_drawing_position.lerp(event.position, t)
+				_erase_stamp(editor.active_layer.image, lerp_pos, brush_size)
 		
+		_erase_stamp(editor.active_layer.image, event.position, brush_size)
 		_last_drawing_position = event.position
 		editor.queue_redraw()
 
+# Optimized eraser stamp
+func _erase_stamp(target_image: Image, center: Vector2, diameter: int) -> void:
+	# Get cached pixel pattern for this radius
+	var radius = diameter / 2
+	if radius < 1: radius = 1
+	
+	var pixels = _get_cached_circle_pixels(radius)
+	
+	# Calculate integer center position
+	var center_x = int(center.x)
+	var center_y = int(center.y)
+	
+	# Apply the stamp pattern to the image
+	var img_width = target_image.get_width()
+	var img_height = target_image.get_height()
+	
+	for offset in pixels:
+		var x = center_x + offset.x
+		var y = center_y + offset.y
+		
+		if x >= 0 and x < img_width and y >= 0 and y < img_height:
+			target_image.set_pixel(x, y, Color.TRANSPARENT)
 
+# Get or create cached circle pixel pattern
+func _get_cached_circle_pixels(radius: int) -> Array:
+	# Clamp radius to reasonable limits
+	radius = min(radius, _max_cached_radius)
+	
+	# Return cached pattern if available
+	if _circle_cache.has(radius):
+		return _circle_cache[radius]
+	
+	# Generate new pattern
+	var pixels = []
+	var r_squared = radius * radius
+	
+	for x in range(-radius, radius + 1):
+		for y in range(-radius, radius + 1):
+			var dist_squared = x*x + y*y
+			if dist_squared <= r_squared:
+				# Store x, y offset in Vector3 (z unused for eraser)
+				pixels.append(Vector3(x, y, 1.0))
+	
+	# Cache the pattern
+	_circle_cache[radius] = pixels
+	return pixels
 
-## Checks if given pixel is within the image and draws it using `set_pixelv`
-func image_draw(target_image: Image, pos: Vector2, color: Color, point_size: int):
-
-	for pixel in get_circle_pixels(pos, point_size):
-		if pixel.x >= 0 and pixel.x < target_image.get_width() and pixel.y >= 0 and pixel.y < target_image.get_height():
-			target_image.set_pixelv(pixel, color) 
-
-
+# Legacy method (for reference)
 func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 	var pixels = PackedVector2Array()
 
@@ -98,6 +144,7 @@ func bresenham_line(start: Vector2, end: Vector2) -> PackedVector2Array:
 
 	return pixels
 
+# Legacy method (for reference)
 func get_circle_pixels(center: Vector2, radius: int) -> PackedVector2Array:
 	var pixels = PackedVector2Array()
 	for x in range(center.x - radius, center.x + radius + 1):
@@ -106,7 +153,7 @@ func get_circle_pixels(center: Vector2, radius: int) -> PackedVector2Array:
 				pixels.append(Vector2(x, y))
 	return pixels
 
-
+# Circle cursor methods (unchanged)
 func create_fast_circle_image(radius: int, line_color: Color = Color(1, 1, 1, 1)) -> Image:
 	var size = radius * 2 + 1
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
@@ -154,4 +201,3 @@ func plot_circle_points(image: Image, center: int, x: int, y: int, color: Color)
 	for point in points:
 		if point.x >= 0 and point.x < image.get_width() and point.y >= 0 and point.y < image.get_height():
 			image.set_pixel(point.x, point.y, color)
-

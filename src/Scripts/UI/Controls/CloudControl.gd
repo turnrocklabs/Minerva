@@ -428,23 +428,23 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 		_mover.get_rect().has_point(at_position)
 	): return null
 
-# 	# Check if we pressed on existing tail point
-# 	var points_arr: = tail.get_points_vector_array()
+	# Check if we pressed on existing tail point
+	var points_arr: = tail.get_points_vector_array()
 
-# 	for i in points_arr.size():
-# 		var point: = points_arr[i]
+	for i in points_arr.size():
+		var point: = points_arr[i]
 
-# 		# if yes start dragging it
-# 		if at_position.distance_to(point) < POINT_RADIUS:
-# 			_drag_point_idx = i 
-# 			return null
+		# if yes start dragging it
+		if at_position.distance_to(point) < POINT_RADIUS:
+			_drag_point_idx = i 
+			return null
 
 
-# 	if get_rect().grow(15).has_point(at_position):
-# 		_dragging = true
+	if get_rect().grow(15).has_point(at_position):
+		_dragging = true
 	
 
-# 	return null
+	return null
 
 # func _can_drop_data(_at_position: Vector2, _data: Variant) -> bool:
 # 	return true

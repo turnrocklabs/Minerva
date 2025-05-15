@@ -102,9 +102,6 @@ func _ready():
 		
 		layers_buttons()
 	
-		SingletonObject.is_graph = false
-		SingletonObject.is_masking = false
-	
 		for layer in loaded_layers:
 			_layers_container.add_child(layer)
 			layer_undo_histories[layer.name] = [] # Initialize undo history for each layer
