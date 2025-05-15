@@ -82,9 +82,9 @@ func open_threads_popup(tab_name: String = "", tab = null):
 
 
 func _on_new_pressed():
-	#open_threads_popup()
-	%NewThreadPopup.show()
-
+	open_threads_popup()
+	
+	
 func _on_btn_create_thread_pressed(isDrawerNote:bool,tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
 	if !isDrawerNote:
@@ -292,9 +292,9 @@ func render_threads():
 
 	# Restore the last active thread:
 	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
-	if not new_tab:
-		if get_tab_count() > 0:
-			self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
+	#if not new_tab:
+	if get_tab_count() > 0:
+		self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
 	else:
 		if get_tab_count() + 1 > 0:
 			self.current_tab = get_tab_count() - 1
@@ -482,7 +482,7 @@ func attach_file(the_file: String):
 	
 	# Append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
-	render_threads()
+	#render_threads()
 
 	file.close()
 # Helper function to check if a file is binary (opposite of text file)

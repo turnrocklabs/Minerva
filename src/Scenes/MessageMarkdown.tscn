@@ -1,6 +1,6 @@
 [gd_scene load_steps=31 format=3 uid="uid://fltuapc4psxd"]
 
-[ext_resource type="Script" uid="uid://dw7ttrabgb5ig" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
+[ext_resource type="Script" uid="uid://r312rmctrom1" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_2tyhp"]
 [ext_resource type="Script" uid="uid://dbap0gqox0ty1" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
 [ext_resource type="FontFile" uid="uid://drkyos7dgp0df" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
