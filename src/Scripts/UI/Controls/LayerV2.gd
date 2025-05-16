@@ -35,6 +35,9 @@ var image_zoom_factor: float:
 
 var type: Type
 
+# Unscaled image that will be used to create scaled versions of the image
+var base_image: Image = null
+
 var image: Image:
     set(value):
         image = value
@@ -43,6 +46,9 @@ var image: Image:
         if not is_node_ready():
             await ready
         
+        if not base_image:
+            base_image = image.duplicate()
+
         var img = ImageTexture.create_from_image(image)
         texture_rect.texture = img
         size = img.get_size()
@@ -192,6 +198,12 @@ func _adjust_control_size() -> void:
             texture_rect.size = size
             # Only resize the image if the size has changed significantly
             if abs(image.get_width() - size.x) > 1 or abs(image.get_height() - size.y) > 1:
-                image.resize(int(size.x), int(size.y), Image.INTERPOLATE_LANCZOS)
+
+                var scaled_image = base_image.duplicate()
+
+                scaled_image.resize(int(size.x), int(size.y), Image.INTERPOLATE_LANCZOS)
+
+                image.copy_from(scaled_image)
+
         Type.SPEECH_BUBBLE:
             speech_bubble.size = size

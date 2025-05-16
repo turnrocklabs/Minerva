@@ -101,6 +101,8 @@ func add_layer(layer: LayerV2):
 	layer_cards_container.add_child(layer_card)
 
 	layers_container.add_child(layer, true)
+
+	layers.append(layer)
 	
 	return layer
 
@@ -179,7 +181,27 @@ func _on_layers_container_mouse_entered() -> void:
 func _on_center_view_button_pressed() -> void:
 	layers_container.center_view()
 
+func _on_add_image_button_pressed() -> void:
+	var fd: = FileDialog.new()
+	
+	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	# fd.filters = []
+
+	fd.file_selected.connect(_on_file_selected)
+
+	add_child(fd)
+
+	fd.popup_centered()
+
+func _on_file_selected(fp: String) -> void:
+	var image: = Image.load_from_file(fp)
+
+	# TODO: validate
+	var l: = LayerV2.create_image_layer(fp.get_file(), image)
+
+	add_layer(l)
+
+
 func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
-
 

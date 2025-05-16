@@ -65,6 +65,10 @@ size_flags_horizontal = 3
 size_flags_vertical = 4
 theme_override_constants/h_separation = 15
 
+[node name="AddImageButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+text = "+"
+
 [node name="BrushToolButton" type="Button" parent="h/v/h/ToolsContainer"]
 layout_mode = 2
 toggle_mode = true
@@ -194,6 +198,7 @@ icon = ExtResource("2_dcy55")
 flat = true
 icon_alignment = 1
 
+[connection signal="pressed" from="h/v/h/ToolsContainer/AddImageButton" to="." method="_on_add_image_button_pressed"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/BrushToolButton" to="." method="_on_brush_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/EraserToolButton" to="." method="_on_eraser_tool_button_toggled"]
