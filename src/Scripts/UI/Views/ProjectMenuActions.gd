@@ -22,6 +22,7 @@ func _new_project():
 	
 	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
 	update_buffer_controls()
+	SingletonObject.updated_save_state.emit("")
 
 
 func open_project(path: = ""):
@@ -292,7 +293,7 @@ func open_project_given_path(project_path: String) -> int:
 	# to the hierarchy until the idle time, when they call set_state(false).
 	# So we just delay this call to that idle time also.
 	SingletonObject.call_deferred("save_state", true)
-	
+	SingletonObject.updated_save_state.emit(project_path.get_file())
 	self.save_path = project_path
 	return OK
 	#SingletonObject.hide_loading_screen()

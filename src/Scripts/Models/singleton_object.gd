@@ -429,8 +429,11 @@ signal set_icon_size_48
 signal set_icon_size_68
 
 var saved_state = true
+signal updated_save_state(project_name:String,saved: bool)
+func save_state(state: bool): 
+	saved_state = state
+	updated_save_state.emit("", saved_state)
 
-func save_state(state: bool): saved_state = state
 
 #endregion Project Management
 
