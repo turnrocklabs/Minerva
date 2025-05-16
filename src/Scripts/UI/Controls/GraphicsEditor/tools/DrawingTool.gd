@@ -125,28 +125,31 @@ func _end_stroke() -> void:
 	_smoothed_pressure = -1.0
 	_current_stroke_points = []
 
-# Optimized brush stamp drawing - draws a circle at a single point
 func _draw_brush_stamp(target_image: Image, center: Vector2, color: Color, diameter: float) -> void:
-	# Get the layer's actual scale factor by comparing the image size vs control size
+	# IMPORTANT: Get the complete scaling factors
+	# Layer scale (difference between display size and actual image size)
 	var layer_scale_x = editor.active_layer.size.x / float(target_image.get_width())
 	var layer_scale_y = editor.active_layer.size.y / float(target_image.get_height())
-	var layer_scale = Vector2(layer_scale_x, layer_scale_y)
 	
-	# Apply the image zoom factor (was already in your code)
-	center *= editor.active_layer.image_zoom_factor
+	# Apply correct scaling to brush diameter
+	# First convert the requested visual diameter to actual image pixels
+	var actual_diameter = diameter / editor.active_layer.image_zoom_factor
 	
-	# IMPORTANT FIX: Apply the layer's scale to the diameter
-	diameter *= editor.active_layer.image_zoom_factor
-	diameter /= ((layer_scale.x + layer_scale.y) / 2.0)  # Use average scale as the factor
+	# Further adjust by the layer's scale to get image pixel coordinates
+	actual_diameter *= max(layer_scale_x, layer_scale_y)  # Use the larger scale to ensure brush isn't too small
 	
-	var radius = int(ceil(diameter * 0.5))
+	# Convert center position to actual image coordinates
+	center /= editor.active_layer.image_zoom_factor
+	
+	# Calculate radius
+	var radius = int(ceil(actual_diameter * 0.5))
 	if radius < 1:
 		radius = 1
 		
 	# Get cached pixel pattern for this radius
 	var pixels = _get_cached_circle_pixels(radius)
 	
-	# Calculate integer center position
+	# Calculate integer center position in image coordinates
 	var center_x = int(center.x)
 	var center_y = int(center.y)
 	

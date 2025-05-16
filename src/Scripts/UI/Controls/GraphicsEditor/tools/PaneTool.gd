@@ -39,12 +39,9 @@ func handle_input_event(event: InputEvent) -> void:
 			last_mouse_position = event.position
 
 func _pan_canvas(relative: Vector2) -> void:
-	# Move all layers together for canvas panning
 	for layer in editor.layers:
 		layer.position += relative
 	
-	# Update canvas bounds
-	_check_canvas_bounds()
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
 	# Calculate the combined center of all layers
@@ -90,10 +87,3 @@ func _check_canvas_bounds() -> void:
 	if max_pos.y > canvas_max_bounds.y:
 		canvas_max_bounds.y = max_pos.y + 1000
 	
-	# Notify the editor to update the background grid
-	_update_background_grid()
-
-func _update_background_grid() -> void:
-	# This function would update your background grid to cover the new canvas bounds
-	# Implementation depends on how your background is handled
-	pass
