@@ -3,7 +3,7 @@ extends PanelContainer
 
 signal active_tool_changed(tool_: BaseTool)
 
-@onready var layers_container: Control = %LayersContainer
+@onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
 
@@ -66,6 +66,8 @@ func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
 	create_new_layer("Layer", canvas_size_)
 
+	layers_container.center_view()
+
 
 func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 	# var img = Image.create(dimensions.x, dimensions.y, true, Image.FORMAT_RGBA8)
@@ -83,6 +85,8 @@ func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 
 	layers_container.add_child(layer, true)
 
+	layers.append(layer)
+
 	return layer
 
 
@@ -97,7 +101,7 @@ func add_layer(layer: LayerV2):
 	layer_cards_container.add_child(layer_card)
 
 	layers_container.add_child(layer, true)
-
+	
 	return layer
 
 
@@ -172,9 +176,10 @@ func _on_speech_bubble_tool_button_toggled(toggled_on:bool) -> void:
 func _on_layers_container_mouse_entered() -> void:
 	Input.set_custom_mouse_cursor(_custom_cursor, _custom_cursor_shape, _custom_cursor_hotspot)
 
+func _on_center_view_button_pressed() -> void:
+	layers_container.center_view()
 
 func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
-
 
 
