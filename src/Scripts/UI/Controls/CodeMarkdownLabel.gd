@@ -61,7 +61,7 @@ func _ready() -> void:
 	
 	if !expanded:
 		await get_tree().create_timer(0.05).timeout
-		code_label.fit_content = false
+		code_label.fit_content = true
 		code_label.custom_minimum_size.y = 0
 		p_2.custom_minimum_size.y = 0
 		expand_button.rotation = deg_to_rad(-90.0)
@@ -193,6 +193,7 @@ func expand_code() -> void:
 	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
 	expand_tween.finished.connect(enable_expand_button)
 	expand_button.disabled = true
+	
 	if label_size == 0 or label_size > int(code_label.size.y):
 		_update_label_size()
 	expand_tween.tween_property(code_label, "custom_minimum_size:y", label_size, expand_anim_duration)
@@ -202,6 +203,8 @@ func expand_code() -> void:
 	expand_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
 	expand_tween.set_parallel()
 	expand_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
+	await expand_tween.finished
+	code_label.fit_content = true
 
 
 func contract_code() -> void:

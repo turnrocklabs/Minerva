@@ -134,7 +134,11 @@ func _ready() -> void:
 		message_labels_container.visible = false
 	_expanded = history_item.Expanded
 	if !_expanded:
-		contract_message()
+		resize_scroll_container.custom_minimum_size.y = 0.0
+		expand_button.rotation = deg_to_rad(-90.0)
+		expand_button.modulate = expand_icon_color
+		resize_scroll_container.visible = false
+		resize_drag_control.visible = false
 	
 	_enable_input()
 

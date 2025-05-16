@@ -361,7 +361,6 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(250, 0)
 layout_mode = 2
 bbcode_enabled = true
-text = "[pulse][shake]New Project*[/shake][/pulse]"
 vertical_alignment = 1
 threaded = true
 
