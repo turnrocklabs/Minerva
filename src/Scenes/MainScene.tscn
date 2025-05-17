@@ -536,14 +536,14 @@ icon_24 = ExtResource("11_p11dv")
 icon_48 = ExtResource("36_hfhsg")
 icon_68 = ExtResource("37_toq4t")
 
-[node name="HButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="HButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["Experimental"]]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 horizontal panes"
 icon = SubResource("CanvasTexture_o30k1")
 icon_alignment = 1
 script = ExtResource("21_rnx1y")
 
-[node name="VButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="VButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["Experimental"]]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 vertical panes"
 icon = ExtResource("9_fr5ee")
