@@ -2,7 +2,7 @@ class_name ChatPane
 extends TabContainer
 
 
-#var icActive = preload("res://assets/icons/Microphone_active.png")
+
 
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
@@ -321,6 +321,7 @@ func execute_regular_chat(text: String) -> void:
 		model_msg_node.first_time_message = true
 	else:
 		model_msg_node.queue_free()
+	SingletonObject.NotesTab.Disable_All()
 
 
 func execute_sequential_chat(text_input: String) -> void:
@@ -431,6 +432,8 @@ func execute_sequential_chat(text_input: String) -> void:
 			model_msg_node.first_time_message = true
 		else:
 			model_msg_node.queue_free()
+	SingletonObject.NotesTab.Disable_All()
+
 
 var _mutex: Mutex = Mutex.new()
 var _inputs: Array[String] = []
@@ -453,7 +456,6 @@ func execute_parallel_chat(text_input: String) -> void:
 	multi_message_container.add_child(_usr_messages_container)
 	multi_message_container.add_child(_mdl_messages_container)
 	history.VBox.add_child(multi_message_container)
-	#history.VBox.add_child(_mdl_messages_container)
 	
 	_user_parallel_chat_UUID = SingletonObject.generate_UUID()
 	_parallel_chat_UUID = SingletonObject.generate_UUID()
@@ -747,17 +749,24 @@ func render_history(chat_history: ChatHistory):
 		# if the SliderContainerId if empty it means is a stand alone item and we just add it
 		if item.SliderContainerId == "" and item.MultiSliderContainerId == "": 
 			vboxChat.add_history_item(item)
-		if slider_containers.has(item.SliderContainerId):
-			var slider: = slider_containers.get(item.SliderContainerId) as SliderContainer
-			slider.add_child(vboxChat.add_history_item(item, false))
-			await get_tree().process_frame
+		elif multi_slider_containers.has(item.MultiSliderContainerId):
+			if slider_containers.has(item.SliderContainerId):
+				var slider: = slider_containers.get(item.SliderContainerId) as SliderContainer
+				slider.add_child(vboxChat.add_history_item(item, false))
+			else:
+				var new_slider_cont = SliderContainer.new()
+				new_slider_cont.add_child(vboxChat.add_history_item(item, false))
+				var multi_slider: = multi_slider_containers.get(item.MultiSliderContainerId) as MultiSliderContainer
+				multi_slider.add_child(new_slider_cont)
+				slider_containers.set(item.SliderContainerId, new_slider_cont)
 		else:
-			var new_slider_cont = SliderContainer.new()
-			new_slider_cont.add_child(vboxChat.add_history_item(item, false))
-			vboxChat.add_child(new_slider_cont)
-			slider_containers.set(item.SliderContainerId, new_slider_cont)
-			await get_tree().process_frame
-		
+			var new_multi_slider_cont: = MultiSliderContainer.new()
+			var slider: SliderContainer = SliderContainer.new()
+			new_multi_slider_cont.add_child(slider)
+			slider.add_child(vboxChat.add_history_item(item, false))
+			slider_containers.set(item.SliderContainerId, slider)
+			multi_slider_containers.set(item.MultiSliderContainerId, new_multi_slider_cont)
+			vboxChat.add_child(new_multi_slider_cont)
 
 
 # Called when the node enters the scene tree for the first time.

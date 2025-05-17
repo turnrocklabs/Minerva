@@ -91,7 +91,7 @@ var LinkedMemories: Dictionary = {}:
 	set(value): SingletonObject.call_deferred("save_state", false); LinkedMemories = value
 
 var CodeLabelsState: Dictionary = {}:
-	set(value): SingletonObject.ccall_deferred("save_state", false); CodeLabelsState = value
+	set(value): SingletonObject.call_deferred("save_state", false); CodeLabelsState = value
 	
 var isMerged: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); isMerged = value
