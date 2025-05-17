@@ -3,7 +3,7 @@ extends TabContainer
 
 
 #var icActive = preload("res://assets/icons/Microphone_active.png")
-#const MultiSliderContainerScene = preload("res://Scenes/multi_message_container.tscn")
+
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -175,7 +175,7 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	existing_response.rendered_node.loading = true
 
-	var bot_response = await history.provider.call_deferred("generate_content", history_list)#.generate_content(history_list)
+	var bot_response = await history.provider.generate_content(history_list)
 
 	# if there was an error with the request
 	if not bot_response: return
@@ -236,7 +236,7 @@ func execute_regular_chat(text: String) -> void:
 		# Handle and append user message
 		history.HistoryItemList.append(user_history_item)
 		var usr_msg_node: = history.VBox.add_history_item(user_history_item)
-		usr_msg_node.regeneratable = false
+		usr_msg_node.regeneratable = true
 		usr_msg_node.render()
 		
 		# Handle and add empty model message
@@ -346,7 +346,7 @@ func execute_sequential_chat(text_input: String) -> void:
 			# Handle and append user message
 			history.HistoryItemList.append(user_history_item)
 			var usr_msg_node: = history.VBox.add_history_item(user_history_item)
-			usr_msg_node.regeneratable = false
+			usr_msg_node.regeneratable = true
 			usr_msg_node.render()
 			
 			# Handle and add empty model message
@@ -703,7 +703,6 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 		return
 		
 	var item_index = history.HistoryItemList.find(item)
-
 	## if the item is user message, check if there's next message that's model and hide it
 	if item.Role == ChatHistoryItem.ChatRole.USER:
 		if history.HistoryItemList.size() > item_index:
@@ -711,7 +710,6 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 			if next_item.Role == ChatHistoryItem.ChatRole.MODEL:
 				next_item.Visible = false
 				next_item.rendered_node.render()
-
 	## if the item is user message, check if there's previous message that's user and hide it
 	elif item.Role == ChatHistoryItem.ChatRole.MODEL:
 		if item_index > 0:
@@ -720,11 +718,8 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 				previous_item.Visible = false
 				previous_item.rendered_node.render()
 
-	
-
 
 func render_history(chat_history: ChatHistory):
-	
 	
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
