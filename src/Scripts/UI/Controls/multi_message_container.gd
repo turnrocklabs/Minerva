@@ -17,13 +17,15 @@ func _connect_slider(slider: SliderContainer) -> void:
 	
 	# Connect the signal
 	slider.active_child_changed.connect(_update_children_index)
-	print("Connected %s to update children function" % slider.name)
+	#print("Connected %s to update children function" % slider.name)
 
 func _update_children_index(new_index: int) -> void:
 	for child in get_children():
 		if child is SliderContainer and child.active_child_index != new_index:
 			# Temporarily disconnect to prevent recursive signal emission
-			child.active_child_changed.disconnect(_update_children_index)
+			child = child as SliderContainer
+			if child.active_child_changed.is_connected(_update_children_index):
+				child.active_child_changed.disconnect(_update_children_index)
 			child.active_child_index = new_index
 			_connect_slider(child)
 	
