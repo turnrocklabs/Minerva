@@ -5,7 +5,7 @@ extends Panel
 
 
 
-func _on_add_shelv_pressed() -> void:
+func _on_add_shelf_pressed() -> void:
 	SingletonObject.pop_up_new_drawer_tab.emit()
 	SingletonObject.DrawerTab.isDrawer = true
 	
