@@ -190,7 +190,9 @@ func set_edit(on: = true) -> void:
 	text_edit.visible = on
 
 func _update_tokens_cost() -> void:
-	var price = history_item.provider.token_cost * history_item.TokenCost
+	var price = 0.0
+	if history_item.provider:
+		price = history_item.provider.token_cost * history_item.TokenCost
 
 	tokens_cost.visible = true
 	if history_item.EstimatedTokenCost:

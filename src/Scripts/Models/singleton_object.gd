@@ -432,7 +432,7 @@ var saved_state = true
 signal updated_save_state(project_name:String,saved: bool)
 func save_state(state: bool): 
 	saved_state = state
-	updated_save_state.emit("", saved_state)
+	updated_save_state.emit("", state)
 
 
 #endregion Project Management
