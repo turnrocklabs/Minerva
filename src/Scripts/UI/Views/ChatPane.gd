@@ -3,7 +3,7 @@ extends TabContainer
 
 
 #var icActive = preload("res://assets/icons/Microphone_active.png")
-#const MultiMessageContainerScene = preload("res://Scenes/multi_message_container.tscn")
+#const MultiSliderContainerScene = preload("res://Scenes/multi_message_container.tscn")
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -329,12 +329,9 @@ func execute_sequential_chat(text_input: String) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 	# Check if we need to do chain of messages
-	inputs = get_separated_messages(text_input)
-	print(inputs)
-	#var multiple_messages: = check_for_create_files(text_input)
-	#var first_line: = text_input.split("\n")[0]
+	_inputs = get_separated_messages(text_input)
 	
-	for i in inputs:
+	for i in _inputs:
 		
 		var user_history_item: = ChatHistoryItem.new()
 		var message_text: = i
@@ -435,31 +432,33 @@ func execute_sequential_chat(text_input: String) -> void:
 		else:
 			model_msg_node.queue_free()
 
-var mutex: Mutex = Mutex.new()
-var inputs: Array[String] = []
-var usr_messages_container: SliderContainer
-var mdl_messages_container: SliderContainer
-var usr_chat_hist_items: Array[ChatHistoryItem] = []
-var bot_responses: Array[ChatHistoryItem] = []
-var user_parallel_chat_UUID: String = ""
-var parallel_chat_UUID: String = ""
+var _mutex: Mutex = Mutex.new()
+var _inputs: Array[String] = []
+var _usr_messages_container: SliderContainer
+var _mdl_messages_container: SliderContainer
+var _usr_chat_hist_items: Array[ChatHistoryItem] = []
+var _bot_responses: Array[ChatHistoryItem] = []
+var _user_parallel_chat_UUID: String = ""
+var _parallel_chat_UUID: String = ""
+var _multi_slider_container_UUID: String = ""
 func execute_parallel_chat(text_input: String) -> void:
 	if text_input.is_empty(): return
 	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	# Check if we need to do chain of messages
-	inputs = get_separated_messages(text_input)
-	var multi_message_container:  = MultiMessageContainer.new()
-	usr_messages_container = SliderContainer.new()
-	mdl_messages_container = SliderContainer.new()
-	multi_message_container.add_child(usr_messages_container)
-	multi_message_container.add_child(mdl_messages_container)
+	_inputs = get_separated_messages(text_input)
+	var multi_message_container:  = MultiSliderContainer.new()
+	_usr_messages_container = SliderContainer.new()
+	_mdl_messages_container = SliderContainer.new()
+	multi_message_container.add_child(_usr_messages_container)
+	multi_message_container.add_child(_mdl_messages_container)
 	history.VBox.add_child(multi_message_container)
-	#history.VBox.add_child(mdl_messages_container)
+	#history.VBox.add_child(_mdl_messages_container)
 	
-	user_parallel_chat_UUID = SingletonObject.generate_UUID()
-	parallel_chat_UUID = SingletonObject.generate_UUID()
-	var task_id = WorkerThreadPool.add_group_task(create_message_new, inputs.size())
+	_user_parallel_chat_UUID = SingletonObject.generate_UUID()
+	_parallel_chat_UUID = SingletonObject.generate_UUID()
+	_multi_slider_container_UUID = SingletonObject.generate_UUID()
+	var task_id = WorkerThreadPool.add_group_task(create_message_new, _inputs.size())
 	
 	WorkerThreadPool.wait_for_group_task_completion(task_id)
 
@@ -468,38 +467,42 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 	if chat_hist_item == null:
 		return
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	var user_msg: ChatHistoryItem = usr_chat_hist_items.pop_front()
+	var user_msg: ChatHistoryItem = _usr_chat_hist_items.pop_front()
 	var bot_response: ChatHistoryItem = chat_hist_item
 	
-	user_msg.SliderContainerId = user_parallel_chat_UUID
-	bot_response.SliderContainerId = parallel_chat_UUID
-	if bot_responses.is_empty() and usr_chat_hist_items.is_empty():
-		user_parallel_chat_UUID = ""
-		parallel_chat_UUID = ""
+	user_msg.SliderContainerId = _user_parallel_chat_UUID
+	bot_response.SliderContainerId = _parallel_chat_UUID
+	user_msg.MultiSliderContainerId = _multi_slider_container_UUID
+	bot_response.MultiSliderContainerId = _multi_slider_container_UUID
+	if _bot_responses.is_empty() and _usr_chat_hist_items.is_empty():
+		_user_parallel_chat_UUID = ""
+		_parallel_chat_UUID = ""
+		_multi_slider_container_UUID = ""
 	
 	var usr_msg_node: = history.VBox.add_history_item(user_msg, false)
 	var mdl_msg_node: = history.VBox.add_history_item(bot_response, false)
 	if user_msg.provider is HumanProvider:
 		
-		usr_messages_container.add_child(usr_msg_node)
+		_usr_messages_container.add_child(usr_msg_node)
 		usr_msg_node.regeneratable = false
 		usr_msg_node.render()
 		
-		mdl_messages_container.add_child(mdl_msg_node)
+		_mdl_messages_container.add_child(mdl_msg_node)
 		mdl_msg_node.regeneratable = false
 		mdl_msg_node.render()
 		mdl_msg_node.set_edit()
 	else:
 		usr_msg_node.render()
-		usr_messages_container.add_child(usr_msg_node)
-		mdl_messages_container.add_child(mdl_msg_node)
+		_usr_messages_container.add_child(usr_msg_node)
+		_mdl_messages_container.add_child(mdl_msg_node)
+
 
 func create_message_new(inputs_idx: int) -> void:
 	print("paralel messages idx:" + str(inputs_idx))
-	await get_tree().create_timer(0.005).timeout
-	mutex.lock()
-	var message = inputs.pop_front()
-	mutex.unlock()
+	#await get_tree().create_timer(0.005).timeout
+	_mutex.lock()
+	var message = _inputs.pop_front()
+	_mutex.unlock()
 	print("message from thread #%d: %s" % [inputs_idx, message])
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var user_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
@@ -507,18 +510,16 @@ func create_message_new(inputs_idx: int) -> void:
 												message,
 												history.provider)
 	user_history_item.response_arrived.connect(_on_thread_bot_response_arrived)
-	mutex.lock()
-	history.HistoryItemList.append(user_history_item)
-	mutex.unlock()
+	
 	if user_history_item.provider is HumanProvider:
 		var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 													ChatHistoryItem.ChatRole.MODEL,
 													"",
 													history.provider)
-		mutex.lock()
-		usr_chat_hist_items.append(user_history_item)
-		bot_responses.append(mdl_history_item)
-		mutex.unlock()
+		_mutex.lock()
+		_usr_chat_hist_items.append(user_history_item)
+		_bot_responses.append(mdl_history_item)
+		_mutex.unlock()
 		return
 	
 	# make a chat request
@@ -538,9 +539,7 @@ func create_message_new(inputs_idx: int) -> void:
 		bot_response = await history.provider.generate_content(history_list, optional_params)
 	else:
 		bot_response = await history.provider.generate_content(history_list)
-	mutex.lock()
-	usr_chat_hist_items.append(user_history_item)
-	mutex.unlock()
+	
 	# Create history item from bot response
 	var chi = ChatHistoryItem.new()
 	
@@ -557,10 +556,12 @@ func create_message_new(inputs_idx: int) -> void:
 		
 	# Update user message node
 	user_history_item.TokenCost = bot_response.prompt_tokens
-	mutex.lock()
+	_mutex.lock()
+	_usr_chat_hist_items.append(user_history_item)
+	history.HistoryItemList.append(user_history_item)
 	history.HistoryItemList.append(chi)
-	bot_responses.append(chi)
-	mutex.unlock()
+	_bot_responses.append(chi)
+	_mutex.unlock()
 	## Inform the user history item that the response has arrived
 	user_history_item.response_arrived.emit(chi)
 	
@@ -578,10 +579,10 @@ func check_for_create_files(input: String) -> bool:
 
 
 func get_separated_messages(input: String) -> Array[String]:
-	var _inputs : Array[String] = []
+	var _inputs_to_return : Array[String] = []
 	for i in input.strip_edges().split("\n"):
-		_inputs.append(i)
-	return _inputs
+		_inputs_to_return.append(i)
+	return _inputs_to_return
 
 # TODO: check if changing the active tab during the request causes any trouble
 #signal my_signal(value)
@@ -745,13 +746,14 @@ func render_history(chat_history: ChatHistory):
 	var tab_idx = %tcChats.get_tab_idx_from_control(scroll_container)
 	%tcChats.set_tab_title(tab_idx, _name)
 	
+	var multi_slider_containers: = {}
 	var slider_containers: = {}
 	for item in chat_history.HistoryItemList:
 		# if the SliderContainerId if empty it means is a stand alone item and we just add it
-		if item.SliderContainerId == "": 
+		if item.SliderContainerId == "" and item.MultiSliderContainerId == "": 
 			vboxChat.add_history_item(item)
-		elif slider_containers.has(item.SliderContainerId):
-			var slider = slider_containers.get(item.SliderContainerId) as SliderContainer
+		if slider_containers.has(item.SliderContainerId):
+			var slider: = slider_containers.get(item.SliderContainerId) as SliderContainer
 			slider.add_child(vboxChat.add_history_item(item, false))
 			await get_tree().process_frame
 		else:
@@ -760,6 +762,7 @@ func render_history(chat_history: ChatHistory):
 			vboxChat.add_child(new_slider_cont)
 			slider_containers.set(item.SliderContainerId, new_slider_cont)
 			await get_tree().process_frame
+		
 
 
 # Called when the node enters the scene tree for the first time.

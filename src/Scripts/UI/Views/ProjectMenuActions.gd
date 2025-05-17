@@ -22,7 +22,7 @@ func _new_project():
 	
 	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
 	update_buffer_controls()
-	SingletonObject.updated_save_state.emit("")
+	SingletonObject.updated_save_state.emit("", true)
 
 
 func open_project(path: = ""):
@@ -100,6 +100,7 @@ func save_project():
 	SingletonObject.save_recent_project(save_path)
 	
 	SingletonObject.save_state(true)
+	SingletonObject.updated_save_state.emit(save_path.get_file(), true)
 
 
 # this function checks if there are unsaved editor panes and saves them
@@ -292,8 +293,8 @@ func open_project_given_path(project_path: String) -> int:
 	# even tho we called deserialize above. Probably because the nodes are not added
 	# to the hierarchy until the idle time, when they call set_state(false).
 	# So we just delay this call to that idle time also.
-	SingletonObject.call_deferred("save_state", true)
-	SingletonObject.updated_save_state.emit(project_path.get_file())
+	SingletonObject.save_state(true)
+	SingletonObject.updated_save_state.emit(project_path.get_file(), true)
 	self.save_path = project_path
 	return OK
 	#SingletonObject.hide_loading_screen()
