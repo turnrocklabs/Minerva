@@ -240,6 +240,8 @@ func _on_btn_drawer_pressed() -> void:
 
 
 func _update_project_label(new_text: String = "", saved_state: bool = true) -> void:
+	if new_text.is_empty() and saved_state:
+		project_name_label.text = ""
 	var base_text = new_text if !new_text.is_empty() else project_name_label.text.replace("*", "")
 	if saved_state:
 		project_name_label.text = base_text
