@@ -136,7 +136,7 @@ func clear_all_tabs():
 
 #region Add notes methods
 
-func add_note(user_title:String,isDrawer:bool, user_content: String,is_completed:bool = true, _source: String = "") -> MemoryItem:
+func add_note(user_title:String, user_content: String,is_completed:bool = true, _source: String = "") -> MemoryItem:
 	# get the active thread.
 	if (SingletonObject.DrawerThreadList == null) or current_tab < 0:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -166,7 +166,7 @@ func add_note(user_title:String,isDrawer:bool, user_content: String,is_completed
 
 
 
-func add_audio_note(note_title: String, note_audio: AudioStreamWAV,isDrawer:bool = false) -> MemoryItem:
+func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryItem:
 	if (SingletonObject.DrawerThreadList == null) or current_tab < 1:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
 		#return
@@ -191,7 +191,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV,isDrawer:bool
 	return new_memory
 
 
-func add_image_note(note_title: String, note_image: Image, imageCaption: String = "",isDrawer:bool = false) -> MemoryItem:
+func add_image_note(note_title: String, note_image: Image, imageCaption: String = "") -> MemoryItem:
 	if SingletonObject.DrawerThreadList.is_empty():
 		create_new_notes_tab()
 	

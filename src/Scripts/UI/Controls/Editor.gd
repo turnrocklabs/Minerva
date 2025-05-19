@@ -451,11 +451,11 @@ func _on_create_note_button_pressed() -> void:
 	else:
 		if Type.TEXT == type:
 			if file:
-				associated_object = SingletonObject.NotesTab.add_note(file.get_file(),false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
 			elif tab_title:
-				associated_object = SingletonObject.NotesTab.add_note(tab_title,false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
 			else:
-				associated_object = SingletonObject.NotesTab.add_note("Note from Editor",false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 
 		if Type.GRAPHICS == type:
 			if tab_title:

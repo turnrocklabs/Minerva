@@ -112,22 +112,22 @@ func _on_add_note_pressed():
 	match note_enum:
 		SingletonObject.note_type.TEXT:
 			if !isDrawer:
-				SingletonObject.NotesTab.add_note(Head, isDrawer, Description)
+				SingletonObject.NotesTab.add_note(Head, Description)
 			else:
-				SingletonObject.DrawerTab.add_note(Head, isDrawer, Description)
+				SingletonObject.DrawerTab.add_note(Head, Description)
 		
 		SingletonObject.note_type.IMAGE:
 			var image_description = ""  # You can add an optional description field for images if needed
 			if !isDrawer:
-				SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description, isDrawer)
+				SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description)
 			else:
-				SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description, isDrawer)
+				SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description)
 		
 		SingletonObject.note_type.AUDIO:
 			if !isDrawer:
-				SingletonObject.NotesTab.add_audio_note(Head, audio_recording, isDrawer)
+				SingletonObject.NotesTab.add_audio_note(Head, audio_recording)
 			else:
-				SingletonObject.DrawerTab.add_audio_note(Head, audio_recording, isDrawer)
+				SingletonObject.DrawerTab.add_audio_note(Head, audio_recording)
 	
 	# Clear all fields after adding note
 	%NoteHead.text = ""
