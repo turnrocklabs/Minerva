@@ -159,7 +159,7 @@ func _drop_data(_at_position: Vector2, data):
 	elif target_thread and dragged_note_drawer_thread:
 		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
 		if data.memory_item.Type == 0:
-			SingletonObject.NotesTab.add_note(data.memory_item.Title,false,data.memory_item.Content)
+			SingletonObject.NotesTab.add_note(data.memory_item.Title,data.memory_item.Content)
 		if data.memory_item.Type == 1:
 			SingletonObject.NotesTab.add_audio_note(data.memory_item.Title,data.memory_item.Audio)
 		if data.memory_item.Type == 2:
@@ -168,7 +168,7 @@ func _drop_data(_at_position: Vector2, data):
 	elif target_drawer_thread and dragged_note_thread:
 		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
 		if data.memory_item.Type == 0:
-			SingletonObject.DrawerTab.add_note(data.memory_item.Title,false,data.memory_item.Content)
+			SingletonObject.DrawerTab.add_note(data.memory_item.Title,data.memory_item.Content)
 		if data.memory_item.Type == 1:
 			SingletonObject.DrawerTab.add_audio_note(data.memory_item.Title,data.memory_item.Audio)
 		if data.memory_item.Type == 2:

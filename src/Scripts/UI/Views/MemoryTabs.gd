@@ -9,8 +9,6 @@ var _drag_active := true
 # var _hovered_tab := -1
 # var _hover_timer
 
-var isDrawer = false
-
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
 #var _can_drop:bool = false
@@ -135,7 +133,7 @@ func clear_all_tabs():
 
 #region Add notes methods
 
-func add_note(user_title:String,isDrawer:bool, user_content: String,is_completed:bool = true, _source: String = "") -> MemoryItem:
+func add_note(user_title:String, user_content: String,is_completed:bool = true, _source: String = "") -> MemoryItem:
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or current_tab < 0:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -165,7 +163,7 @@ func add_note(user_title:String,isDrawer:bool, user_content: String,is_completed
 
 
 
-func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:bool = false) -> MemoryItem:
+func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryItem:
 	# Check if we need to create a new tab
 	if SingletonObject.ThreadList.is_empty() or current_tab < 0:
 		create_new_notes_tab("Notes 1")  # Don't use await here
@@ -190,7 +188,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:boo
 	return new_memory
 
 
-func add_image_note(note_title: String, note_image: Image, imageCaption: String = "",isDrawer:bool = false) -> MemoryItem:
+func add_image_note(note_title: String, note_image: Image, imageCaption: String = "") -> MemoryItem:
 	if SingletonObject.ThreadList.is_empty():
 		create_new_notes_tab()
 	
