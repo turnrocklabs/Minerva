@@ -125,6 +125,7 @@ func _ready() -> void:
 		else:
 			max_message_size_limit = v_box_container.size.y
 	
+	await get_tree().process_frame
 	_setup_sizes()
 	
 	# Make  the controls invisible if they are empty
@@ -140,6 +141,9 @@ func _ready() -> void:
 		resize_scroll_container.visible = false
 		resize_drag_control.visible = false
 	
+	
+	await get_tree().create_timer(0.005).timeout
+	_update_sizes()
 	_enable_input()
 
 
@@ -650,24 +654,29 @@ func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> vo
 func _setup_sizes() -> void:
 	# This resizes the scroll container
 	max_message_size_limit = v_box_container.size.y
-	if images_grid_container.get_child_count() != 0 and message_labels_container.get_child_count() == 0:
-		resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
-	else:
-		if first_time_message:
-			var items_size: = v_box_container.size.y
-			if items_size > custom_starting_size:
-				items_size = custom_starting_size
-			_last_custom_size_y = items_size
-			resize_scroll_container.custom_minimum_size.y = items_size
+	if !first_time_message:
+		if _last_custom_size_y != 0:
+			resize_scroll_container.custom_minimum_size.y = _last_custom_size_y
 		else:
-			if _last_custom_size_y != 0:
-				resize_scroll_container.custom_minimum_size.y = _last_custom_size_y
-			else:
-				resize_scroll_container.custom_minimum_size.y = custom_starting_size
-				_last_custom_size_y = custom_starting_size
+			resize_scroll_container.custom_minimum_size.y = custom_starting_size
+			_last_custom_size_y = custom_starting_size
+		return
+	
+	_last_custom_size_y = v_box_container.size.y
+	if message_labels_container.get_child_count() > 0:
+		for i in message_labels_container.get_children():
+			if i is CodeMarkdownLabel:
+				_last_custom_size_y = _last_custom_size_y - i.size.y
+	resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
 
 
 func _update_sizes() -> void:
-	resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
+	var new_size: = v_box_container.size.y
+	if message_labels_container.get_child_count() > 0:
+		for i in message_labels_container.get_children():
+			if i is CodeMarkdownLabel:
+				new_size = new_size - i.size.y
+	resize_scroll_container.custom_minimum_size.y = new_size
+	
 	if v_box_container.size.y < max_message_size_limit:
-		max_message_size_limit = v_box_container.size.y
+		max_message_size_limit = _last_custom_size_y

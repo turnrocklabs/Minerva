@@ -1,9 +1,6 @@
 class_name ChatPane
 extends TabContainer
 
-
-
-
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -16,6 +13,102 @@ var container: TabContainer  # Store the TabContainer
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
 var latest_msg: Control
+
+# Extract common functionality for handling user history item creation
+func create_user_history_item(text: String, provider = null) -> ChatHistoryItem:
+	if provider == null:
+		provider = SingletonObject.ChatList[current_tab].provider
+	
+	return ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
+							   ChatHistoryItem.ChatRole.USER, 
+							   text,
+							   provider)
+
+# Handle human provider message creation
+func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem) -> void:
+	# Handle and append user message
+	history.HistoryItemList.append(user_history_item)
+	var usr_msg_node: = history.VBox.add_history_item(user_history_item)
+	usr_msg_node.regeneratable = true
+	usr_msg_node.render()
+	
+	# Handle and add empty model message
+	var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
+												ChatHistoryItem.ChatRole.MODEL,
+												"",
+												history.provider)
+	history.HistoryItemList.append(mdl_history_item)
+	var mdl_msg_node: = history.VBox.add_history_item(mdl_history_item)
+	mdl_msg_node.regeneratable = false
+	mdl_msg_node.render()
+	mdl_msg_node.set_edit()
+
+# Create and setup a model message node
+func create_model_message_node(history: ChatHistory, dummy_item: ChatHistoryItem) -> Control:
+	var model_msg_node = history.VBox.add_history_item(dummy_item)
+	latest_msg = model_msg_node
+	model_msg_node.loading = true
+	return model_msg_node
+
+# Generate content from provider
+func generate_content_from_provider(history: ChatHistory, history_list: Array) -> Variant:
+	var bot_response
+	
+	# Append the optional parameters for OpenAI models, send request and wait for the response
+	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and (not history.provider is DallE and not history.provider is GPTImage1):
+		var optional_params = {
+			"temperature": history.Temperature,
+			"top_p": history.TopP,
+			"presence_penalty": history.PresencePenalty,
+			"frequency_penalty": history.FrequencyPenalty,
+		}
+		bot_response = await history.provider.generate_content(history_list, optional_params)
+	else:
+		bot_response = await history.provider.generate_content(history_list)
+	
+	return bot_response
+
+# Process bot response into chat history item
+func process_bot_response(bot_response, _history_provider: BaseProvider) -> ChatHistoryItem:
+	var chi = ChatHistoryItem.new()
+	
+	if bot_response != null: 
+		chi.Id = bot_response.id
+		chi.Role = ChatHistoryItem.ChatRole.MODEL
+		chi.provider = bot_response.provider
+		chi.Message = bot_response.text
+		chi.Error = bot_response.error
+		chi.Complete = bot_response.complete
+		chi.TokenCost = bot_response.completion_tokens
+		if bot_response.image:
+			chi.Images = ([bot_response.image] as Array[Image])
+	
+	return chi
+
+# Update UI after receiving bot response
+func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control, 
+							 model_msg_node: Control, chi: ChatHistoryItem, 
+							 bot_response, history: ChatHistory) -> void:
+	if bot_response != null:
+		# Update user message node
+		user_history_item.TokenCost = bot_response.prompt_tokens
+		user_msg_node.render()
+
+		# Change the history item and the message node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
+
+		## Inform the user history item that the response has arrived
+		user_history_item.response_arrived.emit(chi)
+		
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(model_msg_node)
+		model_msg_node.loading = false
+		model_msg_node.first_time_message = true
+	else:
+		model_msg_node.queue_free()
+	
+	SingletonObject.NotesTab.Disable_All()
 
 ## add new chat 
 func _on_new_chat():
@@ -223,32 +316,12 @@ func execute_regular_chat(text: String) -> void:
 	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
-	#var user_history_item: = ChatHistoryItem.new()
 	
-	var user_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
-											ChatHistoryItem.ChatRole.USER, 
-											text,
-											history.provider)
+	var user_history_item = create_user_history_item(text)
 	
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
-		
-		# Handle and append user message
-		history.HistoryItemList.append(user_history_item)
-		var usr_msg_node: = history.VBox.add_history_item(user_history_item)
-		usr_msg_node.regeneratable = true
-		usr_msg_node.render()
-		
-		# Handle and add empty model message
-		var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
-													ChatHistoryItem.ChatRole.MODEL,
-													"",
-													history.provider)
-		history.HistoryItemList.append(mdl_history_item)
-		var mdl_msg_node: = history.VBox.add_history_item(mdl_history_item)
-		mdl_msg_node.regeneratable = false
-		mdl_msg_node.render()
-		mdl_msg_node.set_edit()
+		handle_human_provider_message(history, user_history_item)
 		return # if user is using Human provider we finish here
 	
 	# Check is the last message is a user message and not do anything if true
@@ -272,56 +345,12 @@ func execute_regular_chat(text: String) -> void:
 										"",
 										history.provider)
 	
-	var model_msg_node = history.VBox.add_history_item(dummy_item)
-	latest_msg = model_msg_node
-	model_msg_node.loading = true 
-	
-	var bot_response
-	# Append the optional parameters for OpenAI models, send request and wait for the response
-	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and (not history.provider is DallE and not history.provider is GPTImage1):
-		var optional_params = {
-			"temperature": history.Temperature,
-			"top_p": history.TopP,
-			"presence_penalty": history.PresencePenalty,
-			"frequency_penalty": history.FrequencyPenalty,
-		}
-		bot_response = await history.provider.generate_content(history_list, optional_params)
-	else:
-		bot_response = await history.provider.generate_content(history_list)
-
+	var model_msg_node = create_model_message_node(history, dummy_item)
+	var bot_response = await generate_content_from_provider(history, history_list)
 	
 	# Create history item from bot response
-	var chi = ChatHistoryItem.new()
-	
-	if bot_response != null: 
-		chi.Id = bot_response.id
-		chi.Role = ChatHistoryItem.ChatRole.MODEL
-		chi.provider = bot_response.provider
-		chi.Message = bot_response.text
-		chi.Error = bot_response.error
-		chi.Complete = bot_response.complete
-		chi.TokenCost = bot_response.completion_tokens
-		if bot_response.image:
-			chi.Images = ([bot_response.image] as Array[Image])
-
-		# Update user message node
-		user_history_item.TokenCost = bot_response.prompt_tokens
-		user_msg_node.render()
-
-		# Change the history item and the message node will update itself
-		model_msg_node.history_item = chi
-		history.HistoryItemList.append(chi)
-
-		## Inform the user history item that the response has arrived
-		user_history_item.response_arrived.emit(chi)
-		
-		await get_tree().process_frame
-		history.VBox.ensure_node_is_visible(model_msg_node)
-		model_msg_node.loading = false
-		model_msg_node.first_time_message = true
-	else:
-		model_msg_node.queue_free()
-	SingletonObject.NotesTab.Disable_All()
+	var chi = process_bot_response(bot_response, history.provider)
+	update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 
 
 func execute_sequential_chat(text_input: String) -> void:
@@ -333,33 +362,11 @@ func execute_sequential_chat(text_input: String) -> void:
 	_inputs = get_separated_messages(text_input)
 	
 	for i in _inputs:
-		
-		var user_history_item: = ChatHistoryItem.new()
-		var message_text: = i
-		user_history_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
-												ChatHistoryItem.ChatRole.USER, 
-												message_text,
-												history.provider)
+		var user_history_item = create_user_history_item(i)
 		
 		# if we're using the human provider, handle it here
 		if user_history_item.provider is HumanProvider:
-			
-			# Handle and append user message
-			history.HistoryItemList.append(user_history_item)
-			var usr_msg_node: = history.VBox.add_history_item(user_history_item)
-			usr_msg_node.regeneratable = true
-			usr_msg_node.render()
-			
-			# Handle and add empty model message
-			var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
-														ChatHistoryItem.ChatRole.MODEL,
-														"",
-														history.provider)
-			history.HistoryItemList.append(mdl_history_item)
-			var mdl_msg_node: = history.VBox.add_history_item(mdl_history_item)
-			mdl_msg_node.regeneratable = false
-			mdl_msg_node.render()
-			mdl_msg_node.set_edit()
+			handle_human_provider_message(history, user_history_item)
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
@@ -383,55 +390,12 @@ func execute_sequential_chat(text_input: String) -> void:
 											"",
 											history.provider)
 		
-		var model_msg_node = history.VBox.add_history_item(dummy_item)
-		latest_msg = model_msg_node
-		model_msg_node.loading = true 
-		
-		var bot_response
-		# Append the optional parameters for OpenAI models, send request and wait for the response
-		if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is DallE:
-			var optional_params = {
-				"temperature": history.Temperature,
-				"top_p": history.TopP,
-				"presence_penalty": history.PresencePenalty,
-				"frequency_penalty": history.FrequencyPenalty,
-			}
-			bot_response = await history.provider.generate_content(history_list, optional_params)
-		else:
-			bot_response = await history.provider.generate_content(history_list)
-
+		var model_msg_node = create_model_message_node(history, dummy_item)
+		var bot_response = await generate_content_from_provider(history, history_list)
 		
 		# Create history item from bot response
-		var chi = ChatHistoryItem.new()
-		
-		if bot_response != null: 
-			chi.Id = bot_response.id
-			chi.Role = ChatHistoryItem.ChatRole.MODEL
-			chi.provider = bot_response.provider
-			chi.Message = bot_response.text
-			chi.Error = bot_response.error
-			chi.Complete = bot_response.complete
-			chi.TokenCost = bot_response.completion_tokens
-			if bot_response.image:
-				chi.Images = ([bot_response.image] as Array[Image])
-
-			# Update user message node
-			user_history_item.TokenCost = bot_response.prompt_tokens
-			user_msg_node.render()
-
-			# Change the history item and the message node will update itself
-			model_msg_node.history_item = chi
-			history.HistoryItemList.append(chi)
-
-			## Inform the user history item that the response has arrived
-			user_history_item.response_arrived.emit(chi)
-			
-			await get_tree().process_frame
-			history.VBox.ensure_node_is_visible(model_msg_node)
-			model_msg_node.loading = false
-			model_msg_node.first_time_message = true
-		else:
-			model_msg_node.queue_free()
+		var chi = process_bot_response(bot_response, history.provider)
+		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	SingletonObject.NotesTab.Disable_All()
 
 
@@ -501,16 +465,13 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 
 func create_message_new(inputs_idx: int) -> void:
 	print("paralel messages idx:" + str(inputs_idx))
-	#await get_tree().create_timer(0.005).timeout
 	_mutex.lock()
 	var message = _inputs.pop_front()
 	_mutex.unlock()
 	print("message from thread #%d: %s" % [inputs_idx, message])
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
-	var user_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
-												ChatHistoryItem.ChatRole.USER, 
-												message,
-												history.provider)
+	var user_history_item = create_user_history_item(message)
+	
 	user_history_item.response_arrived.connect(_on_thread_bot_response_arrived)
 	
 	if user_history_item.provider is HumanProvider:
@@ -529,48 +490,24 @@ func create_message_new(inputs_idx: int) -> void:
 	
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	
-	var bot_response
-	# Append the optional parameters for OpenAI models, send request and wait for the response
-	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is DallE:
-		var optional_params = {
-			"temperature": history.Temperature,
-			"top_p": history.TopP,
-			"presence_penalty": history.PresencePenalty,
-			"frequency_penalty": history.FrequencyPenalty,
-		}
-		bot_response = await history.provider.generate_content(history_list, optional_params)
-	else:
-		bot_response = await history.provider.generate_content(history_list)
+	var bot_response = await generate_content_from_provider(history, history_list)
 	
 	# Create history item from bot response
-	var chi = ChatHistoryItem.new()
+	var chi = process_bot_response(bot_response, history.provider)
 	
-	if bot_response != null: 
-		chi.Id = bot_response.id
-		chi.Role = ChatHistoryItem.ChatRole.MODEL
-		chi.provider = bot_response.provider
-		chi.Message = bot_response.text
-		chi.Error = bot_response.error
-		chi.Complete = bot_response.complete
-		chi.TokenCost = bot_response.completion_tokens
-		if bot_response.image:
-			chi.Images = ([bot_response.image] as Array[Image])
-		
 	# Update user message node
-	user_history_item.TokenCost = bot_response.prompt_tokens
+	if bot_response != null:
+		user_history_item.TokenCost = bot_response.prompt_tokens
+	
 	_mutex.lock()
 	_usr_chat_hist_items.append(user_history_item)
 	history.HistoryItemList.append(user_history_item)
 	history.HistoryItemList.append(chi)
 	_bot_responses.append(chi)
 	_mutex.unlock()
+	
 	## Inform the user history item that the response has arrived
 	user_history_item.response_arrived.emit(chi)
-	
-	
-	#thread_bot_response_completed.emit()
-	# we nned to create the request and add the items to the messages container 
-	#and then update them after the resquest arrives
 
 
 func check_for_create_files(input: String) -> bool:
@@ -835,9 +772,7 @@ func _on_btn_test_pressed():
 	item.Message = """
 		## Markdown
 		Here is how you write hello world in python:
-		```python
-		print (\"Hello World\")
-		```
+		print ("Hello World")
 	"""
 	self.render_single_chat(item)
 	pass # Replace with function body.
