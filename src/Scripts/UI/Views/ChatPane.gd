@@ -8,7 +8,8 @@ var container: TabContainer  # Store the TabContainer
 @onready var txt_main_user_input: TextEdit = %txtMainUserInput
 @onready var _provider_option_button: ProviderOptionButton = %ProviderOptionButton
 @onready var buffer_control_chats: Control = %BufferControlChats
-
+@onready var audio_stop_1: IconsButton = %AudioStop1
+var _active_chat_request: = false
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
@@ -302,6 +303,8 @@ func _on_send_message_button_item_selected(index: int) -> void:
 	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
 	var filteredInput: String = %txtMainUserInput.text#.replace("_",r"\_")
 	%txtMainUserInput.text = ""
+	audio_stop_1.disabled = false
+	_active_chat_request = true
 	match index:
 		0:
 			execute_regular_chat(filteredInput)
@@ -351,6 +354,8 @@ func execute_regular_chat(text: String) -> void:
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
 	update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+	audio_stop_1.disabled = true
+	_active_chat_request = false
 
 
 func execute_sequential_chat(text_input: String) -> void:
@@ -362,6 +367,9 @@ func execute_sequential_chat(text_input: String) -> void:
 	_inputs = get_separated_messages(text_input)
 	
 	for i in _inputs:
+		if _cancelled_chat_requests:
+			_cancelled_chat_requests = false
+			return
 		var user_history_item = create_user_history_item(i)
 		
 		# if we're using the human provider, handle it here
@@ -396,6 +404,8 @@ func execute_sequential_chat(text_input: String) -> void:
 		# Create history item from bot response
 		var chi = process_bot_response(bot_response, history.provider)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+	audio_stop_1.disabled = true
+	_active_chat_request = false
 	SingletonObject.NotesTab.Disable_All()
 
 
@@ -444,7 +454,12 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 		_user_parallel_chat_UUID = ""
 		_parallel_chat_UUID = ""
 		_multi_slider_container_UUID = ""
+		audio_stop_1.disabled = true
+		_active_chat_request = false
 	
+	if _cancelled_chat_requests:
+		_cancelled_chat_requests = false
+		return
 	var usr_msg_node: = history.VBox.add_history_item(user_msg, false)
 	var mdl_msg_node: = history.VBox.add_history_item(bot_response, false)
 	if user_msg.provider is HumanProvider:
@@ -489,6 +504,7 @@ func create_message_new(inputs_idx: int) -> void:
 	var history_list: = create_prompt(user_history_item)
 	
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
+	
 	
 	var bot_response = await generate_content_from_provider(history, history_list)
 	
@@ -947,6 +963,14 @@ func get_first_chat_item() -> ChatHistoryItem:
 
 #endregion Add New HistoryItem
 
-
+var _cancelled_chat_requests: = false
 func _on_audio_stop_1_pressed() -> void:
-	SingletonObject.AtT._StopConverting()
+	if _active_chat_request:
+		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+		history.provider.cancel_active_resquests()
+		history.VBox.remove_child(latest_msg)
+		audio_stop_1.disabled = true
+		_active_chat_request = false
+		_cancelled_chat_requests = true
+	else:
+		SingletonObject.AtT._StopConverting()

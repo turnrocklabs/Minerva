@@ -334,7 +334,6 @@ func _input(event: InputEvent):
 			
 			%MessageLabelsContainer.visible = true
 			text_edit.visible = false
-
 			get_viewport().set_input_as_handled()
 
 
