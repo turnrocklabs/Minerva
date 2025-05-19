@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://d2mp2pdnnufm8"]
+[gd_scene load_steps=10 format=3 uid="uid://d2mp2pdnnufm8"]
 
 [ext_resource type="Script" uid="uid://c04kwjcgbeeb7" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_lx1ul"]
 [ext_resource type="Script" uid="uid://bpmwuclohwpd2" path="res://Scripts/Drawer_add_shelf.gd" id="2_fhdnw"]
@@ -8,7 +8,6 @@
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_nefrs"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="5_6rcta"]
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="6_i8r7k"]
-[ext_resource type="Script" uid="uid://ct1ipcgva4nh7" path="res://Scripts/UI/Controls/vboxChat.gd" id="7_5gaco"]
 [ext_resource type="PackedScene" uid="uid://c5ovagni0xeqo" path="res://Scenes/windows/new_thread_popup_drawer.tscn" id="9_nefrs"]
 
 [node name="Drawer" type="Window"]
@@ -142,7 +141,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 21
-script = ExtResource("7_5gaco")
 
 [node name="Label" type="Label" parent="CloseActions/VBoxChat"]
 layout_mode = 2
