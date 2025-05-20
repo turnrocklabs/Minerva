@@ -272,24 +272,23 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
 func save():
-	#if _save_override.is_valid(): this got put on the note button github issue #154
-		#_save_override.call()
-	#else:
 	if SingletonObject.last_saved_path:
 		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
 		await prompt_close(true)
 	
-	# Post save emit the signals to update the saved state icon
+	# Explicitly update the note after saving
+	if has_meta("memory_item"):
+		_update_memory_item(get_meta("memory_item"))
+	
+	# Post save emit the signals
 	match type:
 		Type.TEXT:
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
 			graphics_editor.is_image_saved = true
 			SingletonObject.UpdateUnsavedTabIcon.emit()
-			pass # TODO: implement for graphics files
 	SingletonObject.UpdateUnsavedTabIcon.emit()
-
 
 ## Returns the bitmask of the saved state for the editor.
 func get_saved_state() -> int:
@@ -364,41 +363,79 @@ func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
 
 
-func save_file_to_disc(path: String):
+func save_file_to_disc(path: String) -> void:
 	file = path
 	match type:
 		Type.TEXT:
+			# Save text content to file
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			if save_file == null:
 				var error: = error_string(FileAccess.get_open_error())
 				push_warning(error)
-				SingletonObject.ErrorDisplay("Couldn't open file", error)
+				SingletonObject.ErrorDisplay("Couldn't save file", error)
 				return
+				
 			save_file.store_string(code_edit.text)
 			code_edit.tag_saved_version()
-			code_edit.saved_content = code_edit.text # update the saved content
+			code_edit.saved_content = code_edit.text
 			
-		Type.GRAPHICS:
-			var dialog = ($FileDialog as FileDialog)
-			var _filters = dialog.filters
-			dialog.filters = [".png"]
-			dialog.filters = _filters
+			# Update associated note if exists
+			if has_meta("memory_item"):
+				_update_memory_item(get_meta("memory_item"))
+			elif is_instance_valid(associated_object) and associated_object is Note:
+				_update_memory_item(associated_object.memory_item)
+				associated_object.memory_item = associated_object.memory_item  # Force update
 
+		Type.GRAPHICS:
+			# Save image to file
 			var img = graphics_editor.image
-			if img: img.save_png(path)
-			
+			if img:
+				# Temporarily change filters for PNG save
+				var dialog = ($FileDialog as FileDialog)
+				var original_filters = dialog.filters
+				dialog.filters = ["*.png"]
+				
+				var err = img.save_png(path)
+				if err != OK:
+					push_warning("Failed to save image: " + error_string(err))
+					SingletonObject.ErrorDisplay("Save Failed", "Couldn't save image to " + path)
+					return
+				
+				dialog.filters = original_filters  # Restore original filters
+				
+				# Update associated note if exists
+				if has_meta("memory_item"):
+					_update_memory_item(get_meta("memory_item"))
+				elif is_instance_valid(associated_object) and associated_object is Note:
+					_update_memory_item(associated_object.memory_item)
+					associated_object.memory_item = associated_object.memory_item  # Force update
+
+				graphics_editor.is_image_saved = true
+
+		Type.VIDEO:
+			# Handle video file saving if needed
+			push_warning("Video saving not implemented")
+	
+	# Update editor state
 	_file_saved = true
 	file_saved_in_disc = true
-
 	SingletonObject.UpdateLastSavePath.emit(path.get_base_dir())
+	
+	# Update config if needed
 	if SingletonObject.config_has_saved_section("LastSavedPath"):
 		SingletonObject.config_clear_section("LastSavedPath")
 		SingletonObject.save_to_config_file("LastSavedPath", "path", SingletonObject.last_saved_path)
+	
+	# Update tab info
 	tab_title = path.get_file()
 	var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
-	SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
-	SingletonObject.editor_pane.Tabs.set_tab_tooltip(idx, path)
-
+	if idx >= 0:
+		SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
+		SingletonObject.editor_pane.Tabs.set_tab_tooltip(idx, path)
+	
+	# Notify changes
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+	content_changed.emit()
 #region bottom of the pane buttons
 
 func _on_save_button_pressed():
@@ -414,11 +451,11 @@ func _on_create_note_button_pressed() -> void:
 	else:
 		if Type.TEXT == type:
 			if file:
-				associated_object = SingletonObject.NotesTab.add_note(file.get_file(),false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
 			elif tab_title:
-				associated_object = SingletonObject.NotesTab.add_note(tab_title,false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
 			else:
-				associated_object = SingletonObject.NotesTab.add_note("Note from Editor",false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 
 		if Type.GRAPHICS == type:
 			if tab_title:
