@@ -89,12 +89,12 @@ func _copy_code_label():
 func _extract_code_label():
 	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
 	if linked_memory_item == "":
-		linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text,false, text_without_tags).UUID
+		linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
 		created_text_note.emit(dict_index, linked_memory_item)
 	else:
 		var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item, text_without_tags)
 		if return_memory == null:
-			linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text,false, text_without_tags).UUID
+			linked_memory_item = SingletonObject.NotesTab.add_note(%SyntaxLabel.text, text_without_tags).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 static var code_markdopwn_label: = preload("res://Scenes/CodeMarkdownLabel.tscn")
