@@ -34,7 +34,6 @@ func _init(_parent):
 
 
 func _ready():
-	print("aaaa")
 	self.size = self.Parent.size
 	message_selection.connect(
 		func(_msg: MessageMarkdown, active: bool):
