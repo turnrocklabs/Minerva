@@ -865,6 +865,7 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	for fp in paths:
 		SingletonObject.AttachNoteFile.emit(fp)
 		await get_tree().process_frame
+	SingletonObject.NotesTab.render_threads()
 
 
 func _on_btn_chat_settings_pressed():

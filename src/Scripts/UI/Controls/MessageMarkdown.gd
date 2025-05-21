@@ -305,12 +305,12 @@ func _on_note_button_pressed():
 	else:
 		if linked_memory_item_UUID == "":
 			linked_memory_item_UUID = SingletonObject.NotesTab.\
-										add_note("Chat Note", false, label.markdown_text,history_item.Complete).UUID
+										add_note("Chat Note", label.markdown_text,history_item.Complete).UUID
 		else:
 			var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item_UUID, label.markdown_text)
 			if return_memory == null:
 				linked_memory_item_UUID = SingletonObject.NotesTab.\
-										add_note("Chat Note", false, label.markdown_text,history_item.Complete).UUID
+										add_note("Chat Note",label.markdown_text,history_item.Complete).UUID
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 

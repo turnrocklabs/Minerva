@@ -146,7 +146,8 @@ signal create_notes_tab(state:bool,name: String)
 signal associated_notes_tab(tab_name, tab: Control)
 @warning_ignore("unused_signal")
 signal pop_up_new_tab
-
+@warning_ignore("unused_signal")
+signal pop_up_new_drawer_tab #it's made for fast fix of double open window when dopuble click on tab for rename. it'll be remove after i'll move drawer to Main scene
 @warning_ignore("unused_signal")
 signal notes_draw_state_changed(state: int)
 
