@@ -1,0 +1,42 @@
+[gd_resource type="JSON" format=3 uid="uid://bmymtvsnw2chx"]
+
+[resource]
+data = {
+"keywords": {
+"False": "#FF6B6B",
+"None": "#D3D3D3",
+"True": "#98FB98",
+"and": "#87CEFA",
+"as": "#DDA0DD",
+"assert": "#FFA07A",
+"async": "#40E0D0",
+"await": "#40E0D0",
+"break": "#FF8FB1",
+"class": "#87CEEB",
+"continue": "#FF8FB1",
+"def": "#87CEEB",
+"del": "#FF6B6B",
+"elif": "#FF9C9C",
+"else": "#FF9C9C",
+"except": "#FFD700",
+"finally": "#FFD700",
+"for": "#FFB38A",
+"from": "#DDA0DD",
+"global": "#DDA0DD",
+"if": "#FF9C9C",
+"import": "#DDA0DD",
+"in": "#87CEFA",
+"is": "#87CEFA",
+"lambda": "#98FB98",
+"nonlocal": "#DDA0DD",
+"not": "#87CEFA",
+"or": "#87CEFA",
+"pass": "#B0C4DE",
+"raise": "#FFA500",
+"return": "#FFA07A",
+"try": "#FFD700",
+"while": "#FFB38A",
+"with": "#00CED1",
+"yield": "#98FB98"
+}
+}

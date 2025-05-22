@@ -32,6 +32,8 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var experimental_enabled: bool = false
 signal toggle_experimental(enabled)
 
+var syntax_manager: SyntaxManager
+
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false
@@ -297,6 +299,9 @@ func _ready():
 	set_output_device(get_output_device())
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
+	
+	syntax_manager = SyntaxManager.new()
+	add_child(syntax_manager)
 	
 
 
