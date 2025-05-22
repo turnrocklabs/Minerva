@@ -1,0 +1,19 @@
+[gd_resource type="JSON" format=3 uid="uid://bcex36v2baa3r"]
+
+[resource]
+data = {
+"colorGroups": {
+"accessModifiers": "#FFB6C1",
+"async": "#8A2BE2",
+"booleanFalse": "#FF6B6B",
+"booleanTrue": "#98FB98",
+"controlFlow": "#FF9C9C",
+"errorHandling": "#FFD700",
+"functions": "#98FB98",
+"loops": "#FFB38A",
+"modules": "#DDA0DD",
+"null": "#D3D3D3",
+"objectRelated": "#00CED1",
+"types": "#87CEEB"
+}
+}
