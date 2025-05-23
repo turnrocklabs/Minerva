@@ -74,10 +74,14 @@ var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
-var tab_title: String = ""
+var tab_title: String = "":
+	set(value):
+		tab_title = value
+		code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
 var file: String:
 	set(value):
 		file = value
+		code_edit.syntax_highlighter = update_code_hightlighter(file)
 		%reloadButton.disabled = false
 #var file_path: String
 var type: Type
@@ -146,16 +150,18 @@ func toggle(on: bool) -> void:
 	_note_check_button.button_pressed = on
 
 
-func update_code_hightlighter(lang: String) -> void:
+func update_code_hightlighter(lang: String) -> CodeHighlighter:
 	var lang_keywords = SingletonObject.syntax_manager.get_syntax_for_language(lang)
+	var code_highlighter: = CodeHighlighter.new()
 	if !lang_keywords.is_empty():
-		var code_highlighter: = CodeHighlighter.new()
 		code_highlighter.keyword_colors = lang_keywords
 		code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
 		code_highlighter.number_color = Color.FLORAL_WHITE
 		code_highlighter.symbol_color = Color.AQUAMARINE
 		code_highlighter.function_color = Color.DEEP_PINK
 		code_highlighter.member_variable_color = Color.BLUE
+	return code_highlighter
+
 
 func _ready():
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
@@ -190,12 +196,17 @@ func _ready():
 	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
 	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
 	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
-	
+
+
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
 
 
 func _load_text_file(filename: String):
+	if !filename.get_extension().is_empty():
+		code_edit.syntax_highlighter = update_code_hightlighter(filename.get_extension())
+	else:
+		code_edit.syntax_highlighter = update_code_hightlighter(filename)
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	if fa_object == null:
 				var error: = error_string(FileAccess.get_open_error())
