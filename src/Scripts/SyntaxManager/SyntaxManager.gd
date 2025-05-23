@@ -1,9 +1,19 @@
 class_name SyntaxManager
 extends Node
 
+static var _ext_to_name: = {
+	"rs" : "rust",
+	"js" : "javascript",
+	"ts" : "typescript",
+	"py" : "python",
+	"gd" : "gdscript"
+}
+
 # Cache for loaded syntax definitions
-var _syntax_cache: = {}
-var _color_groups: = {}
+static var _syntax_cache: = {}
+static var _color_groups: = {}
+
+
 
 func _ready():
 	# Load color groups
@@ -30,8 +40,10 @@ func _load_color_groups():
 
 func get_syntax_for_language(lang_name: String) -> Dictionary:
 	# Strip any numbers or special characters from the language name
-	var clean_lang: = lang_name.rstrip("01234567890!#$%&/()=")
+	var clean_lang: = lang_name.rstrip("01234567890!#$%&/()=").strip_edges()
 	
+	if _ext_to_name.has(clean_lang):
+		clean_lang = _ext_to_name.get(clean_lang)
 	# Return from cache if available
 	if _syntax_cache.has(clean_lang):
 		return _syntax_cache[clean_lang]
