@@ -1,6 +1,7 @@
 [gd_resource type="JSON" format=3 uid="uid://bnu4nsw3d5ik8"]
 
 [resource]
+resource_local_to_scene = true
 data = {
 "keywords": {
 "'static": "#FFA07A",
