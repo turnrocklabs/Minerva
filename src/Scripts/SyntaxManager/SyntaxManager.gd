@@ -10,7 +10,7 @@ func _ready():
 	_load_color_groups()
 
 func _load_color_groups():
-	var file_path = "res://resources/syntax/color_groups.tres"
+	var file_path: = "res://resources/syntax/color_groups.tres"
 	var err := ResourceLoader.load_threaded_request(file_path)
 	
 	if err == OK:
@@ -30,14 +30,14 @@ func _load_color_groups():
 
 func get_syntax_for_language(lang_name: String) -> Dictionary:
 	# Strip any numbers or special characters from the language name
-	var clean_lang = lang_name.rstrip("01234567890!#$%&/()=")
+	var clean_lang: = lang_name.rstrip("01234567890!#$%&/()=")
 	
 	# Return from cache if available
 	if _syntax_cache.has(clean_lang):
 		return _syntax_cache[clean_lang]
 	
 	# Load the language resource file
-	var file_path = "res://resources/syntax/" + clean_lang + ".tres"
+	var file_path: = "res://resources/syntax/" + clean_lang + ".tres"
 	var err := ResourceLoader.load_threaded_request(file_path)
 	
 	if err == OK:

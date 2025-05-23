@@ -1,6 +1,7 @@
 [gd_resource type="JSON" format=3 uid="uid://bcex36v2baa3r"]
 
 [resource]
+resource_local_to_scene = true
 data = {
 "colorGroups": {
 "accessModifiers": "#FFB6C1",

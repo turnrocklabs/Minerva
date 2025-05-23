@@ -626,6 +626,8 @@ func _enable_input() -> void:
 var _resize_dragging: bool = false
 var _last_mouse_posistion_y: float = 0.0
 func _on_resize_control_gui_input(event: InputEvent) -> void:
+	if _last_mouse_posistion_y == 0:
+		_last_mouse_posistion_y = get_global_mouse_position().y
 	if _expanded:
 		if event is InputEventMouseButton:
 			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
