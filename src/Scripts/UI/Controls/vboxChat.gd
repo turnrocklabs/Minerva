@@ -15,7 +15,7 @@ signal message_selection(message: MessageMarkdown, active: bool)
 signal image_activated(image: ChatImage, active: bool)
 
 # Add this to your existing signals
-signal multi_message_updated(container: MultiMessageContainer, index: int)
+signal multi_message_updated(container: MultiSliderContainer, index: int)
 
 @onready var scroll_container = get_parent() as ScrollContainer
 
@@ -223,12 +223,12 @@ func _on_image_activated(chat_image: ChatImage, active: bool):
 
 
 # Update the existing add_multi_message function
-func add_multi_message(messages: Array) -> MultiMessageContainer:
-	var multi_message_container: MultiMessageContainer = MultiMessageContainer.new()
-	await multi_message_container.ready
+func add_multi_slider(messages: Array) -> MultiSliderContainer:
+	var multi_slider_container: MultiSliderContainer = MultiSliderContainer.new()
+	await multi_slider_container.ready
 
 	if messages == null or messages.size() < 1:
-		return multi_message_container
+		return multi_slider_container
 
 	for i in messages:
 		i = i as ChatHistoryItem
@@ -236,28 +236,28 @@ func add_multi_message(messages: Array) -> MultiMessageContainer:
 		msg_node.history_item = i
 		i.rendered_node = msg_node
 		
-		multi_message_container.add_item(msg_node)
+		multi_slider_container.add_item(msg_node)
 
 	# Connect the message_updated signal
-	multi_message_container.message_updated.connect(
+	multi_slider_container.message_updated.connect(
 		func(index: int): 
-			multi_message_updated.emit(multi_message_container, index)
+			multi_message_updated.emit(multi_slider_container, index)
 	)
 
-	add_child(multi_message_container)
-	return multi_message_container
+	add_child(multi_slider_container)
+	return multi_slider_container
 
 # Add new function to update a specific message in a multi-message container
-func update_multi_message(container: MultiMessageContainer, index: int, new_history_item: ChatHistoryItem) -> void:
+func update_multi_message(container: MultiSliderContainer, index: int, new_history_item: ChatHistoryItem) -> void:
 	container.update_message(index, new_history_item)
 
 # Add new function to create a multi-message container from a single message
-func create_multi_message_from(history_item: ChatHistoryItem) -> MultiMessageContainer:
+func create_multi_message_from(history_item: ChatHistoryItem) -> MultiSliderContainer:
 	var messages = [history_item]
-	return await add_multi_message(messages)
+	return await add_multi_slider(messages)
 
 # Add new function to add a message to existing container
-func add_to_multi_message(container: MultiMessageContainer, history_item: ChatHistoryItem) -> void:
+func add_to_multi_message(container: MultiSliderContainer, history_item: ChatHistoryItem) -> void:
 	var msg_node = MessageMarkdown.new_message()
 	msg_node.history_item = history_item
 	history_item.rendered_node = msg_node

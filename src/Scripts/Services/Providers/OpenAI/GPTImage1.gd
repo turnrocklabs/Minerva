@@ -253,6 +253,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 
 
 func estimate_tokens_from_prompt(input_prompt_array: Array[Variant]):
+	input_prompt_array = input_prompt_array
 	# Placeholder - Proper gpt-image-1 cost estimation needed based on operation, size, quality etc.
 	return 0.0
 

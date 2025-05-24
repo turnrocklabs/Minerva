@@ -32,6 +32,8 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var experimental_enabled: bool = false
 signal toggle_experimental(enabled)
 
+var syntax_manager: SyntaxManager
+
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false
@@ -298,6 +300,9 @@ func _ready():
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
 	
+	syntax_manager = SyntaxManager.new()
+	add_child(syntax_manager)
+	
 
 
 var chat_notification_player: AudioStreamPlayer
@@ -434,8 +439,11 @@ signal set_icon_size_48
 signal set_icon_size_68
 
 var saved_state = true
+signal updated_save_state(project_name:String,saved: bool)
+func save_state(state: bool): 
+	saved_state = state
+	updated_save_state.emit("", state)
 
-func save_state(state: bool): saved_state = state
 
 #endregion Project Management
 

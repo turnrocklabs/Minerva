@@ -1,0 +1,47 @@
+[gd_resource type="JSON" format=3 uid="uid://csd00iu2eyuiw"]
+
+[resource]
+resource_local_to_scene = true
+data = {
+"keywords": {
+"async": "#80CBC4",
+"await": "#80CBC4",
+"break": "#C792EA",
+"case": "#C792EA",
+"catch": "#FFD700",
+"class": "#82AAFF",
+"const": "#7FDBCA",
+"constructor": "#82AAFF",
+"continue": "#C792EA",
+"default": "#C792EA",
+"delete": "#FF8B92",
+"do": "#C792EA",
+"else": "#C792EA",
+"export": "#FFA07A",
+"extends": "#82AAFF",
+"false": "#FF9CAC",
+"finally": "#FFD700",
+"for": "#C792EA",
+"from": "#FFA07A",
+"function": "#82AAFF",
+"if": "#C792EA",
+"import": "#FFA07A",
+"instanceof": "#F07178",
+"let": "#7FDBCA",
+"new": "#82AAFF",
+"null": "#B2CCD6",
+"return": "#F07178",
+"super": "#FF8B92",
+"switch": "#C792EA",
+"this": "#FF8B92",
+"throw": "#FFD700",
+"true": "#A8FF60",
+"try": "#FFD700",
+"typeof": "#F07178",
+"undefined": "#B2CCD6",
+"var": "#7FDBCA",
+"void": "#F07178",
+"while": "#C792EA",
+"yield": "#F07178"
+}
+}

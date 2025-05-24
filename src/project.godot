@@ -54,6 +54,13 @@ project/assembly_name="AgentInator"
 
 enabled=PackedStringArray("res://addons/markdownlabel/plugin.cfg")
 
+[file_customization]
+
+folder_colors={
+"res://Scripts/SyntaxManager/": "orange",
+"res://resources/": "orange"
+}
+
 [global_group]
 
 Experimental=""

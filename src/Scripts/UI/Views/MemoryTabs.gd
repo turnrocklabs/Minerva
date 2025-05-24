@@ -544,10 +544,7 @@ func _ready():
 
 
 # if we are dragging a note above a tab, we can drop it there
-func _can_drop_data(at_position: Vector2, data):
-	var tab_idx = get_tab_idx_at_point(at_position)
-	
-	#return tab_idx != -1 and data is Note
+func _can_drop_data(_at_position: Vector2, data):
 	return data is Note
 
 # find out which tab we are above

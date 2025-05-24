@@ -18,7 +18,7 @@ var _is_Completed
 
 var current_layout: LAYOUT
 
-@onready var Tabs: TabContainer = $"./VBoxContainer/HBoxContainer/LeftControl/TabContainer"
+@onready var Tabs: TabContainer = %TabContainer
 
 @onready var LeftControl: Control = $"./VBoxContainer/HBoxContainer/LeftControl"
 @onready var RightControl: Control = $"VBoxContainer/HBoxContainer/RightControl"
@@ -223,7 +223,7 @@ func _copy_children_to(from: Node, to: Node):
 		to.call_deferred("add_child", dup)#.add_child(dup)
 
 func toggle_horizontal_split() -> void:
-	BottomControl.visible = false
+	BottomControl.visible = !BottomControl.visible
 
 	for c in RightControl.get_children(): RightControl.remove_child(c)
 	_copy_children_to(LeftControl, RightControl)
