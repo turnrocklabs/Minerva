@@ -7,7 +7,7 @@ func _init():
 	BASE_URL = "http://localhost:30000"
 	PROVIDER = SingletonObject.API_PROVIDER.LOCAL
 
-	model_name = "Qwen/Qwen3-8B-FP8"
+	model_name = "Qwen/Qwen3-4B-FP8"
 	short_name = "Q3"
 	token_cost = 0.0 # local model
 
@@ -17,7 +17,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		"temperature": 0.7,
 		"top_p": 0.8,
 		"top_k": 20,
-		"max_tokens": 32768,
+		"max_tokens": 8192,
 		"presence_penalty": 1.5,
 		"chat_template_kwargs": {"enable_thinking": false}
   	}, true)
