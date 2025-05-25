@@ -1,7 +1,7 @@
 [gd_scene load_steps=34 format=3 uid="uid://gux15c8l66u7"]
 
-[ext_resource type="Script" uid="uid://bl3o8akse3agn" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
-[ext_resource type="Script" uid="uid://bed3pqcrplxx8" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
+[ext_resource type="Script" uid="uid://ctll2l8clwqaw" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
+[ext_resource type="Script" uid="uid://c04kwjcgbeeb7" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/windows/AISettings.tscn" id="1_qlmlm"]
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="3_pputi"]
 [ext_resource type="Texture2D" uid="uid://cvb2vnkv4fpn5" path="res://assets/icons/plus_icons/add_48.svg" id="5_1cevo"]
@@ -10,7 +10,7 @@
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="7_pery3"]
 [ext_resource type="Texture2D" uid="uid://lmmhfyqj83jd" path="res://assets/icons/gear_icons/gears_icon_48_no_bg.png" id="8_0o5iw"]
-[ext_resource type="Script" uid="uid://63wcsxjjtlug" path="res://Scripts/UI/Views/icons_button.gd" id="8_rhvdc"]
+[ext_resource type="Script" uid="uid://dw58oubsm6sto" path="res://Scripts/UI/Views/icons_button.gd" id="8_rhvdc"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/eraser/ink_eraser_off.svg" id="9_4ngla"]
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
 [ext_resource type="Texture2D" uid="uid://dskn0gjd7h730" path="res://assets/icons/m_glass_icons/search_icon_48_no_bg.png" id="9_wd4ss"]
@@ -23,8 +23,8 @@
 [ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="15_t0aqa"]
 [ext_resource type="Texture2D" uid="uid://dflw78ayjikvx" path="res://assets/icons/stop_icons/stop-sign-48.png" id="17_0g7mq"]
 [ext_resource type="Texture2D" uid="uid://bvxolgw4msf57" path="res://assets/icons/stop_icons/stop-sign-68.png" id="18_libyp"]
-[ext_resource type="Script" uid="uid://bvs6hbnxqdguc" path="res://Scripts/UI/Views/multi_send_button.gd" id="24_qs864"]
-[ext_resource type="Script" uid="uid://45vliptwl2u3" path="res://Scripts/UI/Views/UnsplitedChatMessages.gd" id="27_jeocu"]
+[ext_resource type="Script" uid="uid://byt2bff5a6xnx" path="res://Scripts/UI/Views/multi_send_button.gd" id="24_qs864"]
+[ext_resource type="Script" uid="uid://boh8y87peng64" path="res://Scripts/UI/Views/UnsplitedChatMessages.gd" id="27_jeocu"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="27_rtmbh"]
 [ext_resource type="Texture2D" uid="uid://54susds7lngy" path="res://assets/icons/check_mark16.webp" id="28_t8wf8"]
 [ext_resource type="Texture2D" uid="uid://mdhtonlhq6kh" path="res://assets/icons/cancel16.webp" id="29_7cvmh"]
@@ -153,6 +153,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="VBoxContainer3/VBoxContainer2/HBoxContainer"]
 layout_mode = 2
+size_flags_horizontal = 0
 size_flags_vertical = 1
 theme_override_font_sizes/font_size = 24
 text = "Chats"

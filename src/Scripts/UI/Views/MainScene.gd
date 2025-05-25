@@ -1,5 +1,7 @@
 extends Control
 
+signal openDrawerNotes
+
 var is_dragging = false
 var drag_start_position = Vector2()
 
@@ -233,6 +235,14 @@ func _input(event):
 				
 				
 
+var isDrawerActive = false
 
 func _on_btn_drawer_pressed() -> void:
-	%Drawer.popup_centered()
+	isDrawerActive = !isDrawerActive
+	
+	if isDrawerActive:
+		emit_signal("openDrawerNotes")
+		SingletonObject.NotesTab.render_threads(true)
+		%BottomDrawerControl.show()
+	else:
+		%BottomDrawerControl.hide()
