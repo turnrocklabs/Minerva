@@ -734,7 +734,8 @@ func _ready():
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
-
+	
+	
 	SingletonObject.note_toggled.connect(_on_note_toggled)
 	SingletonObject.note_changed.connect(_on_note_changed)
 
@@ -973,5 +974,7 @@ func _on_audio_stop_1_pressed() -> void:
 		audio_stop_1.disabled = true
 		_active_chat_request = false
 		_cancelled_chat_requests = true
+		if latest_msg:
+			latest_msg.loading = false
 	else:
 		SingletonObject.AtT._StopConverting()
