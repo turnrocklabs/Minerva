@@ -77,7 +77,8 @@ var _save_override: Callable
 var tab_title: String = "":
 	set(value):
 		tab_title = value
-		code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
+		if code_edit:
+			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
 var file: String:
 	set(value):
 		file = value
