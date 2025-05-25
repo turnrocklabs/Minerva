@@ -2,6 +2,7 @@ class_name MemoryTabs
 extends TabContainer
 
 @onready var tcThreads = %tcThreads
+@onready var tcThreadsDrawer = %tcThreadsDrawer
 # just use current_tab
 # var ActiveThreadIndex: int:
 @onready var buffer_control_notes: Control = %BufferControlNotes
@@ -277,16 +278,27 @@ func delete_note(memory_item: MemoryItem):
 	active_thread.MemoryItemList.remove_at(idx)
 
 
-func render_threads():
+func render_threads(isDrawer:bool = false):
 	# Save the last active thread.
 	var last_thread = self.current_tab
-
-	# we must delete existing noted so creating new project works
-	for c in %tcThreads.get_children():
-		c.queue_free()
 	
-	for thread in SingletonObject.ThreadList:
-		render_thread(thread)
+	# we must delete existing noted so creating new project works
+	var what_thread
+	var what_singleton_thread
+	if isDrawer:
+		what_thread = %tcThreadsDrawer
+		what_singleton_thread = SingletonObject.DrawerThreadList
+	else:
+		what_thread = %tcThreads
+		what_singleton_thread = SingletonObject.ThreadList
+		
+	for c in what_thread.get_children():
+		c.queue_free()
+	for thread in what_singleton_thread:
+		if isDrawer:
+			render_thread(thread,true)
+		else:
+			render_thread(thread)
 
 	# Restore the last active thread:
 	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
@@ -302,7 +314,7 @@ func render_threads():
 
 
 static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
-func render_thread(thread_item: MemoryThread):
+func render_thread(thread_item: MemoryThread,isDrawer:bool = false):
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
 	scroll_container.scroll_vertical = 4060
@@ -319,10 +331,16 @@ func render_thread(thread_item: MemoryThread):
 	
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
 	#scroll_container.name = thread_item.ThreadName
+	var what_thread
+	if isDrawer:
+		what_thread = %tcThreadsDrawer
+	else:
+		what_thread = %tcThreads
+		
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
-	%tcThreads.add_child(scroll_container)
-	var tab_idx = %tcThreads.get_tab_idx_from_control(scroll_container)
-	%tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
+	what_thread.add_child(scroll_container)
+	var tab_idx = what_thread.get_tab_idx_from_control(scroll_container)
+	what_thread.set_tab_title(tab_idx, thread_item.ThreadName)
 	if new_tab:
 		self.current_tab = tab_idx
 
