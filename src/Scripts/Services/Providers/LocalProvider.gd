@@ -7,7 +7,7 @@ func _init():
 	BASE_URL = "http://localhost:30000"
 	PROVIDER = SingletonObject.API_PROVIDER.LOCAL
 
-	model_name = "Qwen/Qwen3-4B-FP8"
+	model_name = "gemma3"
 	short_name = "Q3"
 	token_cost = 0.0 # local model
 
