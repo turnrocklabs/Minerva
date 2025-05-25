@@ -40,15 +40,14 @@ func _load_color_groups():
 
 func get_syntax_for_language(lang_name: String) -> Dictionary:
 	# Strip any numbers or special characters from the language name
-	var clean_lang: = lang_name.rstrip("01234567890!#$%&/()=").strip_edges()
-	
+	var clean_lang: = lang_name.rstrip("01234567890!#$%&/()=.,+*{}[]").strip_edges()
+	# extensions dictionary
 	if _ext_to_name.has(clean_lang):
 		clean_lang = _ext_to_name.get(clean_lang)
 	# Return from cache if available
 	if _syntax_cache.has(clean_lang):
 		return _syntax_cache[clean_lang]
 	
-	# Load the language resource file
 	var file_path: = "res://resources/syntax/" + clean_lang + ".tres"
 	var err := ResourceLoader.load_threaded_request(file_path)
 	
@@ -57,7 +56,6 @@ func get_syntax_for_language(lang_name: String) -> Dictionary:
 		
 		# Check if the resource is valid and has JSON data
 		if lang_resource and lang_resource.data:
-		# Access the "colorGroups" dictionary from the JSON data
 			if lang_resource.data.has("keywords"):
 				_syntax_cache.set(clean_lang, lang_resource.data.keywords)
 				return lang_resource.data.keywords

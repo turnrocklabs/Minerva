@@ -9,9 +9,6 @@ func _ready():
 	# duplicate the array of provider keys
 	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
 
-	# we'll add the human provider at the bottom
-	var human: = SingletonObject.API_MODEL_PROVIDERS.HUMAN
-	sorted_keys.erase(human)
 
 	# sort the provider keys by initializing the provider class and comparing the token_cost for each one of them
 	sorted_keys.sort_custom(
@@ -19,19 +16,23 @@ func _ready():
 			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
 	)
 
-	sorted_keys.append(human)
-
+	
 	# display the sorted providers
 	for key in sorted_keys:
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance = script.new()
 		add_item("%s" % instance.display_name, key)
+	
+	if SingletonObject.config_has_saved_section("Providers"):
+		var provider  = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
+		if provider != null:
+			select(get_item_index(provider))
 
 func _on_item_selected(index: int):
 	var item_id = get_item_id(index)
 
 	var provider_object: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
-
+	
 	provider_selected.emit(provider_object)
 
 	# SingletonObject.Chats.set_provider(provider_object)
