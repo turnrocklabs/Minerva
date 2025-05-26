@@ -139,25 +139,27 @@ func _drop_data(_at_position: Vector2, data):
 		return
 
 	# 1. Print UUID of the note being dropped
-	print("Dropping note UUID: ", data.memory_item.UUID)
-
+	print("Dropping note UUID: ", data.memory_item.Title)
 	# Find which type of thread we're dropping into
 	var target_thread = _memory_thread_find(MainThreadId)
 	var target_drawer_thread = _drawer_thread_find(MainThreadId)
+
+	# Rest of your existing drop logic...
+	var dragged_note_thread = _memory_thread_find(data.memory_item.OwningThread)
+	var dragged_note_drawer_thread = _drawer_thread_find(data.memory_item.OwningThread)
 
 	# 2. Print all UUIDs in the target thread
 	if target_thread:
 		print("UUIDs in target thread:")
 		for item in target_thread.MemoryItemList:
-			print("- ", item.UUID)
+			if data.memory_item.Title == item.Title and ((data.memory_item.Content == item.Content)or(data.memory_item.MemoryImage == item.MemoryImage)or(data.memory_item.Audio == item.Audio)):
+				return
 	elif target_drawer_thread:
 		print("UUIDs in target drawer thread:")
 		for item in target_drawer_thread.MemoryItemList:
-			print("- ", item.UUID)
+			if data.memory_item.Title == item.Title:
+				return
 
-	# Rest of your existing drop logic...
-	var dragged_note_thread = _memory_thread_find(data.memory_item.OwningThread)
-	var dragged_note_drawer_thread = _drawer_thread_find(data.memory_item.OwningThread)
 
 	if target_thread and dragged_note_thread:
 		target_thread.MemoryItemList.insert(0, data.memory_item)
