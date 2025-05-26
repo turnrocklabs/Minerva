@@ -5,28 +5,28 @@ extends RefCounted
 # This abstraction is an interface to create a standard that each provider can then use.
 
 var HistoryId: String:
-	set(value): SingletonObject.save_state(false); HistoryId = value
+	set(value): SingletonObject.call_deferred("save_state", false); HistoryId = value
 
 var HistoryName: String:
-	set(value): SingletonObject.save_state(false); HistoryName = value
+	set(value): SingletonObject.call_deferred("save_state", false); HistoryName = value
 
 var HistoryItemList: Array[ChatHistoryItem]:
-	set(value): SingletonObject.save_state(false); HistoryItemList = value
+	set(value): SingletonObject.call_deferred("save_state", false); HistoryItemList = value
 
 var HasUsedSystemPrompt: bool = false:
-	set(value): SingletonObject.save_state(false); HasUsedSystemPrompt = value
+	set(value): SingletonObject.call_deferred("save_state", false); HasUsedSystemPrompt = value
 
 var Temperature: float = 1:
-	set(value): SingletonObject.save_state(false); Temperature = value
+	set(value): SingletonObject.call_deferred("save_state", false); Temperature = value
 
 var TopP: float = 1:
-	set(value): SingletonObject.save_state(false); TopP = value
+	set(value): SingletonObject.call_deferred("save_state", false); TopP = value
 
 var FrequencyPenalty: float = 0:
-	set(value): SingletonObject.save_state(false); FrequencyPenalty = value
+	set(value): SingletonObject.call_deferred("save_state", false); FrequencyPenalty = value
 
 var PresencePenalty: float = 0:
-	set(value): SingletonObject.save_state(false); PresencePenalty = value
+	set(value): SingletonObject.call_deferred("save_state", false); PresencePenalty = value
 
 var VBox: VBoxChat
 var provider: BaseProvider
