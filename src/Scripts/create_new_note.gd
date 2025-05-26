@@ -36,7 +36,6 @@ func _on_about_to_popup() -> void:
 	#should_add_note_be_disabled()
 	%AddNotePopUp.disabled = true
 
-
 func _on_close_requested() -> void:
 	call_deferred("hide")
 	%NoteHead.text = ""
@@ -111,23 +110,14 @@ func _on_add_note_pressed():
 	
 	match note_enum:
 		SingletonObject.note_type.TEXT:
-			if !isDrawer:
-				SingletonObject.NotesTab.add_note(Head, Description)
-			else:
-				SingletonObject.DrawerTab.add_note(Head, Description)
+			SingletonObject.NotesTab.add_note(Head, Description,isDrawer)
 		
 		SingletonObject.note_type.IMAGE:
 			var image_description = ""  # You can add an optional description field for images if needed
-			if !isDrawer:
-				SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description)
-			else:
-				SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description)
+			SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description,isDrawer)
 		
 		SingletonObject.note_type.AUDIO:
-			if !isDrawer:
-				SingletonObject.NotesTab.add_audio_note(Head, audio_recording)
-			else:
-				SingletonObject.DrawerTab.add_audio_note(Head, audio_recording)
+			SingletonObject.NotesTab.add_audio_note(Head, audio_recording,isDrawer)
 	
 	# Clear all fields after adding note
 	%NoteHead.text = ""

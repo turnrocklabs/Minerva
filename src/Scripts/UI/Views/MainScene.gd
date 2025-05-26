@@ -128,6 +128,7 @@ func _gui_input(event):
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
 	%CreateNewNote.popup_centered()
+	%CreateNewNote.isDrawer = false
 
 # this method pops up the preferences window
 func _on_button_pressed() -> void:
