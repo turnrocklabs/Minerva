@@ -286,4 +286,10 @@ func _on_exit_pressed() -> void:
 
 
 func _on_add_note_pressed() -> void:
-	print("it's add note")
+	%CreateNewNote.popup_centered()
+	%CreateNewNote.isDrawer = true
+
+
+func _on_add_shelf_pressed() -> void:
+	%NewThreadPopup.popup_centered()
+	%NewThreadPopup.isDrawer = true
