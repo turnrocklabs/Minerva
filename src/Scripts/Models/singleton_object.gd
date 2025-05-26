@@ -32,6 +32,8 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var experimental_enabled: bool = false
 signal toggle_experimental(enabled)
 
+var syntax_manager: SyntaxManager
+
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false
@@ -70,6 +72,12 @@ func config_has_saved_section(section: String) -> bool:
 	return config_file.has_section(section)
 
 
+func get_config_file_value(section: String, field: String) -> Variant:
+	if config_has_saved_section(section):
+		return config_file.get_value(section, field, null)
+	return ""
+
+
 func config_clear_section(section: String)-> void:
 	if !section: return
 	
@@ -93,9 +101,7 @@ func save_recent_project(path: String):
 # this function returns an array with the files 
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
-	
 	if has_recent_projects():
-		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
 	return ["no recent projects"]
 
@@ -298,6 +304,9 @@ func _ready():
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
 	
+	syntax_manager = SyntaxManager.new()
+	add_child(syntax_manager)
+	
 
 
 var chat_notification_player: AudioStreamPlayer
@@ -364,7 +373,7 @@ enum API_MODEL_PROVIDERS {
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
-var API_MODEL_PROVIDER_SCRIPTS = {
+var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
 	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_MEDIUM: ChatGPTo3.MiniMedium,
 	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_HIGH: ChatGPTo3.MiniHigh,
@@ -434,8 +443,11 @@ signal set_icon_size_48
 signal set_icon_size_68
 
 var saved_state = true
+signal updated_save_state(project_name:String,saved: bool)
+func save_state(state: bool): 
+	saved_state = state
+	updated_save_state.emit("", state)
 
-func save_state(state: bool): saved_state = state
 
 #endregion Project Management
 
