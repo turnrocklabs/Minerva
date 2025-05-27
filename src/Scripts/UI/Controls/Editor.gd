@@ -118,14 +118,15 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 				name_ = name_ as String
 				
 				var lang_keywords: Dictionary = SingletonObject.syntax_manager.get_syntax_for_language(name_)
+				var code_highlighter: = CodeHighlighter.new()
 				if !lang_keywords.is_empty():
-					var code_highlighter: = CodeHighlighter.new()
 					code_highlighter.keyword_colors = lang_keywords
-					code_highlighter.number_color = Color.FLORAL_WHITE
-					code_highlighter.symbol_color = Color.AQUAMARINE
-					code_highlighter.function_color = Color.DEEP_PINK
-					code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
-					new_code_edit.syntax_highlighter = code_highlighter
+				code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
+				code_highlighter.number_color = Color.FLORAL_WHITE
+				code_highlighter.symbol_color = Color.AQUAMARINE
+				code_highlighter.function_color = Color.DEEP_PINK
+				code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
+				new_code_edit.syntax_highlighter = code_highlighter
 			
 			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
@@ -156,11 +157,11 @@ func update_code_hightlighter(lang: String) -> CodeHighlighter:
 	var code_highlighter: = CodeHighlighter.new()
 	if !lang_keywords.is_empty():
 		code_highlighter.keyword_colors = lang_keywords
-		code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
-		code_highlighter.number_color = Color.FLORAL_WHITE
-		code_highlighter.symbol_color = Color.AQUAMARINE
-		code_highlighter.function_color = Color.DEEP_PINK
-		code_highlighter.member_variable_color = Color.BLUE
+	code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
+	code_highlighter.number_color = Color.FLORAL_WHITE
+	code_highlighter.symbol_color = Color.AQUAMARINE
+	code_highlighter.function_color = Color.DEEP_PINK
+	code_highlighter.member_variable_color = Color.BLUE
 	return code_highlighter
 
 
