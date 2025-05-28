@@ -83,7 +83,7 @@ func wrap_memory(item: MemoryItem) -> Variant:
 		output += "### Reference Information ###\n"
 		output += item.Content
 		output += "### End Reference Information ###\n\n"
-		output += "Respond to the user's message: \n\n"
+		output += "Use it as needed: \n\n"
 		return output.json_escape()
 
 
