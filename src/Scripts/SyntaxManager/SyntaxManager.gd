@@ -49,23 +49,21 @@ func get_syntax_for_language(lang_name: String) -> Dictionary:
 		return _syntax_cache[clean_lang]
 	
 	var file_path: = "res://resources/syntax/" + clean_lang + ".tres"
-	var err := ResourceLoader.load_threaded_request(file_path)
-	
-	if err == OK:
-		var lang_resource: JSON = ResourceLoader.load_threaded_get(file_path)
+	if ResourceLoader.exists(file_path):
+		var err := ResourceLoader.load_threaded_request(file_path)
 		
-		# Check if the resource is valid and has JSON data
-		if lang_resource and lang_resource.data:
-			if lang_resource.data.has("keywords"):
-				_syntax_cache.set(clean_lang, lang_resource.data.keywords)
-				return lang_resource.data.keywords
+		if err == OK:
+			var lang_resource: JSON = ResourceLoader.load_threaded_get(file_path)
+			# Check if the resource is valid and has JSON data
+			if lang_resource and lang_resource.data:
+				if lang_resource.data.has("keywords"):
+					_syntax_cache.set(clean_lang, lang_resource.data.keywords)
+					return lang_resource.data.keywords
+				else:
+					push_warning("JSON resource doesn't contain 'colorGroups' key")
 			else:
-				push_warning("JSON resource doesn't contain 'colorGroups' key")
-		else:
-			push_warning("Invalid JSON resource format")
-	else:
-		push_warning("No syntax resource found for language: " + clean_lang)
-	
+				push_warning("Invalid JSON resource format")
+	else: return {}
 	# Return empty dictionary if loading failed
 	return {}
 
