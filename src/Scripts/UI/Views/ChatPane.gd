@@ -978,3 +978,22 @@ func _on_audio_stop_1_pressed() -> void:
 			latest_msg.loading = false
 	else:
 		SingletonObject.AtT._StopConverting()
+
+
+func clone_chat(tab_idx: int) -> void:
+	var serialized_chat_to_clone: = SingletonObject.ChatList[tab_idx].Serialize()
+	var provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[serialized_chat_to_clone.get("Provider")].new()
+	var new_chat_history: ChatHistory = ChatHistory.new(provider)
+	new_chat_history.HistoryName = serialized_chat_to_clone.get("HistoryName") + " clone"
+	var chat_items: Array[ChatHistoryItem] = []
+	for i: Dictionary in serialized_chat_to_clone.get("HistoryItemList"):
+		chat_items.append(ChatHistoryItem.Deserialize(i))
+	new_chat_history.HistoryItemList = chat_items
+	SingletonObject.ChatList.append(new_chat_history)
+	render_history(new_chat_history)
+
+
+func _on_clone_chat_button_pressed() -> void:
+	if %tcChats.current_tab < 0:
+		return
+	clone_chat(%tcChats.current_tab)

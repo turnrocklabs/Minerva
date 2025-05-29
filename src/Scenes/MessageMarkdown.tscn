@@ -1,4 +1,4 @@
-[gd_scene load_steps=31 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=33 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" uid="uid://bs1lduq7lg1qp" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_2tyhp"]
@@ -6,9 +6,11 @@
 [ext_resource type="FontFile" uid="uid://c2pb8b5wi5fb3" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Texture2D" uid="uid://b6acurykmusyp" path="res://assets/icons/split.png" id="3_7l37a"]
 [ext_resource type="Script" uid="uid://d0ywt0yexj1tn" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
+[ext_resource type="Texture2D" uid="uid://djv6o31ysxhol" path="res://assets/icons/left-arrow-16.png" id="3_nqk1n"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_p2uud"]
 [ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/clipboard_icons/content_copy.svg" id="4_3sl4b"]
 [ext_resource type="Script" uid="uid://by37piffqnui" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
+[ext_resource type="Texture2D" uid="uid://c4k11pujjnrg6" path="res://assets/icons/right-arrow-16.png" id="4_24nn0"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="4_qpk4n"]
 [ext_resource type="Script" uid="uid://b5uyeik3rxtpi" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
 [ext_resource type="Script" uid="uid://dnqhrd64u4uhl" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
@@ -200,14 +202,15 @@ icon_alignment = 1
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-text = "L
+text = "
 "
+icon = ExtResource("3_nqk1n")
 
 [node name="RightCardButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-text = "R"
+icon = ExtResource("4_24nn0")
 
 [node name="ContinueButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h" groups=["controls"]]
 unique_name_in_owner = true

@@ -160,16 +160,17 @@ vertical_alignment = 2
 
 [node name="CloneChatButton" type="Button" parent="VBoxContainer3/VBoxContainer2/HBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_horizontal = 10
+tooltip_text = "Clone the currently active chat tab"
+text = "Clone Chat"
 script = ExtResource("8_rhvdc")
 metadata/_custom_type_script = "uid://cq5yob4ah4ow7"
 
 [node name="btnNewChat" type="Button" parent="VBoxContainer3/VBoxContainer2/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 10
+size_flags_horizontal = 8
 tooltip_text = "Creates a new chat tab"
 focus_mode = 0
 text = "New Chat"
@@ -393,6 +394,7 @@ size_flags_vertical = 3
 [connection signal="confirmed" from="EditTitleDialog" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_edit_title_dialog_confirmed"]
 [connection signal="text_submitted" from="EditTitleDialog/VBoxContainer/LineEdit" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_line_edit_text_submitted"]
 [connection signal="files_selected" from="AttachFileDialog" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_attach_file_dialog_files_selected"]
+[connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/CloneChatButton" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_clone_chat_button_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VBoxContainer2/HBoxContainer/btnNewChat" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_new_chat"]
 [connection signal="child_order_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_child_order_changed"]
 [connection signal="tab_changed" from="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_tab_changed"]
