@@ -1,9 +1,9 @@
 [gd_scene load_steps=10 format=3 uid="uid://d2mp2pdnnufm8"]
 
-[ext_resource type="Script" uid="uid://c04kwjcgbeeb7" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_lx1ul"]
-[ext_resource type="Script" uid="uid://bpmwuclohwpd2" path="res://Scripts/Drawer_add_shelf.gd" id="2_fhdnw"]
-[ext_resource type="Script" uid="uid://cny46nwdm5g8d" path="res://Scenes/Drawer_manager.gd" id="2_gr8q8"]
-[ext_resource type="Script" uid="uid://p3524g5d47bb" path="res://Scripts/UI/Views/DrawerTabs.gd" id="3_6nrfe"]
+[ext_resource type="Script" uid="uid://dgvwmbh8gl2xv" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_lx1ul"]
+[ext_resource type="Script" uid="uid://bns5s3d7q150b" path="res://Scripts/Drawer_add_shelf.gd" id="2_fhdnw"]
+[ext_resource type="Script" uid="uid://b172wgd7hty1f" path="res://Scenes/Drawer_manager.gd" id="2_gr8q8"]
+[ext_resource type="Script" uid="uid://br0s8055lcrgk" path="res://Scripts/UI/Views/DrawerTabs.gd" id="3_6nrfe"]
 [ext_resource type="PackedScene" uid="uid://cqgltib53weii" path="res://Scenes/windows/create_new_note.tscn" id="4_krlqx"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="4_nefrs"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="5_6rcta"]

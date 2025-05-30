@@ -1,4 +1,4 @@
-class_name SGLangProvider
+class_name LocalProvider
 extends ChatGPTBase
 
 func _init():
@@ -8,7 +8,7 @@ func _init():
 	PROVIDER = SingletonObject.API_PROVIDER.LOCAL
 
 	model_name = "gemma3"
-	short_name = "Q3"
+	short_name = "G3"
 	token_cost = 0.0 # local model
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
