@@ -108,14 +108,19 @@ var images: Array[ChatImage]:
 		images_.assign(%ImagesGridContainer.get_children().filter(func(node: Node): return node is ChatImage))
 		return images_
 
-
+var _is_in_slider_container: bool = false
 func _ready() -> void:
 	if  history_item.isMerged:
 		%UnsplitButton.visible = true
 	render()
 	
-	await get_tree().process_frame
+	
 	if get_parent() is SliderContainer:
+		_is_in_slider_container = true
+	await get_tree().process_frame
+	resize_drag_control.visible = _is_in_slider_container
+	
+	if _is_in_slider_container:
 		%LeftCardButton.visible = true
 		%RightCardButton.visible = true
 		right_control.visible = false
@@ -124,9 +129,12 @@ func _ready() -> void:
 			max_message_size_limit = custom_starting_size
 		else:
 			max_message_size_limit = v_box_container.size.y
+	else:
+		max_message_size_limit = v_box_container.size.y
 	
 	await get_tree().process_frame
 	_setup_sizes()
+	
 	
 	# Make  the controls invisible if they are empty
 	if images_grid_container.get_child_count() == 0:
@@ -628,7 +636,7 @@ var _last_mouse_posistion_y: float = 0.0
 func _on_resize_control_gui_input(event: InputEvent) -> void:
 	if _last_mouse_posistion_y == 0:
 		_last_mouse_posistion_y = get_global_mouse_position().y
-	if _expanded:
+	if _expanded  and _is_in_slider_container:
 		if event is InputEventMouseButton:
 			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
 				_resize_dragging = true
@@ -653,31 +661,37 @@ func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> vo
 
 
 func _setup_sizes() -> void:
-	# This resizes the scroll container
-	max_message_size_limit = v_box_container.size.y
-	if !first_time_message:
-		if _last_custom_size_y != 0:
-			resize_scroll_container.custom_minimum_size.y = _last_custom_size_y
-		else:
+	if _is_in_slider_container:
+		if v_box_container.size.y > custom_starting_size:
 			resize_scroll_container.custom_minimum_size.y = custom_starting_size
-			_last_custom_size_y = custom_starting_size
+			max_message_size_limit = custom_starting_size
+		else:
+			resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
 		return
+	#if !first_time_message:
+		#if _last_custom_size_y != 0:
+			#resize_scroll_container.custom_minimum_size.y = _last_custom_size_y
+		#else:
+			#resize_scroll_container.custom_minimum_size.y = custom_starting_size
+			#_last_custom_size_y = custom_starting_size
+		#return
 	
 	_last_custom_size_y = v_box_container.size.y
 	if message_labels_container.get_child_count() > 0:
 		for i in message_labels_container.get_children():
 			if i is CodeMarkdownLabel:
 				_last_custom_size_y = _last_custom_size_y - i.size.y
-	resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
+	resize_scroll_container.custom_minimum_size.y = max_message_size_limit
 
 
 func _update_sizes() -> void:
-	var new_size: = v_box_container.size.y
-	if message_labels_container.get_child_count() > 0:
-		for i in message_labels_container.get_children():
-			if i is CodeMarkdownLabel:
-				new_size = new_size - i.size.y
-	resize_scroll_container.custom_minimum_size.y = new_size
-	
-	if v_box_container.size.y < max_message_size_limit:
+	if v_box_container.size.y < max_message_size_limit and first_time_message:
 		max_message_size_limit = _last_custom_size_y
+	if _last_custom_size_y == 0:
+		max_message_size_limit = v_box_container.size.y
+	if !_is_in_slider_container:
+		resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
+	else:
+		if v_box_container.size.y > max_message_size_limit:
+			resize_scroll_container.custom_minimum_size.y = custom_starting_size
+	_last_custom_size_y = resize_scroll_container.custom_minimum_size.y
