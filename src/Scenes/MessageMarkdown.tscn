@@ -121,6 +121,7 @@ error_message_color = Color(0.737255, 0, 0.109804, 1)
 expand_anim_duration = 0.6
 expand_transition_type = 5
 expand_icon_color = Color(0.270588, 0.317647, 0.772549, 1)
+custom_starting_size = 600.0
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2
@@ -360,6 +361,7 @@ icon = ExtResource("16_rwt48")
 
 [node name="ResizeDragControl" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
+visible = false
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
 mouse_default_cursor_shape = 9
