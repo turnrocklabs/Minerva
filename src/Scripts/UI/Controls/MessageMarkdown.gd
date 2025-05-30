@@ -29,6 +29,7 @@ extends HBoxContainer
 @onready var resize_drag_control: Control = %ResizeDragControl
 @onready var images_grid_container: GridContainer = %ImagesGridContainer
 @onready var v_box_container: VBoxContainer = %MainVBoxContainer
+@onready var single_message_container: MarginContainer = %SingleMessageContainer
 
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var text_edit: TextEdit = %MessageTextEdit
@@ -109,6 +110,7 @@ var images: Array[ChatImage]:
 		return images_
 
 var _is_in_slider_container: bool = false
+var _expand_contract_control: Control
 func _ready() -> void:
 	if  history_item.isMerged:
 		%UnsplitButton.visible = true
@@ -119,7 +121,7 @@ func _ready() -> void:
 		_is_in_slider_container = true
 	await get_tree().process_frame
 	resize_drag_control.visible = _is_in_slider_container
-	
+	v_box_container.resized.connect(_update_scroll_container_size)
 	if _is_in_slider_container:
 		%LeftCardButton.visible = true
 		%RightCardButton.visible = true
@@ -130,7 +132,9 @@ func _ready() -> void:
 		else:
 			max_message_size_limit = v_box_container.size.y
 	else:
+		resize_scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 		max_message_size_limit = v_box_container.size.y
+	_expand_contract_control = resize_scroll_container
 	
 	await get_tree().process_frame
 	_setup_sizes()
@@ -150,7 +154,7 @@ func _ready() -> void:
 		resize_drag_control.visible = false
 	
 	
-	await get_tree().create_timer(0.005).timeout
+	await get_tree().create_timer(0.7).timeout
 	_update_sizes()
 	_enable_input()
 
@@ -490,7 +494,7 @@ func _on_expand_button_pressed() -> void:
 
 var expand_tween: Tween
 func expand_message() -> void:
-	
+	_animate_called_from_button = true
 	if v_box_container.size.y > max_message_size_limit:
 			max_message_size_limit = v_box_container.size.y
 	if _last_custom_size_y == 0 or _last_custom_size_y < 100:
@@ -498,21 +502,25 @@ func expand_message() -> void:
 	resize_scroll_container.visible = true
 	resize_drag_control.visible = true
 	_animate_expand(_last_custom_size_y, 0.0, Color.WHITE)
+	_animate_called_from_button = false
 
 
 func contract_message() -> void:
+	_animate_called_from_button = true
 	_animate_expand(0.0, -90.0, expand_icon_color)
 	await get_tree().create_timer(expand_anim_duration- 0.24).timeout
 	resize_scroll_container.visible = false
 	resize_drag_control.visible = false
+	_animate_called_from_button = false
+	
 
-
+var _animate_called_from_button: bool = false
 func _animate_expand(new_size: float, new_rotation: float, new_icon_color: Color) -> Tween:
 	if expand_tween and expand_tween.is_running():
 			expand_tween.kill()
 	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
 	expand_tween.finished.connect(_enable_expand_button)
-	expand_tween.tween_property(resize_scroll_container, "custom_minimum_size:y", new_size, expand_anim_duration)
+	expand_tween.tween_property(_expand_contract_control, "custom_minimum_size:y", new_size, expand_anim_duration)
 	expand_tween.set_parallel()
 	expand_tween.tween_property(expand_button,"rotation", deg_to_rad(new_rotation), expand_anim_duration)
 	expand_tween.set_parallel()
@@ -668,13 +676,6 @@ func _setup_sizes() -> void:
 		else:
 			resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
 		return
-	#if !first_time_message:
-		#if _last_custom_size_y != 0:
-			#resize_scroll_container.custom_minimum_size.y = _last_custom_size_y
-		#else:
-			#resize_scroll_container.custom_minimum_size.y = custom_starting_size
-			#_last_custom_size_y = custom_starting_size
-		#return
 	
 	_last_custom_size_y = v_box_container.size.y
 	if message_labels_container.get_child_count() > 0:
@@ -685,13 +686,22 @@ func _setup_sizes() -> void:
 
 
 func _update_sizes() -> void:
-	if v_box_container.size.y < max_message_size_limit and first_time_message:
-		max_message_size_limit = _last_custom_size_y
-	if _last_custom_size_y == 0:
-		max_message_size_limit = v_box_container.size.y
 	if !_is_in_slider_container:
 		resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
 	else:
 		if v_box_container.size.y > max_message_size_limit:
 			resize_scroll_container.custom_minimum_size.y = custom_starting_size
+			return
+	if v_box_container.size.y < max_message_size_limit and first_time_message:
+		max_message_size_limit = _last_custom_size_y
+	if _last_custom_size_y == 0:
+		max_message_size_limit = v_box_container.size.y
+	if max_message_size_limit > v_box_container.size.y:
+		max_message_size_limit = v_box_container.size.y
+		resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
+	
 	_last_custom_size_y = resize_scroll_container.custom_minimum_size.y
+
+func _update_scroll_container_size() -> void:
+	if !_animate_called_from_button:
+		_animate_expand(v_box_container.size.y +1, expand_button.rotation, expand_button.modulate)
