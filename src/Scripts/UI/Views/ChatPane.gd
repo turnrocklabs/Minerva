@@ -27,6 +27,13 @@ func create_user_history_item(text: String, provider = null) -> ChatHistoryItem:
 
 # Handle human provider message creation
 func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem) -> void:
+	# Get working memory/notes
+	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(history.provider)
+	
+	# Append working memory to the user history item
+	if working_memory:
+		user_history_item.InjectedNotes = working_memory
+	
 	# Handle and append user message
 	history.HistoryItemList.append(user_history_item)
 	var usr_msg_node: = history.VBox.add_history_item(user_history_item)
@@ -38,6 +45,10 @@ func handle_human_provider_message(history: ChatHistory, user_history_item: Chat
 												ChatHistoryItem.ChatRole.MODEL,
 												"",
 												history.provider)
+	# Also append working memory to the model's history item for context
+	if working_memory:
+		mdl_history_item.InjectedNotes = working_memory
+	
 	history.HistoryItemList.append(mdl_history_item)
 	var mdl_msg_node: = history.VBox.add_history_item(mdl_history_item)
 	mdl_msg_node.regeneratable = false
@@ -325,6 +336,7 @@ func execute_regular_chat(text: String) -> void:
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
+		history.HistoryItemList.append(user_history_item)
 		SingletonObject.NotesTab.Disable_All()
 		return # if user is using Human provider we finish here
 	
@@ -373,9 +385,11 @@ func execute_sequential_chat(text_input: String) -> void:
 			return
 		var user_history_item = create_user_history_item(i)
 		
-		# if we're using the human provider, handle it here
+		# In execute_sequential_chat function, update this part:
 		if user_history_item.provider is HumanProvider:
 			handle_human_provider_message(history, user_history_item)
+			history.HistoryItemList.append(user_history_item)  # Remove this line as it's now done inside handle_human_provider_message
+			SingletonObject.NotesTab.Disable_All()
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
@@ -491,10 +505,21 @@ func create_message_new(inputs_idx: int) -> void:
 	user_history_item.response_arrived.connect(_on_thread_bot_response_arrived)
 	
 	if user_history_item.provider is HumanProvider:
+		# Get working memory/notes
+		var working_memory: Array = SingletonObject.NotesTab.To_Prompt(history.provider)
+		
+		# Append working memory to the user history item
+		if working_memory:
+			user_history_item.InjectedNotes = working_memory
+		
 		var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 													ChatHistoryItem.ChatRole.MODEL,
 													"",
 													history.provider)
+		# Also append working memory to the model's history item
+		if working_memory:
+			mdl_history_item.InjectedNotes = working_memory
+		
 		_mutex.lock()
 		_usr_chat_hist_items.append(user_history_item)
 		_bot_responses.append(mdl_history_item)
