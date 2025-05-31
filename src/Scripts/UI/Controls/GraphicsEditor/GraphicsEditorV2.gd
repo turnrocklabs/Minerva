@@ -2,6 +2,7 @@ class_name GraphicsEditorV2
 extends PanelContainer
 
 signal active_tool_changed(tool_: BaseTool)
+signal active_layer_changed(layer: LayerV2)
 
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
@@ -41,8 +42,13 @@ var active_layer: LayerV2:
 		active_layer = value
 		for l in layers_container.get_children().filter(func(n): return n is LayerV2):
 			l.get_meta("layer_card").selected = false
+			l.transform_rect_visible = false
+			l.queue_redraw() # editor queue_redraw will not redraw layers that are not active, so call it here to remove the controls points
 		
 		active_layer.get_meta("layer_card").selected = true
+		queue_redraw()
+
+		active_layer_changed.emit(active_layer)
 
 
 var active_tool: BaseTool:
@@ -80,8 +86,17 @@ func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 	active_layer = layer
 
 	layer_card.layer_clicked.connect(func(): active_layer = layer)
+	layer_card.reorder.connect(
+		func(to: int):
+			prints("REORDER", to)
+			reorder_layer(
+				layer_card.layer,
+				to
+			)
+	)
 
 	layer_cards_container.add_child(layer_card)
+	layer_cards_container.move_child(layer_card, 0)
 
 	layers_container.add_child(layer, true)
 
@@ -99,6 +114,7 @@ func add_layer(layer: LayerV2):
 	layer_card.layer_clicked.connect(func(): active_layer = layer)
 
 	layer_cards_container.add_child(layer_card)
+	layer_cards_container.move_child(layer_card, 0)
 
 	layers_container.add_child(layer, true)
 
@@ -107,6 +123,119 @@ func add_layer(layer: LayerV2):
 	return layer
 
 
+func export_image(path: String) -> Error:
+	# Get all layers
+	var layer_nodes = layers_container.get_children().filter(func(n): return n is LayerV2)
+	
+	# If no layers, return error
+	if layer_nodes.is_empty():
+		return ERR_INVALID_DATA
+	
+	# Determine the bounding rectangle for all layers
+	var bounds := Rect2()
+	var first_layer := true
+	
+	for layer in layer_nodes:
+		if layer is LayerV2:
+			# For rotated layers, we need to calculate a more complex bounding rectangle
+			var corners = _get_rotated_corners(layer)
+			for corner in corners:
+				if first_layer:
+					bounds = Rect2(corner, Vector2.ZERO)
+					first_layer = false
+				else:
+					bounds = bounds.expand(corner)
+	
+	# Create a new image with the determined size
+	var width = int(bounds.size.x)
+	var height = int(bounds.size.y)
+	var output_image := Image.create(width, height, false, Image.FORMAT_RGBA8)
+	
+	# Make sure the image is transparent to start
+	output_image.fill(Color(0, 0, 0, 0))
+	
+	# Blend all layers onto the output image
+	for layer in layer_nodes:
+		if layer is LayerV2 and layer.visible:
+			# Get the layer's image
+			var layer_image = layer.image
+			
+			# Skip empty layers
+			if not layer_image or layer_image.is_empty():
+				continue
+			
+			# Handle rotation using a transform
+			var rotation_rad = layer.rotation
+			var pivot = layer.pivot_offset
+			var layer_pos = layer.position
+			
+			# Process each pixel in the output image space
+			for out_y in range(height):
+				for out_x in range(width):
+					# Get position in global space
+					var global_pos = Vector2(out_x, out_y) + bounds.position
+					
+					# Convert to layer local space (accounting for rotation)
+					var local_pos = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
+					
+					# Check if the point is within the layer's image
+					var img_x = int(local_pos.x)
+					var img_y = int(local_pos.y)
+					
+					if img_x >= 0 and img_x < layer_image.get_width() and img_y >= 0 and img_y < layer_image.get_height():
+						var src_color = layer_image.get_pixel(img_x, img_y)
+						
+						# Skip fully transparent pixels
+						if src_color.a <= 0.01:
+							continue
+							
+						var dst_color = output_image.get_pixel(out_x, out_y)
+						var blended = drawing_tool._blend_colors(dst_color, src_color)
+						output_image.set_pixel(out_x, out_y, blended)
+	
+	# Save the image to the specified path
+	var error := output_image.save_png(path)
+	return error
+
+# Helper function to get corners of a rotated layer
+func _get_rotated_corners(layer: LayerV2) -> Array[Vector2]:
+	var corners: Array[Vector2] = []
+	var pivot = layer.pivot_offset
+	var pos = layer.position
+	var size = layer.size
+	var rotation_rad = layer.rotation
+	
+	# Calculate the four corners in local space
+	var local_corners = [
+		Vector2(0, 0) - pivot,           # Top-left
+		Vector2(size.x, 0) - pivot,      # Top-right
+		Vector2(size.x, size.y) - pivot, # Bottom-right
+		Vector2(0, size.y) - pivot       # Bottom-left
+	]
+	
+	# Transform to global space
+	for corner in local_corners:
+		# Rotate
+		var rotated = corner.rotated(rotation_rad)
+		# Translate to global position
+		var global_corner = rotated + pivot + pos
+		corners.append(global_corner)
+	
+	return corners
+
+# Convert from global space to layer's local space (accounting for rotation)
+func _global_to_layer_space(global_pos: Vector2, layer_pos: Vector2, rotation_rad: float, pivot: Vector2) -> Vector2:
+	# Translate to layer's origin
+	var relative_pos = global_pos - layer_pos
+	# Adjust for pivot point
+	relative_pos -= pivot
+	# Apply inverse rotation
+	relative_pos = relative_pos.rotated(-rotation_rad)
+	# Re-adjust for pivot
+	relative_pos += pivot
+	
+	return relative_pos
+
 func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 = Vector2.ZERO):
 	_custom_cursor = image
 	_custom_cursor_shape = shape
@@ -114,6 +243,26 @@ func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 
 
 	if layers_container.get_rect().has_point(layers_container.get_local_mouse_position()):
 		Input.set_custom_mouse_cursor(image, shape, hotspot)
+
+func reorder_layer(layer: LayerV2, index: int) -> void:
+	if not layer.has_meta("layer_card") or not layer.get_meta("layer_card") is LayerCard:
+		push_error("Can't reorder layer %s to index %s, because of the invalid metadata on it" % [layer, index])
+		return
+
+	var layer_card: LayerCard = layer.get_meta("layer_card")
+
+	if index - layer_card.get_index() == 1:
+		# same final order if we drop it on next index
+		return
+
+	if layer_card.get_index() < index:
+		index -= 1
+
+	if index == layer_cards_container.get_child_count():
+		index -= 1
+
+	layers_container.move_child(layer, -(index+1))
+	layer_cards_container.move_child(layer_card, index)
 	
 
 func _gui_input(event: InputEvent) -> void:
@@ -205,3 +354,7 @@ func _on_file_selected(fp: String) -> void:
 func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
 
+
+
+func _on_save_button_pressed() -> void:
+	export_image(r"D:\Programs\Godot_v4.4-stable_win64.exe\test.png")

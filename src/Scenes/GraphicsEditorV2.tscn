@@ -105,6 +105,10 @@ layout_mode = 2
 tooltip_text = "Centers the viewport."
 text = "Center"
 
+[node name="SaveButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+text = "Save"
+
 [node name="ToolOptionsContainer" type="MarginContainer" parent="h/v/h"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -181,6 +185,8 @@ script = ExtResource("8_fjkto")
 [node name="ScrollContainer" type="ScrollContainer" parent="h"]
 layout_mode = 2
 size_flags_vertical = 3
+mouse_filter = 0
+mouse_force_pass_scroll_events = false
 horizontal_scroll_mode = 0
 
 [node name="v2" type="VBoxContainer" parent="h/ScrollContainer"]
@@ -205,6 +211,7 @@ icon_alignment = 1
 [connection signal="toggled" from="h/v/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
 [connection signal="pressed" from="h/v/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
+[connection signal="pressed" from="h/v/h/ToolsContainer/SaveButton" to="." method="_on_save_button_pressed"]
 [connection signal="toggled" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
 [connection signal="text_changed" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
 [connection signal="mouse_entered" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_entered"]

@@ -2,6 +2,7 @@ class_name LayerCard
 extends PanelContainer
 
 signal layer_clicked()
+signal reorder(to: int)
 
 const _scene: = preload("res://Scenes/LayerCard.tscn")
 
@@ -25,6 +26,8 @@ var layer: LayerV2:
 
 @onready var label: Label = %Label
 @onready var texture_rect: TextureRect = %TextureRect
+@onready var drop_above_separator: Control = %DropAboveSeparator
+@onready var drop_below_separator: Control = %DropBelowSeparator
 
 
 static func create(layer_: LayerV2) -> LayerCard:
@@ -48,7 +51,6 @@ func _draw() -> void:
 			texture_rect.texture = ImageTexture.create_from_image(layer.image)
 		LayerV2.Type.SPEECH_BUBBLE:
 			texture_rect.texture = await get_texture(layer.speech_bubble)
-
 
 static func get_texture(control: Control) -> ImageTexture:
 	var viewport = SubViewport.new()
@@ -75,14 +77,21 @@ func _create_drag_preview(pos: Vector2) -> LayerCard:
 	
 	# create layer copy so it doesnt overwrite the layer metadata
 	var layer_copy: = layer.duplicate()
+	layer_copy.image = layer.image.duplicate()
 
 	var preview: = Control.new()
+	preview.modulate.a = 0.25
+	modulate.a = 0.75
 
 	var lc_copy: = create(layer_copy)
 
 	preview.add_child(lc_copy)
 
 	lc_copy.position = -pos
+
+	preview.tree_exited.connect(
+		func(): modulate.a = 1
+	)
 
 	return preview
 
@@ -95,6 +104,38 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 
 	return self
 
+func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+	if not data is LayerCard:
+		return false
+	
+	# cant drop it on self
+	if data == self: return false
+
+	if (
+		at_position.x < 0 and at_position.y < 0 and
+		at_position.x > size.x and at_position.y > size.y
+	):
+		drop_above_separator.modulate.a = 0
+		drop_below_separator.modulate.a = 0
+		return false
+
+	if at_position.y > size.y / 2:
+		drop_below_separator.modulate.a = 1
+		drop_above_separator.modulate.a = 0
+	else:
+		drop_below_separator.modulate.a = 0
+		drop_above_separator.modulate.a = 1
+
+	return true
+
+
+func _drop_data(at_position: Vector2, data: Variant) -> void:
+	if not data is LayerCard: return
+
+	if at_position.y < size.y / 2:
+		data.reorder.emit(get_index())
+	else:
+		data.reorder.emit(get_index()+1)
 
 func _on_visibility_check_button_toggled(toggled_on: bool) -> void:
 	layer.visible = toggled_on
@@ -102,3 +143,8 @@ func _on_visibility_check_button_toggled(toggled_on: bool) -> void:
 
 func _on_layer_card_pressed() -> void:
 	layer_clicked.emit()
+
+
+func _on_mouse_exited() -> void:
+	drop_below_separator.modulate.a = 0
+	drop_above_separator.modulate.a = 0

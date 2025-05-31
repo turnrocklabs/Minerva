@@ -39,6 +39,14 @@ func _ready() -> void:
 					editor.queue_redraw()
 	)
 
+	editor.active_layer_changed.connect(
+		func(layer: LayerV2):
+			if editor.active_tool != self: return
+			layer.transform_rect_visible = true
+			print(layer)
+			editor.queue_redraw()
+	)
+
 func _process(_delta: float) -> void:
 	# Ensure transform boxes are visible when tool is active
 	if editor.active_tool == self and editor.active_layer and not editor.active_layer.transform_rect_visible:
