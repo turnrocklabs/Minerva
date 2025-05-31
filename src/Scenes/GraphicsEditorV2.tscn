@@ -85,6 +85,7 @@ text = "Brush"
 [node name="BucketToolButton" type="Button" parent="h/v/h/ToolsContainer"]
 layout_mode = 2
 toggle_mode = true
+button_group = ExtResource("2_ymijy")
 text = "Bucket"
 
 [node name="PaneToolButton" type="Button" parent="h/v/h/ToolsContainer"]
