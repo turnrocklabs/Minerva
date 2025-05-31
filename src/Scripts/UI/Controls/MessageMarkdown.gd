@@ -197,13 +197,19 @@ func render() -> void:
 
 
 func set_edit(on: = true) -> void:
-	%MessageLabelsContainer.visible = not on
-	
 	if on:
-		text_edit.text = content
+		_on_message_text_edit_text_set()
+	else:
+		message_labels_container.visible = false
+		%TextMessageHBoxContainer.visible = true
 		text_edit.grab_focus()
+	#%MessageLabelsContainer.visible = not on
+	#%TextMessageHBoxContainer.visible = on
+	#if on:
+		#text_edit.text = content
+		#text_edit.grab_focus()
 	
-	text_edit.visible = on
+	
 
 func _update_tokens_cost() -> void:
 	var price = 0.0
@@ -334,19 +340,24 @@ func _on_regenerate_button_pressed():
 
 
 func _on_edit_button_pressed():
-	set_edit()
+	if %TextMessageHBoxContainer.visible:
+		text_edit.text_set.emit()
+	else:
+		message_labels_container.visible = false
+		%TextMessageHBoxContainer.visible = true
+		text_edit.grab_focus()
+	
 
 # when we click outside the text edit, hide it and save changes
 func _input(event: InputEvent):
-	if text_edit.visible and event is InputEventMouseButton and event.pressed:
+	if %TextMessageHBoxContainer.visible and event is InputEventMouseButton and event.pressed:
 
-		if not text_edit.get_global_rect().has_point(event.global_position):
-			if text_edit.text:
-				content = text_edit.text
-			
-			%MessageLabelsContainer.visible = true
-			text_edit.visible = false
+		if not %TextMessageHBoxContainer.get_global_rect().has_point(event.global_position):
+			if !text_edit.text.is_empty():
+				_on_message_text_edit_text_set()
 			get_viewport().set_input_as_handled()
+		if text_edit.has_focus() and event.is_action_pressed("ui_enter"):
+			_on_message_text_edit_text_set()
 
 
 func _on_hide_button_pressed():
@@ -703,5 +714,13 @@ func _update_sizes() -> void:
 	_last_custom_size_y = resize_scroll_container.custom_minimum_size.y
 
 func _update_scroll_container_size() -> void:
-	if !_animate_called_from_button:
+	if !_animate_called_from_button and !_resize_dragging:
 		_animate_expand(v_box_container.size.y +1, expand_button.rotation, expand_button.modulate)
+
+
+func _on_message_text_edit_text_set() -> void:
+	if !text_edit.text.is_empty():
+		content = text_edit.text
+	%TextMessageHBoxContainer.visible = false
+	message_labels_container.visible = true
+	text_edit.text = "" 
