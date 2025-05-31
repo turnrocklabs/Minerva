@@ -336,7 +336,6 @@ func execute_regular_chat(text: String) -> void:
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
-		history.HistoryItemList.append(user_history_item)
 		SingletonObject.NotesTab.Disable_All()
 		return # if user is using Human provider we finish here
 	
@@ -388,7 +387,6 @@ func execute_sequential_chat(text_input: String) -> void:
 		# In execute_sequential_chat function, update this part:
 		if user_history_item.provider is HumanProvider:
 			handle_human_provider_message(history, user_history_item)
-			history.HistoryItemList.append(user_history_item)  # Remove this line as it's now done inside handle_human_provider_message
 			SingletonObject.NotesTab.Disable_All()
 			return # if user is using Human provider we finish here
 		
