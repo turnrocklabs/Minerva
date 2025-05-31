@@ -345,6 +345,7 @@ func _on_add_image_button_pressed() -> void:
 	var fd: = FileDialog.new()
 	
 	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
 	# fd.filters = []
 
 	fd.file_selected.connect(_on_file_selected)
@@ -356,7 +357,6 @@ func _on_add_image_button_pressed() -> void:
 func _on_file_selected(fp: String) -> void:
 	var image: = Image.load_from_file(fp)
 
-	# TODO: validate
 	var l: = LayerV2.create_image_layer(fp.get_file(), image)
 
 	add_layer(l)
@@ -368,4 +368,18 @@ func _on_layers_container_mouse_exited() -> void:
 
 
 func _on_save_button_pressed() -> void:
-	export_image(r"D:\Programs\Godot_v4.4-stable_win64.exe\test.png")
+
+	var fd: = FileDialog.new()
+	
+	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.filters = ["*.png"]
+
+
+	add_child(fd)
+
+	fd.popup_centered()
+
+	var path = await fd.file_selected
+
+	export_image(path)
