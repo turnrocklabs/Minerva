@@ -46,13 +46,13 @@ var image: Image:
         if not is_node_ready():
             await ready
         
+
         if not base_image:
             base_image = image.duplicate()
 
         var img = ImageTexture.create_from_image(image)
         texture_rect.texture = img
         size = img.get_size()
-        print("SIZE SET TO: ", size)
 
 var speech_bubble: CloudControl:
     set(value):
@@ -81,8 +81,6 @@ static func create_drawing_layer(name_: String, size_: Vector2i, background_colo
     layer.image = img
     layer.name = name_
     layer.type = Type.DRAWING
-
-    print("Img: ", img.get_size())
 
     return layer
 
@@ -191,10 +189,8 @@ func _adjust_control_size() -> void:
     # Set pivot to center for proper rotation
     pivot_offset = size / 2
 
-    prints("pivot offset", pivot_offset, size)
-
     match type:
-        Type.IMAGE, Type.DRAWING:
+        Type.IMAGE:
             texture_rect.size = size
             # Only resize the image if the size has changed significantly
             if abs(image.get_width() - size.x) > 1 or abs(image.get_height() - size.y) > 1:
@@ -204,6 +200,13 @@ func _adjust_control_size() -> void:
                 scaled_image.resize(int(size.x), int(size.y), Image.INTERPOLATE_LANCZOS)
 
                 image.copy_from(scaled_image)
+        
+        Type.DRAWING:
+            texture_rect.size = size
+            if abs(image.get_width() - size.x) > 1 or abs(image.get_height() - size.y) > 1:
 
+                image.resize(int(size.x), int(size.y), Image.INTERPOLATE_LANCZOS)
+
+                
         Type.SPEECH_BUBBLE:
             speech_bubble.size = size
