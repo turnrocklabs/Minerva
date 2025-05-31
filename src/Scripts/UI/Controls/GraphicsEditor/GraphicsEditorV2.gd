@@ -11,10 +11,12 @@ signal active_layer_changed(layer: LayerV2)
 
 # tool options containers
 @onready var _brush_options_container: Control = %BrushOptions
+@onready var _bucket_options_container: Control = %BucketOptions
 @onready var _eraser_options_container: Control = %EraserOptions
 @onready var _speech_bubble_options: Control = %SpeechBubbleOptions
 
 @onready var drawing_tool: DrawingTool = %DrawingTool
+@onready var bucket_tool: BucketTool = %BucketTool
 @onready var pane_tool: PaneTool = %PaneTool
 @onready var eraser_tool: EraserTool = %EraserTool
 @onready var transform_tool: TransformTool = %TransformTool
@@ -23,6 +25,7 @@ signal active_layer_changed(layer: LayerV2)
 
 @onready var tool_options_mapping: = {
 	drawing_tool: _brush_options_container,
+	bucket_tool: _bucket_options_container,
 	eraser_tool: _eraser_options_container,
 	speech_bubble_tool: _speech_bubble_options,
 }
@@ -316,6 +319,9 @@ func _on_new_layer_button_pressed() -> void:
 
 func _on_brush_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = drawing_tool if toggled_on else null
+
+func _on_bucket_tool_button_toggled(toggled_on:bool) -> void:
+	active_tool = bucket_tool if toggled_on else null
 
 func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = pane_tool if toggled_on else null
