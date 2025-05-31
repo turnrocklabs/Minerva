@@ -325,6 +325,7 @@ func execute_regular_chat(text: String) -> void:
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
+		SingletonObject.NotesTab.Disable_All()
 		return # if user is using Human provider we finish here
 	
 	# Check is the last message is a user message and not do anything if true
