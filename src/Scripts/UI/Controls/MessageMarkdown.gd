@@ -197,19 +197,13 @@ func render() -> void:
 
 
 func set_edit(on: = true) -> void:
-	if on:
+	if !on:
 		_on_message_text_edit_text_set()
 	else:
 		message_labels_container.visible = false
 		%TextMessageHBoxContainer.visible = true
 		text_edit.grab_focus()
-	#%MessageLabelsContainer.visible = not on
-	#%TextMessageHBoxContainer.visible = on
-	#if on:
-		#text_edit.text = content
-		#text_edit.grab_focus()
-	
-	
+
 
 func _update_tokens_cost() -> void:
 	var price = 0.0
@@ -356,7 +350,7 @@ func _input(event: InputEvent):
 			if !text_edit.text.is_empty():
 				_on_message_text_edit_text_set()
 			get_viewport().set_input_as_handled()
-		if text_edit.has_focus() and event.is_action_pressed("ui_enter"):
+		if text_edit.has_focus() and event.is_action_pressed("control_enter"):
 			_on_message_text_edit_text_set()
 
 
