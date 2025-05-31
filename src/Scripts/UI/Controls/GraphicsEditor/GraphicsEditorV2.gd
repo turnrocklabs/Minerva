@@ -72,7 +72,7 @@ func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
 	create_new_layer("Layer", canvas_size_)
 
-	layers_container.center_view()
+	# layers_container.center_view()
 
 
 func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
@@ -88,7 +88,6 @@ func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 	layer_card.layer_clicked.connect(func(): active_layer = layer)
 	layer_card.reorder.connect(
 		func(to: int):
-			prints("REORDER", to)
 			reorder_layer(
 				layer_card.layer,
 				to
@@ -99,6 +98,12 @@ func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 	layer_cards_container.move_child(layer_card, 0)
 
 	layers_container.add_child(layer, true)
+	
+	# place the layer at the center of the screen
+	get_tree().process_frame.connect(
+		func(): layer.position = layers_container.size/2 - layer.size/2,
+		ConnectFlags.CONNECT_ONE_SHOT
+	)
 
 	layers.append(layer)
 
