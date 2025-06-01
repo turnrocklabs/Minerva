@@ -33,7 +33,6 @@ func _ready():
 	
 	if SingletonObject.config_has_saved_section("Providers"):
 		var provider  = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
-		var provider_name = SingletonObject.get_config_file_value("Providers", "DefaultProviderName")
 		if provider != null:
 			_provider_option_button.select(_provider_option_button.get_item_index(provider))
 
