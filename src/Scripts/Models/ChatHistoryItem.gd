@@ -22,56 +22,57 @@ static var SERIALIZER_FIELDS = [
 	"LinkedMemories",
 	"CodeLabelsState",
 	"isMerged",
-	"SliderContainerId" # if 2 or more items share the same ID they get put in the same SliderContainer
+	"SliderContainerId", # if 2 or more items share the same ID they get put in the same SliderContainer
+	"MultiSliderContainerId"# if 2 or more items share the same ID they get put in the same SliderContainer
 ]
 
 # This signal is to be emitted when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
 
 var Id: String:
-	set(value): SingletonObject.save_state(false); Id = value
+	set(value): SingletonObject.call_deferred("save_state", false); Id = value
 
 var Role: ChatRole:
-	set(value): SingletonObject.save_state(false); Role = value
+	set(value): SingletonObject.call_deferred("save_state", false); Role = value
 
 var InjectedNotes: Array[Variant]:
-	set(value): SingletonObject.save_state(false); InjectedNotes = value
+	set(value): SingletonObject.call_deferred("save_state", false); InjectedNotes = value
 
 var Message: String:
-	set(value): SingletonObject.save_state(false); Message = value
+	set(value): SingletonObject.call_deferred("save_state", false); Message = value
 
 var Images: Array[Image]:
-	set(value): SingletonObject.save_state(false); Images = value
+	set(value): SingletonObject.call_deferred("save_state", false); Images = value
 
 var Order: int:
-	set(value): SingletonObject.save_state(false); Order = value
+	set(value): SingletonObject.call_deferred("save_state", false); Order = value
 
 var Type: PartType:
-	set(value): SingletonObject.save_state(false); Type = value
+	set(value): SingletonObject.call_deferred("save_state", false); Type = value
 
 var ModelName: String:
-	set(value): SingletonObject.save_state(false); ModelName = value
+	set(value): SingletonObject.call_deferred("save_state", false); ModelName = value
 
 var ModelShortName: String:
-	set(value): SingletonObject.save_state(false); ModelShortName = value
+	set(value): SingletonObject.call_deferred("save_state", false); ModelShortName = value
 
 var Complete: bool:
-	set(value): SingletonObject.save_state(false); Complete = value
+	set(value): SingletonObject.call_deferred("save_state", false); Complete = value
 
 var Error: String:
-	set(value): SingletonObject.save_state(false); Error = value
+	set(value): SingletonObject.call_deferred("save_state", false); Error = value
 
 var Visible: bool = true:
-	set(value): SingletonObject.save_state(false); Visible = value
+	set(value): SingletonObject.call_deferred("save_state", false); Visible = value
 
 ## Estimated amount of tokens of this history item.
 ## `null` if no estimation was made for this history item.
 var EstimatedTokenCost: int:
-	set(value): SingletonObject.save_state(false); EstimatedTokenCost = value
+	set(value): SingletonObject.call_deferred("save_state", false); EstimatedTokenCost = value
 
 ## Amount of tokens of this history item
 var TokenCost: int = 0:
-	set(value): SingletonObject.save_state(false); TokenCost = value
+	set(value): SingletonObject.call_deferred("save_state", false); TokenCost = value
 
 var provider: BaseProvider:
 	set(value):
@@ -79,24 +80,27 @@ var provider: BaseProvider:
 		provider = value
 
 var Expanded: bool = true:
-	set(value): SingletonObject.save_state(false); Expanded = value
+	set(value): SingletonObject.call_deferred("save_state", false); Expanded = value
 
 var LastYSize: float = 0.0:
-	set(value): SingletonObject.save_state(false); LastYSize = value
+	set(value): SingletonObject.call_deferred("save_state", false); LastYSize = value
 
 #this  filed is for saving the UUID of the memoryItems with its respective code label
 #{codeLabelIndex: int, MemoryItemUUID: String}
 var LinkedMemories: Dictionary = {}:
-	set(value): SingletonObject.save_state(false); LinkedMemories = value
+	set(value): SingletonObject.call_deferred("save_state", false); LinkedMemories = value
 
 var CodeLabelsState: Dictionary = {}:
-	set(value): SingletonObject.save_state(false); CodeLabelsState = value
+	set(value): SingletonObject.call_deferred("save_state", false); CodeLabelsState = value
 	
 var isMerged: bool = false:
-	set(value): SingletonObject.save_state(false); isMerged = value
+	set(value): SingletonObject.call_deferred("save_state", false); isMerged = value
 
 var SliderContainerId: String = "":
-	set(value): SingletonObject.save_state(false); SliderContainerId = value
+	set(value): SingletonObject.call_deferred("save_state", false); SliderContainerId = value
+
+var MultiSliderContainerId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); MultiSliderContainerId = value
 
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
@@ -189,7 +193,9 @@ func Serialize() -> Dictionary:
 		"LinkedMemories": LinkedMemories,
 		"CodeLabelsState": CodeLabelsState,
 		"isMerged": isMerged,
-		"SliderContainerId": SliderContainerId
+		"SliderContainerId": SliderContainerId,
+		"MultiSliderContainerId": MultiSliderContainerId
+		
 	}
 	return save_dict
 

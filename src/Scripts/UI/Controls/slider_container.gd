@@ -11,6 +11,7 @@ signal active_child_changed(index: int)
 		if old_index != active_child_index:
 			_animate_children()
 			active_child_changed.emit(active_child_index)
+			#print("active_child_changed emmited")
 
 @export var offset_distance: float = 100.0  # Distance between cards
 @export var transition_duration: float = 0.3

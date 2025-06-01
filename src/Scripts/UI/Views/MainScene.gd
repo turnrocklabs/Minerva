@@ -36,7 +36,8 @@ func _ready() -> void:
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
 	
-	project_name_label.text = ""
+	_update_project_label()
+	SingletonObject.updated_save_state.connect(_update_project_label)
 
 var MAX: = 20
 
@@ -247,3 +248,16 @@ func _on_btn_drawer_pressed() -> void:
 		%BottomDrawerControl.show()
 	else:
 		%BottomDrawerControl.hide()
+
+
+func _update_project_label(new_text: String = "", saved_state: bool = true) -> void:
+	var base_text: String
+	if new_text.is_empty() and saved_state:
+		base_text = ""
+	elif !new_text.is_empty() and saved_state:
+		base_text = new_text
+	elif new_text.is_empty() and !saved_state:
+		base_text = project_name_label.text.replace("*", "") + "*"
+	elif !new_text.is_empty() and !saved_state:
+		base_text = new_text + "*"
+	project_name_label.text = base_text

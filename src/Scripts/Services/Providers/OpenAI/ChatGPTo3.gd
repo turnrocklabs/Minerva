@@ -22,8 +22,8 @@ class MiniMedium extends ChatGPTo3:
 	func _init():
 		super()
 
-		model_name = "o3-mini"
-		display_name = "03-mini-medium"
+		model_name = "o4-mini"
+		display_name = "04-mini-medium"
 		short_name = "OM"
 		token_cost = 1.1 / 1_000_000 * 100
 	
@@ -40,8 +40,8 @@ class MiniHigh extends ChatGPTo3:
 	func _init():
 		super()
 
-		model_name = "o3-mini"
-		display_name = "03-mini-high"
+		model_name = "o4-mini"
+		display_name = "04-mini-high"
 		short_name = "OH"
 		token_cost = 1.1 / 1_000_000 * 100
 	

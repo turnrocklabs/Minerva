@@ -60,6 +60,7 @@ enum Type {
 	VIDEO
 }
 
+
 ## May contain the object that is being edited by this editor.[br]
 ## Eg. ChatImage, Note, etc..[br]
 ## Allows switching to existing editor instead of
@@ -73,10 +74,16 @@ var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
-var tab_title: String = ""
+var tab_title: String = "":
+	set(value):
+		tab_title = value
+		if code_edit:
+			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
 var file: String:
 	set(value):
 		file = value
+		if code_edit != null:
+			code_edit.syntax_highlighter = update_code_hightlighter(file)
 		%reloadButton.disabled = false
 #var file_path: String
 var type: Type
@@ -104,20 +111,24 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	match type_:
 		Editor.Type.TEXT:
 			var new_code_edit = EditorCodeEdit.new()
-			new_code_edit.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_code_edit.caret_blink = true
-			new_code_edit.caret_multiple = false
-			new_code_edit.highlight_all_occurrences = true
-			new_code_edit.highlight_current_line = true
-			new_code_edit.gutters_draw_line_numbers = true
-			new_code_edit.gutters_zero_pad_line_numbers = true
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
-			new_code_edit.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-			new_code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-			new_code_edit.name = "CodeEdit"
 			vbox_container.add_child(new_code_edit)
-			#vbox_container.move_child(new_code_edit,0)
+			
+			if name_:
+				name_ = name_ as String
+				
+				var lang_keywords: Dictionary = SingletonObject.syntax_manager.get_syntax_for_language(name_)
+				var code_highlighter: = CodeHighlighter.new()
+				if !lang_keywords.is_empty():
+					code_highlighter.keyword_colors = lang_keywords
+				code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
+				code_highlighter.number_color = Color.FLORAL_WHITE
+				code_highlighter.symbol_color = Color.AQUAMARINE
+				code_highlighter.function_color = Color.DEEP_PINK
+				code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
+				new_code_edit.syntax_highlighter = code_highlighter
+			
 			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
 			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
@@ -125,7 +136,6 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
-			#vbox_container.move_child(new_graphics_editor, 0)
 			editor.graphics_editor = new_graphics_editor
 			## TODO: Implement changed signal for graphics 
 			
@@ -141,6 +151,19 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 
 func toggle(on: bool) -> void:
 	_note_check_button.button_pressed = on
+
+
+func update_code_hightlighter(lang: String) -> CodeHighlighter:
+	var lang_keywords = SingletonObject.syntax_manager.get_syntax_for_language(lang)
+	var code_highlighter: = CodeHighlighter.new()
+	if !lang_keywords.is_empty():
+		code_highlighter.keyword_colors = lang_keywords
+	code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
+	code_highlighter.number_color = Color.FLORAL_WHITE
+	code_highlighter.symbol_color = Color.AQUAMARINE
+	code_highlighter.function_color = Color.DEEP_PINK
+	code_highlighter.member_variable_color = Color.BLUE
+	return code_highlighter
 
 
 func _ready():
@@ -176,12 +199,17 @@ func _ready():
 	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
 	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
 	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
-	
+
+
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
 
 
 func _load_text_file(filename: String):
+	if !filename.get_extension().is_empty():
+		code_edit.syntax_highlighter = update_code_hightlighter(filename.get_extension())
+	else:
+		code_edit.syntax_highlighter = update_code_hightlighter(filename)
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	if fa_object == null:
 				var error: = error_string(FileAccess.get_open_error())
