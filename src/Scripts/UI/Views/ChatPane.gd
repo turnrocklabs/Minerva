@@ -503,21 +503,10 @@ func create_message_new(inputs_idx: int) -> void:
 	user_history_item.response_arrived.connect(_on_thread_bot_response_arrived)
 	
 	if user_history_item.provider is HumanProvider:
-		# Get working memory/notes
-		var working_memory: Array = SingletonObject.NotesTab.To_Prompt(history.provider)
-		
-		# Append working memory to the user history item
-		if working_memory:
-			user_history_item.InjectedNotes = working_memory
-		
 		var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 													ChatHistoryItem.ChatRole.MODEL,
 													"",
 													history.provider)
-		# Also append working memory to the model's history item
-		if working_memory:
-			mdl_history_item.InjectedNotes = working_memory
-		
 		_mutex.lock()
 		_usr_chat_hist_items.append(user_history_item)
 		_bot_responses.append(mdl_history_item)
