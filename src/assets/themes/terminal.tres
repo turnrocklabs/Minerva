@@ -1,6 +1,6 @@
 [gd_resource type="Theme" load_steps=6 format=3 uid="uid://cdp8qvjvdfebe"]
 
-[ext_resource type="FontFile" uid="uid://cbwy6wioqdqwy" path="res://addons/markdownlabel/assets/fonts/Fira_Code/static/FiraCode-Regular.ttf" id="1_a62c1"]
+[ext_resource type="FontFile" uid="uid://bq0vtem6coath" path="res://addons/markdownlabel/assets/fonts/Fira_Code/static/FiraCode-Regular.ttf" id="1_a62c1"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_lxph6"]
 bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
