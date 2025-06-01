@@ -1,4 +1,4 @@
-class_name SGLangProvider
+class_name LocalProvider
 extends ChatGPTBase
 
 func _init():
@@ -7,8 +7,8 @@ func _init():
 	BASE_URL = "http://localhost:30000"
 	PROVIDER = SingletonObject.API_PROVIDER.LOCAL
 
-	model_name = "Qwen/Qwen3-4B-FP8"
-	short_name = "Q3"
+	model_name = "gemma3"
+	short_name = "G3"
 	token_cost = 0.0 # local model
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
@@ -83,7 +83,7 @@ func wrap_memory(item: MemoryItem) -> Variant:
 		output += "### Reference Information ###\n"
 		output += item.Content
 		output += "### End Reference Information ###\n\n"
-		output += "Respond to the user's message: \n\n"
+		output += "Use it as needed: \n\n"
 		return output.json_escape()
 
 
