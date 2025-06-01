@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://biq3stpy2hhi2"]
 
-[ext_resource type="Script" uid="uid://cvat8pg8p4d0s" path="res://Scripts/UI/Controls/image_note_controls.gd" id="1_kgw3y"]
+[ext_resource type="Script" uid="uid://bs70x7fvlb7gg" path="res://Scripts/UI/Controls/image_note_controls.gd" id="1_kgw3y"]
 
 [node name="ImageVBoxContainer" type="VBoxContainer" node_paths=PackedStringArray("note_image", "image_caption_line_edit")]
 custom_minimum_size = Vector2(0, 235)
