@@ -248,6 +248,9 @@ func _on_btn_drawer_pressed() -> void:
 		%BottomDrawerControl.show()
 	else:
 		%BottomDrawerControl.hide()
+	
+	SingletonObject.NotesTab.Disable_All_Drawer()
+	
 
 
 func _update_project_label(new_text: String = "", saved_state: bool = true) -> void:

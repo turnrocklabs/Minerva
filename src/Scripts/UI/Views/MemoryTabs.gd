@@ -17,8 +17,11 @@ var _needs_update := false
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
 	
-	for this_thread:MemoryThread in SingletonObject.ThreadList:
-		for item:MemoryItem in this_thread.MemoryItemList:
+	# Combine both thread lists into one array to process
+	var all_threads = SingletonObject.ThreadList + SingletonObject.DrawerThreadList
+	
+	for this_thread: MemoryThread in all_threads:
+		for item: MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
 				output.append(provider.wrap_memory(item))
 	
@@ -28,8 +31,18 @@ func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 			output.append(provider.wrap_memory(item))
 	
 	return output
-
 #region Methods for toggling notes
+
+func Disable_All_Drawer():
+	for this_thread:MemoryThread in SingletonObject.DrawerThreadList:
+		for item:MemoryItem in this_thread.MemoryItemList:
+			if item.Enabled:
+				item.Enabled = false
+	
+	for item:MemoryItem in SingletonObject.DetachedNotes:
+		item.Enabled = false
+
+	self.render_threads()
 
 func Disable_All():
 	for this_thread:MemoryThread in SingletonObject.ThreadList:

@@ -1,11 +1,13 @@
 class_name DrawerTabs
 extends TabContainer
 
-
+@onready var tcThreadsDrawer = %tcThreadsDrawer
+# just use current_tab
+# var ActiveThreadIndex: int:
+@onready var buffer_control_notes: Control = %BufferControlNotes
 var _drag_active := true
 # var _hovered_tab := -1
 # var _hover_timer
-
 
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
