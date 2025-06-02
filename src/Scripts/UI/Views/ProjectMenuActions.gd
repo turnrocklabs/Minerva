@@ -303,6 +303,7 @@ func open_project_given_path(project_path: String) -> int:
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		save_editor_panes()
+		print("saveeee")
 
 
 func _on_exit_confirmation_dialog_canceled():
