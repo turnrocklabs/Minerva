@@ -8,6 +8,10 @@ signal active_layer_changed(layer: LayerV2)
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
 
+@onready var message_window: PersistentWindow = %MessageWindow
+@onready var message_title: Label = %MessageTitle
+@onready var message_content: Label = %MessageContent
+
 
 # tool options containers
 @onready var _brush_options_container: Control = %BrushOptions
@@ -37,22 +41,12 @@ var _custom_cursor_shape: int
 var _custom_cursor_hotspot: Vector2
 
 var layers: Array[LayerV2]
-	# get:
-	# 	return layers_container.get_children().filter(func(n): return n is LayerV2) as Array[LayerV2]
+
+## Array of selected layers, in order in which they were selected
+var selected_layers: Array[LayerV2] = []
 
 var active_layer: LayerV2:
-	set(value):
-		active_layer = value
-		for l in layers_container.get_children().filter(func(n): return n is LayerV2):
-			l.get_meta("layer_card").selected = false
-			l.transform_rect_visible = false
-			l.queue_redraw() # editor queue_redraw will not redraw layers that are not active, so call it here to remove the controls points
-		
-		active_layer.get_meta("layer_card").selected = true
-		queue_redraw()
-
-		active_layer_changed.emit(active_layer)
-
+	get: return selected_layers.get(0)
 
 var active_tool: BaseTool:
 	set(value):
@@ -68,34 +62,31 @@ func _ready() -> void:
 	
 	active_tool_changed.connect(_on_active_tool_changed)
 	
+	# setup(Vector2i(500, 500))
 	setup()
-
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
-	create_new_layer("Layer", canvas_size_)
+	create_new_layer("Layer", canvas_size_, Color.WHITE)
+	create_new_layer("Layer 2", canvas_size_)
 
 	# layers_container.center_view()
 
 
-func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
+func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true) -> LayerV2:
 	# var img = Image.create(dimensions.x, dimensions.y, true, Image.FORMAT_RGBA8)
 	# img.fill(Color.TRANSPARENT)
 
-	var layer: = LayerV2.create_drawing_layer(layer_name, dimensions, Color.WHITE)
-	var layer_card: = LayerCard.create(layer)
+	var layer: = LayerV2.create_drawing_layer(layer_name, dimensions, color)
+	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
 	
-	# don't change the active_layer untill layer_card updates the layer metadata
-	active_layer = layer
+	var layer_card: = LayerCard.create(self, layer)
+	layer_card.layer_selected.connect(_on_layer_card_selected.bind(layer, layer_card))
+	layer_card.layer_deselected.connect(_on_layer_card_deselected.bind(layer, layer_card))
+	layer_card.reorder.connect(_on_layer_card_reorder.bind(layer_card))
+	layer_card.layer_clicked.connect(_on_layer_card_clicked.bind(layer_card))
 
-	layer_card.layer_clicked.connect(func(): active_layer = layer)
-	layer_card.reorder.connect(
-		func(to: int):
-			reorder_layer(
-				layer_card.layer,
-				to
-			)
-	)
+	layer_card.selected = select
 
 	layer_cards_container.add_child(layer_card)
 	layer_cards_container.move_child(layer_card, 0)
@@ -114,12 +105,14 @@ func create_new_layer(layer_name: String, dimensions: Vector2i) -> LayerV2:
 
 
 func add_layer(layer: LayerV2):
-	var layer_card: = LayerCard.create(layer)
-	
-	# don't change the active_layer untill layer_card updates the layer metadata
-	active_layer = layer
+	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
 
-	layer_card.layer_clicked.connect(func(): active_layer = layer)
+	var layer_card: = LayerCard.create(self, layer)
+
+	layer_card.layer_selected.connect(_on_layer_card_selected.bind(layer, layer_card))
+	layer_card.layer_deselected.connect(_on_layer_card_deselected.bind(layer, layer_card))
+	layer_card.reorder.connect(_on_layer_card_reorder.bind(layer_card))
+	layer_card.layer_clicked.connect(_on_layer_card_clicked.bind(layer_card))
 
 	layer_cards_container.add_child(layer_card)
 	layer_cards_container.move_child(layer_card, 0)
@@ -130,6 +123,36 @@ func add_layer(layer: LayerV2):
 	
 	return layer
 
+# when layer is deleted remove it from selected layers if it's there
+func _on_layer_tree_exiting(layer: LayerV2):
+	if selected_layers.has(layer):
+		selected_layers.erase(layer)
+
+
+func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
+	selected_layers.append(layer)
+
+func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
+	selected_layers.erase(layer)
+
+func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
+	if button_index == MOUSE_BUTTON_LEFT:
+		if Input.is_key_pressed(KEY_CTRL):
+			layer_card.selected = not layer_card.selected
+		
+		else:
+			for c: LayerCard in layer_cards_container.get_children():
+				c.selected = false
+			layer_card.selected = true
+
+func _on_layer_card_reorder(to: int, layer_card: LayerCard):
+	reorder_layer(layer_card.layer, to)
+
+
+func display_message(title: String, content: String):
+	message_window.popup_centered()
+	message_title.text = title
+	message_content.text = content
 
 func export_image(path: String) -> Error:
 	# Get all layers
@@ -274,13 +297,25 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 	
 
 func _gui_input(event: InputEvent) -> void:
-	if active_layer.is_visible_in_tree() and active_tool:
+	# if we have a active tool and at least one of selected layers is visible
+	if active_tool and selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
+
+		# if active_tool.multi_select or selected_layers.size() < 2:
+		
+		# elif selected_layers.size() > 1:
+		# 	# multiple layers selected for tool that only allows one
+		# 	display_message(
+		# 		"Multiple layers selected",
+		# 		"%s tool only allows operation on one layers. Select only one or merge selected layers." % [active_tool.name]
+		# 	)
+
 		active_tool.handle_input_event(event)
 		accept_event()
 
 
 func _draw() -> void:
-	active_layer.queue_redraw()
+	for layer in selected_layers: layer.queue_redraw()
+	
 	for c: LayerCard in layer_cards_container.get_children():
 		c.queue_redraw()
 
@@ -314,7 +349,11 @@ func _on_active_tool_changed(tool_: BaseTool) -> void:
 
 
 func _on_new_layer_button_pressed() -> void:
-	active_layer = create_new_layer("Layer", canvas_size)
+	# clear layers and create a new one
+	for c: LayerCard in layer_cards_container.get_children():
+		c.selected = false
+	
+	create_new_layer("Layer", canvas_size)
 
 
 func _on_brush_tool_button_toggled(toggled_on: bool) -> void:
@@ -383,3 +422,143 @@ func _on_save_button_pressed() -> void:
 	var path = await fd.file_selected
 
 	export_image(path)
+
+
+func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
+	if to_merge.is_empty():
+		push_error("Cannot merge empty array of layers")
+		return null
+	
+	if to_merge.size() == 1:
+		return to_merge[0]  # Nothing to merge
+	
+	# Calculate the bounding rectangle for all layers
+	var bounds := Rect2()
+	var first_layer := true
+	
+	for layer in to_merge:
+		if not layer.visible:
+			continue  # Skip invisible layers
+			
+		# Get the layer's bounding rect in global space
+		var layer_rect = Rect2(layer.position, layer.size)
+		
+		# Handle rotation by getting rotated corners
+		if layer.rotation != 0:
+			var corners = _get_rotated_corners(layer)
+			for corner in corners:
+				if first_layer:
+					bounds = Rect2(corner, Vector2.ZERO)
+					first_layer = false
+				else:
+					bounds = bounds.expand(corner)
+		else:
+			if first_layer:
+				bounds = layer_rect
+				first_layer = false
+			else:
+				bounds = bounds.merge(layer_rect)
+	
+	if bounds.size.x <= 0 or bounds.size.y <= 0:
+		push_error("Invalid bounds calculated for merged layers")
+		return null
+	
+	# Create a new image with the calculated bounds size
+	var merged_image := Image.create(int(bounds.size.x), int(bounds.size.y), false, Image.FORMAT_RGBA8)
+	merged_image.fill(Color(0, 0, 0, 0))  # Transparent background
+	
+	# Sort layers by their z-index (drawing order) - top layers first (higher index = on top)
+	var sorted_layers = to_merge.duplicate()
+	sorted_layers.sort_custom(func(a: LayerV2, b: LayerV2): 
+		return layers_container.get_children().find(a) < layers_container.get_children().find(b)
+	)
+	
+	# Blend each layer onto the merged image
+	for layer in sorted_layers:
+		if not layer.visible or not layer.image or layer.image.is_empty():
+			continue
+			
+		var layer_image = layer.image
+		var layer_pos = layer.position
+		var rotation_rad = layer.rotation
+		var pivot = layer.pivot_offset
+		
+		# For each pixel in the merged image
+		for y in range(int(bounds.size.y)):
+			for x in range(int(bounds.size.x)):
+				# Convert merged image coordinates to global coordinates
+				var global_pos = Vector2(x, y) + bounds.position
+				
+				# Convert global position to layer's local space
+				var local_pos: Vector2
+				if rotation_rad != 0:
+					local_pos = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
+				else:
+					local_pos = global_pos - layer_pos
+				
+				# Check if the point is within the layer's image bounds
+				var img_x = int(local_pos.x)
+				var img_y = int(local_pos.y)
+				
+				if img_x >= 0 and img_x < layer_image.get_width() and img_y >= 0 and img_y < layer_image.get_height():
+					var src_color = layer_image.get_pixel(img_x, img_y)
+					
+					# Skip fully transparent pixels
+					if src_color.a <= 0.01:
+						continue
+					
+					# Blend with existing pixel
+					var dst_color = merged_image.get_pixel(x, y)
+					var blended: Color
+					
+					# Use the drawing tool's blend function if available, otherwise use our own
+					if drawing_tool and drawing_tool.has_method("_blend_colors"):
+						blended = drawing_tool._blend_colors(dst_color, src_color)
+					else:
+						blended = _blend_colors(dst_color, src_color)
+					
+					merged_image.set_pixel(x, y, blended)
+	
+	var merged_layer = LayerV2.create_image_layer("Layer", merged_image)
+	merged_layer.position = bounds.position
+	
+	# Add the merged layer to the editor
+	add_layer(merged_layer)
+	
+	# Remove original layers and their cards
+	for layer in to_merge:
+		# Find and remove the layer card
+		for card in layer_cards_container.get_children():
+			if card is LayerCard and card.layer == layer:
+				card.queue_free()
+				break
+		
+		# Remove from layers array
+		layers.erase(layer)
+		
+		# Remove from scene
+		layer.queue_free()
+	
+	# Select the merged layer
+	if merged_layer.has_meta("layer_card"):
+		var merged_card = merged_layer.get_meta("layer_card")
+		merged_card.selected = true
+	
+	return merged_layer
+
+# Helper function for color blending (alpha compositing)
+func _blend_colors(dst: Color, src: Color) -> Color:
+	if src.a == 0:
+		return dst
+	if dst.a == 0:
+		return src
+	
+	var alpha = src.a + dst.a * (1.0 - src.a)
+	if alpha == 0:
+		return Color.TRANSPARENT
+	
+	var r = (src.r * src.a + dst.r * dst.a * (1.0 - src.a)) / alpha
+	var g = (src.g * src.a + dst.g * dst.a * (1.0 - src.a)) / alpha
+	var b = (src.b * src.a + dst.b * dst.a * (1.0 - src.a)) / alpha
+	
+	return Color(r, g, b, alpha)
