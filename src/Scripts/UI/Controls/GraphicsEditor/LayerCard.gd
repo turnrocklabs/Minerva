@@ -45,7 +45,7 @@ var layer: LayerV2:
 		queue_redraw()
 
 
-@onready var label: Label = %Label
+@onready var name_line_edit: LineEdit = %Name
 @onready var texture_rect: TextureRect = %TextureRect
 @onready var visibility_check_button: CheckButton = %VisibilityCheckButton
 
@@ -73,7 +73,7 @@ func _draw() -> void:
 	if not is_node_ready():
 		await ready
 
-	label.text = layer.name
+	name_line_edit.text = layer.name
 	match layer.type:
 		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING:
 			texture_rect.texture = ImageTexture.create_from_image(layer.image)
@@ -213,3 +213,14 @@ func _on_context_menu_id_pressed(id: int) -> void:
 
 func _on_context_menu_about_to_popup() -> void:
 	context_menu.set_item_disabled(ContextMenuItem.MERGE, editor.selected_layers.size() < 2)
+
+
+func _on_name_text_submitted(_new_text: String) -> void:
+	name_line_edit.release_focus()
+
+
+func _on_name_focus_exited() -> void:
+	layer.name = name_line_edit.text
+
+	# godot will change the name is already taken and append a number to it, so update the line edit
+	name_line_edit.text = layer.name
