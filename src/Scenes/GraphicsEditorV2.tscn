@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=13 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -10,6 +10,10 @@
 [ext_resource type="Script" uid="uid://ek2a4h3bujgd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SpeechBubbleTool.gd" id="6_g8cav"]
 [ext_resource type="Script" uid="uid://cjbhjvhndont7" path="res://Scripts/UI/Controls/GraphicsEditor/tools/BucketTool.gd" id="7_g4vm0"]
 [ext_resource type="Script" uid="uid://dhme7wn27lxaa" path="res://Scripts/UI/Controls/GraphicsEditor/LayersContainer.gd" id="8_fjkto"]
+[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_v238w"]
+font_size = 36
 
 [node name="GraphicsEditorV2" type="PanelContainer"]
 anchors_preset = 15
@@ -226,6 +230,37 @@ layout_mode = 2
 icon = ExtResource("2_dcy55")
 flat = true
 icon_alignment = 1
+
+[node name="MessageWindow" type="Window" parent="."]
+unique_name_in_owner = true
+size = Vector2i(700, 300)
+visible = false
+script = ExtResource("11_v238w")
+metadata/_custom_type_script = "uid://dxytye5uwyapu"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MessageWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MessageTitle" type="Label" parent="MessageWindow/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "test"
+label_settings = SubResource("LabelSettings_v238w")
+horizontal_alignment = 1
+
+[node name="MessageContent" type="Label" parent="MessageWindow/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 6
+text = "test"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
 
 [connection signal="pressed" from="h/v/h/ToolsContainer/AddImageButton" to="." method="_on_add_image_button_pressed"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/BrushToolButton" to="." method="_on_brush_tool_button_toggled"]

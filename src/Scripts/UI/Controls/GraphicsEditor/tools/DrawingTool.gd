@@ -56,10 +56,17 @@ func _ready() -> void:
 		_get_cached_circle_pixels(r)
 
 func handle_input_event(event: InputEvent) -> void:
+	if not editor.active_layer: return
+
 	event = editor.active_layer.localize_input(event)
 
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
+
+			if editor.selected_layers.size() > 1:
+				display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
+				return
+
 			if event.is_pressed():
 				_start_stroke(event)
 			else:

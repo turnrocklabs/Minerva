@@ -25,16 +25,18 @@ func _ready() -> void:
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
 			if tool_ == self:
-				editor.set_custom_cursor(
-					create_fast_circle_image(brush_size),
-					Input.CursorShape.CURSOR_ARROW,
-					Vector2.ONE * brush_size
-				)
+				var cursor_radius = roundi(brush_size / 2.0)  # Convert diameter to radius
+				var cursor_image = create_contrast_circle_cursor(cursor_radius)
+				var hotspot = Vector2(cursor_image.get_width(), cursor_image.get_height()) / 2
+				editor.set_custom_cursor(cursor_image, Input.CursorShape.CURSOR_ARROW, hotspot)
 	)
 
 	_brush_size_slider.value_changed.connect(
 		func(value: float):
-			editor.set_custom_cursor(create_fast_circle_image(int(value)), Input.CursorShape.CURSOR_ARROW, Vector2.ONE * value)
+			var cursor_radius = roundi(value / 2.0)
+			var cursor_image = create_contrast_circle_cursor(cursor_radius)
+			var hotspot = Vector2(cursor_image.get_width(), cursor_image.get_height()) / 2
+			editor.set_custom_cursor(cursor_image, Input.CursorShape.CURSOR_ARROW, hotspot)
 	)
 	
 	# Pre-cache common brush sizes
@@ -42,10 +44,17 @@ func _ready() -> void:
 		_get_cached_circle_pixels(r)
 
 func handle_input_event(event: InputEvent) -> void:
+	if not editor.active_layer: return
+	
 	event = editor.active_layer.localize_input(event)
 
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
+
+			if editor.selected_layers.size() > 1:
+				display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
+				return
+
 			if event.is_pressed():
 				drawing = true
 				_last_drawing_position = event.position
@@ -153,27 +162,28 @@ func get_circle_pixels(center: Vector2, radius: int) -> PackedVector2Array:
 				pixels.append(Vector2(x, y))
 	return pixels
 
-# Circle cursor methods (unchanged)
-func create_fast_circle_image(radius: int, line_color: Color = Color(1, 1, 1, 1)) -> Image:
-	var size = radius * 2 + 1
+func create_contrast_circle_cursor(radius: int) -> Image:
+	var size = radius * 2 + 3  # Extra space for outline
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
-	
-	# Make the image transparent
 	image.fill(Color(0, 0, 0, 0))
 	
-	# Main circle pixels
+	var center = size / 2
+	
+	# Draw black outline (larger circle)
+	draw_circle_outline(image, center, radius + 1, Color.BLACK)
+	# Draw white outline (smaller circle)  
+	draw_circle_outline(image, center, radius, Color.WHITE)
+	
+	return image
+
+func draw_circle_outline(image: Image, center: int, radius: int, color: Color):
 	var x = radius
 	var y = 0
 	var decision = 1 - radius
 	
-	# Slightly transparent color for anti-aliasing
-	var aa_color = line_color
-	aa_color.a = 0.5
-	
 	while x >= y:
-		# Main pixels
-		plot_circle_points(image, radius, x, y, line_color)
-		plot_circle_points(image, radius, y, x, line_color)
+		plot_circle_points(image, center, x, y, color)
+		plot_circle_points(image, center, y, x, color)
 		
 		y += 1
 		if decision <= 0:
@@ -181,8 +191,6 @@ func create_fast_circle_image(radius: int, line_color: Color = Color(1, 1, 1, 1)
 		else:
 			x -= 1
 			decision += 2 * (y - x) + 1
-	
-	return image
 
 func plot_circle_points(image: Image, center: int, x: int, y: int, color: Color):
 	# Calculate all 8 symmetric points

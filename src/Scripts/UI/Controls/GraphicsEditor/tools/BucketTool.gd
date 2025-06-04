@@ -19,11 +19,18 @@ func _ready() -> void:
 
 
 func handle_input_event(event: InputEvent) -> void:
+	if not editor.active_layer: return
+
 	event = editor.active_layer.localize_input(event)
 
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.is_pressed():
+				
+				if editor.selected_layers.size() > 1:
+					display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
+					return
+				
 				fill(event.position)
 
 

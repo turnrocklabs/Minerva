@@ -30,6 +30,7 @@ custom_minimum_size = Vector2(300, 150)
 layout_mode = 2
 mouse_filter = 1
 theme_override_styles/focus = SubResource("StyleBoxEmpty_hqbae")
+button_mask = 3
 flat = true
 
 [node name="v" type="VBoxContainer" parent="LayerCard"]
@@ -69,6 +70,7 @@ clip_text = true
 text_overrun_behavior = 3
 
 [node name="VisibilityCheckButton" type="CheckButton" parent="LayerCard/v"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 4
 tooltip_text = "Toggle layer visibility"
@@ -82,6 +84,16 @@ modulate = Color(1, 1, 1, 0)
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
 
+[node name="ContextMenu" type="PopupMenu" parent="."]
+unique_name_in_owner = true
+auto_translate_mode = 1
+size = Vector2i(106, 124)
+theme_override_constants/item_start_padding = 0
+theme_override_constants/item_end_padding = 0
+theme_override_font_sizes/font_size = 14
+
+[connection signal="gui_input" from="." to="." method="_on_gui_input"]
 [connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
-[connection signal="pressed" from="LayerCard" to="." method="_on_layer_card_pressed"]
 [connection signal="toggled" from="LayerCard/v/VisibilityCheckButton" to="." method="_on_visibility_check_button_toggled"]
+[connection signal="about_to_popup" from="ContextMenu" to="." method="_on_context_menu_about_to_popup"]
+[connection signal="id_pressed" from="ContextMenu" to="." method="_on_context_menu_id_pressed"]

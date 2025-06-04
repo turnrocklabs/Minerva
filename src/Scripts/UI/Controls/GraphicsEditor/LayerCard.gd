@@ -1,8 +1,16 @@
 class_name LayerCard
 extends PanelContainer
 
-signal layer_clicked()
+signal layer_clicked(button_index: int)
+signal layer_selected()
+signal layer_deselected()
 signal reorder(to: int)
+
+enum ContextMenuItem {
+	VISIBILITY = 0,
+	REMOVE = 1,
+	MERGE = 2,
+}
 
 const _scene: = preload("res://Scenes/LayerCard.tscn")
 
@@ -18,25 +26,45 @@ var selected: = false:
 		styleBox.set("bg_color", _active_color if selected else _color)
 		add_theme_stylebox_override("panel", styleBox)
 
+		if selected:
+			layer_selected.emit()
+		else:
+			layer.transform_rect_visible = false
+			layer_deselected.emit()
+			layer.queue_redraw()
+		
+var editor: GraphicsEditorV2
+
 var layer: LayerV2:
 	set(value):
 		layer = value
+
+		if layer:
+			layer.visibility_changed.connect(_on_layer_visibility_changed)
+
 		queue_redraw()
 
 
 @onready var label: Label = %Label
 @onready var texture_rect: TextureRect = %TextureRect
+@onready var visibility_check_button: CheckButton = %VisibilityCheckButton
+
 @onready var drop_above_separator: Control = %DropAboveSeparator
 @onready var drop_below_separator: Control = %DropBelowSeparator
+@onready var context_menu: PopupMenu = %ContextMenu
 
-
-static func create(layer_: LayerV2) -> LayerCard:
+static func create(editor_: GraphicsEditorV2, layer_: LayerV2) -> LayerCard:
 	var lc: LayerCard = _scene.instantiate()
 
 	lc.layer = layer_
+	lc.editor = editor_
 	lc.layer.set_meta("layer_card", lc)
 
 	return lc
+
+
+func _ready():
+	_setup_context_menu()
 
 
 func _draw() -> void:
@@ -52,6 +80,7 @@ func _draw() -> void:
 		LayerV2.Type.SPEECH_BUBBLE:
 			texture_rect.texture = await get_texture(layer.speech_bubble)
 
+
 static func get_texture(control: Control) -> ImageTexture:
 	var viewport = SubViewport.new()
 	viewport.transparent_bg = true
@@ -65,7 +94,7 @@ static func get_texture(control: Control) -> ImageTexture:
 	await Engine.get_main_loop().process_frame
 	
 	var image = viewport.get_texture().get_image()
-	# image.save_jpg("test.jpg")
+	
 	var texture = ImageTexture.create_from_image(image)
 	
 	viewport.queue_free()
@@ -83,7 +112,7 @@ func _create_drag_preview(pos: Vector2) -> LayerCard:
 	preview.modulate.a = 0.25
 	modulate.a = 0.75
 
-	var lc_copy: = create(layer_copy)
+	var lc_copy: = create(editor, layer_copy)
 
 	preview.add_child(lc_copy)
 
@@ -141,10 +170,46 @@ func _on_visibility_check_button_toggled(toggled_on: bool) -> void:
 	layer.visible = toggled_on
 
 
-func _on_layer_card_pressed() -> void:
-	layer_clicked.emit()
-
-
 func _on_mouse_exited() -> void:
 	drop_below_separator.modulate.a = 0
 	drop_above_separator.modulate.a = 0
+
+
+func _on_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+
+		if event.is_released():
+			layer_clicked.emit(event.button_index)
+
+			if event.button_index == MOUSE_BUTTON_RIGHT:
+				context_menu.position = DisplayServer.mouse_get_position()
+				context_menu.popup()
+
+
+func _on_layer_visibility_changed():
+	if layer.visible:
+		context_menu.set_item_text(ContextMenuItem.VISIBILITY, "Hide")
+	else:
+		context_menu.set_item_text(ContextMenuItem.VISIBILITY, "Show")
+
+	visibility_check_button.set_pressed_no_signal(layer.visible)
+
+func _setup_context_menu():
+	context_menu.add_item("Hide", ContextMenuItem.VISIBILITY)
+	context_menu.add_item("Remove", ContextMenuItem.REMOVE)
+	context_menu.add_item("Merge", ContextMenuItem.MERGE)
+
+
+func _on_context_menu_id_pressed(id: int) -> void:
+	match id:
+		ContextMenuItem.VISIBILITY:
+			layer.visible = not layer.visible
+		ContextMenuItem.REMOVE:
+			layer.queue_free()
+			queue_free()
+		ContextMenuItem.MERGE:
+			editor.merge_layers(editor.selected_layers)
+
+
+func _on_context_menu_about_to_popup() -> void:
+	context_menu.set_item_disabled(ContextMenuItem.MERGE, editor.selected_layers.size() < 2)
