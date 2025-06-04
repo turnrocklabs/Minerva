@@ -61,13 +61,13 @@ texture = ExtResource("2_cfx4g")
 expand_mode = 2
 stretch_mode = 5
 
-[node name="Label" type="Label" parent="LayerCard/v/h"]
+[node name="Name" type="LineEdit" parent="LayerCard/v/h"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 4
 text = "Layer"
-clip_text = true
-text_overrun_behavior = 3
+flat = true
 
 [node name="VisibilityCheckButton" type="CheckButton" parent="LayerCard/v"]
 unique_name_in_owner = true
@@ -94,6 +94,8 @@ theme_override_font_sizes/font_size = 14
 
 [connection signal="gui_input" from="." to="." method="_on_gui_input"]
 [connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
+[connection signal="focus_exited" from="LayerCard/v/h/Name" to="." method="_on_name_focus_exited"]
+[connection signal="text_submitted" from="LayerCard/v/h/Name" to="." method="_on_name_text_submitted"]
 [connection signal="toggled" from="LayerCard/v/VisibilityCheckButton" to="." method="_on_visibility_check_button_toggled"]
 [connection signal="about_to_popup" from="ContextMenu" to="." method="_on_context_menu_about_to_popup"]
 [connection signal="id_pressed" from="ContextMenu" to="." method="_on_context_menu_id_pressed"]
