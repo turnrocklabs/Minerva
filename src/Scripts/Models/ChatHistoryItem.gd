@@ -116,10 +116,9 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _te
 	# otherwise the code that initializes this object should set the provider
 	if not SingletonObject.ChatList.is_empty():
 		self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
-	elif not _provider == null:
+	elif _provider != null:
 		self.provider = _provider
-	else:
-		self.provider = HumanProvider.new()
+	
 	
 	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
 	rng.randomize() # Uses the current time to seed the random number generator
