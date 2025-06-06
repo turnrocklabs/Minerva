@@ -998,6 +998,7 @@ func clone_chat(tab_idx: int) -> void:
 	var provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[serialized_chat_to_clone.get("Provider")].new()
 	var new_chat_history: ChatHistory = ChatHistory.new(provider)
 	new_chat_history.HistoryName = serialized_chat_to_clone.get("HistoryName") + " clone"
+	
 	var chat_items: Array[ChatHistoryItem] = []
 	for i: Dictionary in serialized_chat_to_clone.get("HistoryItemList"):
 		chat_items.append(ChatHistoryItem.Deserialize(i))
