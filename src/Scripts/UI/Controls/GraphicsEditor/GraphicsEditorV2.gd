@@ -68,7 +68,6 @@ func _ready() -> void:
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
 	create_new_layer("Layer", canvas_size_, Color.WHITE)
-	create_new_layer("Layer", canvas_size_)
 
 	# layers_container.center_view()
 

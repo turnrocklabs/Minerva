@@ -220,6 +220,8 @@ func _on_name_text_submitted(_new_text: String) -> void:
 
 
 func _on_name_focus_exited() -> void:
+	if not is_instance_valid(layer): return
+	
 	layer.name = name_line_edit.text
 
 	# godot will change the name is already taken and append a number to it, so update the line edit
