@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=15 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -10,7 +10,14 @@
 [ext_resource type="Script" uid="uid://ek2a4h3bujgd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SpeechBubbleTool.gd" id="6_g8cav"]
 [ext_resource type="Script" uid="uid://cjbhjvhndont7" path="res://Scripts/UI/Controls/GraphicsEditor/tools/BucketTool.gd" id="7_g4vm0"]
 [ext_resource type="Script" uid="uid://dhme7wn27lxaa" path="res://Scripts/UI/Controls/GraphicsEditor/LayersContainer.gd" id="8_fjkto"]
+[ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="9_u8jc2"]
 [ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_3hqvt"]
+shader = ExtResource("9_u8jc2")
+shader_parameter/square_size = 0.1
+shader_parameter/color1 = Color(0.585, 0.585, 0.585, 1)
+shader_parameter/color2 = Color(1, 1, 1, 1)
 
 [sub_resource type="LabelSettings" id="LabelSettings_v238w"]
 font_size = 36
@@ -200,8 +207,9 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LayersContainer" type="Control" parent="h/v/ScrollContainer"]
+[node name="LayersContainer" type="PanelContainer" parent="h/v/ScrollContainer"]
 unique_name_in_owner = true
+material = SubResource("ShaderMaterial_3hqvt")
 clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 3
