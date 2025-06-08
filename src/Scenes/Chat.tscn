@@ -165,7 +165,6 @@ visible = false
 layout_mode = 2
 size_flags_horizontal = 10
 script = ExtResource("8_rhvdc")
-metadata/_custom_type_script = "uid://bevn17mdcqao1"
 
 [node name="btnNewChat" type="Button" parent="VBoxContainer3/VBoxContainer2/HBoxContainer"]
 unique_name_in_owner = true

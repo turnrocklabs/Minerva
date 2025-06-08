@@ -247,6 +247,7 @@ prefer_global_menu = false
 script = ExtResource("1_oipdw")
 
 [node name="ProjectManagement" parent="VBoxRoot/HBoxContainer/menuMain" instance=ExtResource("2_amibn")]
+unique_name_in_owner = true
 layout_mode = 1
 
 [node name="fdgOpenFile" type="FileDialog" parent="VBoxRoot/HBoxContainer/menuMain"]
@@ -702,13 +703,6 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 25
 text = "Drawer"
 
-[node name="SaveData" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/BottomDrawerControl/VBoxContainer/ControlPanel"]
-layout_mode = 2
-focus_mode = 0
-mouse_filter = 1
-mouse_default_cursor_shape = 2
-icon = ExtResource("14_sknqf")
-
 [node name="AddNote" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/BottomDrawerControl/VBoxContainer/ControlPanel"]
 layout_mode = 2
 focus_mode = 0
@@ -837,6 +831,5 @@ visible = false
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" method="_on_new_pressed"]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" method="_on_tab_clicked"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/BottomDrawerControl/VBoxContainer/ControlPanel/SaveData" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/BottomDrawerControl" method="_on_save_data_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/BottomDrawerControl/VBoxContainer/ControlPanel/AddNote" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/BottomDrawerControl" method="_on_add_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/BottomDrawerControl/VBoxContainer/ControlPanel/AddShelf" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/BottomDrawerControl" method="_on_add_shelf_pressed"]

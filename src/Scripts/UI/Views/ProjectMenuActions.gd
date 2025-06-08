@@ -3,6 +3,7 @@ extends Control
 
 # Whether the user selected the file or closed the dialog this signal is emitted
 signal save_as_dialog_exited()
+signal drawer_save_data
 
 var save_path: String
 
@@ -117,7 +118,7 @@ func save_editor_panes(skip_selecting_items: bool = false):
 			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(idx)
 			var item_idx = item_list.add_item(tab_title)
 			item_list.set_item_metadata(item_idx, editor)
-		
+			
 		if skip_selecting_items:
 			var items: = item_list.item_count
 			var counter: = 0
@@ -132,7 +133,6 @@ func save_editor_panes(skip_selecting_items: bool = false):
 			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
 	else:
 		get_tree().quit()
-
 
 #region Serialize/Deserialize Project
 ## Function:
@@ -302,8 +302,9 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		drawer_save_data.emit()
 		save_editor_panes()
-		print("saveeee")
+		
 
 
 func _on_exit_confirmation_dialog_canceled():
