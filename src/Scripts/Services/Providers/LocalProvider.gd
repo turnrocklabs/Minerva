@@ -1,14 +1,17 @@
 class_name LocalProvider
 extends ChatGPTBase
 
+var max_tokens: int
+
 func _init():
 	super()
-	provider_name = "SGLang"
+	provider_name = "Ollama"
 	BASE_URL = "http://localhost:30000"
 	PROVIDER = SingletonObject.API_PROVIDER.LOCAL
 
-	model_name = "gemma3"
-	short_name = "G3"
+	model_name = "deepseek-r1:14b"
+	max_tokens = 8192
+	short_name = "d1"
 	token_cost = 0.0 # local model
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
@@ -17,7 +20,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		"temperature": 0.7,
 		"top_p": 0.8,
 		"top_k": 20,
-		"max_tokens": 8192,
+		"max_tokens": self.max_tokens,
 		"presence_penalty": 1.5,
 		"chat_template_kwargs": {"enable_thinking": false}
   	}, true)
@@ -118,3 +121,11 @@ func estimate_image_tokens_from_prompt(input: Array[Variant]) -> float:
 					img.load_png_from_buffer(Marshalls.base64_to_raw(b64))
 					image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
 	return image_tokens
+
+class Gemma3 extends LocalProvider:
+	func _init():
+		super()
+		model_name = "gemma3:12b"
+		max_tokens = 8192
+		short_name = "g3"
+		token_cost = 0.0 # local model
