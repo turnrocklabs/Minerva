@@ -4,7 +4,15 @@ class_name Drawer_manager
 var data_path: String = "user://drawer_data.json"
 var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
 
-func _on_save_data_pressed() -> void:
+func _ready() -> void:
+	
+	for i in 3:
+		if $"../../../../../../../.." != null:
+			$"../../../../../../../..".connect("openDrawerNotes",_render_drawer)
+	
+	$"../../../../../../../HBoxContainer/menuMain/ProjectManagement".connect("drawer_save_data",_drawer_save_data)
+	
+func _drawer_save_data() -> void:
 	save_notes(data_path)
 
 func save_notes(path: String = "") -> void:
@@ -202,19 +210,19 @@ func deserialize_notes(data: Dictionary) -> void:
 		SingletonObject.DrawerTab.clear_all_tabs()
 		SingletonObject.DrawerTab.render_threads()
 
-func _on_drawer_about_to_popup() -> void:
+func _render_drawer() -> void:
 	load_notes(data_path)
 	
-func _notification(what):
-	if what == NOTIFICATION_WM_CLOSE_REQUEST and $"..".close_requested:
-		# Compare current data with last saved data
-		var current_data = get_current_data()
-		var has_changes = not compare_data(current_data, last_saved_data)
-		
-		if has_changes:
-			$"../CloseActions".popup_centered()
-		else:
-			$"..".hide()
+#func _notification(what):
+	#if what == NOTIFICATION_WM_CLOSE_REQUEST and $"..".close_requested:
+		## Compare current data with last saved data
+		#var current_data = get_current_data()
+		#var has_changes = not compare_data(current_data, last_saved_data)
+		#
+		#if has_changes:
+			#$"../CloseActions".popup_centered()
+		#else:
+			#$"..".hide()
 
 # New function to compare two data sets
 func compare_data(data1: Dictionary, data2: Dictionary) -> bool:
@@ -277,3 +285,13 @@ func _on_close_pressed() -> void:
 func _on_exit_pressed() -> void:
 	$"../CloseActions".hide()
 	$"..".hide()
+
+
+func _on_add_note_pressed() -> void:
+	%CreateNewNote.popup_centered()
+	%CreateNewNote.isDrawer = true
+
+
+func _on_add_shelf_pressed() -> void:
+	%NewThreadPopup.popup_centered()
+	%NewThreadPopup.isDrawer = true

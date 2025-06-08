@@ -1,5 +1,7 @@
 extends Control
 
+signal openDrawerNotes
+
 var is_dragging = false
 var drag_start_position = Vector2()
 
@@ -28,6 +30,7 @@ func _ready() -> void:
 			current_font_size =ThemeDB.fallback_font_size
 	
 	_default_zoom = current_font_size
+	_open_drawer_notes()
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
@@ -127,6 +130,7 @@ func _gui_input(event):
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
 	%CreateNewNote.popup_centered()
+	%CreateNewNote.isDrawer = false
 
 # this method pops up the preferences window
 func _on_button_pressed() -> void:
@@ -234,10 +238,23 @@ func _input(event):
 				
 				
 
+var isDrawerActive = false
 
 func _on_btn_drawer_pressed() -> void:
-	%Drawer.popup_centered()
-
+	isDrawerActive = !isDrawerActive
+	
+	if isDrawerActive:
+		_open_drawer_notes()
+		%BottomDrawerControl.show()
+	else:
+		%BottomDrawerControl.hide()
+	
+	SingletonObject.NotesTab.Disable_All_Drawer()
+	
+#reading file and create note in Drawer thread
+func _open_drawer_notes():
+	emit_signal("openDrawerNotes")
+	SingletonObject.NotesTab.render_threads(true)
 
 func _update_project_label(new_text: String = "", saved_state: bool = true) -> void:
 	var base_text: String

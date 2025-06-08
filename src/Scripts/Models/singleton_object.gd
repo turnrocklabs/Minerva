@@ -147,7 +147,7 @@ enum NotesDrawState {
 # this signals get used in memoryTabs.gd and new_thread_popup.gd 
 # for creating and updating notes tabs names
 @warning_ignore("unused_signal")
-signal create_notes_tab(state:bool,name: String)
+signal create_notes_tab(name: String)
 @warning_ignore("unused_signal")
 signal associated_notes_tab(tab_name, tab: Control)
 @warning_ignore("unused_signal")

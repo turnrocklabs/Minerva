@@ -135,17 +135,32 @@ func _can_drop_data(_at_position: Vector2, data):
 	return true
 
 func _drop_data(_at_position: Vector2, data):
-	if not data is Note: return
+	if not data is Note: 
+		return
 
+	# 1. Print UUID of the note being dropped
+	print("Dropping note UUID: ", data.memory_item.Title)
 	# Find which type of thread we're dropping into
 	var target_thread = _memory_thread_find(MainThreadId)
 	var target_drawer_thread = _drawer_thread_find(MainThreadId)
-	
-	# Find where the note is coming from
+
+	# Rest of your existing drop logic...
 	var dragged_note_thread = _memory_thread_find(data.memory_item.OwningThread)
 	var dragged_note_drawer_thread = _drawer_thread_find(data.memory_item.OwningThread)
 
-	# Add to new location
+	# 2. Print all UUIDs in the target thread
+	if target_thread:
+		print("UUIDs in target thread:")
+		for item in target_thread.MemoryItemList:
+			if data.memory_item.Title == item.Title and ((data.memory_item.Content == item.Content)or(data.memory_item.MemoryImage == item.MemoryImage)or(data.memory_item.Audio == item.Audio)):
+				return
+	elif target_drawer_thread:
+		print("UUIDs in target drawer thread:")
+		for item in target_drawer_thread.MemoryItemList:
+			if data.memory_item.Title == item.Title:
+				return
+
+
 	if target_thread and dragged_note_thread:
 		target_thread.MemoryItemList.insert(0, data.memory_item)
 		data.memory_item.OwningThread = target_thread.ThreadId
@@ -159,17 +174,17 @@ func _drop_data(_at_position: Vector2, data):
 	elif target_thread and dragged_note_drawer_thread:
 		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
 		if data.memory_item.Type == 0:
-			SingletonObject.NotesTab.add_note(data.memory_item.Title,data.memory_item.Content)
-		if data.memory_item.Type == 1:
-			SingletonObject.NotesTab.add_audio_note(data.memory_item.Title,data.memory_item.Audio)
-		if data.memory_item.Type == 2:
-			SingletonObject.NotesTab.add_image_note(data.memory_item.Title,data.memory_item.MemoryImage,data.memory_item.ImageCaption)
+			SingletonObject.NotesTab.add_note(data.memory_item.Title, data.memory_item.Content)
+		elif data.memory_item.Type == 1:
+			SingletonObject.NotesTab.add_audio_note(data.memory_item.Title, data.memory_item.Audio)
+		elif data.memory_item.Type == 2:
+			SingletonObject.NotesTab.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption)
 			
 	elif target_drawer_thread and dragged_note_thread:
 		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
 		if data.memory_item.Type == 0:
-			SingletonObject.DrawerTab.add_note(data.memory_item.Title,data.memory_item.Content)
-		if data.memory_item.Type == 1:
-			SingletonObject.DrawerTab.add_audio_note(data.memory_item.Title,data.memory_item.Audio)
-		if data.memory_item.Type == 2:
-			SingletonObject.DrawerTab.add_image_note(data.memory_item.Title,data.memory_item.MemoryImage,data.memory_item.ImageCaption)
+			SingletonObject.NotesTab.add_note(data.memory_item.Title, data.memory_item.Content, true)
+		elif data.memory_item.Type == 1:
+			SingletonObject.NotesTab.add_audio_note(data.memory_item.Title, data.memory_item.Audio, true)
+		elif data.memory_item.Type == 2:
+			SingletonObject.NotesTab.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption, true)
