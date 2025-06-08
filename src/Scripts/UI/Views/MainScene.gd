@@ -30,6 +30,7 @@ func _ready() -> void:
 			current_font_size =ThemeDB.fallback_font_size
 	
 	_default_zoom = current_font_size
+	_open_drawer_notes()
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
@@ -243,15 +244,17 @@ func _on_btn_drawer_pressed() -> void:
 	isDrawerActive = !isDrawerActive
 	
 	if isDrawerActive:
-		emit_signal("openDrawerNotes")
-		SingletonObject.NotesTab.render_threads(true)
+		_open_drawer_notes()
 		%BottomDrawerControl.show()
 	else:
 		%BottomDrawerControl.hide()
 	
 	SingletonObject.NotesTab.Disable_All_Drawer()
 	
-
+#reading file and create note in Drawer thread
+func _open_drawer_notes():
+	emit_signal("openDrawerNotes")
+	SingletonObject.NotesTab.render_threads(true)
 
 func _update_project_label(new_text: String = "", saved_state: bool = true) -> void:
 	var base_text: String

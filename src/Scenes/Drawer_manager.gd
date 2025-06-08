@@ -5,12 +5,14 @@ var data_path: String = "user://drawer_data.json"
 var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
 
 func _ready() -> void:
+	
 	for i in 3:
 		if $"../../../../../../../.." != null:
 			$"../../../../../../../..".connect("openDrawerNotes",_render_drawer)
-			break
-			
-func _on_save_data_pressed() -> void:
+	
+	$"../../../../../../../HBoxContainer/menuMain/ProjectManagement".connect("drawer_save_data",_drawer_save_data)
+	
+func _drawer_save_data() -> void:
 	save_notes(data_path)
 
 func save_notes(path: String = "") -> void:
