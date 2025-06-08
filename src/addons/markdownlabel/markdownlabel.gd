@@ -124,7 +124,9 @@ func _update() -> void:
 		if temp_text.length() > 0:
 			if get_parent() != null:
 				text = temp_text
-	queue_redraw()
+				
+				pass
+	#queue_redraw()
 
 func _set_markdown_text(new_text: String):
 	markdown_text = new_text
