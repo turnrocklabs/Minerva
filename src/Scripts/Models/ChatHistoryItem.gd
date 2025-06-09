@@ -106,7 +106,7 @@ var MultiSliderContainerId: String = "":
 var rendered_node: MessageMarkdown
 
 
-func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _text: String = "", _provider: BaseProvider = null):
+func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _text: String = ""):
 	self.Type = _type
 	self.Role = _role
 	self.Message = _text
@@ -116,8 +116,6 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _te
 	# otherwise the code that initializes this object should set the provider
 	if not SingletonObject.ChatList.is_empty():
 		self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
-	elif _provider != null:
-		self.provider = _provider
 	
 	
 	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator

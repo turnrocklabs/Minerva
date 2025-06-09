@@ -16,19 +16,15 @@ var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS
 var latest_msg: Control
 
 # Extract common functionality for handling user history item creation
-func create_user_history_item(text: String, provider = null) -> ChatHistoryItem:
-	if provider == null:
-		provider = SingletonObject.ChatList[current_tab].provider
-	
+func create_user_history_item(text: String) -> ChatHistoryItem:
 	return ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
 							   ChatHistoryItem.ChatRole.USER, 
-							   text,
-							   provider)
+							   text)
 
 # Handle human provider message creation
 func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem) -> void:
 	# Get working memory/notes
-	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(history.provider)
+	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider)
 	
 	# Append working memory to the user history item
 	if working_memory:
@@ -43,8 +39,8 @@ func handle_human_provider_message(history: ChatHistory, user_history_item: Chat
 	# Handle and add empty model message
 	var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 												ChatHistoryItem.ChatRole.MODEL,
-												"",
-												history.provider)
+												"")
+	mdl_history_item.provider = history.provider
 	# Also append working memory to the model's history item for context
 	if working_memory:
 		mdl_history_item.InjectedNotes = working_memory
@@ -332,7 +328,7 @@ func execute_regular_chat(text: String) -> void:
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 	
 	var user_history_item = create_user_history_item(text)
-	
+	user_history_item.provider = history.provider
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
@@ -357,8 +353,8 @@ func execute_regular_chat(text: String) -> void:
 	# Add empty history item, to show the loading state
 	var dummy_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 										ChatHistoryItem.ChatRole.MODEL,
-										"",
-										history.provider)
+										"")
+	dummy_item.provider = history.provider
 	
 	var model_msg_node = create_model_message_node(history, dummy_item)
 	var bot_response = await generate_content_from_provider(history, history_list)
@@ -406,10 +402,11 @@ func execute_sequential_chat(text_input: String) -> void:
 		user_msg_node.render()
 
 		# Add empty history item, to show the loading state
-		var dummy_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
+		var dummy_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 											ChatHistoryItem.ChatRole.MODEL,
-											"",
-											history.provider)
+											"")
+		
+		dummy_item.provider = history.provider
 		
 		var model_msg_node = create_model_message_node(history, dummy_item)
 		var bot_response = await generate_content_from_provider(history, history_list)
@@ -505,8 +502,7 @@ func create_message_new(inputs_idx: int) -> void:
 	if user_history_item.provider is HumanProvider:
 		var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 													ChatHistoryItem.ChatRole.MODEL,
-													"",
-													history.provider)
+													"")
 		_mutex.lock()
 		_usr_chat_hist_items.append(user_history_item)
 		_bot_responses.append(mdl_history_item)
