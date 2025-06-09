@@ -187,13 +187,14 @@ func render() -> void:
 
 
 func set_edit(on: = true) -> void:
-	%MessageLabelsContainer.visible = not on
-	
 	if on:
-		text_edit.text = content
+		await get_tree().process_frame
+		message_labels_container.visible = false
+		%TextMessageHBoxContainer.visible = true
 		text_edit.grab_focus()
-	
-	text_edit.visible = on
+		
+	else:
+		_on_message_text_edit_text_set()
 
 func _update_tokens_cost() -> void:
 	var price = 0.0
@@ -683,3 +684,13 @@ func _update_sizes() -> void:
 	
 	if v_box_container.size.y < max_message_size_limit:
 		max_message_size_limit = _last_custom_size_y
+
+
+func _on_message_text_edit_text_set() -> void:
+	if !text_edit.text.is_empty():
+		content = text_edit.text
+	await get_tree().process_frame
+	%TextMessageHBoxContainer.visible = false
+	message_labels_container.visible = true
+	text_edit.text = "" 
+	%SetTextButton.visible = false

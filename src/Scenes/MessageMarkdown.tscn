@@ -363,6 +363,8 @@ scroll_fit_content_height = true
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
+focus_mode = 0
+action_mode = 0
 text = "Set Text"
 
 [node name="h2" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
