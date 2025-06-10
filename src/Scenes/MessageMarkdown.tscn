@@ -1,20 +1,22 @@
-[gd_scene load_steps=31 format=3 uid="uid://fltuapc4psxd"]
+[gd_scene load_steps=33 format=3 uid="uid://fltuapc4psxd"]
 
 [ext_resource type="Script" uid="uid://dw7ttrabgb5ig" path="res://Scripts/UI/Controls/MessageMarkdown.gd" id="1_5rvwm"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_2tyhp"]
 [ext_resource type="Script" uid="uid://c1lqsdshqrr7g" path="res://addons/markdownlabel/markdownlabel.gd" id="2_5cmtk"]
-[ext_resource type="FontFile" uid="uid://lhjvpl7xmphm" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
+[ext_resource type="FontFile" uid="uid://c2pb8b5wi5fb3" path="res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf" id="2_uss7y"]
 [ext_resource type="Texture2D" uid="uid://b6acurykmusyp" path="res://assets/icons/split.png" id="3_7l37a"]
-[ext_resource type="Script" uid="uid://ctun3awowso27" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
+[ext_resource type="Script" uid="uid://d0ywt0yexj1tn" path="res://addons/markdownlabel/header_formats/h1_format.gd" id="3_hh526"]
+[ext_resource type="Texture2D" uid="uid://djv6o31ysxhol" path="res://assets/icons/left-arrow-16.png" id="3_nqk1n"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="3_p2uud"]
 [ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/clipboard_icons/content_copy.svg" id="4_3sl4b"]
-[ext_resource type="Script" uid="uid://wflc6yhgexit" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
+[ext_resource type="Script" uid="uid://by37piffqnui" path="res://addons/markdownlabel/header_formats/h2_format.gd" id="4_4sci6"]
+[ext_resource type="Texture2D" uid="uid://c4k11pujjnrg6" path="res://assets/icons/right-arrow-16.png" id="4_24nn0"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="4_qpk4n"]
-[ext_resource type="Script" uid="uid://bkn24nrikolf6" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
-[ext_resource type="Script" uid="uid://bavfhdiwr4xd3" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
+[ext_resource type="Script" uid="uid://b5uyeik3rxtpi" path="res://addons/markdownlabel/header_formats/h3_format.gd" id="5_qyua3"]
+[ext_resource type="Script" uid="uid://dnqhrd64u4uhl" path="res://addons/markdownlabel/header_formats/h4_format.gd" id="6_7xri6"]
 [ext_resource type="Texture2D" uid="uid://uoecrgwhfrqq" path="res://assets/icons/replace_icons/replace_icon_white.png" id="6_aa7ls"]
-[ext_resource type="Script" uid="uid://ds5mpp44o5e5y" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
-[ext_resource type="Script" uid="uid://d38fxi8flidoq" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="8_ywchm"]
+[ext_resource type="Script" uid="uid://cw34fr8ulv22w" path="res://addons/markdownlabel/header_formats/h5_format.gd" id="7_46jbr"]
+[ext_resource type="Script" uid="uid://dywy41ysnugtw" path="res://addons/markdownlabel/header_formats/h6_format.gd" id="8_ywchm"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="10_6uibh"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="10_h3jau"]
 [ext_resource type="Texture2D" uid="uid://dr5q0d4id5wst" path="res://assets/icons/arrow_right.svg" id="12_tbvqb"]
@@ -119,6 +121,7 @@ error_message_color = Color(0.737255, 0, 0.109804, 1)
 expand_anim_duration = 0.6
 expand_transition_type = 5
 expand_icon_color = Color(0.270588, 0.317647, 0.772549, 1)
+custom_starting_size = 600.0
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2
@@ -200,14 +203,15 @@ icon_alignment = 1
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-text = "L
+text = "
 "
+icon = ExtResource("3_nqk1n")
 
 [node name="RightCardButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
-text = "R"
+icon = ExtResource("4_24nn0")
 
 [node name="ContinueButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h" groups=["controls"]]
 unique_name_in_owner = true
@@ -241,6 +245,7 @@ unique_name_in_owner = true
 texture_filter = 2
 layout_mode = 2
 tooltip_text = "Edit Message Contens"
+focus_mode = 0
 icon = ExtResource("10_h3jau")
 
 [node name="ClipButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/h/h" groups=["controls"]]
@@ -300,13 +305,15 @@ bbcode_enabled = true
 text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
 threaded = true
 
-[node name="ResizeScrollContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+[node name="ResizeScrollContainer" type="ScrollContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 0
 
 [node name="MarginContainer" type="MarginContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 0
 theme_override_constants/margin_left = 5
 theme_override_constants/margin_right = 10
 
@@ -314,12 +321,13 @@ theme_override_constants/margin_right = 10
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
+size_flags_vertical = 0
 
 [node name="MessageLabelsContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer/MainVBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 0
 
 [node name="ImagesGridContainer" type="GridContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer/MainVBoxContainer"]
 unique_name_in_owner = true
@@ -327,14 +335,29 @@ layout_mode = 2
 size_flags_vertical = 3
 
 [node name="Control" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+visible = false
 layout_mode = 2
 
-[node name="MessageTextEdit" type="TextEdit" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
+[node name="TextMessageHBoxContainer" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MessageTextEdit" type="TextEdit" parent="MarginContainer/HBoxContainer/PanelContainer/v/TextMessageHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
 wrap_mode = 1
 scroll_fit_content_height = true
+
+[node name="SetTextButton" type="Button" parent="MarginContainer/HBoxContainer/PanelContainer/v/TextMessageHBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+focus_mode = 0
+action_mode = 0
+text = "Set Text"
 
 [node name="h2" type="HBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 layout_mode = 2
@@ -356,6 +379,7 @@ icon = ExtResource("16_rwt48")
 
 [node name="ResizeDragControl" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 unique_name_in_owner = true
+visible = false
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
 mouse_default_cursor_shape = 9
@@ -388,7 +412,6 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[connection signal="gui_input" from="." to="." method="_on_gui_input"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/ResizeControl/ExpandButton" to="." method="_on_expand_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/LeftCardButton" to="." method="_on_left_card_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/RightCardButton" to="." method="_on_right_card_button_pressed"]
@@ -400,6 +423,7 @@ layout_mode = 2
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/NoteButton" to="." method="_on_note_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h/h/DeleteButton" to="." method="_on_delete_button_pressed"]
 [connection signal="gui_input" from="MarginContainer/HBoxContainer/PanelContainer/v/MarkdownLabel" to="." method="_on_markdown_label_gui_input"]
+[connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/TextMessageHBoxContainer/SetTextButton" to="." method="_on_message_text_edit_text_set"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h2/ContinueButton" to="." method="_on_continue_button_pressed"]
 [connection signal="pressed" from="MarginContainer/HBoxContainer/PanelContainer/v/h2/RegenerateButton" to="." method="_on_regenerate_button_pressed"]
 [connection signal="gui_input" from="MarginContainer/HBoxContainer/PanelContainer/v/ResizeDragControl" to="." method="_on_resize_control_gui_input"]
