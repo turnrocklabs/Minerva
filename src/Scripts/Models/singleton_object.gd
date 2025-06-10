@@ -369,7 +369,8 @@ enum API_MODEL_PROVIDERS {
 	CLAUDE_SONNET,
 	CLAUDE_OPUS,
 	GPT_IMAGE_1,
-	LOCALLLM
+	OLLAMA_R1,
+	OLLAMA_GEMMA3
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -388,7 +389,8 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	# API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
 	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1,
-	API_MODEL_PROVIDERS.LOCALLLM: SGLangProvider
+	API_MODEL_PROVIDERS.OLLAMA_R1: LocalProvider,
+	API_MODEL_PROVIDERS.OLLAMA_GEMMA3: LocalProvider.Gemma3
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value

@@ -82,7 +82,7 @@ var tab_title: String = "":
 var file: String:
 	set(value):
 		file = value
-		if code_edit:
+		if code_edit != null:
 			code_edit.syntax_highlighter = update_code_hightlighter(file)
 		%reloadButton.disabled = false
 #var file_path: String
