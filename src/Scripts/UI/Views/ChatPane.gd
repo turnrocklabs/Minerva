@@ -48,6 +48,7 @@ func handle_human_provider_message(history: ChatHistory, user_history_item: Chat
 	history.HistoryItemList.append(mdl_history_item)
 	var mdl_msg_node: = history.VBox.add_history_item(mdl_history_item)
 	mdl_msg_node.regeneratable = false
+	mdl_msg_node.editable = true
 	mdl_msg_node.render()
 	mdl_msg_node.set_edit()
 
@@ -183,15 +184,11 @@ func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseP
 		var history: ChatHistory = SingletonObject.ChatList[current_tab]
 		if not provider:
 			provider = history.provider
-
 		history_list = history.To_Prompt(predicate)
 	
-	# if there's no history provider and no fallback, we can't format the append item even if there is one
 	if not provider:
 		return []
-
 	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(provider)
-
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
@@ -202,8 +199,7 @@ func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseP
 		# also append the new item since it's not in the history yet
 		var item = provider.Format(append_item)
 		if item: history_list.append(item)
-
-
+	
 	return history_list
 
 
@@ -400,18 +396,15 @@ func execute_sequential_chat(text_input: String) -> void:
 		user_msg_node.first_time_message = true
 		history.VBox.ensure_node_is_visible(user_msg_node)
 		user_msg_node.render()
-
 		# Add empty history item, to show the loading state
 		var dummy_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 											ChatHistoryItem.ChatRole.MODEL,
 											"")
-		
 		dummy_item.provider = history.provider
 		
 		var model_msg_node = create_model_message_node(history, dummy_item)
 		var bot_response = await generate_content_from_provider(history, history_list)
 		
-		# Create history item from bot response
 		var chi = process_bot_response(bot_response, history.provider)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	audio_stop_1.disabled = true
