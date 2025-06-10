@@ -24,7 +24,7 @@ extends HBoxContainer
 @export var max_lines_expanded_code_segment: int = 6
 
 @onready var expand_button: Button = %ExpandButton
-@onready var resize_scroll_container: VBoxContainer = %ResizeScrollContainer
+@onready var resize_scroll_container: ScrollContainer = %ResizeScrollContainer
 @onready var message_labels_container: VBoxContainer = %MessageLabelsContainer
 @onready var resize_drag_control: Control = %ResizeDragControl
 @onready var images_grid_container: GridContainer = %ImagesGridContainer
