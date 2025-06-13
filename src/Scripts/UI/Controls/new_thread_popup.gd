@@ -53,8 +53,7 @@ func _on_close_requested() -> void:
 
 
 func _on_txt_new_tab_name_text_submitted(new_text: String) -> void:
-	SingletonObject.create_notes_tab.emit(new_text, tab_reference)
-	call_deferred("hide")
+	_on_btn_create_thread_pressed()
 
 
 func _on_window_input(event: InputEvent) -> void:
