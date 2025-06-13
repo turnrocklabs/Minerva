@@ -116,6 +116,28 @@ static func create(code_text: String, syntax: String = "Plain Text", index: Stri
 	code_panel.get_node("%CodeLabel").finished.connect(code_panel._update_label_size)
 	return code_panel
 
+func _on_smartdiff_pressed() -> bool:
+	# get the active editor and ask it to handle the diff
+	var ep: EditorPane = SingletonObject.editor_pane
+	var active_tab_editor_node: Editor
+	var tab_count: int = ep.Tabs.get_tab_count()
+	if tab_count > 0:
+		active_tab_editor_node = ep.Tabs.get_current_tab_control()
+	else:
+		# do nothing
+		return false
+	
+	# see if we can get a EditorCodeEdit type
+	var editor: EditorCodeEdit
+	if active_tab_editor_node.code_edit != null:
+		editor = active_tab_editor_node.code_edit 
+	
+	# get the string of the gnerated code
+	var new_text: String = _parse_code_block(%CodeLabel.text)
+#	editor.apply_diff(new_text)
+	editor.preview_diff(new_text)
+	return true
+
 
 func _on_replace_all_pressed():
 	# Get the EditorPane instance

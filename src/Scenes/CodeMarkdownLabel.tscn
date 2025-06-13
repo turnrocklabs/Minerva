@@ -160,6 +160,13 @@ size_flags_horizontal = 8
 tooltip_text = "takes the content into the currently selected tab (creates one if there isn't one)"
 icon = ExtResource("3_iq8ce")
 
+[node name="ReplaceAll2" type="Button" parent="v/p/h/HBoxContainer"]
+editor_description = "Replacing all in active tab"
+layout_mode = 2
+size_flags_horizontal = 8
+tooltip_text = "takes the content into the currently selected tab (creates one if there isn't one)"
+text = "SD"
+
 [node name="CopyButton" type="Button" parent="v/p/h/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -200,3 +207,4 @@ h6 = SubResource("Resource_f738n")
 
 [connection signal="pressed" from="v/p/h/Control/ExpandButton" to="." method="_on_expand_button_pressed"]
 [connection signal="pressed" from="v/p/h/HBoxContainer/ReplaceAll" to="." method="_on_replace_all_pressed"]
+[connection signal="pressed" from="v/p/h/HBoxContainer/ReplaceAll2" to="." method="_on_smartdiff_pressed"]
