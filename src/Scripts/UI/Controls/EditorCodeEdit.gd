@@ -53,25 +53,32 @@ func _ready() -> void:
 # PUBLIC API – Apply preview permanently
 # ══════════════════════════════════════════════════════════════════
 func apply_preview() -> void:
-	if _last_preview_text.is_empty():
-		push_warning("No preview cached. Run preview_diff() first.")
-		return
+	var combined_text = _text_to_lines(text)
+	var output_buffer: Array[String] = []
+	var line_count := len(combined_text)
+	for idex in range(line_count):
+		var bg_color = get_line_background_color(idex)
+		if bg_color[0] != 1.0:
+			output_buffer.append(combined_text[idex])
+	var new_text_content := "\n".join(output_buffer)
+	text = new_text_content
+	
+	# Reset all diff-related state to initial conditions
+	_reset_diff_state()
 
-	var old_text := text
-	var new_text := _last_preview_text
-
-	# Commit and enable undo
-	var ur := UndoRedo.new()
-	ur.create_action("Apply AI patch")
-	ur.add_do_property(self, "text", new_text)
-	ur.add_undo_property(self, "text", old_text)
-	ur.commit_action()
-
-	text          = new_text
-	saved_content = new_text
-	_clear_preview_highlights()
-
-
+func _reset_diff_state() -> void:
+	# Clear all highlights
+	for ln in _preview_highlighted:
+		if ln < get_line_count():
+			set_line_background_color(ln, Color(0, 0, 0, 0))
+	
+	# Reset all state variables to empty/initial values
+	_preview_original_text = ""
+	_last_preview_text = ""
+	_raw_diff = ""
+	_preview_highlighted.clear()
+	_pending_hunks.clear()
+	_applied_hunks.clear()
 
 # ══════════════════════════════════════════════════════════════════
 # PUBLIC API – Preview diff with highlights   (dual-buffer approach)
@@ -269,27 +276,32 @@ func _calculate_match_score(doc:Array, pos:int, patt:Array, pts:Array, exp:int) 
 # Apply one hunk at a **known** position (no extra search)
 # ══════════════════════════════════════════════════════════════════
 func _apply_hunk_at_pos(doc: Array, h: Dictionary, pos: int) -> void:
-	# Collect deletions & insertions
-	var del_lines:Array = []
-	var add_lines:Array = []
+	# Walk through the hunk exactly in the order it appears
+	var idx := pos                                # current position in `doc`
+
 	for e in h["body"]:
-		match e["type"]:
-			"-": del_lines.append(_normalize_line(e["content"]))
-			"+": add_lines.append(e["content"])
-			" ": pos += 1   # advance cursor across context lines
+		var t = e["type"]
+		var c = e["content"]
 
-	# Delete each “-” line exactly once starting at anchor
-	for dl in del_lines:
-		var k := pos
-		while k < doc.size():
-			if _normalize_line(doc[k]) == dl:
-				doc.remove_at(k)
-				break
-			k += 1
+		match t:
+			" ":                                   # context
+				idx += 1
 
-	# Insert “+” lines
-	for i in range(add_lines.size()):
-		doc.insert(pos + i, add_lines[i])
+			"-":                                   # deletion
+				# If the expected line is exactly at idx, remove it.
+				# Otherwise scan forward (helps with whitespace or duplicate lines).
+				var k := idx
+				while k < doc.size():
+					if _normalize_line(doc[k]) == _normalize_line(c):
+						doc.remove_at(k)
+						break
+					k += 1
+				# Do NOT advance idx – the next original line
+				# is now at the same index after the removal.
+
+			"+":                                   # insertion
+				doc.insert(idx, c)
+				idx += 1                            # advance past the inserted line
 
 
 
