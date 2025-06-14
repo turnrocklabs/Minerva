@@ -1,181 +1,338 @@
+## EditorCodeEdit.gd – Complete Lint‑Clean Version
+## Supports exact + fuzzy unified‑diff patching in Godot CodeEdit.
+
 class_name EditorCodeEdit
 extends CodeEdit
 
-## Content of the saved version of this code edit.[br]
-## Every time the editor content is saved, this should be updated.
-var saved_content: String
+# ------------------------------------------------------------------
+# Saved snapshot
+# ------------------------------------------------------------------
+var saved_content: String = ""
 
+# ------------------------------------------------------------------
+# Fuzzy‑matching configuration
+# ------------------------------------------------------------------
+const MAX_CONTEXT_FUZZ: int       = 2      # context lines allowed to differ
+const INITIAL_SEARCH_RADIUS: int  = 20     # ± window start
+const MAX_SEARCH_RADIUS: int      = 100    # ± window cap
+const MIN_CONFIDENCE_SCORE: float = 0.60   # reject matches below this
+const WHITESPACE_TOLERANCE: bool  = false  # ignore leading/trailing whitespace
 
+# ------------------------------------------------------------------
+# Preview state
+# ------------------------------------------------------------------
+var _applied_hunks: Array = []
+var _pending_hunks: Array = []
+var _preview_original_text: String = ""
+var _preview_highlighted: Array = []
+var _raw_diff: String = ""
+# ------------------------------------------------------------------
+# Godot lifecycle
+# ------------------------------------------------------------------
 func _ready() -> void:
-	size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-	caret_blink = true
-	caret_multiple = false
-	highlight_all_occurrences = true
-	highlight_current_line = true
-	gutters_draw_line_numbers = true
+	size_flags_vertical           = SizeFlags.SIZE_EXPAND_FILL
+	caret_blink                   = true
+	highlight_all_occurrences     = true
+	highlight_current_line        = true
+	gutters_draw_line_numbers     = true
 	gutters_zero_pad_line_numbers = true
-	autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-	wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	name = "CodeEdit"
-	line_folding = true
-	editable = true
+	autowrap_mode                 = TextServer.AUTOWRAP_ARBITRARY
+	wrap_mode                     = TextEdit.LINE_WRAPPING_BOUNDARY
+	line_folding                  = true
+	editable                      = true
+
+# ==================================================================
+# PUBLIC API – apply diff permanently
+# ==================================================================
+func apply_preview() -> void:
+	clear_diff_preview()
+	self.apply_diff(_raw_diff)
 
 func apply_diff(diff: String) -> void:
-	# 1) Convert current text into an editable Array[String]
-	var lines: Array[String] = []
-	for l in text.split("\n"):
-		lines.append(l)
+	var hunks: Array = _parse_diff(diff)
+	var lines: Array  = _text_to_lines(text)
 
-	# 2) Split diff text into lines
-	var diff_lines: PackedStringArray = diff.split("\n")
+	hunks.sort_custom(func(a, b) -> bool:
+		return int(a["old_start"]) < int(b["old_start"])
+	)
 
-	# 3) Regex to match unified-diff hunk headers: @@ -a,b +c,d @@
-	var hunk_re := RegEx.new()
-	hunk_re.compile("@@ -([0-9]+),?([0-9]*) +\\+([0-9]+),?([0-9]*) @@")
+	var cumulative_offset: int = 0
+	for h in hunks:
+		var h2 = h.duplicate(true)
+		h2["old_start"] = int(h["old_start"]) + cumulative_offset
 
-	var i := 0
-	while i < diff_lines.size():
-		var header := diff_lines[i]
+		var res := _apply_hunk_fuzzy(lines, h2, true)
+		print("apply_diff: hunk@%d → %s" % [h["old_start"]+1, res])
+		if res.get("success", false):
+			cumulative_offset += int(res.get("lines_added",0)) - int(res.get("lines_removed",0))
+		else:
+			push_warning("Hunk @%d failed: %s" % [int(h["old_start"])+1, res.get("message","")])
 
-		if header.begins_with("@@"):
-			var m := hunk_re.search(header)
-			if m:
-				# -- Parse header values --
-				var orig_start := int(m.get_string(1)) - 1	# 0-based
-				var orig_len := 1
-				if m.get_string(2) != "":
-					orig_len = int(m.get_string(2))
-
-				var new_len := 1
-				if m.get_string(4) != "":
-					new_len = int(m.get_string(4))
-
-				# -- Collect replacement lines (context + additions) --
-				var new_lines: Array[String] = []
-				i += 1
-				while i < diff_lines.size() and not diff_lines[i].begins_with("@@"):
-					var dl := diff_lines[i]
-					if dl.begins_with(" ") or dl.begins_with("+"):
-						new_lines.append(dl.substr(1))	# strip leading char
-					# deletions ("-") are skipped
-					i += 1
-
-				# -- Remove original lines --
-				for _idx in range(orig_len):
-					if orig_start < lines.size():
-						lines.remove_at(orig_start)
-
-				# -- Insert replacement lines --
-				for j in range(new_lines.size()):
-					lines.insert(orig_start + j, new_lines[j])
-
-				# continue outer while (i already advanced inside while)
-				continue
-
-		# Not a hunk header → advance
-		i += 1
-
-	# 4) Reassemble text and update saved_content
 	text = "\n".join(lines)
 	saved_content = text
 
-# --------------------------------------------------------------------
-# Diff preview helpers (accurate unified diff – keep "-" lines, add "+" lines)
-# --------------------------------------------------------------------
-var _preview_original_text: String = ""
-var _preview_highlighted: Array[int] = []
+# ==================================================================
+# PUBLIC API – preview diff with highlights
+# ==================================================================
+func preview_diff(diff: String) -> void:
+	_raw_diff = diff
+	clear_diff_preview()
+	_preview_original_text = text
 
+	var doc_lines: Array = _text_to_lines(text)
+	var hunks: Array     = _parse_diff(diff)
+	var additions: Array = []
+	var deletions: Array = []
+
+	for h in hunks:
+		var loc := _find_hunk_location(doc_lines, h)
+		var conf := float(loc["confidence"])
+		var uniq := bool(loc["unique"])
+		var pos  := int(loc["position"])
+
+		if conf < MIN_CONFIDENCE_SCORE or not uniq:
+			_pending_hunks.append(h)
+			continue
+		
+		var sim := _apply_hunk_fuzzy(doc_lines, h, false)
+		if not sim.get("success", false):
+			_pending_hunks.append(h)
+			continue
+
+		var body := h["body"] as Array
+		var idx := pos
+		for e in body:
+			var t := str(e["type"])
+			var c := str(e["content"])
+			if t == " ":
+				idx += 1
+			elif t == "-":
+				deletions.append(idx)
+				idx += 1
+			elif t == "+":
+				doc_lines.insert(idx, c)
+				additions.append(idx)
+				idx += 1
+
+	text = "\n".join(doc_lines)
+	for i in additions: _highlight_line(i, Color(0.25,1,0.25,0.35))
+	for i in deletions: _highlight_line(i, Color(1,0.25,0.25,0.35))
+
+	if _pending_hunks.size() > 0:
+		push_warning("AI Diff Preview: %d hunk(s) need review" % _pending_hunks.size())
 
 func clear_diff_preview() -> void:
 	if _preview_original_text == "":
 		return
-
 	text = _preview_original_text
 	_preview_original_text = ""
-
 	for ln in _preview_highlighted:
 		if ln < get_line_count():
-			set_line_background_color(ln, Color(0, 0, 0, 0))
+			set_line_background_color(ln, Color(0,0,0,0))
 	_preview_highlighted.clear()
+	_applied_hunks.clear()
+	_pending_hunks.clear()
 
-
-func preview_diff(diff: String) -> void:
-	# ---------- reset any old preview ----------
-	clear_diff_preview()
-
-	# ---------- save current buffer for later ----------
-	_preview_original_text = text
-
-	# Work on a mutable copy of the buffer
-	var lines: Array[String] = []
-	for l in text.split("\n"):
-		lines.append(l)
-
-	# Split diff and prep header regex
-	var diff_lines := diff.split("\n")
-	var hunk_re := RegEx.new()
-	hunk_re.compile("@@ -([0-9]+),?([0-9]*) +\\+([0-9]+),?([0-9]*) @@")
-
-	var additions: Array[int] = []
-	var deletions: Array[int] = []
-
-	var i := 0
-	var line_offset := 0		# tracks cumulative insertions
-
-	while i < diff_lines.size():
-		if diff_lines[i].begins_with("@@"):
-			var m := hunk_re.search(diff_lines[i])
+# ==================================================================
+# DIFF PARSER
+# ==================================================================
+func _parse_diff(diff: String) -> Array:
+	var hunks: Array = []
+	var lines := diff.split("\n")
+	var re := RegEx.new()
+	re.compile("@@ -([0-9]+),?([0-9]*) \\+([0-9]+),?([0-9]*) @@")
+	var i: int = 0
+	while i < lines.size():
+		var l := lines[i]
+		if l.begins_with("@@"):
+			var m := re.search(l)
 			if m:
-				# Map original line number to current preview buffer
-				var orig_start := int(m.get_string(1)) - 1
-				var current_idx := orig_start + line_offset
-				
-				# Track where we are in the original file for this hunk
-				var orig_line_counter := 0
-
-				i += 1		# move to first body line
-				while i < diff_lines.size() and not diff_lines[i].begins_with("@@"):
-					var dl := diff_lines[i]
-
-					if dl.begins_with(" "):
-						# Context line: exists in both versions
-						current_idx += 1
-						orig_line_counter += 1
-
-					elif dl.begins_with("-"):
-						# Deletion: mark existing line for red highlight
-						deletions.append(current_idx)
-						current_idx += 1
-						orig_line_counter += 1
-
-					elif dl.begins_with("+"):
-						# Insertion: insert new line and highlight green
-						var new_content := dl.substr(1)
-						lines.insert(current_idx, new_content)
-						additions.append(current_idx)
-						current_idx += 1
-						line_offset += 1	# track that we added a line
-
+				var h := {
+					"old_start": int(m.get_string(1))-1,
+					"old_len"  : (1 if m.get_string(2)=="" else int(m.get_string(2))),
+					"new_start": int(m.get_string(3))-1,
+					"new_len"  : (1 if m.get_string(4)=="" else int(m.get_string(4))),
+					"body"     : []
+				}
+				i += 1
+				while i < lines.size() and not lines[i].begins_with("@@"):
+					var bl := lines[i]
+					if bl != "":
+						var op := bl.substr(0,1)
+						var ct := bl.substr(1)
+						if op in [" ","-","+"]:
+							(h["body"] as Array).append({"type":op, "content":ct})
 					i += 1
-				continue	# next hunk
+				_heal_hunk_context(h)
+				hunks.append(h)
+				continue
 		i += 1
+	return hunks
 
-	# ---------- update editor ----------
-	text = "\n".join(lines)
+func _heal_hunk_context(h: Dictionary) -> void:
+	var ctx: int = 0
+	var chg: bool = false
+	for e in h["body"]:
+		if e["type"] == " ": ctx += 1
+		else: chg = true
+	h["context_lines"] = ctx
+	h["low_context"]   = (ctx < 3 and chg)
 
-	# ---------- apply highlights ----------
-	var green := Color(0.25, 1.0, 0.25, 0.35)
-	var red   := Color(1.0, 0.25, 0.25, 0.35)
+# ==================================================================
+# HUNK LOCATION (fuzzy even for low‐context)
+# ==================================================================
+func _find_hunk_location(doc: Array, h: Dictionary) -> Dictionary:
+	var exp := int(h["old_start"])
+	var ctx := int(h.get("context_lines", 0))
 
-	for ln in additions:
-		if ln < get_line_count():
-			_highlight_line(ln, green)
+	# Always do a limited fuzzy search ±INITIAL_SEARCH_RADIUS
+	var patt: Array = []
+	var pts: Array = []
+	for e in h["body"]:
+		var t := str(e["type"])
+		if t in [" ", "-"]:
+			patt.append(_normalize_line(str(e["content"])))
+			pts.append(t)
 
-	for ln in deletions:
-		if ln < get_line_count():
-			_highlight_line(ln, red)
+	var best_p := -1
+	var best_c := 0.0
+	var ct := 0
+	var rad := INITIAL_SEARCH_RADIUS
 
+	while rad <= MAX_SEARCH_RADIUS:
+		var start_idx: int = max(0, exp - rad)
+		var end_idx:int = min(doc.size() - patt.size(), exp + rad)
+		for pos in range(start_idx, end_idx + 1):
+			var sc := _calculate_match_score(doc, pos, patt, pts, exp)
+			if sc > best_c:
+				best_c = sc
+				best_p = pos
+				ct = 1
+			elif abs(sc - best_c) < 0.001 and sc > 0.5:
+				ct += 1
+		if best_c >= 0.8:
+			break
+		rad = min(rad * 2, MAX_SEARCH_RADIUS)
+	var uniq := (ct == 1)
 
-func _highlight_line(line_idx: int, color: Color) -> void:
-	set_line_background_color(line_idx, color)
-	_preview_highlighted.append(line_idx)
+	# Fallback to header if no decent match
+	if best_p < 0:
+		best_p = exp
+		best_c = 0.0
+		uniq = false
+
+	return {
+		"position":   best_p,
+		"confidence": best_c,
+		"unique":     uniq
+	}
+
+func _calculate_match_score(doc: Array, pos:int, patt:Array, pts:Array, exp:int) -> float:
+	if pos<0 or pos+patt.size()>doc.size(): return 0.0
+	var m: float = 0.0
+	var w: float = 0.0
+	var tot:int = patt.size()
+	for i in range(tot):
+		var dl := _normalize_line(doc[pos+i])
+		var pl = patt[i]
+		if pl == dl:
+			m += 1.0
+			w += 1.2 if (pts[i]=="-") else 1.0
+		elif _fuzzy_match(pl, dl):
+			m += 0.7
+			w += 0.8 if (pts[i]=="-") else 0.7
+	if tot==0: return 0.0
+	var base := m/float(tot)
+	var weighted := w/(float(tot)*1.2)
+	var dist = abs(pos-exp)
+	var pen := (1.0 if dist==0 else clampf(1.0 - float(dist)/(MAX_SEARCH_RADIUS*2), 0.5, 1.0))
+	return (base*0.5 + weighted*0.5) * pen
+
+# ******************************************************************
+# APPLY (or SIMULATE) A SINGLE HUNK – delete only '-' lines
+# ******************************************************************
+func _apply_hunk_fuzzy(doc: Array, h: Dictionary, permanent: bool) -> Dictionary:
+	var loc  := _find_hunk_location(doc, h)
+	var conf := float(loc["confidence"])
+	var pos  := int(loc["position"])
+
+	if conf < MIN_CONFIDENCE_SCORE:
+		return {"success": false, "message": "Low confidence: %.2f" % conf}
+	if pos < 0:
+		return {"success": false, "message": "Location not found"}
+	if not permanent:
+		return {"success": true, "position": pos, "confidence": conf}
+
+	# Build replacement lines and count deletions
+	var original_count: int = 0
+	var added_count:    int = 0
+	var repl: Array = []
+	for e in h["body"]:
+		var t := str(e["type"])
+		var c := str(e["content"])
+		if t == "+":
+			repl.append(c)
+			added_count += 1
+		elif t == "-":
+			original_count += 1
+		elif t == " ":
+			# keep context lines intact
+			repl.append(c)
+		# note: context lines are not counted for deletion
+
+	# Remove only the "-" lines at the found position
+	var removed := 0
+	var scan_pos := pos
+	while removed < original_count and scan_pos < doc.size():
+		if _normalize_line(doc[scan_pos]) == _normalize_line(h["body"][removed]["content"]):
+			doc.remove_at(scan_pos)
+			removed += 1
+		else:
+			scan_pos += 1
+
+	# Insert all replacement lines
+	for i in range(repl.size()):
+		doc.insert(pos + i, repl[i])
+
+	return {
+		"success":      true,
+		"position":     pos,
+		"confidence":   conf,
+		"lines_added":  added_count,
+		"lines_removed": original_count
+	}
+# ------------------------------------------------------------------
+# Utilities
+# ------------------------------------------------------------------
+func _normalize_line(s:String) -> String:
+	return s.strip_edges() if WHITESPACE_TOLERANCE else s
+
+func _fuzzy_match(a:String, b:String) -> bool:
+	if a == b: return true
+	if WHITESPACE_TOLERANCE and a.replace(" ","") == b.replace(" ",""): return true
+	return false
+
+func _text_to_lines(s:String) -> Array:
+	return s.split("\n")
+
+func _highlight_line(idx:int, col:Color) -> void:
+	if idx<0 or idx>=get_line_count(): return
+	set_line_background_color(idx, col)
+	if not _preview_highlighted.has(idx):
+		_preview_highlighted.append(idx)
+
+func get_pending_hunks() -> Array:
+	return _pending_hunks.duplicate()
+
+func apply_pending_hunk_by_index(i:int) -> bool:
+	if i<0 or i>=_pending_hunks.size(): return false
+	var h = _pending_hunks[i]
+	var lines := _text_to_lines(text)
+	var res := _apply_hunk_fuzzy(lines, h, true)
+	if res.get("success", false):
+		text = "\n".join(lines)
+		_pending_hunks.remove_at(i)
+		_applied_hunks.append(h)
+		return true
+	push_warning("Manual apply failed: %s"%res.get("message",""))
+	return false
