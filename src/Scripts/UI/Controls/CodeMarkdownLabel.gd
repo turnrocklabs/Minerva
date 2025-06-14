@@ -135,9 +135,9 @@ func _on_smartdiff_pressed() -> bool:
 	# get the string of the gnerated code
 	var new_text: String = _parse_code_block(%CodeLabel.text)
 #	editor.apply_diff(new_text)
+	active_tab_editor_node.enable_apply_diff()
 	editor.preview_diff(new_text)
 	return true
-
 
 func _on_replace_all_pressed():
 	# Get the EditorPane instance
