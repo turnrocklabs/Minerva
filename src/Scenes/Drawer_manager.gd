@@ -22,7 +22,7 @@ func save_notes(path: String = "") -> void:
 
 func load_notes(path: String) -> void:
 	if not FileAccess.file_exists(path):
-		push_error("File does not exist: ", path)
+		push_warning("File does not exist: ", path)
 		return
 	
 	var file = FileAccess.open(path, FileAccess.READ)
@@ -46,7 +46,7 @@ func get_current_data() -> Dictionary:
 # New function to get saved data from file
 func get_saved_data(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
-		push_error("File does not exist: ", path)
+		push_warning("File does not exist: ", path)
 		return {}
 	
 	var file = FileAccess.open(path, FileAccess.READ)

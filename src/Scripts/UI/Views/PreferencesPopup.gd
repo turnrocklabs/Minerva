@@ -9,6 +9,7 @@ const PROVIDERS = {
 	SingletonObject.API_PROVIDER.OPENAI: "openai",
 	SingletonObject.API_PROVIDER.ANTHROPIC: "anthropic",
 	SingletonObject.API_PROVIDER.GOOGLE: "google_vertex",
+	SingletonObject.API_PROVIDER.LOCAL: "sglang",
 }
 
 @onready var _fields = {
@@ -83,7 +84,10 @@ func _on_about_to_popup():
 	populate_output_devices_button()
 
 func get_api_key(provider: SingletonObject.API_PROVIDER) -> String:
-	return config_file.get_value("API KEYS", PROVIDERS[provider], "")
+	if provider == SingletonObject.API_PROVIDER.LOCAL:
+		return " "
+	else:
+		return config_file.get_value("API KEYS", PROVIDERS[provider], "")
 
 func get_user_full_name() -> String:
 	return "%s %s" % [config_file.get_value("USER", "first_name", ""), config_file.get_value("USER", "last_name", "")]

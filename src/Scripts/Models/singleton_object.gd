@@ -32,6 +32,8 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var experimental_enabled: bool = false
 signal toggle_experimental(enabled)
 
+var syntax_manager: SyntaxManager
+
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false
@@ -70,6 +72,12 @@ func config_has_saved_section(section: String) -> bool:
 	return config_file.has_section(section)
 
 
+func get_config_file_value(section: String, field: String) -> Variant:
+	if config_has_saved_section(section):
+		return config_file.get_value(section, field, null)
+	return ""
+
+
 func config_clear_section(section: String)-> void:
 	if !section: return
 	
@@ -93,9 +101,7 @@ func save_recent_project(path: String):
 # this function returns an array with the files 
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
-	
 	if has_recent_projects():
-		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
 	return ["no recent projects"]
 
@@ -146,7 +152,8 @@ signal create_notes_tab(state:bool,name: String)
 signal associated_notes_tab(tab_name, tab: Control)
 @warning_ignore("unused_signal")
 signal pop_up_new_tab
-
+@warning_ignore("unused_signal")
+signal pop_up_new_drawer_tab #it's made for fast fix of double open window when dopuble click on tab for rename. it'll be remove after i'll move drawer to Main scene
 @warning_ignore("unused_signal")
 signal notes_draw_state_changed(state: int)
 
@@ -297,6 +304,9 @@ func _ready():
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
 	
+	syntax_manager = SyntaxManager.new()
+	add_child(syntax_manager)
+	
 
 
 var chat_notification_player: AudioStreamPlayer
@@ -343,7 +353,7 @@ func ErrorDisplay(error_title:String, error_message: String):
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL }
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
@@ -357,11 +367,14 @@ enum API_MODEL_PROVIDERS {
 	GOOGLE_VERTEX_PRO,
 	DALLE,
 	CLAUDE_SONNET,
-	GPT_IMAGE_1
+	CLAUDE_OPUS,
+	GPT_IMAGE_1,
+	OLLAMA_R1,
+	OLLAMA_GEMMA3
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
-var API_MODEL_PROVIDER_SCRIPTS = {
+var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
 	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_MEDIUM: ChatGPTo3.MiniMedium,
 	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_HIGH: ChatGPTo3.MiniHigh,
@@ -369,12 +382,15 @@ var API_MODEL_PROVIDER_SCRIPTS = {
 	# API_MODEL_PROVIDERS.CHAT_GPT_O1_MINI: ChatGPTo1.Mini,
 	# API_MODEL_PROVIDERS.CHAT_GPT_O1_PREVIEW: ChatGPTo1.Preview,
 	API_MODEL_PROVIDERS.DALLE: DallE,
-	API_MODEL_PROVIDERS.CLAUDE_SONNET: ClaudeSonnet,
+	API_MODEL_PROVIDERS.CLAUDE_SONNET: ClaudeSonnet.Sonnet4,
+	API_MODEL_PROVIDERS.CLAUDE_OPUS: ClaudeSonnet.Opus4,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX: GoogleAi,
 	# API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	# API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
-	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1
+	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1,
+	API_MODEL_PROVIDERS.OLLAMA_R1: LocalProvider,
+	API_MODEL_PROVIDERS.OLLAMA_GEMMA3: LocalProvider.Gemma3
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value
@@ -429,8 +445,11 @@ signal set_icon_size_48
 signal set_icon_size_68
 
 var saved_state = true
+signal updated_save_state(project_name:String,saved: bool)
+func save_state(state: bool): 
+	saved_state = state
+	updated_save_state.emit("", state)
 
-func save_state(state: bool): saved_state = state
 
 #endregion Project Management
 
