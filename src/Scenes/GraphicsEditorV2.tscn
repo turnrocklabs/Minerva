@@ -105,7 +105,7 @@ text = "Brush"
 layout_mode = 2
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
-text = "Brush"
+text = "Smudge"
 
 [node name="BucketToolButton" type="Button" parent="h/v/h/ToolsContainer"]
 layout_mode = 2
@@ -173,6 +173,7 @@ ticks_on_borders = true
 
 [node name="SmudgeOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
