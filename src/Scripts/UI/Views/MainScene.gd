@@ -230,14 +230,9 @@ func _input(event):
 				if typeof(get_viewport().gui_get_drag_data()) == TYPE_STRING:
 					is_dragging = true
 					%DropForNode.visible = true
-			
-				
-				
-
 
 func _on_btn_drawer_pressed() -> void:
 	%Drawer.popup_centered()
-
 
 func _update_project_label(new_text: String = "", saved_state: bool = true) -> void:
 	var base_text: String
