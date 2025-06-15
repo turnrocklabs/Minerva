@@ -203,6 +203,7 @@ func _end_transform() -> void:
 		_finalize_transform()
 		
 		# Force redraw after operation completion
+		editor.active_layer._adjust_control_size()
 		editor.queue_redraw()
 	
 	_is_transforming = false

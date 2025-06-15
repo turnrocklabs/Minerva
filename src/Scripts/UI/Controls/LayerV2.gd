@@ -46,13 +46,32 @@ var image: Image:
 		if not is_node_ready():
 			await ready
 		
-
 		if not base_image:
 			base_image = image.duplicate()
 
 		var img = ImageTexture.create_from_image(image)
-		texture_rect.texture = img
+		
+		await get_tree().process_frame
+
+		# Set the layer's minimum size to match the image
 		size = img.get_size()
+		
+		# Set the actual size if it's currently zero
+		if size == Vector2.ZERO:
+			size = img.get_size()
+		
+		# Set pivot to center for proper rotation
+		pivot_offset = size / 2
+		
+		# Set texture and let TextureRect size itself to the texture
+		texture_rect.texture = img
+		texture_rect.size = img.get_size()  # Use image size, not layer size
+		
+		print("Image size:", img.get_size())
+		print("Layer size:", size)
+		print("TextureRect size:", texture_rect.size)
+
+		queue_redraw()
 
 var speech_bubble: CloudControl:
 	set(value):
@@ -62,6 +81,15 @@ var speech_bubble: CloudControl:
 			await ready
 
 		center_container.add_child(speech_bubble)
+
+
+func _ready() -> void:
+	# Prevent automatic positioning while allowing manual size control
+	set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	# Or use size flags to control behavior
+	size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
 
 static func create_image_layer(name_: String, image_: Image) -> LayerV2:
 	var layer: LayerV2 = _scene.instantiate()
@@ -128,7 +156,7 @@ func _draw() -> void:
 	])
 
 	# Add rotation handle (above the top center handle)
-	var rotation_handle_pos = Vector2(size.x/2, -30)
+	# var rotation_handle_pos = Vector2(size.x/2, -30)
 	
 	# Draw border lines
 	draw_line(Vector2.ZERO, Vector2(size.x, 0), Color.BLACK)
@@ -147,13 +175,13 @@ func _draw() -> void:
 		draw_rect(drag_square.grow(2), Color.BLACK)
 		draw_rect(drag_square, Color.WHITE)
 	
-	# Draw rotation handle
-	var rotation_square: = Rect2(rotation_handle_pos - _transform_rect_size/2, _transform_rect_size)
-	draw_rect(rotation_square.grow(2), Color.BLACK)
-	draw_rect(rotation_square, Color.YELLOW)  # Different color to distinguish it
+	# # Draw rotation handle
+	# var rotation_square: = Rect2(rotation_handle_pos - _transform_rect_size/2, _transform_rect_size)
+	# draw_rect(rotation_square.grow(2), Color.BLACK)
+	# draw_rect(rotation_square, Color.YELLOW)  # Different color to distinguish it
 	
-	# Draw line from top center to rotation handle
-	draw_line(Vector2(size.x/2, 0), rotation_handle_pos, Color.BLACK)
+	# # Draw line from top center to rotation handle
+	# draw_line(Vector2(size.x/2, 0), rotation_handle_pos, Color.BLACK)
 
 func _get_transform_rect_positions() -> Dictionary:
 	var positions = {
@@ -178,17 +206,19 @@ func localize_input(event: InputEvent):
 			return speech_bubble.make_input_local(event)
 
 func _on_resized() -> void:
-	_adjust_control_size()
+	pass
+	# _adjust_control_size()
 	
 func _on_minimum_size_changed() -> void:
-	_adjust_control_size()
+	pass
+	# _adjust_control_size()
 
 func _adjust_control_size() -> void:
+
 	if not is_node_ready(): return
-
 	
-
 	# Set pivot to center for proper rotation
+	# custom_minimum_size = size
 	pivot_offset = size / 2
 
 	match type:

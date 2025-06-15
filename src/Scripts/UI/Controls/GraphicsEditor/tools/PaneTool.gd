@@ -39,31 +39,24 @@ func handle_input_event(event: InputEvent) -> void:
 			last_mouse_position = event.position
 
 func _pan_canvas(relative: Vector2) -> void:
-	for layer in editor.layers:
-		layer.position += relative
+	editor.layers_container.position += relative
+	# for layer in editor.layers:
+	# 	layer.position += relative
 	
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
-	# Calculate the combined center of all layers
-	var center = Vector2.ZERO
-	for layer in editor.layers:
-		center += layer.position + layer.size * 0.5
-	center /= max(1, editor.layers.size())
+	var container = editor.layers_container
 	
-	# Zoom all layers together
-	for layer in editor.layers:
-		var old_pos = layer.position
-		var old_size = layer.custom_minimum_size
-		
-		# Scale the layer
-		layer.custom_minimum_size *= factor
-		
-		# Adjust position to keep the point under the mouse stable
-		var mouse_offset = mouse_position - old_pos
-		var new_mouse_offset = mouse_offset * factor
-		layer.position = mouse_position - new_mouse_offset
+	# Get mouse position relative to the container
+	var mouse_relative = mouse_position - container.position
 	
-	# Update canvas bounds
+	# Apply scale to the entire container
+	container.scale *= factor
+	
+	# Adjust container position to keep the mouse point stationary
+	var offset = mouse_relative * (factor - 1.0)
+	container.position -= offset
+	
 	_check_canvas_bounds()
 
 func _check_canvas_bounds() -> void:

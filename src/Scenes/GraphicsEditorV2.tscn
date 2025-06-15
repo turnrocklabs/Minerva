@@ -13,9 +13,9 @@
 [ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="9_u8jc2"]
 [ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_3hqvt"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_u8jc2"]
 shader = ExtResource("9_u8jc2")
-shader_parameter/square_size = 0.1
+shader_parameter/square_size = 0.05
 shader_parameter/color1 = Color(0.585, 0.585, 0.585, 1)
 shader_parameter/color2 = Color(1, 1, 1, 1)
 
@@ -207,10 +207,15 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="LayersContainer" type="PanelContainer" parent="h/v/ScrollContainer"]
+[node name="MarginContainer" type="PanelContainer" parent="h/v/ScrollContainer"]
+material = SubResource("ShaderMaterial_u8jc2")
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+
+[node name="LayersContainer" type="Control" parent="h/v/ScrollContainer/MarginContainer"]
 unique_name_in_owner = true
-material = SubResource("ShaderMaterial_3hqvt")
-clip_contents = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -281,6 +286,6 @@ autowrap_mode = 3
 [connection signal="pressed" from="h/v/h/ToolsContainer/SaveButton" to="." method="_on_save_button_pressed"]
 [connection signal="toggled" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
 [connection signal="text_changed" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
-[connection signal="mouse_entered" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
-[connection signal="mouse_exited" from="h/v/ScrollContainer/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
+[connection signal="mouse_entered" from="h/v/ScrollContainer/MarginContainer/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
+[connection signal="mouse_exited" from="h/v/ScrollContainer/MarginContainer/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
 [connection signal="pressed" from="h/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
