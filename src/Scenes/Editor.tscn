@@ -192,6 +192,13 @@ icon_24 = ExtResource("4_0is2e")
 icon_48 = ExtResource("11_nrs0x")
 icon_68 = ExtResource("12_yvsru")
 
+[node name="btnApplyDiff" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Apply Diff"
+disabled = true
+text = "AD"
+
 [node name="SaveOpenEditorTabsButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
 tooltip_text = "save all unsaved and open editor tabs"
@@ -306,6 +313,7 @@ layout_mode = 2
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/AutowrapButton" to="." method="toggle_autowrap"]
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/MicButton" to="." method="_on_mic_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/reloadButton" to="." method="_on_reload_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/btnApplyDiff" to="." method="_on_btn_apply_diff_pressed"]
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/SaveOpenEditorTabsButton" to="." method="_on_save_open_editor_tabs_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/SaveButton" to="." method="_on_save_button_pressed"]
 [connection signal="pressed" from="VBoxContainer/ButtonsHBoxContainer/CreateNoteButton" to="." method="_on_create_note_button_pressed"]

@@ -494,8 +494,14 @@ func _on_create_note_button_pressed() -> void:
 				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 
 	SingletonObject.UpdateUnsavedTabIcon.emit()
-	
 
+## Apply diff button stuff 
+func enable_apply_diff() -> void:
+	%btnApplyDiff.disabled = false
+	
+func _on_btn_apply_diff_pressed() -> void:
+	self.code_edit.apply_preview()
+	%btnApplyDiff.disabled = true
 
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
@@ -508,7 +514,6 @@ func _on_reload_button_pressed() -> void:
 				text_is_smaller.visible = false
 				text_is_incoplete.visible = false
 				text_is_smaller_and_incoplete.visible = false
-
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
 func _on_save_open_editor_tabs_button_pressed() -> void:
