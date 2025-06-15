@@ -29,7 +29,7 @@ var video_player: VideoPlayer:
 		get_node("%VBoxContainer").add_child(value)
 
 var code_edit: EditorCodeEdit
-var graphics_editor: GraphicsEditor
+var graphics_editor: GraphicsEditorV2
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -122,7 +122,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 		Editor.Type.GRAPHICS:
 			var new_graphics_editor: GraphicsEditorV2 = graphics_editor_scene.instantiate()
 			new_graphics_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
+			# new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
 			#vbox_container.move_child(new_graphics_editor, 0)

@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=16 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -9,6 +9,7 @@
 [ext_resource type="Script" uid="uid://detvnetf4keir" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TransformTool.gd" id="5_sc07q"]
 [ext_resource type="Script" uid="uid://ek2a4h3bujgd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SpeechBubbleTool.gd" id="6_g8cav"]
 [ext_resource type="Script" uid="uid://cjbhjvhndont7" path="res://Scripts/UI/Controls/GraphicsEditor/tools/BucketTool.gd" id="7_g4vm0"]
+[ext_resource type="Script" uid="uid://dcrsoqmlvvpn6" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SmudgeTool.gd" id="8_3hqvt"]
 [ext_resource type="Script" uid="uid://dhme7wn27lxaa" path="res://Scripts/UI/Controls/GraphicsEditor/LayersContainer.gd" id="8_fjkto"]
 [ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="9_u8jc2"]
 [ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
@@ -66,6 +67,13 @@ script = ExtResource("7_g4vm0")
 _color_picker_button = NodePath("../../h/v/h/ToolOptionsContainer/BucketOptions/ColorPickerButton")
 editor = NodePath("../..")
 
+[node name="SmudgeTool" type="Node" parent="Tools" node_paths=PackedStringArray("_strength_slider", "_brush_size_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("8_3hqvt")
+_strength_slider = NodePath("../../h/v/h/ToolOptionsContainer/SmudgeOptions/StrengthHSlider")
+_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/SmudgeOptions/SizeHSlider")
+editor = NodePath("../..")
+
 [node name="h" type="HBoxContainer" parent="."]
 layout_mode = 2
 
@@ -88,6 +96,12 @@ layout_mode = 2
 text = "+"
 
 [node name="BrushToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Brush"
+
+[node name="SmudgeToolButton" type="Button" parent="h/v/h/ToolsContainer"]
 layout_mode = 2
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
@@ -156,6 +170,24 @@ size_flags_vertical = 4
 max_value = 46.0
 value = 1.0
 ticks_on_borders = true
+
+[node name="SmudgeOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="SizeHSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/SmudgeOptions"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_vertical = 4
+max_value = 46.0
+value = 1.0
+ticks_on_borders = true
+
+[node name="StrengthHSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/SmudgeOptions"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_vertical = 4
 
 [node name="BucketOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
 unique_name_in_owner = true
@@ -277,6 +309,7 @@ autowrap_mode = 3
 
 [connection signal="pressed" from="h/v/h/ToolsContainer/AddImageButton" to="." method="_on_add_image_button_pressed"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/BrushToolButton" to="." method="_on_brush_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/SmudgeToolButton" to="." method="_on_smudge_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/BucketToolButton" to="." method="_on_bucket_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
 [connection signal="toggled" from="h/v/h/ToolsContainer/EraserToolButton" to="." method="_on_eraser_tool_button_toggled"]
