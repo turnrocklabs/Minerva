@@ -1,0 +1,325 @@
+[gd_scene load_steps=16 format=3 uid="uid://drcf5pucshg1x"]
+
+[ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
+[ext_resource type="ButtonGroup" uid="uid://da3bhcsoc4ruq" path="res://assets/data/GraphicsEditorToolsButtonGroup.tres" id="2_ymijy"]
+[ext_resource type="Script" uid="uid://ub4ntbcjuw4" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DrawingTool.gd" id="2_yti2r"]
+[ext_resource type="Script" uid="uid://i5o2j3imd6hw" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PaneTool.gd" id="3_42ubw"]
+[ext_resource type="Script" uid="uid://cp1wg0srxc8hs" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EraserTool.gd" id="4_146eo"]
+[ext_resource type="Script" uid="uid://detvnetf4keir" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TransformTool.gd" id="5_sc07q"]
+[ext_resource type="Script" uid="uid://ek2a4h3bujgd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SpeechBubbleTool.gd" id="6_g8cav"]
+[ext_resource type="Script" uid="uid://cjbhjvhndont7" path="res://Scripts/UI/Controls/GraphicsEditor/tools/BucketTool.gd" id="7_g4vm0"]
+[ext_resource type="Script" uid="uid://dcrsoqmlvvpn6" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SmudgeTool.gd" id="8_3hqvt"]
+[ext_resource type="Script" uid="uid://dhme7wn27lxaa" path="res://Scripts/UI/Controls/GraphicsEditor/LayersContainer.gd" id="8_fjkto"]
+[ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="9_u8jc2"]
+[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_u8jc2"]
+shader = ExtResource("9_u8jc2")
+shader_parameter/square_size = 0.05
+shader_parameter/color1 = Color(0.585, 0.585, 0.585, 1)
+shader_parameter/color2 = Color(1, 1, 1, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_v238w"]
+font_size = 36
+
+[node name="GraphicsEditorV2" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_yogh5")
+
+[node name="Tools" type="Node" parent="."]
+
+[node name="DrawingTool" type="Node" parent="Tools" node_paths=PackedStringArray("_color_picker_button", "_brush_size_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("2_yti2r")
+_color_picker_button = NodePath("../../h/v/h/ToolOptionsContainer/BrushOptions/ColorPickerButton")
+_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/BrushOptions/HSlider")
+editor = NodePath("../..")
+
+[node name="PaneTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("3_42ubw")
+editor = NodePath("../..")
+
+[node name="EraserTool" type="Node" parent="Tools" node_paths=PackedStringArray("_brush_size_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("4_146eo")
+_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/EraserOptions/HSlider")
+editor = NodePath("../..")
+
+[node name="TransformTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("5_sc07q")
+editor = NodePath("../..")
+
+[node name="SpeechBubbleTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("6_g8cav")
+editor = NodePath("../..")
+
+[node name="BucketTool" type="Node" parent="Tools" node_paths=PackedStringArray("_color_picker_button", "editor")]
+unique_name_in_owner = true
+script = ExtResource("7_g4vm0")
+_color_picker_button = NodePath("../../h/v/h/ToolOptionsContainer/BucketOptions/ColorPickerButton")
+editor = NodePath("../..")
+
+[node name="SmudgeTool" type="Node" parent="Tools" node_paths=PackedStringArray("_strength_slider", "_brush_size_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("8_3hqvt")
+_strength_slider = NodePath("../../h/v/h/ToolOptionsContainer/SmudgeOptions/StrengthHSlider")
+_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/SmudgeOptions/SizeHSlider")
+editor = NodePath("../..")
+
+[node name="h" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="v" type="VBoxContainer" parent="h"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="h" type="HBoxContainer" parent="h/v"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+
+[node name="ToolsContainer" type="HFlowContainer" parent="h/v/h"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/h_separation = 15
+
+[node name="AddImageButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+text = "+"
+
+[node name="BrushToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Brush"
+
+[node name="SmudgeToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Smudge"
+
+[node name="BucketToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Bucket"
+
+[node name="PaneToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Pane"
+
+[node name="EraserToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Eraser"
+
+[node name="TransformToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "T"
+
+[node name="SpeechBubbleToolButton" type="Button" parent="h/v/h/ToolsContainer"]
+visible = false
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Speech"
+
+[node name="CenterViewButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+tooltip_text = "Centers the viewport."
+text = "Center"
+
+[node name="SaveButton" type="Button" parent="h/v/h/ToolsContainer"]
+layout_mode = 2
+text = "Save"
+
+[node name="ToolOptionsContainer" type="MarginContainer" parent="h/v/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 3.0
+
+[node name="BrushOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/h/ToolOptionsContainer/BrushOptions"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+
+[node name="HSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/BrushOptions"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_vertical = 4
+max_value = 46.0
+value = 1.0
+ticks_on_borders = true
+
+[node name="SmudgeOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="SizeHSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/SmudgeOptions"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_vertical = 4
+max_value = 46.0
+value = 1.0
+ticks_on_borders = true
+
+[node name="StrengthHSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/SmudgeOptions"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="BucketOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/h/ToolOptionsContainer/BucketOptions"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+
+[node name="EraserOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="HSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/EraserOptions"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_vertical = 4
+max_value = 46.0
+value = 1.0
+ticks_on_borders = true
+
+[node name="SpeechBubbleOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="EditModeCheckButton" type="CheckButton" parent="h/v/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+text = "Edit Mode"
+
+[node name="LineEdit" type="LineEdit" parent="h/v/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Bubble Text"
+expand_to_text_length = true
+
+[node name="ApplyButton" type="Button" parent="h/v/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+text = "Apply"
+
+[node name="HSeparator" type="HSeparator" parent="h/v"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="h/v"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MarginContainer" type="PanelContainer" parent="h/v/ScrollContainer"]
+material = SubResource("ShaderMaterial_u8jc2")
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+
+[node name="LayersContainer" type="Control" parent="h/v/ScrollContainer/MarginContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+script = ExtResource("8_fjkto")
+
+[node name="ScrollContainer" type="ScrollContainer" parent="h"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 0
+mouse_force_pass_scroll_events = false
+horizontal_scroll_mode = 0
+
+[node name="v2" type="VBoxContainer" parent="h/ScrollContainer"]
+layout_mode = 2
+
+[node name="LayerCardsContainer" type="VBoxContainer" parent="h/ScrollContainer/v2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="NewLayerButton" type="Button" parent="h/ScrollContainer/v2"]
+layout_mode = 2
+icon = ExtResource("2_dcy55")
+flat = true
+icon_alignment = 1
+
+[node name="MessageWindow" type="Window" parent="."]
+unique_name_in_owner = true
+size = Vector2i(700, 300)
+visible = false
+script = ExtResource("11_v238w")
+metadata/_custom_type_script = "uid://dxytye5uwyapu"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MessageWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MessageTitle" type="Label" parent="MessageWindow/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "test"
+label_settings = SubResource("LabelSettings_v238w")
+horizontal_alignment = 1
+
+[node name="MessageContent" type="Label" parent="MessageWindow/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 6
+text = "test"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[connection signal="pressed" from="h/v/h/ToolsContainer/AddImageButton" to="." method="_on_add_image_button_pressed"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/BrushToolButton" to="." method="_on_brush_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/SmudgeToolButton" to="." method="_on_smudge_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/BucketToolButton" to="." method="_on_bucket_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/EraserToolButton" to="." method="_on_eraser_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
+[connection signal="toggled" from="h/v/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
+[connection signal="pressed" from="h/v/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
+[connection signal="pressed" from="h/v/h/ToolsContainer/SaveButton" to="." method="_on_save_button_pressed"]
+[connection signal="toggled" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
+[connection signal="text_changed" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
+[connection signal="mouse_entered" from="h/v/ScrollContainer/MarginContainer/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
+[connection signal="mouse_exited" from="h/v/ScrollContainer/MarginContainer/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
+[connection signal="pressed" from="h/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
