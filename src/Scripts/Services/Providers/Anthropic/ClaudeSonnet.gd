@@ -3,12 +3,14 @@ extends BaseProvider
 
 var system_prompt: String
 var api_model_id: String
+var max_tokens: int
 
 func _init():
 	provider_name = "Anthropic"
 	BASE_URL = "https://api.anthropic.com/v1"
 	PROVIDER = SingletonObject.API_PROVIDER.ANTHROPIC
 	self.api_model_id = "claude-3-7-sonnet-20250219"
+	self.max_tokens = 64000
 
 	model_name = "claude-37-sonnet"
 	short_name = "CS"
@@ -51,7 +53,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	var request_body = {
 		"model": self.api_model_id,
 		"messages": prompt,
-		"max_tokens": 64000,
+		"max_tokens": self.max_tokens,
 		"system": system_prompt
 	}
 
@@ -204,3 +206,23 @@ func to_bot_response(data: Variant) -> BotResponse:
 	response.text = data["content"][0]["text"]
 	
 	return response
+
+class Opus4 extends ClaudeSonnet:
+	func _init():
+		super()
+		self.api_model_id = "claude-opus-4-0"
+		self.max_tokens = 32000
+
+		model_name = "claude-opus-4"
+		short_name = "CO"
+		token_cost = 1.1 / 1_000_000 * 100
+
+class Sonnet4 extends ClaudeSonnet:
+	func _init():
+		super()
+		self.api_model_id = "claude-sonnet-4-0"
+		self.max_tokens = 64000
+
+		model_name = "claude-sonnet-4"
+		short_name = "S4"
+		token_cost = 1.1 / 1_000_000 * 100

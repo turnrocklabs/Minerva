@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cufod2luxi0bf" path="res://Scripts/create_new_note.gd" id="1_jtoh0"]
 [ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="3_0e5iv"]
-[ext_resource type="Script" uid="uid://dw58oubsm6sto" path="res://Scripts/UI/Views/icons_button.gd" id="3_1xf7d"]
+[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="3_1xf7d"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file/file.svg" id="4_46txl"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="4_tenly"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="5_nij35"]

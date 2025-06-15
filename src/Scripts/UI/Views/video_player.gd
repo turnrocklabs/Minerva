@@ -37,7 +37,7 @@ var video_path: String:
 			else:
 				video_resource = FFmpegVideoStream.new()
 				video_resource.file = value
-			if video_resource:
+			if video_resource.file:
 				video_stream_player.stream = video_resource
 				h_slider.max_value = video_stream_player.get_stream_length()
 			h_slider.value = 0

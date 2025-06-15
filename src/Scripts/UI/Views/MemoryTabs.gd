@@ -9,8 +9,6 @@ var _drag_active := true
 # var _hovered_tab := -1
 # var _hover_timer
 
-var isDrawer = false
-
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
 #var _can_drop:bool = false
@@ -82,9 +80,9 @@ func open_threads_popup(tab_name: String = "", tab = null):
 
 
 func _on_new_pressed():
-	#open_threads_popup()
-	%NewThreadPopup.show()
-
+	open_threads_popup()
+	
+	
 func _on_btn_create_thread_pressed(isDrawerNote:bool,tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
 	if !isDrawerNote:
@@ -135,7 +133,7 @@ func clear_all_tabs():
 
 #region Add notes methods
 
-func add_note(user_title:String,isDrawer:bool, user_content: String,is_completed:bool = true, _source: String = "") -> MemoryItem:
+func add_note(user_title:String, user_content: String,is_completed:bool = true, _source: String = "") -> MemoryItem:
 	# get the active thread.
 	if (SingletonObject.ThreadList == null) or current_tab < 0:
 		#SingletonObject.ErrorDisplay("Missing Thread", "Please create a new notes tab first, then try again.")
@@ -165,7 +163,7 @@ func add_note(user_title:String,isDrawer:bool, user_content: String,is_completed
 
 
 
-func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:bool = false) -> MemoryItem:
+func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryItem:
 	# Check if we need to create a new tab
 	if SingletonObject.ThreadList.is_empty() or current_tab < 0:
 		create_new_notes_tab("Notes 1")  # Don't use await here
@@ -190,7 +188,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:boo
 	return new_memory
 
 
-func add_image_note(note_title: String, note_image: Image, imageCaption: String = "",isDrawer:bool = false) -> MemoryItem:
+func add_image_note(note_title: String, note_image: Image, imageCaption: String = "") -> MemoryItem:
 	if SingletonObject.ThreadList.is_empty():
 		create_new_notes_tab()
 	
@@ -292,9 +290,9 @@ func render_threads():
 
 	# Restore the last active thread:
 	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
-	if not new_tab:
-		if get_tab_count() > 0:
-			self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
+	#if not new_tab:
+	if get_tab_count() > 0:
+		self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
 	else:
 		if get_tab_count() + 1 > 0:
 			self.current_tab = get_tab_count() - 1
@@ -482,7 +480,7 @@ func attach_file(the_file: String):
 	
 	# Append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
-	render_threads()
+	#render_threads()
 
 	file.close()
 # Helper function to check if a file is binary (opposite of text file)
@@ -546,10 +544,7 @@ func _ready():
 
 
 # if we are dragging a note above a tab, we can drop it there
-func _can_drop_data(at_position: Vector2, data):
-	var tab_idx = get_tab_idx_at_point(at_position)
-	
-	#return tab_idx != -1 and data is Note
+func _can_drop_data(_at_position: Vector2, data):
 	return data is Note
 
 # find out which tab we are above

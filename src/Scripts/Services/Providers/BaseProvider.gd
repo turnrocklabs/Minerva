@@ -29,7 +29,7 @@ var token_cost: float = 0
 
 var active_request: HTTPRequest
 # var active_bot: BotResponse
-
+var active_requests: Array[HTTPRequest]
 
 #region METHODS TO REIMPLEMENT
 
@@ -90,17 +90,30 @@ class RequestResults extends RefCounted:
 
 	## This function will take results of the `HTTPRequest.request_completed` signal and additional data to construct
 	## RequestResults object
-	static func from_request_response(request_data_: Array, http_request_: HTTPRequest, url_: String, metadata_: Dictionary = {}):
+	static func from_request_response(request_data_: Array = [], http_request_: HTTPRequest = null, url_: String = "", metadata_: Dictionary = {}):
 		var obj = RequestResults.new()
-		obj.http_request_result = request_data_[0]
-		obj.response_code = request_data_[1]
-		obj.headers = request_data_[2]
-		obj.body = request_data_[3]
+		
+		# Handle case where request_data_ is null or empty
+		if request_data_ == null || request_data_.size() < 4:
+			obj.http_request_result = HTTPRequest.RESULT_REQUEST_FAILED
+			obj.response_code = 0
+			obj.headers = PackedStringArray()
+			obj.body = PackedByteArray()
+		else:
+			obj.http_request_result = request_data_[0]
+			obj.response_code = request_data_[1]
+			obj.headers = request_data_[2]
+			obj.body = request_data_[3]
 
-		obj.url = url_
-		obj.metadata = metadata_
+		# Handle null or empty http_request
 		obj.http_request = http_request_
-		obj.http_request.use_threads = true
+		if obj.http_request != null:
+			obj.http_request.use_threads = true
+		
+		# Handle null or empty url and metadata
+		obj.url = url_ if url_ != null else ""
+		obj.metadata = metadata_ if metadata_ != null else {}
+		
 		return obj
 	
 	static func from_error(msg: String):
@@ -116,11 +129,11 @@ class RequestResults extends RefCounted:
 ## This function will return array of 
 func make_request(url: String, method: int, body: Variant = "", headers: Array[String]= []) -> RequestResults:
 	# setup request object for the delta endpoint and append API key
-	var http_request = HTTPRequest.new()
-	#http_request.use_threads = true
+	var http_request: = HTTPRequest.new()
+	http_request.use_threads = true
 	call_deferred("add_child", http_request)
 	await http_request.ready
-
+	active_requests.append(http_request)
 	if len(API_KEY) != 0:
 		#add_child(http_request)
 		# if not http_request.request_completed.is_connected(_on_request_completed.bind(http_request, url)):
@@ -152,8 +165,18 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 
 	# data returned from awaited signal is array of arguments that would
 	# be received by callback for that same signal
+	
 	var request_results: Array = await http_request.request_completed
 
 	var results = RequestResults.from_request_response(request_results, http_request, url)
 
 	return results
+
+
+func cancel_active_resquests() -> void:
+	for i: HTTPRequest in active_requests:
+		if i.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+			i.cancel_request()
+			i.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
+			active_requests.erase(i)
+			i.queue_free()

@@ -34,11 +34,12 @@ func _on_btn_voice_for_note_tab_pressed():
 
 func _on_btn_create_thread_pressed() -> void:
 	var thread_main = get_parent().find_child("NewThreadPopup")
-	var thread_drawer = get_parent().find_child("DrawerThreadPopup") 
+	var thread_drawer = null
 	if thread_main != null:
 		SingletonObject.create_notes_tab.emit(false,%txtNewTabName.text, tab_reference)
 	elif thread_drawer != null:
 		SingletonObject.create_notes_tab.emit(true,%txtNewTabName.text, tab_reference)
+	%txtNewTabName.text = ""
 	call_deferred("hide")
 
 
@@ -47,6 +48,7 @@ func _on_about_to_popup() -> void:
 
 
 func _on_close_requested() -> void:
+	%txtNewTabName.text = ""
 	call_deferred("hide")
 
 
@@ -58,3 +60,4 @@ func _on_txt_new_tab_name_text_submitted(new_text: String) -> void:
 func _on_window_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		_on_close_requested()
+		

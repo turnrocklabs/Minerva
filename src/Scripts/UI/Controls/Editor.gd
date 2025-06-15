@@ -60,6 +60,7 @@ enum Type {
 	VIDEO
 }
 
+
 ## May contain the object that is being edited by this editor.[br]
 ## Eg. ChatImage, Note, etc..[br]
 ## Allows switching to existing editor instead of
@@ -73,10 +74,16 @@ var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
-var tab_title: String = ""
+var tab_title: String = "":
+	set(value):
+		tab_title = value
+		if code_edit:
+			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
 var file: String:
 	set(value):
 		file = value
+		if code_edit != null:
+			code_edit.syntax_highlighter = update_code_hightlighter(file)
 		%reloadButton.disabled = false
 #var file_path: String
 var type: Type
@@ -104,20 +111,24 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	match type_:
 		Editor.Type.TEXT:
 			var new_code_edit = EditorCodeEdit.new()
-			new_code_edit.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_code_edit.caret_blink = true
-			new_code_edit.caret_multiple = false
-			new_code_edit.highlight_all_occurrences = true
-			new_code_edit.highlight_current_line = true
-			new_code_edit.gutters_draw_line_numbers = true
-			new_code_edit.gutters_zero_pad_line_numbers = true
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
-			new_code_edit.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
-			new_code_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-			new_code_edit.name = "CodeEdit"
 			vbox_container.add_child(new_code_edit)
-			#vbox_container.move_child(new_code_edit,0)
+			
+			if name_:
+				name_ = name_ as String
+				
+				var lang_keywords: Dictionary = SingletonObject.syntax_manager.get_syntax_for_language(name_)
+				var code_highlighter: = CodeHighlighter.new()
+				if !lang_keywords.is_empty():
+					code_highlighter.keyword_colors = lang_keywords
+				code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
+				code_highlighter.number_color = Color.FLORAL_WHITE
+				code_highlighter.symbol_color = Color.AQUAMARINE
+				code_highlighter.function_color = Color.DEEP_PINK
+				code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
+				new_code_edit.syntax_highlighter = code_highlighter
+			
 			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
 			var new_graphics_editor: GraphicsEditorV2 = graphics_editor_scene.instantiate()
@@ -125,7 +136,6 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			# new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
-			#vbox_container.move_child(new_graphics_editor, 0)
 			editor.graphics_editor = new_graphics_editor
 			## TODO: Implement changed signal for graphics 
 			
@@ -141,6 +151,19 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 
 func toggle(on: bool) -> void:
 	_note_check_button.button_pressed = on
+
+
+func update_code_hightlighter(lang: String) -> CodeHighlighter:
+	var lang_keywords = SingletonObject.syntax_manager.get_syntax_for_language(lang)
+	var code_highlighter: = CodeHighlighter.new()
+	if !lang_keywords.is_empty():
+		code_highlighter.keyword_colors = lang_keywords
+	code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
+	code_highlighter.number_color = Color.FLORAL_WHITE
+	code_highlighter.symbol_color = Color.AQUAMARINE
+	code_highlighter.function_color = Color.DEEP_PINK
+	code_highlighter.member_variable_color = Color.BLUE
+	return code_highlighter
 
 
 func _ready():
@@ -176,12 +199,17 @@ func _ready():
 	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
 	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
 	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
-	
+
+
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
 
 
 func _load_text_file(filename: String):
+	if !filename.get_extension().is_empty():
+		code_edit.syntax_highlighter = update_code_hightlighter(filename.get_extension())
+	else:
+		code_edit.syntax_highlighter = update_code_hightlighter(filename)
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	if fa_object == null:
 				var error: = error_string(FileAccess.get_open_error())
@@ -272,24 +300,23 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
 func save():
-	#if _save_override.is_valid(): this got put on the note button github issue #154
-		#_save_override.call()
-	#else:
 	if SingletonObject.last_saved_path:
 		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
 		await prompt_close(true)
 	
-	# Post save emit the signals to update the saved state icon
+	# Explicitly update the note after saving
+	if has_meta("memory_item"):
+		_update_memory_item(get_meta("memory_item"))
+	
+	# Post save emit the signals
 	match type:
 		Type.TEXT:
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
 			graphics_editor.is_image_saved = true
 			SingletonObject.UpdateUnsavedTabIcon.emit()
-			pass # TODO: implement for graphics files
 	SingletonObject.UpdateUnsavedTabIcon.emit()
-
 
 ## Returns the bitmask of the saved state for the editor.
 func get_saved_state() -> int:
@@ -364,41 +391,79 @@ func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
 
 
-func save_file_to_disc(path: String):
+func save_file_to_disc(path: String) -> void:
 	file = path
 	match type:
 		Type.TEXT:
+			# Save text content to file
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			if save_file == null:
 				var error: = error_string(FileAccess.get_open_error())
 				push_warning(error)
-				SingletonObject.ErrorDisplay("Couldn't open file", error)
+				SingletonObject.ErrorDisplay("Couldn't save file", error)
 				return
+				
 			save_file.store_string(code_edit.text)
 			code_edit.tag_saved_version()
-			code_edit.saved_content = code_edit.text # update the saved content
+			code_edit.saved_content = code_edit.text
 			
-		Type.GRAPHICS:
-			var dialog = ($FileDialog as FileDialog)
-			var _filters = dialog.filters
-			dialog.filters = [".png"]
-			dialog.filters = _filters
+			# Update associated note if exists
+			if has_meta("memory_item"):
+				_update_memory_item(get_meta("memory_item"))
+			elif is_instance_valid(associated_object) and associated_object is Note:
+				_update_memory_item(associated_object.memory_item)
+				associated_object.memory_item = associated_object.memory_item  # Force update
 
+		Type.GRAPHICS:
+			# Save image to file
 			var img = graphics_editor.image
-			if img: img.save_png(path)
-			
+			if img:
+				# Temporarily change filters for PNG save
+				var dialog = ($FileDialog as FileDialog)
+				var original_filters = dialog.filters
+				dialog.filters = ["*.png"]
+				
+				var err = img.save_png(path)
+				if err != OK:
+					push_warning("Failed to save image: " + error_string(err))
+					SingletonObject.ErrorDisplay("Save Failed", "Couldn't save image to " + path)
+					return
+				
+				dialog.filters = original_filters  # Restore original filters
+				
+				# Update associated note if exists
+				if has_meta("memory_item"):
+					_update_memory_item(get_meta("memory_item"))
+				elif is_instance_valid(associated_object) and associated_object is Note:
+					_update_memory_item(associated_object.memory_item)
+					associated_object.memory_item = associated_object.memory_item  # Force update
+
+				graphics_editor.is_image_saved = true
+
+		Type.VIDEO:
+			# Handle video file saving if needed
+			push_warning("Video saving not implemented")
+	
+	# Update editor state
 	_file_saved = true
 	file_saved_in_disc = true
-
 	SingletonObject.UpdateLastSavePath.emit(path.get_base_dir())
+	
+	# Update config if needed
 	if SingletonObject.config_has_saved_section("LastSavedPath"):
 		SingletonObject.config_clear_section("LastSavedPath")
 		SingletonObject.save_to_config_file("LastSavedPath", "path", SingletonObject.last_saved_path)
+	
+	# Update tab info
 	tab_title = path.get_file()
 	var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
-	SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
-	SingletonObject.editor_pane.Tabs.set_tab_tooltip(idx, path)
-
+	if idx >= 0:
+		SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
+		SingletonObject.editor_pane.Tabs.set_tab_tooltip(idx, path)
+	
+	# Notify changes
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+	content_changed.emit()
 #region bottom of the pane buttons
 
 func _on_save_button_pressed():
@@ -414,11 +479,11 @@ func _on_create_note_button_pressed() -> void:
 	else:
 		if Type.TEXT == type:
 			if file:
-				associated_object = SingletonObject.NotesTab.add_note(file.get_file(),false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
 			elif tab_title:
-				associated_object = SingletonObject.NotesTab.add_note(tab_title,false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
 			else:
-				associated_object = SingletonObject.NotesTab.add_note("Note from Editor",false, code_edit.text)
+				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 
 		if Type.GRAPHICS == type:
 			if tab_title:
@@ -429,8 +494,14 @@ func _on_create_note_button_pressed() -> void:
 				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 
 	SingletonObject.UpdateUnsavedTabIcon.emit()
-	
 
+## Apply diff button stuff 
+func enable_apply_diff() -> void:
+	%btnApplyDiff.disabled = false
+	
+func _on_btn_apply_diff_pressed() -> void:
+	self.code_edit.apply_preview()
+	%btnApplyDiff.disabled = true
 
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
@@ -443,7 +514,6 @@ func _on_reload_button_pressed() -> void:
 				text_is_smaller.visible = false
 				text_is_incoplete.visible = false
 				text_is_smaller_and_incoplete.visible = false
-
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
 func _on_save_open_editor_tabs_button_pressed() -> void:

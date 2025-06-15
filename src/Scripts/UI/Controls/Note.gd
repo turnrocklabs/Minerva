@@ -201,19 +201,12 @@ func _to_string():
 # but if the mouse is not above this note anymore, hide the separators
 func _process(_delta):
 	
-	if resize_dragging:
-		_resize_vertical(get_global_mouse_position().y, last_mouse_posistion_y)
-	
-		last_mouse_posistion_y = get_global_mouse_position().y
 	if not _upper_separator.visible and not _lower_separator.visible: return
 	
 	if not get_global_rect().has_point(get_global_mouse_position()):
 		_upper_separator.visible = false
 		_lower_separator.visible = false
-	
-	
 
-var last_mouse_posistion_y: float = 0.0
 
 func _notification(notification_type):
 	match notification_type:
@@ -364,7 +357,6 @@ func _on_edit_button_pressed():
 		SingletonObject.is_graph = true # this lines should be moved to the correct node rather that them being on SingletonObject
 		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
-		await editor.ready
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
@@ -459,14 +451,19 @@ func enable_expand_button() -> void:
 	expand_button.disabled = false
 
 var resize_dragging: bool = false
+var _last_mouse_posistion_y: float = 0.0
 func _on_resize_control_gui_input(event: InputEvent) -> void:
+	if _last_mouse_posistion_y == 0:
+		_last_mouse_posistion_y = get_global_mouse_position().y
 	if expanded:
 		if event is InputEventMouseButton:
 			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
 				resize_dragging = true
 			elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
 				resize_dragging = false
-
+	if resize_dragging:
+		_resize_vertical(get_global_mouse_position().y, _last_mouse_posistion_y)
+		_last_mouse_posistion_y = get_global_mouse_position().y
 
 func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
 	#if control_type == null: return

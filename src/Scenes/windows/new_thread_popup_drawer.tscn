@@ -1,0 +1,103 @@
+[gd_scene load_steps=7 format=3 uid="uid://c5ovagni0xeqo"]
+
+[ext_resource type="Script" uid="uid://nms1jielbawc" path="res://Scripts/UI/Controls/new_thread_popup_drawer.gd" id="1_xf8qc"]
+[ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="2_0svcj"]
+[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="3_kk4vr"]
+[ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="4_dxffn"]
+[ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="5_nvlxs"]
+[ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow_icons/create_arrow.png" id="6_gketj"]
+
+[node name="NewThreadPopup" type="Window"]
+auto_translate_mode = 1
+initial_position = 4
+size = Vector2i(450, 80)
+transient = true
+exclusive = true
+min_size = Vector2i(350, 0)
+max_size = Vector2i(500, 100)
+content_scale_size = Vector2i(2, 2)
+script = ExtResource("1_xf8qc")
+
+[node name="Panel" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Control" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="HBoxTopRow" type="HBoxContainer" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Control3" type="Control" parent="VBoxContainer/HBoxTopRow"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxTopRow"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Name"
+
+[node name="txtNewTabName" type="LineEdit" parent="VBoxContainer/HBoxTopRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Tab Name"
+max_length = 25
+clear_button_enabled = true
+caret_blink = true
+
+[node name="btnVoiceForNoteTab" type="Button" parent="VBoxContainer/HBoxTopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("2_0svcj")
+script = ExtResource("3_kk4vr")
+icon_24 = ExtResource("2_0svcj")
+icon_48 = ExtResource("4_dxffn")
+icon_68 = ExtResource("5_nvlxs")
+
+[node name="btnCreateThread" type="Button" parent="VBoxContainer/HBoxTopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+tooltip_text = "Create Notes Tab"
+text = "Create"
+icon = ExtResource("6_gketj")
+script = ExtResource("3_kk4vr")
+
+[node name="Control2" type="Control" parent="VBoxContainer/HBoxTopRow"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+theme_override_constants/separation = 16
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+
+[connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
+[connection signal="close_requested" from="." to="." method="_on_close_requested"]
+[connection signal="window_input" from="." to="." method="_on_window_input"]
+[connection signal="text_submitted" from="VBoxContainer/HBoxTopRow/txtNewTabName" to="." method="_on_txt_new_tab_name_text_submitted"]
+[connection signal="pressed" from="VBoxContainer/HBoxTopRow/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxTopRow/btnCreateThread" to="." method="_on_btn_create_thread_pressed"]
