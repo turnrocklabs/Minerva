@@ -35,6 +35,8 @@ var image_zoom_factor: float:
 
 var type: Type
 
+var auto_expand: = true
+
 # Unscaled image that will be used to create scaled versions of the image
 var base_image: Image = null
 
@@ -199,11 +201,30 @@ func _get_transform_rect_positions() -> Dictionary:
 	return positions
 
 func localize_input(event: InputEvent):
+	if not event is InputEventMouse:
+		return event
+	
+	var local_event = event.duplicate()
+	
 	match type:
 		Type.IMAGE, Type.DRAWING:
-			return texture_rect.make_input_local(event)
+			# Use global_position to bypass all parent UI element offsets
+			local_event.position = texture_rect.get_local_mouse_position()
 		Type.SPEECH_BUBBLE:
-			return speech_bubble.make_input_local(event)
+			pass
+	
+	return local_event
+
+func expand_to_point(point: Vector2):
+	if (
+		point.x > 0 and point.x < image.get_size().x and
+		point.y > 0 and point.y < image.get_size().y
+	):
+		return
+	
+
+	# TODO: implement image expansion
+
 
 func _on_resized() -> void:
 	pass
