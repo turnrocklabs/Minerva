@@ -46,7 +46,7 @@ var layers: Array[LayerV2]
 var selected_layers: Array[LayerV2] = []
 
 var active_layer: LayerV2:
-	get: return selected_layers.get(0)
+	get: return selected_layers.get(0) if not selected_layers.is_empty() else null
 
 var active_tool: BaseTool:
 	set(value):
@@ -91,12 +91,14 @@ func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = C
 	layer_cards_container.move_child(layer_card, 0)
 
 	layers_container.add_child(layer, true)
+
+	# breakpoint
 	
 	# place the layer at the center of the screen
-	get_tree().process_frame.connect(
-		func(): layer.position = layers_container.size/2 - layer.size/2,
-		ConnectFlags.CONNECT_ONE_SHOT
-	)
+	# get_tree().process_frame.connect(
+	# 	func(): layer.position = layers_container.size/2 - layer.size/2; print("PROCESS FRAME HERE"),
+	# 	ConnectFlags.CONNECT_ONE_SHOT
+	# )
 
 	layers.append(layer)
 
