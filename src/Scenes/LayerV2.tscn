@@ -1,0 +1,46 @@
+[gd_scene load_steps=3 format=3 uid="uid://dfffqwg0xyekp"]
+
+[ext_resource type="Script" uid="uid://c2tgvvt6056bo" path="res://Scripts/UI/Controls/LayerV2.gd" id="1_fehm3"]
+[ext_resource type="Texture2D" uid="uid://bj0b5cmrbfma" path="res://addons/markdownlabel/assets/screenshot.png" id="2_ac76k"]
+
+[node name="LayerV2" type="Control"]
+z_index = 1
+layout_mode = 3
+anchors_preset = 0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+script = ExtResource("1_fehm3")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.235294, 0.298039, 0.470588, 0.298039)
+
+[node name="TextureRect" type="TextureRect" parent="."]
+unique_name_in_owner = true
+z_as_relative = false
+layout_mode = 2
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_ac76k")
+expand_mode = 1
+
+[node name="CenterContainer" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+
+[connection signal="minimum_size_changed" from="." to="." method="_on_minimum_size_changed"]
+[connection signal="resized" from="." to="." method="_on_resized"]

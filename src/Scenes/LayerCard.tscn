@@ -1,0 +1,101 @@
+[gd_scene load_steps=8 format=3 uid="uid://bgqhpokm027si"]
+
+[ext_resource type="Script" uid="uid://dk5fww5r5sryf" path="res://Scripts/UI/Controls/GraphicsEditor/LayerCard.gd" id="1_8joxi"]
+[ext_resource type="Texture2D" uid="uid://bj0b5cmrbfma" path="res://addons/markdownlabel/assets/screenshot.png" id="2_cfx4g"]
+[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="2_tha0k"]
+[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="3_bp0f0"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_c4m65"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+bg_color = Color(0.186202, 0.173051, 0.172226, 1)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_hqbae"]
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_3bco1"]
+resource_local_to_scene = true
+color = Color(0.130437, 0, 0.970655, 1)
+
+[node name="PanelContainer" type="PanelContainer"]
+offset_right = 316.0
+offset_bottom = 166.0
+mouse_filter = 1
+theme_override_styles/panel = SubResource("StyleBoxFlat_c4m65")
+script = ExtResource("1_8joxi")
+
+[node name="LayerCard" type="Button" parent="."]
+custom_minimum_size = Vector2(300, 150)
+layout_mode = 2
+mouse_filter = 1
+theme_override_styles/focus = SubResource("StyleBoxEmpty_hqbae")
+button_mask = 3
+flat = true
+
+[node name="v" type="VBoxContainer" parent="LayerCard"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+
+[node name="DropAboveSeparator" type="HSeparator" parent="LayerCard/v"]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
+
+[node name="h" type="HBoxContainer" parent="LayerCard/v"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TextureRect" type="TextureRect" parent="LayerCard/v/h"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+size_flags_vertical = 3
+texture = ExtResource("2_cfx4g")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="Name" type="LineEdit" parent="LayerCard/v/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+text = "Layer"
+flat = true
+
+[node name="VisibilityCheckButton" type="CheckButton" parent="LayerCard/v"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+tooltip_text = "Toggle layer visibility"
+theme_override_icons/checked = ExtResource("2_tha0k")
+theme_override_icons/unchecked = ExtResource("3_bp0f0")
+button_pressed = true
+
+[node name="DropBelowSeparator" type="HSeparator" parent="LayerCard/v"]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
+
+[node name="ContextMenu" type="PopupMenu" parent="."]
+unique_name_in_owner = true
+auto_translate_mode = 1
+size = Vector2i(106, 124)
+theme_override_constants/item_start_padding = 0
+theme_override_constants/item_end_padding = 0
+theme_override_font_sizes/font_size = 14
+
+[connection signal="gui_input" from="." to="." method="_on_gui_input"]
+[connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
+[connection signal="focus_exited" from="LayerCard/v/h/Name" to="." method="_on_name_focus_exited"]
+[connection signal="text_submitted" from="LayerCard/v/h/Name" to="." method="_on_name_text_submitted"]
+[connection signal="toggled" from="LayerCard/v/VisibilityCheckButton" to="." method="_on_visibility_check_button_toggled"]
+[connection signal="about_to_popup" from="ContextMenu" to="." method="_on_context_menu_about_to_popup"]
+[connection signal="id_pressed" from="ContextMenu" to="." method="_on_context_menu_id_pressed"]
