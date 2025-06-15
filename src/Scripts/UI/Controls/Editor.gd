@@ -60,6 +60,7 @@ enum Type {
 	VIDEO
 }
 
+var _linked_memory_item_UUID: String = ""
 
 ## May contain the object that is being edited by this editor.[br]
 ## Eg. ChatImage, Note, etc..[br]
@@ -124,7 +125,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 					code_highlighter.keyword_colors = lang_keywords
 				code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
 				code_highlighter.number_color = Color.FLORAL_WHITE
-				code_highlighter.symbol_color = Color.AQUAMARINE
+				code_highlighter.symbol_color = Color.CORNSILK
 				code_highlighter.function_color = Color.DEEP_PINK
 				code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
 				new_code_edit.syntax_highlighter = code_highlighter
@@ -472,9 +473,8 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 
-	if is_instance_valid(associated_object) and associated_object is Note:
-		_update_memory_item(associated_object.memory_item)
-		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
+	if _linked_memory_item_UUID != "":
+		_update_memory_item(_linked_memory_item_UUID)
 		
 	else:
 		if Type.TEXT == type:
@@ -492,7 +492,8 @@ func _on_create_note_button_pressed() -> void:
 				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
 			else:
 				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
-
+		
+		_linked_memory_item_UUID = associated_object.UUID
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 ## Apply diff button stuff 
@@ -692,9 +693,9 @@ func _on_editor_changed(text: String = ""):
 		# _file_saved = false
 		# file_saved_in_disc = false
 
-	if has_meta("memory_item"):
-		var item: MemoryItem = get_meta("memory_item")
-		_update_memory_item(item)
+	#if has_meta("memory_item"):
+		#var item: MemoryItem = get_meta("memory_item")
+		#_update_memory_item(item)
 
 	content_changed.emit()
 
@@ -757,17 +758,18 @@ func _create_note() -> MemoryItem:
 
 	else:
 		return null # type not supported
-	
+	_linked_memory_item_UUID = memory_item.UUID
 	return memory_item
 
-func _update_memory_item(memory_item: MemoryItem) -> void:
+func _update_memory_item(memory_UUID: String) -> void:
+	#SingletonObject.NotesTab.update_note(_linked_memory_item_UUID, code_edit.text)
 	if type == Type.TEXT:
-		memory_item.Type = SingletonObject.note_type.TEXT
-		memory_item.Content = code_edit.text
+		SingletonObject.NotesTab.update_note(_linked_memory_item_UUID, code_edit.text)
+		#memory_item.Type = SingletonObject.note_type.TEXT
+		#memory_item.Content = code_edit.text
 	
 	elif type == Type.GRAPHICS:
-		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = graphics_editor.image
+		SingletonObject.NotesTab.update_note(_linked_memory_item_UUID, graphics_editor.image)
 
 
 

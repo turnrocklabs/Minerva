@@ -327,7 +327,7 @@ func _on_remove_button_pressed():
 ## reflects note title changes into the tab title.
 func associate_editor(editor: Editor):
 	editor.associated_object = self
-
+	editor._linked_memory_item_UUID = self.memory_item.UUID
 	label_node.text_changed.connect(
 		func(text):
 			editor.tab_title = text
@@ -345,11 +345,12 @@ func _on_edit_button_pressed():
 
 	# Try to find editor that's already associated with memory_item
 	for i in range(ep.Tabs.get_tab_count()):
-		var tab_control = ep.Tabs.get_tab_control(i)
-		
-		if tab_control is Editor and tab_control.associated_object == self:
-			ep.Tabs.current_tab = i # Change the current tab to that editor
-			return
+		var tab_control: Editor = ep.Tabs.get_tab_control(i)
+		var memory_item_UUID: = tab_control._linked_memory_item_UUID
+		if memory_item:
+			if tab_control is Editor and memory_item_UUID == self.memory_item.UUID:
+				ep.Tabs.current_tab = i # Change the current tab to that editor
+				return
 
 	var editor: Editor
 
@@ -360,18 +361,16 @@ func _on_edit_button_pressed():
 		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
-		
 		# Get the old text from the code_edit before replacing it
 		var old_text: String = editor.code_edit.text
-		
 		# Set the new text
 		editor.code_edit.text = memory_item.Content
-		
 		# Call check_incomplete_snippet with the correct old_text and new_text
 		ep.check_incomplete_snippet(editor, old_text, editor.code_edit.text)
 		ep._is_Completed = memory_item.isCompleted
 	
-	associate_editor(editor)
+	if editor.associated_object == null:
+		associate_editor(editor)
 
 
 func _on_hide_button_pressed():
