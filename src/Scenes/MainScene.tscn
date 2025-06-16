@@ -1,6 +1,6 @@
 [gd_scene load_steps=68 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Script" uid="uid://br3la2tvaqy3o" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
+[ext_resource type="Script" uid="uid://de2uyvmvju8y2" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" uid="uid://xj3syc210tqo" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
@@ -44,7 +44,7 @@
 [ext_resource type="Texture2D" uid="uid://8ia1252jycjp" path="res://assets/icons/file/many_files_24_new.png" id="28_qncfk"]
 [ext_resource type="Texture2D" uid="uid://b041v4o6sa3fd" path="res://assets/icons/file/many_files_48_new.png" id="29_3uhrd"]
 [ext_resource type="Texture2D" uid="uid://rnoowdcewge8" path="res://assets/icons/undo_icons/undo_arrow_48.png" id="29_rqudt"]
-[ext_resource type="Script" uid="uid://34gp4lt2oiw7" path="res://Scripts/DropScript.gd" id="30_1anci"]
+[ext_resource type="Script" uid="uid://yrtcflmpovr5" path="res://Scripts/DropScript.gd" id="30_1anci"]
 [ext_resource type="Texture2D" uid="uid://c6bgcn813bv5q" path="res://assets/icons/undo_icons/undo_arrow_64.png" id="30_i8mta"]
 [ext_resource type="Texture2D" uid="uid://jtwgif8ev4lw" path="res://assets/icons/file/many_files_64_new.png" id="30_jj3p5"]
 [ext_resource type="Texture2D" uid="uid://0qjd86qhe1as" path="res://assets/icons/clipboard_icons/backspace_icons/backspace_icon.png" id="32_nebas"]

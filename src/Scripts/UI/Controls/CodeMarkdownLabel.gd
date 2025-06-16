@@ -61,6 +61,7 @@ func _ready() -> void:
 	
 	await get_tree().create_timer(0.05).timeout
 	_update_label_size()
+	p_2.resized
 	if !expanded:
 		code_label.fit_content = false
 		code_label.custom_minimum_size.y = 0
@@ -216,20 +217,13 @@ func expand_code() -> void:
 		return
 	if label_size == 0 or label_size > int(code_label.size.y):
 		_update_label_size()
-	
-	p_2.show()
-	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
-	expand_tween.finished.connect(enable_expand_button)
 	expand_button.disabled = true
-	expand_tween.tween_property(code_label, "custom_minimum_size:y", label_size, expand_anim_duration)
-	expand_tween.set_parallel()
-	expand_tween.tween_property(p_2, "custom_minimum_size:y", label_size, expand_anim_duration)
-	expand_tween.set_parallel()
-	expand_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
-	expand_tween.set_parallel()
-	expand_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
+	_animate_expand(label_size, 0.0, Color.WHITE_SMOKE)
+	p_2.show()
+	
 	await get_tree().create_timer(expand_anim_duration - 0.24).timeout
 	code_label.fit_content = true
+	code_label.custom_minimum_size.y = 0.0
 
 
 func contract_code() -> void:
@@ -239,20 +233,26 @@ func contract_code() -> void:
 	if label_size == 0 or label_size > int(code_label.size.y):
 		_update_label_size()
 	code_label.fit_content = false
-	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
-	expand_tween.finished.connect(enable_expand_button)
 	expand_button.disabled = true
-	expand_tween.tween_property(code_label, "custom_minimum_size:y", 0, expand_anim_duration)
-	expand_tween.set_parallel()
-	expand_tween.tween_property(p_2, "custom_minimum_size:y", 0, expand_anim_duration)
-	expand_tween.set_parallel()
-	expand_tween.tween_property(expand_button,"rotation", deg_to_rad(-90.0), expand_anim_duration)
-	expand_tween.set_parallel()
-	expand_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
-	
+	_animate_expand(0, -90.0, expand_icon_color)
 	await get_tree().create_timer(expand_anim_duration - 0.24).timeout
 	p_2.hide()
 
+
+func _animate_expand(new_size: float, new_rotation: float, new_icon_color: Color) -> Tween:
+	if expand_tween and expand_tween.is_running():
+		expand_tween.kill()
+	
+	expand_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
+	expand_tween.finished.connect(enable_expand_button)
+	expand_tween.tween_property(code_label, "custom_minimum_size:y", new_size, expand_anim_duration)
+	expand_tween.set_parallel()
+	expand_tween.tween_property(p_2, "custom_minimum_size:y", new_size, expand_anim_duration)
+	expand_tween.set_parallel()
+	expand_tween.tween_property(expand_button,"rotation", deg_to_rad(new_rotation), expand_anim_duration)
+	expand_tween.set_parallel()
+	expand_tween.tween_property(expand_button, "modulate", new_icon_color, expand_anim_duration)
+	return expand_tween
 
 func enable_expand_button() -> void:
 	expand_button.disabled = false

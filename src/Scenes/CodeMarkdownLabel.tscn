@@ -184,6 +184,7 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_m7865")
 [node name="CodeLabel" type="RichTextLabel" parent="v/p2"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 0
 focus_mode = 2
 mouse_filter = 1
 theme_override_colors/default_color = Color(0.945098, 0.945098, 0.945098, 1)

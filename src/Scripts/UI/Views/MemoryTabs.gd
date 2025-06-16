@@ -2,16 +2,13 @@ class_name MemoryTabs
 extends TabContainer
 
 @onready var tcThreads = %tcThreads
-# just use current_tab
-# var ActiveThreadIndex: int:
 @onready var buffer_control_notes: Control = %BufferControlNotes
 var _drag_active := true
-# var _hovered_tab := -1
-# var _hover_timer
+
 
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
-#var _can_drop:bool = false
+
 ## return a single large string of all active memories
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
@@ -81,8 +78,8 @@ func open_threads_popup(tab_name: String = "", tab = null):
 
 func _on_new_pressed():
 	open_threads_popup()
-	
-	
+
+
 func _on_btn_create_thread_pressed(isDrawerNote:bool,tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
 	if !isDrawerNote:
@@ -128,7 +125,6 @@ func clear_all_tabs():
 		%tcThreads.remove_child(child)
 		child.queue_free()
 	pass
-	
 
 
 #region Add notes methods
@@ -155,12 +151,8 @@ func add_note(user_title:String, user_content: String,is_completed:bool = true, 
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
-	#buffer_control_notes.hide()
 	render_threads()
-
 	return new_memory
-
-
 
 
 func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryItem:
@@ -210,8 +202,8 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	buffer_control_notes.hide()
 	render_threads()
 	return new_memory
-	
-	
+
+
 ## Creates a note without adding it to any thread.
 func create_note(title: String, type: SingletonObject.note_type = SingletonObject.note_type.TEXT) -> MemoryItem:
 	var new_memory: MemoryItem = MemoryItem.new()
@@ -327,8 +319,6 @@ func render_thread(thread_item: MemoryThread):
 		self.current_tab = tab_idx
 
 
-
-
 func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)
 	
@@ -351,8 +341,8 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	if get_tab_count() < 1:
 		buffer_control_notes.show()
-	
-	
+
+
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
 		var data = SingletonObject.undo.deleted_tabs[tab_name]
@@ -371,13 +361,13 @@ func restore_deleted_tab(tab_name: String):
 
 		# Remove the data from the deleted_tabs dictionary.
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
-	
+
+
 func _memory_thread_find(thread_id: String) -> MemoryThread:
 	return SingletonObject.ThreadList.filter(
 		func(t: MemoryThread):
 			return t.ThreadId == thread_id
 	).pop_front()
-
 
 
 ## Function:
@@ -483,6 +473,8 @@ func attach_file(the_file: String):
 	#render_threads()
 
 	file.close()
+
+
 # Helper function to check if a file is binary (opposite of text file)
 func _is_binary_file(file_path: String) -> bool:
 	var file = FileAccess.open(file_path, FileAccess.READ)
@@ -503,7 +495,8 @@ func _is_binary_file(file_path: String) -> bool:
 	
 	file.close()
 	return false
-	
+
+
 # helper func to check if the file is text
 func _is_text_file(file_path: String) -> bool:
 	var file = FileAccess.open(file_path, FileAccess.READ)
@@ -523,8 +516,8 @@ func _is_text_file(file_path: String) -> bool:
 
 	file.close()
 	return is_text
-	
-# Called when the node enters the scene tree for the first time.
+
+
 func _ready():
 	
 	%tcThreads.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
@@ -606,7 +599,6 @@ func _on_active_tab_rearranged(idx_to: int) -> void:
 	temp_current_tab = current_tab
 
 #endregion Tab signal methods
-
 
 # This function is called when the ThreadList is modified
 func _on_thread_list_changed():
