@@ -1,6 +1,6 @@
 [gd_scene load_steps=69 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Script" uid="uid://de2uyvmvju8y2" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
+[ext_resource type="Script" uid="uid://br3la2tvaqy3o" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://bke6fbealwlun" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" uid="uid://xj3syc210tqo" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
@@ -360,7 +360,7 @@ layout_mode = 2
 
 [node name="ProjectNameLabel" type="RichTextLabel" parent="VBoxRoot/HBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(250, 0)
+custom_minimum_size = Vector2(350, 0)
 layout_mode = 2
 bbcode_enabled = true
 vertical_alignment = 1
