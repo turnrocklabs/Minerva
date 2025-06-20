@@ -7,7 +7,7 @@ extends Control
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
 static var editor_scene = preload("res://Scenes/Editor.tscn")
-static var graphics_editor_scene = preload("res://Scenes/GraphicsEditor.tscn")
+static var graphics_editor_scene = preload("res://Scenes/GraphicsEditorV2.tscn")
 
 
 signal content_changed()
@@ -29,7 +29,7 @@ var video_player: VideoPlayer:
 		get_node("%VBoxContainer").add_child(value)
 
 var code_edit: EditorCodeEdit
-var graphics_editor: GraphicsEditor
+var graphics_editor: GraphicsEditorV2
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -131,9 +131,9 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			
 			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
-			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
+			var new_graphics_editor: GraphicsEditorV2 = graphics_editor_scene.instantiate()
 			new_graphics_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
+			# new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
 			editor.graphics_editor = new_graphics_editor
@@ -494,8 +494,14 @@ func _on_create_note_button_pressed() -> void:
 				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 
 	SingletonObject.UpdateUnsavedTabIcon.emit()
-	
 
+## Apply diff button stuff 
+func enable_apply_diff() -> void:
+	%btnApplyDiff.disabled = false
+	
+func _on_btn_apply_diff_pressed() -> void:
+	self.code_edit.apply_preview()
+	%btnApplyDiff.disabled = true
 
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
@@ -508,7 +514,6 @@ func _on_reload_button_pressed() -> void:
 				text_is_smaller.visible = false
 				text_is_incoplete.visible = false
 				text_is_smaller_and_incoplete.visible = false
-
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
 func _on_save_open_editor_tabs_button_pressed() -> void:

@@ -24,7 +24,7 @@ extends HBoxContainer
 @export var max_lines_expanded_code_segment: int = 6
 
 @onready var expand_button: Button = %ExpandButton
-@onready var resize_scroll_container: VBoxContainer = %ResizeScrollContainer
+@onready var resize_scroll_container: ScrollContainer = %ResizeScrollContainer
 @onready var message_labels_container: VBoxContainer = %MessageLabelsContainer
 @onready var resize_drag_control: Control = %ResizeDragControl
 @onready var images_grid_container: GridContainer = %ImagesGridContainer
@@ -32,6 +32,7 @@ extends HBoxContainer
 
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var text_edit: TextEdit = %MessageTextEdit
+@onready var text_message_container: HBoxContainer = %TextMessageHBoxContainer
 
 var is_unsplit_edit = false
 
@@ -115,6 +116,7 @@ func _ready() -> void:
 	render()
 	
 	await get_tree().process_frame
+	v_box_container.resized.connect(_update_scroll_container_size)
 	if get_parent() is SliderContainer:
 		%LeftCardButton.visible = true
 		%RightCardButton.visible = true
@@ -124,6 +126,8 @@ func _ready() -> void:
 			max_message_size_limit = custom_starting_size
 		else:
 			max_message_size_limit = v_box_container.size.y
+	else:
+		resize_scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	
 	await get_tree().process_frame
 	_setup_sizes()
@@ -185,13 +189,20 @@ func render() -> void:
 
 
 func set_edit(on: = true) -> void:
-	%MessageLabelsContainer.visible = not on
-	
 	if on:
-		text_edit.text = content
+		await get_tree().process_frame
+		message_labels_container.visible = false
+		text_message_container.visible = true
+		%SetTextButton.visible = true
+		text_edit.text = history_item.Message  # Pre-populate with current content
 		text_edit.grab_focus()
-	
-	text_edit.visible = on
+	else:
+		_exit_edit_mode()
+
+func _exit_edit_mode():
+	text_message_container.visible = false
+	%SetTextButton.visible = false
+	message_labels_container.visible = true
 
 func _update_tokens_cost() -> void:
 	var price = 0.0
@@ -323,18 +334,6 @@ func _on_regenerate_button_pressed():
 
 func _on_edit_button_pressed():
 	set_edit()
-
-# when we click outside the text edit, hide it and save changes
-func _input(event: InputEvent):
-	if text_edit.visible and event is InputEventMouseButton and event.pressed:
-
-		if not text_edit.get_global_rect().has_point(event.global_position):
-			if text_edit.text:
-				content = text_edit.text
-			
-			%MessageLabelsContainer.visible = true
-			text_edit.visible = false
-			get_viewport().set_input_as_handled()
 
 
 func _on_hide_button_pressed():
@@ -482,7 +481,7 @@ func _on_expand_button_pressed() -> void:
 
 var expand_tween: Tween
 func expand_message() -> void:
-	
+	_animate_called_from_button = true
 	if v_box_container.size.y > max_message_size_limit:
 			max_message_size_limit = v_box_container.size.y
 	if _last_custom_size_y == 0 or _last_custom_size_y < 100:
@@ -490,15 +489,19 @@ func expand_message() -> void:
 	resize_scroll_container.visible = true
 	resize_drag_control.visible = true
 	_animate_expand(_last_custom_size_y, 0.0, Color.WHITE)
+	_animate_called_from_button = false
 
 
 func contract_message() -> void:
+	_animate_called_from_button = true
 	_animate_expand(0.0, -90.0, expand_icon_color)
 	await get_tree().create_timer(expand_anim_duration- 0.24).timeout
 	resize_scroll_container.visible = false
 	resize_drag_control.visible = false
+	_animate_called_from_button = false
 
 
+var _animate_called_from_button: bool = false
 func _animate_expand(new_size: float, new_rotation: float, new_icon_color: Color) -> Tween:
 	if expand_tween and expand_tween.is_running():
 			expand_tween.kill()
@@ -681,3 +684,24 @@ func _update_sizes() -> void:
 	
 	if v_box_container.size.y < max_message_size_limit:
 		max_message_size_limit = _last_custom_size_y
+	resize_scroll_container.custom_minimum_size.y = v_box_container.size.y
+
+func _update_scroll_container_size() -> void:
+	if !_animate_called_from_button and !_resize_dragging:
+		_animate_expand(v_box_container.size.y +1, expand_button.rotation, expand_button.modulate)
+
+func _on_message_text_edit_text_set() -> void:
+	if !text_edit.text.is_empty():
+		history_item.Message = text_edit.text
+		text_edit.text = ""
+		text_message_container.visible = false
+		%SetTextButton.visible = false
+		await get_tree().process_frame
+		render()
+		
+		message_labels_container.visible = true
+		_update_sizes()
+	else:
+		text_message_container.visible = false
+		%SetTextButton.visible = false
+		message_labels_container.visible = false
