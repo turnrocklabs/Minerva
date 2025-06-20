@@ -327,7 +327,7 @@ func _on_remove_button_pressed():
 ## reflects note title changes into the tab title.
 func associate_editor(editor: Editor):
 	editor.associated_object = self
-	editor._linked_memory_item_UUID = self.memory_item.UUID
+	editor.linked_memory_item_UUID = self.memory_item.UUID
 	label_node.text_changed.connect(
 		func(text):
 			editor.tab_title = text
@@ -346,7 +346,7 @@ func _on_edit_button_pressed():
 	# Try to find editor that's already associated with memory_item
 	for i in range(ep.Tabs.get_tab_count()):
 		var tab_control: Editor = ep.Tabs.get_tab_control(i)
-		var memory_item_UUID: = tab_control._linked_memory_item_UUID
+		var memory_item_UUID: = tab_control.linked_memory_item_UUID
 		if memory_item:
 			if tab_control is Editor and memory_item_UUID == self.memory_item.UUID:
 				ep.Tabs.current_tab = i # Change the current tab to that editor

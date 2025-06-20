@@ -35,10 +35,12 @@ func serialize() -> Array:
 				content = layers
 		
 		var editor_string = {
-			"name": editor_pane.Tabs.get_tab_title(tab_idx),#editor.name,
+			"name": editor_pane.Tabs.get_tab_title(tab_idx),
+			"UUID": editor.UUID,
 			"file": editor.file,
 			"type": editor.type,
-			"content": content
+			"content": content,
+			"linked_note": editor.linked_memory_item_UUID
 		}
 		editors_serialized.append(editor_string)
 		tab_idx += 1
@@ -53,7 +55,8 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 	for editor_ser in editors_array:
 		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
 		editor_inst.tab_title = editor_ser.get("name")
-		
+		editor_inst.UUID = editor_ser.get("UUID")
+		editor_inst.linked_memory_item_UUID = editor_ser.get("linked_note")
 		if editor_inst.type == Editor.Type.TEXT:
 			
 			editor_inst.code_edit.text = editor_ser.get("content")

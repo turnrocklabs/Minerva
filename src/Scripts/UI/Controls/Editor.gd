@@ -60,8 +60,8 @@ enum Type {
 	VIDEO
 }
 
-var _linked_memory_item_UUID: String = ""
-
+var linked_memory_item_UUID: String = ""
+var UUID: String = ""
 ## May contain the object that is being edited by this editor.[br]
 ## Eg. ChatImage, Note, etc..[br]
 ## Allows switching to existing editor instead of
@@ -196,7 +196,7 @@ func _ready():
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
-	
+	UUID = SingletonObject.generate_UUID()
 	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
 	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
 	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
@@ -473,8 +473,8 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 
-	if _linked_memory_item_UUID != "":
-		_update_memory_item(_linked_memory_item_UUID)
+	if linked_memory_item_UUID != "":
+		_update_memory_item(linked_memory_item_UUID)
 		
 	else:
 		if Type.TEXT == type:
@@ -493,7 +493,7 @@ func _on_create_note_button_pressed() -> void:
 			else:
 				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
 		
-		_linked_memory_item_UUID = associated_object.UUID
+		linked_memory_item_UUID = associated_object.UUID
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 ## Apply diff button stuff 
@@ -758,18 +758,18 @@ func _create_note() -> MemoryItem:
 
 	else:
 		return null # type not supported
-	_linked_memory_item_UUID = memory_item.UUID
+	linked_memory_item_UUID = memory_item.UUID
 	return memory_item
 
 func _update_memory_item(memory_UUID: String) -> void:
 	#SingletonObject.NotesTab.update_note(_linked_memory_item_UUID, code_edit.text)
 	if type == Type.TEXT:
-		SingletonObject.NotesTab.update_note(_linked_memory_item_UUID, code_edit.text)
+		SingletonObject.NotesTab.update_note(linked_memory_item_UUID, code_edit.text)
 		#memory_item.Type = SingletonObject.note_type.TEXT
 		#memory_item.Content = code_edit.text
 	
 	elif type == Type.GRAPHICS:
-		SingletonObject.NotesTab.update_note(_linked_memory_item_UUID, graphics_editor.image)
+		SingletonObject.NotesTab.update_note(linked_memory_item_UUID, graphics_editor.image)
 
 
 

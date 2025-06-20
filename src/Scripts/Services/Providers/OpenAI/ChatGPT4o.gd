@@ -97,7 +97,8 @@ func estimate_image_tokens_from_prompt(input: Array[Variant]) -> float:
 			for part in content:
 				if part.get("type") == "image_url":
 					var b64: String = part["image_url"]["url"]
-					var img = Image.new()
-					img.load_png_from_buffer(Marshalls.base64_to_raw(b64))
-					image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
+					if b64:
+						var img = Image.new()
+						img.load_png_from_buffer(Marshalls.base64_to_raw(b64))
+						image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
 	return image_tokens
