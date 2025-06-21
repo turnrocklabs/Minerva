@@ -1,6 +1,5 @@
 extends Control
 
-signal openDrawerNotes
 
 var is_dragging = false
 var drag_start_position = Vector2()
@@ -238,22 +237,33 @@ func _input(event):
 				
 				
 
-var isDrawerActive = false
 
+@onready var bottom_drawer_control: Drawer_manager = %BottomDrawerControl
+@onready var notes_drawer_split: VSplitContainer = %NotesDrawerSplit
+var split_drawer_tween: Tween
 func _on_btn_drawer_pressed() -> void:
-	isDrawerActive = !isDrawerActive
 	
-	if isDrawerActive:
+	if split_drawer_tween and split_drawer_tween.is_running():
+		split_drawer_tween.kill()
+	
+	if !bottom_drawer_control.visible:
+		notes_drawer_split.split_offset = 1500
+		split_drawer_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
+		bottom_drawer_control.visible = true
+		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 0, 0.7)
 		_open_drawer_notes()
-		%BottomDrawerControl.show()
 	else:
-		%BottomDrawerControl.hide()
-	
+		notes_drawer_split.split_offset = 0
+		split_drawer_tween = create_tween().set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_LINEAR)
+		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 1500, 0.6)
+		await get_tree().create_timer(0.33).timeout
+		bottom_drawer_control.visible = false
 	SingletonObject.NotesTab.Disable_All_Drawer()
-	
+
+
 #reading file and create note in Drawer thread
 func _open_drawer_notes():
-	emit_signal("openDrawerNotes")
+	SingletonObject.emit_signal("openDrawerNotes")
 	SingletonObject.NotesTab.render_threads(true)
 
 func _update_project_label(new_text: String = "", saved_state: bool = true) -> void:

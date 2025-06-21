@@ -3,7 +3,6 @@ extends Control
 
 # Whether the user selected the file or closed the dialog this signal is emitted
 signal save_as_dialog_exited()
-signal drawer_save_data
 
 var save_path: String
 
@@ -302,7 +301,7 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		drawer_save_data.emit()
+		SingletonObject.drawer_save_data.emit()
 		save_editor_panes()
 		
 
