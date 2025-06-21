@@ -6,11 +6,11 @@ var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
 
 func _ready() -> void:
 	
-	for i in 3:
-		if $"../../../../../../../.." != null:
-			$"../../../../../../../..".connect("openDrawerNotes",_render_drawer)
 	
-	$"../../../../../../../HBoxContainer/menuMain/ProjectManagement".connect("drawer_save_data",_drawer_save_data)
+	if SingletonObject.main_scene:
+		SingletonObject.connect("openDrawerNotes",_render_drawer)
+	
+	SingletonObject.connect("drawer_save_data",_drawer_save_data)
 	
 func _drawer_save_data() -> void:
 	save_notes(data_path)
@@ -30,7 +30,6 @@ func save_notes(path: String = "") -> void:
 
 func load_notes(path: String) -> void:
 	if not FileAccess.file_exists(path):
-		push_warning("File does not exist: ", path)
 		return
 	
 	var file = FileAccess.open(path, FileAccess.READ)
@@ -212,7 +211,8 @@ func deserialize_notes(data: Dictionary) -> void:
 
 func _render_drawer() -> void:
 	load_notes(data_path)
-	
+
+
 #func _notification(what):
 	#if what == NOTIFICATION_WM_CLOSE_REQUEST and $"..".close_requested:
 		## Compare current data with last saved data

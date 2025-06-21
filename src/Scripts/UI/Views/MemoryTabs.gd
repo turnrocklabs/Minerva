@@ -131,7 +131,7 @@ func create_new_notes_tab(tab_name: String = "notes 1",isDrawer:bool = false):
 	new_tab = true
 	if isDrawer:
 		SingletonObject.DrawerThreadList.append(thread)
-		%ProjectManagement.drawer_save_data.emit()
+		SingletonObject.drawer_save_data.emit()
 	else:
 		SingletonObject.ThreadList.append(thread)
 	SingletonObject.NotesTab.render_threads(isDrawer)
@@ -208,7 +208,7 @@ func add_note(user_title:String, user_content: String, isDrawer:bool = false, is
 	# Explicitly set the current tab after rendering
 	if isDrawer:
 		tcThreadsDrawer.current_tab = current_tab_idx
-		%ProjectManagement.drawer_save_data.emit()
+		SingletonObject.drawer_save_data.emit()
 	else:
 		current_tab = current_tab_idx
 

@@ -443,6 +443,10 @@ signal set_icon_size_24
 signal set_icon_size_48
 @warning_ignore("unused_signal")
 signal set_icon_size_68
+@warning_ignore("unused_signal")
+signal drawer_save_data
+@warning_ignore("unused_signal")
+signal openDrawerNotes
 
 var saved_state = true
 signal updated_save_state(project_name:String,saved: bool)
