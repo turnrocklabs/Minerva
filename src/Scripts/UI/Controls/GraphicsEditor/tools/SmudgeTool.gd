@@ -24,9 +24,8 @@ var smudge_strength: float:
 
 var smudging: bool = false
 var _last_smudge_position: Vector2
-var _smudge_buffer: Array[Color] = []
-var _buffer_positions: Array[Vector2] = []
-var _max_buffer_size: int = 50
+var _brush_buffer: PackedByteArray  # Single buffer for brush data
+var _brush_buffer_size: int = 0
 var _last_pressure: float = 1.0
 var _smoothed_pressure: float = -1.0
 var _pressure_smoothing_factor: float = 0.3
@@ -34,28 +33,29 @@ var _pressure_smoothing_factor: float = 0.3
 # Performance optimizations
 var _circle_cache = {}
 var _max_cached_radius = 100
+var _spacing_accumulator: float = 0.0
 
 func _ready() -> void:
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
 			if tool_ == self:
-				var cursor_radius = roundi(brush_size / 2.0)
-				var cursor_image = create_contrast_circle_cursor(cursor_radius)
-				var hotspot = Vector2(cursor_image.get_width(), cursor_image.get_height()) / 2
-				editor.set_custom_cursor(cursor_image, Input.CursorShape.CURSOR_ARROW, hotspot)
+				_update_cursor()
 	)
 
 	_brush_size_slider.value_changed.connect(
 		func(value: float):
-			var cursor_radius = roundi(value / 2.0)
-			var cursor_image = create_contrast_circle_cursor(cursor_radius)
-			var hotspot = Vector2(cursor_image.get_width(), cursor_image.get_height()) / 2
-			editor.set_custom_cursor(cursor_image, Input.CursorShape.CURSOR_ARROW, hotspot)
+			_update_cursor()
 	)
 	
 	# Pre-cache common brush sizes
 	for r in range(1, min(30, _max_cached_radius)):
 		_get_cached_circle_pixels(r)
+
+func _update_cursor() -> void:
+	var cursor_radius = roundi(brush_size / 2.0)
+	var cursor_image = create_contrast_circle_cursor(cursor_radius)
+	var hotspot = Vector2(cursor_image.get_width(), cursor_image.get_height()) / 2
+	editor.set_custom_cursor(cursor_image, Input.CursorShape.CURSOR_ARROW, hotspot)
 
 func handle_input_event(event: InputEvent) -> void:
 	if not editor.active_layer: return
@@ -80,11 +80,10 @@ func _start_smudge(event: InputEvent) -> void:
 	smudging = true
 	_last_smudge_position = event.position
 	_smoothed_pressure = -1.0
-	_smudge_buffer.clear()
-	_buffer_positions.clear()
+	_spacing_accumulator = 0.0
 	
-	# Sample initial colors from the canvas
-	_sample_colors_at_position(event.position)
+	# Initialize brush buffer from starting position
+	_pickup_brush_data(event.position)
 
 func _perform_smudge(event: InputEvent) -> void:
 	var pos = event.position
@@ -99,144 +98,112 @@ func _perform_smudge(event: InputEvent) -> void:
 	
 	# Calculate movement distance
 	var distance = _last_smudge_position.distance_to(pos)
+	_spacing_accumulator += distance
 	
-	# If moving too fast, add intermediate points
-	if distance > brush_size * 0.3:
-		var steps = ceil(distance / (brush_size * 0.2))
-		for i in range(1, steps + 1):
-			var t = float(i) / steps
-			var lerp_pos = _last_smudge_position.lerp(pos, t)
-			_apply_smudge_at_position(lerp_pos, _smoothed_pressure)
-	else:
-		_apply_smudge_at_position(pos, _smoothed_pressure)
+	# Use 1-pixel spacing like the original algorithm suggests
+	var spacing = 1.0
 	
-	_last_smudge_position = pos
-	editor.queue_redraw()
+	if _spacing_accumulator >= spacing:
+		var steps = int(_spacing_accumulator / spacing)
+		var step_vector = (pos - _last_smudge_position).normalized() * spacing
+		
+		for i in range(steps):
+			var stamp_pos = _last_smudge_position + step_vector * (i + 1)
+			_apply_smudge_stamp(stamp_pos, _smoothed_pressure)
+		
+		_spacing_accumulator = fmod(_spacing_accumulator, spacing)
+		_last_smudge_position = pos
+		editor.queue_redraw()
 
 func _end_smudge() -> void:
 	smudging = false
 	_smoothed_pressure = -1.0
-	_smudge_buffer.clear()
-	_buffer_positions.clear()
+	_brush_buffer.clear()
+	_brush_buffer_size = 0
+	_spacing_accumulator = 0.0
 
-func _sample_colors_at_position(pos: Vector2) -> void:
+func _pickup_brush_data(pos: Vector2) -> void:
 	var target_image = editor.active_layer.image
-	
-	# Convert position to image coordinates
-	var layer_scale_x = editor.active_layer.size.x / float(target_image.get_width())
-	var layer_scale_y = editor.active_layer.size.y / float(target_image.get_height())
-	
 	var image_pos = pos / editor.active_layer.image_zoom_factor
-	var sample_radius = max(1, int(brush_size * 0.3 / editor.active_layer.image_zoom_factor))
+	var pickup_radius = max(1, int(brush_size * 0.5 / editor.active_layer.image_zoom_factor))
 	
-	# Sample colors in a circular pattern around the position
-	var pixels = _get_cached_circle_pixels(sample_radius)
+	var pixels = _get_cached_circle_pixels(pickup_radius)
 	var center_x = int(image_pos.x)
 	var center_y = int(image_pos.y)
 	
 	var img_width = target_image.get_width()
 	var img_height = target_image.get_height()
 	
-	for offset in pixels:
-		var x = center_x + offset.x
-		var y = center_y + offset.y
-		
-		if x >= 0 and x < img_width and y >= 0 and y < img_height:
-			var color = target_image.get_pixel(x, y)
-			if color.a > 0.01:  # Only sample non-transparent pixels
-				_add_to_smudge_buffer(color, Vector2(x, y))
-
-func _add_to_smudge_buffer(color: Color, buffer_pos: Vector2) -> void:
-	_smudge_buffer.append(color)
-	_buffer_positions.append(buffer_pos)
+	# Calculate buffer size needed (4 bytes per pixel: RGBA)
+	var buffer_size = pixels.size() * 4
+	_brush_buffer.resize(buffer_size)
+	_brush_buffer_size = pixels.size()
 	
-	# Keep buffer size manageable
-	if _smudge_buffer.size() > _max_buffer_size:
-		_smudge_buffer.pop_front()
-		_buffer_positions.pop_front()
+	# Sample pixels into buffer
+	var buffer_index = 0
+	for offset in pixels:
+		var x = center_x + int(offset.x)
+		var y = center_y + int(offset.y)
+		
+		var color = Color.TRANSPARENT
+		if x >= 0 and x < img_width and y >= 0 and y < img_height:
+			color = target_image.get_pixel(x, y)
+		
+		# Store RGBA in buffer
+		_brush_buffer[buffer_index] = int(color.r * 255)
+		_brush_buffer[buffer_index + 1] = int(color.g * 255)
+		_brush_buffer[buffer_index + 2] = int(color.b * 255)
+		_brush_buffer[buffer_index + 3] = int(color.a * 255)
+		buffer_index += 4
 
-func _apply_smudge_at_position(pos: Vector2, pressure: float) -> void:
+func _apply_smudge_stamp(pos: Vector2, pressure: float) -> void:
 	var target_image = editor.active_layer.image
 	
-	# Sample new colors at current position
-	_sample_colors_at_position(pos)
-	
-	if _smudge_buffer.is_empty():
-		return
-	
-	# Calculate effective brush size based on pressure
-	var effective_size = brush_size * pressure
-	
-	# Apply smudge effect
-	_apply_smudge_stamp(target_image, pos, effective_size)
-
-func _apply_smudge_stamp(target_image: Image, center: Vector2, diameter: float) -> void:
 	# Convert to image coordinates
-	var layer_scale_x = editor.active_layer.size.x / float(target_image.get_width())
-	var layer_scale_y = editor.active_layer.size.y / float(target_image.get_height())
-	
-	var actual_diameter = diameter / editor.active_layer.image_zoom_factor
-	actual_diameter *= max(layer_scale_x, layer_scale_y)
-	
-	center /= editor.active_layer.image_zoom_factor
-	
-	var radius = int(ceil(actual_diameter * 0.5))
-	if radius < 1:
-		radius = 1
+	var image_pos = pos / editor.active_layer.image_zoom_factor
+	var actual_diameter = brush_size / editor.active_layer.image_zoom_factor
+	var radius = max(1, int(ceil(actual_diameter * 0.5)))
 	
 	var pixels = _get_cached_circle_pixels(radius)
-	var center_x = int(center.x)
-	var center_y = int(center.y)
+	var center_x = int(image_pos.x)
+	var center_y = int(image_pos.y)
 	
 	var img_width = target_image.get_width()
 	var img_height = target_image.get_height()
 	
-	for offset in pixels:
-		var x = center_x + offset.x
-		var y = center_y + offset.y
+	# Apply brush data to canvas
+	var buffer_index = 0
+	for i in range(min(pixels.size(), _brush_buffer_size)):
+		var offset = pixels[i]
+		var x = center_x + int(offset.x)
+		var y = center_y + int(offset.y)
 		
 		if x >= 0 and x < img_width and y >= 0 and y < img_height:
-			var alpha_factor = offset.z
-			var existing_color = target_image.get_pixel(x, y)
+			# Get brush color from buffer
+			var brush_r = float(_brush_buffer[buffer_index]) / 255.0
+			var brush_g = float(_brush_buffer[buffer_index + 1]) / 255.0
+			var brush_b = float(_brush_buffer[buffer_index + 2]) / 255.0
+			var brush_a = float(_brush_buffer[buffer_index + 3]) / 255.0
+			var brush_color = Color(brush_r, brush_g, brush_b, brush_a)
 			
-			# Get smudged color based on buffer
-			var smudged_color = _get_smudged_color_for_position(Vector2(x, y), existing_color)
-			
-			# Apply smudge strength and alpha factor
-			var blend_factor = smudge_strength * alpha_factor
-			var final_color = existing_color.lerp(smudged_color, blend_factor)
-			
-			target_image.set_pixel(x, y, final_color)
-
-func _get_smudged_color_for_position(pos: Vector2, current_color: Color) -> Color:
-	if _smudge_buffer.is_empty():
-		return current_color
-	
-	# Weight colors by distance from buffer positions
-	var total_weight = 0.0
-	var weighted_color = Color(0, 0, 0, 0)
-	
-	var max_samples = min(_smudge_buffer.size(), 10)  # Limit for performance
-	
-	for i in range(max_samples):
-		var buffer_color = _smudge_buffer[i]
-		var buffer_pos = _buffer_positions[i]
+			if brush_color.a > 0.01:  # Only apply if brush has content
+				var existing_color = target_image.get_pixel(x, y)
+				var brush_alpha = offset.z  # Brush shape falloff
+				
+				# Calculate blend factor
+				var blend_factor = smudge_strength * pressure * brush_alpha
+				blend_factor = clamp(blend_factor, 0.0, 1.0)
+				
+				# Blend the colors
+				var final_color = existing_color.lerp(brush_color, blend_factor)
+				target_image.set_pixel(x, y, final_color)
 		
-		# Calculate distance weight (closer colors have more influence)
-		var distance = pos.distance_to(buffer_pos)
-		var weight = 1.0 / (1.0 + distance * 0.1)  # Adjust multiplier for influence range
-		
-		weighted_color += buffer_color * weight
-		total_weight += weight
+		buffer_index += 4
 	
-	if total_weight > 0.0:
-		weighted_color /= total_weight
-		# Blend with current color for more natural smudging
-		return current_color.lerp(weighted_color, 0.7)
-	else:
-		return current_color
+	# Update brush data for next stamp (pickup from current position)
+	_pickup_brush_data(pos)
 
-# Cached circle pixel generation (same as drawing tool)
+# Cached circle pixel generation
 func _get_cached_circle_pixels(radius: int) -> Array:
 	radius = min(radius, _max_cached_radius)
 	
@@ -252,9 +219,12 @@ func _get_cached_circle_pixels(radius: int) -> Array:
 			if dist_squared <= r_squared:
 				var alpha_factor = 1.0
 				
-				if dist_squared > (radius-1) * (radius-1):
+				# Smooth falloff at edges
+				if radius > 1:
 					var dist = sqrt(dist_squared)
-					alpha_factor = max(0.0, 1.0 - (dist - (radius-1)))
+					var falloff_start = max(0.0, radius - 1.0)
+					if dist > falloff_start:
+						alpha_factor = max(0.0, 1.0 - (dist - falloff_start))
 				
 				pixels.append(Vector3(x, y, alpha_factor))
 	
