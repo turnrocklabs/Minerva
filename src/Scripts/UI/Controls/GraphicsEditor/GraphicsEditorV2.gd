@@ -23,7 +23,7 @@ signal active_layer_changed(layer: LayerV2)
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var smudge_tool: SmudgeTool = %SmudgeTool
 @onready var bucket_tool: BucketTool = %BucketTool
-@onready var pane_tool: PaneTool = %PaneTool
+@onready var pan_tool: PanTool = %PanTool
 @onready var eraser_tool: EraserTool = %EraserTool
 @onready var transform_tool: TransformTool = %TransformTool
 @onready var speech_bubble_tool: SpeechBubbleTool = %SpeechBubbleTool
@@ -383,7 +383,7 @@ func _on_bucket_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = bucket_tool if toggled_on else null
 
 func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
-	active_tool = pane_tool if toggled_on else null
+	active_tool = pan_tool if toggled_on else null
 
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = eraser_tool if toggled_on else null
