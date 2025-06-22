@@ -36,8 +36,8 @@ script = ExtResource("1_yogh5")
 [node name="DrawingTool" type="Node" parent="Tools" node_paths=PackedStringArray("_color_picker_button", "_brush_size_slider", "editor")]
 unique_name_in_owner = true
 script = ExtResource("2_yti2r")
-_color_picker_button = NodePath("../../h/v/h/ToolOptionsContainer/BrushOptions/ColorPickerButton")
-_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/BrushOptions/HSlider")
+_color_picker_button = NodePath("../../h/v/h/ToolOptionsContainer/BrushOptions/VBoxContainer/ColorPickerButton")
+_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/BrushOptions/VBoxContainer2/HSlider")
 editor = NodePath("../..")
 
 [node name="PaneTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
@@ -48,7 +48,7 @@ editor = NodePath("../..")
 [node name="EraserTool" type="Node" parent="Tools" node_paths=PackedStringArray("_brush_size_slider", "editor")]
 unique_name_in_owner = true
 script = ExtResource("4_146eo")
-_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/EraserOptions/HSlider")
+_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/EraserOptions/VBoxContainer/HSlider")
 editor = NodePath("../..")
 
 [node name="TransformTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
@@ -64,14 +64,14 @@ editor = NodePath("../..")
 [node name="BucketTool" type="Node" parent="Tools" node_paths=PackedStringArray("_color_picker_button", "editor")]
 unique_name_in_owner = true
 script = ExtResource("7_g4vm0")
-_color_picker_button = NodePath("../../h/v/h/ToolOptionsContainer/BucketOptions/ColorPickerButton")
+_color_picker_button = NodePath("../../h/v/h/ToolOptionsContainer/BucketOptions/VBoxContainer/ColorPickerButton")
 editor = NodePath("../..")
 
 [node name="SmudgeTool" type="Node" parent="Tools" node_paths=PackedStringArray("_strength_slider", "_brush_size_slider", "editor")]
 unique_name_in_owner = true
 script = ExtResource("8_3hqvt")
-_strength_slider = NodePath("../../h/v/h/ToolOptionsContainer/SmudgeOptions/StrengthHSlider")
-_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/SmudgeOptions/SizeHSlider")
+_strength_slider = NodePath("../../h/v/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2/StrengthHSlider")
+_brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer/SizeHSlider")
 editor = NodePath("../..")
 
 [node name="h" type="HBoxContainer" parent="."]
@@ -158,14 +158,28 @@ visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/h/ToolOptionsContainer/BrushOptions"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/v/h/ToolOptionsContainer/BrushOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/v/h/ToolOptionsContainer/BrushOptions/VBoxContainer"]
+layout_mode = 2
+text = "Color:"
+
+[node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/h/ToolOptionsContainer/BrushOptions/VBoxContainer"]
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 
-[node name="HSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/BrushOptions"]
+[node name="VBoxContainer2" type="VBoxContainer" parent="h/v/h/ToolOptionsContainer/BrushOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/v/h/ToolOptionsContainer/BrushOptions/VBoxContainer2"]
+layout_mode = 2
+text = "Brush Size:"
+
+[node name="HSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/BrushOptions/VBoxContainer2"]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
-size_flags_vertical = 4
+size_flags_vertical = 6
 max_value = 46.0
 value = 1.0
 ticks_on_borders = true
@@ -176,7 +190,14 @@ visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="SizeHSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/SmudgeOptions"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/v/h/ToolOptionsContainer/SmudgeOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/v/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer"]
+layout_mode = 2
+text = "Brush Size:"
+
+[node name="SizeHSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer"]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_vertical = 4
@@ -184,10 +205,20 @@ max_value = 46.0
 value = 1.0
 ticks_on_borders = true
 
-[node name="StrengthHSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/SmudgeOptions"]
+[node name="VBoxContainer2" type="VBoxContainer" parent="h/v/h/ToolOptionsContainer/SmudgeOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/v/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2"]
+layout_mode = 2
+text = "Strength:"
+
+[node name="StrengthHSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2"]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_vertical = 4
+max_value = 5.0
+step = 0.05
+value = 0.5
 
 [node name="BucketOptions" type="HBoxContainer" parent="h/v/h/ToolOptionsContainer"]
 unique_name_in_owner = true
@@ -195,7 +226,14 @@ visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/h/ToolOptionsContainer/BucketOptions"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/v/h/ToolOptionsContainer/BucketOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/v/h/ToolOptionsContainer/BucketOptions/VBoxContainer"]
+layout_mode = 2
+text = "Color:"
+
+[node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/h/ToolOptionsContainer/BucketOptions/VBoxContainer"]
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 
@@ -205,7 +243,14 @@ visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="HSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/EraserOptions"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/v/h/ToolOptionsContainer/EraserOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/v/h/ToolOptionsContainer/EraserOptions/VBoxContainer"]
+layout_mode = 2
+text = "Brush Size:"
+
+[node name="HSlider" type="HSlider" parent="h/v/h/ToolOptionsContainer/EraserOptions/VBoxContainer"]
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_vertical = 4
