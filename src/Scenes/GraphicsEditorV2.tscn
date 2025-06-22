@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
 [ext_resource type="ButtonGroup" uid="uid://da3bhcsoc4ruq" path="res://assets/data/GraphicsEditorToolsButtonGroup.tres" id="2_ymijy"]
 [ext_resource type="Script" uid="uid://ub4ntbcjuw4" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DrawingTool.gd" id="2_yti2r"]
-[ext_resource type="Script" uid="uid://i5o2j3imd6hw" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PaneTool.gd" id="3_42ubw"]
+[ext_resource type="Script" uid="uid://i5o2j3imd6hw" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PanTool.gd" id="3_42ubw"]
 [ext_resource type="Script" uid="uid://cp1wg0srxc8hs" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EraserTool.gd" id="4_146eo"]
 [ext_resource type="Script" uid="uid://detvnetf4keir" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TransformTool.gd" id="5_sc07q"]
 [ext_resource type="Script" uid="uid://ek2a4h3bujgd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SpeechBubbleTool.gd" id="6_g8cav"]
@@ -40,7 +40,7 @@ _color_picker_button = NodePath("../../h/v/h/ToolOptionsContainer/BrushOptions/V
 _brush_size_slider = NodePath("../../h/v/h/ToolOptionsContainer/BrushOptions/VBoxContainer2/HSlider")
 editor = NodePath("../..")
 
-[node name="PaneTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="PanTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("3_42ubw")
 editor = NodePath("../..")

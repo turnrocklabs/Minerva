@@ -1,4 +1,4 @@
-class_name PaneTool
+class_name PanTool
 extends BaseTool
 
 var hand_icon: = preload("res://assets/icons/drag_hand.png")
@@ -8,7 +8,6 @@ var last_mouse_position: Vector2 = Vector2.ZERO
 # Infinite canvas support
 var canvas_min_bounds: Vector2 = Vector2(-5000, -5000)  # Arbitrary large limits
 var canvas_max_bounds: Vector2 = Vector2(5000, 5000)
-# var background_grid: = preload("res://assets/textures/grid.png")  # Optional grid texture
 
 func _ready() -> void:
 	editor.active_tool_changed.connect(
