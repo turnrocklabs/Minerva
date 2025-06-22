@@ -28,10 +28,13 @@ var selected: = false:
 
 		if selected:
 			layer_selected.emit()
+			layer.outline_visible = true
 		else:
+			layer.outline_visible = false
 			layer.transform_rect_visible = false
 			layer_deselected.emit()
-			layer.queue_redraw()
+		
+		layer.queue_redraw()
 		
 var editor: GraphicsEditorV2
 
