@@ -22,12 +22,19 @@ var brush_size: int:
 	get:
 		return int(_brush_size_slider.value)
 
+var auto_expand: = true
+
 var drawing: = false
 var _last_drawing_position: Vector2
 var _current_stroke_points = []
 var _last_pressure: float = 1.0
 var _smoothed_pressure: float = -1.0
 var _pressure_smoothing_factor: float = 0.3
+
+var _first_point_drawn: bool = false
+var _first_point_position: Vector2
+var _first_point_backup_region: Image
+var _awaiting_pressure_correction: bool = false
 
 # Performance optimizations
 var _circle_cache = {}  # Cache circular brush patterns
@@ -68,27 +75,101 @@ func handle_input_event(event: InputEvent) -> void:
 				return
 
 			if event.is_pressed():
+				# Expand to accommodate full brush size for mouse button (assume pressure = 1.0)
+				var radius = get_actual_brush_radius(1.0)
+				var bounds_point = get_bounds_point_for_expansion(event.position, radius)
+				var offset = editor.active_layer.expand_to_point(bounds_point)
+				editor.active_layer.position -= offset
+				event = editor.active_layer.localize_input(event)
+
 				_start_stroke(event)
 			else:
 				_end_stroke()
 
 	elif event is InputEventMouseMotion and drawing:
+		# Expand to accommodate brush size with current pressure
+		var radius = get_actual_brush_radius(event.pressure)
+		var bounds_point = get_bounds_point_for_expansion(event.position, radius)
+		var offset = editor.active_layer.expand_to_point(bounds_point)
+		editor.active_layer.position -= offset
+		event = editor.active_layer.localize_input(event)
+
 		_add_stroke_point(event)
+
+## Returns the point that should be used for layer expansion.
+## For points on right/bottom edges, use bottom-right corner of brush.
+## For points on left/top edges, use top-left corner of brush.
+func get_bounds_point_for_expansion(center: Vector2, radius: int) -> Vector2:
+	var layer_size = editor.active_layer.image.get_size()
+	var bounds_point = center
+	
+	# Check if we're closer to right edge - expand to right
+	if center.x > layer_size.x * 0.5:
+		bounds_point.x += radius
+	else:
+		# Closer to left edge - expand to left
+		bounds_point.x -= radius
+	
+	# Check if we're closer to bottom edge - expand to bottom  
+	if center.y > layer_size.y * 0.5:
+		bounds_point.y += radius
+	else:
+		# Closer to top edge - expand to top
+		bounds_point.y -= radius
+	
+	return bounds_point
+
+# Returns the actual radius in image pixels that will be drawn.
+func get_actual_brush_radius(pressure: float) -> int:
+	var visual_zoom = editor.layers_container.scale.x
+	var actual_diameter = (brush_size * pressure) / visual_zoom
+	var radius = int(ceil(actual_diameter * 0.5))
+	return max(radius, 1)
 
 func _start_stroke(event: InputEvent) -> void:
 	drawing = true
 	_last_drawing_position = event.position
 	_smoothed_pressure = -1.0
 	_current_stroke_points = []
+	_first_point_drawn = false
+	_awaiting_pressure_correction = true
 	
-	# Add first point
-	_add_stroke_point(event)
+	# Use default pressure for first point
+	var initial_pressure = 1.0  # Or 0.5, whatever you prefer as default
+	_last_pressure = initial_pressure
+	
+	# Store first point info for potential correction
+	_first_point_position = event.position
+	
+	# Backup the area where we're about to draw (for potential revert)
+	_backup_first_point_region(event.position, initial_pressure)
+	
+	# Draw the first point with default pressure
+	_draw_brush_stamp(
+		editor.active_layer.image,
+		event.position,
+		brush_color,
+		brush_size * initial_pressure
+	)
+	
+	_first_point_drawn = true
+	editor.queue_redraw()
 
 func _add_stroke_point(event: InputEvent) -> void:
 	var pos = event.position
 	var pressure = event.pressure if event is InputEventMouseMotion else 1.0
-	
-	# Smooth pressure
+
+	# Check if we need to correct the first point
+	if _awaiting_pressure_correction and event is InputEventMouseMotion:
+		var actual_pressure = clamp(pressure, 0.0, 1.0)
+		
+		# If the pressure is significantly different from our assumption, correct the first point
+		if abs(actual_pressure - _last_pressure) > 0.1:  # Threshold for correction
+			_correct_first_point(actual_pressure)
+		
+		_awaiting_pressure_correction = false
+
+	# Continue with normal processing
 	pressure = clamp(pressure, 0.0, 1.0)
 	if _smoothed_pressure < 0.0:
 		_smoothed_pressure = pressure
@@ -101,55 +182,114 @@ func _add_stroke_point(event: InputEvent) -> void:
 		"pressure": _smoothed_pressure
 	})
 	
-	# If moving too fast, add intermediate points to ensure a continuous line
+	# Calculate distance and determine if we need interpolation
 	var distance = _last_drawing_position.distance_to(pos)
-	if distance > brush_size * 0.5:  # Add more points if moving faster than half the brush size
-		var steps = ceil(distance / (brush_size * 0.25))  # Adjust divisor to control density
-		for i in range(1, steps):
+	var effective_brush_size = brush_size * _smoothed_pressure
+	
+	if distance > effective_brush_size * 0.5:
+		# Add intermediate points to ensure continuous line
+		var steps = ceil(distance / (effective_brush_size * 0.25))
+		var last_pressure = _last_pressure
+		
+		for i in range(1, steps + 1):
 			var t = float(i) / steps
 			var lerp_pos = _last_drawing_position.lerp(pos, t)
-			var lerp_pressure = _smoothed_pressure  # Use current pressure for interpolated points
+			var lerp_pressure = lerp(last_pressure, _smoothed_pressure, t)
 			
-			# Draw a single stamp at this position
 			_draw_brush_stamp(
 				editor.active_layer.image,
 				lerp_pos,
 				brush_color,
 				brush_size * lerp_pressure
 			)
+	else:
+		# Distance is small, just draw the current point
+		_draw_brush_stamp(
+			editor.active_layer.image,
+			pos,
+			brush_color,
+			brush_size * _smoothed_pressure
+		)
 	
-	# Draw the actual point
+	# Update for next iteration
+	_last_drawing_position = pos
+	_last_pressure = _smoothed_pressure
+	editor.queue_redraw()
+
+func _backup_first_point_region(center: Vector2, pressure: float) -> void:
+	var visual_zoom = editor.layers_container.scale.x
+	var actual_diameter = (brush_size * pressure) / visual_zoom
+	var radius = int(ceil(actual_diameter * 0.5)) + 2  # Extra padding
+	
+	var center_x = int(center.x)
+	var center_y = int(center.y)
+	
+	var backup_size = radius * 2 + 1
+	_first_point_backup_region = Image.create(backup_size, backup_size, false, Image.FORMAT_RGBA8)
+	
+	# Copy the region from the main image
+	var img = editor.active_layer.image
+	for x in range(backup_size):
+		for y in range(backup_size):
+			var src_x = center_x - radius + x
+			var src_y = center_y - radius + y
+			
+			if src_x >= 0 and src_x < img.get_width() and src_y >= 0 and src_y < img.get_height():
+				var pixel = img.get_pixel(src_x, src_y)
+				_first_point_backup_region.set_pixel(x, y, pixel)
+			else:
+				_first_point_backup_region.set_pixel(x, y, Color(0, 0, 0, 0))
+
+func _correct_first_point(correct_pressure: float) -> void:
+	if not _first_point_drawn or not _first_point_backup_region:
+		return
+	
+	# Restore the backed up regions
+	var visual_zoom = editor.layers_container.scale.x
+	var actual_diameter = (brush_size * _last_pressure) / visual_zoom
+	var radius = int(ceil(actual_diameter * 0.5)) + 2
+	
+	var center_x = int(_first_point_position.x)
+	var center_y = int(_first_point_position.y)
+	
+	var img = editor.active_layer.image
+	var backup_size = _first_point_backup_region.get_width()
+	
+	# Restore original pixels
+	for x in range(backup_size):
+		for y in range(backup_size):
+			var dst_x = center_x - radius + x
+			var dst_y = center_y - radius + y
+			
+			if dst_x >= 0 and dst_x < img.get_width() and dst_y >= 0 and dst_y < img.get_height():
+				var pixel = _first_point_backup_region.get_pixel(x, y)
+				img.set_pixel(dst_x, dst_y, pixel)
+	
+	# Redraw with correct pressure
 	_draw_brush_stamp(
-		editor.active_layer.image,
-		pos,
+		img,
+		_first_point_position,
 		brush_color,
-		brush_size * _smoothed_pressure
+		brush_size * correct_pressure
 	)
 	
-	_last_drawing_position = pos
-	editor.queue_redraw()
+	# Update the last pressure to the corrected value
+	_last_pressure = correct_pressure
+	_smoothed_pressure = correct_pressure
 
 func _end_stroke() -> void:
 	drawing = false
 	_smoothed_pressure = -1.0
 	_current_stroke_points = []
+	_first_point_drawn = false
+	_awaiting_pressure_correction = false
+	_first_point_backup_region = null
 
 func _draw_brush_stamp(target_image: Image, center: Vector2, color: Color, diameter: float) -> void:
-	# IMPORTANT: Get the complete scaling factors
-	# Layer scale (difference between display size and actual image size)
-	var layer_scale_x = editor.active_layer.size.x / float(target_image.get_width())
-	var layer_scale_y = editor.active_layer.size.y / float(target_image.get_height())
-	
 	# Apply correct scaling to brush diameter
-	# First convert the requested visual diameter to actual image pixels
-	var actual_diameter = diameter / editor.active_layer.image_zoom_factor
-	
-	# Further adjust by the layer's scale to get image pixel coordinates
-	actual_diameter *= max(layer_scale_x, layer_scale_y)  # Use the larger scale to ensure brush isn't too small
-	
-	# Convert center position to actual image coordinates
-	center /= editor.active_layer.image_zoom_factor
-	
+	var visual_zoom = editor.layers_container.scale.x
+	var actual_diameter = diameter / visual_zoom
+
 	# Calculate radius
 	var radius = int(ceil(actual_diameter * 0.5))
 	if radius < 1:

@@ -60,6 +60,7 @@ var active_tool: BaseTool:
 		_set_drag_forward_to_layer(active_tool)
 		active_tool_changed.emit(value)
 
+var saved: = true
 
 func _ready() -> void:
 	
@@ -76,26 +77,22 @@ func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
 
 func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true) -> LayerV2:
-	# var img = Image.create(dimensions.x, dimensions.y, true, Image.FORMAT_RGBA8)
-	# img.fill(Color.TRANSPARENT)
-
 	var layer: = LayerV2.create_drawing_layer(layer_name, dimensions, color)
-	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
 	
-	var layer_card: = LayerCard.create(self, layer)
-	layer_card.layer_selected.connect(_on_layer_card_selected.bind(layer, layer_card))
-	layer_card.layer_deselected.connect(_on_layer_card_deselected.bind(layer, layer_card))
-	layer_card.reorder.connect(_on_layer_card_reorder.bind(layer_card))
-	layer_card.layer_clicked.connect(_on_layer_card_clicked.bind(layer_card))
+	add_layer(layer, select)
 
-	layer_card.selected = select
+	# place the layer at the center of the screen
+	# get_tree().process_frame.connect(
+	# 	func(): layer.position = layers_container.size/2 - layer.size/2; print("PROCESS FRAME HERE"),
+	# 	ConnectFlags.CONNECT_ONE_SHOT
+	# )
 
-	layer_cards_container.add_child(layer_card)
-	layer_cards_container.move_child(layer_card, 0)
+	return layer
 
-	layers_container.add_child(layer, true)
-
-	# breakpoint
+func create_new_image_layer(layer_name: String, image: Image, select: = true) -> LayerV2:
+	var layer: = LayerV2.create_image_layer(layer_name, image)
+	
+	add_layer(layer, select)
 	
 	# place the layer at the center of the screen
 	# get_tree().process_frame.connect(
@@ -103,12 +100,10 @@ func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = C
 	# 	ConnectFlags.CONNECT_ONE_SHOT
 	# )
 
-	layers.append(layer)
-
 	return layer
 
 
-func add_layer(layer: LayerV2):
+func add_layer(layer: LayerV2, select: = true):
 	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
 
 	var layer_card: = LayerCard.create(self, layer)
@@ -120,10 +115,12 @@ func add_layer(layer: LayerV2):
 
 	layer_cards_container.add_child(layer_card)
 	layer_cards_container.move_child(layer_card, 0)
+	layer_card.selected = select
 
 	layers_container.add_child(layer, true)
 
 	layers.append(layer)
+
 	
 	return layer
 
@@ -158,13 +155,15 @@ func display_message(title: String, content: String):
 	message_title.text = title
 	message_content.text = content
 
-func export_image(path: String) -> Error:
+
+
+func compose_final_image() -> Image:
 	# Get all layers
 	var layer_nodes = layers_container.get_children().filter(func(n): return n is LayerV2)
 	
 	# If no layers, return error
 	if layer_nodes.is_empty():
-		return ERR_INVALID_DATA
+		return Image.new()
 	
 	# Determine the bounding rectangle for all layers
 	var bounds := Rect2()
@@ -229,7 +228,24 @@ func export_image(path: String) -> Error:
 						output_image.set_pixel(out_x, out_y, blended)
 	
 	# Save the image to the specified path
-	var error := output_image.save_png(path)
+	var image_bytes := output_image.save_png_to_buffer()
+
+	var image: = Image.new()
+
+	image.load_png_from_buffer(image_bytes)
+
+	return image
+
+
+func export_image(path: String) -> Error:
+	
+	var image: = compose_final_image()
+
+	if image.is_empty():
+		return ERR_INVALID_DATA
+
+	var error: = image.save_png(path)
+
 	return error
 
 # Helper function to get corners of a rotated layer
