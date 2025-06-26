@@ -7,6 +7,8 @@ signal active_layer_changed(layer: LayerV2)
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
+@onready var layer_cards_popup_panel: PopupPanel = %LayerCardsPopupPanel
+@onready var layer_cards_toggle_button: Button = %LayerCardsButton
 
 @onready var message_window: PersistentWindow = %MessageWindow
 @onready var message_title: Label = %MessageTitle
@@ -544,7 +546,6 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 						blended = _blend_colors(dst_color, src_color)
 					
 					merged_image.set_pixel(x, y, blended)
-	
 	var merged_layer = LayerV2.create_image_layer("Layer", merged_image)
 	merged_layer.position = bounds.position
 	
@@ -588,3 +589,19 @@ func _blend_colors(dst: Color, src: Color) -> Color:
 	var b = (src.b * src.a + dst.b * dst.a * (1.0 - src.a)) / alpha
 	
 	return Color(r, g, b, alpha)
+
+
+func _on_layer_cards_button_toggled(toggled_on: bool) -> void:
+	if toggled_on:
+		layer_cards_popup_panel.position = Vector2(
+			DisplayServer.screen_get_size().x - layer_cards_popup_panel.size.x,
+			DisplayServer.mouse_get_position().y
+		)
+		layer_cards_popup_panel.popup()
+	else:
+		layer_cards_popup_panel.hide()
+
+
+func _on_layer_cards_popup_panel_popup_hide() -> void:
+	layer_cards_toggle_button.release_focus()
+	layer_cards_toggle_button.set_pressed_no_signal(false)
