@@ -316,6 +316,9 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 	layer_cards_container.move_child(layer_card, index)
 	
 
+# Why graphics editor instead of just layers container?
+# When using layers container, pan tool acts wierd and i don't know why exactly.
+# Control with tools is set to stop the mouse events to accommodate for the below input hadnling
 func _gui_input(event: InputEvent) -> void:
 	# if we have a active tool and at least one of selected layers is visible
 	if active_tool and selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
