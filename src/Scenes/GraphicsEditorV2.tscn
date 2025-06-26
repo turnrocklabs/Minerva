@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=17 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -19,6 +19,9 @@ shader = ExtResource("9_u8jc2")
 shader_parameter/square_size = 0.05
 shader_parameter/color1 = Color(0.585, 0.585, 0.585, 1)
 shader_parameter/color2 = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3hqvt"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
 
 [sub_resource type="LabelSettings" id="LabelSettings_v238w"]
 font_size = 36
@@ -84,6 +87,7 @@ size_flags_horizontal = 3
 [node name="h" type="HFlowContainer" parent="h/v"]
 custom_minimum_size = Vector2(350, 80)
 layout_mode = 2
+mouse_filter = 0
 
 [node name="ToolsContainer" type="HFlowContainer" parent="h/v/h"]
 custom_minimum_size = Vector2(350, 0)
@@ -282,18 +286,21 @@ layout_mode = 2
 
 [node name="MarginContainer" type="PanelContainer" parent="h/v"]
 material = SubResource("ShaderMaterial_u8jc2")
+clip_contents = true
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 1
+theme_override_styles/panel = SubResource("StyleBoxFlat_3hqvt")
 
 [node name="Control" type="Control" parent="h/v/MarginContainer"]
 layout_mode = 2
+mouse_filter = 2
 
 [node name="LayersContainer" type="Control" parent="h/v/MarginContainer/Control"]
 unique_name_in_owner = true
 layout_mode = 2
 anchors_preset = 0
-offset_right = 1822.0
+offset_right = 1851.0
 offset_bottom = 970.0
 mouse_filter = 1
 script = ExtResource("8_fjkto")
@@ -363,6 +370,7 @@ autowrap_mode = 3
 [connection signal="pressed" from="h/v/h/ToolsContainer/SaveButton" to="." method="_on_save_button_pressed"]
 [connection signal="toggled" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
 [connection signal="text_changed" from="h/v/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
+[connection signal="gui_input" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
 [connection signal="mouse_entered" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
 [connection signal="mouse_exited" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
 [connection signal="pressed" from="h/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
