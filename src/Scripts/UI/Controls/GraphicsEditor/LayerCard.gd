@@ -211,7 +211,7 @@ func _on_context_menu_id_pressed(id: int) -> void:
 			layer.queue_free()
 			queue_free()
 		ContextMenuItem.MERGE:
-			editor.merge_layers(editor.selected_layers)
+			editor.merge_layers(editor.selected_layers.duplicate())
 
 
 func _on_context_menu_about_to_popup() -> void:
