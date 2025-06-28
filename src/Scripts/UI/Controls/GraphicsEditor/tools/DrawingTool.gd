@@ -74,7 +74,6 @@ func handle_input_event(event: InputEvent) -> void:
 				_end_stroke(event)
 
 	elif event is InputEventMouseMotion and drawing:
-		event.pressure = pingpong(Time.get_unix_time_from_system(), 1)
 		_single_click = false
 		_add_stroke_point(event)
 
