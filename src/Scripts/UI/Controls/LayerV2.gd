@@ -69,10 +69,6 @@ var image: Image:
 		# Set texture and let TextureRect size itself to the texture
 		texture_rect.texture = img
 		texture_rect.size = img.get_size()  # Use image size, not layer size
-		
-		print("Image size:", img.get_size())
-		print("Layer size:", size)
-		print("TextureRect size:", texture_rect.size)
 
 		queue_redraw()
 
