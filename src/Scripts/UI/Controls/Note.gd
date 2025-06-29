@@ -29,6 +29,7 @@ var isDrawer:bool = false
 @onready var resize_drag_control: Control = %ResizeControl
 @onready var h_separator: HSeparator = %HSeparator
 
+var _temp_controls: Array[Control] = []
 
 var expanded: bool = true:
 	set(value):
@@ -56,6 +57,12 @@ var memory_item: MemoryItem:
 
 		if not is_node_ready(): await ready
 
+		# TODO: improve the code below
+		# The code below dynamically creates new controls
+		# each time the memory item is updated, we just clear them here
+		for ctrl in _temp_controls:
+			ctrl.queue_free()
+
 		label_node.text = value.Title
 		checkbutton_node.button_pressed = value.Enabled
 		visible = value.Visible
@@ -69,6 +76,7 @@ var memory_item: MemoryItem:
 				var image_controls_inst: = SingletonObject.image_controls_scene.instantiate()
 				image_controls_inst.memory_item = value
 				v_box_container.add_child(image_controls_inst)
+				_temp_controls = [image_controls_inst]
 				control_type = image_controls_inst
 				last_min_size = image_controls_inst.size.y
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
@@ -77,6 +85,7 @@ var memory_item: MemoryItem:
 			v_box_container.add_child(audio_control_inst)
 			control_type = audio_control_inst
 			v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
+			_temp_controls = [audio_control_inst]
 		if memory_item.Type == SingletonObject.note_type.VIDEO:
 			%EditButton.visible = false
 			var video_player_node: = SingletonObject.video_player_scene.instantiate()
@@ -357,7 +366,9 @@ func _on_edit_button_pressed():
 		SingletonObject.is_graph = true # this lines should be moved to the correct node rather that them being on SingletonObject
 		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
-		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
+		# if there is a file, Editor.gd will set it up automatically
+		if not memory_item.File:
+			editor.graphics_editor.create_new_image_layer(memory_item.Title, memory_item.MemoryImage.duplicate())
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
 		

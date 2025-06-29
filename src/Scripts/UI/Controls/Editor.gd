@@ -306,8 +306,8 @@ func save():
 		await prompt_close(true)
 	
 	# Explicitly update the note after saving
-	if has_meta("memory_item"):
-		_update_memory_item(get_meta("memory_item"))
+	# if has_meta("memory_item"):
+	# 	_update_memory_item(get_meta("memory_item"))
 	
 	# Post save emit the signals
 	match type:
@@ -472,6 +472,8 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 
+	# breakpoint
+
 	if is_instance_valid(associated_object) and associated_object is Note:
 		_update_memory_item(associated_object.memory_item)
 		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
@@ -488,7 +490,7 @@ func _on_create_note_button_pressed() -> void:
 		if Type.GRAPHICS == type:
 			var editor_image: = graphics_editor.compose_final_image()
 			if tab_title:
-				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image, "TODO: CAPTION GOES HERE")
+				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image)
 			elif file:
 				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
 			else:
