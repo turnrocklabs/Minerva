@@ -67,9 +67,6 @@ var saved: = true
 func _ready() -> void:
 	
 	active_tool_changed.connect(_on_active_tool_changed)
-	
-	# setup(Vector2i(500, 500))
-	setup()
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
@@ -83,24 +80,12 @@ func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = C
 	
 	add_layer(layer, select)
 
-	# place the layer at the center of the screen
-	# get_tree().process_frame.connect(
-	# 	func(): layer.position = layers_container.size/2 - layer.size/2; print("PROCESS FRAME HERE"),
-	# 	ConnectFlags.CONNECT_ONE_SHOT
-	# )
-
 	return layer
 
 func create_new_image_layer(layer_name: String, image: Image, select: = true) -> LayerV2:
 	var layer: = LayerV2.create_image_layer(layer_name, image)
 	
 	add_layer(layer, select)
-	
-	# place the layer at the center of the screen
-	# get_tree().process_frame.connect(
-	# 	func(): layer.position = layers_container.size/2 - layer.size/2; print("PROCESS FRAME HERE"),
-	# 	ConnectFlags.CONNECT_ONE_SHOT
-	# )
 
 	return layer
 
@@ -431,25 +416,6 @@ func _on_file_selected(fp: String) -> void:
 
 func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
-
-
-
-func _on_save_button_pressed() -> void:
-
-	var fd: = FileDialog.new()
-	
-	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-	fd.access = FileDialog.ACCESS_FILESYSTEM
-	fd.filters = ["*.png"]
-
-
-	add_child(fd)
-
-	fd.popup_centered()
-
-	var path = await fd.file_selected
-
-	export_image(path)
 
 
 func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
