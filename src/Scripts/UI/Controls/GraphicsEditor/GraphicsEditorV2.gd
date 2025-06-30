@@ -118,7 +118,8 @@ func _on_layer_tree_exiting(layer: LayerV2):
 
 
 func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
-	selected_layers.append(layer)
+	if not selected_layers.has(layer):
+		selected_layers.append(layer)
 
 func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
 	selected_layers.erase(layer)
@@ -466,6 +467,8 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 	sorted_layers.sort_custom(func(a: LayerV2, b: LayerV2): 
 		return layers_container.get_children().find(a) < layers_container.get_children().find(b)
 	)
+
+	var _processed: = 0 
 	
 	# Blend each layer onto the merged image
 	for layer in sorted_layers:
@@ -509,6 +512,13 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 						blended = _blend_colors(dst_color, src_color)
 					
 					merged_image.set_pixel(x, y, blended)
+				
+				_processed += 1
+
+				if _processed > 5000:
+					await get_tree().process_frame # let the UI update
+					_processed = 0
+
 	var merged_layer = LayerV2.create_image_layer("Layer", merged_image)
 
 	
