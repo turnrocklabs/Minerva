@@ -481,14 +481,11 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 		for y in range(int(bounds.size.y)):
 			for x in range(int(bounds.size.x)):
 				# Convert merged image coordinates to global coordinates
-				var global_pos = Vector2(x, y) + bounds.position
+				# var global_pos = Vector2(x, y) + bounds.position
+				var global_pos = bounds.position + Vector2(x, y)
 				
 				# Convert global position to layer's local space
-				var local_pos: Vector2
-				if rotation_rad != 0:
-					local_pos = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
-				else:
-					local_pos = global_pos - layer_pos
+				var local_pos: = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
 				
 				# Check if the point is within the layer's image bounds
 				var img_x = int(local_pos.x)
@@ -513,11 +510,15 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 					
 					merged_image.set_pixel(x, y, blended)
 	var merged_layer = LayerV2.create_image_layer("Layer", merged_image)
-	merged_layer.position = bounds.position
+
 	
 	# Add the merged layer to the editor
 	add_layer(merged_layer)
-	
+
+	# We need to set the position here, after the add_layer
+	# because that function resets this property, not sure where exactly
+	merged_layer.position = bounds.position
+
 	# Remove original layers and their cards
 	for layer in to_merge:
 		# Find and remove the layer card
