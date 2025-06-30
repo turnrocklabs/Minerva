@@ -270,8 +270,6 @@ func _on_minimum_size_changed() -> void:
 
 func _adjust_control_size() -> void:
 
-	print("OVDE")
-
 	if not is_node_ready(): return
 	
 	# Set pivot to center for proper rotation
