@@ -35,6 +35,8 @@ var _single_click: bool = false
 var _circle_cache = {}
 var _max_cached_radius = 100
 
+var current_stroke_command: GraphicsEditorUndo.DrawStrokeCommand
+
 func _ready() -> void:
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
@@ -106,13 +108,31 @@ func _start_stroke(event: InputEvent) -> void:
 	_smoothed_pressure = 1.0
 	_last_pressure = 1.0
 	
-	# Expand for maximum possible brush size
+	# Handle layer expansion first (if needed)
 	var max_radius = get_actual_brush_radius(1.0)
 	var bounds_point = get_bounds_point_for_expansion(event.position, max_radius)
 	var offset = editor.active_layer.expand_to_point(bounds_point)
-	editor.active_layer.position -= offset
+	
+	if offset != Vector2.ZERO:
+		# Create resize command for layer expansion
+		var resize_command = GraphicsEditorUndo.ResizeCommand.new(
+			editor.active_layer, 
+			editor.active_layer.position - offset
+		)
+		resize_command.set_new_image(editor.active_layer.image)  # After expansion
+		editor.execute_command(resize_command)
+		editor.active_layer.position -= offset
+	
+	# Update event after potential layer changes
 	event = editor.active_layer.localize_input(event)
 	_last_drawing_position = event.position
+	
+	# this needs to be calculated after the stroke has been finished
+	# Create drawing command - captures "before" state
+	# var stroke_bounds = _calculate_stroke_bounds(event.position)
+
+	current_stroke_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
+
 
 func _add_stroke_point(event: InputEvent) -> void:
 	var pos = event.position
@@ -136,7 +156,7 @@ func _add_stroke_point(event: InputEvent) -> void:
 	_last_pressure = _smoothed_pressure
 	editor.queue_redraw()
 
-func _end_stroke(event: InputEvent) -> void:
+func _end_stroke(_event: InputEvent) -> void:
 	# Handle single click - draw one dot
 	if _single_click:
 		_draw_brush_stamp(
@@ -147,8 +167,32 @@ func _end_stroke(event: InputEvent) -> void:
 		)
 		editor.queue_redraw()
 	
+	# Finalize and execute the drawing command
+	if current_stroke_command:
+		current_stroke_command.finalize_stroke()  # Captures "after" state
+		editor.execute_command(current_stroke_command)
+		current_stroke_command = null
+	
 	drawing = false
 	_single_click = false
+
+## Helper function to calculate the bounds of the stroke
+func _calculate_stroke_bounds(center_pos: Vector2) -> Rect2i:
+	var max_radius = get_actual_brush_radius(1.0)
+	var top_left = Vector2i(
+		int(center_pos.x - max_radius),
+		int(center_pos.y - max_radius)
+	)
+	var size = Vector2i(max_radius * 2, max_radius * 2)
+	
+	# Clamp to layer bounds
+	var layer_size = editor.active_layer.image.get_size()
+	top_left.x = max(0, top_left.x)
+	top_left.y = max(0, top_left.y)
+	size.x = min(size.x, layer_size.x - top_left.x)
+	size.y = min(size.y, layer_size.y - top_left.y)
+	
+	return Rect2i(top_left, size)
 
 func _draw_continuous_line(start_pos: Vector2, end_pos: Vector2, start_pressure: float, end_pressure: float) -> void:
 	var distance = start_pos.distance_to(end_pos)
