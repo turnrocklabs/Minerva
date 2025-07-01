@@ -45,6 +45,11 @@ var _custom_cursor: Resource
 var _custom_cursor_shape: int
 var _custom_cursor_hotspot: Vector2
 
+
+const COMMANDS_SIZE: = 15
+var _command_idx: = -1
+var _commands: Array[GraphicsEditorUndo.Command] = []
+
 var layers: Array[LayerV2]
 
 ## Array of selected layers, in order in which they were selected
@@ -323,6 +328,14 @@ func _gui_input(event: InputEvent) -> void:
 		active_tool.handle_input_event(event)
 		accept_event()
 
+func _unhandled_key_input(event: InputEvent) -> void:
+	
+	if event.is_action_pressed("ui_undo"):
+		undo_command()
+
+	elif event.is_action_pressed("ui_redo"):
+		redo_command()
+
 
 func _draw() -> void:
 	for layer in selected_layers: layer.queue_redraw()
@@ -582,3 +595,57 @@ func _on_layer_cards_button_toggled(toggled_on: bool) -> void:
 func _on_layer_cards_popup_panel_popup_hide() -> void:
 	layer_cards_toggle_button.release_focus()
 	layer_cards_toggle_button.set_pressed_no_signal(false)
+
+
+
+#region Undo
+
+
+## Stores the executed command in the commands stack.
+## The command is treated as completed and ready for undo.
+func execute_command(cmd: GraphicsEditorUndo.Command) -> void:
+	
+	# if we did execute a undo for some command and now there's a new one
+	# delete all the commands after the current index and store the new one
+	if _command_idx != _commands.size()-1:
+		_commands.resize(_command_idx+1)
+
+	# since this check occurs every time,
+	# there must be no more than one command over the limit
+	# account for element that will be added
+	if _commands.size()+1 > COMMANDS_SIZE:
+		_commands.remove_at(0)
+
+	_commands.append(cmd)
+	_command_idx = _commands.size()-1
+
+	print(_commands)
+	print(_command_idx)
+
+
+func undo_command() -> void:
+	var cmd: = _commands[_command_idx]
+
+	cmd.undo()
+
+	_command_idx = clampi(_command_idx-1, 0, _commands.size()-1)
+
+	print(_commands)
+	print(_command_idx)
+
+
+func redo_command() -> void:
+
+	if _command_idx == _commands.size()-1:
+		return # nothing to redo
+
+	var cmd: = _commands[_command_idx+1]
+
+	cmd.redo()
+
+	_command_idx = clampi(_command_idx+1, 0, _commands.size()-1)
+
+	print(_commands)
+	print(_command_idx)
+
+#endregion
