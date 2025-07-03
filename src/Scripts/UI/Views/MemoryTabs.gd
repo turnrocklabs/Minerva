@@ -3,16 +3,13 @@ extends TabContainer
 
 @onready var tcThreads = %tcThreads
 @onready var tcThreadsDrawer = %tcThreadsDrawer
-# just use current_tab
-# var ActiveThreadIndex: int:
 @onready var buffer_control_notes: Control = %BufferControlNotes
 var _drag_active := true
-# var _hovered_tab := -1
-# var _hover_timer
+
 
 # This flag will be set to true when we need to update the UI
 var _needs_update := false
-#var _can_drop:bool = false
+
 ## return a single large string of all active memories
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
@@ -164,31 +161,19 @@ func clear_all_tabs():
 
 #region Add notes methods
 
-func add_note(user_title:String, user_content: String, isDrawer:bool = false, is_completed:bool = true, _source: String = "") -> MemoryItem:
+func add_note(user_title:String, user_content: String, is_completed:bool = true, _source: String = "") -> MemoryItem:
 	# get the active thread.
 	var active_thread : MemoryThread 
 	var current_tab_idx: int
 	
-	if isDrawer:
-		# Handle drawer tabs
-		if SingletonObject.DrawerThreadList.is_empty():
-			create_new_notes_tab("Note 1", true)
-			
-		current_tab_idx = tcThreadsDrawer.current_tab
-		if current_tab_idx < 0:  # If no tab is selected, use the first one
-			current_tab_idx = 0
-			
-		active_thread = SingletonObject.DrawerThreadList[current_tab_idx]
-	else:
-		# Handle regular tabs
-		if SingletonObject.ThreadList.is_empty():
-			create_new_notes_tab("Note 1")
-			
-		current_tab_idx = current_tab
-		if current_tab_idx < 0:  # If no tab is selected, use the first one
-			current_tab_idx = 0
-			
-		active_thread = SingletonObject.ThreadList[current_tab_idx]
+	if SingletonObject.ThreadList.is_empty():
+		create_new_notes_tab("Notes 1")
+		
+	current_tab_idx = current_tab
+	if current_tab_idx < 0:  # If no tab is selected, use the first one
+		current_tab_idx = 0
+		
+	active_thread = SingletonObject.ThreadList[current_tab_idx]
 		
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
@@ -200,17 +185,13 @@ func add_note(user_title:String, user_content: String, isDrawer:bool = false, is
 	new_memory.Content = user_content           
 	new_memory.Visible = true
 	new_memory.isCompleted = is_completed
-	
+	new_memory.isDrawer = false
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
-	render_threads(isDrawer)
+	render_threads()
 
 	# Explicitly set the current tab after rendering
-	if isDrawer:
-		tcThreadsDrawer.current_tab = current_tab_idx
-		SingletonObject.drawer_save_data.emit()
-	else:
-		current_tab = current_tab_idx
+	current_tab = current_tab_idx
 
 	return new_memory
 
@@ -438,6 +419,8 @@ func render_thread(thread_item: MemoryThread,isDrawer:bool = false):
 	var what_thread
 	if isDrawer:
 		what_thread = %tcThreadsDrawer
+		
+		return
 	else:
 		what_thread = %tcThreads
 		

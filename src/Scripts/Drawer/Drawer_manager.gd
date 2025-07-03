@@ -6,12 +6,11 @@ var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
 
 func _ready() -> void:
 	
-	
-	if SingletonObject.main_scene:
-		SingletonObject.connect("openDrawerNotes",_render_drawer)
+	SingletonObject.connect("openDrawerNotes",_render_drawer)
 	
 	SingletonObject.connect("drawer_save_data",_drawer_save_data)
-	
+
+
 func _drawer_save_data() -> void:
 	save_notes(data_path)
 
@@ -97,7 +96,8 @@ func serialize_notes() -> Dictionary:
 				"Order": memory_item.Order,
 				"OwningThread": memory_item.OwningThread,
 				"Expanded": memory_item.Expanded,
-				"LastYSize": memory_item.LastYSize
+				"LastYSize": memory_item.LastYSize,
+				"isDrawer": memory_item.isDrawer
 			}
 			
 			# Handle image data

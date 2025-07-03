@@ -107,12 +107,9 @@ func render_items():
 		note_control.memory_item = item
 		
 		#note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
-#
-		#self.add_child(note_control)
-
 		# When the note control is deleted, delete the memory item, so it doesn't get re-rendered next time
-		
-		note_control.deleted.connect(self.MainTabContainer.delete_note.bind(item))
+		if note_control.isDrawer:
+			note_control.deleted_drawer.connect(self.MainTabContainer.delete_drawer_note.bind(item))
 		
 		note_control.changed.connect(SingletonObject.note_changed.emit.bind(note_control))
 
