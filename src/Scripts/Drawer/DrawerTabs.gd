@@ -2,12 +2,8 @@ class_name DrawerTabs
 extends TabContainer
 
 @onready var tcThreadsDrawer = %tcThreadsDrawer
-# just use current_tab
-# var ActiveThreadIndex: int:
 @onready var buffer_control_notes: Control = %BufferControlNotes
-#var _drag_active := true
-# var _hovered_tab := -1
-# var _hover_timer
+
 
 func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
@@ -110,7 +106,7 @@ func render_threads():
 	SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.UNSET)
 
 
-static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
+static var vboxDrawerList_scene: = preload("res://Scripts/Drawer/VBoxDrawerList.gd")
 func render_thread(thread_item: MemoryThread):
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
@@ -120,8 +116,8 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# Create a custom VBoxContainer derived class
-	var vboxMemoryList = vboxMemoryList_scene.new(self, thread_item.ThreadId, thread_item.MemoryItemList)
-
+	var vboxMemoryList = vboxDrawerList_scene.new(self, thread_item.ThreadId, thread_item.MemoryItemList, true)
+	
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vboxMemoryList)
 	#scroll_container.follow_focus = true
@@ -136,9 +132,12 @@ func render_thread(thread_item: MemoryThread):
 		self.current_tab = tab_idx
 
 
-
 func _ready():
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
+	SingletonObject.DrawerTab = self
+	
+	SingletonObject.deleted_drawer_note.connect(delete_drawer_note)
+	render_threads()
 
 
 # if we are dragging a note above a tab, we can drop it there
@@ -161,20 +160,84 @@ func _drop_data(at_position: Vector2, data):
 
 	vbox_memory_list._drop_data(at_position, data)
 	current_tab = tab_idx
-	
 
-# FIXME: This will interfere with render threads on project load
-# one note tab is loaded and then since child is added this function is called
-# and it changes the SingletonObject.ThreadList which causes the loop in render threads
-# to fail since array that it's looping through is altered
-# func _on_child_order_changed():
-# 	# Update SingletonObject.ThreadList after tab reordering
-# 	var new_thread_list: Array[MemoryThread] = []
-# 	if %tcThreads == null:
-# 		pass
-# 	else:
-# 		for child in %tcThreads.get_children():
-# 			new_thread_list.append(child.get_meta("thread"))
-		
-# 		SingletonObject.ThreadList = new_thread_list
-# 		print(SingletonObject.ThreadList)
+
+func tab_name_to_use(proposed_name: String) -> String:
+	var collisions = 0
+	var thread_to_use
+	
+	for i in range(get_tab_count()):
+		if get_tab_title(i).split(" ")[0] == proposed_name:
+			collisions+=1
+	if collisions == 0:
+		return proposed_name
+	else:
+		return proposed_name + "(" + str(get_tab_count() + 1) + ")"
+
+
+func create_new_tab(tab_name: String = "notes 1") -> void:
+	var thread = MemoryThread.new()
+	thread.ThreadName = tab_name_to_use(tab_name)
+	var thread_memories: Array[MemoryItem] = []
+	thread.MemoryItemList = thread_memories
+	new_tab = true
+	SingletonObject.DrawerThreadList.append(thread)
+	SingletonObject.drawer_save_data.emit()
+
+
+func add_note(user_title:String, user_content: String) -> MemoryItem:
+	var active_thread : MemoryThread 
+	var current_tab_idx: int
+	if SingletonObject.DrawerThreadList.is_empty():
+		create_new_tab("Notes 1")
+			
+		current_tab_idx = current_tab
+		if current_tab_idx < 0:  # If no tab is selected, use the first one
+			current_tab_idx = 0
+			
+	active_thread = SingletonObject.DrawerThreadList[ current_tab]
+	
+	# Create a memory item.
+	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
+	new_memory.Enabled = false
+	new_memory.Type = SingletonObject.note_type.TEXT
+	new_memory.ContentType = "text"
+	new_memory.Title = user_title
+	new_memory.Content = user_content           
+	new_memory.Visible = true
+	new_memory.isCompleted = true
+	new_memory.isDrawer = false
+	# append the new memory item to the active thread memory list
+	active_thread.MemoryItemList.append(new_memory)
+	render_threads()
+	return new_memory
+
+
+func delete_drawer_note(memory_item_UUID: String) -> void:
+	
+	print("DrawerTabs line 165")
+	print(memory_item_UUID)
+	
+	var active_thread : MemoryThread = SingletonObject.DrawerThreadList[self.current_tab]
+	
+	for i in active_thread.MemoryItemList:
+		if i.UUID == memory_item_UUID:
+			active_thread.MemoryItemList.erase(i)
+			break
+	
+	SingletonObject.drawer_save_data.emit()
+	#save_drawer_data.emit()
+
+#signal save_drawer_data
+#func find_drawer_memory_item(memory_item_UUID: String)
+
+
+#func delete_drawer_note(memory_item: MemoryItem) -> void:
+	#var active_thread : MemoryThread = SingletonObject.DrawerThreadList[self.current_tab]
+	#
+	#print("this is running")
+	#var idx = active_thread.MemoryItemList.find(memory_item)
+	#if idx == -1: return
+	#
+	#active_thread.MemoryItemList.remove_at(idx)

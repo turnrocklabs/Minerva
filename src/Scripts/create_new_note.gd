@@ -110,7 +110,13 @@ func _on_add_note_pressed():
 	
 	match note_enum:
 		SingletonObject.note_type.TEXT:
-			SingletonObject.NotesTab.add_note(Head, Description,isDrawer)
+			print(isDrawer)
+			if isDrawer:
+				SingletonObject.DrawerTab.add_note(Head, Description) # to be implemented
+			# TODO: here Drawers tabs has to be called if is a drawer note instead of note tabs
+			else:
+				SingletonObject.NotesTab.add_note(Head, Description)
+			
 		
 		SingletonObject.note_type.IMAGE:
 			var image_description = ""  # You can add an optional description field for images if needed
@@ -285,9 +291,11 @@ func _on_play_audio_button_pressed() -> void:
 #endregion Audio Note
 
 func should_add_note_be_disabled() -> void:
-	var text_fields_filled = %NoteHead.text != "" and %NoteDescription.text != ""
-	var image_field_and_title = %NoteHead.text != "" and image_original_res != null
-	var audio_field_and_title = %NoteHead.text != "" and audio_recording != null
+	var note_title: String = %NoteHead.text.strip_edges()
+	var note_description: String = %NoteDescription.text.strip_edges()
+	var text_fields_filled: bool = !note_title.is_empty() and !note_description.is_empty()
+	var image_field_and_title: bool =!note_title.is_empty() and image_original_res != null
+	var audio_field_and_title: bool = !note_title.is_empty() and audio_recording != null
 	
 	if text_fields_filled or image_field_and_title or audio_field_and_title:
 		%AddNotePopUp.disabled = false

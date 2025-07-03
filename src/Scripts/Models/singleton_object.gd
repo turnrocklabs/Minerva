@@ -447,6 +447,8 @@ signal set_icon_size_68
 signal drawer_save_data
 @warning_ignore("unused_signal")
 signal openDrawerNotes
+@warning_ignore("unused_signal")
+signal deleted_drawer_note
 
 var saved_state = true
 signal updated_save_state(project_name:String,saved: bool)

@@ -3,11 +3,13 @@ extends VBoxContainer
 
 signal deleted()
 signal toggled(on: bool)
+signal deleted_drawer()
 
 ## This signal is emitted each time the underlying memory item has been updated.
 signal changed()
 
-var isDrawer:bool = false
+
+@onready var remove_button: Button = %RemoveButton
 
 @export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
@@ -125,6 +127,18 @@ var memory_item: MemoryItem:
 		
 		changed.emit()
 
+var isDrawer:bool = false:
+	set(value):
+		isDrawer = value
+		if remove_button:
+			if isDrawer:
+				remove_button.connect("pressed", _on_remove_drawer_button_pressed)
+				if remove_button.is_connected("pressed",_on_remove_button_pressed):
+					remove_button.disconnect("pressed", _on_remove_button_pressed)
+			else:
+				remove_button.connect("pressed", _on_remove_button_pressed)
+				if remove_button.is_connected("pressed",_on_remove_drawer_button_pressed):
+					remove_button.disconnect("pressed", _on_remove_drawer_button_pressed)
 #region New notes methods
 
 func new_text_note():
@@ -169,8 +183,8 @@ func _ready():
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
 	description_node.text = ""
 	#change_modulate_for_texture(SingletonObject.get_theme_enum())
-	# var new_size: Vector2 = size * 0.15
-	# set_size(new_size)
+	
+	remove_button.connect("pressed", _on_remove_button_pressed)
 	label_node.text_changed.connect(
 		func(text):
 			if memory_item: memory_item.Title = text
@@ -320,8 +334,12 @@ func _on_remove_button_pressed():
 	var tween = get_tree().create_tween()
 	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
 	tween.tween_callback(queue_free)
-
-	deleted.emit()
+	
+	if !isDrawer:
+		deleted.emit()
+	else: 
+		SingletonObject.deleted_drawer_note.emit(memory_item.UUID)
+		
 
 ## Connects this note and the given [parameter editor] and
 ## reflects note title changes into the tab title.
@@ -484,3 +502,14 @@ func _on_expand_button_pressed() -> void:
 		contract_note()
 	else:
 		expand_note()
+
+
+func _on_remove_drawer_button_pressed():
+	pivot_offset = size / 2
+
+	var tween = get_tree().create_tween()
+	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
+	tween.tween_callback(queue_free)
+
+	deleted_drawer.emit()
+	SingletonObject.drawer_save_data.emit()
