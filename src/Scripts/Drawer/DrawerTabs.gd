@@ -20,6 +20,18 @@ func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	
 	return output
 
+
+func _ready():
+	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
+	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+	get_tab_bar().tab_clicked.connect(_on_drawer_tab_clicked)
+	
+	SingletonObject.DrawerTab = self
+	
+	SingletonObject.create_drawer_tab.connect(create_new_tab_helper)
+	SingletonObject.deleted_drawer_note.connect(delete_drawer_note)
+	render_threads()
+
 #region Methods for toggling notes
 
 func Disable_All():
@@ -132,14 +144,6 @@ func render_thread(thread_item: MemoryThread):
 		self.current_tab = tab_idx
 
 
-func _ready():
-	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
-	SingletonObject.DrawerTab = self
-	
-	SingletonObject.deleted_drawer_note.connect(delete_drawer_note)
-	render_threads()
-
-
 # if we are dragging a note above a tab, we can drop it there
 func _can_drop_data(at_position: Vector2, data):
 	var tab_idx = get_tab_idx_at_point(at_position)
@@ -175,6 +179,18 @@ func tab_name_to_use(proposed_name: String) -> String:
 		return proposed_name + "(" + str(get_tab_count() + 1) + ")"
 
 
+func create_new_tab_helper(tab_name: String, tab_ref: Control = null) -> void:
+	print("thisa is running")
+	if tab_name == "":
+		tab_name = "notes " + str(get_tab_count() + 1)
+	
+	if tab_ref:
+		tab_ref.get_meta("thread").ThreadName = tab_name
+		render_threads()
+	else:
+		create_new_tab(tab_name)
+
+
 func create_new_tab(tab_name: String = "notes 1") -> void:
 	var thread = MemoryThread.new()
 	thread.ThreadName = tab_name_to_use(tab_name)
@@ -183,6 +199,7 @@ func create_new_tab(tab_name: String = "notes 1") -> void:
 	new_tab = true
 	SingletonObject.DrawerThreadList.append(thread)
 	SingletonObject.drawer_save_data.emit()
+	render_threads()
 
 
 func add_note(user_title:String, user_content: String) -> MemoryItem:
@@ -214,11 +231,74 @@ func add_note(user_title:String, user_content: String) -> MemoryItem:
 	return new_memory
 
 
+func add_audio_note(note_title: String, note_audio: AudioStreamWAV) -> MemoryItem:
+	# get the active thread.
+	var active_thread : MemoryThread 
+	var current_tab_idx: int
+	
+
+	if SingletonObject.DrawerThreadList.is_empty():
+		create_new_tab("Notes 1")
+		
+	current_tab_idx = current_tab
+	if current_tab_idx < 0:  # If no tab is selected, use the first one
+		current_tab_idx = 0
+		
+	active_thread = SingletonObject.DrawerThreadList[current_tab_idx]
+	
+	# Create a memory item.
+	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
+	new_memory.Enabled = false
+	new_memory.Type = SingletonObject.note_type.AUDIO
+	new_memory.ContentType = "audio"
+	new_memory.Title = note_title
+	new_memory.Audio = note_audio
+	new_memory.Visible = true
+	
+	# append the new memory item to the active thread memory list
+	active_thread.MemoryItemList.append(new_memory)
+	render_threads()
+	current_tab = current_tab_idx
+	%ProjectManagement.drawer_save_data.emit()
+	
+	return new_memory
+
+
+func add_image_note(note_title: String, note_image: Image, imageCaption: String = "", isDrawer:bool = false) -> MemoryItem:
+	# get the active thread.
+	var active_thread : MemoryThread 
+	var current_tab_idx: int
+	
+	if SingletonObject.DrawerThreadList.is_empty():
+		create_new_tab("Notes 1")
+		
+	current_tab_idx = tcThreadsDrawer.current_tab
+	if current_tab_idx < 0:  # If no tab is selected, use the first one
+		current_tab_idx = 0
+		
+	active_thread = SingletonObject.DrawerThreadList[current_tab_idx]
+	
+	# Create a memory item.
+	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.UUID = SingletonObject.generate_UUID()
+	new_memory.Enabled = false
+	new_memory.Type = SingletonObject.note_type.IMAGE
+	new_memory.ContentType = "image"
+	new_memory.Title = note_title
+	new_memory.MemoryImage = note_image
+	new_memory.ImageCaption = imageCaption
+	new_memory.Visible = true
+	
+	# append the new memory item to the active thread memory list
+	active_thread.MemoryItemList.append(new_memory)
+	render_threads()
+	# Explicitly set the current tab after rendering
+	tcThreadsDrawer.current_tab = current_tab_idx
+	%ProjectManagement.drawer_save_data.emit()
+	return new_memory
+
 func delete_drawer_note(memory_item_UUID: String) -> void:
-	
-	print("DrawerTabs line 165")
-	print(memory_item_UUID)
-	
 	var active_thread : MemoryThread = SingletonObject.DrawerThreadList[self.current_tab]
 	
 	for i in active_thread.MemoryItemList:
@@ -227,17 +307,45 @@ func delete_drawer_note(memory_item_UUID: String) -> void:
 			break
 	
 	SingletonObject.drawer_save_data.emit()
-	#save_drawer_data.emit()
-
-#signal save_drawer_data
-#func find_drawer_memory_item(memory_item_UUID: String)
 
 
-#func delete_drawer_note(memory_item: MemoryItem) -> void:
-	#var active_thread : MemoryThread = SingletonObject.DrawerThreadList[self.current_tab]
-	#
-	#print("this is running")
-	#var idx = active_thread.MemoryItemList.find(memory_item)
-	#if idx == -1: return
-	#
-	#active_thread.MemoryItemList.remove_at(idx)
+#region Tab signal methods
+
+var _clicked_tab: int = -1
+var _click_counter: int = 0
+func _on_tab_clicked(tab: int):
+	
+	if _clicked_tab > -1 and _click_counter >= 1:
+		var tab_title = get_tab_bar().get_tab_title(tab)
+		open_threads_popup(tab_title, tab)
+		_click_counter = -1
+		return
+	_clicked_tab = tab
+	_click_counter += 1
+	get_tree().create_timer(0.2).timeout.connect(reset_tab_values)
+
+
+func reset_tab_values() -> void:
+	_clicked_tab = -1
+	_click_counter = 0
+
+
+func _on_drawer_tab_clicked(tab: int): 
+	_on_tab_clicked(tab)
+
+func _on_active_tab_rearranged(idx_to: int) -> void:
+	var chat_history_to_move: MemoryThread = SingletonObject.DrawerThreadList[_clicked_tab]
+	SingletonObject.DrawerThreadList.pop_at(_clicked_tab)
+	SingletonObject.DrawerThreadList.insert(idx_to, chat_history_to_move)
+	_clicked_tab = current_tab
+	SingletonObject.drawer_save_data.emit()
+	render_threads()
+
+
+func open_threads_popup(tab_name: String = "", tab = null):
+	var update = tab != null
+	# set metadata so we can determine should we create new or update existing and which tab, when we click the button in the popup
+	if update:
+		SingletonObject.associated_notes_tab.emit(tab_name, get_child(tab))
+	else: 
+		SingletonObject.pop_up_new_tab.emit()

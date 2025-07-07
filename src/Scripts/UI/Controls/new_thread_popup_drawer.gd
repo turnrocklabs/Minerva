@@ -30,18 +30,12 @@ func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForNoteTab
-	#%btnVoiceForNoteTab.icon = icActive
 	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 
 
 func _on_btn_create_thread_pressed() -> void:
-	var thread_main = null
 	var thread_drawer = get_parent().find_child("NewThreadPopupDrawer") 
-	print(thread_main)
-	print(thread_drawer)
-	if thread_main != null:
-		SingletonObject.create_notes_tab.emit(false,%txtNewTabName.text, tab_reference)
-	elif thread_drawer != null:
+	if thread_drawer != null:
 		SingletonObject.create_notes_tab.emit(true,%txtNewTabName.text, tab_reference)
 	%txtNewTabName.text = ""
 	call_deferred("hide")

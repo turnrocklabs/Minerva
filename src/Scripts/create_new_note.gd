@@ -110,20 +110,21 @@ func _on_add_note_pressed():
 	
 	match note_enum:
 		SingletonObject.note_type.TEXT:
-			print(isDrawer)
 			if isDrawer:
-				SingletonObject.DrawerTab.add_note(Head, Description) # to be implemented
-			# TODO: here Drawers tabs has to be called if is a drawer note instead of note tabs
+				SingletonObject.DrawerTab.add_note(Head, Description)
 			else:
 				SingletonObject.NotesTab.add_note(Head, Description)
-			
-		
 		SingletonObject.note_type.IMAGE:
 			var image_description = ""  # You can add an optional description field for images if needed
-			SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description,isDrawer)
-		
+			if isDrawer:
+				SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description)
+			else:
+				SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description,isDrawer)
 		SingletonObject.note_type.AUDIO:
-			SingletonObject.NotesTab.add_audio_note(Head, audio_recording,isDrawer)
+			if isDrawer:
+				SingletonObject.DrawerTab.add_audio_note(Head, audio_recording)
+			else:
+				SingletonObject.NotesTab.add_audio_note(Head, audio_recording,isDrawer)
 	
 	# Clear all fields after adding note
 	%NoteHead.text = ""
