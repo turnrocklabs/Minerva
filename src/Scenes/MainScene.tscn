@@ -697,6 +697,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/separation = 12
 
 [node name="ControlPanel" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer"]
 layout_mode = 2
@@ -841,3 +842,4 @@ visible = false
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_tab_clicked"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddNote" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddShelf" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_shelf_pressed"]
+[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsDrawer" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsDrawer" method="_on_active_tab_rearranged"]

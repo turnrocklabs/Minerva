@@ -156,6 +156,8 @@ signal pop_up_new_tab
 signal pop_up_new_drawer_tab #it's made for fast fix of double open window when dopuble click on tab for rename. it'll be remove after i'll move drawer to Main scene
 @warning_ignore("unused_signal")
 signal notes_draw_state_changed(state: int)
+@warning_ignore("unused_signal")
+signal create_drawer_tab
 
 var notes_draw_state: int
 

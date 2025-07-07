@@ -95,13 +95,9 @@ func _on_new_pressed():
 	open_threads_popup()
 	
 	
-func _on_btn_create_thread_pressed(tab_name: String,isDrawer:bool,tab_ref: Control = null):
+func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
-	var thread_for_tab
-	if isDrawer:
-		thread_for_tab = %tcThreadsDrawer
-	else:
-		thread_for_tab = %tcThreads
+	var thread_for_tab = %tcThreads
 		
 	if tab_name == "":
 		tab_name = "notes " + str(thread_for_tab.get_tab_count() + 1)
@@ -110,10 +106,7 @@ func _on_btn_create_thread_pressed(tab_name: String,isDrawer:bool,tab_ref: Contr
 		tab_ref.get_meta("thread").ThreadName = tab_name
 		render_threads()
 	else:
-		if isDrawer:
-			create_new_notes_tab(tab_name,true)
-		else:
-			create_new_notes_tab(tab_name)
+		create_new_notes_tab(tab_name)
 			
 	if get_tab_count() > 0:
 		buffer_control_notes.hide()
@@ -126,12 +119,8 @@ func create_new_notes_tab(tab_name: String = "notes 1",isDrawer:bool = false):
 	var thread_memories: Array[MemoryItem] = []
 	thread.MemoryItemList = thread_memories
 	new_tab = true
-	if isDrawer:
-		SingletonObject.DrawerThreadList.append(thread)
-		SingletonObject.drawer_save_data.emit()
-	else:
-		SingletonObject.ThreadList.append(thread)
-	SingletonObject.NotesTab.render_threads(isDrawer)
+	SingletonObject.ThreadList.append(thread)
+	SingletonObject.NotesTab.render_threads()
 
 func tab_name_to_use(proposed_name: String,isDrawerName:bool) -> String:
 	var collisions = 0
@@ -174,7 +163,7 @@ func add_note(user_title:String, user_content: String, is_completed:bool = true,
 		current_tab_idx = 0
 		
 	active_thread = SingletonObject.ThreadList[current_tab_idx]
-		
+	
 	# Create a memory item.
 	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
 	new_memory.UUID = SingletonObject.generate_UUID()
@@ -189,13 +178,9 @@ func add_note(user_title:String, user_content: String, is_completed:bool = true,
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
-
 	# Explicitly set the current tab after rendering
 	current_tab = current_tab_idx
-
 	return new_memory
-
-
 
 
 func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:bool = false) -> MemoryItem:
@@ -206,7 +191,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:boo
 	if isDrawer:
 		# Handle drawer tabs
 		if SingletonObject.DrawerThreadList.is_empty():
-			create_new_notes_tab("Note 1", true)
+			create_new_notes_tab("Notes 1", true)
 			
 		current_tab_idx = tcThreadsDrawer.current_tab
 		if current_tab_idx < 0:  # If no tab is selected, use the first one
@@ -216,7 +201,7 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:boo
 	else:
 		# Handle regular tabs
 		if SingletonObject.ThreadList.is_empty():
-			create_new_notes_tab("Note 1")
+			create_new_notes_tab("Notes 1")
 			
 		current_tab_idx = current_tab
 		if current_tab_idx < 0:  # If no tab is selected, use the first one
@@ -236,12 +221,11 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:boo
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
-	render_threads(isDrawer)
+	render_threads()
 
 	# Explicitly set the current tab after rendering
 	if isDrawer:
 		tcThreadsDrawer.current_tab = current_tab_idx
-		%ProjectManagement.drawer_save_data.emit()
 	else:
 		current_tab = current_tab_idx
 
@@ -256,7 +240,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	if isDrawer:
 		# Handle drawer tabs
 		if SingletonObject.DrawerThreadList.is_empty():
-			create_new_notes_tab("Note 1", true)
+			create_new_notes_tab("NoteS 1", true)
 			
 		current_tab_idx = tcThreadsDrawer.current_tab
 		if current_tab_idx < 0:  # If no tab is selected, use the first one
@@ -287,7 +271,7 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
-	render_threads(isDrawer)
+	render_threads()
 
 	# Explicitly set the current tab after rendering
 	if isDrawer:
@@ -363,27 +347,14 @@ func delete_note(memory_item: MemoryItem):
 	active_thread.MemoryItemList.remove_at(idx)
 
 
-func render_threads(isDrawer:bool = false):
+func render_threads():
 	# Save the last active thread.
 	var last_thread = self.current_tab
 	
-	# we must delete existing noted so creating new project works
-	var what_thread
-	var what_singleton_thread
-	if isDrawer:
-		what_thread = %tcThreadsDrawer
-		what_singleton_thread = SingletonObject.DrawerThreadList
-	else:
-		what_thread = %tcThreads
-		what_singleton_thread = SingletonObject.ThreadList
-		
-	for c in what_thread.get_children():
+	for c in %tcThreads.get_children():
 		c.queue_free()
-	for thread in what_singleton_thread:
-		if isDrawer:
-			render_thread(thread,true)
-		else:
-			render_thread(thread)
+	for thread in SingletonObject.ThreadList:
+		render_thread(thread)
 
 	# Restore the last active thread:
 	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
@@ -399,7 +370,7 @@ func render_threads(isDrawer:bool = false):
 
 
 static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
-func render_thread(thread_item: MemoryThread,isDrawer:bool = false):
+func render_thread(thread_item: MemoryThread):
 	# Create the ScrollContainer
 	var scroll_container = ScrollContainer.new()
 	scroll_container.scroll_vertical = 4060
@@ -416,18 +387,11 @@ func render_thread(thread_item: MemoryThread,isDrawer:bool = false):
 	
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
 	#scroll_container.name = thread_item.ThreadName
-	var what_thread
-	if isDrawer:
-		what_thread = %tcThreadsDrawer
-		
-		return
-	else:
-		what_thread = %tcThreads
 		
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
-	what_thread.add_child(scroll_container)
-	var tab_idx = what_thread.get_tab_idx_from_control(scroll_container)
-	what_thread.set_tab_title(tab_idx, thread_item.ThreadName)
+	%tcThreads.add_child(scroll_container)
+	var tab_idx = %tcThreads.get_tab_idx_from_control(scroll_container)
+	%tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
 	if new_tab:
 		self.current_tab = tab_idx
 
@@ -641,10 +605,8 @@ func _is_text_file(file_path: String) -> bool:
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	
-	%tcThreads.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
-	%tcThreads.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreads))
-	%tcThreadsDrawer.get_tab_bar().tab_clicked.connect(_on_drawer_tab_clicked)
-	%tcThreadsDrawer.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+	get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	%tcThreadsDrawer.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreadsDrawer))
 		
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
@@ -721,7 +683,7 @@ func _on_tab_clicked(tab: int, container: TabContainer = %tcThreads):
 		temp_current_tab = tab
 	else:
 		temp_current_drawer_tab = tab
-	
+	 
 	get_tree().create_timer(0.4).timeout.connect(func(): clicked = -1)
 
 func _on_drawer_tab_clicked(tab: int): 
