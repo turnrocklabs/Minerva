@@ -15,6 +15,8 @@ signal active_layer_changed(layer: LayerV2)
 @onready var message_content: Label = %MessageContent
 
 
+@onready var _tools_option_button: OptionButton = %ToolsOptionButton
+
 # tool options containers
 @onready var _brush_options_container: Control = %BrushOptions
 @onready var _smudge_options_container: Control = %SmudgeOptions
@@ -73,11 +75,15 @@ func _ready() -> void:
 	
 	active_tool_changed.connect(_on_active_tool_changed)
 
+	_tools_option_button.select(0)
+	_tools_option_button.item_selected.emit(0) # select doesnt trigger the event automatically
+
+
+
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
 	create_new_layer("Layer", canvas_size_, Color.WHITE)
 
-	# layers_container.center_view()
 
 
 func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true) -> LayerV2:
@@ -583,9 +589,17 @@ func _blend_colors(dst: Color, src: Color) -> Color:
 
 func _on_layer_cards_button_toggled(toggled_on: bool) -> void:
 	if toggled_on:
+		# layer_cards_popup_panel.position = Vector2(
+		# 	DisplayServer.screen_get_size().x - layer_cards_popup_panel.size.x,
+		# 	DisplayServer.mouse_get_position().y
+		# )
 		layer_cards_popup_panel.position = Vector2(
-			DisplayServer.screen_get_size().x - layer_cards_popup_panel.size.x,
-			DisplayServer.mouse_get_position().y
+			(
+				layer_cards_toggle_button.global_position.x 
+				-layer_cards_popup_panel.size.x/2.0
+				+layer_cards_toggle_button.size.x/2.0
+			),
+			layer_cards_toggle_button.global_position.y + 50
 		)
 		layer_cards_popup_panel.popup()
 	else:
@@ -649,3 +663,13 @@ func redo_command() -> void:
 	print(_command_idx)
 
 #endregion
+
+
+func _on_tools_option_button_item_selected(index: int) -> void:
+	match index:
+		0: _on_brush_tool_button_toggled(true)
+		1: _on_eraser_tool_button_toggled(true)
+		2: _on_bucket_tool_button_toggled(true)
+		3: _on_smudge_tool_button_toggled(true)
+		_: pass
+	

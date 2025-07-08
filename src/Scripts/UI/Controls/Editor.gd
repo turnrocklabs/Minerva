@@ -757,6 +757,7 @@ func _create_note() -> MemoryItem:
 	elif type == Type.GRAPHICS:
 		memory_item.Type = SingletonObject.note_type.IMAGE
 		memory_item.MemoryImage = graphics_editor.compose_final_image()
+		print("CREATED GE D_NOTE")
 
 	else:
 		return null # type not supported
@@ -798,6 +799,7 @@ func _on_check_button_toggled(toggled_on: bool):
 		if not present:
 			SingletonObject.DetachedNotes.append(item)
 
+	_update_memory_item(item)
 	item.Enabled = toggled_on
 
 func _on_close_warrning(path):
