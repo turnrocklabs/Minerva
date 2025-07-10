@@ -30,16 +30,6 @@ func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 	return output
 #region Methods for toggling notes
 
-func Disable_All_Drawer():
-	for this_thread:MemoryThread in SingletonObject.DrawerThreadList:
-		for item:MemoryItem in this_thread.MemoryItemList:
-			if item.Enabled:
-				item.Enabled = false
-	
-	for item:MemoryItem in SingletonObject.DetachedNotes:
-		item.Enabled = false
-
-	self.render_threads()
 
 func Disable_All():
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
@@ -397,7 +387,7 @@ func render_thread(thread_item: MemoryThread):
 
 
 
-
+#TODO: refactor drawer logic to its own script
 func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)
 	
@@ -429,8 +419,8 @@ func _on_close_tab(tab: int, container: TabContainer):
 	
 	if get_tab_count() < 1:
 		buffer_control_notes.show()
-	
-	
+
+
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
 		var data = SingletonObject.undo.deleted_tabs[tab_name]
@@ -634,7 +624,7 @@ func _drop_data(at_position: Vector2, data):
 		return
 	# If no tabs exist, create a new one
 	if get_tab_count() <= 0:
-		create_new_notes_tab("Note 1")
+		create_new_notes_tab()
 	
 	# Get tab index - if no tab at position, use current tab
 	var tab_idx = get_tab_idx_at_point(at_position)
