@@ -118,6 +118,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		model_msg_node.queue_free()
 	
 	SingletonObject.NotesTab.Disable_All()
+	SingletonObject.DrawerTab.Disable_All()
 
 ## add new chat 
 func _on_new_chat():
@@ -291,6 +292,7 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	existing_response.rendered_node.loading = false
 	SingletonObject.NotesTab.Disable_All()
+	SingletonObject.DrawerTab.Disable_All()
 
 
 func _on_chat_pressed():
@@ -329,6 +331,7 @@ func execute_regular_chat(text: String) -> void:
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
 		SingletonObject.NotesTab.Disable_All()
+		SingletonObject.DrawerTab.Disable_All()
 		return # if user is using Human provider we finish here
 	
 	# Check is the last message is a user message and not do anything if true
@@ -380,6 +383,7 @@ func execute_sequential_chat(text_input: String) -> void:
 		if user_history_item.provider is HumanProvider:
 			handle_human_provider_message(history, user_history_item)
 			SingletonObject.NotesTab.Disable_All()
+			SingletonObject.DrawerTab.Disable_All()
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
@@ -410,6 +414,7 @@ func execute_sequential_chat(text_input: String) -> void:
 	audio_stop_1.disabled = true
 	_active_chat_request = false
 	SingletonObject.NotesTab.Disable_All()
+	SingletonObject.DrawerTab.Disable_All()
 
 
 var _mutex: Mutex = Mutex.new()

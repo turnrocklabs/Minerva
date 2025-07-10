@@ -193,8 +193,12 @@ signal note_changed(note: Note)
 func toggle_all_notes(notes_enabled: bool):
 	if notes_enabled:
 		NotesTab.Disable_All()
+		if DrawerTab.visible:
+			DrawerTab.Disable_All()
 	if !notes_enabled:
 		NotesTab.enable_all()
+		if DrawerTab.visible:
+			DrawerTab.enable_all()
 
 ## Returns `MemoryThread` with the given `ThreadId` or null if none are found
 func get_thread(thread_id: String) -> MemoryThread:

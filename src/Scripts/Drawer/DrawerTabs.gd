@@ -180,7 +180,6 @@ func tab_name_to_use(proposed_name: String) -> String:
 
 
 func create_new_tab_helper(tab_name: String, tab_ref: Control = null) -> void:
-	print("thisa is running")
 	if tab_name == "":
 		tab_name = "notes " + str(get_tab_count() + 1)
 	
