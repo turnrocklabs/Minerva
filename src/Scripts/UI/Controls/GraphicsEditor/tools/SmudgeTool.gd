@@ -37,6 +37,9 @@ var _single_click: bool = false
 var _circle_cache = {}
 var _max_cached_radius = 100
 
+# Undo system
+var current_stroke_command: GraphicsEditorUndo.DrawStrokeCommand
+
 func _ready() -> void:
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
@@ -108,13 +111,27 @@ func _start_smudge(event: InputEvent) -> void:
 	_smoothed_pressure = 1.0
 	_last_pressure = 1.0
 	
-	# Expand for maximum possible brush size
+	# Handle layer expansion first (if needed)
 	var max_radius = get_actual_brush_radius(1.0)
 	var bounds_point = get_bounds_point_for_expansion(event.position, max_radius)
 	var offset = editor.active_layer.expand_to_point(bounds_point)
-	editor.active_layer.position -= offset
+	
+	if offset != Vector2.ZERO:
+		# Create resize command for layer expansion
+		var resize_command = GraphicsEditorUndo.ResizeCommand.new(
+			editor.active_layer, 
+			editor.active_layer.position - offset
+		)
+		resize_command.set_new_image(editor.active_layer.image)  # After expansion
+		editor.execute_command(resize_command)
+		editor.active_layer.position -= offset
+	
+	# Update event after potential layer changes
 	event = editor.active_layer.localize_input(event)
 	_last_smudge_position = event.position
+	
+	# Create smudge command - captures "before" state
+	current_stroke_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
 	
 	# Initialize brush buffer from starting position
 	_pickup_brush_data(_last_smudge_position)
@@ -150,6 +167,12 @@ func _end_smudge(event: InputEvent) -> void:
 			brush_size * _smoothed_pressure
 		)
 		editor.queue_redraw()
+	
+	# Finalize and execute the smudge command
+	if current_stroke_command:
+		current_stroke_command.finalize_stroke()  # Captures "after" state
+		editor.execute_command(current_stroke_command)
+		current_stroke_command = null
 	
 	smudging = false
 	_single_click = false
