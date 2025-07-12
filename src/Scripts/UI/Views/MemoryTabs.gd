@@ -404,7 +404,7 @@ func _on_close_tab(tab: int, container: TabContainer):
 			SingletonObject.ThreadList.remove_at(thread_idx)
 		elif container == tcThreadsDrawer:
 			SingletonObject.DrawerThreadList.remove_at(thread_idx)
-		SingletonObject.ThreadList.remove_at(thread_idx)
+		#SingletonObject.ThreadList.remove_at(thread_idx)
 
 		# this will crash the program by freeing the `control` object
 		# Update the UI with the remaining threads
