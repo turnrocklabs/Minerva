@@ -3,7 +3,6 @@ extends BaseTool
 
 @export var _color_picker_button: ColorPickerButton
 
-
 var fill_color: Color:
 	set(value):
 		fill_color = value
@@ -13,10 +12,8 @@ var fill_color: Color:
 	get:
 		return _color_picker_button.color
 
-
 func _ready() -> void:
 	super()
-
 
 func handle_input_event(event: InputEvent) -> void:
 	if not editor.active_layer: return
@@ -33,11 +30,8 @@ func handle_input_event(event: InputEvent) -> void:
 				
 				fill(event.position)
 
-
-
 func _tool_selected():
 	pass
-
 
 func fill(position: Vector2) -> void:
 	var point := Vector2i(position.round())
@@ -50,6 +44,9 @@ func fill(position: Vector2) -> void:
 	var target_color := image.get_pixelv(point)
 	if target_color == fill_color:
 		return
+	
+	# Create fill command - captures "before" state
+	var fill_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
 	
 	var stack := [point]
 	
@@ -85,5 +82,9 @@ func fill(position: Vector2) -> void:
 				span_below = false
 				
 			x += 1
+	
+	# Finalize and execute the fill command
+	fill_command.finalize_stroke()  # Captures "after" state
+	editor.execute_command(fill_command)
 	
 	editor.queue_redraw()
