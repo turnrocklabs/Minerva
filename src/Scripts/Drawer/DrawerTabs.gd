@@ -146,23 +146,31 @@ func render_thread(thread_item: MemoryThread):
 
 # if we are dragging a note above a tab, we can drop it there
 func _can_drop_data(at_position: Vector2, data):
-	var tab_idx = get_tab_idx_at_point(at_position)
-
-	return tab_idx != -1 and data is Note
+	return data is Note
 
 # find out which tab we are above
 # and get it's vboxMemoryList control (which is the only child of the scroll container)
 # then call it's _drop_data so it handles the Note by just appending it and removing it from the old thread
 func _drop_data(at_position: Vector2, data):
 	if not data is Note: return
-
+	
+	print("dropped data on drawers tab")
+	if get_tab_count() <= 0:
+		create_new_tab()
+	
 	var tab_idx = get_tab_idx_at_point(at_position)
-
+	if tab_idx == -1:
+		tab_idx = current_tab
+	
 	var control = get_tab_control(tab_idx)
-
-	var vbox_memory_list = control.get_child(0)
-
-	vbox_memory_list._drop_data(at_position, data)
+	if not control:
+		return
+	
+	var vbox_drawer_list = control.get_child(0) if control.get_child_count() > 0 else null
+	if not vbox_drawer_list or not vbox_drawer_list.has_method("_drop_data"):
+		return
+	
+	vbox_drawer_list._drop_data(at_position, data)
 	current_tab = tab_idx
 
 
