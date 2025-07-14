@@ -47,8 +47,8 @@ func _ready() -> void:
 	for r in range(1, min(30, _max_cached_radius)):
 		_get_cached_circle_pixels(r)
 
-func handle_input_event(event: InputEvent) -> void:
-	if not editor.active_layer: return
+func handle_input_event(event: InputEvent) -> bool:
+	if not editor.active_layer: return false
 	
 	event = editor.active_layer.localize_input(event)
 
@@ -57,16 +57,22 @@ func handle_input_event(event: InputEvent) -> void:
 
 			if editor.selected_layers.size() > 1:
 				display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
-				return
+				return false
 
 			if event.is_pressed():
 				_start_erase(event)
 			else:
 				_end_erase(event)
 
+			return true
+
 	elif event is InputEventMouseMotion and drawing:
 		_single_click = false
 		_continue_erase(event)
+
+		return true
+	
+	return false
 
 func _start_erase(event: InputEvent) -> void:
 	drawing = true

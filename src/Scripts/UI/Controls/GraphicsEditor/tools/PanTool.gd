@@ -16,7 +16,7 @@ func _ready() -> void:
 				editor.set_custom_cursor(hand_icon)
 	)
 
-func handle_input_event(event: InputEvent) -> void:
+func handle_input_event(event: InputEvent) -> bool:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.is_pressed():
@@ -36,6 +36,8 @@ func handle_input_event(event: InputEvent) -> void:
 			var relative = event.position - last_mouse_position
 			_pan_canvas(relative)
 			last_mouse_position = event.position
+	
+	return false
 
 func _pan_canvas(relative: Vector2) -> void:
 	editor.layers_container.position += relative
