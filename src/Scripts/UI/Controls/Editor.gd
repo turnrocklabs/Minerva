@@ -416,7 +416,7 @@ func save_file_to_disc(path: String) -> void:
 
 		Type.GRAPHICS:
 			# Save image to file
-			var img = graphics_editor.compose_final_image()
+			var img = await graphics_editor.compose_final_image()
 			if img:
 				# Temporarily change filters for PNG save
 				var dialog = ($FileDialog as FileDialog)
@@ -488,7 +488,7 @@ func _on_create_note_button_pressed() -> void:
 				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 
 		if Type.GRAPHICS == type:
-			var editor_image: = graphics_editor.compose_final_image()
+			var editor_image = await graphics_editor.compose_final_image()
 			if tab_title:
 				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image)
 			elif file:
@@ -756,7 +756,7 @@ func _create_note() -> MemoryItem:
 	
 	elif type == Type.GRAPHICS:
 		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = graphics_editor.compose_final_image()
+		memory_item.MemoryImage = await graphics_editor.compose_final_image()
 		print("CREATED GE D_NOTE")
 
 	else:
@@ -771,7 +771,7 @@ func _update_memory_item(memory_item: MemoryItem) -> void:
 	
 	elif type == Type.GRAPHICS:
 		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = graphics_editor.compose_final_image()
+		memory_item.MemoryImage = await graphics_editor.compose_final_image()
 
 
 
@@ -779,7 +779,7 @@ func _on_check_button_toggled(toggled_on: bool):
 	var item: MemoryItem
 
 	if not has_meta("memory_item"):
-		item = _create_note()
+		item = await _create_note()
 		if not item:
 			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the editor.")
 			_note_check_button.button_pressed = false

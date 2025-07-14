@@ -62,8 +62,8 @@ func _ready() -> void:
 	for r in range(1, min(30, _max_cached_radius)):
 		_get_cached_circle_pixels(r)
 
-func handle_input_event(event: InputEvent) -> void:
-	if not editor.active_layer: return
+func handle_input_event(event: InputEvent) -> bool:
+	if not editor.active_layer: return false
 
 	event = editor.active_layer.localize_input(event)
 
@@ -71,16 +71,22 @@ func handle_input_event(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if editor.selected_layers.size() > 1:
 				display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
-				return
+				return false
 
 			if event.is_pressed():
 				_start_smudge(event)
 			else:
 				_end_smudge(event)
 
+			return true
+
 	elif event is InputEventMouseMotion and smudging:
 		_single_click = false
 		_perform_smudge(event)
+
+		return true
+	
+	return false
 
 func get_bounds_point_for_expansion(center: Vector2, radius: int) -> Vector2:
 	var layer_size = editor.active_layer.image.get_size()
