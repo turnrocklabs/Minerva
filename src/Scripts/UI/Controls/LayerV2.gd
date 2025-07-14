@@ -31,6 +31,7 @@ var transform_rect_visible: = false
 
 var outline_color: = Color.ORANGE_RED
 var outline_visible: = true
+var locked: = false
 
 var image_zoom_factor: float:
 	get: return (Vector2(image.get_size()).length() / size.length()) if image else .0

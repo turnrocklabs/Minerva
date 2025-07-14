@@ -216,6 +216,7 @@ func _on_context_menu_id_pressed(id: int) -> void:
 
 func _on_context_menu_about_to_popup() -> void:
 	context_menu.set_item_disabled(ContextMenuItem.MERGE, editor.selected_layers.size() < 2)
+	context_menu.set_item_disabled(ContextMenuItem.REMOVE, layer.locked)
 
 
 func _on_name_text_submitted(_new_text: String) -> void:

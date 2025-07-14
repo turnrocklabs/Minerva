@@ -93,14 +93,16 @@ func _ready() -> void:
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
-	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT)
-	create_new_layer("Background", canvas_size_, Color.WHITE)
+	create_new_layer("Background", canvas_size_, Color.WHITE, false)
+	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, true, true)
 
 
 
-func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true) -> LayerV2:
+func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true, locked: = false) -> LayerV2:
 	var layer: = LayerV2.create_drawing_layer(layer_name, dimensions, color)
 	
+	layer.locked = locked
+
 	add_layer(layer, select)
 
 	return layer
@@ -136,8 +138,8 @@ func add_layer(layer: LayerV2, select: = true):
 
 # when layer is deleted remove it from selected layers if it's there
 func _on_layer_tree_exiting(layer: LayerV2):
-	if selected_layers.has(layer):
-		selected_layers.erase(layer)
+	selected_layers.erase(layer)
+	layers.erase(layer)
 
 
 func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
@@ -566,8 +568,6 @@ func execute_command(cmd: GraphicsEditorUndo.Command) -> void:
 	_commands.append(cmd)
 	_command_idx = _commands.size()-1
 
-	print(_commands)
-	print(_command_idx)
 
 
 func undo_command() -> void:
@@ -610,12 +610,10 @@ var _current_compose_thread: Thread = null
 
 func _on_compose_progress(progress: float):
 	progress_window_bar.value = progress * 100
-	print(progress)
 
 func _on_compose_complete(_image: Image):
 	progress_window.hide()
 	_compose_result_expired = false
-	prints("COMPOSE COMPLETE", _image)
 
 
 func compose_final_image(show_dialog: = true) -> Image:
@@ -623,7 +621,6 @@ func compose_final_image(show_dialog: = true) -> Image:
 	if _compose_result_image and not _compose_result_expired:
 		return _compose_result_image
 
-	print("RUNNING COMPOSE FINAL IMAGE")
 
 	# Don't start if already running
 	if _current_compose_thread != null and _current_compose_thread.is_alive():
@@ -673,7 +670,6 @@ func _compose_image_thread_worker(layer_data: Array[Dictionary]):
 
 # Keep your existing _compose_final_image_worker function as is, but update progress reporting:
 func _compose_final_image_worker(layer_data: Array) -> Image:
-	print("compose worker")
 	# If no layers, return empty image
 	if layer_data.is_empty():
 		return Image.new()
