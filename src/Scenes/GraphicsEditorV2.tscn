@@ -283,6 +283,7 @@ layout_mode = 2
 
 [node name="EraserOptions" type="HBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
