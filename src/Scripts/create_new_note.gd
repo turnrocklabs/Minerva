@@ -36,7 +36,6 @@ func _on_about_to_popup() -> void:
 	#should_add_note_be_disabled()
 	%AddNotePopUp.disabled = true
 
-
 func _on_close_requested() -> void:
 	call_deferred("hide")
 	%NoteHead.text = ""
@@ -111,23 +110,21 @@ func _on_add_note_pressed():
 	
 	match note_enum:
 		SingletonObject.note_type.TEXT:
-			if !isDrawer:
-				SingletonObject.NotesTab.add_note(Head, Description)
-			else:
+			if isDrawer:
 				SingletonObject.DrawerTab.add_note(Head, Description)
-		
+			else:
+				SingletonObject.NotesTab.add_note(Head, Description)
 		SingletonObject.note_type.IMAGE:
 			var image_description = ""  # You can add an optional description field for images if needed
-			if !isDrawer:
-				SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description)
-			else:
+			if isDrawer:
 				SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description)
-		
-		SingletonObject.note_type.AUDIO:
-			if !isDrawer:
-				SingletonObject.NotesTab.add_audio_note(Head, audio_recording)
 			else:
+				SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description,isDrawer)
+		SingletonObject.note_type.AUDIO:
+			if isDrawer:
 				SingletonObject.DrawerTab.add_audio_note(Head, audio_recording)
+			else:
+				SingletonObject.NotesTab.add_audio_note(Head, audio_recording,isDrawer)
 	
 	# Clear all fields after adding note
 	%NoteHead.text = ""
@@ -295,9 +292,11 @@ func _on_play_audio_button_pressed() -> void:
 #endregion Audio Note
 
 func should_add_note_be_disabled() -> void:
-	var text_fields_filled = %NoteHead.text != "" and %NoteDescription.text != ""
-	var image_field_and_title = %NoteHead.text != "" and image_original_res != null
-	var audio_field_and_title = %NoteHead.text != "" and audio_recording != null
+	var note_title: String = %NoteHead.text.strip_edges()
+	var note_description: String = %NoteDescription.text.strip_edges()
+	var text_fields_filled: bool = !note_title.is_empty() and !note_description.is_empty()
+	var image_field_and_title: bool =!note_title.is_empty() and image_original_res != null
+	var audio_field_and_title: bool = !note_title.is_empty() and audio_recording != null
 	
 	if text_fields_filled or image_field_and_title or audio_field_and_title:
 		%AddNotePopUp.disabled = false
