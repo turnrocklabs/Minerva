@@ -139,6 +139,7 @@ func _on_response_arrived(item: ChatHistoryItem):
 		rendered_node.history_item = self
 	SingletonObject.play_chat_notification()
 	SingletonObject.NotesTab.Disable_All()
+	SingletonObject.DrawerTab.Disable_All()
 
 
 func format(callback: Callable) -> String:

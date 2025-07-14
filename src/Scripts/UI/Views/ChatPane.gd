@@ -118,6 +118,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		model_msg_node.queue_free()
 	
 	SingletonObject.NotesTab.Disable_All()
+	SingletonObject.DrawerTab.Disable_All()
 
 ## add new chat 
 func _on_new_chat():
@@ -291,6 +292,7 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	existing_response.rendered_node.loading = false
 	SingletonObject.NotesTab.Disable_All()
+	SingletonObject.DrawerTab.Disable_All()
 
 
 func _on_chat_pressed():
@@ -329,6 +331,7 @@ func execute_regular_chat(text: String) -> void:
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
 		SingletonObject.NotesTab.Disable_All()
+		SingletonObject.DrawerTab.Disable_All()
 		return # if user is using Human provider we finish here
 	
 	# Check is the last message is a user message and not do anything if true
@@ -380,6 +383,7 @@ func execute_sequential_chat(text_input: String) -> void:
 		if user_history_item.provider is HumanProvider:
 			handle_human_provider_message(history, user_history_item)
 			SingletonObject.NotesTab.Disable_All()
+			SingletonObject.DrawerTab.Disable_All()
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
@@ -410,8 +414,9 @@ func execute_sequential_chat(text_input: String) -> void:
 	audio_stop_1.disabled = true
 	_active_chat_request = false
 	SingletonObject.NotesTab.Disable_All()
+	SingletonObject.DrawerTab.Disable_All()
 
-
+var parallel_loading: = preload("res://Scenes/multi_message_loading.tscn")
 var _mutex: Mutex = Mutex.new()
 var _inputs: Array[String] = []
 var _usr_messages_container: SliderContainer
@@ -432,6 +437,8 @@ func execute_parallel_chat(text_input: String) -> void:
 	_mdl_messages_container = SliderContainer.new()
 	multi_message_container.add_child(_usr_messages_container)
 	multi_message_container.add_child(_mdl_messages_container)
+	var parallel_message_loading: = parallel_loading.instantiate()
+	history.VBox.add_child(parallel_message_loading)
 	history.VBox.add_child(multi_message_container)
 	
 	_user_parallel_chat_UUID = SingletonObject.generate_UUID()
@@ -448,6 +455,9 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var user_msg: ChatHistoryItem = _usr_chat_hist_items.pop_front()
 	var bot_response: ChatHistoryItem = chat_hist_item
+	
+	for i in get_tree().get_nodes_in_group("parallelLoadingNode"):
+		i.queue_free()
 	
 	user_msg.SliderContainerId = _user_parallel_chat_UUID
 	bot_response.SliderContainerId = _parallel_chat_UUID
