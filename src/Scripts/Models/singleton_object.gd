@@ -147,7 +147,7 @@ enum NotesDrawState {
 # this signals get used in memoryTabs.gd and new_thread_popup.gd 
 # for creating and updating notes tabs names
 @warning_ignore("unused_signal")
-signal create_notes_tab(state:bool,name: String)
+signal create_notes_tab(name: String)
 @warning_ignore("unused_signal")
 signal associated_notes_tab(tab_name, tab: Control)
 @warning_ignore("unused_signal")
@@ -156,6 +156,8 @@ signal pop_up_new_tab
 signal pop_up_new_drawer_tab #it's made for fast fix of double open window when dopuble click on tab for rename. it'll be remove after i'll move drawer to Main scene
 @warning_ignore("unused_signal")
 signal notes_draw_state_changed(state: int)
+@warning_ignore("unused_signal")
+signal create_drawer_tab
 
 var notes_draw_state: int
 
@@ -191,8 +193,12 @@ signal note_changed(note: Note)
 func toggle_all_notes(notes_enabled: bool):
 	if notes_enabled:
 		NotesTab.Disable_All()
+		if DrawerTab.visible:
+			DrawerTab.Disable_All()
 	if !notes_enabled:
 		NotesTab.enable_all()
+		if DrawerTab.visible:
+			DrawerTab.enable_all()
 
 ## Returns `MemoryThread` with the given `ThreadId` or null if none are found
 func get_thread(thread_id: String) -> MemoryThread:
@@ -443,6 +449,12 @@ signal set_icon_size_24
 signal set_icon_size_48
 @warning_ignore("unused_signal")
 signal set_icon_size_68
+@warning_ignore("unused_signal")
+signal drawer_save_data
+@warning_ignore("unused_signal")
+signal openDrawerNotes
+@warning_ignore("unused_signal")
+signal deleted_drawer_note
 
 var saved_state = true
 signal updated_save_state(project_name:String,saved: bool)

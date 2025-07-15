@@ -107,12 +107,9 @@ func render_items():
 		note_control.memory_item = item
 		
 		#note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
-#
-		#self.add_child(note_control)
-
 		# When the note control is deleted, delete the memory item, so it doesn't get re-rendered next time
-		
-		note_control.deleted.connect(self.MainTabContainer.delete_note.bind(item))
+		if note_control.isDrawer:
+			note_control.deleted_drawer.connect(self.MainTabContainer.delete_drawer_note.bind(item))
 		
 		note_control.changed.connect(SingletonObject.note_changed.emit.bind(note_control))
 
@@ -136,15 +133,14 @@ func _drawer_thread_find(thread_id: String) -> MemoryThread:
 
 # We can also drop the Note in a VBoxMemoryList
 func _can_drop_data(_at_position: Vector2, data):
-	if not data is Note: return false
-	return true
+	return data is Note
 
 func _drop_data(_at_position: Vector2, data):
 	if not data is Note: 
 		return
 
 	# 1. Print UUID of the note being dropped
-	print("Dropping note UUID: ", data.memory_item.Title)
+	print("Dropping note UUID: ", data.memory_item.UUID)
 	# Find which type of thread we're dropping into
 	var target_thread = _memory_thread_find(MainThreadId)
 	var target_drawer_thread = _drawer_thread_find(MainThreadId)
@@ -164,32 +160,30 @@ func _drop_data(_at_position: Vector2, data):
 		for item in target_drawer_thread.MemoryItemList:
 			if data.memory_item.Title == item.Title:
 				return
-
-
+	
 	if target_thread and dragged_note_thread:
 		target_thread.MemoryItemList.insert(0, data.memory_item)
 		data.memory_item.OwningThread = target_thread.ThreadId
 		dragged_note_thread.MemoryItemList.erase(data.memory_item)
-		
 	elif target_drawer_thread and dragged_note_drawer_thread:
 		target_drawer_thread.MemoryItemList.insert(0, data.memory_item)
 		data.memory_item.OwningThread = target_drawer_thread.ThreadId
 		dragged_note_drawer_thread.MemoryItemList.erase(data.memory_item)
-		
 	elif target_thread and dragged_note_drawer_thread:
 		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
 		if data.memory_item.Type == 0:
-			SingletonObject.NotesTab.add_note(data.memory_item.Title, data.memory_item.Content)
+			SingletonObject.DrawerTab.add_note(data.memory_item.Title, data.memory_item.Content)
 		elif data.memory_item.Type == 1:
-			SingletonObject.NotesTab.add_audio_note(data.memory_item.Title, data.memory_item.Audio)
+			SingletonObject.DrawerTab.add_audio_note(data.memory_item.Title, data.memory_item.Audio)
 		elif data.memory_item.Type == 2:
-			SingletonObject.NotesTab.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption)
+			SingletonObject.DrawerTab.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption)
 			
 	elif target_drawer_thread and dragged_note_thread:
 		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
 		if data.memory_item.Type == 0:
-			SingletonObject.NotesTab.add_note(data.memory_item.Title, data.memory_item.Content, true)
+			SingletonObject.DrawerTab.add_note(data.memory_item.Title, data.memory_item.Content)
 		elif data.memory_item.Type == 1:
-			SingletonObject.NotesTab.add_audio_note(data.memory_item.Title, data.memory_item.Audio, true)
+			SingletonObject.DrawerTab.add_audio_note(data.memory_item.Title, data.memory_item.Audio)
 		elif data.memory_item.Type == 2:
-			SingletonObject.NotesTab.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption, true)
+			SingletonObject.DrawerTab.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption)
+	SingletonObject.drawer_save_data.emit()

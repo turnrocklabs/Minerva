@@ -1,5 +1,6 @@
-[gd_scene load_steps=68 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=69 format=3 uid="uid://cw1ig4ql83b6a"]
 
+[ext_resource type="Script" uid="uid://de2uyvmvju8y2" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Script" uid="uid://de2uyvmvju8y2" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://kdb2dck4ym74" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -61,7 +62,8 @@
 [ext_resource type="Texture2D" uid="uid://bk13anfwduwom" path="res://assets/icons/plus_icons/add_68.svg" id="42_l3jum"]
 [ext_resource type="Texture2D" uid="uid://c3yhv44gc4qdl" path="res://assets/icons/drawer.png" id="47_dn1w2"]
 [ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
-[ext_resource type="PackedScene" uid="uid://d2mp2pdnnufm8" path="res://Scenes/Drawer.tscn" id="60_pa4y5"]
+[ext_resource type="Script" uid="uid://b172wgd7hty1f" path="res://Scripts/Drawer/Drawer_manager.gd" id="58_a7b38"]
+[ext_resource type="Script" uid="uid://br0s8055lcrgk" path="res://Scripts/Drawer/DrawerTabs.gd" id="58_jnakw"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -246,6 +248,7 @@ prefer_global_menu = false
 script = ExtResource("1_oipdw")
 
 [node name="ProjectManagement" parent="VBoxRoot/HBoxContainer/menuMain" instance=ExtResource("2_amibn")]
+unique_name_in_owner = true
 layout_mode = 1
 
 [node name="fdgOpenFile" type="FileDialog" parent="VBoxRoot/HBoxContainer/menuMain"]
@@ -664,14 +667,77 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 27.5)
 layout_mode = 2
 
-[node name="tcThreads" type="TabContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer"]
+[node name="NotesDrawerSplit" type="VSplitContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer"]
 unique_name_in_owner = true
+clip_contents = true
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 605
+
+[node name="tcThreads" type="TabContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 drag_to_rearrange_enabled = true
 tab_focus_mode = 1
 script = ExtResource("1_gunt8")
+
+[node name="BottomDrawerControl" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("58_a7b38")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+
+[node name="ControlPanel" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel"]
+layout_mode = 2
+size_flags_horizontal = 2
+
+[node name="Label" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/HBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 25
+text = "Drawer"
+
+[node name="AddNote" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel"]
+layout_mode = 2
+focus_mode = 0
+mouse_filter = 1
+mouse_default_cursor_shape = 2
+text = "Create note"
+icon = ExtResource("20_n1ygu")
+
+[node name="AddShelf" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel"]
+layout_mode = 2
+focus_mode = 0
+mouse_filter = 1
+mouse_default_cursor_shape = 2
+text = "New tab"
+icon = ExtResource("40_056ov")
+
+[node name="tcThreadsDrawer" type="TabContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/icon_separation = 16
+drag_to_rearrange_enabled = true
+tab_focus_mode = 1
+script = ExtResource("58_jnakw")
 
 [node name="DropForNode" type="ColorRect" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control"]
 unique_name_in_owner = true
@@ -740,10 +806,6 @@ grow_vertical = 2
 unique_name_in_owner = true
 visible = false
 
-[node name="Drawer" parent="." instance=ExtResource("60_pa4y5")]
-unique_name_in_owner = true
-visible = false
-
 [connection signal="about_to_popup" from="ManyNewFilesDialogWindow" to="ManyNewFilesDialogWindow" method="_on_about_to_popup"]
 [connection signal="text_submitted" from="ManyNewFilesDialogWindow/Panel/MarginContainer/VBoxContainer/HBoxContainer/NewFilesLineEdit" to="ManyNewFilesDialogWindow" method="_on_new_files_line_edit_text_submitted"]
 [connection signal="pressed" from="ManyNewFilesDialogWindow/Panel/MarginContainer/VBoxContainer/HBoxContainer/Button" to="ManyNewFilesDialogWindow" method="_on_button_pressed"]
@@ -776,6 +838,9 @@ visible = false
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnDrawer" to="." method="_on_btn_drawer_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachment_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" method="_on_new_pressed"]
-[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" method="_on_active_tab_rearranged"]
-[connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/tcThreads" method="_on_tab_clicked"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_new_pressed"]
+[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_active_tab_rearranged"]
+[connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_tab_clicked"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddNote" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_note_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddShelf" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_shelf_pressed"]
+[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsDrawer" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsDrawer" method="_on_active_tab_rearranged"]
