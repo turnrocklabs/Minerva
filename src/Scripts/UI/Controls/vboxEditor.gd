@@ -18,7 +18,7 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 
 func serialize() -> Array:
 	var editors_serialized: Array[Dictionary] = []
-	var tab_idx:= 0
+	var tab_idx := 0
 	for editor in editor_pane.get_open_editors():
 		var content
 		match editor.type:
@@ -26,50 +26,168 @@ func serialize() -> Array:
 				content = editor.code_edit.text
 			editor.Type.GRAPHICS:
 				var layers: Array[Dictionary] = []
-				for layer in editor.graphics_editor._layers_container.get_children():
-					if layer:
-						var layer_dic = {
-							"layer_img": Marshalls.raw_to_base64(layer.texture.get_image().save_png_to_buffer())
-						}
-						layers.append(layer_dic)
-				content = layers
+				# Get the GraphicsEditorV2 instance
+				var graphics_editor = editor.graphics_editor
+				if graphics_editor:
+					# Serialize layers in the correct order (from layers array)
+					for layer in graphics_editor.layers:
+						if layer and layer.image:
+							var layer_data = {
+								"name": layer.name,
+								"layer_img": Marshalls.raw_to_base64(layer.image.save_png_to_buffer()),
+								"position_x": layer.position.x,
+								"position_y": layer.position.y,
+								"size_x": layer.size.x,
+								"size_y": layer.size.y,
+								"rotation": layer.rotation,
+								"pivot_offset_x": layer.pivot_offset.x,
+								"pivot_offset_y": layer.pivot_offset.y,
+								"visible": layer.visible,
+								"locked": layer.locked,
+								"type": layer.type,
+								"outline_visible": layer.outline_visible,
+								"outline_color_r": layer.outline_color.r,
+								"outline_color_g": layer.outline_color.g,
+								"outline_color_b": layer.outline_color.b,
+								"outline_color_a": layer.outline_color.a
+							}
+							
+							# Save base_image if it exists (for image layers)
+							if layer.base_image:
+								layer_data["base_img"] = Marshalls.raw_to_base64(layer.base_image.save_png_to_buffer())
+							
+							# Save speech bubble data if it exists
+							if layer.type == LayerV2.Type.SPEECH_BUBBLE and layer.speech_bubble:
+								layer_data["speech_bubble_type"] = layer.speech_bubble.type
+							
+							layers.append(layer_data)
+					
+					# Also save canvas size and selected layers
+					content = {
+						"layers": layers,
+						"canvas_size_x": graphics_editor.canvas_size.x,
+						"canvas_size_y": graphics_editor.canvas_size.y,
+						"selected_layer_names": graphics_editor.selected_layers.map(func(l): return l.name)
+					}
+				else:
+					content = {"layers": [], "canvas_size_x": 1000, "canvas_size_y": 1000, "selected_layer_names": []}
 		
-		var editor_string = {
-			"name": editor_pane.Tabs.get_tab_title(tab_idx),#editor.name,
+		var editor_data = {
+			"name": editor_pane.Tabs.get_tab_title(tab_idx),
 			"file": editor.file,
 			"type": editor.type,
 			"content": content
 		}
-		editors_serialized.append(editor_string)
+		editors_serialized.append(editor_data)
 		tab_idx += 1
 	
 	return editors_serialized
 
 
 static func deserialize(editors_array: Array) -> Array[Editor]:
-	# first clear all open editors
-	#var data: Array = editors_array_dic.get("editors_array")
 	var editor_instances: Array[Editor] = []
 	for editor_ser in editors_array:
 		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
 		editor_inst.tab_title = editor_ser.get("name")
 		
+		await SingletonObject.editor_container.get_tree().process_frame
+
 		if editor_inst.type == Editor.Type.TEXT:
-			
 			editor_inst.code_edit.text = editor_ser.get("content")
+			
 		elif editor_inst.type == Editor.Type.GRAPHICS:
-			var graphics_editor: GraphicsEditor = editor_inst.get_node("%GraphicsEditor")
-			var counter = 1
-			for layer_img in editor_ser.get("content"):
+			var graphics_editor: GraphicsEditorV2 = editor_inst.graphics_editor
+			if graphics_editor:
+				var content = editor_ser.get("content")
 				
-				var buffer = Marshalls.base64_to_raw(layer_img.get("layer_img"))
-				var image = Image.new()
-				image.load_png_from_buffer(buffer)
-				var layer = Layer.create(image, "layer " + str(counter))
-				#layer.texture = texture
-				if graphics_editor != null:
-					graphics_editor.loaded_layers.append(layer)
-					counter +=1
+				# Restore canvas size
+				var canvas_size = Vector2i(
+					content.get("canvas_size_x", 1000),
+					content.get("canvas_size_y", 1000)
+				)
+				graphics_editor.canvas_size = canvas_size
+				
+				# Clear existing layers first
+				for existing_layer in graphics_editor.layers.duplicate():
+					if existing_layer:
+						# Remove layer card
+						for card in graphics_editor.layer_cards_container.get_children():
+							if card is LayerCard and card.layer == existing_layer:
+								card.queue_free()
+								break
+						
+						# Remove from arrays
+						graphics_editor.layers.erase(existing_layer)
+						graphics_editor.selected_layers.erase(existing_layer)
+						
+						# Remove from scene
+						existing_layer.queue_free()
+				
+				# Wait for cleanup
+				await SingletonObject.editor_container.get_tree().process_frame
+				
+				# Recreate layers from serialized data
+				var selected_layer_names = content.get("selected_layer_names", [])
+				var layers_data = content.get("layers", [])
+				
+				for layer_data in layers_data:
+					var layer: LayerV2
+					
+					# Restore the image
+					var buffer = Marshalls.base64_to_raw(layer_data.get("layer_img"))
+					var image = Image.new()
+					image.load_png_from_buffer(buffer)
+					
+					# Create layer based on type
+					var layer_type = layer_data.get("type", LayerV2.Type.DRAWING)
+					match layer_type:
+						LayerV2.Type.IMAGE:
+							layer = LayerV2.create_image_layer(layer_data.get("name", "Layer"), image)
+							# Restore base_image if it exists
+							if layer_data.has("base_img"):
+								var base_buffer = Marshalls.base64_to_raw(layer_data.get("base_img"))
+								var base_image = Image.new()
+								base_image.load_png_from_buffer(base_buffer)
+								layer.base_image = base_image
+								
+						LayerV2.Type.SPEECH_BUBBLE:
+							var bubble_type = layer_data.get("speech_bubble_type", CloudControl.Type.ELLIPSE)
+							layer = LayerV2.create_speech_bubble_layer(layer_data.get("name", "Speech Bubble"), bubble_type)
+							
+						_: # Default to DRAWING
+							layer = LayerV2.create_drawing_layer(
+								layer_data.get("name", "Layer"),
+								Vector2i(image.get_width(), image.get_height())
+							)
+							layer.image = image
+					
+					# Restore all layer properties
+					layer.position = Vector2(
+						layer_data.get("position_x", 0),
+						layer_data.get("position_y", 0)
+					)
+					layer.size = Vector2(
+						layer_data.get("size_x", image.get_width()),
+						layer_data.get("size_y", image.get_height())
+					)
+					layer.rotation = layer_data.get("rotation", 0.0)
+					layer.pivot_offset = Vector2(
+						layer_data.get("pivot_offset_x", layer.size.x / 2),
+						layer_data.get("pivot_offset_y", layer.size.y / 2)
+					)
+					layer.visible = layer_data.get("visible", true)
+					layer.locked = layer_data.get("locked", false)
+					layer.outline_visible = layer_data.get("outline_visible", true)
+					layer.outline_color = Color(
+						layer_data.get("outline_color_r", 1.0),
+						layer_data.get("outline_color_g", 0.5),
+						layer_data.get("outline_color_b", 0.0),
+						layer_data.get("outline_color_a", 1.0)
+					)
+					
+					# Add layer to graphics editor (this will create the layer card automatically)
+					var should_select = selected_layer_names.has(layer.name)
+					graphics_editor.add_layer.call_deferred(layer, should_select)
 		
 		editor_instances.append(editor_inst)
 	
