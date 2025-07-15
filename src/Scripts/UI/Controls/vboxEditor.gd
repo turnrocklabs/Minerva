@@ -87,7 +87,7 @@ func serialize() -> Array:
 static func deserialize(editors_array: Array) -> Array[Editor]:
 	var editor_instances: Array[Editor] = []
 	for editor_ser in editors_array:
-		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"))
+		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"), null, null, false)
 		editor_inst.tab_title = editor_ser.get("name")
 		
 		await SingletonObject.editor_container.get_tree().process_frame
@@ -98,6 +98,7 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 		elif editor_inst.type == Editor.Type.GRAPHICS:
 			var graphics_editor: GraphicsEditorV2 = editor_inst.graphics_editor
 			if graphics_editor:
+				
 				var content = editor_ser.get("content")
 				
 				# Restore canvas size
