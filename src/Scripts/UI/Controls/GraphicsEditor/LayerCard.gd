@@ -20,6 +20,7 @@ var _color: Color = Color.from_string("2f2c2c", Color.BLACK)
 
 var selected: = false:
 	set(value):
+		value = value if not layer.locked else false # don't allow selecting locked layers
 		selected = value
 		
 		var styleBox: StyleBoxFlat = get_theme_stylebox("panel").duplicate()
@@ -30,6 +31,7 @@ var selected: = false:
 			layer_selected.emit()
 			layer.outline_visible = true
 		else:
+			mouse_filter = Control.MOUSE_FILTER_PASS
 			layer.outline_visible = false
 			layer.transform_rect_visible = false
 			layer_deselected.emit()
