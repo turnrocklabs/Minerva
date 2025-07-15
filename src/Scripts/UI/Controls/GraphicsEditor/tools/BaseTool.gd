@@ -19,8 +19,8 @@ func _ready() -> void:
 			if tool_ == self: _tool_selected()
 	)
 
-func handle_input_event(_event: InputEvent) -> void:
-	pass
+func handle_input_event(_event: InputEvent) -> bool:
+	return false
 
 
 func _tool_selected():

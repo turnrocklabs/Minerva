@@ -281,7 +281,7 @@ func _on_screenshot_button_pressed() -> void:
 	SingletonObject.is_graph = true
 	SingletonObject.is_picture = true
 	var editor = ep.add(Editor.Type.GRAPHICS, null, stream_position)
-	editor.graphics_editor.setup_from_image(image)
+	editor.graphics_editor.create_new_image_layer("Layer", image)
 	remove_child(viewport)
 	viewport = null
 
