@@ -93,8 +93,8 @@ func _ready() -> void:
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
-	create_new_layer("Background", canvas_size_, Color.WHITE, false)
-	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, true, true)
+	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
+	create_new_layer("Background", canvas_size_, Color.WHITE, true)
 
 
 
@@ -151,6 +151,9 @@ func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
 
 func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 	if button_index == MOUSE_BUTTON_LEFT:
+
+		if layer_card.layer.locked: return # ignore locked layers
+		
 		if Input.is_key_pressed(KEY_CTRL):
 			layer_card.selected = not layer_card.selected
 		
