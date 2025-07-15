@@ -186,6 +186,7 @@ button_group = ExtResource("2_ymijy")
 text = "Speech"
 
 [node name="CenterViewButton" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
+visible = false
 layout_mode = 2
 tooltip_text = "Centers the viewport."
 icon = ExtResource("17_tml0f")

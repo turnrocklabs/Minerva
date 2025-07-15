@@ -331,12 +331,24 @@ func _on_bucket_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = bucket_tool if toggled_on else null
 
 func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
+	if not toggled_on:
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+		_tools_option_button.grab_focus()
+		return
+	
 	active_tool = pan_tool if toggled_on else null
 
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = eraser_tool if toggled_on else null
 
 func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
+	if not toggled_on:
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+		_tools_option_button.grab_focus()
+		return
+	
 	active_tool = transform_tool if toggled_on else null
 
 func _on_speech_bubble_tool_button_toggled(toggled_on:bool) -> void:
