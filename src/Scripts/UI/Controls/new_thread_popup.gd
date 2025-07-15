@@ -2,7 +2,7 @@ extends PersistentWindow
 
 var tab_reference = null
 #var tab_title: String = ""
-
+var isDrawer:bool
 func _ready() -> void:
 	SingletonObject.associated_notes_tab.connect(_on_associated_notes_tab)
 	SingletonObject.pop_up_new_tab.connect(_pop_up_new_tab)
@@ -31,14 +31,11 @@ func _on_btn_voice_for_note_tab_pressed():
 	#%btnVoiceForNoteTab.icon = icActive
 	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 
-
 func _on_btn_create_thread_pressed() -> void:
-	var thread_main = get_parent().find_child("NewThreadPopup")
-	var thread_drawer = null
-	if thread_main != null:
-		SingletonObject.create_notes_tab.emit(false,%txtNewTabName.text, tab_reference)
-	elif thread_drawer != null:
-		SingletonObject.create_notes_tab.emit(true,%txtNewTabName.text, tab_reference)
+	if isDrawer:
+		SingletonObject.create_drawer_tab.emit(%txtNewTabName.text,tab_reference)
+	else:
+		SingletonObject.create_notes_tab.emit(%txtNewTabName.text,tab_reference)
 	%txtNewTabName.text = ""
 	call_deferred("hide")
 
@@ -52,8 +49,8 @@ func _on_close_requested() -> void:
 	call_deferred("hide")
 
 
-func _on_txt_new_tab_name_text_submitted(new_text: String) -> void:
-	SingletonObject.create_notes_tab.emit(new_text, tab_reference)
+func _on_txt_new_tab_name_text_submitted(_new_text: String) -> void:
+	_on_btn_create_thread_pressed()
 	call_deferred("hide")
 
 

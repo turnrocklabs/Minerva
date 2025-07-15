@@ -66,6 +66,7 @@ folder_colors={
 
 Experimental=""
 ToggleTabs=""
+parallelLoadingNode=""
 
 [gui]
 

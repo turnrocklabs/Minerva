@@ -4,8 +4,16 @@ class_name Drawer_manager
 var data_path: String = "user://drawer_data.json"
 var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
 
-func _on_save_data_pressed() -> void:
+func _ready() -> void:
+	
+	SingletonObject.connect("openDrawerNotes",_render_drawer)
+	
+	SingletonObject.connect("drawer_save_data",_drawer_save_data)
+
+
+func _drawer_save_data() -> void:
 	save_notes(data_path)
+
 
 func save_notes(path: String = "") -> void:
 	var notes_data = serialize_notes()
@@ -16,13 +24,15 @@ func save_notes(path: String = "") -> void:
 			file.store_line(JSON.stringify(notes_data, "\t"))
 			file.close()
 			last_saved_data = notes_data  # Update last saved data
-			print("Notes saved successfully to: ", path)
+			if OS.is_debug_build():
+				print("Notes saved successfully to: ", path)
 		else:
-			push_error("Failed to save notes to ", path, ". Error: ", FileAccess.get_open_error())
+			if OS.is_debug_build():
+				push_error("Failed to save notes to ", path, ". Error: ", FileAccess.get_open_error())
+
 
 func load_notes(path: String) -> void:
 	if not FileAccess.file_exists(path):
-		push_warning("File does not exist: ", path)
 		return
 	
 	var file = FileAccess.open(path, FileAccess.READ)
@@ -90,7 +100,8 @@ func serialize_notes() -> Dictionary:
 				"Order": memory_item.Order,
 				"OwningThread": memory_item.OwningThread,
 				"Expanded": memory_item.Expanded,
-				"LastYSize": memory_item.LastYSize
+				"LastYSize": memory_item.LastYSize,
+				"isDrawer": memory_item.isDrawer
 			}
 			
 			# Handle image data
@@ -202,19 +213,9 @@ func deserialize_notes(data: Dictionary) -> void:
 		SingletonObject.DrawerTab.clear_all_tabs()
 		SingletonObject.DrawerTab.render_threads()
 
-func _on_drawer_about_to_popup() -> void:
+func _render_drawer() -> void:
 	load_notes(data_path)
-	
-func _notification(what):
-	if what == NOTIFICATION_WM_CLOSE_REQUEST and $"..".close_requested:
-		# Compare current data with last saved data
-		var current_data = get_current_data()
-		var has_changes = not compare_data(current_data, last_saved_data)
-		
-		if has_changes:
-			$"../CloseActions".popup_centered()
-		else:
-			$"..".hide()
+
 
 # New function to compare two data sets
 func compare_data(data1: Dictionary, data2: Dictionary) -> bool:
@@ -277,3 +278,13 @@ func _on_close_pressed() -> void:
 func _on_exit_pressed() -> void:
 	$"../CloseActions".hide()
 	$"..".hide()
+
+
+func _on_add_note_pressed() -> void:
+	%CreateNewNote.popup_centered()
+	%CreateNewNote.isDrawer = true
+
+
+func _on_add_shelf_pressed() -> void:
+	%NewThreadPopup.popup_centered()
+	%NewThreadPopup.isDrawer = true
