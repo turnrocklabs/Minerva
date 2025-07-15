@@ -87,7 +87,7 @@ func _ready() -> void:
 	_tools_option_button.item_selected.emit(0)
 	compose_progress_updated.connect(_on_compose_progress)
 	compose_finished.connect(_on_compose_complete)
-	setup()
+	# setup()
 
 
 
@@ -368,6 +368,9 @@ func _on_file_selected(fp: String) -> void:
 
 	add_layer(l)
 
+	# reselect the first tool
+	_tools_option_button.select(0)
+	_tools_option_button.item_selected.emit(0)
 
 func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
@@ -598,7 +601,7 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		1: _on_eraser_tool_button_toggled(true)
 		2: _on_bucket_tool_button_toggled(true)
 		3: _on_smudge_tool_button_toggled(true)
-		4: _on_add_image_button_pressed()
+		4: active_tool = null; _on_add_image_button_pressed()
 		_: pass
 	
 
