@@ -28,10 +28,13 @@ var selected: = false:
 
 		if selected:
 			layer_selected.emit()
+			layer.outline_visible = true
 		else:
+			layer.outline_visible = false
 			layer.transform_rect_visible = false
 			layer_deselected.emit()
-			layer.queue_redraw()
+		
+		layer.queue_redraw()
 		
 var editor: GraphicsEditorV2
 
@@ -208,11 +211,12 @@ func _on_context_menu_id_pressed(id: int) -> void:
 			layer.queue_free()
 			queue_free()
 		ContextMenuItem.MERGE:
-			editor.merge_layers(editor.selected_layers)
+			editor.merge_layers(editor.selected_layers.duplicate())
 
 
 func _on_context_menu_about_to_popup() -> void:
 	context_menu.set_item_disabled(ContextMenuItem.MERGE, editor.selected_layers.size() < 2)
+	context_menu.set_item_disabled(ContextMenuItem.REMOVE, layer.locked)
 
 
 func _on_name_text_submitted(_new_text: String) -> void:

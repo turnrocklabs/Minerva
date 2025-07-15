@@ -228,7 +228,7 @@ func _load_text_file(filename: String):
 
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
-	graphics_editor.setup_from_image(image)
+	graphics_editor.create_new_image_layer(filename.get_file().get_basename(), image)
 	#_file_saved = true
 	#SingletonObject.UpdateUnsavedTabIcon.emit()
 	# %SaveButton.disabled = false
@@ -306,15 +306,15 @@ func save():
 		await prompt_close(true)
 	
 	# Explicitly update the note after saving
-	if has_meta("memory_item"):
-		_update_memory_item(get_meta("memory_item"))
+	# if has_meta("memory_item"):
+	# 	_update_memory_item(get_meta("memory_item"))
 	
 	# Post save emit the signals
 	match type:
 		Type.TEXT:
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
-			graphics_editor.is_image_saved = true
+			graphics_editor.saved = true
 			SingletonObject.UpdateUnsavedTabIcon.emit()
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
@@ -347,7 +347,7 @@ func get_saved_state() -> int:
 			# if there's no graphics editor, even tho that's the type, just return all saved states
 			if not graphics_editor: state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
-			if file and graphics_editor.is_image_saved:
+			if file and graphics_editor.saved:
 				state |= FILE_SAVED
 			
 			if associated_object:
@@ -416,7 +416,7 @@ func save_file_to_disc(path: String) -> void:
 
 		Type.GRAPHICS:
 			# Save image to file
-			var img = graphics_editor.image
+			var img = await graphics_editor.compose_final_image()
 			if img:
 				# Temporarily change filters for PNG save
 				var dialog = ($FileDialog as FileDialog)
@@ -438,7 +438,7 @@ func save_file_to_disc(path: String) -> void:
 					_update_memory_item(associated_object.memory_item)
 					associated_object.memory_item = associated_object.memory_item  # Force update
 
-				graphics_editor.is_image_saved = true
+				graphics_editor.saved = true
 
 		Type.VIDEO:
 			# Handle video file saving if needed
@@ -472,6 +472,8 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 
+	# breakpoint
+
 	if is_instance_valid(associated_object) and associated_object is Note:
 		_update_memory_item(associated_object.memory_item)
 		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
@@ -486,12 +488,13 @@ func _on_create_note_button_pressed() -> void:
 				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 
 		if Type.GRAPHICS == type:
+			var editor_image = await graphics_editor.compose_final_image()
 			if tab_title:
-				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", graphics_editor.image, graphics_editor.image.get_meta("caption", ""))
+				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image)
 			elif file:
-				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
+				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
 			else:
-				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", editor_image, "Sketch")
 
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
@@ -753,7 +756,8 @@ func _create_note() -> MemoryItem:
 	
 	elif type == Type.GRAPHICS:
 		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = graphics_editor.image
+		memory_item.MemoryImage = await graphics_editor.compose_final_image()
+		print("CREATED GE D_NOTE")
 
 	else:
 		return null # type not supported
@@ -767,7 +771,7 @@ func _update_memory_item(memory_item: MemoryItem) -> void:
 	
 	elif type == Type.GRAPHICS:
 		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = graphics_editor.image
+		memory_item.MemoryImage = await graphics_editor.compose_final_image()
 
 
 
@@ -775,7 +779,7 @@ func _on_check_button_toggled(toggled_on: bool):
 	var item: MemoryItem
 
 	if not has_meta("memory_item"):
-		item = _create_note()
+		item = await _create_note()
 		if not item:
 			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the editor.")
 			_note_check_button.button_pressed = false
@@ -795,6 +799,7 @@ func _on_check_button_toggled(toggled_on: bool):
 		if not present:
 			SingletonObject.DetachedNotes.append(item)
 
+	_update_memory_item(item)
 	item.Enabled = toggled_on
 
 func _on_close_warrning(path):

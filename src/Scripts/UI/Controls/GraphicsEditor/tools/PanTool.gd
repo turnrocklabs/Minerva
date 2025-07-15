@@ -1,4 +1,4 @@
-class_name PaneTool
+class_name PanTool
 extends BaseTool
 
 var hand_icon: = preload("res://assets/icons/drag_hand.png")
@@ -8,7 +8,6 @@ var last_mouse_position: Vector2 = Vector2.ZERO
 # Infinite canvas support
 var canvas_min_bounds: Vector2 = Vector2(-5000, -5000)  # Arbitrary large limits
 var canvas_max_bounds: Vector2 = Vector2(5000, 5000)
-# var background_grid: = preload("res://assets/textures/grid.png")  # Optional grid texture
 
 func _ready() -> void:
 	editor.active_tool_changed.connect(
@@ -17,7 +16,7 @@ func _ready() -> void:
 				editor.set_custom_cursor(hand_icon)
 	)
 
-func handle_input_event(event: InputEvent) -> void:
+func handle_input_event(event: InputEvent) -> bool:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.is_pressed():
@@ -37,6 +36,8 @@ func handle_input_event(event: InputEvent) -> void:
 			var relative = event.position - last_mouse_position
 			_pan_canvas(relative)
 			last_mouse_position = event.position
+	
+	return false
 
 func _pan_canvas(relative: Vector2) -> void:
 	editor.layers_container.position += relative
