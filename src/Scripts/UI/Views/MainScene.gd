@@ -1,10 +1,12 @@
 extends Control
 
+
 var is_dragging = false
 var drag_start_position = Vector2()
 
 @export  var terminal_container: TerminalTabContainer
 #variables where writing out notes Head and description
+@onready var project_name_label: RichTextLabel = %ProjectNameLabel
 
 #these variables are for changing only the font size of the UI
 var _default_zoom: int
@@ -27,12 +29,15 @@ func _ready() -> void:
 			current_font_size =ThemeDB.fallback_font_size
 	
 	_default_zoom = current_font_size
+	_open_drawer_notes()
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %fdgOpenFile.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 14)
-
+	
+	_update_project_label()
+	SingletonObject.updated_save_state.connect(_update_project_label)
 
 var MAX: = 20
 
@@ -107,8 +112,6 @@ func reset_zoom():
 
 	_recursive_theme_change(self, _set_node_font_size.bind(current_font_size))
 
-	# _recursive_theme_change(self, _reset_node_font_size)
-
 
 func _gui_input(event):
 
@@ -124,6 +127,7 @@ func _gui_input(event):
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
 	%CreateNewNote.popup_centered()
+	%CreateNewNote.isDrawer = false
 
 # this method pops up the preferences window
 func _on_button_pressed() -> void:
@@ -146,7 +150,6 @@ func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteHead
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForHeader
-	#%btnVoiceForHeader.icon = icActive
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
 	SingletonObject.AtT.btnStop = %StopButton3
@@ -155,7 +158,6 @@ func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName
 	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnVoiceForNoteTab
-	#%btnVoiceForNoteTab.icon = icActive
 	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 	%AudioStopButton2.visible = true
 	SingletonObject.AtT.btnStop = %AudioStopButton2
@@ -174,18 +176,22 @@ func _on_disable_notes_button_pressed() -> void:
 
 #region help menu
 
-var license_agreement_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
-var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 
-var about_status: = ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
-var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
 func _on_help_id_pressed(id: int) -> void:
 	match id:
 		0:# id for the About option
-			var about_scene_inst = about_scene.instantiate()
+			if !ResourceLoader.has_cached("res://Scenes/windows/about_popup.tscn"):
+				ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
+			
+			var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
+			var about_scene_inst: AboutPopup = about_scene.instantiate()
 			call_deferred("add_child", about_scene_inst)
 		1:# id for the license Agreement 
-			var license_scene_inst = license_scene.instantiate()
+			if !ResourceLoader.has_cached("res://Scenes/windows/license_agreement_panel.tscn"):
+				ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
+			
+			var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
+			var license_scene_inst: LicensePopup = license_scene.instantiate()
 			call_deferred("add_child", license_scene_inst)
 
 #endregion help menu
@@ -205,7 +211,7 @@ func _on_stop_button_3_pressed() -> void:
 
 func _on_stop_button_4_pressed() -> void:
 	SingletonObject.AtT._StopConverting()
-	
+
 
 func _input(event):
 	if event.is_action_released("ui_terminal", true):
@@ -227,18 +233,46 @@ func _input(event):
 				if typeof(get_viewport().gui_get_drag_data()) == TYPE_STRING:
 					is_dragging = true
 					%DropForNode.visible = true
-			
-				
-				
 
 
-func _on_project_mouse_entered() -> void:
-	print("aaaaaaaaaaaaa")
+@onready var bottom_drawer_control: Drawer_manager = %BottomDrawerControl
+@onready var notes_drawer_split: VSplitContainer = %NotesDrawerSplit
+var split_drawer_tween: Tween
+func _on_btn_drawer_pressed() -> void:
+	
+	if split_drawer_tween and split_drawer_tween.is_running():
+		return
+	
+	if !bottom_drawer_control.visible:
+		notes_drawer_split.split_offset = 600
+		split_drawer_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
+		bottom_drawer_control.visible = true
+		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 0, 0.7)
+		_open_drawer_notes()
+		bottom_drawer_control.visible = true
+	else:
+		
+		split_drawer_tween = create_tween().set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_LINEAR)
+		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 600, 0.6)
+		
+		await get_tree().create_timer(0.48).timeout
+		bottom_drawer_control.visible = false
+	SingletonObject.DrawerTab.Disable_All()
 
 
-func _on_project_mouse_exited() -> void:
-	pass # Replace with function body.
+#reading file and create note in Drawer thread
+func _open_drawer_notes():
+	SingletonObject.emit_signal("openDrawerNotes")
+	SingletonObject.DrawerTab.render_threads()
 
-
-func _on_add_layer_pressed() -> void:
-	pass # Replace with function body.
+func _update_project_label(new_text: String = "", saved_state: bool = true) -> void:
+	var base_text: String
+	if new_text.is_empty() and saved_state:
+		base_text = ""
+	elif !new_text.is_empty() and saved_state:
+		base_text = new_text
+	elif new_text.is_empty() and !saved_state:
+		base_text = project_name_label.text.replace("*", "") + "*"
+	elif !new_text.is_empty() and !saved_state:
+		base_text = new_text + "*"
+	project_name_label.text = base_text

@@ -3,10 +3,15 @@
 [ext_resource type="Script" uid="uid://c014abn8bg8me" path="res://Scripts/UI/Controls/slider_container.gd" id="1_ypr63"]
 
 [node name="SliderContainer" type="Container"]
-custom_minimum_size = Vector2(0, 100)
+clip_contents = true
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+size_flags_horizontal = 3
 script = ExtResource("1_ypr63")
+offset_distance = 600.0
+inactive_scale = 0.95
+
+[connection signal="child_entered_tree" from="." to="." method="_on_child_entered_tree"]

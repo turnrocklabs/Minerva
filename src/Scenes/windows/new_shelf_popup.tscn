@@ -1,0 +1,80 @@
+[gd_scene load_steps=4 format=3 uid="uid://brm1w121bm61d"]
+
+[ext_resource type="Script" uid="uid://cgbf8yxnoy3hq" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_cqyqj"]
+[ext_resource type="Script" uid="uid://6djlivwuoitq" path="res://Scripts/shelf_popup.gd" id="2_hbbme"]
+[ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow_icons/create_arrow.png" id="6_mw14t"]
+
+[node name="new_shelf_popup" type="Window"]
+position = Vector2i(0, 36)
+size = Vector2i(500, 110)
+script = ExtResource("1_cqyqj")
+metadata/_custom_type_script = "uid://cgbf8yxnoy3hq"
+
+[node name="Panel" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_hbbme")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Control" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="HBoxTopRow" type="HBoxContainer" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Control3" type="Control" parent="VBoxContainer/HBoxTopRow"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxTopRow"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Name"
+
+[node name="txtNewShelfName" type="LineEdit" parent="VBoxContainer/HBoxTopRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Tab Name"
+max_length = 25
+clear_button_enabled = true
+caret_blink = true
+
+[node name="btnCreateThread" type="Button" parent="VBoxContainer/HBoxTopRow"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+tooltip_text = "Create Notes Tab"
+text = "Create"
+icon = ExtResource("6_mw14t")
+
+[node name="Control2" type="Control" parent="VBoxContainer/HBoxTopRow"]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+theme_override_constants/separation = 16
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+
+[connection signal="pressed" from="VBoxContainer/HBoxTopRow/btnCreateThread" to="Panel" method="_on_btn_create_thread_pressed"]

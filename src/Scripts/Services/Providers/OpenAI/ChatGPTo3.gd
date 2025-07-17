@@ -1,30 +1,29 @@
 class_name ChatGPTo3
 extends ChatGPT4o
 
-class O3 extends ChatGPTo3:
+class o3 extends ChatGPTo3:
 	func _init():
 		super()
 
-		model_name = "o3-2025-04-16"
-		display_name = "O3"
+		model_name = "o3"
+		display_name = "03"
 		short_name = "O3"
-		token_cost = 40.0 / 1_000_000 * 100
+		token_cost = 1.1 / 1_000_000 * 100
 	
 	func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 		
 		additional_params.merge({
-			"reasoning_effort": "high"
+			"reasoning_effort": "medium"
 		}, true)
 
 		return await super(prompt, additional_params)
-
 
 class MiniMedium extends ChatGPTo3:
 	func _init():
 		super()
 
-		model_name = "o3-mini"
-		display_name = "03-mini-medium"
+		model_name = "o4-mini"
+		display_name = "04-mini-medium"
 		short_name = "OM"
 		token_cost = 1.1 / 1_000_000 * 100
 	
@@ -36,12 +35,13 @@ class MiniMedium extends ChatGPTo3:
 
 		return await super(prompt, additional_params)
 
+
 class MiniHigh extends ChatGPTo3:
 	func _init():
 		super()
 
-		model_name = "o3-mini"
-		display_name = "03-mini-high"
+		model_name = "o4-mini"
+		display_name = "04-mini-high"
 		short_name = "OH"
 		token_cost = 1.1 / 1_000_000 * 100
 	

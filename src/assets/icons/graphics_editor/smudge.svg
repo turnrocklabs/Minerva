@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e8eaed">
+  <!-- Hand/finger shape -->
+  <path d="M200-300q-17 0-28.5-11.5T160-340v-60q0-17 11.5-28.5T200-440h40v-100q0-17 11.5-28.5T280-580q17 0 28.5 11.5T320-540v100h40v-140q0-17 11.5-28.5T400-620q17 0 28.5 11.5T440-580v140h40v-120q0-17 11.5-28.5T520-600q17 0 28.5 11.5T560-560v120h40q17 0 28.5 11.5T640-400v60q0 17-11.5 28.5T600-300H200Z"/>
+  
+  <!-- Smudged line being created -->
+  <path d="M640-480h80" stroke="#e8eaed" stroke-width="8" stroke-linecap="round" opacity="0.8"/>
+  <path d="M720-480h60" stroke="#e8eaed" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
+  <path d="M780-480h40" stroke="#e8eaed" stroke-width="4" stroke-linecap="round" opacity="0.3"/>
+</svg>

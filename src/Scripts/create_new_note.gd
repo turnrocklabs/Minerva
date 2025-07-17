@@ -5,7 +5,7 @@ extends PersistentWindow
 @onready var image_check_box: CheckBox = %ImageCheckBox
 
 var note_enum = SingletonObject.note_type.TEXT
-
+var isDrawer:bool = false
 var effect: AudioEffect
 var audio_recording: AudioStreamWAV = null
 var image_original_res: Image = null
@@ -36,7 +36,6 @@ func _on_about_to_popup() -> void:
 	#should_add_note_be_disabled()
 	%AddNotePopUp.disabled = true
 
-
 func _on_close_requested() -> void:
 	call_deferred("hide")
 	%NoteHead.text = ""
@@ -45,7 +44,8 @@ func _on_close_requested() -> void:
 	image_original_res = null
 	audio_recording = null
 	%ImageDropPanel.visible = true
-	%CreateNewNote.exclusive = false
+	if !isDrawer:
+		%CreateNewNote.exclusive = false
 
 #endregion Window signal handler functions
 
@@ -105,25 +105,43 @@ func change_note_type(button: CheckBox):
 
 #Creating new note
 func _on_add_note_pressed():
+	var Head = %NoteHead.text
+	var Description = %NoteDescription.text
 	
-	var Head = %NoteHead
-	var Description = %NoteDescription
+	match note_enum:
+		SingletonObject.note_type.TEXT:
+			if isDrawer:
+				SingletonObject.DrawerTab.add_note(Head, Description)
+			else:
+				SingletonObject.NotesTab.add_note(Head, Description)
+		SingletonObject.note_type.IMAGE:
+			var image_description = ""  # You can add an optional description field for images if needed
+			if isDrawer:
+				SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description)
+			else:
+				SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description,isDrawer)
+		SingletonObject.note_type.AUDIO:
+			if isDrawer:
+				SingletonObject.DrawerTab.add_audio_note(Head, audio_recording)
+			else:
+				SingletonObject.NotesTab.add_audio_note(Head, audio_recording,isDrawer)
 	
-	#SingletonObject.NotesTab.add_note(Head.text, Description.text)
-	if note_enum == SingletonObject.note_type.TEXT:
-		SingletonObject.NotesTab.add_note(Head.text, Description.text)
-	if note_enum == SingletonObject.note_type.IMAGE:
-		SingletonObject.NotesTab.add_image_note(Head.text, image_original_res)
-	if note_enum == SingletonObject.note_type.AUDIO:
-		SingletonObject.NotesTab.add_audio_note(Head.text, audio_recording)
-	Head.clear()
-	Description.clear()
+	# Clear all fields after adding note
+	%NoteHead.text = ""
+	%NoteDescription.text = ""
 	%ImagePreview.texture = null
-	%ImageDropPanel.visible = true
+	image_original_res = null
 	audio_recording = null
-	%CreateNewNote.hide()
+	%ImageDropPanel.visible = true
 	%AddNotePopUp.disabled = true
-
+	
+	# Reset audio UI
+	if note_enum == SingletonObject.note_type.AUDIO:
+		%RecordAudioButton.text = "Press To Record Note"
+		%PlayAudioButton.disabled = true
+		effect.set_recording_active(false)
+	
+	%CreateNewNote.hide()
 
 
 #region Image Note region
@@ -274,9 +292,11 @@ func _on_play_audio_button_pressed() -> void:
 #endregion Audio Note
 
 func should_add_note_be_disabled() -> void:
-	var text_fields_filled = %NoteHead.text != "" and %NoteDescription.text != ""
-	var image_field_and_title = %NoteHead.text != "" and image_original_res != null
-	var audio_field_and_title = %NoteHead.text != "" and audio_recording != null
+	var note_title: String = %NoteHead.text.strip_edges()
+	var note_description: String = %NoteDescription.text.strip_edges()
+	var text_fields_filled: bool = !note_title.is_empty() and !note_description.is_empty()
+	var image_field_and_title: bool =!note_title.is_empty() and image_original_res != null
+	var audio_field_and_title: bool = !note_title.is_empty() and audio_recording != null
 	
 	if text_fields_filled or image_field_and_title or audio_field_and_title:
 		%AddNotePopUp.disabled = false

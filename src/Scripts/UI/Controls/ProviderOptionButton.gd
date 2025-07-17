@@ -27,6 +27,11 @@ func _ready():
 		var instance = script.new()
 		add_item("%s" % instance.display_name, key)
 
+	if SingletonObject.config_has_saved_section("Providers"):
+		var provider  = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
+		if provider != null:
+			select(get_item_index(provider))
+
 	Core.service_selected.connect(_on_hcp_service_selected)
 
 func _on_item_selected(index: int):

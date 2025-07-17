@@ -9,9 +9,9 @@ func _init():
 	BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 	PROVIDER = SingletonObject.API_PROVIDER.GOOGLE
 
-	model_name = "gemini-2.0-flash-exp"
+	model_name = "gemini-2.0-flash"
 	short_name = "GV"
-	token_cost = 0
+	token_cost = 1.05 / 1_000_000
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response := BotResponse.new()

@@ -1,0 +1,20 @@
+[gd_resource type="JSON" format=3 uid="uid://bcex36v2baa3r"]
+
+[resource]
+resource_local_to_scene = true
+data = {
+"colorGroups": {
+"accessModifiers": "#FF79C6",
+"async": "#BD93F9",
+"booleanFalse": "#FF5555",
+"booleanTrue": "#50FA7B",
+"controlFlow": "#FFB86C",
+"errorHandling": "#F1FA8C",
+"functions": "#8BE9FD",
+"loops": "#FF79C6",
+"modules": "#E6DB74",
+"null": "#6272A4",
+"objectRelated": "#50FA7B",
+"types": "#8BE9FD"
+}
+}
