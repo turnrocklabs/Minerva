@@ -37,7 +37,7 @@ var video_path: String:
 			else:
 				video_resource = FFmpegVideoStream.new()
 				video_resource.file = value
-			if video_resource:
+			if video_resource.file:
 				video_stream_player.stream = video_resource
 				h_slider.max_value = video_stream_player.get_stream_length()
 			h_slider.value = 0
@@ -281,7 +281,7 @@ func _on_screenshot_button_pressed() -> void:
 	SingletonObject.is_graph = true
 	SingletonObject.is_picture = true
 	var editor = ep.add(Editor.Type.GRAPHICS, null, stream_position)
-	editor.graphics_editor.setup_from_image(image)
+	editor.graphics_editor.create_new_image_layer("Layer", image)
 	remove_child(viewport)
 	viewport = null
 

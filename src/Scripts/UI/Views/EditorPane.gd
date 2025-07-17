@@ -18,7 +18,7 @@ var _is_Completed
 
 var current_layout: LAYOUT
 
-@onready var Tabs: TabContainer = $"./VBoxContainer/HBoxContainer/LeftControl/TabContainer"
+@onready var Tabs: TabContainer = %TabContainer
 
 @onready var LeftControl: Control = $"./VBoxContainer/HBoxContainer/LeftControl"
 @onready var RightControl: Control = $"VBoxContainer/HBoxContainer/RightControl"
@@ -131,7 +131,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	for editor: Editor in Tabs.get_children():
 		if not editor is Editor: 
 			continue
-		if (file and editor.file == file) or (associated_object != null and editor.associated_object == associated_object):
+		if editor.file == file or (associated_object != null and editor.associated_object == associated_object):
 			Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
 			return editor
 	
@@ -223,7 +223,7 @@ func _copy_children_to(from: Node, to: Node):
 		to.call_deferred("add_child", dup)#.add_child(dup)
 
 func toggle_horizontal_split() -> void:
-	BottomControl.visible = false
+	BottomControl.visible = !BottomControl.visible
 
 	for c in RightControl.get_children(): RightControl.remove_child(c)
 	_copy_children_to(LeftControl, RightControl)

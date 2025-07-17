@@ -6,7 +6,7 @@ func _init():
 
 	model_name = "human"
 	short_name = "HU"
-	token_cost = 0 # so it ends up at the bottom of the list
+	token_cost = 5.0 # so it ends up at the bottom of the list
 
 
 func _parse_request_results(_response: RequestResults) -> BotResponse:
@@ -48,4 +48,3 @@ func estimate_tokens_from_prompt(_input: Array[Variant]):
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
-

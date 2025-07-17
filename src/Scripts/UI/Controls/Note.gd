@@ -3,9 +3,13 @@ extends VBoxContainer
 
 signal deleted()
 signal toggled(on: bool)
+signal deleted_drawer()
 
 ## This signal is emitted each time the underlying memory item has been updated.
 signal changed()
+
+
+@onready var remove_button: Button = %RemoveButton
 
 @export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
 @export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
@@ -27,6 +31,7 @@ signal changed()
 @onready var resize_drag_control: Control = %ResizeControl
 @onready var h_separator: HSeparator = %HSeparator
 
+var _temp_controls: Array[Control] = []
 
 var expanded: bool = true:
 	set(value):
@@ -54,6 +59,12 @@ var memory_item: MemoryItem:
 
 		if not is_node_ready(): await ready
 
+		# TODO: improve the code below
+		# The code below dynamically creates new controls
+		# each time the memory item is updated, we just clear them here
+		for ctrl in _temp_controls:
+			ctrl.queue_free()
+
 		label_node.text = value.Title
 		checkbutton_node.button_pressed = value.Enabled
 		visible = value.Visible
@@ -67,6 +78,7 @@ var memory_item: MemoryItem:
 				var image_controls_inst: = SingletonObject.image_controls_scene.instantiate()
 				image_controls_inst.memory_item = value
 				v_box_container.add_child(image_controls_inst)
+				_temp_controls = [image_controls_inst]
 				control_type = image_controls_inst
 				last_min_size = image_controls_inst.size.y
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
@@ -75,6 +87,7 @@ var memory_item: MemoryItem:
 			v_box_container.add_child(audio_control_inst)
 			control_type = audio_control_inst
 			v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
+			_temp_controls = [audio_control_inst]
 		if memory_item.Type == SingletonObject.note_type.VIDEO:
 			%EditButton.visible = false
 			var video_player_node: = SingletonObject.video_player_scene.instantiate()
@@ -123,6 +136,18 @@ var memory_item: MemoryItem:
 		
 		changed.emit()
 
+var isDrawer:bool = false:
+	set(value):
+		isDrawer = value
+		if remove_button:
+			if isDrawer:
+				remove_button.connect("pressed", _on_remove_drawer_button_pressed)
+				if remove_button.is_connected("pressed",_on_remove_button_pressed):
+					remove_button.disconnect("pressed", _on_remove_button_pressed)
+			else:
+				remove_button.connect("pressed", _on_remove_button_pressed)
+				if remove_button.is_connected("pressed",_on_remove_drawer_button_pressed):
+					remove_button.disconnect("pressed", _on_remove_drawer_button_pressed)
 #region New notes methods
 
 func new_text_note():
@@ -167,8 +192,8 @@ func _ready():
 	SingletonObject.theme_changed.connect(change_modulate_for_texture)
 	description_node.text = ""
 	#change_modulate_for_texture(SingletonObject.get_theme_enum())
-	# var new_size: Vector2 = size * 0.15
-	# set_size(new_size)
+	
+	remove_button.connect("pressed", _on_remove_button_pressed)
 	label_node.text_changed.connect(
 		func(text):
 			if memory_item: memory_item.Title = text
@@ -199,19 +224,12 @@ func _to_string():
 # but if the mouse is not above this note anymore, hide the separators
 func _process(_delta):
 	
-	if resize_dragging:
-		_resize_vertical(get_global_mouse_position().y, last_mouse_posistion_y)
-	
-	last_mouse_posistion_y = get_global_mouse_position().y
 	if not _upper_separator.visible and not _lower_separator.visible: return
 	
 	if not get_global_rect().has_point(get_global_mouse_position()):
 		_upper_separator.visible = false
 		_lower_separator.visible = false
-	
-	
 
-var last_mouse_posistion_y: float = 0.0
 
 func _notification(notification_type):
 	match notification_type:
@@ -262,56 +280,57 @@ func _can_drop_data(at_position: Vector2, data) -> bool:
 	return true
 	
 
-func _memory_thread_find(thread_id: String) -> MemoryThread:
-	return SingletonObject.ThreadList.filter(
+func _memory_thread_find(thread_id: String, note_type) -> MemoryThread:
+	return note_type.filter(
 		func(t: MemoryThread):
 			return t.ThreadId == thread_id
 	).pop_front()
 
 
 func _drop_data(_at_position: Vector2, data) -> void:
-	data = data as Note
-	# dragged note should be moved to thread where 'self' is 
-	# at 'insert_index'
-	var insert_index: int
-
+	if not data is Note: return
 	if data == self: return
 
-	# thread where dragged note is currently
-	var dragged_note_thread := _memory_thread_find(data.memory_item.OwningThread)
+	# Combine all possible thread locations
+	var all_threads = SingletonObject.ThreadList + SingletonObject.DrawerThreadList
 	
-	# if dragged note and the note we're dropping on to are not in same tabs
-	# it means we have to deal with two different MemoryThreads
-	if memory_item.OwningThread != data.memory_item.OwningThread:
-		
-		var target_note_thread := _memory_thread_find(memory_item.OwningThread)
+	# Find current and target threads
+	var target_thread = all_threads.filter(
+		func(t): return t.ThreadId == memory_item.OwningThread
+	).front()
+	var source_thread = all_threads.filter(
+		func(t): return t.ThreadId == data.memory_item.OwningThread
+	).front()
 
-		if _upper_separator.visible:
-			insert_index = target_note_thread.MemoryItemList.find(memory_item)
-		elif _lower_separator.visible:
-			insert_index = target_note_thread.MemoryItemList.find(memory_item)+1
-		
-		if dragged_note_thread.MemoryItemList.has(data.memory_item):
-			dragged_note_thread.MemoryItemList.erase(data.memory_item)
-		if insert_index >= 0 and insert_index <= dragged_note_thread.MemoryItemList.size():
-			target_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
+	if not target_thread or not source_thread:
+		return
 
-		data.memory_item.OwningThread = target_note_thread.ThreadId
-	
-	else:
-		if dragged_note_thread.MemoryItemList.has(data.memory_item):
-			dragged_note_thread.MemoryItemList.erase(data.memory_item)
+	# Calculate insert position
+	var target_pos = target_thread.MemoryItemList.find(memory_item)
+	var insert_index = target_pos
+	if _upper_separator.visible:
+		insert_index = target_pos
+	elif _lower_separator.visible:
+		insert_index = target_pos + 1
 
-		if _upper_separator.visible:
-			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)
-		elif _lower_separator.visible:
-			insert_index = dragged_note_thread.MemoryItemList.find(memory_item)+1
-		
-		if insert_index >= 0 and insert_index <= dragged_note_thread.MemoryItemList.size():
-			dragged_note_thread.MemoryItemList.insert(insert_index, data.memory_item)
-	#data.queue_free()
+	# Only remove from source if moving within the same thread
+	if source_thread == target_thread:
+		var current_index = source_thread.MemoryItemList.find(data.memory_item)
+		if current_index >= 0:
+			source_thread.MemoryItemList.remove_at(current_index)
+			
+			# Adjust index if moving within same thread
+			if current_index < insert_index:
+				insert_index -= 1
 
+	# Insert into target
+	if insert_index >= 0 and insert_index <= target_thread.MemoryItemList.size():
+		target_thread.MemoryItemList.insert(insert_index, data.memory_item)
+		data.memory_item.OwningThread = target_thread.ThreadId
 
+	# Hide separators
+	_upper_separator.visible = false
+	_lower_separator.visible = false
 func _on_check_button_toggled(toggled_on: bool) -> void:
 	if memory_item:
 		memory_item.Enabled = toggled_on
@@ -324,8 +343,12 @@ func _on_remove_button_pressed():
 	var tween = get_tree().create_tween()
 	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
 	tween.tween_callback(queue_free)
-
-	deleted.emit()
+	
+	if !isDrawer:
+		deleted.emit()
+	else: 
+		SingletonObject.deleted_drawer_note.emit(memory_item.UUID)
+		
 
 ## Connects this note and the given [parameter editor] and
 ## reflects note title changes into the tab title.
@@ -357,11 +380,13 @@ func _on_edit_button_pressed():
 
 	var editor: Editor
 
-	if memory_item.MemoryImage:
-		SingletonObject.is_graph = true
+	if  memory_item.Type == SingletonObject.note_type.IMAGE:
+		SingletonObject.is_graph = true # this lines should be moved to the correct node rather that them being on SingletonObject
 		SingletonObject.is_picture = true
 		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
-		editor.graphics_editor.setup_from_image(memory_item.MemoryImage)
+		# if there is a file, Editor.gd will set it up automatically
+		if not memory_item.File:
+			editor.graphics_editor.create_new_image_layer(memory_item.Title, memory_item.MemoryImage.duplicate())
 	else:
 		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
 		
@@ -455,17 +480,22 @@ func enable_expand_button() -> void:
 	expand_button.disabled = false
 
 var resize_dragging: bool = false
+var _last_mouse_posistion_y: float = 0.0
 func _on_resize_control_gui_input(event: InputEvent) -> void:
+	if _last_mouse_posistion_y == 0:
+		_last_mouse_posistion_y = get_global_mouse_position().y
 	if expanded:
 		if event is InputEventMouseButton:
 			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
 				resize_dragging = true
 			elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
 				resize_dragging = false
-
+	if resize_dragging:
+		_resize_vertical(get_global_mouse_position().y, _last_mouse_posistion_y)
+		_last_mouse_posistion_y = get_global_mouse_position().y
 
 func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
-	if control_type == null: return
+	#if control_type == null: return
 	var difference: float = current_mouse_pos_y - last_mouse_pos_y
 	
 	if control_type.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:
@@ -483,3 +513,14 @@ func _on_expand_button_pressed() -> void:
 		contract_note()
 	else:
 		expand_note()
+
+
+func _on_remove_drawer_button_pressed():
+	pivot_offset = size / 2
+
+	var tween = get_tree().create_tween()
+	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
+	tween.tween_callback(queue_free)
+
+	deleted_drawer.emit()
+	SingletonObject.drawer_save_data.emit()

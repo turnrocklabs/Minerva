@@ -1,0 +1,40 @@
+[gd_resource type="JSON" format=3 uid="uid://bqqm3sjawhr43"]
+
+[resource]
+data = {
+"keywords": {
+"and": "#87CEFA",
+"as": "#DDA0DD",
+"assert": "#FFA07A",
+"break": "#FF8FB1",
+"class_name": "#DDA0DD",
+"const": "#FFD700",
+"continue": "#FF8FB1",
+"elif": "#FF9C9C",
+"else": "#FF9C9C",
+"enum": "#00CED1",
+"export": "#40E0D0",
+"extends": "#DDA0DD",
+"false": "#FF6B6B",
+"for": "#FFB38A",
+"func": "#87CEEB",
+"if": "#FF9C9C",
+"in": "#87CEFA",
+"is": "#87CEFA",
+"match": "#FFA500",
+"not": "#87CEFA",
+"null": "#D3D3D3",
+"onready": "#FFA07A",
+"or": "#87CEFA",
+"pass": "#B0C4DE",
+"return": "#FFA07A",
+"setget": "#FFD700",
+"signal": "#FF8FB1",
+"static": "#DDA0DD",
+"tool": "#FFD700",
+"true": "#98FB98",
+"var": "#40E0D0",
+"while": "#FFB38A",
+"yield": "#98FB98"
+}
+}

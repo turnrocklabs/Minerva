@@ -1,0 +1,42 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- Center crosshair -->
+  <g stroke="black" stroke-width="2" fill="none">
+    <!-- Horizontal line -->
+    <path d="M2 12 L22 12" stroke="white" stroke-width="2"/>
+    <path d="M2 12 L22 12" stroke="black" stroke-width="2" stroke-dasharray="none" fill="none"/>
+    
+    <!-- Vertical line -->
+    <path d="M12 2 L12 22" stroke="white" stroke-width="2"/>
+    <path d="M12 2 L12 22" stroke="black" stroke-width="2" stroke-dasharray="none" fill="none"/>
+  </g>
+  
+  <!-- Center point -->
+  <circle cx="12" cy="12" r="2" fill="white" stroke="black" stroke-width="1.5"/>
+  
+  <!-- Corner brackets -->
+  <g stroke="black" stroke-width="1.5" fill="none">
+    <!-- Top-left corner -->
+    <path d="M4 4 L4 8" stroke="white" stroke-width="2"/>
+    <path d="M4 4 L8 4" stroke="white" stroke-width="2"/>
+    <path d="M4 4 L4 8" stroke="black" stroke-width="1.5"/>
+    <path d="M4 4 L8 4" stroke="black" stroke-width="1.5"/>
+    
+    <!-- Top-right corner -->
+    <path d="M20 4 L20 8" stroke="white" stroke-width="2"/>
+    <path d="M20 4 L16 4" stroke="white" stroke-width="2"/>
+    <path d="M20 4 L20 8" stroke="black" stroke-width="1.5"/>
+    <path d="M20 4 L16 4" stroke="black" stroke-width="1.5"/>
+    
+    <!-- Bottom-left corner -->
+    <path d="M4 20 L4 16" stroke="white" stroke-width="2"/>
+    <path d="M4 20 L8 20" stroke="white" stroke-width="2"/>
+    <path d="M4 20 L4 16" stroke="black" stroke-width="1.5"/>
+    <path d="M4 20 L8 20" stroke="black" stroke-width="1.5"/>
+    
+    <!-- Bottom-right corner -->
+    <path d="M20 20 L20 16" stroke="white" stroke-width="2"/>
+    <path d="M20 20 L16 20" stroke="white" stroke-width="2"/>
+    <path d="M20 20 L20 16" stroke="black" stroke-width="1.5"/>
+    <path d="M20 20 L16 20" stroke="black" stroke-width="1.5"/>
+  </g>
+</svg>

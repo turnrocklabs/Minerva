@@ -1,0 +1,38 @@
+[gd_scene load_steps=4 format=3 uid="uid://c3fmrb1x4umxw"]
+
+[ext_resource type="Script" uid="uid://cr67um6d1feck" path="res://Scripts/UI/Controls/multi_message_loading.gd" id="1_aloj0"]
+[ext_resource type="Texture2D" uid="uid://jla8nxu2jw3p" path="res://assets/icons/white_loading_circle.png" id="1_eplkq"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_aloj0"]
+
+[node name="ParallelMessageLoading" type="PanelContainer" groups=["parallelLoadingNode"]]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -166.0
+offset_top = -154.5
+offset_right = 166.0
+offset_bottom = 154.5
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("StyleBoxEmpty_aloj0")
+script = ExtResource("1_aloj0")
+anim_duration = 2.0
+
+[node name="LoadingRing" type="TextureProgressBar" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+value = 100.0
+fill_mode = 4
+radial_initial_angle = 360.0
+radial_fill_degrees = 327.4
+texture_under = ExtResource("1_eplkq")
+texture_progress = ExtResource("1_eplkq")
+tint_under = Color(0, 0.780392, 0.270588, 1)
+tint_progress = Color(0.0823529, 0.521569, 0.960784, 1)

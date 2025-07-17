@@ -7,7 +7,7 @@ extends Control
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
 static var editor_scene = preload("res://Scenes/Editor.tscn")
-static var graphics_editor_scene = preload("res://Scenes/GraphicsEditor.tscn")
+static var graphics_editor_scene = preload("res://Scenes/GraphicsEditorV2.tscn")
 
 
 signal content_changed()
@@ -29,7 +29,7 @@ var video_player: VideoPlayer:
 		get_node("%VBoxContainer").add_child(value)
 
 var code_edit: EditorCodeEdit
-var graphics_editor: GraphicsEditor
+var graphics_editor: GraphicsEditorV2
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -59,226 +59,6 @@ enum Type {
 	NOTE_EDITOR,
 	VIDEO
 }
-const code_highlight_keywords = {
-	"python": {
-		"if": "#FF9C9C",
-		"else": "#FF9C9C",
-		"elif": "#FF9C9C",
-		"while": "#FFB38A",
-		"for": "#FFB38A",
-		"break": "#FF8FB1",
-		"continue": "#FF8FB1",
-		"return": "#FFA07A",
-		"def": "#87CEEB",
-		"class": "#87CEEB",
-		"lambda": "#98FB98",
-		"import": "#DDA0DD",
-		"from": "#DDA0DD",
-		"as": "#DDA0DD",
-		"try": "#FFD700",
-		"except": "#FFD700",
-		"finally": "#FFD700",
-		"raise": "#FFA500",
-		"with": "#00CED1",
-		"async": "#40E0D0",
-		"await": "#40E0D0",
-		"True": "#98FB98",
-		"False": "#FF6B6B",
-		"None": "#D3D3D3",
-		"and": "#87CEFA",
-		"or": "#87CEFA",
-		"not": "#87CEFA",
-		"is": "#87CEFA",
-		"in": "#87CEFA",
-		"global": "#DDA0DD",
-		"nonlocal": "#DDA0DD",
-		"pass": "#B0C4DE",
-		"assert": "#FFA07A",
-		"del": "#FF6B6B",
-		"yield": "#98FB98"
-		},
-	"javascript": {
-		"var": "#87CEEB",
-		"let": "#87CEEB",
-		"const": "#87CEEB",
-		"if": "#FF9C9C",
-		"else": "#FF9C9C",
-		"for": "#FFB38A",
-		"while": "#FFB38A",
-		"do": "#FFB38A",
-		"switch": "#FF9C9C",
-		"case": "#FF9C9C",
-		"break": "#FF8FB1",
-		"continue": "#FF8FB1",
-		"return": "#FFA07A",
-		"default": "#FF9C9C",
-		"function": "#98FB98",
-		"class": "#98FB98",
-		"constructor": "#98FB98",
-		"extends": "#90EE90",
-		"new": "#98FB98",
-		"import": "#DDA0DD",
-		"export": "#DDA0DD",
-		"from": "#DDA0DD",
-		"try": "#FFD700",
-		"catch": "#FFD700",
-		"finally": "#FFD700",
-		"throw": "#FFA500",
-		"this": "#00CED1",
-		"super": "#40E0D0",
-		"async": "#8A2BE2",
-		"await": "#8A2BE2",
-		"true": "#98FB98",
-		"false": "#FF6B6B",
-		"null": "#D3D3D3",
-		"undefined": "#D3D3D3"
-		},
-	"typescript": {
-		"var": "#87CEEB",
-		"let": "#87CEEB",
-		"const": "#87CEEB",
-		"if": "#FF9C9C",
-		"else": "#FF9C9C",
-		"for": "#FFB38A",
-		"while": "#FFB38A",
-		"do": "#FFB38A",
-		"switch": "#FF9C9C",
-		"case": "#FF9C9C",
-		"break": "#FF8FB1",
-		"continue": "#FF8FB1",
-		"return": "#FFA07A",
-		"default": "#FF9C9C",
-		"function": "#98FB98",
-		"class": "#98FB98",
-		"constructor": "#98FB98",
-		"extends": "#90EE90",
-		"new": "#98FB98",
-		"import": "#DDA0DD",
-		"export": "#DDA0DD",
-		"from": "#DDA0DD",
-		"try": "#FFD700",
-		"catch": "#FFD700",
-		"finally": "#FFD700",
-		"throw": "#FFA500",
-		"this": "#00CED1",
-		"super": "#40E0D0",
-		"async": "#8A2BE2",
-		"await": "#8A2BE2",
-		"true": "#98FB98",
-		"false": "#FF6B6B",
-		"null": "#D3D3D3",
-		"undefined": "#D3D3D3",
-		"type": "#E6A8D7",
-		"interface": "#E6A8D7",
-		"implements": "#E6A8D7",
-		"namespace": "#DDA0DD",
-		"enum": "#E6A8D7",
-		"private": "#FFB6C1",
-		"protected": "#FFB6C1",
-		"public": "#FFB6C1",
-		"readonly": "#FFB6C1",
-		"as": "#40E0D0",
-		"instanceof": "#40E0D0",
-		"typeof": "#40E0D0",
-		"any": "#FFD700",
-		"void": "#FFD700",
-		"never": "#FFD700",
-		"unknown": "#FFD700"
-		},
-	"rust": {
-		"let": "#87CEEB",
-		"const": "#87CEEB",
-		"static": "#87CEEB",
-		"type": "#87CEEB",
-		"if": "#FF9C9C",
-		"else": "#FF9C9C",
-		"match": "#FF9C9C",
-		"loop": "#FFB38A",
-		"while": "#FFB38A",
-		"for": "#FFB38A",
-		"break": "#FF8FB1",
-		"continue": "#FF8FB1",
-		"return": "#FFA07A",
-		"fn": "#98FB98",
-		"mod": "#98FB98",
-		"use": "#90EE90",
-		"pub": "#98FB98",
-		"mut": "#DDA0DD",
-		"ref": "#DDA0DD",
-		"move": "#DDA0DD",
-		"impl": "#FFD700",
-		"trait": "#FFD700",
-		"where": "#FFD700",
-		"lifetime": "#FFA500",
-		"struct": "#00CED1",
-		"enum": "#40E0D0",
-		"union": "#40E0D0",
-		"async": "#8A2BE2",
-		"await": "#8A2BE2",
-		"unsafe": "#FF6B6B",
-		"dyn": "#FF6B6B"
-		},
-	"java": {
-		"var": "#87CEEB",
-		"final": "#87CEEB",
-		"static": "#87CEEB",
-		"if": "#FF9C9C",
-		"else": "#FF9C9C",
-		"for": "#FFB38A",
-		"while": "#FFB38A",
-		"do": "#FFB38A",
-		"switch": "#FF9C9C",
-		"case": "#FF9C9C",
-		"break": "#FF8FB1",
-		"continue": "#FF8FB1",
-		"return": "#FFA07A",
-		"class": "#98FB98",
-		"interface": "#98FB98",
-		"extends": "#90EE90",
-		"implements": "#90EE90",
-		"new": "#98FB98",
-		"public": "#FFB6C1",
-		"private": "#FFB6C1",
-		"protected": "#FFB6C1",
-		"package": "#FFB6C1",
-		"try": "#FFD700",
-		"catch": "#FFD700",
-		"finally": "#FFD700",
-		"throw": "#FFA500",
-		"throws": "#FFA500",
-		"this": "#00CED1",
-		"super": "#40E0D0",
-		"void": "#40E0D0",
-		"int": "#DDA0DD",
-		"long": "#DDA0DD",
-		"float": "#DDA0DD",
-		"double": "#DDA0DD",
-		"boolean": "#DDA0DD",
-		"char": "#DDA0DD",
-		"byte": "#DDA0DD",
-		"short": "#DDA0DD",
-		"true": "#98FB98",
-		"false": "#FF6B6B",
-		"null": "#D3D3D3"
-		}
-	}
-const color_groups: Dictionary = {
-		"colorGroups": {
-		"controlFlow": "#FF9C9C",
-		"loops": "#FFB38A",
-		"functions": "#98FB98",
-		"types": "#87CEEB",
-		"modules": "#DDA0DD",
-		"errorHandling": "#FFD700",
-		"async": "#8A2BE2",
-		"booleanTrue": "#98FB98",
-		"booleanFalse": "#FF6B6B",
-		"null": "#D3D3D3",
-		"accessModifiers": "#FFB6C1",
-		"objectRelated": "#00CED1"
-		}
-	}
-
 
 
 ## May contain the object that is being edited by this editor.[br]
@@ -294,10 +74,16 @@ var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
-var tab_title: String = ""
+var tab_title: String = "":
+	set(value):
+		tab_title = value
+		if code_edit:
+			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
 var file: String:
 	set(value):
 		file = value
+		if code_edit != null:
+			code_edit.syntax_highlighter = update_code_hightlighter(file)
 		%reloadButton.disabled = false
 #var file_path: String
 var type: Type
@@ -310,7 +96,7 @@ var prompt_save:= true
 # checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
-static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null) -> Editor:
+static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null, initial_setup: = true) -> Editor:
 	var editor = editor_scene.instantiate()
 	editor.type = type_
 	editor.associated_object = associated_object_
@@ -319,7 +105,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 		editor.tab_title = name_
 	if file_: 
 		editor.file = file_
-	
+
 	# runs before onready so we need to use get_node
 	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
 	match type_:
@@ -327,31 +113,33 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			var new_code_edit = EditorCodeEdit.new()
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
+			vbox_container.add_child(new_code_edit)
 			
 			if name_:
 				name_ = name_ as String
 				
-				var lang_keywords: Dictionary = get_keywords_colors(name_)
+				var lang_keywords: Dictionary = SingletonObject.syntax_manager.get_syntax_for_language(name_)
+				var code_highlighter: = CodeHighlighter.new()
 				if !lang_keywords.is_empty():
-					var code_highlighter: = CodeHighlighter.new()
 					code_highlighter.keyword_colors = lang_keywords
-					code_highlighter.number_color = Color.FLORAL_WHITE
-					code_highlighter.symbol_color = Color.AQUAMARINE
-					code_highlighter.function_color = Color.DODGER_BLUE
-					code_highlighter.member_keyword_colors = color_groups.get("colorGroups")
-					code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
-					new_code_edit.syntax_highlighter = code_highlighter
+				code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
+				code_highlighter.number_color = Color.FLORAL_WHITE
+				code_highlighter.symbol_color = Color.AQUAMARINE
+				code_highlighter.function_color = Color.DEEP_PINK
+				code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
+				new_code_edit.syntax_highlighter = code_highlighter
 			
-			vbox_container.add_child(new_code_edit)
-			#vbox_container.move_child(new_code_edit,0)
 			editor.code_edit = new_code_edit
 		Editor.Type.GRAPHICS:
-			var new_graphics_editor: GraphicsEditor = graphics_editor_scene.instantiate()
+			var new_graphics_editor: GraphicsEditorV2 = graphics_editor_scene.instantiate()
 			new_graphics_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
+			
+			if initial_setup:
+				new_graphics_editor.ready.connect(new_graphics_editor.setup)
+
+			# new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
-			#vbox_container.move_child(new_graphics_editor, 0)
 			editor.graphics_editor = new_graphics_editor
 			## TODO: Implement changed signal for graphics 
 			
@@ -365,29 +153,21 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			
 	return editor
 
-
-static func get_keywords_colors(lang: String) -> Dictionary:
-	if code_highlight_keywords.has(lang.rstrip("01234567890!#$%&/()=") ):
-		return code_highlight_keywords.get(lang.rstrip("01234567890!#$%&/()=") )
-	else:
-		return {}
-
-
-func update_code_hightlighter(lang: String) -> void:
-	var lang_keywords = get_keywords_colors(lang)
-	if !lang_keywords.is_empty():
-		var code_highlighter: = CodeHighlighter.new()
-		code_highlighter.keyword_colors = lang_keywords
-		code_highlighter.member_keyword_colors = color_groups.get("colorGroups")
-		code_highlighter.number_color = Color.FLORAL_WHITE
-		code_highlighter.symbol_color = Color.AQUAMARINE
-		code_highlighter.function_color = Color.DODGER_BLUE
-		code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
-		code_edit.syntax_highlighter = code_highlighter
-
-
 func toggle(on: bool) -> void:
 	_note_check_button.button_pressed = on
+
+
+func update_code_hightlighter(lang: String) -> CodeHighlighter:
+	var lang_keywords = SingletonObject.syntax_manager.get_syntax_for_language(lang)
+	var code_highlighter: = CodeHighlighter.new()
+	if !lang_keywords.is_empty():
+		code_highlighter.keyword_colors = lang_keywords
+	code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
+	code_highlighter.number_color = Color.FLORAL_WHITE
+	code_highlighter.symbol_color = Color.AQUAMARINE
+	code_highlighter.function_color = Color.DEEP_PINK
+	code_highlighter.member_variable_color = Color.BLUE
+	return code_highlighter
 
 
 func _ready():
@@ -430,6 +210,10 @@ func update_last_path(new_path: String) -> void:
 
 
 func _load_text_file(filename: String):
+	if !filename.get_extension().is_empty():
+		code_edit.syntax_highlighter = update_code_hightlighter(filename.get_extension())
+	else:
+		code_edit.syntax_highlighter = update_code_hightlighter(filename)
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	if fa_object == null:
 				var error: = error_string(FileAccess.get_open_error())
@@ -448,7 +232,7 @@ func _load_text_file(filename: String):
 
 func _load_graphics_file(filename: String):
 	var image = Image.load_from_file(filename)
-	graphics_editor.setup_from_image(image)
+	graphics_editor.create_new_image_layer(filename.get_file().get_basename(), image)
 	#_file_saved = true
 	#SingletonObject.UpdateUnsavedTabIcon.emit()
 	# %SaveButton.disabled = false
@@ -465,7 +249,7 @@ func override_save(save_function: Callable) -> void:
 ## Prompts user to save the file
 ## show_save_file_dialog determines if user should be asked wether he wants to save the editor first
 ## otherwise if shows save file dialog straight away
-func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_this_path: String = "") -> bool:
+func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_this_path: String = "") -> bool:	
 	#var dialog_filters: = ($FileDialog as FileDialog).filters # we may need to temporarily alter file dialog filters
 	if open_in_this_path != "":
 		$FileDialog.current_path = open_in_this_path
@@ -520,24 +304,23 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
 func save():
-	#if _save_override.is_valid(): this got put on the note button github issue #154
-		#_save_override.call()
-	#else:
 	if SingletonObject.last_saved_path:
 		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
 		await prompt_close(true)
 	
-	# Post save emit the signals to update the saved state icon
+	# Explicitly update the note after saving
+	# if has_meta("memory_item"):
+	# 	_update_memory_item(get_meta("memory_item"))
+	
+	# Post save emit the signals
 	match type:
 		Type.TEXT:
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
-			graphics_editor.is_image_saved = true
+			graphics_editor.saved = true
 			SingletonObject.UpdateUnsavedTabIcon.emit()
-			pass # TODO: implement for graphics files
 	SingletonObject.UpdateUnsavedTabIcon.emit()
-
 
 ## Returns the bitmask of the saved state for the editor.
 func get_saved_state() -> int:
@@ -568,7 +351,7 @@ func get_saved_state() -> int:
 			# if there's no graphics editor, even tho that's the type, just return all saved states
 			if not graphics_editor: state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
-			if file and graphics_editor.is_image_saved:
+			if file and graphics_editor.saved:
 				state |= FILE_SAVED
 			
 			if associated_object:
@@ -612,41 +395,79 @@ func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
 
 
-func save_file_to_disc(path: String):
+func save_file_to_disc(path: String) -> void:
 	file = path
 	match type:
 		Type.TEXT:
+			# Save text content to file
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			if save_file == null:
 				var error: = error_string(FileAccess.get_open_error())
 				push_warning(error)
-				SingletonObject.ErrorDisplay("Couldn't open file", error)
+				SingletonObject.ErrorDisplay("Couldn't save file", error)
 				return
+				
 			save_file.store_string(code_edit.text)
 			code_edit.tag_saved_version()
-			code_edit.saved_content = code_edit.text # update the saved content
+			code_edit.saved_content = code_edit.text
 			
-		Type.GRAPHICS:
-			var dialog = ($FileDialog as FileDialog)
-			var _filters = dialog.filters
-			dialog.filters = [".png"]
-			dialog.filters = _filters
+			# Update associated note if exists
+			if has_meta("memory_item"):
+				_update_memory_item(get_meta("memory_item"))
+			elif is_instance_valid(associated_object) and associated_object is Note:
+				_update_memory_item(associated_object.memory_item)
+				associated_object.memory_item = associated_object.memory_item  # Force update
 
-			var img = graphics_editor.image
-			if img: img.save_png(path)
-			
+		Type.GRAPHICS:
+			# Save image to file
+			var img = await graphics_editor.compose_final_image()
+			if img:
+				# Temporarily change filters for PNG save
+				var dialog = ($FileDialog as FileDialog)
+				var original_filters = dialog.filters
+				dialog.filters = ["*.png"]
+				
+				var err = img.save_png(path)
+				if err != OK:
+					push_warning("Failed to save image: " + error_string(err))
+					SingletonObject.ErrorDisplay("Save Failed", "Couldn't save image to " + path)
+					return
+				
+				dialog.filters = original_filters  # Restore original filters
+				
+				# Update associated note if exists
+				if has_meta("memory_item"):
+					_update_memory_item(get_meta("memory_item"))
+				elif is_instance_valid(associated_object) and associated_object is Note:
+					_update_memory_item(associated_object.memory_item)
+					associated_object.memory_item = associated_object.memory_item  # Force update
+
+				graphics_editor.saved = true
+
+		Type.VIDEO:
+			# Handle video file saving if needed
+			push_warning("Video saving not implemented")
+	
+	# Update editor state
 	_file_saved = true
 	file_saved_in_disc = true
-
 	SingletonObject.UpdateLastSavePath.emit(path.get_base_dir())
+	
+	# Update config if needed
 	if SingletonObject.config_has_saved_section("LastSavedPath"):
 		SingletonObject.config_clear_section("LastSavedPath")
 		SingletonObject.save_to_config_file("LastSavedPath", "path", SingletonObject.last_saved_path)
+	
+	# Update tab info
 	tab_title = path.get_file()
 	var idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
-	SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
-	SingletonObject.editor_pane.Tabs.set_tab_tooltip(idx, path)
-
+	if idx >= 0:
+		SingletonObject.editor_pane.Tabs.set_tab_title(idx, tab_title)
+		SingletonObject.editor_pane.Tabs.set_tab_tooltip(idx, path)
+	
+	# Notify changes
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+	content_changed.emit()
 #region bottom of the pane buttons
 
 func _on_save_button_pressed():
@@ -654,6 +475,8 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
+
+	# breakpoint
 
 	if is_instance_valid(associated_object) and associated_object is Note:
 		_update_memory_item(associated_object.memory_item)
@@ -669,16 +492,23 @@ func _on_create_note_button_pressed() -> void:
 				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 
 		if Type.GRAPHICS == type:
+			var editor_image = await graphics_editor.compose_final_image()
 			if tab_title:
-				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", graphics_editor.image, graphics_editor.image.get_meta("caption", ""))
+				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image)
 			elif file:
-				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), graphics_editor.image, "Sketch")
+				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
 			else:
-				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", graphics_editor.image, "Sketch")
+				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", editor_image, "Sketch")
 
 	SingletonObject.UpdateUnsavedTabIcon.emit()
-	
 
+## Apply diff button stuff 
+func enable_apply_diff() -> void:
+	%btnApplyDiff.disabled = false
+	
+func _on_btn_apply_diff_pressed() -> void:
+	self.code_edit.apply_preview()
+	%btnApplyDiff.disabled = true
 
 #this functions calls the file linked to the editor to be loaded again into memory
 func _on_reload_button_pressed() -> void:
@@ -691,7 +521,6 @@ func _on_reload_button_pressed() -> void:
 				text_is_smaller.visible = false
 				text_is_incoplete.visible = false
 				text_is_smaller_and_incoplete.visible = false
-
 
 #this emits a signal that gets picked by the projectMenuActions to save open editor tabs
 func _on_save_open_editor_tabs_button_pressed() -> void:
@@ -931,7 +760,8 @@ func _create_note() -> MemoryItem:
 	
 	elif type == Type.GRAPHICS:
 		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = graphics_editor.image
+		memory_item.MemoryImage = await graphics_editor.compose_final_image()
+		print("CREATED GE D_NOTE")
 
 	else:
 		return null # type not supported
@@ -945,7 +775,7 @@ func _update_memory_item(memory_item: MemoryItem) -> void:
 	
 	elif type == Type.GRAPHICS:
 		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = graphics_editor.image
+		memory_item.MemoryImage = await graphics_editor.compose_final_image()
 
 
 
@@ -953,7 +783,7 @@ func _on_check_button_toggled(toggled_on: bool):
 	var item: MemoryItem
 
 	if not has_meta("memory_item"):
-		item = _create_note()
+		item = await _create_note()
 		if not item:
 			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the editor.")
 			_note_check_button.button_pressed = false
@@ -973,6 +803,7 @@ func _on_check_button_toggled(toggled_on: bool):
 		if not present:
 			SingletonObject.DetachedNotes.append(item)
 
+	_update_memory_item(item)
 	item.Enabled = toggled_on
 
 func _on_close_warrning(path):

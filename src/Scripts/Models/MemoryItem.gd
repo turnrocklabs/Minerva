@@ -7,7 +7,7 @@ extends RefCounted ## so I get memory management and signals.
 signal toggled(on: bool)
 
 
-static var SERIALIZER_FIELDS = ["UUID" ,"Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order", "Expanded", "LastYSize"]
+static var SERIALIZER_FIELDS = ["UUID" ,"Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order", "Expanded", "LastYSize", "isDrawer"]
 
 var UUID: String = "":
 	set(value):
@@ -84,6 +84,9 @@ var LastYSize: float = 0.0:
 var isCompleted: bool:
 	set(value): SingletonObject.save_state(false); isCompleted = value;
 
+var isDrawer: bool:
+	set(value): isDrawer = value
+
 var OwningThread
 
 func hash_string(input: String) -> String:
@@ -134,7 +137,8 @@ func Serialize() -> Dictionary:
 		"Order": Order,
 		"OwningThread": OwningThread,
 		"Expanded": Expanded,
-		"LastYSize": LastYSize
+		"LastYSize": LastYSize,
+		"isDrawer": isDrawer
 	}
 	return save_dict
 

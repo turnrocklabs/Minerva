@@ -25,6 +25,7 @@ const PROVIDERS = {
 	SingletonObject.API_PROVIDER.OPENAI: "openai",
 	SingletonObject.API_PROVIDER.ANTHROPIC: "anthropic",
 	SingletonObject.API_PROVIDER.GOOGLE: "google_vertex",
+	SingletonObject.API_PROVIDER.LOCAL: "sglang",
 }
 
 # --- Authentication Presets ---
@@ -176,7 +177,10 @@ func _on_about_to_popup():
 	populate_output_devices_button()
 
 func get_api_key(provider: SingletonObject.API_PROVIDER) -> String:
-	return config_file.get_value("API KEYS", PROVIDERS[provider], "")
+	if provider == SingletonObject.API_PROVIDER.LOCAL:
+		return " "
+	else:
+		return config_file.get_value("API KEYS", PROVIDERS[provider], "")
 
 func get_user_full_name() -> String:
 	return "%s %s" % [config_file.get_value("USER", "first_name", ""), config_file.get_value("USER", "last_name", "")]
@@ -240,13 +244,9 @@ func _on_microphones_item_selected(index: int) -> void:
 
 
 func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
-	# Experimental Features are stored as "Experimental" in config file and there is a global group label
-	%View.set_item_disabled(3, !toggled_on)
-	for node in get_tree().get_nodes_in_group("Experimental"):
-		if node is Control:
-			node.visible = toggled_on
-		if node is Button:
-			node.disabled = !toggled_on
+	#Experimental Features are stored as "Experimental" in config file
+	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
+	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
 	SingletonObject.toggle_experimental.emit(toggled_on)
 
 

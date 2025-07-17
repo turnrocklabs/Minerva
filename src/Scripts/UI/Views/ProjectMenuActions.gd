@@ -22,6 +22,7 @@ func _new_project():
 	
 	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
 	update_buffer_controls()
+	SingletonObject.updated_save_state.emit("", true)
 
 
 func open_project(path: = ""):
@@ -99,6 +100,7 @@ func save_project():
 	SingletonObject.save_recent_project(save_path)
 	
 	SingletonObject.save_state(true)
+	SingletonObject.updated_save_state.emit(save_path.get_file(), true)
 
 
 # this function checks if there are unsaved editor panes and saves them
@@ -115,7 +117,7 @@ func save_editor_panes(skip_selecting_items: bool = false):
 			var tab_title = SingletonObject.editor_pane.Tabs.get_tab_title(idx)
 			var item_idx = item_list.add_item(tab_title)
 			item_list.set_item_metadata(item_idx, editor)
-		
+			
 		if skip_selecting_items:
 			var items: = item_list.item_count
 			var counter: = 0
@@ -130,7 +132,6 @@ func save_editor_panes(skip_selecting_items: bool = false):
 			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
 	else:
 		get_tree().quit()
-
 
 #region Serialize/Deserialize Project
 ## Function:
@@ -194,7 +195,7 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.editor_container.clear_editor_tabs()
 	var editor_nodes: Array = []
 	if data.get("Editors"):
-		editor_nodes = EditorContainer.deserialize(data.get("Editors", []))
+		editor_nodes = await EditorContainer.deserialize(data.get("Editors", []))
 	for editor in editor_nodes:
 		SingletonObject.editor_pane.Tabs.add_child(editor)
 		var tab_idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
@@ -290,8 +291,8 @@ func open_project_given_path(project_path: String) -> int:
 	# even tho we called deserialize above. Probably because the nodes are not added
 	# to the hierarchy until the idle time, when they call set_state(false).
 	# So we just delay this call to that idle time also.
-	SingletonObject.call_deferred("save_state", true)
-	
+	SingletonObject.save_state(true)
+	SingletonObject.updated_save_state.emit(project_path.get_file(), true)
 	self.save_path = project_path
 	return OK
 	#SingletonObject.hide_loading_screen()
@@ -300,7 +301,9 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		SingletonObject.drawer_save_data.emit()
 		save_editor_panes()
+		
 
 
 func _on_exit_confirmation_dialog_canceled():

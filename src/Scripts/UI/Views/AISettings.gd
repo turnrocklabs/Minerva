@@ -21,10 +21,20 @@ func get_selected_provider() -> GDScript:
 
 func _ready():
 	super()
-	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
+	sorted_keys.sort_custom(
+		func(a: SingletonObject.API_MODEL_PROVIDERS, b: SingletonObject.API_MODEL_PROVIDERS):
+			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
+	)
+	for key in sorted_keys:
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance = script.new()
 		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.display_name], key)
+	
+	if SingletonObject.config_has_saved_section("Providers"):
+		var provider  = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
+		if provider != null:
+			_provider_option_button.select(_provider_option_button.get_item_index(provider))
 
 
 func _on_provider_option_button_item_selected(index: int):
@@ -33,7 +43,8 @@ func _on_provider_option_button_item_selected(index: int):
 	var provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id]
 
 	SingletonObject.Chats.default_provider_script = provider_script
-
+	SingletonObject.save_to_config_file("Providers", "DefaultProviderId", item_id)
+	SingletonObject.save_to_config_file("Providers", "DefaultProviderName", _provider_option_button.get_item_text(index))
 	if SingletonObject.ChatList.is_empty():
 		SingletonObject.Chats._provider_option_button.select(index)
 

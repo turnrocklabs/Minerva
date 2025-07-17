@@ -32,6 +32,8 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var experimental_enabled: bool = false
 signal toggle_experimental(enabled)
 
+var syntax_manager: SyntaxManager
+
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false
@@ -47,11 +49,11 @@ var is_marker
 #endregion global variables
 
 #region Config File
-var config_file_name: String = "user://config_file.cfg"
+var _config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
 func load_config_file() -> ConfigFile:
-	var err = config_file.load(config_file_name)
+	var err = config_file.load(_config_file_name)
 	if err != OK:
 		return null
 	else: 
@@ -62,20 +64,25 @@ func save_to_config_file(section: String, field: String, value):
 	#config_file.get_sections()
 	#config_file = load_config_file()
 	config_file.set_value(section, field, value)
-	config_file.save(config_file_name)
+	config_file.save(_config_file_name)
 	
 
 func config_has_saved_section(section: String) -> bool:
 	if !section: return false
-	
 	return config_file.has_section(section)
+
+
+func get_config_file_value(section: String, field: String) -> Variant:
+	if config_has_saved_section(section):
+		return config_file.get_value(section, field, null)
+	return ""
 
 
 func config_clear_section(section: String)-> void:
 	if !section: return
 	
 	config_file.erase_section(section)
-	config_file.save(config_file_name)
+	config_file.save(_config_file_name)
 
 
 #method for checking if the user has saved files
@@ -94,9 +101,7 @@ func save_recent_project(path: String):
 # this function returns an array with the files 
 # names of the recent project saved in config file
 func get_recent_projects() -> Array:
-	
 	if has_recent_projects():
-		#print(config_file.get_section_keys("OpenRecent"))
 		return config_file.get_section_keys("OpenRecent")
 	return ["no recent projects"]
 
@@ -108,7 +113,7 @@ func get_project_path(project_name: String) -> String:
 # method for erasing all the recently opened projects
 func clear_recent_projects() -> void:
 	config_file.erase_section("OpenRecent")
-	config_file.save(config_file_name)
+	config_file.save(_config_file_name)
 
 func remove_recent_project(project_name: String) -> void:
 	if !has_recent_projects():
@@ -119,7 +124,7 @@ func remove_recent_project(project_name: String) -> void:
 		return
 
 	config_file.erase_section_key("OpenRecent", project_name)
-	config_file.save(config_file_name)
+	config_file.save(_config_file_name)
 	
 
 #endregion Config File
@@ -147,9 +152,12 @@ signal create_notes_tab(name: String)
 signal associated_notes_tab(tab_name, tab: Control)
 @warning_ignore("unused_signal")
 signal pop_up_new_tab
-
+@warning_ignore("unused_signal")
+signal pop_up_new_drawer_tab #it's made for fast fix of double open window when dopuble click on tab for rename. it'll be remove after i'll move drawer to Main scene
 @warning_ignore("unused_signal")
 signal notes_draw_state_changed(state: int)
+@warning_ignore("unused_signal")
+signal create_drawer_tab
 
 var notes_draw_state: int
 
@@ -158,11 +166,13 @@ var ThreadList: Array[MemoryThread]#:  =[]
 	#set(value):
 		## save_state(false)
 		#ThreadList = value
+var DrawerThreadList: Array[MemoryThread]#:  =[]
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
 var DetachedNotes: Array[MemoryItem]
 
 var NotesTab: MemoryTabs
+var DrawerTab: DrawerTabs
 ##reorder array
 func initialize_notes(threads: Array[MemoryThread] = []):
 	ThreadList = threads
@@ -183,8 +193,12 @@ signal note_changed(note: Note)
 func toggle_all_notes(notes_enabled: bool):
 	if notes_enabled:
 		NotesTab.Disable_All()
+		if DrawerTab.visible:
+			DrawerTab.Disable_All()
 	if !notes_enabled:
 		NotesTab.enable_all()
+		if DrawerTab.visible:
+			DrawerTab.enable_all()
 
 ## Returns `MemoryThread` with the given `ThreadId` or null if none are found
 func get_thread(thread_id: String) -> MemoryThread:
@@ -275,7 +289,7 @@ func _ready():
 	get_tree().root.call_deferred("add_child", transcription_notification_player)
 
 	#TODO add ui scale to the config file and retrieve it on app load
-	var err = config_file.load(config_file_name)
+	var err = config_file.load(_config_file_name)
 	if err != OK:
 		return null
 	
@@ -295,6 +309,9 @@ func _ready():
 	set_output_device(get_output_device())
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
+	
+	syntax_manager = SyntaxManager.new()
+	add_child(syntax_manager)
 	
 
 
@@ -342,42 +359,45 @@ func ErrorDisplay(error_title:String, error_message: String):
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, TURNROCK }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK }
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
 	HUMAN,
-	CHAT_GPT_4O,
-	CHAT_GPT_O1,
-	CHAT_GPT_O3,
-	CHAT_GPT_O1_MINI,
-	CHAT_GPT_O1_PREVIEW,
 	CHAT_GPT_O3_MINI_MEDIUM,
 	CHAT_GPT_O3_MINI_HIGH,
+	CHAT_GPT_O3,
 	CHAT_GPT_35_TURBO,
 	GOOGLE_VERTEX,
 	GOOGLE_VERTEX_PRO,
 	DALLE,
 	CLAUDE_SONNET,
+	CLAUDE_OPUS,
+	GPT_IMAGE_1,
+	OLLAMA_R1,
+	OLLAMA_GEMMA3,
 	TURNROCK,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
-var API_MODEL_PROVIDER_SCRIPTS = {
+var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
-	API_MODEL_PROVIDERS.CHAT_GPT_O1: ChatGPTo1,
 	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_MEDIUM: ChatGPTo3.MiniMedium,
 	API_MODEL_PROVIDERS.CHAT_GPT_O3_MINI_HIGH: ChatGPTo3.MiniHigh,
-	API_MODEL_PROVIDERS.CHAT_GPT_O3: ChatGPTo3.O3,
+	API_MODEL_PROVIDERS.CHAT_GPT_O3: ChatGPTo3.o3,
 	# API_MODEL_PROVIDERS.CHAT_GPT_O1_MINI: ChatGPTo1.Mini,
 	# API_MODEL_PROVIDERS.CHAT_GPT_O1_PREVIEW: ChatGPTo1.Preview,
 	API_MODEL_PROVIDERS.DALLE: DallE,
-	API_MODEL_PROVIDERS.CLAUDE_SONNET: ClaudeSonnet,
+	API_MODEL_PROVIDERS.CLAUDE_SONNET: ClaudeSonnet.Sonnet4,
+	API_MODEL_PROVIDERS.CLAUDE_OPUS: ClaudeSonnet.Opus4,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX: GoogleAi,
-	API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
+	# API_MODEL_PROVIDERS.CHAT_GPT_4O: ChatGPT4o,
 	# API_MODEL_PROVIDERS.CHAT_GPT_35_TURBO: ChatGPT35Turbo,
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
+	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1,
+	API_MODEL_PROVIDERS.OLLAMA_R1: LocalProvider,
+	API_MODEL_PROVIDERS.OLLAMA_GEMMA3: LocalProvider.Gemma3,
 	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
 }
 
@@ -431,10 +451,19 @@ signal set_icon_size_24
 signal set_icon_size_48
 @warning_ignore("unused_signal")
 signal set_icon_size_68
+@warning_ignore("unused_signal")
+signal drawer_save_data
+@warning_ignore("unused_signal")
+signal openDrawerNotes
+@warning_ignore("unused_signal")
+signal deleted_drawer_note
 
 var saved_state = true
+signal updated_save_state(project_name:String,saved: bool)
+func save_state(state: bool): 
+	saved_state = state
+	updated_save_state.emit("", state)
 
-func save_state(state: bool): saved_state = state
 
 #endregion Project Management
 
@@ -597,7 +626,7 @@ func reorder_recent_project(firstIndex: int, secondIndex: int) -> void:
 		config_file.set_value("OpenRecent", key, reordered_projects[key])
 
 
-	config_file.save(config_file_name)
+	config_file.save(_config_file_name)
 
 # generate IDs for items: chat items, memory items and editor
 func generate_UUID() -> String:

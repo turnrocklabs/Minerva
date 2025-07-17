@@ -33,8 +33,11 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 		# otherwise extract the error
 		else:
 			
-			if "error" in data:
-				bot_response.error = data["error"]["message"]
+			if "error" in data or "message" in data:
+				if "error" in data:
+					bot_response.error = data["error"]["message"]
+				else:
+					bot_response.error = data["message"]
 			else:
 				bot_response.error = "Unexpected error occurred while generating the response"
 
@@ -47,7 +50,7 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api
-func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
+func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 
 	var request_body = {
 		"model": model_name,
