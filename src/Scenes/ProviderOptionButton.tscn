@@ -6,4 +6,3 @@
 [node name="ProviderOptionButton" type="OptionButton"]
 script = ExtResource("1_kgywg")
 
-[connection signal="item_selected" from="." to="." method="_on_item_selected"]

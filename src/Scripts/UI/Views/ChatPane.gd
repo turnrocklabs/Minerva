@@ -10,7 +10,6 @@ var container: TabContainer  # Store the TabContainer
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
 var _active_chat_request: = false
-@onready var dynamic_ui_generator: DynamicUIGenerator = %DynamicUIGenerator
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
 
 # Script of the default provider to use when creating new chat tab
@@ -303,8 +302,7 @@ func _on_chat_pressed():
 
 
 func _on_send_message_button_item_selected(index: int) -> void:
-	if %txtMainUserInput.text.is_empty(): return
-
+	
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 	%SendMessageButton.selected = -1
@@ -321,10 +319,89 @@ func _on_send_message_button_item_selected(index: int) -> void:
 		2:
 			execute_sequential_chat(filteredInput)
 
+func execute_hcp_chat():
+	ensure_chat_open()
+
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+
+	if not history.provider is CoreProvider:
+		push_error("'execute_hcp_chat' called while current provider is not CoreProvider")
+		return
+
+	var provider: CoreProvider = history.provider
+
+	var user_history_item: = ChatHistoryItem.new()
+	user_history_item.HcpData = Core.dynamic_ui_generator.get_user_input(dynamic_ui_container)
+	user_history_item.HcpStructure = provider.action.input_parameters
+	user_history_item.Role = ChatHistoryItem.ChatRole.USER
+	user_history_item.Type = ChatHistoryItem.PartType.TEXT
+	# user_history_item.Message = 
+
+	var user_msg_node: = history.VBox.add_history_item(user_history_item)
+	
+	history.HistoryItemList.append(user_history_item)
+	
+	var history_list: = create_prompt(user_history_item)
+
+	# rerender the message since we changed the history item
+	user_msg_node.first_time_message = true
+	history.VBox.ensure_node_is_visible(user_msg_node)
+	user_msg_node.render()
+
+	var dummy_item = ChatHistoryItem.new()
+	dummy_item.Role = ChatHistoryItem.ChatRole.MODEL
+	dummy_item.provider = history.provider
+	var model_msg_node = history.VBox.add_history_item(dummy_item)
+	
+	model_msg_node.loading = true 
+
+	var hcp_provider: CoreProvider = history.provider
+
+	var bot_response = await hcp_provider.generate_content(history_list)
+
+
+	var chi = ChatHistoryItem.new()
+		
+	if bot_response != null: 
+		chi.Id = bot_response.id
+		chi.Role = ChatHistoryItem.ChatRole.MODEL
+		chi.HcpStructure = provider.action.output_parameters
+		chi.HcpData = bot_response.hcp_data
+		chi.Error = bot_response.error
+		chi.provider = history.provider
+		chi.Complete = bot_response.complete
+		chi.TokenCost = bot_response.completion_tokens
+		if bot_response.image:
+			chi.Images = ([bot_response.image] as Array[Image])
+
+		# Update user message node
+		user_history_item.TokenCost = bot_response.prompt_tokens
+		user_msg_node.render()
+
+		# Change the history item and the message node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
+
+		## Inform the user history item that the response has arrived
+		user_history_item.response_arrived.emit(chi)
+		
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(model_msg_node)
+		model_msg_node.loading = false
+		model_msg_node.first_time_message = true
+	else:
+		model_msg_node.queue_free()
 
 func execute_regular_chat(text: String) -> void:
+
+	if SingletonObject.Chats._provider_option_button.get_selected_provider() is CoreProvider:
+		execute_hcp_chat()
+		return
+
 	if text.is_empty(): return
+	
 	ensure_chat_open()
+	
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 	
@@ -926,11 +1003,13 @@ func _on_system_button_pressed() -> void:
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	update_token_estimation()
 
+	print(provider_)
+
 	if provider_ is CoreProvider:
 		
 		var o_params: = (provider_ as CoreProvider).action.input_parameters
 
-		var controls: = dynamic_ui_generator.process_parameters(o_params)
+		var controls: = Core.dynamic_ui_generator.process_parameters(o_params)
 		
 		for ch in dynamic_ui_container.get_children():
 			ch.queue_free()

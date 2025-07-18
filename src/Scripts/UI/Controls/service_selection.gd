@@ -58,3 +58,4 @@ func _on_action_option_button_item_selected(index: int) -> void:
 	action_description_button.text = action.description
 
 	selected_action = action
+

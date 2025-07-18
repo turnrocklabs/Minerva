@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://ci2nbjiei8up1"]
+[gd_scene load_steps=2 format=3 uid="uid://cl4gj0ckqhtah"]
 
-[ext_resource type="Script" uid="uid://8au0376717km" path="res://Scripts/UI/Views/HcpLogs.gd" id="1_aet82"]
+[ext_resource type="Script" uid="uid://bg6lp54vfsklh" path="res://Scripts/UI/Views/HcpLogs.gd" id="1_aet82"]
 
 [node name="HcpLogs" type="Window" node_paths=PackedStringArray("_rich_text_label", "_text_edit")]
 title = "Test"

@@ -6,6 +6,8 @@ extends RefCounted
 var id: StringName
 var text: String
 
+var hcp_data: Dictionary
+
 ## Image associated with this response.
 ## Caption can be set by setting the `caption` meta field of this object
 var image: Image

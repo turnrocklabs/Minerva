@@ -277,7 +277,7 @@ func _on_core_connet_button_pressed() -> void:
 	var pword = hcp_password.text
 
 	if auth_http_base_url.is_empty() or core_ws_url.is_empty() or uname.is_empty() or pword.is_empty():
-		SingletonObject.ErrorDisplay("Missing Information", "Please fill in Auth Base URI, Core URL, Username, and Password.")
+		SingletonObject.ErrorDisplay("Missing Information", "Please fill in Auth Base URI, Core URL, Username, and Password.", self)
 		return
 
 	# Update status immediately - maybe "Connecting..."
@@ -343,7 +343,7 @@ func _on_core_connet_button_pressed() -> void:
 func _on_select_services_button_pressed() -> void:
 	var services: Array[Service] = await Core.fetch_services()
 	if services.is_empty() and not Core.client._connected:
-		SingletonObject.ErrorDisplay("Not Connected", "Cannot fetch services. Please connect to Core first.")
+		SingletonObject.ErrorDisplay("Not Connected", "Cannot fetch services. Please connect to Core first.", self)
 		return
 
 	service_selection_window.set_services(services)

@@ -34,7 +34,7 @@ func _ready():
 
 	Core.service_selected.connect(_on_hcp_service_selected)
 
-func _on_item_selected(index: int):
+func _on_provider_option_button_item_selected(index: int):
 	var provider_object: = get_provider_from_id(get_item_id(index))
 
 	provider_selected.emit(provider_object)

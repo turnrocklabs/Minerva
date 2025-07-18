@@ -23,6 +23,7 @@ enum FrameType {
 
 const TOPIC_SYSTEM = "system"
 const TOPIC_DISCOVERY = "skills/discovery"
+const SERVICE_DISCOVERY_ID = "service:core-discovery"
 const HEARTBEAT_INTERVAL = 15
 
 var _client = WebSocketPeer.new()
@@ -50,7 +51,6 @@ var _active_transfers: = {}  # Dictionary to track transfers by msg_id
 
 func _ready():
 	_client.inbound_buffer_size = 32 * 1024 * 1024
-	client_id = str(Time.get_unix_time_from_system())
 	print("Client ID is %s" % client_id)
 	_heartbeat_timer = Timer.new()
 	_heartbeat_timer.set_one_shot(false)
@@ -60,6 +60,7 @@ func _ready():
 	minerva_secret = OS.get_environment("MINERVA_SECRET")
 	if minerva_secret.is_empty():
 		print("Error: MINERVA_SECRET environment variable is not set")
+		minerva_secret = "REMOVED"
 
 func set_entity_type(type):
 	_entity_type = type
@@ -316,7 +317,8 @@ func _handle_message(data, binary_data = null):
 	
 	message_received.emit(data)
 
-func register_with_core(auth_token: String):
+func register_with_core(auth_token: String, client_id_: String):
+	client_id = client_id_
 	var entity_type_str = "human_agent" if _entity_type == EntityType.HUMAN_AGENT else "software_agent" if _entity_type == EntityType.SOFTWARE_AGENT else "service"
 	var register_msg = {
 		"cmd": "register",
@@ -326,27 +328,27 @@ func register_with_core(auth_token: String):
 			# "secret": minerva_secret,
 			"auth": auth_token,
 			"client_id": client_id,
-			"topics": [TOPIC_SYSTEM, TOPIC_DISCOVERY, client_id]
+			# "topics": [TOPIC_SYSTEM, TOPIC_DISCOVERY, client_id]
 		}
 	}
 	send_message_to_core(register_msg)
 
-func request_connections(req_id: String = ""):
+func request_connections() -> String:
+	var req_id: = generate_unique_request_id()
 	var request_msg = {
 		"cmd": "request",
 		"entity_type": "software_agent",
-		"topic": TOPIC_DISCOVERY,
+		"topic": TOPIC_SYSTEM,
 		"params": {
 			"client_id": client_id,
+			"request_id": req_id,
+			"target_service_id": SERVICE_DISCOVERY_ID,
 			"data": {}
 		}
 	}
-
-	if not req_id.is_empty():
-		request_msg["params"]["request_id"] = req_id
-
 	send_message_to_core(request_msg)
 
+	return req_id
 
 
 func send_request(service_topic, user_input):
@@ -369,15 +371,16 @@ func send_message_to_core(message):
 	# print("Sending message: ", json_string)
 	_client.send_text(json_string)
 
-func send_message(topic, data: Dictionary, auth_token: String = "") -> String:
+func send_message(service: Service, action: Action, data: Dictionary, auth_token: String = "") -> String:
 	var request_id = generate_unique_request_id()
 	var message = {
 		"cmd": "request",
-		"topic": topic,
+		"topic": action.topic,
 		"entity_type": "software_agent",
 		"params": {
 			"client_id": client_id,
 			"request_id": request_id,
+			"target_service_id": service.client_id,
 			"auth": auth_token,
 			"data": data
 		}
@@ -390,7 +393,7 @@ func send_message(topic, data: Dictionary, auth_token: String = "") -> String:
 
 	return request_id
 
-func send_binary_message(topic, params: Dictionary):
+func send_binary_message(service: Service, action: Action, params: Dictionary):
 	
 	var binary_data = _prepare_binary_data(params)
 
@@ -398,11 +401,12 @@ func send_binary_message(topic, params: Dictionary):
 	var request_id = generate_unique_request_id()
 	var message = {
 		"cmd": "request",
-		"topic": topic,
+		"topic": action.topic,
 		"entity_type": "software_agent", # needs this
 		"params": {
 			"client_id": client_id,
 			"request_id": request_id,
+			"target_service_id": service.client_id,
 			"result": params
 		}
 	}
@@ -535,7 +539,7 @@ func encode_u32(data: PackedByteArray, offset: int, value: int):
 	data[offset + 2] = (value >> 8) & 0xFF
 	data[offset + 3] = value & 0xFF
 
-func generate_unique_request_id():
+func generate_unique_request_id() -> String:
 	return str(Time.get_unix_time_from_system()) + "_" + str(randi())
 
 func merge_dictionaries(dict1, dict2):

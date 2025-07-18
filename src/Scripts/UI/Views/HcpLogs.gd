@@ -15,7 +15,7 @@ var _received_data: Array[Dictionary] = []
 func _on_message_received(msg: Dictionary) -> void:
 
 	var cmd: String = msg.get("cmd", "NA")
-	var topic: String = msg.get("topic", "NA")
+	var topic: String = msg.get("topic", msg.get("entity_type", "NA"))
 	var brief: String = ""
 	var color: Color = Color.DARK_BLUE
 

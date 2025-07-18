@@ -14,7 +14,7 @@ static func create(field_params: Dictionary, input: = true) -> String_Field:
 
 	scn.ready.connect(
 		func():
-			scn._field_name_label.text = field_params["display_name"]
+			scn._field_name_label.text = field_params["display_name"] + ":"
 
 			# if input use the line edit
 			if input:

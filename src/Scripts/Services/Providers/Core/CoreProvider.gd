@@ -30,12 +30,13 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 	if cmd == "error":
 		bot_response.error = params.get("error", "Unknown Error")
 		return bot_response
-	
-	print("here:")
-	print(response)
 
-	bot_response.text = params["result"]["response"]
+	if not params.has("result"):
+		bot_response.error = params.get("error", "No 'result' field found in received data")
+		push_error("%s has no 'result' field." % params)
+		return bot_response
 
+	bot_response.hcp_data = params["result"]
 
 	return bot_response
 
@@ -48,9 +49,10 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary={})
 		bot_response.error = "No service selected in preferences"
 		return bot_response
 
-	var topic = SingletonObject.preferences_popup.selected_action.topic
+	# var service = SingletonObject.preferences_popup.selected_action
+	# var action = SingletonObject.preferences_popup.selected_service
 
-	var msg = await Core.send_message(topic, prompt.back()).receive()
+	var msg = await Core.send_message(service, action, prompt.back()).receive()
 	
 	if not msg:
 		var bot_response:= BotResponse.new()
