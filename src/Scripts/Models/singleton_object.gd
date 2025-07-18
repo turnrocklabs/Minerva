@@ -348,11 +348,13 @@ var Is_code_completed:bool = true
 var errorPopup: PersistentWindow
 var errorTitle: Label
 var errorText: Label
-func ErrorDisplay(error_title:String, error_message: String):
+func ErrorDisplay(error_title:String, error_message: String, on_close_focus: Node = null):
 	errorTitle.text = error_title
 	errorText.text = error_message
 	errorPopup.popup_centered()
-	pass
+
+	if on_close_focus and on_close_focus.has_method("grab_focus"):
+		errorPopup.close_requested.connect(func(): on_close_focus.grab_focus())
 
 @onready var main_scene = $"/root/RootControl"
 

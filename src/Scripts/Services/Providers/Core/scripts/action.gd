@@ -3,8 +3,8 @@ extends RefCounted
 
 var name: String
 var description: String
-var input_parameters: Dictionary	
-var output_parameters: Dictionary	
+var input_parameters: Dictionary
+var output_parameters: Dictionary
 var topic: String
 
 func _init(action_parameters: Dictionary) -> void:

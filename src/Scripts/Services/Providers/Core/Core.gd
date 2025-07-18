@@ -6,6 +6,8 @@ signal service_selected(service: Service, action: Action)
 # Preload the client script
 @onready var _client_script: = preload("res://Scripts/Services/Providers/Core/core_client.gd")
 
+@onready var dynamic_ui_generator: = DynamicUIGenerator.new()
+
 # Flag to track if the client successfully registered with the core
 var registered: = false
 
@@ -19,7 +21,8 @@ var services: Array[Service]
 
 # JWT token obtained after successful login
 var _jwt_token: String = ""
-
+# Client ID returned after successful login
+var _client_id: String = ""
 
 func _ready() -> void:
 	# Instantiate and add the CoreClient node
@@ -40,7 +43,7 @@ func _ready() -> void:
 func start(core_ws_url: String, auth_http_base_url: String, username: String, password: String) -> bool:
 
 	# --- 1. Authentication via HTTP ---
-	var auth_endpoint = auth_http_base_url.path_join("login") # Construct the full login URL
+	var auth_endpoint = auth_http_base_url #.path_join("login") # Construct the full login URL
 	var headers = PackedStringArray([
 		"Content-Type: application/json",
 		"Accept: application/json" # Good practice to specify accepted response type
@@ -72,6 +75,11 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 		prints("Authentication failed or token not received.")
 		return false # _on_auth_request_completed handles error display
 
+	if _client_id.is_empty():
+		prints("Authentication failed or client ID not received.")
+		return false # _on_auth_request_completed handles error display
+
+
 	print("Authentication successful. Token received.")
 
 	# --- 3. Connect to Core WebSocket ---
@@ -84,6 +92,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 		SingletonObject.ErrorDisplay("Connection Failed", err_msg)
 		# Reset token maybe? Or let user retry.
 		_jwt_token = ""
+		_client_id = ""
 		return false
 
 	# Wait for the WebSocket connection to be established
@@ -91,7 +100,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	print("WebSocket connection established.")
 
 	# --- 4. Register with Core using the obtained JWT ---
-	client.register_with_core(_jwt_token) # Use the JWT token for registration
+	client.register_with_core(_jwt_token, _client_id) # Use the JWT token for registration
 	# Note: We assume registration happens quickly. If it could fail and require feedback,
 	# we might need an await signal for registration completion/error from CoreClient.
 	# For now, assume connection_established + register_with_core implies success.
@@ -108,6 +117,7 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 		push_error(err_msg)
 		SingletonObject.ErrorDisplay("Authentication Network Error", err_msg)
 		_jwt_token = "" # Ensure token is empty on failure
+		_client_id = ""
 		return
 
 	var response_body_text = body.get_string_from_utf8()
@@ -117,8 +127,13 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 	if response_code != 200: # Check for successful HTTP status
 		var err_msg = "Authentication Failed: Server returned status %d. Response: %s" % [response_code, response_body_text]
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Failed", "Server returned status %d. Check credentials or server logs." % response_code)
+		SingletonObject.ErrorDisplay(
+			"Authentication Failed",
+			"Server returned status %d. Check credentials or server logs." % response_code,
+			SingletonObject.preferences_popup
+		)
 		_jwt_token = ""
+		_client_id = ""
 		return
 
 	# Parse the JSON response
@@ -126,35 +141,36 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 	if typeof(json) != TYPE_DICTIONARY:
 		var err_msg = "Failed to parse authentication response JSON."
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg)
+		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		_jwt_token = ""
 		return
 
-	# --- Extract the token ---
-	# Adjust this path based on the *actual* structure of your successful login response!
-	# Example assumes: {"params": {"result": {"token": "..."}}} like the old code structure
-	# If the swagger definition's 200 response is just e.g. {"token": "..."}, adjust accordingly.
-	# Let's assume a simpler structure first based on common practice: {"token": "..."}
-	if json.has("token"):
-		_jwt_token = json["token"]
+	if json.has("data") and json["data"].has("token"):
+		_jwt_token = json["data"]["token"]
 		if typeof(_jwt_token) != TYPE_STRING or _jwt_token.is_empty():
 			var err_msg = "Authentication response token is invalid or empty."
 			push_error(err_msg)
-			SingletonObject.ErrorDisplay("Authentication Error", err_msg)
-			_jwt_token = ""
-	# Fallback to checking the more nested structure if simple 'token' not found
-	elif json.has("params") and json["params"].has("result") and json["params"]["result"].has("token"):
-		_jwt_token = json["params"]["result"]["token"]
-		if typeof(_jwt_token) != TYPE_STRING or _jwt_token.is_empty():
-			var err_msg = "Authentication response token (nested) is invalid or empty."
-			push_error(err_msg)
-			SingletonObject.ErrorDisplay("Authentication Error", err_msg)
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 			_jwt_token = ""
 	else:
 		var err_msg = "Authentication response does not contain a 'token'."
 		push_error(err_msg, " Received JSON: ", json)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg)
+		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		_jwt_token = ""
+		return
+	
+	if json.has("data") and json["data"].has("user") and json["data"]["user"].has("id"):
+		_client_id = json["data"]["user"]["id"]
+		if typeof(_client_id) != TYPE_STRING or _client_id.is_empty():
+			var err_msg = "Authentication response token is invalid or empty."
+			push_error(err_msg)
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+			_client_id = ""
+	else:
+		var err_msg = "Authentication response does not contain a 'client_id'."
+		push_error(err_msg, " Received JSON: ", json)
+		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		_client_id = ""
 		return
 
 	# If we reach here, token *should* be set. The await in 'start' will resume.
@@ -180,7 +196,7 @@ func _get_http_result_string(result_enum: int) -> String:
 
 
 # Sends a message via the WebSocket client and returns an AwaitMessage object
-func send_message(topic: String, msg: Dictionary) -> AwaitMessage:
+func send_message(service: Service, action: Action, msg: Dictionary) -> AwaitMessage:
 	if not client._connected:
 		push_warning("Attempted to send message while not connected to Core.")
 		# Return an AwaitMessage that will likely time out? Or handle differently?
@@ -188,7 +204,7 @@ func send_message(topic: String, msg: Dictionary) -> AwaitMessage:
 		awaiter.timeout = 0.1 # Make it timeout quickly
 		return awaiter
 
-	var request_id: String = client.send_message(topic, msg)
+	var request_id: String = client.send_message(service, action, msg)
 	return await_message().with_request_id(request_id)
 
 # Fetches the list of available services from the Core
@@ -197,10 +213,10 @@ func fetch_services() -> Array[Service]:
 		push_warning("Attempted to fetch services while not connected.")
 		return []
 
-	client.request_connections() # Send the request to the core
+	var req_id: = client.request_connections() # Send the request to the core
 
 	# Wait for the response message
-	var msg = await await_message().with_cmd("response").with_topic("skills/discovery").receive()
+	var msg = await await_message().with_request_id(req_id).receive()
 
 	if not msg:
 		push_error("Did not receive response for skills/discovery or timed out.")
@@ -218,8 +234,8 @@ func fetch_services() -> Array[Service]:
 	services.clear()
 	for srvc_dta in services_array:
 		if srvc_dta.has("params") and typeof(srvc_dta["params"]) == TYPE_DICTIONARY:
-			#print("\nParsing Service data:") # Debug
-			#print(srvc_dta["params"])      # Debug
+			# print("\nParsing Service data:") # Debug
+			# print(srvc_dta["params"])      # Debug
 			services.append(Service.new(srvc_dta["params"]))
 		else:
 			push_warning("Skipping service entry with invalid format: ", srvc_dta)

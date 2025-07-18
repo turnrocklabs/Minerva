@@ -42,6 +42,9 @@ var InjectedNotes: Array[Variant]:
 var HcpData: Dictionary:
 	set(value): SingletonObject.save_state(false); HcpData = value
 
+var HcpStructure: Dictionary:
+	set(value): SingletonObject.save_state(false); HcpStructure = value
+
 var Message: String:
 	set(value): SingletonObject.call_deferred("save_state", false); Message = value
 

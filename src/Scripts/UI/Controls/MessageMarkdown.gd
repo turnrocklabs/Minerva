@@ -29,6 +29,8 @@ extends HBoxContainer
 @onready var resize_drag_control: Control = %ResizeDragControl
 @onready var images_grid_container: GridContainer = %ImagesGridContainer
 @onready var v_box_container: VBoxContainer = %MainVBoxContainer
+@onready var dynamic_output_container: VBoxContainer = %DynamicOutputContainer
+
 
 @onready var tokens_cost: Label = %TokensCostLabel
 @onready var text_edit: TextEdit = %MessageTextEdit
@@ -228,8 +230,12 @@ func _setup_user_message() -> void:
 	right_control.visible = true
 	right_control.get_node("%AvatarName").text = SingletonObject.preferences_popup.get_user_initials()
 	right_control.get_node("%MsgSenderAvatar").tooltip_text = SingletonObject.preferences_popup.get_user_full_name()
-	label.markdown_text = history_item.Message
-	label.set("theme_override_colors/default_color", Color.WHITE)
+
+	if history_item.HcpData:
+		set_dynamic_data(history_item.HcpStructure, history_item.HcpData)
+	else:
+		label.markdown_text = history_item.Message
+		label.set("theme_override_colors/default_color", Color.WHITE)
 
 	if regeneratable:
 		%RegenerateButton.visible = true
@@ -237,6 +243,17 @@ func _setup_user_message() -> void:
 	var style: StyleBoxFlat = get_node("%PanelContainer").get("theme_override_styles/panel")
 	style.bg_color = user_message_color
 	
+func set_dynamic_data(parameters: Dictionary, data: Dictionary):
+	var controls: = Core.dynamic_ui_generator.process_parameters(parameters, false)
+
+	# delete current nodes
+	for child in dynamic_output_container.get_children():
+		child.free()
+
+	for ctrl in controls:
+		dynamic_output_container.add_child(ctrl)
+
+	Core.dynamic_ui_generator.set_output(dynamic_output_container, data)
 
 
 func _setup_model_message():
@@ -271,7 +288,9 @@ func _setup_model_message():
 	var continue_btn = get_node("%ContinueButton") as Button
 	continue_btn.visible = not history_item.Complete
 	
-	if history_item.Error:
+	if history_item.HcpData:
+		set_dynamic_data(history_item.HcpStructure, history_item.HcpData)
+	elif history_item.Error:
 		label.text = "An error occurred:\n%s" % history_item.Error
 		style.bg_color = error_message_color
 	else:
