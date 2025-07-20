@@ -331,7 +331,7 @@ func register_with_core(auth_token: String, client_id_: String):
 			# "topics": [TOPIC_SYSTEM, TOPIC_DISCOVERY, client_id]
 		}
 	}
-	send_message_to_core(register_msg)
+	send_text_message_to_core(register_msg)
 
 func request_connections() -> String:
 	var req_id: = generate_unique_request_id()
@@ -346,7 +346,7 @@ func request_connections() -> String:
 			"data": {}
 		}
 	}
-	send_message_to_core(request_msg)
+	send_text_message_to_core(request_msg)
 
 	return req_id
 
@@ -363,15 +363,41 @@ func send_request(service_topic, user_input):
 		}
 	}
 	message["params"] = merge_dictionaries(message["params"], user_input)
-	send_message_to_core(message)
+	send_text_message_to_core(message)
 
 
-func send_message_to_core(message):
+func send_text_message_to_core(message):
 	var json_string = JSON.stringify(message)
 	# print("Sending message: ", json_string)
 	_client.send_text(json_string)
 
+
+func _has_binary_data(params, current_path: = "") -> bool:
+	if params is Array:
+		for item in params:
+			if _has_binary_data(item, current_path):
+				return true
+	elif params is Dictionary:
+		for value in params.values():
+			if value is FileAccess or value is Image:
+				return true
+			elif value is Dictionary or value is Array:
+				if _has_binary_data(value, current_path):
+					return true
+	return false
+
+## Determines if the message needs to be sent in binary or text format and sends it to core[br]
+## Message will be sent as a binary message if [parameter data] has fields with values of the following types:[br]
+## [class.FileAcess]
+## [class.Image]
 func send_message(service: Service, action: Action, data: Dictionary, auth_token: String = "") -> String:
+
+	if _has_binary_data(data):
+		return send_binary_message(service, action, data, auth_token)
+
+	return send_text_message(service, action, data, auth_token)
+
+func send_text_message(service: Service, action: Action, data: Dictionary, auth_token: String = "") -> String:
 	var request_id = generate_unique_request_id()
 	var message = {
 		"cmd": "request",
@@ -393,20 +419,20 @@ func send_message(service: Service, action: Action, data: Dictionary, auth_token
 
 	return request_id
 
-func send_binary_message(service: Service, action: Action, params: Dictionary):
+func send_binary_message(service: Service, action: Action, params: Dictionary, auth_token: String = ""):
 	
-	var binary_data = _prepare_binary_data(params)
-
+	var binary_data: = _prepare_binary_data(params)
 
 	var request_id = generate_unique_request_id()
 	var message = {
 		"cmd": "request",
 		"topic": action.topic,
-		"entity_type": "software_agent", # needs this
+		"entity_type": "software_agent",
 		"params": {
 			"client_id": client_id,
 			"request_id": request_id,
 			"target_service_id": service.client_id,
+			"auth": auth_token,
 			"result": params
 		}
 	}
@@ -432,17 +458,37 @@ func send_binary_message(service: Service, action: Action, params: Dictionary):
 	encode_u32(frame, frame.size(), binary_data.size())
 	frame.append_array(json_bytes)
 
-	await send_packet(frame)
+	send_packet(frame)
 	print("sending header + json")
 
 	# Send each file
 	const CHUNK_SIZE = 32 * 1024  # Reduced chunk size
 	for path in binary_data:
-		var fa: FileAccess = binary_data[path]
+		var obj = binary_data[path]
+		
+		var file_size: int
+		var get_chunk_func: Callable
+		
+		# Handle different object types
+		if obj is FileAccess:
+			var fa: FileAccess = obj
+			file_size = fa.get_length()
+			fa.seek(0)
+			get_chunk_func = func(size): return fa.get_buffer(size)
+			
+		elif obj is Image:
+			var img: Image = obj
+			var png_buffer = img.save_png_to_buffer()
+			var pos_wrapper = {"position": 0}  # Use dictionary to work around capture limitation
+			file_size = png_buffer.size()
+			get_chunk_func = func(size): 
+				var chunk_size = min(size, file_size - pos_wrapper.position)
+				var chunk = png_buffer.slice(pos_wrapper.position, pos_wrapper.position + chunk_size)
+				pos_wrapper.position += chunk_size
+				return chunk
 		
 		# BINARY_HEADER frame
 		var path_bytes = path.to_utf8_buffer()
-		var file_size = fa.get_length()
 		
 		# Send raw binary header frame
 		frame = PackedByteArray()
@@ -452,26 +498,29 @@ func send_binary_message(service: Service, action: Action, params: Dictionary):
 		encode_u32(frame, frame.size(), file_size)         # file size 4 bytes
 		frame.append_array(path_bytes)                      # path bytes
 		
-		await send_packet(frame)
+		send_packet(frame)
 		print("sending file header")
 		
 		# BINARY_DATA frames
-		fa.seek(0)
-		while fa.get_position() < file_size:
+		var bytes_sent = 0
+		while bytes_sent < file_size:
 			frame = PackedByteArray()
 			frame.append(FrameType.BINARY_DATA)   # frame type byte
 			frame.append_array(msg_id)            # msg_id 16 bytes
-			frame.append_array(fa.get_buffer(CHUNK_SIZE))  # chunk of file data
+			frame.append_array(get_chunk_func.call(CHUNK_SIZE))  # chunk of data
 			
-			await send_packet(frame)
+			bytes_sent += min(CHUNK_SIZE, file_size - bytes_sent)
+			send_packet(frame)
 		print("sending file content")
 
 	print("Data sending finished")
 
+	return request_id
+
 # Add this helper function to handle packet sending with backpressure
 func send_packet(packet: PackedByteArray) -> void:
-	while _client.get_current_outbound_buffered_amount() > 0:
-		await get_tree().create_timer(0.1).timeout
+	# while _client.get_current_outbound_buffered_amount() > 0:
+	# 	await get_tree().create_timer(0.1).timeout
 	_client.put_packet(packet)
 
 
@@ -502,11 +551,9 @@ func _prepare_binary_data(params, current_path: = "") -> Dictionary:
 			if value is Dictionary or value is Array:
 				data.merge(_prepare_binary_data(value, path))
 			
-			elif value is FileAccess:
+			elif value is FileAccess or value is Image:
 				data[path] = value
 
-
-	# CLAUDE CODE
 	# Remove binary data from nested structures
 	if current_path.is_empty():
 		for binary_path in data.keys():
@@ -527,7 +574,6 @@ func _prepare_binary_data(params, current_path: = "") -> Dictionary:
 			if current_dict is Dictionary:
 				var last_key = parts[-1]
 				current_dict.erase(last_key)
-
 
 	return data
 
@@ -556,5 +602,5 @@ func send_heartbeat():
 			"entity_type": "software_agent",
 			"params": {}
 		}
-		send_message_to_core(heartbeat_msg)
+		send_text_message_to_core(heartbeat_msg)
 		print("Heartbeat sent")
