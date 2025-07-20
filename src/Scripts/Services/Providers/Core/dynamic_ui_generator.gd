@@ -11,8 +11,12 @@ var _field_scenes: = {
 	"image": ImageField,
 	"file": FileField,
 	"list": ListField,
+	"array": ListField,
 	"bool": BoolField,
 	"number": NumberField,
+	
+	# complex data types
+	"notes": NoteField,
 }
 
 
@@ -20,7 +24,6 @@ func process_parameters(parameters: Dictionary, input: = true) -> Array[Control]
 	var controls: Array[Control]
 
 	for key in parameters.keys():
-		print("Processing: ", key)
 		var fields_params: Dictionary = parameters[key]
 
 		var field_type: String = fields_params.get("type", "")
@@ -37,13 +40,11 @@ func process_parameters(parameters: Dictionary, input: = true) -> Array[Control]
 
 		controls.append(ctrl)
 
-	
 	return controls
 
 func get_user_input(input_container: Control) -> Dictionary:
 	var data: Dictionary
 
-	print("\n\n")
 	for child in input_container.get_children():
 		if child.has_method("get_user_data"):
 			var child_data = child.get_user_data()
@@ -52,20 +53,14 @@ func get_user_input(input_container: Control) -> Dictionary:
 
 			data[field_name] = child_data
 
-	print(data)
-
 	return data
 
 func set_output(input_container: Control, data: Dictionary) -> Dictionary:
-
-	print("\n\nUpdating output container")
 	for child in input_container.get_children():
 		if child.has_method("update_output"):
 
 			var field_name = child.get_meta("field_name")
 
 			child.update_output(data[field_name])
-
-	print(data)
 
 	return data

@@ -335,7 +335,6 @@ func execute_hcp_chat():
 	user_history_item.HcpStructure = provider.action.input_parameters
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 	user_history_item.Type = ChatHistoryItem.PartType.TEXT
-	# user_history_item.Message = 
 
 	var user_msg_node: = history.VBox.add_history_item(user_history_item)
 	

@@ -6,7 +6,6 @@ var action: Action
 
 func _init(service_: Service = null, action_: Action = null):
 	provider_name = "TurnRock"
-	BASE_URL = "ws://localhost:3030" # TODO: change this
 	PROVIDER = SingletonObject.API_PROVIDER.TURNROCK
 
 	model_name = "core"
@@ -43,14 +42,10 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 
 func generate_content(prompt: Array[Variant], _additional_params: Dictionary={}):
 	
-
 	if not SingletonObject.preferences_popup.selected_action:
 		var bot_response:= BotResponse.new()
 		bot_response.error = "No service selected in preferences"
 		return bot_response
-
-	# var service = SingletonObject.preferences_popup.selected_action
-	# var action = SingletonObject.preferences_popup.selected_service
 
 	var msg = await Core.send_message(service, action, prompt.back()).receive()
 	
