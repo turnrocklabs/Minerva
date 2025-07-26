@@ -153,7 +153,11 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			if not value: continue # if no data, just skip
 
 			var img = Image.new()
-			img.load_png_from_buffer(Marshalls.base64_to_raw(value))
+			if value is String:
+				img.load_png_from_buffer(Marshalls.base64_to_raw(value))
+			elif value is FileAccess:
+				img.load_png_from_buffer(FileAccess.get_file_as_bytes(value.get_path()))
+			
 			value = img
 			
 		elif prop == "Audio":
@@ -167,8 +171,12 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			if not value: continue # if no data, just skip
 			
 			# if file doesn't exist anymore, set it to null
-			if not FileAccess.file_exists(value):
-				value = null
+			if value is String:
+				if not FileAccess.file_exists(value):
+					value = null
+			elif value is FileAccess:
+				value = value.get_path_absolute()
+
 		elif prop == "UUID":
 			if value == "":
 				value = SingletonObject.generate_UUID()

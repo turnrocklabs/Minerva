@@ -59,6 +59,10 @@ var memory_item: MemoryItem:
 
 		if not is_node_ready(): await ready
 
+		# when memory item is enabled trigger this notes signal
+		# sometimes notes are enabled/deisabled with code and check button doesnt emit the signal
+		memory_item.toggled.connect(toggled.emit)
+
 		# TODO: improve the code below
 		# The code below dynamically creates new controls
 		# each time the memory item is updated, we just clear them here
@@ -331,10 +335,13 @@ func _drop_data(_at_position: Vector2, data) -> void:
 	# Hide separators
 	_upper_separator.visible = false
 	_lower_separator.visible = false
+
 func _on_check_button_toggled(toggled_on: bool) -> void:
 	if memory_item:
 		memory_item.Enabled = toggled_on
-	toggled.emit(toggled_on)
+
+	# this is setup in memory item setter
+	# toggled.emit(toggled_on)
 
 
 func _on_remove_button_pressed():
