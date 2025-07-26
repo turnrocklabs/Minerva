@@ -63,7 +63,8 @@ func _on_hcp_service_selected(service: Service, action: Action):
 
 	var idx: = item_count
 
-	var item_name = "%s..." % service.name.left(20) if service.name.length() > 17 else service.name 
+	var item_name: = action.name
+	item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
 
 	add_item(item_name, idx)
 	set_item_tooltip(idx, service.name)

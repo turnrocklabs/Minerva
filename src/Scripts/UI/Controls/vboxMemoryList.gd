@@ -116,8 +116,9 @@ func render_items():
 		
 		note_control.changed.connect(SingletonObject.note_changed.emit.bind(note_control))
 
+	
 		# can't use bind because of the order of the parameters
-		note_control.MemoryItem.toggled.connect(
+		note_control.toggled.connect(
 			func(on: bool):
 				SingletonObject.note_toggled.emit(note_control, on)
 		)

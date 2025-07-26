@@ -892,17 +892,16 @@ func clear_all_chats():
 		child.queue_free()
 
 
-func update_token_estimation():
+func update_token_estimation(provider: BaseProvider = null):
 
-	var provider: BaseProvider
+	if not provider:
+		# if we don't have any chats use the selected provider from the dropdown
+		if SingletonObject.ChatList.is_empty():
 
-	# if we don't have any chats use the selected provider from the dropdown
-	if SingletonObject.ChatList.is_empty():
-
-		var p_id = _provider_option_button.get_selected_id()
-		provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
-	else:
-		provider = SingletonObject.ChatList[current_tab].provider
+			var p_id = _provider_option_button.get_selected_id()
+			provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
+		else:
+			provider = SingletonObject.ChatList[current_tab].provider
 
 	var chi = ChatHistoryItem.new()
 	chi.Message = %txtMainUserInput.text
@@ -1000,7 +999,7 @@ func _on_system_button_pressed() -> void:
 
 
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
-	update_token_estimation()
+	update_token_estimation(provider_)
 
 	print(provider_)
 

@@ -122,7 +122,7 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 
 	var response_body_text = body.get_string_from_utf8()
 	print("Auth Response Code: ", response_code)
-	#print("Auth Response Body: ", response_body_text) # Debug: careful logging passwords/tokens
+	print("Auth Response Body: ", response_body_text)
 
 	if response_code != 200: # Check for successful HTTP status
 		var err_msg = "Authentication Failed: Server returned status %d. Response: %s" % [response_code, response_body_text]
@@ -251,7 +251,7 @@ class AwaitMessage extends RefCounted:
 	var topic: String
 	var cmd: String
 	var request_id: String
-	var timeout: float = 5.0 # Default timeout in seconds
+	var timeout: float = 15.0 # Default timeout in seconds
 
 	var client: CoreClient # Reference to the WebSocket client
 

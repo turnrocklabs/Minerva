@@ -5,15 +5,21 @@ var service: Service
 var action: Action
 
 func _init(service_: Service = null, action_: Action = null):
+	print("OVDE:")
+	print(service_, action_)
+	service = service_
+	action = action_
+
 	provider_name = "TurnRock"
 	PROVIDER = SingletonObject.API_PROVIDER.TURNROCK
 
-	model_name = "core"
-	short_name = "C"
+	if action:
+		model_name = "%s (%s)" % [service.name if service else "Core", action.name]
+	
+	short_name = service.name[0] if service else "C"
+	
 	token_cost = 0.000015
 
-	service = service_
-	action = action_
 
 func _parse_request_results(response: Dictionary) -> BotResponse:
 	var bot_response:= BotResponse.new()
@@ -31,8 +37,8 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 		return bot_response
 
 	if not params.has("result"):
-		bot_response.error = params.get("error", "No 'result' field found in received data")
-		push_error("%s has no 'result' field." % params)
+		bot_response.error = params.get("error", "No 'data' field found in received data")
+		push_error("%s has no 'data' field." % params)
 		return bot_response
 
 	bot_response.hcp_data = params["result"]
@@ -53,6 +59,9 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary={})
 		var bot_response:= BotResponse.new()
 		bot_response.error = "No response received"
 		return bot_response
+
+	print("\n\nRESPONSE:")
+	print(msg)
 
 	var item = _parse_request_results(msg)
 	

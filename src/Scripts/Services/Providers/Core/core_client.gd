@@ -36,9 +36,12 @@ var minerva_secret = ""
 
 
 class Transfer extends RefCounted:
+	const DIRECTORY: = "user://.temp/transfers"
+
 	var json_data: Dictionary
 	var total_files: int
 	var received: int
+	var directory: String
 
 	# these change everytime there is new FrameType.BINARY_HEADER
 	var fa: FileAccess
@@ -61,6 +64,62 @@ func _ready():
 	if minerva_secret.is_empty():
 		print("Error: MINERVA_SECRET environment variable is not set")
 		minerva_secret = "m30wM1n3rv123456"
+
+
+
+func _exit_tree() -> void:
+	_clean()
+
+func _notification(what):
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_clean()
+
+func _clean():
+	for msg_id in _active_transfers.keys():
+		var t: Transfer = _active_transfers[msg_id]
+
+		print("Clearing transfer (%s)" % msg_id)
+		clear_trasnfer(t)
+
+func clear_trasnfer(t: Transfer) -> void:
+	var files: = _find_file_objects(t.json_data)
+
+	for fa in files:
+		fa.close()
+		var ferr: = DirAccess.remove_absolute(fa.get_path_absolute())
+		
+		if ferr == OK:
+			print("Removed %s" % fa.get_path_absolute())
+		else:
+			push_error("%s while trying to delete" % [error_string(ferr), fa.get_path_absolute()])
+	
+	var derr: = DirAccess.remove_absolute(t.directory)
+	
+	if derr == OK:
+		print("Removed %s" % t.directory)
+	else:
+		push_error("%s while trying to delete" % [error_string(derr), t.directory])
+
+
+func _find_file_objects(current) -> Array[FileAccess]:
+	var fas: Array[FileAccess] = []
+
+	if not (current is Dictionary or current is Array):
+		return fas
+
+	if current is Dictionary:
+		for value in current.values():
+			if value is FileAccess: fas.append(value)
+			elif value is Array or value is Dictionary:
+				fas.append_array(_find_file_objects(value))
+
+	else:
+		for value in current:
+			if value is FileAccess: fas.append(value)
+			elif value is Array or value is Dictionary:
+				fas.append_array(_find_file_objects(value))
+
+	return fas
 
 func set_entity_type(type):
 	_entity_type = type
@@ -161,7 +220,7 @@ func get_frame_size(frame_type: int, data: PackedByteArray) -> int:
 func bytes_to_u32(bytes: PackedByteArray) -> int:
 	if bytes.size() < 4:
 		return 0
-	return (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]
+	return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)  # ← LITTLE-ENDIAN
 
 func _handle_frame(frame: PackedByteArray):
 	var frame_type = frame[0]
@@ -202,12 +261,19 @@ func _handle_binary_header(msg_id: String, data: PackedByteArray):
 
 	var t: Transfer = _active_transfers[msg_id]
 
-	DirAccess.make_dir_recursive_absolute("user://.temp/")
+	var trasnfer_dir = Transfer.DIRECTORY.path_join(msg_id)
+	t.directory = trasnfer_dir
 
-	t.fa = FileAccess.open("user://.temp/%s.tmp" % [path.replace("/", "_")], FileAccess.WRITE_READ)
+	DirAccess.make_dir_recursive_absolute(trasnfer_dir)
+
+	# example: Transfer.DIRECTORY/fth4736247fjg/notes_0_MemoryImage.tmp
+	var fp: = trasnfer_dir.path_join("%s.tmp" % path.replace("/", "_"))
+
+	t.fa = FileAccess.open(fp, FileAccess.WRITE_READ)
+
 
 	if not t.fa:
-		print("ALOALOALO")
+		breakpoint
 		print(error_string(FileAccess.get_open_error()))
 
 	t.file_path = path
@@ -229,7 +295,7 @@ func _handle_binary_data(msg_id: String, data: PackedByteArray):
 		# file received, store file object in json
 		if t.file_size == t.fa.get_position():
 
-			var current = t.json_data["params"]["result"]
+			var current = t.json_data["params"]["data"]
 			var keys = t.file_path.split("/")
 			for i in range(keys.size() - 1):
 				current = current[int(keys[i]) if keys[i].is_valid_int() else keys[i]]
@@ -255,9 +321,9 @@ func _check_transfer_complete(transfer: Dictionary) -> bool:
 	return true
 
 func decode_u32(data, offset):
-	var value = (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]
-	# Handle signed int
-	if value & 0x80000000:  # If highest bit is set (negative)
+	var value = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)  # ← LITTLE-ENDIAN
+	# Handle signed int  
+	if value & 0x80000000:
 		value = value - 0x100000000
 	return value
 
@@ -433,10 +499,14 @@ func send_binary_message(service: Service, action: Action, params: Dictionary, a
 			"request_id": request_id,
 			"target_service_id": service.client_id,
 			"auth": auth_token,
-			"result": params
+			"data": params
 		}
 	}
 	# message["params"] = merge_dictionaries(message["params"], params)
+
+	print("\n\nBINARY MESSAGE")
+	print(message)
+	print(binary_data)
 
 	var json_string: = JSON.stringify(message)
 	var json_bytes = json_string.to_utf8_buffer()
@@ -580,10 +650,10 @@ func _prepare_binary_data(params, current_path: = "") -> Dictionary:
 func encode_u32(data: PackedByteArray, offset: int, value: int):
 	if offset + 4 > data.size():
 		data.resize(offset + 4)
-	data[offset] = (value >> 24) & 0xFF
-	data[offset + 1] = (value >> 16) & 0xFF
-	data[offset + 2] = (value >> 8) & 0xFF
-	data[offset + 3] = value & 0xFF
+	data[offset] = value & 0xFF          # Least significant byte first
+	data[offset + 1] = (value >> 8) & 0xFF
+	data[offset + 2] = (value >> 16) & 0xFF
+	data[offset + 3] = (value >> 24) & 0xFF  # Most significant byte last
 
 func generate_unique_request_id() -> String:
 	return str(Time.get_unix_time_from_system()) + "_" + str(randi())

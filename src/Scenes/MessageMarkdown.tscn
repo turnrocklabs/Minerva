@@ -337,6 +337,7 @@ size_flags_vertical = 3
 [node name="DynamicOutputContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer/PanelContainer/v/ResizeScrollContainer/MarginContainer/MainVBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
 
 [node name="Control" type="Control" parent="MarginContainer/HBoxContainer/PanelContainer/v"]
 visible = false
