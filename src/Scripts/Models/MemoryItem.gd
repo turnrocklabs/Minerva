@@ -156,7 +156,10 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			if value is String:
 				img.load_png_from_buffer(Marshalls.base64_to_raw(value))
 			elif value is FileAccess:
+				value.seek(0)
 				img.load_png_from_buffer(FileAccess.get_file_as_bytes(value.get_path()))
+			elif value is Image:
+				img.copy_from(value)
 			
 			value = img
 			

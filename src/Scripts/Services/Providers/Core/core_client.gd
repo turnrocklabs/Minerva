@@ -486,6 +486,8 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 	return request_id
 
 func send_binary_message(service: Service, action: Action, params: Dictionary, auth_token: String = ""):
+	# duplicate the params dictionary so it doesnt alter the provided one
+	params = params.duplicate(true)
 	
 	var binary_data: = _prepare_binary_data(params)
 

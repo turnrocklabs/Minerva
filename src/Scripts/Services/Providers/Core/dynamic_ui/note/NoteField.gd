@@ -49,16 +49,10 @@ func get_user_data():
 		for item in t.MemoryItemList:
 			if item.Enabled:
 				data.append(item.Serialize(false))
-	
-	print("DATA FOR NOTES IS")
-	print(data)
 
 	return data
 
 func update_output(notes: Array) -> void:
-
-	print("\n\nUpdate noted field:")
-	print(notes)
 
 	var orphans: Dictionary = {}
 
@@ -66,8 +60,6 @@ func update_output(notes: Array) -> void:
 		var item: = MemoryItem.Deserialize(note_data)
 		var owning_thread: String = item.OwningThread if item.OwningThread else ""
 		var item_uuid: String = item.UUID if item.UUID else ""
-
-		print(owning_thread)
 
 		if owning_thread.is_empty():
 			if orphans.has(owning_thread):
@@ -81,7 +73,6 @@ func update_output(notes: Array) -> void:
 		
 		for i in SingletonObject.ThreadList.size():
 			var thread: = SingletonObject.ThreadList[i]
-			prints(owning_thread, "-", thread.ThreadId)
 			if thread.ThreadId == owning_thread:
 				
 				# check if this memory item already exists
@@ -119,8 +110,5 @@ func update_output(notes: Array) -> void:
 			thread.MemoryItemList.append(item)
 
 		SingletonObject.ThreadList.append(thread)
-	
-	print(SingletonObject.ThreadList)
-	print(orphans)
 
 	SingletonObject.NotesTab.render_threads()
