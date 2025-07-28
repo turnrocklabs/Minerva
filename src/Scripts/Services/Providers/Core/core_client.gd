@@ -91,7 +91,7 @@ func clear_trasnfer(t: Transfer) -> void:
 		if ferr == OK:
 			print("Removed %s" % fa.get_path_absolute())
 		else:
-			push_error("%s while trying to delete" % [error_string(ferr), fa.get_path_absolute()])
+			push_error("%s while trying to delete %s" % [error_string(ferr), fa.get_path_absolute()])
 	
 	var derr: = DirAccess.remove_absolute(t.directory)
 	
@@ -295,7 +295,7 @@ func _handle_binary_data(msg_id: String, data: PackedByteArray):
 		# file received, store file object in json
 		if t.file_size == t.fa.get_position():
 
-			var current = t.json_data["params"]["data"]
+			var current = t.json_data["params"]["data"] if "data" in t.json_data["params"] else t.json_data["params"]["result"]
 			var keys = t.file_path.split("/")
 			for i in range(keys.size() - 1):
 				current = current[int(keys[i]) if keys[i].is_valid_int() else keys[i]]
