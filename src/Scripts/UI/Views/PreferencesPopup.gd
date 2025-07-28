@@ -113,6 +113,10 @@ func _ready():
 			connect_button.disabled = false
 	)
 
+	# if auto connect is checked act like the connect button was pressed
+	if _fields["hcp_auto_connect"].button_pressed:
+		_on_core_connet_button_pressed()
+
 
 func set_field_values():
 	_fields["first_name"].text = config_file.get_value("USER", "first_name", "Not")
