@@ -335,11 +335,10 @@ func _on_remove_button_pressed():
 	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
 	tween.tween_callback(queue_free)
 	
-	if !isDrawer:
-		deleted.emit()
-	else: 
-		SingletonObject.deleted_drawer_note.emit(memory_item.UUID)
-		
+	
+	deleted.emit()
+	
+	
 
 ## Connects this note and the given [parameter editor] and
 ## reflects note title changes into the tab title.
