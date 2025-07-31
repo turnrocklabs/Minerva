@@ -69,8 +69,8 @@ func _reset_state() -> void:
 	_handles_global_positions.clear()
 	# We don't reset _first_original_image here to preserve quality across operations
 
-func handle_input_event(event: InputEvent) -> void:
-	if not editor.active_layer: return
+func handle_input_event(event: InputEvent) -> bool:
+	if not editor.active_layer: return false
 
 	event = editor.active_layer.localize_input(event)
 
@@ -78,20 +78,24 @@ func handle_input_event(event: InputEvent) -> void:
 		
 		if editor.selected_layers.size() > 1:
 			display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
-			return
+			return false
 
 		if event.pressed:
 			_start_transform(event)
 		else:
 			_end_transform()
+		return true
+
 	elif event is InputEventMouseMotion and _is_transforming:
 		_update_transform(event)
+		return true
+
 	elif event is InputEventMouseMotion and not _is_transforming and editor.active_layer:
 		# Update cursor when hovering over handles
 		var local_pos = editor.active_layer.get_global_transform().affine_inverse() * event.position
 		var hover_point = editor.active_layer.get_rect_by_mouse_position(local_pos)
-		
-		# You could implement cursor changes based on the hover_point if needed
+
+	return false
 
 func _get_handle_global_positions() -> Dictionary:
 	# Calculate global positions of all control handles

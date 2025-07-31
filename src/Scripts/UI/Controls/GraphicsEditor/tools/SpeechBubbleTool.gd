@@ -10,7 +10,7 @@ func _tool_selected():
 
 
 
-func handle_input_event(event: InputEvent) -> void:
+func handle_input_event(event: InputEvent) -> bool:
 	event = editor.active_layer.localize_input(event)
 
 	if event is InputEventMouseButton:
@@ -61,6 +61,7 @@ func handle_input_event(event: InputEvent) -> void:
 	if editor.active_layer.type == LayerV2.Type.SPEECH_BUBBLE:
 		editor.active_layer.speech_bubble.handle_event(event)
 
+	return false
 
 func _get_drag_data(at_position: Vector2) -> Variant:
 	at_position = at_position - editor.active_layer.position

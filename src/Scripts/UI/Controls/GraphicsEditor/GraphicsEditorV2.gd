@@ -4,14 +4,27 @@ extends PanelContainer
 signal active_tool_changed(tool_: BaseTool)
 signal active_layer_changed(layer: LayerV2)
 
+signal compose_progress_updated(progress: float)
+signal compose_finished(image: Image)
+
+@onready var mutex: = Mutex.new()
+@onready var thread: = Thread.new()
+
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
+@onready var layer_cards_popup_panel: PopupPanel = %LayerCardsPopupPanel
+@onready var layer_cards_toggle_button: Button = %LayerCardsButton
 
 @onready var message_window: PersistentWindow = %MessageWindow
 @onready var message_title: Label = %MessageTitle
 @onready var message_content: Label = %MessageContent
 
+@onready var progress_window: PersistentWindow = %ProgressWindow
+@onready var progress_window_bar: ProgressBar = %ProgressBar
+@onready var progress_window_label: Label = %ProgressLabel
+
+@onready var _tools_option_button: OptionButton = %ToolsOptionButton
 
 # tool options containers
 @onready var _brush_options_container: Control = %BrushOptions
@@ -23,7 +36,7 @@ signal active_layer_changed(layer: LayerV2)
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var smudge_tool: SmudgeTool = %SmudgeTool
 @onready var bucket_tool: BucketTool = %BucketTool
-@onready var pane_tool: PaneTool = %PaneTool
+@onready var pan_tool: PanTool = %PanTool
 @onready var eraser_tool: EraserTool = %EraserTool
 @onready var transform_tool: TransformTool = %TransformTool
 @onready var speech_bubble_tool: SpeechBubbleTool = %SpeechBubbleTool
@@ -43,6 +56,11 @@ var _custom_cursor: Resource
 var _custom_cursor_shape: int
 var _custom_cursor_hotspot: Vector2
 
+
+const COMMANDS_SIZE: = 15
+var _command_idx: = -1
+var _commands: Array[GraphicsEditorUndo.Command] = []
+
 var layers: Array[LayerV2]
 
 ## Array of selected layers, in order in which they were selected
@@ -60,55 +78,44 @@ var active_tool: BaseTool:
 		_set_drag_forward_to_layer(active_tool)
 		active_tool_changed.emit(value)
 
+var saved: = true
 
 func _ready() -> void:
 	
 	active_tool_changed.connect(_on_active_tool_changed)
-	
-	# setup(Vector2i(500, 500))
-	setup()
+	_tools_option_button.select(0)
+	_tools_option_button.item_selected.emit(0)
+	compose_progress_updated.connect(_on_compose_progress)
+	compose_finished.connect(_on_compose_complete)
+	# setup()
+
+
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
-	create_new_layer("Layer", canvas_size_, Color.WHITE)
+	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
+	create_new_layer("Background", canvas_size_, Color.WHITE, true)
 
-	# layers_container.center_view()
 
 
-func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true) -> LayerV2:
-	# var img = Image.create(dimensions.x, dimensions.y, true, Image.FORMAT_RGBA8)
-	# img.fill(Color.TRANSPARENT)
-
+func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true, locked: = false) -> LayerV2:
 	var layer: = LayerV2.create_drawing_layer(layer_name, dimensions, color)
-	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
 	
-	var layer_card: = LayerCard.create(self, layer)
-	layer_card.layer_selected.connect(_on_layer_card_selected.bind(layer, layer_card))
-	layer_card.layer_deselected.connect(_on_layer_card_deselected.bind(layer, layer_card))
-	layer_card.reorder.connect(_on_layer_card_reorder.bind(layer_card))
-	layer_card.layer_clicked.connect(_on_layer_card_clicked.bind(layer_card))
+	layer.locked = locked
 
-	layer_card.selected = select
+	add_layer(layer, select)
 
-	layer_cards_container.add_child(layer_card)
-	layer_cards_container.move_child(layer_card, 0)
+	return layer
 
-	layers_container.add_child(layer, true)
-
-	# breakpoint
+func create_new_image_layer(layer_name: String, image: Image, select: = true) -> LayerV2:
+	var layer: = LayerV2.create_image_layer(layer_name, image)
 	
-	# place the layer at the center of the screen
-	# get_tree().process_frame.connect(
-	# 	func(): layer.position = layers_container.size/2 - layer.size/2; print("PROCESS FRAME HERE"),
-	# 	ConnectFlags.CONNECT_ONE_SHOT
-	# )
-
-	layers.append(layer)
+	add_layer(layer, select)
 
 	return layer
 
 
-func add_layer(layer: LayerV2):
+func add_layer(layer: LayerV2, select: = true):
 	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
 
 	var layer_card: = LayerCard.create(self, layer)
@@ -120,27 +127,33 @@ func add_layer(layer: LayerV2):
 
 	layer_cards_container.add_child(layer_card)
 	layer_cards_container.move_child(layer_card, 0)
+	layer_card.selected = select
 
 	layers_container.add_child(layer, true)
 
 	layers.append(layer)
+
 	
 	return layer
 
 # when layer is deleted remove it from selected layers if it's there
 func _on_layer_tree_exiting(layer: LayerV2):
-	if selected_layers.has(layer):
-		selected_layers.erase(layer)
+	selected_layers.erase(layer)
+	layers.erase(layer)
 
 
 func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
-	selected_layers.append(layer)
+	if not selected_layers.has(layer):
+		selected_layers.append(layer)
 
 func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
 	selected_layers.erase(layer)
 
 func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 	if button_index == MOUSE_BUTTON_LEFT:
+
+		if layer_card.layer.locked: return # ignore locked layers
+		
 		if Input.is_key_pressed(KEY_CTRL):
 			layer_card.selected = not layer_card.selected
 		
@@ -158,78 +171,16 @@ func display_message(title: String, content: String):
 	message_title.text = title
 	message_content.text = content
 
+# FIXME: change this
 func export_image(path: String) -> Error:
-	# Get all layers
-	var layer_nodes = layers_container.get_children().filter(func(n): return n is LayerV2)
 	
-	# If no layers, return error
-	if layer_nodes.is_empty():
+	var image: = await compose_final_image()
+
+	if image.is_empty():
 		return ERR_INVALID_DATA
-	
-	# Determine the bounding rectangle for all layers
-	var bounds := Rect2()
-	var first_layer := true
-	
-	for layer in layer_nodes:
-		if layer is LayerV2:
-			# For rotated layers, we need to calculate a more complex bounding rectangle
-			var corners = _get_rotated_corners(layer)
-			for corner in corners:
-				if first_layer:
-					bounds = Rect2(corner, Vector2.ZERO)
-					first_layer = false
-				else:
-					bounds = bounds.expand(corner)
-	
-	# Create a new image with the determined size
-	var width = int(bounds.size.x)
-	var height = int(bounds.size.y)
-	var output_image := Image.create(width, height, false, Image.FORMAT_RGBA8)
-	
-	# Make sure the image is transparent to start
-	output_image.fill(Color(0, 0, 0, 0))
-	
-	# Blend all layers onto the output image
-	for layer in layer_nodes:
-		if layer is LayerV2 and layer.visible:
-			# Get the layer's image
-			var layer_image = layer.image
-			
-			# Skip empty layers
-			if not layer_image or layer_image.is_empty():
-				continue
-			
-			# Handle rotation using a transform
-			var rotation_rad = layer.rotation
-			var pivot = layer.pivot_offset
-			var layer_pos = layer.position
-			
-			# Process each pixel in the output image space
-			for out_y in range(height):
-				for out_x in range(width):
-					# Get position in global space
-					var global_pos = Vector2(out_x, out_y) + bounds.position
-					
-					# Convert to layer local space (accounting for rotation)
-					var local_pos = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
-					
-					# Check if the point is within the layer's image
-					var img_x = int(local_pos.x)
-					var img_y = int(local_pos.y)
-					
-					if img_x >= 0 and img_x < layer_image.get_width() and img_y >= 0 and img_y < layer_image.get_height():
-						var src_color = layer_image.get_pixel(img_x, img_y)
-						
-						# Skip fully transparent pixels
-						if src_color.a <= 0.01:
-							continue
-							
-						var dst_color = output_image.get_pixel(out_x, out_y)
-						var blended = drawing_tool._blend_colors(dst_color, src_color)
-						output_image.set_pixel(out_x, out_y, blended)
-	
-	# Save the image to the specified path
-	var error := output_image.save_png(path)
+
+	var error: = image.save_png(path)
+
 	return error
 
 # Helper function to get corners of a rotated layer
@@ -300,6 +251,9 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 	layer_cards_container.move_child(layer_card, index)
 	
 
+# Why graphics editor instead of just layers container?
+# When using layers container, pan tool acts wierd and i don't know why exactly.
+# Control with tools is set to stop the mouse events to accommodate for the below input hadnling
 func _gui_input(event: InputEvent) -> void:
 	# if we have a active tool and at least one of selected layers is visible
 	if active_tool and selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
@@ -313,8 +267,18 @@ func _gui_input(event: InputEvent) -> void:
 		# 		"%s tool only allows operation on one layers. Select only one or merge selected layers." % [active_tool.name]
 		# 	)
 
-		active_tool.handle_input_event(event)
+		if active_tool.handle_input_event(event):
+			_compose_result_expired = true
+		
 		accept_event()
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	
+	if event.is_action_pressed("ui_undo"):
+		undo_command()
+
+	elif event.is_action_pressed("ui_redo"):
+		redo_command()
 
 
 func _draw() -> void:
@@ -367,12 +331,24 @@ func _on_bucket_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = bucket_tool if toggled_on else null
 
 func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
-	active_tool = pane_tool if toggled_on else null
+	if not toggled_on:
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+		_tools_option_button.grab_focus()
+		return
+	
+	active_tool = pan_tool if toggled_on else null
 
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = eraser_tool if toggled_on else null
 
 func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
+	if not toggled_on:
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+		_tools_option_button.grab_focus()
+		return
+	
 	active_tool = transform_tool if toggled_on else null
 
 func _on_speech_bubble_tool_button_toggled(toggled_on:bool) -> void:
@@ -407,28 +383,12 @@ func _on_file_selected(fp: String) -> void:
 
 	add_layer(l)
 
+	# reselect the first tool
+	_tools_option_button.select(0)
+	_tools_option_button.item_selected.emit(0)
 
 func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
-
-
-
-func _on_save_button_pressed() -> void:
-
-	var fd: = FileDialog.new()
-	
-	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-	fd.access = FileDialog.ACCESS_FILESYSTEM
-	fd.filters = ["*.png"]
-
-
-	add_child(fd)
-
-	fd.popup_centered()
-
-	var path = await fd.file_selected
-
-	export_image(path)
 
 
 func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
@@ -479,6 +439,8 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 	sorted_layers.sort_custom(func(a: LayerV2, b: LayerV2): 
 		return layers_container.get_children().find(a) < layers_container.get_children().find(b)
 	)
+
+	var _processed: = 0 
 	
 	# Blend each layer onto the merged image
 	for layer in sorted_layers:
@@ -494,14 +456,11 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 		for y in range(int(bounds.size.y)):
 			for x in range(int(bounds.size.x)):
 				# Convert merged image coordinates to global coordinates
-				var global_pos = Vector2(x, y) + bounds.position
+				# var global_pos = Vector2(x, y) + bounds.position
+				var global_pos = bounds.position + Vector2(x, y)
 				
 				# Convert global position to layer's local space
-				var local_pos: Vector2
-				if rotation_rad != 0:
-					local_pos = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
-				else:
-					local_pos = global_pos - layer_pos
+				var local_pos: = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
 				
 				# Check if the point is within the layer's image bounds
 				var img_x = int(local_pos.x)
@@ -525,13 +484,23 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 						blended = _blend_colors(dst_color, src_color)
 					
 					merged_image.set_pixel(x, y, blended)
-	
+				
+				_processed += 1
+
+				if _processed > 5000:
+					await get_tree().process_frame # let the UI update
+					_processed = 0
+
 	var merged_layer = LayerV2.create_image_layer("Layer", merged_image)
-	merged_layer.position = bounds.position
+
 	
 	# Add the merged layer to the editor
 	add_layer(merged_layer)
-	
+
+	# We need to set the position here, after the add_layer
+	# because that function resets this property, not sure where exactly
+	merged_layer.position = bounds.position
+
 	# Remove original layers and their cards
 	for layer in to_merge:
 		# Find and remove the layer card
@@ -569,3 +538,282 @@ func _blend_colors(dst: Color, src: Color) -> Color:
 	var b = (src.b * src.a + dst.b * dst.a * (1.0 - src.a)) / alpha
 	
 	return Color(r, g, b, alpha)
+
+
+func _on_layer_cards_button_toggled(toggled_on: bool) -> void:
+	if toggled_on:
+		# layer_cards_popup_panel.position = Vector2(
+		# 	DisplayServer.screen_get_size().x - layer_cards_popup_panel.size.x,
+		# 	DisplayServer.mouse_get_position().y
+		# )
+		layer_cards_popup_panel.position = Vector2(
+			(
+				layer_cards_toggle_button.global_position.x 
+				-layer_cards_popup_panel.size.x/2.0
+				+layer_cards_toggle_button.size.x/2.0
+			),
+			layer_cards_toggle_button.global_position.y + 50
+		)
+		layer_cards_popup_panel.popup()
+	else:
+		layer_cards_popup_panel.hide()
+
+
+func _on_layer_cards_popup_panel_popup_hide() -> void:
+	layer_cards_toggle_button.release_focus()
+	layer_cards_toggle_button.set_pressed_no_signal(false)
+
+
+
+#region Undo
+
+
+## Stores the executed command in the commands stack.
+## The command is treated as completed and ready for undo.
+func execute_command(cmd: GraphicsEditorUndo.Command) -> void:
+	
+	# if we did execute a undo for some command and now there's a new one
+	# delete all the commands after the current index and store the new one
+	if _command_idx != _commands.size()-1:
+		_commands.resize(_command_idx+1)
+
+	# since this check occurs every time,
+	# there must be no more than one command over the limit
+	# account for element that will be added
+	if _commands.size()+1 > COMMANDS_SIZE:
+		_commands.remove_at(0)
+
+	_commands.append(cmd)
+	_command_idx = _commands.size()-1
+
+
+
+func undo_command() -> void:
+	var cmd: = _commands[_command_idx]
+
+	cmd.undo()
+
+	_command_idx = clampi(_command_idx-1, 0, _commands.size()-1)
+
+
+func redo_command() -> void:
+
+	if _command_idx == _commands.size()-1:
+		return # nothing to redo
+
+	var cmd: = _commands[_command_idx+1]
+
+	cmd.redo()
+
+	_command_idx = clampi(_command_idx+1, 0, _commands.size()-1)
+
+#endregion
+
+
+func _on_tools_option_button_item_selected(index: int) -> void:
+	match index:
+		0: _on_brush_tool_button_toggled(true)
+		1: _on_eraser_tool_button_toggled(true)
+		2: _on_bucket_tool_button_toggled(true)
+		3: _on_smudge_tool_button_toggled(true)
+		4: active_tool = null; _on_add_image_button_pressed()
+		_: pass
+	
+
+#region Image compose
+
+var _compose_result_image: Image
+var _compose_result_expired: = false
+var _current_compose_thread: Thread = null
+
+func _on_compose_progress(progress: float):
+	progress_window_bar.value = progress * 100
+
+func _on_compose_complete(_image: Image):
+	progress_window.hide()
+	_compose_result_expired = false
+
+
+func compose_final_image(show_dialog: = true) -> Image:
+	# _compose_result_expired is set to true every time a tool is used
+	if _compose_result_image and not _compose_result_expired:
+		return _compose_result_image
+
+
+	# Don't start if already running
+	if _current_compose_thread != null and _current_compose_thread.is_alive():
+		print("Compose already running, ignoring request")
+		return Image.new()
+	
+	# Clean up previous thread if it exists
+	if _current_compose_thread != null:
+		if _current_compose_thread.is_alive():
+			_current_compose_thread.wait_to_finish()
+		_current_compose_thread = null
+	
+	if show_dialog:
+		# Show progress window
+		progress_window.popup_centered()
+		progress_window_label.text = "Composing image..."
+		progress_window_bar.value = 0
+	
+	# Extract all needed data from nodes in main thread
+	var layer_data: Array[Dictionary] = []
+	var layer_nodes = layers_container.get_children().filter(func(n): return n is LayerV2)
+	
+	for layer in layer_nodes:
+		if layer is LayerV2 and layer.visible:
+			layer_data.append({
+				"image": layer.image,
+				"position": layer.position,
+				"rotation": layer.rotation,
+				"pivot_offset": layer.pivot_offset,
+				"size": layer.size
+			})
+	
+	# Create and start new thread
+	_current_compose_thread = Thread.new()
+	_current_compose_thread.start(_compose_image_thread_worker.bind(layer_data))
+	
+	return await compose_finished
+
+# Replace your thread worker with this simpler version:
+func _compose_image_thread_worker(layer_data: Array[Dictionary]):
+	print("Starting compose worker thread")
+	
+	var result_image = _compose_final_image_worker(layer_data)
+	
+	# Signal completion back to main thread
+	call_deferred("_on_compose_finished", result_image)
+
+# Keep your existing _compose_final_image_worker function as is, but update progress reporting:
+func _compose_final_image_worker(layer_data: Array) -> Image:
+	# If no layers, return empty image
+	if layer_data.is_empty():
+		return Image.new()
+	
+	# Determine the bounding rectangle for all layers
+	var bounds := Rect2()
+	var first_layer := true
+	
+	for data in layer_data:
+		var corners = _get_rotated_corners_static(data.position, data.size, data.rotation, data.pivot_offset)
+		for corner in corners:
+			if first_layer:
+				bounds = Rect2(corner, Vector2.ZERO)
+				first_layer = false
+			else:
+				bounds = bounds.expand(corner)
+	
+	# Create output image
+	var width = int(bounds.size.x)
+	var height = int(bounds.size.y)
+	var output_image := Image.create(width, height, false, Image.FORMAT_RGBA8)
+	output_image.fill(Color(0, 0, 0, 0))
+	
+	# Calculate total pixels for progress reporting
+	var total_pixels = width * height * layer_data.size()
+	var processed_pixels = 0
+	var progress_update_interval = max(1000, total_pixels / 100)  # Update progress every 1% or 1000 pixels
+	
+	# Blend all layers onto the output image
+	for layer_idx in range(layer_data.size()):
+		var data = layer_data[layer_idx]
+		var layer_image = data.image
+		
+		# Skip empty layers
+		if not layer_image or layer_image.is_empty():
+			processed_pixels += width * height  # Skip this layer's pixels
+			continue
+		
+		var rotation_rad = data.rotation
+		var pivot = data.pivot_offset
+		var layer_pos = data.position
+		
+		# Process each pixel in the output image space
+		for out_y in range(height):
+			for out_x in range(width):
+				# Get position in global space
+				var global_pos = Vector2(out_x, out_y) + bounds.position
+				
+				# Convert to layer local space (accounting for rotation)
+				var local_pos = _global_to_layer_space_static(global_pos, layer_pos, rotation_rad, pivot)
+				
+				# Check if the point is within the layer's image
+				var img_x = int(local_pos.x)
+				var img_y = int(local_pos.y)
+				
+				if img_x >= 0 and img_x < layer_image.get_width() and img_y >= 0 and img_y < layer_image.get_height():
+					var src_color = layer_image.get_pixel(img_x, img_y)
+					
+					# Skip fully transparent pixels
+					if src_color.a > 0.01:
+						var dst_color = output_image.get_pixel(out_x, out_y)
+						var blended = _blend_colors(dst_color, src_color)
+						output_image.set_pixel(out_x, out_y, blended)
+				
+				processed_pixels += 1
+				
+				# Update progress periodically
+				if processed_pixels % progress_update_interval == 0:
+					var progress = float(processed_pixels) / float(total_pixels)
+					call_deferred("_emit_progress", progress)
+	
+	return output_image
+
+# Keep your existing helper functions:
+func _emit_progress(progress: float):
+	compose_progress_updated.emit(progress)
+
+func _on_compose_finished(image: Image):
+	_compose_result_image = image
+	compose_finished.emit(image)
+	
+	# Clean up the thread
+	if _current_compose_thread != null and _current_compose_thread.is_alive():
+		_current_compose_thread.wait_to_finish()
+	_current_compose_thread = null
+
+# Add this to handle cleanup when the node is being destroyed:
+func _exit_tree():
+	if _current_compose_thread != null and _current_compose_thread.is_alive():
+		_current_compose_thread.wait_to_finish()
+	_current_compose_thread = null
+# Static helper functions that don't access node properties
+static func _get_rotated_corners_static(position: Vector2, size: Vector2, rotation: float, pivot_offset: Vector2) -> Array[Vector2]:
+	var corners: Array[Vector2] = []
+	var pivot = pivot_offset
+	var pos = position
+	var rotation_rad = rotation
+	
+	# Calculate the four corners in local space
+	var local_corners = [
+		Vector2(0, 0) - pivot,           # Top-left
+		Vector2(size.x, 0) - pivot,      # Top-right
+		Vector2(size.x, size.y) - pivot, # Bottom-right
+		Vector2(0, size.y) - pivot       # Bottom-left
+	]
+	
+	# Transform to global space
+	for corner in local_corners:
+		# Rotate
+		var rotated = corner.rotated(rotation_rad)
+		# Translate to global position
+		var global_corner = rotated + pivot + pos
+		corners.append(global_corner)
+	
+	return corners
+
+static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector2, rotation_rad: float, pivot: Vector2) -> Vector2:
+	# Translate to layer's origin
+	var relative_pos = global_pos - layer_pos
+	# Adjust for pivot point
+	relative_pos -= pivot
+	# Apply inverse rotation
+	relative_pos = relative_pos.rotated(-rotation_rad)
+	# Re-adjust for pivot
+	relative_pos += pivot
+	
+	return relative_pos
+
+#endregion

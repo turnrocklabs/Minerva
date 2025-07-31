@@ -29,13 +29,15 @@ enum TransformPoint {
 var _transform_rect_size: = Vector2(50, 50)
 var transform_rect_visible: = false
 
+var outline_color: = Color.ORANGE_RED
+var outline_visible: = true
+var locked: = false
+
 var image_zoom_factor: float:
 	get: return (Vector2(image.get_size()).length() / size.length()) if image else .0
 
 
 var type: Type
-
-var auto_expand: = true
 
 # Unscaled image that will be used to create scaled versions of the image
 var base_image: Image = null
@@ -68,10 +70,6 @@ var image: Image:
 		# Set texture and let TextureRect size itself to the texture
 		texture_rect.texture = img
 		texture_rect.size = img.get_size()  # Use image size, not layer size
-		
-		print("Image size:", img.get_size())
-		print("Layer size:", size)
-		print("TextureRect size:", texture_rect.size)
 
 		queue_redraw()
 
@@ -142,6 +140,10 @@ func _draw() -> void:
 			texture_rect.texture = img
 		Type.SPEECH_BUBBLE:
 			speech_bubble.queue_redraw()
+	
+	# Draw the outline if visible
+	if outline_visible:
+		draw_rect(Rect2(Vector2.ZERO, get_rect().size), outline_color, false)
 
 	if not transform_rect_visible: return
 	
@@ -176,7 +178,7 @@ func _draw() -> void:
 		
 		draw_rect(drag_square.grow(2), Color.BLACK)
 		draw_rect(drag_square, Color.WHITE)
-	
+
 	# # Draw rotation handle
 	# var rotation_square: = Rect2(rotation_handle_pos - _transform_rect_size/2, _transform_rect_size)
 	# draw_rect(rotation_square.grow(2), Color.BLACK)
@@ -215,16 +217,49 @@ func localize_input(event: InputEvent):
 	
 	return local_event
 
-func expand_to_point(point: Vector2):
+func expand_to_point(point: Vector2) -> Vector2:
+	# If point is already within bounds, no expansion needed
 	if (
-		point.x > 0 and point.x < image.get_size().x and
-		point.y > 0 and point.y < image.get_size().y
+		point.x >= 0 and point.x < image.get_size().x and
+		point.y >= 0 and point.y < image.get_size().y
 	):
-		return
+		return Vector2.ZERO
 	
-
-	# TODO: implement image expansion
-
+	var current_size = image.get_size()
+	
+	# Convert point to integer coordinates (floor for proper pixel alignment)
+	var point_x = int(floor(point.x))
+	var point_y = int(floor(point.y))
+	
+	# Calculate new dimensions and offsets
+	var min_x = min(0, point_x)
+	var min_y = min(0, point_y)
+	var max_x = max(current_size.x, point_x + 1)  # +1 to include the target pixel
+	var max_y = max(current_size.y, point_y + 1)  # +1 to include the target pixel
+	
+	var new_width = max_x - min_x
+	var new_height = max_y - min_y
+	
+	# Calculate where to place the old image in the new expanded image
+	var offset_x = -min_x
+	var offset_y = -min_y
+	
+	# Create new expanded image with transparent background
+	var expanded_image = Image.create(new_width, new_height, false, image.get_format())
+	expanded_image.fill(Color(0, 0, 0, 0))  # Fill with transparent
+	
+	# Debug info
+	print("Expanding from ", current_size, " to ", Vector2(new_width, new_height))
+	print("Target point: ", point, " -> ", Vector2(point_x, point_y))
+	print("Offset: ", Vector2(offset_x, offset_y))
+	
+	# Copy the original image to the correct position in the expanded image
+	expanded_image.blit_rect(image, Rect2i(0, 0, current_size.x, current_size.y), Vector2i(offset_x, offset_y))
+	
+	# Replace the original image with the expanded one
+	image = expanded_image
+	
+	return Vector2(offset_x, offset_y)
 
 func _on_resized() -> void:
 	pass
