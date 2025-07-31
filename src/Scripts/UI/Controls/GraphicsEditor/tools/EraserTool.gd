@@ -16,10 +16,14 @@ var brush_size: int:
 
 var _last_drawing_position: Vector2
 var drawing: = false
+var _single_click: bool = false
 
 # Performance optimizations
 var _circle_cache = {}  # Cache circular brush patterns
 var _max_cached_radius = 100
+
+# Undo system
+var current_stroke_command: GraphicsEditorUndo.DrawStrokeCommand
 
 func _ready() -> void:
 	editor.active_tool_changed.connect(
@@ -43,8 +47,8 @@ func _ready() -> void:
 	for r in range(1, min(30, _max_cached_radius)):
 		_get_cached_circle_pixels(r)
 
-func handle_input_event(event: InputEvent) -> void:
-	if not editor.active_layer: return
+func handle_input_event(event: InputEvent) -> bool:
+	if not editor.active_layer: return false
 	
 	event = editor.active_layer.localize_input(event)
 
@@ -53,29 +57,60 @@ func handle_input_event(event: InputEvent) -> void:
 
 			if editor.selected_layers.size() > 1:
 				display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
-				return
+				return false
 
 			if event.is_pressed():
-				drawing = true
-				_last_drawing_position = event.position
-				_erase_stamp(editor.active_layer.image, event.position, brush_size)
-				editor.queue_redraw()
+				_start_erase(event)
 			else:
-				drawing = false
+				_end_erase(event)
 
-	if event is InputEventMouseMotion and drawing:
-		# If moving too fast, add intermediate points to ensure a continuous line
-		var distance = _last_drawing_position.distance_to(event.position)
-		if distance > brush_size * 0.5:  # Add more points if moving faster than half the brush size
-			var steps = ceil(distance / (brush_size * 0.25))  # Adjust divisor to control density
-			for i in range(1, steps):
-				var t = float(i) / steps
-				var lerp_pos = _last_drawing_position.lerp(event.position, t)
-				_erase_stamp(editor.active_layer.image, lerp_pos, brush_size)
-		
-		_erase_stamp(editor.active_layer.image, event.position, brush_size)
-		_last_drawing_position = event.position
-		editor.queue_redraw()
+			return true
+
+	elif event is InputEventMouseMotion and drawing:
+		_single_click = false
+		_continue_erase(event)
+
+		return true
+	
+	return false
+
+func _start_erase(event: InputEvent) -> void:
+	drawing = true
+	_single_click = true
+	_last_drawing_position = event.position
+	
+	# Create erase command - captures "before" state
+	current_stroke_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
+	
+	_erase_stamp(editor.active_layer.image, event.position, brush_size)
+	editor.queue_redraw()
+
+func _continue_erase(event: InputEvent) -> void:
+	# If moving too fast, add intermediate points to ensure a continuous line
+	var distance = _last_drawing_position.distance_to(event.position)
+	if distance > brush_size * 0.5:  # Add more points if moving faster than half the brush size
+		var steps = ceil(distance / (brush_size * 0.25))  # Adjust divisor to control density
+		for i in range(1, steps):
+			var t = float(i) / steps
+			var lerp_pos = _last_drawing_position.lerp(event.position, t)
+			_erase_stamp(editor.active_layer.image, lerp_pos, brush_size)
+	
+	_erase_stamp(editor.active_layer.image, event.position, brush_size)
+	_last_drawing_position = event.position
+	editor.queue_redraw()
+
+func _end_erase(event: InputEvent) -> void:
+	# Handle single click - already erased in _start_erase
+	# No additional action needed for single click
+	
+	# Finalize and execute the erase command
+	if current_stroke_command:
+		current_stroke_command.finalize_stroke()  # Captures "after" state
+		editor.execute_command(current_stroke_command)
+		current_stroke_command = null
+	
+	drawing = false
+	_single_click = false
 
 # Optimized eraser stamp
 func _erase_stamp(target_image: Image, center: Vector2, diameter: int) -> void:
