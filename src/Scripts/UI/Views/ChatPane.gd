@@ -518,6 +518,7 @@ func execute_parallel_chat(text_input: String) -> void:
 	multi_message_container.add_child(_mdl_messages_container)
 	var parallel_message_loading: = parallel_loading.instantiate()
 	history.VBox.add_child(parallel_message_loading)
+	history.VBox.scroll_to_bottom()
 	history.VBox.add_child(multi_message_container)
 	
 	_user_parallel_chat_UUID = SingletonObject.generate_UUID()
