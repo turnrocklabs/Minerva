@@ -5,8 +5,6 @@ var service: Service
 var action: Action
 
 func _init(service_: Service = null, action_: Action = null):
-	print("OVDE:")
-	print(service_, action_)
 	service = service_
 	action = action_
 

@@ -129,9 +129,9 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null)
 	# check if we're opening a file that's already open or for the same associated_object (except null)
 	# if so just switch to that editor
 	for editor: Editor in Tabs.get_children():
-		if not editor is Editor: 
+		if not editor is Editor:
 			continue
-		if editor.file == file or (associated_object != null and editor.associated_object == associated_object):
+		if (file and editor.file == file) or (associated_object != null and editor.associated_object == associated_object):
 			Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
 			return editor
 	
