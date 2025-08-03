@@ -148,10 +148,12 @@ func _on_auth_preset_option_button_item_selected(index: int) -> void:
 	match index:
 		0: # Production
 			auth_base_url.text = AUTH_PRESET_PROD
+			auth_base_url.get_parent().visible = false
 		1: # Localhost
 			auth_base_url.text = AUTH_PRESET_LOCAL
+			auth_base_url.get_parent().visible = false
 		2: # Custom
-			# Do nothing, let the user edit the LineEdit directly
+			auth_base_url.get_parent().visible = true
 			pass
 
 
