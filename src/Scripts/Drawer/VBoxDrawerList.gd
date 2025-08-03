@@ -80,7 +80,6 @@ func _notification(notification_type):
 
 
 func render_items():
-
 	# Clear existing children
 	for child in get_children():
 		if child is Note:
