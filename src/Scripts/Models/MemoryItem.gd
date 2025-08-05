@@ -110,14 +110,14 @@ func _enable_toggle():
 
 ## Function:
 # Serialize takes this instance of a MemoryItem and serializes it so it can be represented as JSON
-func Serialize() -> Dictionary:
+func Serialize(use_b64: = true) -> Dictionary:
 	var b64_data_image
-	if MemoryImage:
+	if MemoryImage and use_b64:
 		b64_data_image = Marshalls.raw_to_base64(MemoryImage.save_png_to_buffer())
 	
 
 	var b64_data_audio
-	if Audio:
+	if Audio and use_b64:
 		b64_data_audio = Marshalls.variant_to_base64(Audio, true)
 
 	var save_dict:Dictionary = {
@@ -129,8 +129,8 @@ func Serialize() -> Dictionary:
 		"Content": Content,
 		"Type": Type,
 		"ContentType": ContentType,
-		"MemoryImage": b64_data_image,
-		"Audio": b64_data_audio,
+		"MemoryImage": b64_data_image if use_b64 else MemoryImage,
+		"Audio": b64_data_audio if use_b64 else Audio,
 		"ImageCaption": ImageCaption,
 		"Visible": Visible,
 		"Pinned": Pinned,
@@ -153,7 +153,14 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			if not value: continue # if no data, just skip
 
 			var img = Image.new()
-			img.load_png_from_buffer(Marshalls.base64_to_raw(value))
+			if value is String:
+				img.load_png_from_buffer(Marshalls.base64_to_raw(value))
+			elif value is FileAccess:
+				value.seek(0)
+				img.load_png_from_buffer(FileAccess.get_file_as_bytes(value.get_path()))
+			elif value is Image:
+				img.copy_from(value)
+			
 			value = img
 			
 		elif prop == "Audio":
@@ -167,8 +174,12 @@ static func Deserialize(data: Dictionary) -> MemoryItem:
 			if not value: continue # if no data, just skip
 			
 			# if file doesn't exist anymore, set it to null
-			if not FileAccess.file_exists(value):
-				value = null
+			if value is String:
+				if not FileAccess.file_exists(value):
+					value = null
+			elif value is FileAccess:
+				value = value.get_path_absolute()
+
 		elif prop == "UUID":
 			if value == "":
 				value = SingletonObject.generate_UUID()

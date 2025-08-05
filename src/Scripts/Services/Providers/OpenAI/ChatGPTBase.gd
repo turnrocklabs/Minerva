@@ -100,13 +100,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
 	
 	var text_notes = chat_item.InjectedNotes.filter(func(note): return note is String)
-
-	var text = """
-		%s
-		%s
-		%s
-	""" % [image_captions, "\n".join(text_notes), chat_item.Message]
-
+	var text := "%s\n%s\n%s" % [image_captions, "\n".join(text_notes), chat_item.Message]
+	text += "\nHCP Data: %s" % chat_item.HcpData if chat_item.HcpData != null and not chat_item.HcpData.is_empty() else ""
 	text = text.strip_edges()
 
 	return {

@@ -10,6 +10,8 @@ var container: TabContainer  # Store the TabContainer
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
 var _active_chat_request: = false
+@onready var dynamic_ui_container: Container = %DynamicUIContainer
+
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
@@ -145,7 +147,7 @@ func _on_new_chat():
 	# If there are no open chat tabs, use provider from the dropdown as the provider
 	if SingletonObject.ChatList.is_empty():
 		var p_id = _provider_option_button.get_selected_id()
-		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
+		provider_obj = _provider_option_button.get_provider_from_id(p_id)
 	
 	# if we're opening a new chat, by default select the first provider from the dropdown menu
 	else:
@@ -300,8 +302,7 @@ func _on_chat_pressed():
 
 
 func _on_send_message_button_item_selected(index: int) -> void:
-	if %txtMainUserInput.text.is_empty(): return
-
+	
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 	%SendMessageButton.selected = -1
@@ -318,10 +319,88 @@ func _on_send_message_button_item_selected(index: int) -> void:
 		2:
 			execute_sequential_chat(filteredInput)
 
+func execute_hcp_chat():
+	ensure_chat_open()
+
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+
+	if not history.provider is CoreProvider:
+		push_error("'execute_hcp_chat' called while current provider is not CoreProvider")
+		return
+
+	var provider: CoreProvider = history.provider
+
+	var user_history_item: = ChatHistoryItem.new()
+	user_history_item.HcpData = Core.dynamic_ui_generator.get_user_input(dynamic_ui_container)
+	user_history_item.HcpStructure = provider.action.input_parameters
+	user_history_item.Role = ChatHistoryItem.ChatRole.USER
+	user_history_item.Type = ChatHistoryItem.PartType.TEXT
+
+	var user_msg_node: = history.VBox.add_history_item(user_history_item)
+	
+	history.HistoryItemList.append(user_history_item)
+	
+	var history_list: = create_prompt(user_history_item)
+
+	# rerender the message since we changed the history item
+	user_msg_node.first_time_message = true
+	history.VBox.ensure_node_is_visible(user_msg_node)
+	user_msg_node.render()
+
+	var dummy_item = ChatHistoryItem.new()
+	dummy_item.Role = ChatHistoryItem.ChatRole.MODEL
+	dummy_item.provider = history.provider
+	var model_msg_node = history.VBox.add_history_item(dummy_item)
+	
+	model_msg_node.loading = true 
+
+	var hcp_provider: CoreProvider = history.provider
+
+	var bot_response = await hcp_provider.generate_content(history_list)
+
+
+	var chi = ChatHistoryItem.new()
+		
+	if bot_response != null: 
+		chi.Id = bot_response.id
+		chi.Role = ChatHistoryItem.ChatRole.MODEL
+		chi.HcpStructure = provider.action.output_parameters
+		chi.HcpData = bot_response.hcp_data
+		chi.Error = bot_response.error
+		chi.provider = history.provider
+		chi.Complete = bot_response.complete
+		chi.TokenCost = bot_response.completion_tokens
+		if bot_response.image:
+			chi.Images = ([bot_response.image] as Array[Image])
+
+		# Update user message node
+		user_history_item.TokenCost = bot_response.prompt_tokens
+		user_msg_node.render()
+
+		# Change the history item and the message node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
+
+		## Inform the user history item that the response has arrived
+		user_history_item.response_arrived.emit(chi)
+		
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(model_msg_node)
+		model_msg_node.loading = false
+		model_msg_node.first_time_message = true
+	else:
+		model_msg_node.queue_free()
 
 func execute_regular_chat(text: String) -> void:
+
+	if SingletonObject.Chats._provider_option_button.get_selected_provider() is CoreProvider:
+		execute_hcp_chat()
+		return
+
 	if text.is_empty(): return
+	
 	ensure_chat_open()
+	
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 	
@@ -814,17 +893,16 @@ func clear_all_chats():
 		child.queue_free()
 
 
-func update_token_estimation():
+func update_token_estimation(provider: BaseProvider = null):
 
-	var provider: BaseProvider
+	if not provider:
+		# if we don't have any chats use the selected provider from the dropdown
+		if SingletonObject.ChatList.is_empty():
 
-	# if we don't have any chats use the selected provider from the dropdown
-	if SingletonObject.ChatList.is_empty():
-
-		var p_id = _provider_option_button.get_selected_id()
-		provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
-	else:
-		provider = SingletonObject.ChatList[current_tab].provider
+			var p_id = _provider_option_button.get_selected_id()
+			provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
+		else:
+			provider = SingletonObject.ChatList[current_tab].provider
 
 	var chi = ChatHistoryItem.new()
 	chi.Message = %txtMainUserInput.text
@@ -922,7 +1000,27 @@ func _on_system_button_pressed() -> void:
 
 
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
-	update_token_estimation()
+	update_token_estimation(provider_)
+
+	print(provider_)
+
+	if provider_ is CoreProvider:
+		
+		var o_params: = (provider_ as CoreProvider).action.input_parameters
+
+		var controls: = Core.dynamic_ui_generator.process_parameters(o_params)
+		
+		for ch in dynamic_ui_container.get_children():
+			ch.queue_free()
+
+		for ctrl in controls:
+			dynamic_ui_container.add_child(ctrl)
+
+		txt_main_user_input.visible = false
+		dynamic_ui_container.visible = true
+	else:
+		txt_main_user_input.visible = true
+		dynamic_ui_container.visible = false
 
 	if SingletonObject.ChatList.is_empty(): return
 
@@ -933,6 +1031,7 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 		history.VBox.add_child(provider_)
 
 	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.display_name])
+
 
 # when tab changes, set the provider to one that that chat tab is using
 func _on_tab_changed(tab: int):

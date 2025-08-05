@@ -348,18 +348,20 @@ var Is_code_completed:bool = true
 var errorPopup: PersistentWindow
 var errorTitle: Label
 var errorText: Label
-func ErrorDisplay(error_title:String, error_message: String):
+func ErrorDisplay(error_title:String, error_message: String, on_close_focus: Node = null):
 	errorTitle.text = error_title
 	errorText.text = error_message
 	errorPopup.popup_centered()
-	pass
+
+	if on_close_focus and on_close_focus.has_method("grab_focus"):
+		errorPopup.close_requested.connect(func(): on_close_focus.grab_focus())
 
 @onready var main_scene = $"/root/RootControl"
 
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK }
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
@@ -376,7 +378,8 @@ enum API_MODEL_PROVIDERS {
 	CLAUDE_OPUS,
 	GPT_IMAGE_1,
 	OLLAMA_R1,
-	OLLAMA_GEMMA3
+	OLLAMA_GEMMA3,
+	TURNROCK,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -396,7 +399,8 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.GOOGLE_VERTEX_PRO: GoogleAi_PRO,
 	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1,
 	API_MODEL_PROVIDERS.OLLAMA_R1: LocalProvider,
-	API_MODEL_PROVIDERS.OLLAMA_GEMMA3: LocalProvider.Gemma3
+	API_MODEL_PROVIDERS.OLLAMA_GEMMA3: LocalProvider.Gemma3,
+	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
 }
 
 ## This function will return the `API_MODEL_PROVIDERS` enum value
