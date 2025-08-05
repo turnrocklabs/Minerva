@@ -1,15 +1,18 @@
-[gd_scene load_steps=6 format=3 uid="uid://booxo77json0y"]
+[gd_scene load_steps=9 format=3 uid="uid://booxo77json0y"]
 
 [ext_resource type="Script" uid="uid://b02us2hre5m42" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
-[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
+[ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
 [ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="4_0f5nr"]
+[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="4_nlyvs"]
 [ext_resource type="Texture2D" uid="uid://dmhyo26833yx8" path="res://assets/icons/save_icons/save-64-white.png" id="5_346qj"]
+[ext_resource type="PackedScene" uid="uid://cl4gj0ckqhtah" path="res://Scenes/windows/hcp_logs.tscn" id="7_6m13a"]
+[ext_resource type="PackedScene" uid="uid://bx4qo4lmxtd8q" path="res://Scripts/UI/Controls/service_selection.tscn" id="8_g7jo0"]
 
 [node name="PreferencesPopup" type="Window"]
 title = "Preferences"
 initial_position = 4
-size = Vector2i(580, 600)
+size = Vector2i(580, 700)
 unresizable = true
 min_size = Vector2i(580, 570)
 script = ExtResource("1_snp1b")
@@ -25,150 +28,195 @@ theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="v" type="VBoxContainer" parent="MarginContainer"]
-layout_mode = 2
-theme_override_constants/separation = 10
-alignment = 1
-
-[node name="SectionsContainer" type="VBoxContainer" parent="MarginContainer/v"]
-custom_minimum_size = Vector2(512, 0)
-layout_mode = 2
-size_flags_horizontal = 4
-theme_override_constants/separation = 12
-
-[node name="APIKeysVBoxContainer" type="VBoxContainer" parent="MarginContainer/v/SectionsContainer"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="APIKeysLabel" type="RichTextLabel" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer"]
-layout_mode = 2
-bbcode_enabled = true
-text = "[b]API Keys[/b]"
-fit_content = true
-shortcut_keys_enabled = false
-
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer"]
-layout_mode = 2
-theme_override_constants/separation = 10
-
-[node name="Label" type="Label" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "Google AI"
-
-[node name="leGoogleVertex" type="LineEdit" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-secret = true
-
-[node name="GoogleVertexCheckBox" type="CheckBox" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer" groups=["visibilityButton"]]
-layout_mode = 2
-theme_type_variation = &"visibilityCheckButton"
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="Label" type="Label" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "Anthropic"
-
-[node name="leAnthropic" type="LineEdit" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-secret = true
-
-[node name="AnthropicCheckBox" type="CheckBox" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2" groups=["visibilityButton"]]
-layout_mode = 2
-theme_type_variation = &"visibilityCheckButton"
-
-[node name="HBoxContainer3" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="Label" type="Label" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 0.3
-text = "OpenAI"
-
-[node name="leOpenAI" type="LineEdit" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-secret = true
-
-[node name="OpenAICheckBox" type="CheckBox" parent="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3" groups=["visibilityButton"]]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"visibilityCheckButton"
-
-[node name="HSeparator" type="HSeparator" parent="MarginContainer/v/SectionsContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
 layout_mode = 2
 
-[node name="UserVBoxContainer" type="VBoxContainer" parent="MarginContainer/v/SectionsContainer"]
+[node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+
+[node name="User" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_index = 0
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/VBoxContainer/TabContainer/User"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="UserVBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="UserLabel" type="RichTextLabel" parent="MarginContainer/v/SectionsContainer/UserVBoxContainer"]
+[node name="UserLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/UserVBoxContainer"]
 layout_mode = 2
 bbcode_enabled = true
 text = "[b]User[/b]"
 fit_content = true
 
-[node name="HBoxContainer5" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer/UserVBoxContainer"]
+[node name="HBoxContainer5" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/UserVBoxContainer"]
 layout_mode = 2
 
-[node name="FirstNameLabel" type="Label" parent="MarginContainer/v/SectionsContainer/UserVBoxContainer/HBoxContainer5"]
+[node name="FirstNameLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/UserVBoxContainer/HBoxContainer5"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
 text = "First Name"
 
-[node name="leFirstName" type="LineEdit" parent="MarginContainer/v/SectionsContainer/UserVBoxContainer/HBoxContainer5"]
+[node name="leFirstName" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/UserVBoxContainer/HBoxContainer5"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer/UserVBoxContainer"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/UserVBoxContainer"]
 layout_mode = 2
 
-[node name="LastNameLabel" type="Label" parent="MarginContainer/v/SectionsContainer/UserVBoxContainer/HBoxContainer6"]
+[node name="LastNameLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/UserVBoxContainer/HBoxContainer6"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
 text = "Last Name"
 
-[node name="leLastName" type="LineEdit" parent="MarginContainer/v/SectionsContainer/UserVBoxContainer/HBoxContainer6"]
+[node name="leLastName" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/UserVBoxContainer/HBoxContainer6"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="HSeparator2" type="HSeparator" parent="MarginContainer/v/SectionsContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2"]
 layout_mode = 2
 
-[node name="ThemeVBoxContainer" type="VBoxContainer" parent="MarginContainer/v/SectionsContainer"]
+[node name="AuthLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
+layout_mode = 2
+bbcode_enabled = true
+text = "[b]Authentication[/b]"
+fit_content = true
+shortcut_keys_enabled = false
+
+[node name="AuthPresetHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
 layout_mode = 2
 
-[node name="ThemeHBoxContainer" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer/ThemeVBoxContainer"]
+[node name="AuthPresetLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/AuthPresetHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Source:"
+vertical_alignment = 1
+
+[node name="AuthPresetOptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/AuthPresetHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 3
+popup/item_0/text = "turnrock.ai"
+popup/item_0/id = 0
+popup/item_1/text = "local"
+popup/item_1/id = 1
+popup/item_2/text = "Other"
+popup/item_2/id = 2
+
+[node name="AuthBaseUrlHBox" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
+layout_mode = 2
+
+[node name="AuthBaseUrlLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/AuthBaseUrlHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Base URI:"
+
+[node name="leAuthBaseUrl" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/AuthBaseUrlHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "https://..."
+
+[node name="HBoxContainer4" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HBoxContainer4"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Username:"
+
+[node name="leUsername" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HBoxContainer4"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer5" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HBoxContainer5"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Password:"
+
+[node name="lePassword" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HBoxContainer5"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.9
+secret = true
+
+[node name="PasswordCheckbox" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HBoxContainer5"]
+layout_mode = 2
+theme_override_icons/unchecked = ExtResource("4_nlyvs")
+
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+
+[node name="CoreConnetButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Connect / Authenticate"
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
+layout_mode = 2
+
+[node name="ConnectionLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 1
+text = "You are not connected to core"
+
+[node name="ConnectionTextureRect" type="TextureRect" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HcpLogsButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "See all HCP logs"
+text = "See logs"
+
+[node name="ThemeVBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2"]
+layout_mode = 2
+
+[node name="ThemeHBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/ThemeVBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="ThemeLabel" type="Label" parent="MarginContainer/v/SectionsContainer/ThemeVBoxContainer/ThemeHBoxContainer"]
+[node name="ThemeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/ThemeVBoxContainer/ThemeHBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Theme:"
 vertical_alignment = 1
 
-[node name="ThemeOptionButton" type="OptionButton" parent="MarginContainer/v/SectionsContainer/ThemeVBoxContainer/ThemeHBoxContainer"]
+[node name="ThemeOptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/ThemeVBoxContainer/ThemeHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+selected = 0
 allow_reselect = true
 item_count = 3
 popup/item_0/text = "Light Mode"
@@ -178,31 +226,53 @@ popup/item_1/id = 1
 popup/item_2/text = "Windows"
 popup/item_2/id = 2
 
-[node name="HSeparator3" type="HSeparator" parent="MarginContainer/v/SectionsContainer"]
+[node name="ExperimentalHBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2"]
 layout_mode = 2
 
-[node name="AudioVBoxContainer" type="VBoxContainer" parent="MarginContainer/v/SectionsContainer"]
+[node name="ExperimentalFeaturesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/ExperimentalHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Experimental Features:"
+
+[node name="ExperimentalCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/ExperimentalHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+
+[node name="Audio & Video" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 10
+metadata/_tab_index = 1
 
-[node name="AudioLabel" type="RichTextLabel" parent="MarginContainer/v/SectionsContainer/AudioVBoxContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer"]
+layout_mode = 2
+
+[node name="AudioLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer"]
 layout_mode = 2
 bbcode_enabled = true
 text = "[b]Audio[/b]"
 fit_content = true
 shortcut_keys_enabled = false
 
-[node name="MicrophoneContainer" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer/AudioVBoxContainer"]
+[node name="MicrophoneContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="MicLabel" type="Label" parent="MarginContainer/v/SectionsContainer/AudioVBoxContainer/MicrophoneContainer"]
+[node name="MicLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/MicrophoneContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Microphone:"
 vertical_alignment = 1
 
-[node name="Microphones" type="OptionButton" parent="MarginContainer/v/SectionsContainer/AudioVBoxContainer/MicrophoneContainer"]
+[node name="Microphones" type="OptionButton" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/MicrophoneContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -210,46 +280,185 @@ clip_text = true
 fit_to_longest_item = false
 allow_reselect = true
 
-[node name="OutputDeviceContainer" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer/AudioVBoxContainer"]
+[node name="OutputDeviceContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="OuputLabel" type="Label" parent="MarginContainer/v/SectionsContainer/AudioVBoxContainer/OutputDeviceContainer"]
+[node name="OuputLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/OutputDeviceContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Output Device:"
 
-[node name="OutputDeviceButton" type="OptionButton" parent="MarginContainer/v/SectionsContainer/AudioVBoxContainer/OutputDeviceContainer"]
+[node name="OutputDeviceButton" type="OptionButton" parent="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/OutputDeviceContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 clip_text = true
 fit_to_longest_item = false
 
-[node name="HSeparator4" type="HSeparator" parent="MarginContainer/v/SectionsContainer"]
+[node name="BYOK" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 10
+metadata/_tab_index = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK"]
+layout_mode = 2
+theme_override_constants/margin_left = 0
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="SectionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer"]
+custom_minimum_size = Vector2(512, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/separation = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer"]
+custom_minimum_size = Vector2(512, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/separation = 10
+
+[node name="ConnectionLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer"]
+layout_mode = 2
+bbcode_enabled = true
+text = "[b]Core WebSocket Connection[/b]"
+fit_content = true
+shortcut_keys_enabled = false
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="ExperimentalHBoxContainer" type="HBoxContainer" parent="MarginContainer/v/SectionsContainer"]
-layout_mode = 2
-
-[node name="ExperimentalFeaturesLabel" type="Label" parent="MarginContainer/v/SectionsContainer/ExperimentalHBoxContainer"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Experimental Features:"
+size_flags_stretch_ratio = 0.3
+text = "Core URL:"
 
-[node name="ExperimentalCheckButton" type="CheckButton" parent="MarginContainer/v/SectionsContainer/ExperimentalHBoxContainer"]
+[node name="leCoreUrl" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 8
+size_flags_horizontal = 3
+placeholder_text = "ws://..."
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/v"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="Control" type="Control" parent="MarginContainer/v/HBoxContainer"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Auto Connect:"
+
+[node name="leConnectAuto" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 2
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+
+[node name="CoreErrorItemList" type="ItemList" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SelectServicesButton" type="Button" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer"]
+layout_mode = 2
+text = "Select Services"
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer"]
+layout_mode = 2
+
+[node name="APIKeysVBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="APIKeysLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer"]
+layout_mode = 2
+bbcode_enabled = true
+text = "[b]API Keys[/b]"
+fit_content = true
+shortcut_keys_enabled = false
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Google AI"
+
+[node name="leGoogleVertex" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+secret = true
+
+[node name="GoogleVertexCheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer" groups=["visibilityButton"]]
+layout_mode = 2
+theme_type_variation = &"visibilityCheckButton"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "Anthropic"
+
+[node name="leAnthropic" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+secret = true
+
+[node name="AnthropicCheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2" groups=["visibilityButton"]]
+layout_mode = 2
+theme_type_variation = &"visibilityCheckButton"
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "OpenAI"
+
+[node name="leOpenAI" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+secret = true
+
+[node name="OpenAICheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3" groups=["visibilityButton"]]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"visibilityCheckButton"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Control" type="Control" parent="MarginContainer/VBoxContainer/HBoxContainer"]
+visible = false
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 
-[node name="btnSavePrefs" type="Button" parent="MarginContainer/v/HBoxContainer"]
+[node name="btnSavePrefs" type="Button" parent="MarginContainer/VBoxContainer/HBoxContainer"]
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 size_flags_horizontal = 0
@@ -261,12 +470,26 @@ icon_24 = ExtResource("2_kl0rj")
 icon_48 = ExtResource("4_0f5nr")
 icon_68 = ExtResource("5_346qj")
 
+[node name="HcpLogs" parent="." instance=ExtResource("7_6m13a")]
+unique_name_in_owner = true
+visible = false
+
+[node name="ServiceSelection" parent="." instance=ExtResource("8_g7jo0")]
+unique_name_in_owner = true
+visible = false
+
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
-[connection signal="toggled" from="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer/GoogleVertexCheckBox" to="." method="_on_google_vertex_check_box_toggled"]
-[connection signal="toggled" from="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2/AnthropicCheckBox" to="." method="_on_anthropic_check_box_toggled"]
-[connection signal="toggled" from="MarginContainer/v/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
-[connection signal="item_selected" from="MarginContainer/v/SectionsContainer/ThemeVBoxContainer/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]
-[connection signal="item_selected" from="MarginContainer/v/SectionsContainer/AudioVBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
-[connection signal="item_selected" from="MarginContainer/v/SectionsContainer/AudioVBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]
-[connection signal="toggled" from="MarginContainer/v/SectionsContainer/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
-[connection signal="pressed" from="MarginContainer/v/HBoxContainer/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]
+[connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/AuthPresetHBox/AuthPresetOptionButton" to="." method="_on_auth_preset_option_button_item_selected"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HBoxContainer5/PasswordCheckbox" to="." method="_on_password_checkbox_toggled"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/VBoxContainer/HcpLogsButton" to="." method="_on_hcp_logs_button_pressed"]
+[connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/ThemeVBoxContainer/ThemeHBoxContainer/ThemeOptionButton" to="." method="_on_theme_option_button_item_selected"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/User/MarginContainer/VBoxContainer2/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
+[connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
+[connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/VBoxContainer/SelectServicesButton" to="." method="_on_select_services_button_pressed"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer/GoogleVertexCheckBox" to="." method="_on_google_vertex_check_box_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2/AnthropicCheckBox" to="." method="_on_anthropic_check_box_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/BYOK/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]
+[connection signal="service_selected" from="ServiceSelection" to="." method="_on_service_selection_service_selected"]
