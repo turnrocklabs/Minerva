@@ -51,7 +51,11 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary={})
 		bot_response.error = "No service selected in preferences"
 		return bot_response
 
-	var msg = await Core.send_message(service, action, prompt.back()).receive()
+	var last_msg = prompt.back()
+	if not last_msg:
+		last_msg = {}
+
+	var msg = await Core.send_message(service, action, last_msg).receive()
 	
 	if not msg:
 		var bot_response:= BotResponse.new()
