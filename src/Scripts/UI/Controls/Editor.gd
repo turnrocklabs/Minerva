@@ -55,9 +55,8 @@ var graphics_editor: GraphicsEditorV2
 enum Type {
 	TEXT,
 	GRAPHICS,
-	WhiteBoard, # TODO: To be removed
 	NOTE_EDITOR,
-	VIDEO
+	VIDEO,
 }
 
 
@@ -70,21 +69,27 @@ var associated_object:
 		associated_object = value
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 
-var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
 var tab_title: String = "":
 	set(value):
 		tab_title = value
+		
+		var idx: = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
+		if idx != -1:
+			SingletonObject.editor_pane.Tabs.set_tab_title(idx, value)
+
 		if code_edit:
 			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
+
 var file: String:
 	set(value):
 		file = value
 		if code_edit != null:
 			code_edit.syntax_highlighter = update_code_hightlighter(file)
 		%reloadButton.disabled = false
+
 #var file_path: String
 var type: Type
 var _file_saved := false

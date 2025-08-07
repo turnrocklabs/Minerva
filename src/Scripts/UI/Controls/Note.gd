@@ -50,6 +50,7 @@ var last_min_size: float = 100.0:
 
 var control_type: Control
 var downscaled_image: Image
+
 # this will react each time memory item is changed
 var memory_item: MemoryItem:
 	set(value):
@@ -130,12 +131,13 @@ var memory_item: MemoryItem:
 		expand_button.disabled = false
 		
 		v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
+
 		# If we create a note, open a editor associated with it and then rerender the memory_item
 		# that will create completely new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
 		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
 			if editor.associated_object is MemoryItem:
-				if editor.associated_object == memory_item:
+				if editor.associated_object.UUID == memory_item.UUID:
 					associate_editor(editor)
 		
 		changed.emit()
@@ -317,25 +319,23 @@ func _drop_data(_at_position: Vector2, data) -> void:
 	elif _lower_separator.visible:
 		insert_index = target_pos + 1
 
-	# Only remove from source if moving within the same thread
-	if source_thread == target_thread:
-		var current_index = source_thread.MemoryItemList.find(data.memory_item)
-		if current_index >= 0:
-			source_thread.MemoryItemList.remove_at(current_index)
+	var current_index = source_thread.MemoryItemList.find(data.memory_item)
+	if current_index >= 0:
+		source_thread.MemoryItemList.remove_at(current_index)
 
-			
-			# Adjust index if moving within same thread
-			if current_index < insert_index:
-				insert_index -= 1
+	# Adjust index only if moving within same thread
+	if source_thread == target_thread and current_index < insert_index:
+		insert_index -= 1
 
 	# Insert into target
 	if insert_index >= 0 and insert_index <= target_thread.MemoryItemList.size():
 		target_thread.MemoryItemList.insert(insert_index, data.memory_item)
-		data.memory_item.OwningThread = target_thread.ThreadId
 
-	
-	SingletonObject.NotesTab.memories_updated.emit(source_thread)
-	SingletonObject.NotesTab.memories_updated.emit(target_thread)
+	if source_thread != target_thread:
+		SingletonObject.NotesTab.memories_updated.emit(source_thread)
+		SingletonObject.NotesTab.memories_updated.emit(target_thread)
+	else:
+		SingletonObject.NotesTab.memories_updated.emit(source_thread)
 
 	# Hide separators
 	_upper_separator.visible = false
