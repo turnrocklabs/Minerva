@@ -66,7 +66,7 @@ func _init(_provider, optional_historyId = null):
 ## The `predicate` parameter is a `Callable` that returns an `Array` of 2 booleans.
 ## First determines if provided item should be added to the returned list,
 ## while second determines if the execution of the function should stop and the value returned immediately.
-func To_Prompt(predicate: Callable = Callable()) -> Array[Variant]:
+func to_prompt(predicate: Callable = Callable()) -> Array[Variant]:
 	var retVal:Array[Variant] = []
 
 	for chat: ChatHistoryItem in self.HistoryItemList:

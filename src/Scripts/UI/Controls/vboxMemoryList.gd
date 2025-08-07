@@ -1,14 +1,14 @@
 extends VBoxContainer
 
-var Memories: Array[MemoryItem] = []
-var MainTabContainer
-var MainThreadId
+
+var main_tab_container: MemoryTabs
+var memory_thread: MemoryThread
 var disable_notes_button
 ## initialize the box
 
 var is_drawer_list: bool = false
 
-func _init(_parent, _threadId, _mem = null, is_drawer: bool = false):
+func _init(memory_tabs: MemoryTabs, thread: MemoryThread, is_drawer: bool = false):
 
 	# we add separation between the children of the HBoxContainer
 	add_theme_constant_override("Separation", 12)
@@ -16,16 +16,15 @@ func _init(_parent, _threadId, _mem = null, is_drawer: bool = false):
 	#we add a disable notes button
 	add_child(initialize_disable_button())
 	
-	self.MainTabContainer = _parent
-	self.MainThreadId = _threadId
-	self.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	self.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_tab_container = memory_tabs
+	memory_thread = thread
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	
 	is_drawer_list = is_drawer 
-	if _mem != null:
-		self.Memories = _mem
-		render_items()
-	pass
+	
+	memory_tabs.memories_updated.connect(_on_memories_updated)
+
 
 #create a check button for toggling enabled notes 
 func initialize_disable_button() -> CheckButton:
@@ -33,7 +32,7 @@ func initialize_disable_button() -> CheckButton:
 	disable_notes_button.text = "Notes Enabled"
 	disable_notes_button.button_pressed = false
 	disable_notes_button.size_flags_horizontal = Control.SIZE_SHRINK_END
-	disable_notes_button.alignment = 2# we use a constant for the alignment (RIGHT)
+	disable_notes_button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	disable_notes_button.toggled.connect(_on_toggled_disable_notes_button)
 	return disable_notes_button
 
@@ -75,53 +74,96 @@ func _notification(notification_type):
 		NOTIFICATION_DRAG_END:
 			_update_memory_item_order()
 			
-			if SingletonObject.notes_draw_state != SingletonObject.NotesDrawState.DRAWING:
-				render_items()
+			print("drag ended")
+			await render_items()
 
 
+func _on_memories_updated(thread: MemoryThread):
+
+	if thread.ThreadId == memory_thread.ThreadId:
+		prints("Memories updated for thread:", thread)
+		await render_items()
+
+## Goes over all memory items in this containers thread[br]
+## and renders the new ones and removes the ones that no longer exist.
 func render_items():
+	print("render items")
 
-	# Clear existing children
+	print(memory_thread.MemoryItemList)
+	
+	# cache the note related to each memory_item
+	var cached_notes: Dictionary = {}
+
+	# go over all memory items and check if there is a note for it
+	for item in memory_thread.MemoryItemList:
+		
+		# if the note is not created for this item, create it
+		var rendered_note = get_memory_item_note(item)
+
+		if not rendered_note:
+			rendered_note = await render_item(item)
+		
+		cached_notes[item] = rendered_note
+
+	# no go over all notes and check if there is a note
+	# for memory item that no longer exists
 	for child in get_children():
 		if child is Note:
-			child.queue_free()
-
-	# Re-add memory items
-	for item in Memories:
-		var note_control: Note = SingletonObject.notes_scene.instantiate()
-		#checks how the note is going to be rendered
-		note_control.isDrawer = true
-		if item.Type == SingletonObject.note_type.TEXT:
-			note_control.new_text_note()
-		elif item.Type == SingletonObject.note_type.IMAGE:
-			note_control.new_image_note()
-		elif item.Type == SingletonObject.note_type.AUDIO:
-			note_control.new_audio_note()
-		elif item.Type == SingletonObject.note_type.VIDEO:
-			note_control.new_video_note()
-			
-		note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
-		self.add_child.call_deferred(note_control)
-		await note_control.ready
-
-		note_control.memory_item = item
-		
-		#note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
-#
-		#self.add_child(note_control)
-
-		# When the note control is deleted, delete the memory item, so it doesn't get re-rendered next time
-		
-		note_control.deleted.connect(self.MainTabContainer.delete_note.bind(item))
-		
-		note_control.changed.connect(SingletonObject.note_changed.emit.bind(note_control))
-
+			if not memory_thread.MemoryItemList.has(child.memory_item):
+				child.queue_free()
 	
-		# can't use bind because of the order of the parameters
-		note_control.toggled.connect(
-			func(on: bool):
-				SingletonObject.note_toggled.emit(note_control, on)
-		)
+	# now make sure the order is correct by movig all the notes
+	# to the same index as the memory item
+	for i in memory_thread.MemoryItemList.size():
+		var item = memory_thread.MemoryItemList[i]
+		var note: Note = cached_notes[item]
+
+		note.get_parent().move_child(note, i)
+
+
+func render_item(item: MemoryItem) -> Note:
+	var note_control: Note = SingletonObject.notes_scene.instantiate()
+	#checks how the note is going to be rendered
+	note_control.isDrawer = true
+	if item.Type == SingletonObject.note_type.TEXT:
+		note_control.new_text_note()
+	elif item.Type == SingletonObject.note_type.IMAGE:
+		note_control.new_image_note()
+	elif item.Type == SingletonObject.note_type.AUDIO:
+		note_control.new_audio_note()
+	elif item.Type == SingletonObject.note_type.VIDEO:
+		note_control.new_video_note()
+		
+	note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
+	add_child.call_deferred(note_control)
+	
+	await note_control.ready
+
+	note_control.memory_item = item
+	
+	note_control.deleted.connect(main_tab_container.delete_note.bind(item))
+	
+	note_control.changed.connect(SingletonObject.note_changed.emit.bind(note_control))
+
+
+	# can't use bind because of the order of the parameters
+	note_control.toggled.connect(
+		func(on: bool):
+			SingletonObject.note_toggled.emit(note_control, on)
+	)
+
+	return note_control
+
+## Finds [class Note] that is rendering the [parameter item].[br]
+## Returns `null` if not found.
+func get_memory_item_note(item: MemoryItem) -> Note:
+	
+	for child in get_children():
+		if child is Note:
+			if child.memory_item == item:
+				return child
+	
+	return null
 
 func _memory_thread_find(thread_id: String) -> MemoryThread:
 	return SingletonObject.ThreadList.filter(
@@ -147,8 +189,8 @@ func _drop_data(_at_position: Vector2, data):
 	# 1. Print UUID of the note being dropped
 	print("Dropping note UUID: ", data.memory_item.Title)
 	# Find which type of thread we're dropping into
-	var target_thread = _memory_thread_find(MainThreadId)
-	var target_drawer_thread = _drawer_thread_find(MainThreadId)
+	var target_thread = _memory_thread_find(memory_thread.ThreadId)
+	var target_drawer_thread = _drawer_thread_find(memory_thread.ThreadId)
 
 	# Rest of your existing drop logic...
 	var dragged_note_thread = _memory_thread_find(data.memory_item.OwningThread)

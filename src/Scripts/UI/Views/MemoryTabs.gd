@@ -1,17 +1,17 @@
 class_name MemoryTabs
 extends TabContainer
 
-@onready var tcThreads = %tcThreads
+## Emitted when theres a change in the memory items list (item added, removed).
+signal memories_updated(thread: MemoryThread)
+
+@onready var tcThreads: MemoryTabs = %tcThreads
 @onready var tcThreadsDrawer = %tcThreadsDrawer
 @onready var buffer_control_notes: Control = %BufferControlNotes
 var _drag_active := true
 
 
-# This flag will be set to true when we need to update the UI
-var _needs_update := false
-
-## return a single large string of all active memories
-func To_Prompt(provider: BaseProvider) -> Array[Variant]:
+## Return a single large string of all active memories for the given provider.
+func to_prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
 	
 	# Combine both thread lists into one array to process
@@ -28,10 +28,12 @@ func To_Prompt(provider: BaseProvider) -> Array[Variant]:
 			output.append(provider.wrap_memory(item))
 	
 	return output
-#region Methods for toggling notes
 
 
-func Disable_All():
+
+#region Notes toggle
+
+func disable_all():
 	for this_thread:MemoryThread in SingletonObject.ThreadList:
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
@@ -39,8 +41,6 @@ func Disable_All():
 	
 	for item:MemoryItem in SingletonObject.DetachedNotes:
 		item.Enabled = false
-
-	self.render_threads()
 
 
 func enable_all():
@@ -52,9 +52,7 @@ func enable_all():
 	for item:MemoryItem in SingletonObject.DetachedNotes:
 		item.Enabled = true
 
-	self.render_threads()
-
-
+## Enables all notes in the current active tab.
 func enable_notes_in_tab():
 	var currentNotesTab = SingletonObject.ThreadList[current_tab]
 	for item:MemoryItem in currentNotesTab:
@@ -62,14 +60,17 @@ func enable_notes_in_tab():
 			item.Enabled = true
 
 
+## Disables all notes in the current active tab.
 func disable_notes_in_tab():
 	var currentNotesTab = SingletonObject.ThreadList[current_tab]
 	for item:MemoryItem in currentNotesTab:
 		if item.Enabled:
 			item.Enabled = false
 
-#endregion Methods for toggling notes
+#endregion
 
+# this seems to call a singleton object signal that the threads popup catches and then emits
+# SingletonObject.create_notes_tab
 func open_threads_popup(tab_name: String = "", tab = null):
 	var update = tab != null
 	
@@ -84,12 +85,12 @@ func _on_new_pressed():
 	%NewThreadPopup.isDrawer = false
 	open_threads_popup()
 	
-	
+
 func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 	#added a check for the tab name, if no name gives a default name
 	var thread_for_tab = %tcThreads
 		
-	if tab_name == "":
+	if tab_name.is_empty():
 		tab_name = "notes " + str(thread_for_tab.get_tab_count() + 1)
 	
 	if tab_ref:
@@ -101,32 +102,46 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 	if get_tab_count() > 0:
 		buffer_control_notes.hide()
 
-## add indexing system here
-var new_tab: bool = false
-func create_new_notes_tab(tab_name: String = "notes 1",isDrawer:bool = false):
+
+func create_new_notes_tab(tab_name: String = "Notes",isDrawer:bool = false):
 	var thread = MemoryThread.new()
-	thread.ThreadName = tab_name_to_use(tab_name,isDrawer)
+	thread.ThreadName = tab_name_to_use(tab_name, isDrawer)
 	var thread_memories: Array[MemoryItem] = []
 	thread.MemoryItemList = thread_memories
-	new_tab = true
 	SingletonObject.ThreadList.append(thread)
-	SingletonObject.NotesTab.render_threads()
+	
+	setup_thread_container(thread)
 
-func tab_name_to_use(proposed_name: String,isDrawerName:bool) -> String:
-	var collisions = 0
-	var thread_to_use
+## Finds first available name for the tab, appending a number suffix if the name is occupied
+func tab_name_to_use(proposed_name: String, isDrawerName:bool) -> String:
+	var thread_to_use: TabContainer
 	if isDrawerName:
 		thread_to_use = tcThreadsDrawer
 	else:
 		thread_to_use = tcThreads
+	
+	var suffix: = 0
+	var available_name: = proposed_name
+	var found: = false
+
+	
+	while not found: # will break as soon as we find a available name
 		
-	for i in range(thread_to_use.get_tab_count()):
-		if thread_to_use.get_tab_title(i).split(" ")[0] == proposed_name:
-			collisions+=1
-	if collisions == 0:
-		return proposed_name
-	else:
-		return proposed_name + "(" + str(thread_to_use.get_tab_count() + 1) + ")"
+		if thread_to_use.get_tab_count() == 0:
+			break
+		
+		for i in range(thread_to_use.get_tab_count()):
+			prints("Checking:", thread_to_use.get_tab_title(i), available_name)
+			if thread_to_use.get_tab_title(i) == available_name:
+				found = false
+				suffix += 1
+				available_name = "%s (%s)" % [proposed_name, suffix]
+				break
+			else:
+				if i == thread_to_use.get_tab_count()-1:
+					found = true
+
+	return available_name
 
 
 func clear_all_tabs():
@@ -146,7 +161,7 @@ func add_note(user_title:String, user_content: String, is_completed:bool = true,
 	var current_tab_idx: int
 	
 	if SingletonObject.ThreadList.is_empty():
-		create_new_notes_tab("Notes 1")
+		create_new_notes_tab()
 		
 	current_tab_idx = current_tab
 	if current_tab_idx < 0:  # If no tab is selected, use the first one
@@ -165,11 +180,16 @@ func add_note(user_title:String, user_content: String, is_completed:bool = true,
 	new_memory.Visible = true
 	new_memory.isCompleted = is_completed
 	new_memory.isDrawer = false
+
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
+
 	# Explicitly set the current tab after rendering
 	current_tab = current_tab_idx
+	
+	memories_updated.emit(active_thread)
+
 	return new_memory
 
 
@@ -212,6 +232,8 @@ func add_audio_note(note_title: String, note_audio: AudioStreamWAV, isDrawer:boo
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
+
+	memories_updated.emit(active_thread)
 
 	# Explicitly set the current tab after rendering
 	if isDrawer:
@@ -262,6 +284,8 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)
 	render_threads()
+
+	memories_updated.emit(active_thread)
 
 	# Explicitly set the current tab after rendering
 	if isDrawer:
@@ -338,30 +362,33 @@ func delete_note(memory_item: MemoryItem):
 
 
 func render_threads():
-	# Save the last active thread.
-	var last_thread = self.current_tab
+	print("render_threads")
+	# # Save the last active thread.
+	# var last_thread = self.current_tab
 	
-	for c in %tcThreads.get_children():
-		c.queue_free()
-	for thread in SingletonObject.ThreadList:
-		render_thread(thread)
+	# for c in %tcThreads.get_children():
+	# 	c.queue_free()
+	# for thread in SingletonObject.ThreadList:
+	# 	render_thread(thread)
 
-	# Restore the last active thread:
-	await get_tree().process_frame # process frame is needed for wating untill all tabs are created
-	#if not new_tab:
-	if get_tab_count() > 0:
-		self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
-	else:
-		if get_tab_count() + 1 > 0:
-			self.current_tab = get_tab_count() - 1
-	new_tab = false
+	# # Restore the last active thread:
+	# await get_tree().process_frame # process frame is needed for wating untill all tabs are created
+	# #if not new_tab:
+	# if get_tab_count() > 0:
+	# 	self.current_tab = clampi( last_thread, 0, self.get_child_count()-1)
+	# else:
+	# 	if get_tab_count() + 1 > 0:
+	# 		self.current_tab = get_tab_count() - 1
+	# new_tab = false
 
-	SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.UNSET)
+	# SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.UNSET)
 
 
-static var vboxMemoryList_scene: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
-func render_thread(thread_item: MemoryThread):
+static var vboxMemoryList: = preload("res://Scripts/UI/Controls/vboxMemoryList.gd")
+func setup_thread_container(thread_item: MemoryThread):
+	prints("render_thread", thread_item)
 	# Create the ScrollContainer
+
 	var scroll_container = ScrollContainer.new()
 	scroll_container.scroll_vertical = 4060
 	scroll_container.follow_focus = true
@@ -369,22 +396,22 @@ func render_thread(thread_item: MemoryThread):
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# Create a custom VBoxContainer derived class
-	var vboxMemoryList = vboxMemoryList_scene.new(self, thread_item.ThreadId, thread_item.MemoryItemList)
+	var vbox_memory_list = vboxMemoryList.new(self, thread_item)
 
 	# Add VBoxContainer as a child of the ScrollContainer
-	scroll_container.add_child(vboxMemoryList)
+	scroll_container.add_child(vbox_memory_list)
 	#scroll_container.follow_focus = true
 	
 	# Get %tcThreads by its unique name and add the ScrollContainer as its new child (tab)
 	#scroll_container.name = thread_item.ThreadName
 		
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
-	%tcThreads.add_child(scroll_container)
-	var tab_idx = %tcThreads.get_tab_idx_from_control(scroll_container)
-	%tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
-	if new_tab:
-		self.current_tab = tab_idx
+	
+	tcThreads.add_child(scroll_container)
+	
+	var tab_idx = tcThreads.get_tab_idx_from_control(scroll_container)
 
+	tcThreads.set_tab_title(tab_idx, thread_item.ThreadName)
 
 
 #TODO: refactor drawer logic to its own script
@@ -435,7 +462,7 @@ func restore_deleted_tab(tab_name: String):
 			SingletonObject.ThreadList.append(thread)
 
 		# Call render_thread to re-create the tab UI.
-		render_thread(thread)
+		# render_thread(thread)
 
 		# Remove the data from the deleted_tabs dictionary.
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
@@ -690,14 +717,14 @@ func _on_active_tab_rearranged(idx_to: int) -> void:
 
 
 # This function is called when the ThreadList is modified
-func _on_thread_list_changed():
-	_needs_update = true
+# func _on_thread_list_changed():
+# 	_needs_update = true
 
-# This function is called every frame
-func _process(_delta):
-	if _needs_update:
-		render_threads()
-		_needs_update = false
+# # This function is called every frame
+# func _process(_delta):
+# 	if _needs_update:
+# 		render_threads()
+# 		_needs_update = false
 
 
 # FIXME: This will interfere with render threads on project load

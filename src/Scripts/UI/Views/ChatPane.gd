@@ -26,7 +26,7 @@ func create_user_history_item(text: String) -> ChatHistoryItem:
 # Handle human provider message creation
 func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem) -> void:
 	# Get working memory/notes
-	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider)
+	var working_memory: Array = SingletonObject.NotesTab.to_prompt(SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider)
 	
 	# Append working memory to the user history item
 	if working_memory:
@@ -119,8 +119,8 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 	else:
 		model_msg_node.queue_free()
 	
-	SingletonObject.NotesTab.Disable_All()
-	SingletonObject.DrawerTab.Disable_All()
+	SingletonObject.NotesTab.disable_all()
+	SingletonObject.DrawerTab.disable_all()
 
 ## add new chat 
 func _on_new_chat():
@@ -176,7 +176,7 @@ func ensure_chat_open() -> void:
 ## Generates the full turn prompt using the history of the active chat and the selected provider.
 ## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.[br]
 ## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
-## Check `History.To_Prompt` for explanation on `predicate`.
+## Check `History.to_prompt` for explanation on `predicate`.
 func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
 	
 	# if we don't have any chats history_list will be empty
@@ -187,11 +187,11 @@ func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseP
 		var history: ChatHistory = SingletonObject.ChatList[current_tab]
 		if not provider:
 			provider = history.provider
-		history_list = history.To_Prompt(predicate)
+		history_list = history.to_prompt(predicate)
 	
 	if not provider:
 		return []
-	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(provider)
+	var working_memory: Array = SingletonObject.NotesTab.to_prompt(provider)
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
@@ -293,8 +293,8 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.rendered_node.render()
 
 	existing_response.rendered_node.loading = false
-	SingletonObject.NotesTab.Disable_All()
-	SingletonObject.DrawerTab.Disable_All()
+	SingletonObject.NotesTab.disable_all()
+	SingletonObject.DrawerTab.disable_all()
 
 
 func _on_chat_pressed():
@@ -409,8 +409,8 @@ func execute_regular_chat(text: String) -> void:
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
-		SingletonObject.NotesTab.Disable_All()
-		SingletonObject.DrawerTab.Disable_All()
+		SingletonObject.NotesTab.disable_all()
+		SingletonObject.DrawerTab.disable_all()
 		return # if user is using Human provider we finish here
 	
 	# Check is the last message is a user message and not do anything if true
@@ -461,8 +461,8 @@ func execute_sequential_chat(text_input: String) -> void:
 		# In execute_sequential_chat function, update this part:
 		if user_history_item.provider is HumanProvider:
 			handle_human_provider_message(history, user_history_item)
-			SingletonObject.NotesTab.Disable_All()
-			SingletonObject.DrawerTab.Disable_All()
+			SingletonObject.NotesTab.disable_all()
+			SingletonObject.DrawerTab.disable_all()
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
@@ -492,8 +492,8 @@ func execute_sequential_chat(text_input: String) -> void:
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	audio_stop_1.disabled = true
 	_active_chat_request = false
-	SingletonObject.NotesTab.Disable_All()
-	SingletonObject.DrawerTab.Disable_All()
+	SingletonObject.NotesTab.disable_all()
+	SingletonObject.DrawerTab.disable_all()
 
 var parallel_loading: = preload("res://Scenes/multi_message_loading.tscn")
 var _mutex: Mutex = Mutex.new()

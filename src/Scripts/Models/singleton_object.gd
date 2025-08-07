@@ -162,11 +162,8 @@ signal create_drawer_tab
 var notes_draw_state: int
 
 
-var ThreadList: Array[MemoryThread]#:  =[]
-	#set(value):
-		## save_state(false)
-		#ThreadList = value
-var DrawerThreadList: Array[MemoryThread]#:  =[]
+var ThreadList: Array[MemoryThread]
+var DrawerThreadList: Array[MemoryThread]
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
 var DetachedNotes: Array[MemoryItem]
@@ -192,9 +189,9 @@ signal note_changed(note: Note)
 
 func toggle_all_notes(notes_enabled: bool):
 	if notes_enabled:
-		NotesTab.Disable_All()
+		NotesTab.disable_all()
 		if DrawerTab.visible:
-			DrawerTab.Disable_All()
+			DrawerTab.disable_all()
 	if !notes_enabled:
 		NotesTab.enable_all()
 		if DrawerTab.visible:

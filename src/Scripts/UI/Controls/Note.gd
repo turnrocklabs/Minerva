@@ -322,6 +322,7 @@ func _drop_data(_at_position: Vector2, data) -> void:
 		var current_index = source_thread.MemoryItemList.find(data.memory_item)
 		if current_index >= 0:
 			source_thread.MemoryItemList.remove_at(current_index)
+
 			
 			# Adjust index if moving within same thread
 			if current_index < insert_index:
@@ -331,6 +332,10 @@ func _drop_data(_at_position: Vector2, data) -> void:
 	if insert_index >= 0 and insert_index <= target_thread.MemoryItemList.size():
 		target_thread.MemoryItemList.insert(insert_index, data.memory_item)
 		data.memory_item.OwningThread = target_thread.ThreadId
+
+	
+	SingletonObject.NotesTab.memories_updated.emit(source_thread)
+	SingletonObject.NotesTab.memories_updated.emit(target_thread)
 
 	# Hide separators
 	_upper_separator.visible = false
