@@ -257,7 +257,7 @@ func _on_btn_drawer_pressed() -> void:
 		
 		await get_tree().create_timer(0.48).timeout
 		bottom_drawer_control.visible = false
-	SingletonObject.DrawerTab.Disable_All()
+	SingletonObject.DrawerTab.disable_all()
 
 
 #reading file and create note in Drawer thread

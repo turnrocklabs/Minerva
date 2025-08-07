@@ -5,7 +5,7 @@ extends TabContainer
 @onready var buffer_control_notes: Control = %BufferControlNotes
 
 
-func To_Prompt(provider: BaseProvider) -> Array[Variant]:
+func to_prompt(provider: BaseProvider) -> Array[Variant]:
 	var output: Array[Variant] = []
 	
 	for this_thread:MemoryThread in SingletonObject.DrawerThreadList:
@@ -34,7 +34,7 @@ func _ready():
 
 #region Methods for toggling notes
 
-func Disable_All():
+func disable_all():
 	for this_thread:MemoryThread in SingletonObject.DrawerThreadList:
 		for item:MemoryItem in this_thread.MemoryItemList:
 			if item.Enabled:
