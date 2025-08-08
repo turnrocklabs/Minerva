@@ -85,24 +85,28 @@ func render_items():
 	# cache the note related to each memory_item
 	var cached_notes: Dictionary = {}
 
-	# go over all memory items and check if there is a note for it
+	var orphan_notes: Array[Note] = []
+
+	# go over all notes and check if there is a note
+	# for memory item that no longer exists
+	for child in get_children():
+		if child is Note:
+			if not memory_thread.MemoryItemList.has(child.memory_item):
+				remove_child(child)
+				prints("ADDED TO ORPHAN NOTES:", child)
+				orphan_notes.append(child) # dont delete the note, maybe it was just moved to another thread
+	
+	# now go over all memory items and check if there is a note for it
 	for item in memory_thread.MemoryItemList:
 		
 		# if the note is not created for this item, create it
 		var rendered_note = get_memory_item_note(item)
 
 		if not rendered_note:
-			rendered_note = await render_item(item)
+			rendered_note = await render_item(item, orphan_notes)
 		
 		cached_notes[item] = rendered_note
 
-	# no go over all notes and check if there is a note
-	# for memory item that no longer exists
-	for child in get_children():
-		if child is Note:
-			if not memory_thread.MemoryItemList.has(child.memory_item):
-				child.queue_free()
-	
 	# now make sure the order is correct by movig all the notes
 	# to the same index as the memory item
 	for i in memory_thread.MemoryItemList.size():
@@ -111,7 +115,13 @@ func render_items():
 
 		note.get_parent().move_child(note, i)
 
-func render_item(item: MemoryItem) -> Note:
+func render_item(item: MemoryItem, orphan_notes: Array[Note] = []) -> Note:
+
+	for orphan_note in orphan_notes:
+		if orphan_note.memory_item == item:
+			add_child(orphan_note)
+			return orphan_note
+
 	var note_control: Note = SingletonObject.notes_scene.instantiate()
 	#checks how the note is going to be rendered
 	note_control.isDrawer = is_drawer_list
@@ -138,6 +148,14 @@ func render_item(item: MemoryItem) -> Note:
 		note_control.deleted.connect(main_tab_container.delete_note.bind(item))
 	
 	note_control.changed.connect(SingletonObject.note_changed.emit.bind(note_control))
+
+	# delete the editor association of it exists
+	note_control.deleted.connect(
+		func():
+			if note_control.has_meta("associated_editor"):
+				var editor: Editor = note_control.get_meta("associated_editor")
+				editor.associated_object = null
+	)
 
 	# can't use bind because of the order of the parameters
 	note_control.toggled.connect(

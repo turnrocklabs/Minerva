@@ -66,6 +66,7 @@ enum Type {
 ## opening a new one for same associated object.
 var associated_object:
 	set(value):
+		prints("AO SET TO:", self, value)
 		associated_object = value
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 
@@ -482,6 +483,10 @@ func _on_save_button_pressed():
 func _on_create_note_button_pressed() -> void:
 
 	# breakpoint
+	print("\nSAVE")
+	prints(is_instance_valid(associated_object), associated_object is Note)
+	print(associated_object)
+	# prints(associated_object, associated_object.memory_item.UUID)
 
 	if is_instance_valid(associated_object) and associated_object is Note:
 		_update_memory_item(associated_object.memory_item)

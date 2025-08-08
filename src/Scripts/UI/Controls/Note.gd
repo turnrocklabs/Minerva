@@ -135,9 +135,10 @@ var memory_item: MemoryItem:
 		# If we create a note, open a editor associated with it and then rerender the memory_item
 		# that will create completely new Note node and break the connection between note and the editor.
 		# So here we check if there's editor associated with memory_item this note is rendering.
+
 		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
-			if editor.associated_object is MemoryItem:
-				if editor.associated_object.UUID == memory_item.UUID:
+			if editor.associated_object is Note:
+				if editor.associated_object.memory_item.UUID == memory_item.UUID:
 					associate_editor(editor)
 		
 		changed.emit()
@@ -205,12 +206,6 @@ func _ready():
 			if memory_item: memory_item.Title = text
 	)
 
-
-func _exit_tree() -> void:
-	if has_meta("associated_editor"):
-		var editor: Editor = get_meta("associated_editor")
-		if is_instance_valid(editor):
-			editor.associated_object = null
 
 
 #method for changing the dots texture when the main theme changes

@@ -133,7 +133,6 @@ func tab_name_to_use(proposed_name: String) -> String:
 			break
 		
 		for i in range(thread_to_use.get_tab_count()):
-			prints("Checking:", thread_to_use.get_tab_title(i), available_name)
 			if thread_to_use.get_tab_title(i) == available_name:
 				found = false
 				suffix += 1
@@ -332,6 +331,7 @@ func delete_note(memory_item: MemoryItem):
 		if idx == -1: 
 			return
 		active_thread.MemoryItemList.remove_at(idx)
+
 
 func render_threads():
 	# Empty - we don't use this approach anymore
