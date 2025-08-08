@@ -1,0 +1,228 @@
+class_name BaseVBoxMemoryList
+extends VBoxContainer
+
+var main_tab_container: BaseTabContainer
+var memory_thread: MemoryThread
+var disable_notes_button
+var is_drawer_list: bool = false
+
+func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool = false):
+	# we add separation between the children of the HBoxContainer
+	add_theme_constant_override("Separation", 12)
+	
+	#we add a disable notes button
+	add_child(initialize_disable_button())
+	
+	main_tab_container = memory_tabs
+	memory_thread = thread
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	
+	is_drawer_list = is_drawer 
+	
+	memory_tabs.memories_updated.connect(_on_memories_updated)
+
+#create a check button for toggling enabled notes 
+func initialize_disable_button() -> CheckButton:
+	disable_notes_button = CheckButton.new()
+	disable_notes_button.text = "Notes Enabled"
+	disable_notes_button.button_pressed = false
+	disable_notes_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	disable_notes_button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	disable_notes_button.toggled.connect(_on_toggled_disable_notes_button)
+	return disable_notes_button
+
+func _on_toggled_disable_notes_button(toggled_on: bool) -> void:
+	if toggled_on:
+		disable_notes_button.text = "Notes Enabled"
+		toggle_notes(toggled_on)
+	if !toggled_on:
+		disable_notes_button.text = "Notes Disabled"
+		toggle_notes(toggled_on)
+
+func toggle_notes(toggled_on: bool) -> void:
+	var notes = get_children()
+	for note in notes:
+		if note.is_in_group("notes_in_tab"):
+			if toggled_on:
+				note.checkbutton_node.button_pressed = true
+			if !toggled_on:
+				note.checkbutton_node.button_pressed = false
+
+## goes trough note nodes and updates the memory item order accordingly
+func _update_memory_item_order():
+	var i = 0
+	for note in get_children():
+		if not note is Note: continue
+		note.memory_item.Order = i
+		i += 1
+
+func _notification(notification_type):
+	match notification_type:
+		# Change MemoryItem Order when notes order changes
+		NOTIFICATION_CHILD_ORDER_CHANGED:
+			if is_inside_tree(): _update_memory_item_order()
+		NOTIFICATION_ENTER_TREE:
+			_update_memory_item_order()
+		# When the drag is over, maybe the order of notes changed, so rerender them
+		NOTIFICATION_DRAG_END:
+			_update_memory_item_order()
+			
+			print("drag ended")
+			await render_items()
+
+func _on_memories_updated(thread: MemoryThread):
+	if thread.ThreadId == memory_thread.ThreadId:
+		prints("Memories updated for thread:", thread)
+		await render_items()
+
+## Goes over all memory items in this containers thread[br]
+## and renders the new ones and removes the ones that no longer exist.
+func render_items():
+	print("render items")
+	print(memory_thread.MemoryItemList)
+	
+	# cache the note related to each memory_item
+	var cached_notes: Dictionary = {}
+
+	# go over all memory items and check if there is a note for it
+	for item in memory_thread.MemoryItemList:
+		
+		# if the note is not created for this item, create it
+		var rendered_note = get_memory_item_note(item)
+
+		if not rendered_note:
+			rendered_note = await render_item(item)
+		
+		cached_notes[item] = rendered_note
+
+	# no go over all notes and check if there is a note
+	# for memory item that no longer exists
+	for child in get_children():
+		if child is Note:
+			if not memory_thread.MemoryItemList.has(child.memory_item):
+				child.queue_free()
+	
+	# now make sure the order is correct by movig all the notes
+	# to the same index as the memory item
+	for i in memory_thread.MemoryItemList.size():
+		var item = memory_thread.MemoryItemList[i]
+		var note: Note = cached_notes[item]
+
+		note.get_parent().move_child(note, i)
+
+func render_item(item: MemoryItem) -> Note:
+	var note_control: Note = SingletonObject.notes_scene.instantiate()
+	#checks how the note is going to be rendered
+	note_control.isDrawer = is_drawer_list
+	if item.Type == SingletonObject.note_type.TEXT:
+		note_control.new_text_note()
+	elif item.Type == SingletonObject.note_type.IMAGE:
+		note_control.new_image_note()
+	elif item.Type == SingletonObject.note_type.AUDIO:
+		note_control.new_audio_note()
+	elif item.Type == SingletonObject.note_type.VIDEO:
+		note_control.new_video_note()
+		
+	note_control.add_to_group("notes_in_tab")# add to a group for enabling the notes
+	add_child.call_deferred(note_control)
+	
+	await note_control.ready
+
+	note_control.memory_item = item
+	
+	# Connect to the appropriate delete method based on drawer type
+	if is_drawer_list and main_tab_container.has_method("delete_drawer_note"):
+		note_control.deleted.connect(main_tab_container.delete_drawer_note.bind(item.UUID))
+	else:
+		note_control.deleted.connect(main_tab_container.delete_note.bind(item))
+	
+	note_control.changed.connect(SingletonObject.note_changed.emit.bind(note_control))
+
+	# can't use bind because of the order of the parameters
+	note_control.toggled.connect(
+		func(on: bool):
+			SingletonObject.note_toggled.emit(note_control, on)
+	)
+
+	return note_control
+
+## Finds [class Note] that is rendering the [parameter item].[br]
+## Returns `null` if not found.
+func get_memory_item_note(item: MemoryItem) -> Note:
+	for child in get_children():
+		if child is Note:
+			if child.memory_item == item:
+				return child
+	return null
+
+func _memory_thread_find(thread_id: String) -> MemoryThread:
+	return SingletonObject.ThreadList.filter(
+		func(t: MemoryThread):
+			return t.ThreadId == thread_id
+	).pop_front()
+	
+func _drawer_thread_find(thread_id: String) -> MemoryThread:
+	return SingletonObject.DrawerThreadList.filter(
+		func(t: MemoryThread):
+			return t.ThreadId == thread_id
+	).pop_front()
+
+# We can also drop the Note in a VBoxMemoryList
+func _can_drop_data(_at_position: Vector2, data):
+	if not data is Note: return false
+	return true
+
+func _drop_data(_at_position: Vector2, data):
+	if not data is Note: 
+		return
+
+	# 1. Print UUID of the note being dropped
+	print("Dropping note UUID: ", data.memory_item.Title)
+	# Find which type of thread we're dropping into
+	var target_thread = _memory_thread_find(memory_thread.ThreadId)
+	var target_drawer_thread = _drawer_thread_find(memory_thread.ThreadId)
+
+	# Rest of your existing drop logic...
+	var dragged_note_thread = _memory_thread_find(data.memory_item.OwningThread)
+	var dragged_note_drawer_thread = _drawer_thread_find(data.memory_item.OwningThread)
+
+	# 2. Print all UUIDs in the target thread
+	if target_thread:
+		print("UUIDs in target thread:")
+		for item in target_thread.MemoryItemList:
+			if data.memory_item.Title == item.Title and ((data.memory_item.Content == item.Content)or(data.memory_item.MemoryImage == item.MemoryImage)or(data.memory_item.Audio == item.Audio)):
+				return
+	elif target_drawer_thread:
+		print("UUIDs in target drawer thread:")
+		for item in target_drawer_thread.MemoryItemList:
+			if data.memory_item.Title == item.Title:
+				return
+
+	if target_thread and dragged_note_thread:
+		target_thread.MemoryItemList.insert(0, data.memory_item)
+		data.memory_item.OwningThread = target_thread.ThreadId
+		dragged_note_thread.MemoryItemList.erase(data.memory_item)
+		
+	elif target_drawer_thread and dragged_note_drawer_thread:
+		target_drawer_thread.MemoryItemList.insert(0, data.memory_item)
+		data.memory_item.OwningThread = target_drawer_thread.ThreadId
+		dragged_note_drawer_thread.MemoryItemList.erase(data.memory_item)
+		
+	elif target_thread and dragged_note_drawer_thread:
+		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
+		if data.memory_item.Type == 0:
+			main_tab_container.add_note(data.memory_item.Title, data.memory_item.Content)
+		elif data.memory_item.Type == 1:
+			main_tab_container.add_audio_note(data.memory_item.Title, data.memory_item.Audio)
+		elif data.memory_item.Type == 2:
+			main_tab_container.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption)
+			
+	elif target_drawer_thread and dragged_note_thread:
+		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
+		if data.memory_item.Type == 0:
+			main_tab_container.add_note(data.memory_item.Title, data.memory_item.Content)
+		elif data.memory_item.Type == 1:
+			main_tab_container.add_audio_note(data.memory_item.Title, data.memory_item.Audio)
+		elif data.memory_item.Type == 2:
+			main_tab_container.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption)
