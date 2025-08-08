@@ -62,7 +62,8 @@ var memory_item: MemoryItem:
 
 		# when memory item is enabled trigger this notes signal
 		# sometimes notes are enabled/deisabled with code and check button doesnt emit the signal
-		memory_item.toggled.connect(toggled.emit)
+		if not memory_item.toggled.is_connected(toggled.emit):
+			memory_item.toggled.connect(toggled.emit)
 
 		# TODO: improve the code below
 		# The code below dynamically creates new controls
