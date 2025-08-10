@@ -168,6 +168,7 @@ func _on_new_pressed():
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	super()
 	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	%tcThreadsDrawer.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreadsDrawer))

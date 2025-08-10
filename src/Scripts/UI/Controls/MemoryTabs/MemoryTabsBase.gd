@@ -6,6 +6,7 @@ extends TabContainer
 
 ## Emitted when theres a change in the memory items list (item added, removed).
 signal memories_updated(thread: MemoryThread)
+signal note_rendered(note: Note)
 
 @onready var buffer_control_notes: Control = %BufferControlNotes
 var _drag_active := true
@@ -27,9 +28,26 @@ func save_data_if_needed():
 	# Override in derived classes if needed
 	pass
 
-func create_vbox_memory_list(thread: MemoryThread):
+func create_vbox_memory_list(thread: MemoryThread) -> BaseVBoxMemoryList:
 	assert(false, "create_vbox_memory_list() must be implemented in derived class")
 	return null
+
+func _ready() -> void:
+	var container: = get_tab_container()
+	
+	container.child_exiting_tree.connect(_on_child_exiting_tree)
+
+# when a thread is deleted, emit the note deleted manually for each note that was deleted
+func _on_child_exiting_tree(node: Node):
+	if node.get_meta("thread"):
+		var thread: MemoryThread = node.get_meta("thread")
+
+		var notes_container: BaseVBoxMemoryList = node.get_node(thread.ThreadId)
+		
+		for note in notes_container.get_children():
+			if note is Note:
+				note.deleted.emit()
+
 
 ## Return a single large string of all active memories for the given provider.
 func to_prompt(provider: BaseProvider) -> Array[Variant]:
@@ -157,7 +175,7 @@ func add_note(user_title: String, user_content: String, is_completed: bool = tru
 	var active_thread: MemoryThread 
 	var current_tab_idx: int
 	var thread_list = get_thread_list()
-	
+
 	if thread_list.is_empty():
 		create_new_notes_tab()
 		
@@ -174,7 +192,7 @@ func add_note(user_title: String, user_content: String, is_completed: bool = tru
 	new_memory.Type = SingletonObject.note_type.TEXT
 	new_memory.ContentType = "text"
 	new_memory.Title = user_title
-	new_memory.Content = user_content           
+	new_memory.Content = user_content
 	new_memory.Visible = true
 	new_memory.isCompleted = is_completed
 	new_memory.isDrawer = false
@@ -188,6 +206,8 @@ func add_note(user_title: String, user_content: String, is_completed: bool = tru
 	
 	memories_updated.emit(active_thread)
 	save_data_if_needed()
+
+	print("HERE HERE")
 
 	return new_memory
 
@@ -265,7 +285,24 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	save_data_if_needed()
 
 	return new_memory
+
+func _wait_for_rendered_note(memory_item: MemoryItem, timeout: = 1.0) -> Note:
 	
+	var timer: = get_tree().create_timer(timeout)
+
+	while true:
+		var note: Note = await note_rendered
+
+		if note.memory_item == memory_item:
+			return note
+
+		if timer.time_left == 0:
+			break
+
+		await get_tree().process_frame
+
+	return null
+
 ## Creates a note without adding it to any thread.
 func create_note(title: String, type: SingletonObject.note_type = SingletonObject.note_type.TEXT) -> MemoryItem:
 	var new_memory: MemoryItem = MemoryItem.new()
@@ -348,7 +385,10 @@ func setup_thread_container(thread_item: MemoryThread):
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	# Create a custom VBoxContainer derived class
-	var vbox_memory_list = create_vbox_memory_list(thread_item)
+	var vbox_memory_list: = create_vbox_memory_list(thread_item)
+	vbox_memory_list.name = thread_item.ThreadId
+
+	# vbox_memory_list.tree_exiting.connect(_on_child_exiting_tree.bind(vbox_memory_list))
 
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vbox_memory_list)
