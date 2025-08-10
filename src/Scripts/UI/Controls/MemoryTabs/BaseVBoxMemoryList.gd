@@ -22,6 +22,7 @@ func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool 
 	
 	memory_tabs.memories_updated.connect(_on_memories_updated)
 
+
 #create a check button for toggling enabled notes 
 func initialize_disable_button() -> CheckButton:
 	disable_notes_button = CheckButton.new()
@@ -68,7 +69,6 @@ func _notification(notification_type):
 		NOTIFICATION_DRAG_END:
 			_update_memory_item_order()
 			
-			print("drag ended")
 			await render_items()
 
 func _on_memories_updated(thread: MemoryThread):
@@ -93,7 +93,6 @@ func render_items():
 		if child is Note:
 			if not memory_thread.MemoryItemList.has(child.memory_item):
 				remove_child(child)
-				prints("ADDED TO ORPHAN NOTES:", child)
 				orphan_notes.append(child) # dont delete the note, maybe it was just moved to another thread
 	
 	# now go over all memory items and check if there is a note for it
@@ -104,6 +103,7 @@ func render_items():
 
 		if not rendered_note:
 			rendered_note = await render_item(item, orphan_notes)
+			main_tab_container.note_rendered.emit(rendered_note)
 		
 		cached_notes[item] = rendered_note
 
@@ -162,6 +162,8 @@ func render_item(item: MemoryItem, orphan_notes: Array[Note] = []) -> Note:
 		func(on: bool):
 			SingletonObject.note_toggled.emit(note_control, on)
 	)
+
+	note_control.check_editor_association()
 
 	return note_control
 

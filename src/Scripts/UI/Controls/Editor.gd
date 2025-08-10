@@ -493,22 +493,28 @@ func _on_create_note_button_pressed() -> void:
 		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
 		
 	else:
+		var memory_item: MemoryItem = null
+
 		if Type.TEXT == type:
 			if file:
-				associated_object = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
+				memory_item = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
 			elif tab_title:
-				associated_object = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
+				memory_item = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
 			else:
-				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+				memory_item = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
 
 		if Type.GRAPHICS == type:
 			var editor_image = await graphics_editor.compose_final_image()
 			if tab_title:
-				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image)
+				memory_item = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image)
 			elif file:
-				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
+				memory_item = SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
 			else:
-				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", editor_image, "Sketch")
+				memory_item = SingletonObject.NotesTab.add_image_note("From file Editor", editor_image, "Sketch")
+
+		if memory_item:
+			var note: = await SingletonObject.NotesTab._wait_for_rendered_note(memory_item)
+			if note: note.associate_editor(self)
 
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 

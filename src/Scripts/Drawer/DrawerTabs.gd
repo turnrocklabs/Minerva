@@ -78,6 +78,7 @@ func delete_drawer_note(memory_item_UUID: String) -> void:
 	save_data_if_needed()
 
 func _ready():
+	super()
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	get_tab_bar().tab_clicked.connect(_on_drawer_tab_clicked)

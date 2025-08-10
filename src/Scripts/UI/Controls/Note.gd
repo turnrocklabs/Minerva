@@ -133,14 +133,7 @@ var memory_item: MemoryItem:
 		
 		v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
 
-		# If we create a note, open a editor associated with it and then rerender the memory_item
-		# that will create completely new Note node and break the connection between note and the editor.
-		# So here we check if there's editor associated with memory_item this note is rendering.
-
-		for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
-			if editor.associated_object is Note:
-				if editor.associated_object.memory_item.UUID == memory_item.UUID:
-					associate_editor(editor)
+		check_editor_association()
 		
 		changed.emit()
 
@@ -205,8 +198,8 @@ func _ready():
 	label_node.text_changed.connect(
 		func(text):
 			if memory_item: memory_item.Title = text
+			_update_note_editor_title()
 	)
-
 
 
 #method for changing the dots texture when the main theme changes
@@ -355,21 +348,32 @@ func _on_remove_button_pressed():
 	
 	deleted.emit()
 	
-	
 
 ## Connects this note and the given [parameter editor] and
 ## reflects note title changes into the tab title.
 func associate_editor(editor: Editor):
 	editor.associated_object = self
 
-	label_node.text_changed.connect(
-		func(text):
-			editor.tab_title = text
-	)
-
-	# set the editor so we know if we can close the editor if the note is deleted
 	set_meta("associated_editor", editor)
 
+func _update_note_editor_title():
+	
+	if has_meta("associated_editor"):
+		var editor: Editor = get_meta("associated_editor")
+		if editor:
+			editor.tab_title = label_node.text
+
+# If we create a note, open a editor associated with it and then rerender the memory_item
+# that will create completely new Note node and break the connection between note and the editor.
+# So here we check if there's editor associated with memory_item this note is rendering.
+func check_editor_association() -> Editor:
+	for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
+		if editor.associated_object is Note:
+			if editor.associated_object.memory_item.UUID == memory_item.UUID:
+				associate_editor(editor)
+				return editor
+	
+	return null
 
 func _on_edit_button_pressed():
 	var ep: EditorPane = SingletonObject.editor_container.editor_pane
@@ -390,12 +394,12 @@ func _on_edit_button_pressed():
 	if  memory_item.Type == SingletonObject.note_type.IMAGE:
 		SingletonObject.is_graph = true # this lines should be moved to the correct node rather that them being on SingletonObject
 		SingletonObject.is_picture = true
-		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note")
+		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note", self)
 		# if there is a file, Editor.gd will set it up automatically
 		if not memory_item.File:
 			editor.graphics_editor.create_new_image_layer(memory_item.Title, memory_item.MemoryImage.duplicate())
 	else:
-		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title)
+		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title, self)
 		
 		# Get the old text from the code_edit before replacing it
 		var old_text: String = editor.code_edit.text
