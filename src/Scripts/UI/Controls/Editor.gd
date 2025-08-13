@@ -482,14 +482,8 @@ func _on_save_button_pressed():
 
 func _on_create_note_button_pressed() -> void:
 
-	# breakpoint
-	print("\nSAVE")
-	prints(is_instance_valid(associated_object), associated_object is Note)
-	print(associated_object)
-	# prints(associated_object, associated_object.memory_item.UUID)
-
 	if is_instance_valid(associated_object) and associated_object is Note:
-		_update_memory_item(associated_object.memory_item)
+		await _update_memory_item(associated_object.memory_item)
 		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
 		
 	else:
@@ -506,7 +500,7 @@ func _on_create_note_button_pressed() -> void:
 		if Type.GRAPHICS == type:
 			var editor_image = await graphics_editor.compose_final_image()
 			if tab_title:
-				memory_item = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image)
+				memory_item = SingletonObject.NotesTab.add_image_note(tab_title, editor_image)
 			elif file:
 				memory_item = SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
 			else:

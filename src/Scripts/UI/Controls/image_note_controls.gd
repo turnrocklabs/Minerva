@@ -35,7 +35,7 @@ func set_note_image(image: Image) -> void:
 	downscaled_image.copy_from(image)
 	
 	downscaled_image = downscale_image(downscaled_image)
-	
+	print(downscaled_image.get_size())
 	var image_texture = ImageTexture.new()
 	image_texture.set_image(downscaled_image)
 	note_image.texture = image_texture

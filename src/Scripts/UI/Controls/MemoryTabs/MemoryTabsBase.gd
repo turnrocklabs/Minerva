@@ -273,6 +273,8 @@ func add_image_note(note_title: String, note_image: Image, imageCaption: String 
 	new_memory.MemoryImage = note_image
 	new_memory.ImageCaption = imageCaption
 	new_memory.Visible = true
+
+	print(note_image.get_size())
 	
 	# append the new memory item to the active thread memory list
 	active_thread.MemoryItemList.append(new_memory)

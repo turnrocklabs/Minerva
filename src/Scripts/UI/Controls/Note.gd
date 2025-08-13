@@ -81,11 +81,13 @@ var memory_item: MemoryItem:
 			
 			%EditButton.visible = SingletonObject.experimental_enabled
 			if value.MemoryImage:
+				print(value.MemoryImage.get_size())
 				var image_controls_inst: = SingletonObject.image_controls_scene.instantiate()
 				image_controls_inst.memory_item = value
 				v_box_container.add_child(image_controls_inst)
 				_temp_controls = [image_controls_inst]
 				control_type = image_controls_inst
+				image_controls_inst.size.y = 100
 				last_min_size = image_controls_inst.size.y
 		if memory_item.Type == SingletonObject.note_type.AUDIO:
 			var audio_control_inst: = SingletonObject.audio_contols_scene.instantiate()
@@ -394,7 +396,7 @@ func _on_edit_button_pressed():
 	if  memory_item.Type == SingletonObject.note_type.IMAGE:
 		SingletonObject.is_graph = true # this lines should be moved to the correct node rather that them being on SingletonObject
 		SingletonObject.is_picture = true
-		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, "Graphic Note", self)
+		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, memory_item.Title, self, false)
 		# if there is a file, Editor.gd will set it up automatically
 		if not memory_item.File:
 			editor.graphics_editor.create_new_image_layer(memory_item.Title, memory_item.MemoryImage.duplicate())
