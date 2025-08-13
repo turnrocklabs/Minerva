@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://b47xkyujp2kep"]
 
-[ext_resource type="Script" path="res://Scripts/Services/Providers/Core/dynamic_ui/image/image.gd" id="1_ep1eq"]
-[ext_resource type="Texture2D" uid="uid://bbl6ih4xfy8yi" path="res://icon.svg" id="2_q2vr7"]
+[ext_resource type="Script" uid="uid://cr8onpxkybinq" path="res://Scripts/Services/Providers/Core/dynamic_ui/image/image.gd" id="1_ep1eq"]
+[ext_resource type="Texture2D" uid="uid://ccsnuxldc2g20" path="res://icon.png" id="2_vqj1y"]
 
 [node name="Image" type="VBoxContainer"]
 anchors_preset = 15
@@ -34,7 +34,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 size_flags_vertical = 3
-texture = ExtResource("2_q2vr7")
+texture = ExtResource("2_vqj1y")
 expand_mode = 3
 stretch_mode = 5
 
