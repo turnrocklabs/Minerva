@@ -1,6 +1,9 @@
 class_name DrawingTool
 extends BaseTool
 
+# Signals
+signal pen_inverted_changed(is_inverted: bool)
+
 # Minimum pressure for feather-light touches
 const MIN_PRESSURE := 0.01
 
@@ -36,6 +39,7 @@ var _single_click: bool = false
 var _waiting_for_motion: bool = false
 var _saw_motion: bool = false
 var _use_pressure: bool = true  # false = treat as mouse/no-pressure this stroke
+var _pen_inverted: bool = false  # Track current pen inverted state
 
 # Performance optimizations
 var _circle_cache = {}
@@ -67,6 +71,18 @@ func _ready() -> void:
 
 func handle_input_event(event: InputEvent) -> bool:
 	if not editor.active_layer: return false
+	
+	# Check for pen inverted state on any motion event (even when not drawing)
+	if event is InputEventMouseMotion or event is InputEventScreenDrag:
+		var is_inverted = _is_pen_inverted(event)
+		
+		# Emit signal if pen inverted state changed
+		if is_inverted != _pen_inverted:
+			_pen_inverted = is_inverted
+			pen_inverted_changed.emit(is_inverted)
+			# Don't handle the event if we're switching to eraser
+			if is_inverted:
+				return false
 
 	event = editor.active_layer.localize_input(event)
 
@@ -122,6 +138,14 @@ func _pressure_from_event(ev: InputEvent) -> float:
 		# Some devices provide pressure on press/release
 		return clamp(ev.pressure, MIN_PRESSURE, 1.0)
 	return 1.0  # Default to full pressure for unknown event types (mouse)
+
+func _is_pen_inverted(event: InputEvent) -> bool:
+	# Check if the pen is inverted (eraser end)
+	if event is InputEventMouseMotion:
+		return event.pen_inverted
+	elif event is InputEventScreenDrag:
+		return event.pen_inverted
+	return false
 
 func _start_stroke(event: InputEvent) -> void:
 	drawing = true
