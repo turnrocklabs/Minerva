@@ -25,7 +25,7 @@ static func create(field_params: Dictionary, input: = true) -> ListField:
 	scn.ready.connect(
 		func():
 			scn._is_input = input
-			scn._field_params = field_params["values"]
+			scn._field_params = field_params["values"] if field_params.has("values") else field_params["items"]
 
 			scn._label.text = field_params["display_name"]
 
