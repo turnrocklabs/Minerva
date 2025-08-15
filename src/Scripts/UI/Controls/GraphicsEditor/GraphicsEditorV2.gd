@@ -97,9 +97,10 @@ func _ready() -> void:
 
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
-
+	# Create layers in order (first created appears at bottom in visual stack)
+	create_new_layer("Background", canvas_size_, Color.WHITE, false)
 	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
-	create_new_layer("Background", canvas_size_, Color.WHITE, true)
+	create_new_layer("Drawing", canvas_size_, Color.TRANSPARENT, true)  # Selected by default
 
 
 
