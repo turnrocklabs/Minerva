@@ -58,8 +58,14 @@ func get_provider_from_id(item_id: int) -> BaseProvider:
 func get_selected_provider() -> BaseProvider:
 	return get_provider_from_id(get_selected_id()) if selected != -1 else null
 
+var _core_actions: Array[Action] = []
 func _on_hcp_service_selected(service: Service, action: Action):
-	add_separator()
+	if _core_actions.is_empty():
+		add_separator()
+
+	if action in _core_actions:
+		print("Slected action is already present")
+		return
 
 	var idx: = item_count
 
@@ -69,4 +75,6 @@ func _on_hcp_service_selected(service: Service, action: Action):
 	add_item(item_name, idx)
 	set_item_tooltip(idx, service.name)
 	set_item_metadata(idx, [service, action])
+
+	_core_actions.append(action)
 	prints("added hcp item at index:", idx)
