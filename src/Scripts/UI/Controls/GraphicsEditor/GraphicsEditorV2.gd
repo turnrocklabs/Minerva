@@ -326,6 +326,7 @@ func _on_pen_inverted_changed(is_inverted: bool) -> void:
 		# Switch to eraser tool when pen is inverted
 		if active_tool != eraser_tool:
 			_previous_tool_before_eraser = active_tool
+			eraser_tool.set_activated_by_pen(true)  # Mark that eraser was activated by pen
 			active_tool = eraser_tool
 			# Update the UI to show eraser is selected
 			_tools_option_button.select(1)  # Index 1 is eraser
@@ -379,7 +380,11 @@ func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = pan_tool if toggled_on else null
 
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
-	active_tool = eraser_tool if toggled_on else null
+	if toggled_on:
+		eraser_tool.set_activated_by_pen(false)  # Mark that eraser was activated manually
+		active_tool = eraser_tool
+	else:
+		active_tool = null
 
 func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
 	if not toggled_on:

@@ -20,7 +20,8 @@ var brush_size: int:
 var _last_drawing_position: Vector2
 var drawing: = false
 var _single_click: bool = false
-var _pen_was_inverted: bool = true  # Track if we were in eraser mode via pen
+var _pen_was_inverted: bool = false  # Track if we were in eraser mode via pen
+var _activated_by_pen: bool = false  # Track if eraser was activated by pen inversion
 
 # Performance optimizations
 var _circle_cache = {}  # Cache circular brush patterns
@@ -37,6 +38,10 @@ func _ready() -> void:
 				var cursor_image = create_contrast_circle_cursor(cursor_radius)
 				var hotspot = Vector2(cursor_image.get_width(), cursor_image.get_height()) / 2
 				editor.set_custom_cursor(cursor_image, Input.CursorShape.CURSOR_ARROW, hotspot)
+			else:
+				# Reset pen activation state when tool is deselected
+				_activated_by_pen = false
+				_pen_was_inverted = false
 	)
 
 	_brush_size_slider.value_changed.connect(
@@ -59,16 +64,22 @@ func _is_pen_inverted(event: InputEvent) -> bool:
 		return event.pen_inverted
 	return false
 
+func set_activated_by_pen(activated: bool) -> void:
+	_activated_by_pen = activated
+	if activated:
+		_pen_was_inverted = true
+
 func handle_input_event(event: InputEvent) -> bool:
 	if not editor.active_layer: return false
 	
-	# Check for pen state changes - if pen is no longer inverted, signal to switch back
-	if event is InputEventMouseMotion or event is InputEventScreenDrag:
+	# Only check for pen state changes if we were activated by pen inversion
+	if _activated_by_pen and (event is InputEventMouseMotion or event is InputEventScreenDrag):
 		var is_inverted = _is_pen_inverted(event)
 		
 		# If pen was inverted but now it's not, emit signal to switch back
 		if _pen_was_inverted and not is_inverted:
 			pen_normal_detected.emit()
+			_activated_by_pen = false  # Reset for next time
 			return false  # Don't handle this event, let the drawing tool take over
 		
 		_pen_was_inverted = is_inverted
