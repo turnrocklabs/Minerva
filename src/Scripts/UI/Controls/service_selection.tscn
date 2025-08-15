@@ -56,13 +56,6 @@ size_flags_horizontal = 3
 layout_mode = 2
 text = "Available actions:"
 
-[node name="ActionOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/VBoxContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-item_count = 1
-popup/item_0/id = 0
-
 [node name="ActionItemList" type="ItemList" parent="VBoxContainer/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -93,6 +86,5 @@ disabled = true
 text = "Choose"
 
 [connection signal="item_selected" from="VBoxContainer/ScrollContainer/ItemList" to="." method="_on_item_list_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/HBoxContainer/VBoxContainer/ActionOptionButton" to="." method="_on_action_option_button_item_selected"]
 [connection signal="multi_selected" from="VBoxContainer/HBoxContainer/VBoxContainer/ActionItemList" to="." method="_on_action_item_list_multi_selected"]
 [connection signal="pressed" from="VBoxContainer/Button" to="." method="_on_button_pressed"]
