@@ -158,10 +158,15 @@ func estimate_tokens(input) -> int:
 
 func estimate_tokens_from_prompt(input: Array[Variant]):
 	var all_messages: Array[String] = []
+	
+	# TODO: This logic is totally busted. 
+	# just crashes when input not empty.
+	# and I don't know what it was trying to do.
+	# Disabled for now.
 
-	for msg: Dictionary in input:
-		for part in msg["parts"]:
-			if "text" in part: all_messages.append(part["text"])
+	#for msg: Dictionary in input:
+	#	for part in msg["parts"]:
+	#		if "text" in part: all_messages.append(part["text"])
 	
 	return estimate_tokens("".join(all_messages))
 

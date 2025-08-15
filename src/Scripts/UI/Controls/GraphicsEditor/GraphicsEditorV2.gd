@@ -79,6 +79,7 @@ var active_tool: BaseTool:
 		active_tool_changed.emit(value)
 
 var saved: = true
+var _previous_tool_before_eraser: BaseTool = null  # Store tool to return to after eraser mode
 
 func _ready() -> void:
 	
@@ -87,14 +88,19 @@ func _ready() -> void:
 	_tools_option_button.item_selected.emit(0)
 	compose_progress_updated.connect(_on_compose_progress)
 	compose_finished.connect(_on_compose_complete)
+	
+	# Connect pen inverted signals
+	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
+	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
 	# setup()
 
 
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
-
+	# Create layers in order (first created appears at bottom in visual stack)
+	create_new_layer("Background", canvas_size_, Color.WHITE, false)
 	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
-	create_new_layer("Background", canvas_size_, Color.WHITE, true)
+	create_new_layer("Drawing", canvas_size_, Color.TRANSPARENT, true)  # Selected by default
 
 
 
@@ -315,6 +321,40 @@ func _on_active_tool_changed(tool_: BaseTool) -> void:
 
 	if options: options.visible = true
 
+func _on_pen_inverted_changed(is_inverted: bool) -> void:
+	if is_inverted:
+		# Switch to eraser tool when pen is inverted
+		if active_tool != eraser_tool:
+			_previous_tool_before_eraser = active_tool
+			eraser_tool.set_activated_by_pen(true)  # Mark that eraser was activated by pen
+			active_tool = eraser_tool
+			# Update the UI to show eraser is selected
+			_tools_option_button.select(1)  # Index 1 is eraser
+	else:
+		# Switch back to previous tool when pen is normal
+		if active_tool == eraser_tool and _previous_tool_before_eraser:
+			active_tool = _previous_tool_before_eraser
+			# Update UI to show the previous tool
+			if _previous_tool_before_eraser == drawing_tool:
+				_tools_option_button.select(0)  # Brush
+			elif _previous_tool_before_eraser == bucket_tool:
+				_tools_option_button.select(2)  # Bucket
+			elif _previous_tool_before_eraser == smudge_tool:
+				_tools_option_button.select(3)  # Smudge
+			_previous_tool_before_eraser = null
+
+func _on_pen_normal_detected() -> void:
+	# Called when eraser tool detects pen is no longer inverted
+	if active_tool == eraser_tool and _previous_tool_before_eraser:
+		active_tool = _previous_tool_before_eraser
+		# Update UI to show the previous tool
+		if _previous_tool_before_eraser == drawing_tool:
+			_tools_option_button.select(0)  # Brush
+		elif _previous_tool_before_eraser == bucket_tool:
+			_tools_option_button.select(2)  # Bucket
+		elif _previous_tool_before_eraser == smudge_tool:
+			_tools_option_button.select(3)  # Smudge
+		_previous_tool_before_eraser = null
 
 func _on_new_layer_button_pressed() -> void:
 	# clear layers and create a new one
@@ -340,7 +380,11 @@ func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = pan_tool if toggled_on else null
 
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
-	active_tool = eraser_tool if toggled_on else null
+	if toggled_on:
+		eraser_tool.set_activated_by_pen(false)  # Mark that eraser was activated manually
+		active_tool = eraser_tool
+	else:
+		active_tool = null
 
 func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
 	if not toggled_on:
