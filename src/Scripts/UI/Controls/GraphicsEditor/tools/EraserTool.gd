@@ -1,6 +1,9 @@
 class_name EraserTool
 extends BaseTool
 
+# Signals
+signal pen_normal_detected()  # Emitted when pen is flipped back to normal
+
 @export var _brush_size_slider: Slider
 
 var brush_color: = Color.TRANSPARENT
@@ -17,6 +20,7 @@ var brush_size: int:
 var _last_drawing_position: Vector2
 var drawing: = false
 var _single_click: bool = false
+var _pen_was_inverted: bool = true  # Track if we were in eraser mode via pen
 
 # Performance optimizations
 var _circle_cache = {}  # Cache circular brush patterns
@@ -47,8 +51,27 @@ func _ready() -> void:
 	for r in range(1, min(30, _max_cached_radius)):
 		_get_cached_circle_pixels(r)
 
+func _is_pen_inverted(event: InputEvent) -> bool:
+	# Check if the pen is inverted (eraser end)
+	if event is InputEventMouseMotion:
+		return event.pen_inverted
+	elif event is InputEventScreenDrag:
+		return event.pen_inverted
+	return false
+
 func handle_input_event(event: InputEvent) -> bool:
 	if not editor.active_layer: return false
+	
+	# Check for pen state changes - if pen is no longer inverted, signal to switch back
+	if event is InputEventMouseMotion or event is InputEventScreenDrag:
+		var is_inverted = _is_pen_inverted(event)
+		
+		# If pen was inverted but now it's not, emit signal to switch back
+		if _pen_was_inverted and not is_inverted:
+			pen_normal_detected.emit()
+			return false  # Don't handle this event, let the drawing tool take over
+		
+		_pen_was_inverted = is_inverted
 	
 	event = editor.active_layer.localize_input(event)
 
