@@ -18,6 +18,9 @@ func get_vbox_scene():
 func create_vbox_memory_list(thread: MemoryThread):
 	return vboxMemoryList.new(self, thread, false)
 
+func save_data_if_needed():
+	SingletonObject.drawer_save_data.emit()
+
 ## Function:
 # attach_file creates a memory item/note from a file.  It can detect file type
 func attach_file(the_file: String):
@@ -171,7 +174,6 @@ func _ready():
 	super()
 	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
-	%tcThreadsDrawer.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(%tcThreadsDrawer))
 		
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS

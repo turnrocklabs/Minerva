@@ -45,8 +45,12 @@ func _ready():
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	get_tab_bar().tab_clicked.connect(_on_drawer_tab_clicked)
+	get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
+	# tcThreadsDrawer.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(tcThreadsDrawer))
 	
 	SingletonObject.DrawerTab = self
+	print("evo ga")
+	prints(SingletonObject.DrawerTab, self)
 	
 	SingletonObject.create_drawer_tab.connect(_on_btn_create_thread_pressed)
 	SingletonObject.deleted_drawer_note.connect(delete_drawer_note)
@@ -80,3 +84,5 @@ func _on_active_tab_rearranged(idx_to: int) -> void:
 	# Don't call render_threads() - not needed with new approach
 
 #endregion Tab signal methods
+
+
