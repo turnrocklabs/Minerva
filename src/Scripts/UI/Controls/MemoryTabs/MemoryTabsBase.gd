@@ -8,6 +8,11 @@ extends TabContainer
 signal memories_updated(thread: MemoryThread)
 signal note_rendered(note: Note)
 
+# If lock is set to true, notes WONT be saved.
+# used when the app is exiting so the saved notes dont get cleared
+# and nothing gets saved
+var lock: = false
+
 @onready var buffer_control_notes: Control = %BufferControlNotes
 var _drag_active := true
 
@@ -37,8 +42,13 @@ func _ready() -> void:
 	
 	container.child_exiting_tree.connect(_on_child_exiting_tree)
 
+	memories_updated.connect(
+		func(_thread: MemoryThread):
+			save_data_if_needed()
+	)
+
 # when a thread is deleted, emit the note deleted manually for each note that was deleted
-func _on_child_exiting_tree(node: Node):
+func _on_child_exiting_tree(node: Node):	
 	if node.get_meta("thread"):
 		var thread: MemoryThread = node.get_meta("thread")
 
@@ -130,6 +140,7 @@ func _on_btn_create_thread_pressed(tab_name: String, tab_ref: Control = null):
 		buffer_control_notes.hide()
 
 func create_new_notes_tab(tab_name: String = "Notes"):
+	print("CREATE NOTES TAB")
 	var thread = MemoryThread.new()
 	thread.ThreadName = tab_name_to_use(tab_name)
 	var thread_memories: Array[MemoryItem] = []
@@ -175,6 +186,12 @@ func add_note(user_title: String, user_content: String, is_completed: bool = tru
 	var active_thread: MemoryThread 
 	var current_tab_idx: int
 	var thread_list = get_thread_list()
+
+	prints("thread_list", thread_list.size())
+	print("=== ADD_NOTE CALLED ===")
+	print("Call stack:")
+	print(get_stack())
+	print("Thread list size: ", get_thread_list().size())
 
 	if thread_list.is_empty():
 		create_new_notes_tab()
@@ -402,6 +419,14 @@ func setup_thread_container(thread_item: MemoryThread):
 	
 	var tab_idx = tab_container.get_tab_idx_from_control(scroll_container)
 	tab_container.set_tab_title(tab_idx, thread_item.ThreadName)
+
+	thread_item.changed.connect(
+		func(prop_name: StringName):
+			if prop_name == &"ThreadName":
+				tab_container.set_tab_title(tab_idx, thread_item.ThreadName)
+	)
+
+
 
 func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)

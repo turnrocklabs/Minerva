@@ -301,7 +301,7 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		SingletonObject.drawer_save_data.emit()
+		SingletonObject.DrawerTab.lock = true
 		save_editor_panes()
 		
 

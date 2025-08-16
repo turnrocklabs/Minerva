@@ -18,64 +18,27 @@ func get_vbox_scene():
 	return vboxDrawerList_scene
 
 func save_data_if_needed():
+	print("save_data_if_needed")
 	SingletonObject.drawer_save_data.emit()
 
 func create_vbox_memory_list(thread: MemoryThread):
 	return vboxDrawerList_scene.new(self, thread, true)
 
-# Override create_new_notes_tab to use the new_tab flag (if still needed)
-func create_new_notes_tab(tab_name: String = "Notes"):
-	var thread = MemoryThread.new()
-	thread.ThreadName = tab_name_to_use(tab_name)
-	var thread_memories: Array[MemoryItem] = []
-	thread.MemoryItemList = thread_memories
-	get_thread_list().append(thread)
-	save_data_if_needed()
-	setup_thread_container(thread)
-
-# Remove old rendering approach - now handled by VBox
-# render_threads() and render_thread() are no longer needed
-
-# Override add_note to handle drawer-specific logic
 func add_note(user_title: String, user_content: String, is_completed: bool = true, _source: String = "") -> MemoryItem:
-	var active_thread: MemoryThread 
-	var current_tab_idx: int
-	if get_thread_list().is_empty():
-		create_new_notes_tab("Notes 1")
-			
-	current_tab_idx = current_tab
-	if current_tab_idx < 0:  # If no tab is selected, use the first one
-		current_tab_idx = 0
-			
-	active_thread = get_thread_list()[current_tab]
-	
-	# Create a memory item.
-	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
-	new_memory.UUID = SingletonObject.generate_UUID()
-	new_memory.Enabled = false
-	new_memory.Type = SingletonObject.note_type.TEXT
-	new_memory.ContentType = "text"
-	new_memory.Title = user_title
-	new_memory.Content = user_content           
-	new_memory.Visible = true
-	new_memory.isCompleted = true
-	new_memory.isDrawer = false
-	# append the new memory item to the active thread memory list
-	active_thread.MemoryItemList.append(new_memory)
-	# Don't call render_threads() - let the VBox handle rendering
-	memories_updated.emit(active_thread)
-	save_data_if_needed()
+	var new_memory = super(user_title, user_content, is_completed, _source)
+	new_memory.isDrawer = true
 	return new_memory
 
-func delete_drawer_note(memory_item_UUID: String) -> void:
+func delete_drawer_note(memory_item_UUID: String) -> void:	
 	var active_thread: MemoryThread = get_thread_list()[self.current_tab]
 	
 	for i in active_thread.MemoryItemList:
 		if i.UUID == memory_item_UUID:
+			print("Found item to delete: ", i.Title)
 			active_thread.MemoryItemList.erase(i)
 			break
 	
-	save_data_if_needed()
+	print("Items after delete: ", active_thread.MemoryItemList.size())
 
 func _ready():
 	super()

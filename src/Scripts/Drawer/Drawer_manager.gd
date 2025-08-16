@@ -2,273 +2,239 @@ extends Control
 class_name Drawer_manager
 
 var data_path: String = "user://drawer_data.json"
-var last_saved_data: Dictionary = {}  # Holds the last saved data for comparison
 
 func _ready() -> void:
+	# Load data on startup
+	load_drawer_data()
 	
-	SingletonObject.connect("openDrawerNotes",_render_drawer)
-	
-	SingletonObject.connect("drawer_save_data",_drawer_save_data)
+	# Connect save signal
+	SingletonObject.connect("drawer_save_data", save_drawer_data)
 
+## Main save function - called by signal
+func save_drawer_data() -> void:
+	print("\n\n")
+	print("SAVE DRAWER NOTES")
+	print_stack()
 
-func _drawer_save_data() -> void:
-	save_notes(data_path)
-
-
-func save_notes(path: String = "") -> void:
-	var notes_data = serialize_notes()
-	
-	var file = FileAccess.open(path, FileAccess.WRITE)
-	if file != null:
-		if file:
-			file.store_line(JSON.stringify(notes_data, "\t"))
-			file.close()
-			last_saved_data = notes_data  # Update last saved data
-			if OS.is_debug_build():
-				print("Notes saved successfully to: ", path)
-		else:
-			if OS.is_debug_build():
-				push_error("Failed to save notes to ", path, ". Error: ", FileAccess.get_open_error())
-
-
-func load_notes(path: String) -> void:
-	if not FileAccess.file_exists(path):
+	if SingletonObject.DrawerTab.lock:
 		return
-	
-	var file = FileAccess.open(path, FileAccess.READ)
-	if file:
-		var json_text = file.get_as_text()
-		file.close()
-		
-		var json = JSON.parse_string(json_text)
-		if json is Dictionary:
-			last_saved_data = json  # Store loaded data for comparison
-			deserialize_notes(json)
-		else:
-			push_error("Failed to parse JSON data from ", path)
-	else:
-		push_error("Failed to open file ", path, ". Error: ", FileAccess.get_open_error())
 
-# New function to get current data from memory
-func get_current_data() -> Dictionary:
-	return serialize_notes()
+	var serialized_data = serialize_drawer_data()
+	write_data_to_file(serialized_data)
 
-# New function to get saved data from file
-func get_saved_data(path: String) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		push_warning("File does not exist: ", path)
-		return {}
-	
-	var file = FileAccess.open(path, FileAccess.READ)
-	if file:
-		var json_text = file.get_as_text()
-		file.close()
-		
-		var json = JSON.parse_string(json_text)
-		if json is Dictionary:
-			return json
-		else:
-			push_error("Failed to parse JSON data from ", path)
-			return {}
-	else:
-		push_error("Failed to open file ", path, ". Error: ", FileAccess.get_open_error())
-		return {}
-
-func serialize_notes() -> Dictionary:
-	var notes_data: Array[Dictionary] = []
+## Serialize drawer threads and notes to dictionary
+func serialize_drawer_data() -> Dictionary:
+	var drawer_data: Array[Dictionary] = []
 	
 	for thread in SingletonObject.DrawerThreadList:
 		var thread_data = {
 			"ThreadId": thread.ThreadId,
 			"ThreadName": thread.ThreadName,
-			"MemoryItemList": []
+			"MemoryItemList": serialize_memory_items(thread.MemoryItemList)
 		}
-		
-		for memory_item in thread.MemoryItemList:
-			var memory_data = {
-				"UUID": memory_item.UUID,
-				"Enabled": memory_item.Enabled,
-				"File": memory_item.File,
-				"Locked": memory_item.Locked,
-				"Title": memory_item.Title,
-				"Content": memory_item.Content,
-				"Type": memory_item.Type,
-				"ContentType": memory_item.ContentType,
-				"ImageCaption": memory_item.ImageCaption,
-				"Visible": memory_item.Visible,
-				"Pinned": memory_item.Pinned,
-				"Order": memory_item.Order,
-				"OwningThread": memory_item.OwningThread,
-				"Expanded": memory_item.Expanded,
-				"LastYSize": memory_item.LastYSize,
-				"isDrawer": memory_item.isDrawer
-			}
-			
-			# Handle image data
-			if memory_item.Type == SingletonObject.note_type.IMAGE and memory_item.MemoryImage:
-				var image = memory_item.MemoryImage
-				var buffer = image.save_png_to_buffer()
-				memory_data["ImageData"] = Marshalls.raw_to_base64(buffer)
-			
-			# Handle audio data - only save if it's a WAV or MP3
-			if memory_item.Type == SingletonObject.note_type.AUDIO and memory_item.Audio:
-				if memory_item.Audio is AudioStreamWAV:
-					memory_data["AudioFormat"] = "wav"
-					memory_data["AudioData"] = Marshalls.raw_to_base64(memory_item.Audio.data)
-					# Save additional WAV properties
-					memory_data["AudioMixRate"] = memory_item.Audio.mix_rate
-					memory_data["AudioStereo"] = memory_item.Audio.stereo
-					memory_data["AudioFormatEnum"] = memory_item.Audio.format
-				elif memory_item.Audio is AudioStreamMP3:
-					memory_data["AudioFormat"] = "mp3"
-					memory_data["AudioData"] = Marshalls.raw_to_base64(memory_item.Audio.data)
-					# Save additional MP3 properties
-					memory_data["AudioBPM"] = memory_item.Audio.bpm
-					memory_data["AudioBeatCount"] = memory_item.Audio.beat_count
-					memory_data["AudioBarBeats"] = memory_item.Audio.bar_beats
-					memory_data["AudioLoop"] = memory_item.Audio.loop
-					memory_data["AudioLoopOffset"] = memory_item.Audio.loop_offset
-				# Skip OGG as it's more complex to serialize
-			
-			thread_data["MemoryItemList"].append(memory_data)
-		
-		notes_data.append(thread_data)
+		drawer_data.append(thread_data)
 	
 	return {
 		"version": 1,
-		"last_updated": Time.get_datetime_string_from_system(),
-		"notes": notes_data,
-		"note_count": notes_data.size()
+		"timestamp": Time.get_datetime_string_from_system(),
+		"drawer_threads": drawer_data
 	}
 
-func deserialize_notes(data: Dictionary) -> void:
-	if not data.has("notes"):
-		push_error("Invalid data format - missing 'notes' key")
+## Serialize array of memory items
+func serialize_memory_items(memory_items: Array[MemoryItem]) -> Array[Dictionary]:
+	var items_data: Array[Dictionary] = []
+	print("Created empty items_data array")
+	
+	for i in range(memory_items.size()):
+		var item = memory_items[i]
+		print("Processing item ", i, ": ", item.Title)
+		
+		var item_data = {
+			"UUID": item.UUID,
+			"Title": item.Title,
+			"Content": item.Content,
+			"Type": item.Type,
+			"ContentType": item.ContentType,
+			"Enabled": item.Enabled,
+			"Visible": item.Visible,
+			"Order": item.Order,
+			"OwningThread": item.OwningThread,
+			"isDrawer": item.isDrawer
+		}
+		print("Created basic item_data with keys: ", item_data.keys())
+		
+		# Handle type-specific data
+		match item.Type:
+			SingletonObject.note_type.IMAGE:
+				print("Processing IMAGE type")
+				if item.MemoryImage:
+					var buffer = item.MemoryImage.save_png_to_buffer()
+					item_data["ImageData"] = Marshalls.raw_to_base64(buffer)
+					item_data["ImageCaption"] = item.ImageCaption
+					print("Added image data")
+			
+			SingletonObject.note_type.AUDIO:
+				print("Processing AUDIO type")
+				if item.Audio:
+					if item.Audio is AudioStreamWAV:
+						item_data["AudioFormat"] = "wav"
+						item_data["AudioData"] = Marshalls.raw_to_base64(item.Audio.data)
+						item_data["AudioMixRate"] = item.Audio.mix_rate
+						item_data["AudioStereo"] = item.Audio.stereo
+						item_data["AudioFormatEnum"] = item.Audio.format
+						print("Added WAV audio data")
+					elif item.Audio is AudioStreamMP3:
+						item_data["AudioFormat"] = "mp3"
+						item_data["AudioData"] = Marshalls.raw_to_base64(item.Audio.data)
+						print("Added MP3 audio data")
+			_:
+				print("Processing TEXT or other type")
+		
+		items_data.append(item_data)
+		print("items_data size after append: ", items_data.size())
+	
+	return items_data
+
+## Write serialized data to file
+func write_data_to_file(data: Dictionary) -> void:
+	var file = FileAccess.open(data_path, FileAccess.WRITE)
+	if file:
+		file.store_line(JSON.stringify(data, "\t"))
+		file.close()
+		print("Drawer data saved successfully")
+	else:
+		push_error("Failed to save drawer data: " + str(FileAccess.get_open_error()))
+
+## Main load function
+func load_drawer_data() -> void:
+	if not FileAccess.file_exists(data_path):
+		print("No drawer data file found - starting fresh")
 		return
 	
-	# Clear existing data
+	var data = read_data_from_file()
+	if data.is_empty():
+		return
+		
+	deserialize_drawer_data(data)
+
+## Read and parse data from file
+func read_data_from_file() -> Dictionary:
+	var file = FileAccess.open(data_path, FileAccess.READ)
+	if not file:
+		push_error("Failed to open drawer data file: " + str(FileAccess.get_open_error()))
+		return {}
+	
+	var json_text = file.get_as_text()
+	file.close()
+	
+	var json = JSON.parse_string(json_text)
+	if not json is Dictionary:
+		push_error("Invalid JSON in drawer data file")
+		return {}
+	
+	return json
+
+## Deserialize data and create UI
+func deserialize_drawer_data(data: Dictionary) -> void:
+	if not data.has("drawer_threads"):
+		print("No drawer threads found in data")
+		return
+	
+	# Clear existing data and UI
 	SingletonObject.DrawerThreadList.clear()
-	
-	for thread_data in data["notes"]:
-		var thread = MemoryThread.new()
-		thread.ThreadId = thread_data.get("ThreadId", str(randi()))
-		thread.ThreadName = thread_data.get("ThreadName", "Thread " + str(randi() % 1000))
-		
-		if thread_data.has("MemoryItemList"):
-			for memory_data in thread_data["MemoryItemList"]:
-				var memory_item = MemoryItem.new(thread.ThreadId)
-				memory_item.UUID = memory_data.get("UUID", str(randi()))
-				memory_item.Enabled = memory_data.get("Enabled", false)
-				memory_item.File = memory_data.get("File", "")
-				memory_item.Locked = memory_data.get("Locked", false)
-				memory_item.Title = memory_data.get("Title", "")
-				memory_item.Content = memory_data.get("Content", "")
-				memory_item.Type = memory_data.get("Type", 0)
-				memory_item.ContentType = memory_data.get("ContentType", "text")
-				memory_item.ImageCaption = memory_data.get("ImageCaption", "")
-				memory_item.Visible = memory_data.get("Visible", true)
-				memory_item.Pinned = memory_data.get("Pinned", false)
-				memory_item.Order = memory_data.get("Order", 0)
-				memory_item.OwningThread = memory_data.get("OwningThread", thread.ThreadId)
-				memory_item.Expanded = memory_data.get("Expanded", true)
-				memory_item.LastYSize = memory_data.get("LastYSize", 100.0)
-				
-				# Handle image data
-				if memory_data.has("ImageData"):
-					var buffer = Marshalls.base64_to_raw(memory_data["ImageData"])
-					var image = Image.new()
-					if image.load_png_from_buffer(buffer) == OK:
-						memory_item.MemoryImage = image
-				
-				# Handle audio data
-				if memory_data.has("AudioData") and memory_data.has("AudioFormat"):
-					var buffer = Marshalls.base64_to_raw(memory_data["AudioData"])
-					match memory_data["AudioFormat"]:
-						"wav":
-							var audio = AudioStreamWAV.new()
-							audio.data = buffer
-							# Restore WAV properties
-							audio.mix_rate = memory_data.get("AudioMixRate", 44100)
-							audio.stereo = memory_data.get("AudioStereo", true)
-							audio.format = memory_data.get("AudioFormatEnum", AudioStreamWAV.FORMAT_16_BITS)
-							memory_item.Audio = audio
-						"mp3":
-							var audio = AudioStreamMP3.new()
-							audio.data = buffer
-							# Restore MP3 properties
-							audio.bpm = memory_data.get("AudioBPM", 125.0)
-							audio.beat_count = memory_data.get("AudioBeatCount", 4)
-							audio.bar_beats = memory_data.get("AudioBarBeats", 4)
-							audio.loop = memory_data.get("AudioLoop", false)
-							audio.loop_offset = memory_data.get("AudioLoopOffset", 0.0)
-							memory_item.Audio = audio
-						# OGG is not handled here as per your request
-				
-				thread.MemoryItemList.append(memory_item)
-		
-		SingletonObject.DrawerThreadList.append(thread)
-	
-	# Force UI update
 	if SingletonObject.DrawerTab:
 		SingletonObject.DrawerTab.clear_all_tabs()
-		SingletonObject.DrawerTab.render_threads()
-
-func _render_drawer() -> void:
-	load_notes(data_path)
-
-
-# New function to compare two data sets
-func compare_data(data1: Dictionary, data2: Dictionary) -> bool:
-	# Simple comparison - you might want to make this more sophisticated
-	# For example, by comparing only the relevant fields
 	
-	# Quick check for empty data
-	if data1.is_empty() or data2.is_empty():
-		return false
+	# Load each thread
+	for thread_data in data["drawer_threads"]:
+		var thread = create_thread_from_data(thread_data)
+		if thread:
+			# Add to data model
+			SingletonObject.DrawerThreadList.append(thread)
+			
+			# Create UI tab for this thread
+			if SingletonObject.DrawerTab:
+				SingletonObject.DrawerTab.setup_thread_container(thread)
+				
+				# THIS IS MISSING - trigger rendering of loaded notes
+				SingletonObject.DrawerTab.memories_updated.emit(thread)
+
+			
+
+## Create a MemoryThread from serialized data
+func create_thread_from_data(thread_data: Dictionary) -> MemoryThread:
+	var thread = MemoryThread.new()
+	thread.ThreadId = thread_data.get("ThreadId", generate_thread_id())
+	thread.ThreadName = thread_data.get("ThreadName", "Drawer Tab")
 	
-	# Compare basic structure
-	if data1.get("note_count", 0) != data2.get("note_count", 0):
-		return false
+	# Load memory items
+	if thread_data.has("MemoryItemList"):
+		for item_data in thread_data["MemoryItemList"]:
+			var memory_item = create_memory_item_from_data(item_data, thread.ThreadId)
+			if memory_item:
+				thread.MemoryItemList.append(memory_item)
 	
-	# Compare each thread and memory item
-	if data1.has("notes") and data2.has("notes"):
-		var notes1 = data1["notes"]
-		var notes2 = data2["notes"]
+	return thread
+
+## Create a MemoryItem from serialized data
+func create_memory_item_from_data(item_data: Dictionary, thread_id: String) -> MemoryItem:
+	var item = MemoryItem.new(thread_id)
+	
+	# Basic properties
+	item.UUID = item_data.get("UUID", SingletonObject.generate_UUID())
+	item.Title = item_data.get("Title", "")
+	item.Content = item_data.get("Content", "")
+	item.Type = item_data.get("Type", SingletonObject.note_type.TEXT)
+	item.ContentType = item_data.get("ContentType", "text")
+	item.Enabled = item_data.get("Enabled", false)
+	item.Visible = item_data.get("Visible", true)
+	item.Order = item_data.get("Order", 0)
+	item.OwningThread = item_data.get("OwningThread", thread_id)
+	item.isDrawer = item_data.get("isDrawer", true)
+	
+	# Handle type-specific data
+	match item.Type:
+		SingletonObject.note_type.IMAGE:
+			if item_data.has("ImageData"):
+				var buffer = Marshalls.base64_to_raw(item_data["ImageData"])
+				var image = Image.new()
+				if image.load_png_from_buffer(buffer) == OK:
+					item.MemoryImage = image
+			item.ImageCaption = item_data.get("ImageCaption", "")
 		
-		if notes1.size() != notes2.size():
-			return false
-			
-		for i in notes1.size():
-			var thread1 = notes1[i]
-			var thread2 = notes2[i]
-			
-			# Compare thread properties
-			if thread1.get("ThreadId") != thread2.get("ThreadId") or \
-			   thread1.get("ThreadName") != thread2.get("ThreadName"):
-				return false
-				
-			# Compare memory items
-			var items1 = thread1.get("MemoryItemList", [])
-			var items2 = thread2.get("MemoryItemList", [])
-			
-			if items1.size() != items2.size():
-				return false
-				
-			for j in items1.size():
-				var item1 = items1[j]
-				var item2 = items2[j]
-				
-				# Compare key properties of memory items
-				if item1.get("UUID") != item2.get("UUID") or \
-				   item1.get("Title") != item2.get("Title") or \
-				   item1.get("Content") != item2.get("Content") or \
-				   item1.get("Type") != item2.get("Type"):
-					return false
+		SingletonObject.note_type.AUDIO:
+			if item_data.has("AudioData") and item_data.has("AudioFormat"):
+				var buffer = Marshalls.base64_to_raw(item_data["AudioData"])
+				match item_data["AudioFormat"]:
+					"wav":
+						var audio = AudioStreamWAV.new()
+						audio.data = buffer
+						audio.mix_rate = item_data.get("AudioMixRate", 44100)
+						audio.stereo = item_data.get("AudioStereo", true)
+						audio.format = item_data.get("AudioFormatEnum", AudioStreamWAV.FORMAT_16_BITS)
+						item.Audio = audio
+					"mp3":
+						var audio = AudioStreamMP3.new()
+						audio.data = buffer
+						item.Audio = audio
 	
-	return true
+	return item
+
+## Generate a unique thread ID
+func generate_thread_id() -> String:
+	return "drawer_thread_" + str(Time.get_unix_time_from_system()) + "_" + str(randi())
+
+## UI Event Handlers
+func _on_add_note_pressed() -> void:
+	%CreateNewNote.popup_centered()
+	%CreateNewNote.isDrawer = true
+
+func _on_add_shelf_pressed() -> void:
+	%NewThreadPopup.popup_centered()
+	%NewThreadPopup.isDrawer = true
 
 func _on_save_pressed() -> void:
-	save_notes(data_path)
+	save_drawer_data()
 	$"..".hide()
 	$"../CloseActions".hide()
 
@@ -278,13 +244,3 @@ func _on_close_pressed() -> void:
 func _on_exit_pressed() -> void:
 	$"../CloseActions".hide()
 	$"..".hide()
-
-
-func _on_add_note_pressed() -> void:
-	%CreateNewNote.popup_centered()
-	%CreateNewNote.isDrawer = true
-
-
-func _on_add_shelf_pressed() -> void:
-	%NewThreadPopup.popup_centered()
-	%NewThreadPopup.isDrawer = true

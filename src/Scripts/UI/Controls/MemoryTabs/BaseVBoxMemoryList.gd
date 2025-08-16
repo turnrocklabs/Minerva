@@ -18,7 +18,7 @@ func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool 
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	
-	is_drawer_list = is_drawer 
+	is_drawer_list = is_drawer
 	
 	memory_tabs.memories_updated.connect(_on_memories_updated)
 
@@ -72,16 +72,18 @@ func _notification(notification_type):
 			await render_items()
 
 func _on_memories_updated(thread: MemoryThread):
+	print("\nMEMORIES UPDATE HERE")
 	if thread.ThreadId == memory_thread.ThreadId:
 		prints("Memories updated for thread:", thread)
 		await render_items()
+		
 
 ## Goes over all memory items in this containers thread[br]
 ## and renders the new ones and removes the ones that no longer exist.
 func render_items():
 	print("render items")
 	print(memory_thread.MemoryItemList)
-	
+
 	# cache the note related to each memory_item
 	var cached_notes: Dictionary = {}
 
@@ -228,6 +230,8 @@ func _drop_data(_at_position: Vector2, data):
 		target_drawer_thread.MemoryItemList.insert(0, data.memory_item)
 		data.memory_item.OwningThread = target_drawer_thread.ThreadId
 		dragged_note_drawer_thread.MemoryItemList.erase(data.memory_item)
+
+		main_tab_container.save_data_if_needed()
 		
 	elif target_thread and dragged_note_drawer_thread:
 		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
@@ -237,6 +241,8 @@ func _drop_data(_at_position: Vector2, data):
 			main_tab_container.add_audio_note(data.memory_item.Title, data.memory_item.Audio)
 		elif data.memory_item.Type == 2:
 			main_tab_container.add_image_note(data.memory_item.Title, data.memory_item.MemoryImage, data.memory_item.ImageCaption)
+		
+		main_tab_container.save_data_if_needed()
 			
 	elif target_drawer_thread and dragged_note_thread:
 		SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
