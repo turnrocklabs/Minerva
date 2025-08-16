@@ -498,7 +498,7 @@ func _on_tab_clicked(tab: int, container: TabContainer = null):
 		container = get_tab_container()
 	last_clicked_container = container
 	
-	if clicked > -1:
+	if clicked > -1 and temp_current_tab == tab:
 		var tab_title = container.get_tab_bar().get_tab_title(tab)
 		open_threads_popup(tab_title, tab)
 		return
