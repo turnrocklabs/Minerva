@@ -207,13 +207,13 @@ func to_bot_response(data: Variant) -> BotResponse:
 	
 	return response
 
-class Opus4 extends ClaudeSonnet:
+class Opus4_1 extends ClaudeSonnet:
 	func _init():
 		super()
-		self.api_model_id = "claude-opus-4-0"
+		self.api_model_id = "claude-opus-4-1"
 		self.max_tokens = 32000
 
-		model_name = "claude-opus-4"
+		model_name = "claude-opus-4-1"
 		short_name = "CO"
 		token_cost = 1.1 / 1_000_000 * 100
 
