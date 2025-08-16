@@ -31,7 +31,7 @@ func get_vbox_scene():
 
 func save_data_if_needed():
 	# Override in derived classes if needed
-	pass
+	print("SAVED HERE??")
 
 func create_vbox_memory_list(thread: MemoryThread) -> BaseVBoxMemoryList:
 	assert(false, "create_vbox_memory_list() must be implemented in derived class")
@@ -443,10 +443,17 @@ func _on_close_tab(tab: int, container: TabContainer):
 		SingletonObject.undo.store_deleted_tab_right(tab, control, "right")
 	
 	# Remove the tab control from the TabContainer
-	container.remove_child(control) 
+	container.remove_child(control)
 	
 	if get_tab_count() < 1:
 		buffer_control_notes.show()
+	
+	print("\nDELETED A TAB DRAWER")
+
+	print("evo ga opet")
+	prints(SingletonObject.DrawerTab, self)
+
+	save_data_if_needed()
 
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:
