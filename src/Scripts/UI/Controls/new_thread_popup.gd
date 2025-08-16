@@ -32,7 +32,7 @@ func _on_btn_voice_for_note_tab_pressed():
 	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 
 func _on_btn_create_thread_pressed() -> void:
-	if isDrawer:
+	if isDrawer: # TODO
 		SingletonObject.create_drawer_tab.emit(%txtNewTabName.text,tab_reference)
 	else:
 		SingletonObject.create_notes_tab.emit(%txtNewTabName.text,tab_reference)

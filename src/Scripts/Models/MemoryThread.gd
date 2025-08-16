@@ -1,6 +1,8 @@
 class_name MemoryThread
 extends RefCounted
 
+signal changed(property: StringName)
+
 static var SERIALIZER_FIELDS = ["ThreadId", "ThreadName", "MemoryItemList"]
 
 var ThreadId: String:
@@ -8,24 +10,27 @@ var ThreadId: String:
 		if SingletonObject.DrawerThreadList: 
 			SingletonObject.save_state(true); 
 		else:
-			SingletonObject.save_state(false); 
+			SingletonObject.save_state(false);
 		ThreadId = value
+		changed.emit(&"ThreadId")
 
 var ThreadName: String:
 	set(value):
 		if SingletonObject.DrawerThreadList: 
 			SingletonObject.save_state(true); 
 		else:
-			SingletonObject.save_state(false); 
+			SingletonObject.save_state(false);
 		ThreadName = value
+		changed.emit(&"ThreadName")
 
 var MemoryItemList: Array[MemoryItem]:
 	set(value):
 		if SingletonObject.DrawerThreadList: 
 			SingletonObject.save_state(true); 
 		else:
-			SingletonObject.save_state(false);  
+			SingletonObject.save_state(false);
 		MemoryItemList = value
+		changed.emit(&"MemoryItemList")
 
 
 # initialize with a new ThreadId
