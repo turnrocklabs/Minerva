@@ -392,6 +392,10 @@ func delete_note(memory_item: MemoryItem):
 func render_threads():
 	# Empty - we don't use this approach anymore
 	# Notes are rendered through the improved VBox system
+	for i in SingletonObject.NotesTab.get_children():
+		i.queue_free()
+	for i in SingletonObject.ThreadList:
+		setup_thread_container(i)
 	pass
 
 func setup_thread_container(thread_item: MemoryThread):
@@ -411,6 +415,7 @@ func setup_thread_container(thread_item: MemoryThread):
 
 	# Add VBoxContainer as a child of the ScrollContainer
 	scroll_container.add_child(vbox_memory_list)
+	vbox_memory_list.render_items()
 	
 	scroll_container.set_meta("thread", thread_item) # when the tab is deleted we need to know which thread item to delete
 	
@@ -425,7 +430,6 @@ func setup_thread_container(thread_item: MemoryThread):
 			if prop_name == &"ThreadName":
 				tab_container.set_tab_title(tab_idx, thread_item.ThreadName)
 	)
-
 
 
 func _on_close_tab(tab: int, container: TabContainer):
@@ -471,7 +475,7 @@ func restore_deleted_tab(tab_name: String):
 
 		# Remove the data from the deleted_tabs dictionary.
 		SingletonObject.undo.deleted_tabs.erase(tab_name)
-	
+
 func _memory_thread_find(thread_id: String) -> MemoryThread:
 	return get_thread_list().filter(
 		func(t: MemoryThread):

@@ -84,5 +84,3 @@ func _on_active_tab_rearranged(idx_to: int) -> void:
 	# Don't call render_threads() - not needed with new approach
 
 #endregion Tab signal methods
-
-

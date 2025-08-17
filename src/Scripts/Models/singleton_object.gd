@@ -1,7 +1,7 @@
 extends Node
 
 #region global variables
-#	Suported video format MIME types by GoogleAI see: https://ai.google.dev/gemini-api/docs/vision?lang=python
+# Suported video format MIME types by GoogleAI see: https://ai.google.dev/gemini-api/docs/vision?lang=python
 var google_supported_video_formats: = { 
 	"mp4": "video/mp4", 
 	"mpeg": "video/mpeg", 
@@ -161,8 +161,9 @@ signal create_drawer_tab
 
 var notes_draw_state: int
 
-
+## THis variable stores the notes tabs threads
 var ThreadList: Array[MemoryThread]
+## THis variable stores the Drawers notes tabs threads
 var DrawerThreadList: Array[MemoryThread]
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
