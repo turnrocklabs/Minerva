@@ -1,6 +1,12 @@
 class_name DrawingTool
 extends BaseTool
 
+# Signals
+signal pen_inverted_changed(is_inverted: bool)
+
+# Minimum pressure for feather-light touches
+const MIN_PRESSURE := 0.01
+
 @export var _color_picker_button: ColorPickerButton
 @export var _brush_size_slider: Slider
 
@@ -30,6 +36,10 @@ var _last_pressure: float = 1.0
 var _smoothed_pressure: float = 1.0
 var _pressure_smoothing_factor: float = 0.3
 var _single_click: bool = false
+var _waiting_for_motion: bool = false
+var _saw_motion: bool = false
+var _use_pressure: bool = true  # false = treat as mouse/no-pressure this stroke
+var _pen_inverted: bool = false  # Track current pen inverted state
 
 # Performance optimizations
 var _circle_cache = {}
@@ -61,6 +71,18 @@ func _ready() -> void:
 
 func handle_input_event(event: InputEvent) -> bool:
 	if not editor.active_layer: return false
+	
+	# Check for pen inverted state on any motion event (even when not drawing)
+	if event is InputEventMouseMotion or event is InputEventScreenDrag:
+		var is_inverted = _is_pen_inverted(event)
+		
+		# Emit signal if pen inverted state changed
+		if is_inverted != _pen_inverted:
+			_pen_inverted = is_inverted
+			pen_inverted_changed.emit(is_inverted)
+			# Don't handle the event if we're switching to eraser
+			if is_inverted:
+				return false
 
 	event = editor.active_layer.localize_input(event)
 
@@ -107,12 +129,39 @@ func get_actual_brush_radius(pressure: float) -> int:
 	var radius = int(ceil(actual_diameter * 0.5))
 	return max(radius, 1)
 
+func _pressure_from_event(ev: InputEvent) -> float:
+	if ev is InputEventScreenDrag:
+		return clamp(ev.pressure, MIN_PRESSURE, 1.0)
+	elif ev is InputEventMouseMotion:
+		return clamp(ev.pressure, MIN_PRESSURE, 1.0)
+	elif ev is InputEventScreenTouch:
+		# Some devices provide pressure on press/release
+		return clamp(ev.pressure, MIN_PRESSURE, 1.0)
+	return 1.0  # Default to full pressure for unknown event types (mouse)
+
+func _is_pen_inverted(event: InputEvent) -> bool:
+	# Check if the pen is inverted (eraser end)
+	if event is InputEventMouseMotion:
+		return event.pen_inverted
+	elif event is InputEventScreenDrag:
+		return event.pen_inverted
+	return false
+
 func _start_stroke(event: InputEvent) -> void:
 	drawing = true
 	_single_click = true
 	_last_drawing_position = event.position
-	_smoothed_pressure = 1.0
-	_last_pressure = 1.0
+	
+	# Seed with a safe low default, or real pressure if this event has it (e.g., touch).
+	var start_pressure := 0.1
+	if event is InputEventScreenTouch: # touch has pressure on press
+		start_pressure = clamp(event.pressure, MIN_PRESSURE, 1.0)
+	
+	_smoothed_pressure = start_pressure
+	_last_pressure = start_pressure
+	_waiting_for_motion = true
+	_saw_motion = false
+	_use_pressure = true
 	
 	# Handle layer expansion first (if needed)
 	var max_radius = get_actual_brush_radius(1.0)
@@ -141,11 +190,49 @@ func _start_stroke(event: InputEvent) -> void:
 
 
 func _add_stroke_point(event: InputEvent) -> void:
-	var pos = event.position
-	var pressure = clamp(event.pressure if event is InputEventMouseMotion else 1.0, 0.1, 1.0)
+	var pos: Vector2 = event.position
+	var p := _pressure_from_event(event)
 	
-	# Smooth pressure
-	_smoothed_pressure = lerp(_smoothed_pressure, pressure, _pressure_smoothing_factor)
+	if _waiting_for_motion:
+		_waiting_for_motion = false
+		_saw_motion = true
+		
+		# Heuristic: a mouse "looks" like constant full pressure with zero tilt.
+		var looks_like_mouse: bool = (event is InputEventMouseMotion 
+									   and is_equal_approx(p, 1.0) 
+									   and (event.tilt == Vector2.ZERO))
+		_use_pressure = not looks_like_mouse
+		
+		# Use the first real sample as-is (no ramp from 0.1)
+		_smoothed_pressure = p
+		_last_pressure = p
+		
+		# Expand & localize before optional "touchdown" stamp
+		var radius := get_actual_brush_radius(_smoothed_pressure)
+		var bounds_point := get_bounds_point_for_expansion(pos, radius)
+		var offset := editor.active_layer.expand_to_point(bounds_point)
+		editor.active_layer.position -= offset
+		event = editor.active_layer.localize_input(event)
+		pos = event.position
+		
+		# Optional: stamp once at touchdown using the true first pressure
+		_draw_brush_stamp(
+			editor.active_layer.image,
+			pos,
+			brush_color,
+			brush_size * (p if _use_pressure else 1.0)
+		)
+		editor.queue_redraw()
+		
+		_last_drawing_position = pos
+		_single_click = false   # Important: clear this flag to prevent double stamping
+		return
+	
+	# Subsequent motion: smooth only if we're actually using pressure
+	if _use_pressure:
+		_smoothed_pressure = lerp(_smoothed_pressure, p, _pressure_smoothing_factor)
+	else:
+		_smoothed_pressure = 1.0
 	
 	# Expand layer if needed
 	var radius = get_actual_brush_radius(_smoothed_pressure)
@@ -156,20 +243,29 @@ func _add_stroke_point(event: InputEvent) -> void:
 	pos = event.position
 	
 	# Draw continuous line between last and current position
-	_draw_continuous_line(_last_drawing_position, pos, _last_pressure, _smoothed_pressure)
+	_draw_continuous_line(
+		_last_drawing_position, 
+		pos, 
+		_last_pressure if _use_pressure else 1.0,
+		_smoothed_pressure if _use_pressure else 1.0
+	)
 	
 	_last_drawing_position = pos
 	_last_pressure = _smoothed_pressure
 	editor.queue_redraw()
 
-func _end_stroke(_event: InputEvent) -> void:
+func _end_stroke(event: InputEvent) -> void:
 	# Handle single click - draw one dot
 	if _single_click:
+		# Clicks/taps with no motion: use full pressure for mouse, touch pressure if available
+		var p := 1.0
+		if event is InputEventScreenTouch:
+			p = clamp(event.pressure, MIN_PRESSURE, 1.0)  # touch reports pressure on press/release
 		_draw_brush_stamp(
 			editor.active_layer.image,
 			_last_drawing_position,
 			brush_color,
-			brush_size * _smoothed_pressure
+			brush_size * p
 		)
 		editor.queue_redraw()
 	
@@ -181,6 +277,8 @@ func _end_stroke(_event: InputEvent) -> void:
 	
 	drawing = false
 	_single_click = false
+	_waiting_for_motion = false
+	_saw_motion = false
 
 ## Helper function to calculate the bounds of the stroke
 func _calculate_stroke_bounds(center_pos: Vector2) -> Rect2i:
