@@ -56,7 +56,7 @@ func get_provider_from_id(item_id: int) -> BaseProvider:
 	return provider_object
 
 func get_selected_provider() -> BaseProvider:
-	return get_provider_from_id(get_selected_id()) if selected != -1 else null
+	return get_provider_from_id(get_selected_id())
 
 var _core_actions: Array[Action] = []
 func _on_hcp_service_selected(service: Service, action: Action):
