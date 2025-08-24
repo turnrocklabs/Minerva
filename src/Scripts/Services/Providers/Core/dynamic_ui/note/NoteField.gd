@@ -6,6 +6,8 @@ static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/n
 @onready var _field_name_label: Label = %FieldName
 @onready var _field_rich_text_label: RichTextLabel = %RichTextLabel
 
+var _requested_fields: Array
+
 var selected_notes: = 0:
 	set(value):
 		selected_notes = value
@@ -19,6 +21,7 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 	scn.ready.connect(
 		func():
 			scn._field_name_label.text = field_params["display_name"] + ":"
+			scn._requested_fields = field_params.get("fields", [])
 
 			if input:
 				scn.selected_notes = scn.selected_notes
@@ -28,11 +31,11 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 							scn.selected_notes += 1
 				
 				SingletonObject.note_toggled.connect(
-					func(_note: Note, on: bool):
+					(func(_note: Note, on: bool, scn_: NoteField):
 						if on:
-							scn.selected_notes += 1
+							scn_.selected_notes += 1
 						else:
-							scn.selected_notes -= 1
+							scn_.selected_notes -= 1).bind(scn)
 				)
 
 			else:
@@ -48,13 +51,30 @@ func get_user_data():
 	for t in SingletonObject.ThreadList:
 		for item in t.MemoryItemList:
 			if item.Enabled:
-				data.append(item.Serialize(false))
+				var serialized_note = item.Serialize(false)
+				
+				if _requested_fields.is_empty():
+					data.append(serialized_note)
+				else:
+					print("Requested note fields are: %s" % _requested_fields)
+					var serialized_part: = {}
+					for field in _requested_fields:
+						serialized_part[field] = serialized_note.get(field, "")
+
+						if not serialized_part[field]:
+							push_error("Couldn't extract requested field '%s' from the note" % field)
+
+					data.append(serialized_part)
 
 	return data
 
 func update_output(notes: Array) -> void:
 
 	var orphans: Dictionary = {}
+
+	# if partial request don't try and recreate the notes
+	if not _requested_fields.is_empty():
+		return
 
 	for note_data in notes:
 		var item: = MemoryItem.Deserialize(note_data)
