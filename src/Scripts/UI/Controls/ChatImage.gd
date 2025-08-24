@@ -99,10 +99,10 @@ func _on_note_button_pressed():
 	#if caption_title.length() > 25:
 		#caption_title = caption_title.substr(0, 25) + "..."
 	if linked_memory_item == "":
-		var return_memory = SingletonObject.NotesTab.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
+		var return_memory = SingletonObject.notes_container.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
 		created_image_note.emit(dict_index, return_memory.UUID)
 	else:
-		var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item, image)
+		var return_memory = SingletonObject.notes_container.update_note(linked_memory_item, image)
 		if return_memory == null:
-			return_memory = SingletonObject.NotesTab.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
+			return_memory = SingletonObject.notes_container.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
 			created_image_note.emit(dict_index, return_memory.UUID)

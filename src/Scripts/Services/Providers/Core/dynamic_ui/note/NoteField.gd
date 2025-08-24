@@ -111,4 +111,4 @@ func update_output(notes: Array) -> void:
 
 		SingletonObject.ThreadList.append(thread)
 
-	SingletonObject.NotesTab.render_threads()
+	SingletonObject.notes_container.render_threads()

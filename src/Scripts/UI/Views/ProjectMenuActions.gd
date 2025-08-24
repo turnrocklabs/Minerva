@@ -21,7 +21,6 @@ func _new_project():
 	save_path = ""
 	
 	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
-	update_buffer_controls()
 	SingletonObject.updated_save_state.emit("", true)
 
 
@@ -162,16 +161,17 @@ func serialize_project() -> Dictionary:
 		"Editors": editors,
 		"last_tab_index": SingletonObject.last_tab_index,
 		"active_chatindex": SingletonObject.Chats.current_tab,
-		"active_notes_index": SingletonObject.NotesTab.current_tab,
+		"active_notes_index": SingletonObject.notes_container.current_tab,
 		"active_editor_index": SingletonObject.editor_pane.Tabs.current_tab,
 		"default_provider": SingletonObject.get_active_provider(),
 	}
 
 func deserialize_project(data: Dictionary):
-	var threads: Array[MemoryThread] = []
-	for thread_data in data.get("ThreadList", []):
-		threads.append(MemoryThread.Deserialize(thread_data))
-	SingletonObject.initialize_notes(threads)
+	# var threads: Array[MemoryThread] = []
+	# for thread_data in data.get("ThreadList", []):
+	# 	threads.append(MemoryThread.Deserialize(thread_data))
+	
+	SingletonObject.notes_container.deserialize_notes(data.get("ThreadList", []))
 
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("default_provider", 0))
@@ -206,8 +206,8 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 
 	var current_notes_tab = data.get("active_notes_index", 0)
-	if SingletonObject.NotesTab.get_tab_count()-1 >= current_notes_tab:
-		SingletonObject.NotesTab.current_tab = current_notes_tab
+	if SingletonObject.notes_container.get_tab_count()-1 >= current_notes_tab:
+		SingletonObject.notes_container.current_tab = current_notes_tab
 	
 	# Set the current tab only if it's within the present tabs
 	var current_chat_tab = data.get("active_chatindex", 0)
@@ -301,7 +301,6 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		SingletonObject.DrawerTab.lock = true
 		save_editor_panes()
 		
 
@@ -325,10 +324,10 @@ func update_buffer_controls() -> void:
 		SingletonObject.Chats.buffer_control_chats.hide()
 	else:
 		SingletonObject.Chats.buffer_control_chats.show()
-	if SingletonObject.NotesTab.get_tab_count() > 0:
-		SingletonObject.NotesTab.buffer_control_notes.hide()
-	else:
-		SingletonObject.NotesTab.buffer_control_notes.show()
+	# if SingletonObject.notes_container.get_tab_count() > 0:
+	# 	SingletonObject.notes_container.buffer_control_notes.hide()
+	# else:
+	# 	SingletonObject.notes_container.buffer_control_notes.show()
 	if SingletonObject.editor_pane.Tabs.get_tab_count() > 0:
 		SingletonObject.editor_pane.buffer_control_editor.hide()
 	else:

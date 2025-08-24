@@ -144,9 +144,11 @@ func _on_response_arrived(item: ChatHistoryItem):
 	if rendered_node:
 		# Set the history_item again to trigger the setter
 		rendered_node.history_item = self
-	SingletonObject.play_chat_notification()
-	SingletonObject.NotesTab.disable_all()
-	SingletonObject.DrawerTab.disable_all()
+
+	# TODO: implement
+	# SingletonObject.play_chat_notification()
+	# SingletonObject.notes_container.disable_all()
+	# SingletonObject.DrawerTab.disable_all()
 
 
 func format(callback: Callable) -> String:

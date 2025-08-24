@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://c0eehds55to2n" path="res://Scripts/UI/Controls/new_thread_popup.gd" id="1_gxqic"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="2_pyuyo"]
-[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="3_edsys"]
+[ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="3_edsys"]
 [ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow_icons/create_arrow.png" id="3_ncgrc"]
 [ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="4_s7ycu"]
 [ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="5_a74rp"]
@@ -35,25 +35,22 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 12
 alignment = 1
 
-[node name="Control" type="Control" parent="VBoxContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer"]
 layout_mode = 2
-size_flags_vertical = 0
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
 
-[node name="HBoxTopRow" type="HBoxContainer" parent="VBoxContainer"]
+[node name="HBoxTopRow" type="HBoxContainer" parent="VBoxContainer/MarginContainer"]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
 theme_override_constants/separation = 14
 
-[node name="Control3" type="Control" parent="VBoxContainer/HBoxTopRow"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="Label" type="Label" parent="VBoxContainer/HBoxTopRow"]
+[node name="Label" type="Label" parent="VBoxContainer/MarginContainer/HBoxTopRow"]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Name"
 
-[node name="txtNewTabName" type="LineEdit" parent="VBoxContainer/HBoxTopRow"]
+[node name="txtNewTabName" type="LineEdit" parent="VBoxContainer/MarginContainer/HBoxTopRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
@@ -63,7 +60,7 @@ max_length = 25
 clear_button_enabled = true
 caret_blink = true
 
-[node name="btnVoiceForNoteTab" type="Button" parent="VBoxContainer/HBoxTopRow"]
+[node name="btnVoiceForNoteTab" type="Button" parent="VBoxContainer/MarginContainer/HBoxTopRow"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("2_pyuyo")
@@ -72,7 +69,7 @@ icon_24 = ExtResource("2_pyuyo")
 icon_48 = ExtResource("4_s7ycu")
 icon_68 = ExtResource("5_a74rp")
 
-[node name="btnCreateThread" type="Button" parent="VBoxContainer/HBoxTopRow"]
+[node name="btnCreateThread" type="Button" parent="VBoxContainer/MarginContainer/HBoxTopRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 4
@@ -82,22 +79,9 @@ text = "Create"
 icon = ExtResource("3_ncgrc")
 script = ExtResource("3_edsys")
 
-[node name="Control2" type="Control" parent="VBoxContainer/HBoxTopRow"]
-layout_mode = 2
-size_flags_vertical = 0
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
-layout_mode = 2
-size_flags_horizontal = 8
-size_flags_vertical = 4
-theme_override_constants/separation = 16
-
-[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
 [connection signal="window_input" from="." to="." method="_on_window_input"]
-[connection signal="text_submitted" from="VBoxContainer/HBoxTopRow/txtNewTabName" to="." method="_on_txt_new_tab_name_text_submitted"]
-[connection signal="pressed" from="VBoxContainer/HBoxTopRow/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
-[connection signal="pressed" from="VBoxContainer/HBoxTopRow/btnCreateThread" to="." method="_on_btn_create_thread_pressed"]
+[connection signal="text_submitted" from="VBoxContainer/MarginContainer/HBoxTopRow/txtNewTabName" to="." method="_on_txt_new_tab_name_text_submitted"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxTopRow/btnVoiceForNoteTab" to="." method="_on_btn_voice_for_note_tab_pressed"]
+[connection signal="pressed" from="VBoxContainer/MarginContainer/HBoxTopRow/btnCreateThread" to="." method="_on_btn_create_thread_pressed"]
