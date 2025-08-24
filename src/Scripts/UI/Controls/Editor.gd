@@ -481,36 +481,38 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
-
-	if is_instance_valid(associated_object) and associated_object is Note:
-		await _update_memory_item(associated_object.memory_item)
-		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
+	
+	# TODO: implement
+	pass
+	# if is_instance_valid(associated_object) and associated_object is Note:
+	# 	await _update_memory_item(associated_object.memory_item)
+	# 	associated_object.memory_item = associated_object.memory_item # force the setter to update the note
 		
-	else:
-		var memory_item: MemoryItem = null
+	# else:
+	# 	var memory_item: MemoryItem = null
 
-		if Type.TEXT == type:
-			if file:
-				memory_item = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
-			elif tab_title:
-				memory_item = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
-			else:
-				memory_item = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+	# 	if Type.TEXT == type:
+	# 		if file:
+	# 			memory_item = SingletonObject.notes_container.add_note(file.get_file(), code_edit.text)
+	# 		elif tab_title:
+	# 			memory_item = SingletonObject.notes_container.add_note(tab_title, code_edit.text)
+	# 		else:
+	# 			memory_item = SingletonObject.notes_container.add_note("Note from Editor", code_edit.text)
 
-		if Type.GRAPHICS == type:
-			var editor_image = await graphics_editor.compose_final_image()
-			if tab_title:
-				memory_item = SingletonObject.NotesTab.add_image_note(tab_title, editor_image)
-			elif file:
-				memory_item = SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
-			else:
-				memory_item = SingletonObject.NotesTab.add_image_note("From file Editor", editor_image, "Sketch")
+	# 	if Type.GRAPHICS == type:
+	# 		var editor_image = await graphics_editor.compose_final_image()
+	# 		if tab_title:
+	# 			memory_item = SingletonObject.notes_container.add_image_note(tab_title, editor_image)
+	# 		elif file:
+	# 			memory_item = SingletonObject.notes_container.add_image_note(file.get_file(), editor_image, "Sketch")
+	# 		else:
+	# 			memory_item = SingletonObject.notes_container.add_image_note("From file Editor", editor_image, "Sketch")
 
-		if memory_item:
-			var note: = await SingletonObject.NotesTab._wait_for_rendered_note(memory_item)
-			if note: note.associate_editor(self)
+	# 	if memory_item:
+	# 		var note: = await SingletonObject.notes_container._wait_for_rendered_note(memory_item)
+	# 		if note: note.associate_editor(self)
 
-	SingletonObject.UpdateUnsavedTabIcon.emit()
+	# SingletonObject.UpdateUnsavedTabIcon.emit()
 
 ## Apply diff button stuff 
 func enable_apply_diff() -> void:
@@ -761,22 +763,24 @@ func _on_mic_button_pressed() -> void:
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
-func _create_note() -> MemoryItem:
-	var memory_item: = SingletonObject.NotesTab.create_note("Editor Note")
+func _create_note() -> void:
+	# TODO: implement
+	pass
+	# var memory_item: = SingletonObject.notes_container.create_note("Editor Note")
 	
-	if type == Type.TEXT:
-		memory_item.Type = SingletonObject.note_type.TEXT
-		memory_item.Content = code_edit.text
+	# if type == Type.TEXT:
+	# 	memory_item.Type = SingletonObject.note_type.TEXT
+	# 	memory_item.Content = code_edit.text
 	
-	elif type == Type.GRAPHICS:
-		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = await graphics_editor.compose_final_image()
-		print("CREATED GE D_NOTE")
+	# elif type == Type.GRAPHICS:
+	# 	memory_item.Type = SingletonObject.note_type.IMAGE
+	# 	memory_item.MemoryImage = await graphics_editor.compose_final_image()
+	# 	print("CREATED GE D_NOTE")
 
-	else:
-		return null # type not supported
+	# else:
+	# 	return null # type not supported
 	
-	return memory_item
+	# return memory_item
 
 func _update_memory_item(memory_item: MemoryItem) -> void:
 	if type == Type.TEXT:

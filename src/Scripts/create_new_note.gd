@@ -1,13 +1,18 @@
+# Most of this class was left the same
+# Audio controls were added and a way to select a audio file
 extends PersistentWindow
 
 @onready var text_note_check_box: CheckBox = %TextNoteCheckBox
 @onready var audio_check_box: CheckBox = %AudioCheckBox
 @onready var image_check_box: CheckBox = %ImageCheckBox
 
-var note_enum = SingletonObject.note_type.TEXT
+@onready var audio_file_dialog: FileDialog = %AudioNoteFileImport
+@onready var audio_controls: NoteAudioControls = %AudioControls
+
+var note_enum: Note.Type
 var isDrawer:bool = false
 var effect: AudioEffect
-var audio_recording: AudioStreamWAV = null
+var audio_file = null
 var image_original_res: Image = null
 
 func _ready() -> void:
@@ -42,7 +47,7 @@ func _on_close_requested() -> void:
 	%NoteDescription.text = ""
 	%ImagePreview.texture = null
 	image_original_res = null
-	audio_recording = null
+	audio_controls.audio = null
 	%ImageDropPanel.visible = true
 	if !isDrawer:
 		%CreateNewNote.exclusive = false
@@ -72,7 +77,7 @@ func _on_btn_voice_pressed():
 # toggles the visibility of inputs based en note type selection
 func change_note_type(button: CheckBox): 
 	if button.text == "Text Note":
-		note_enum = SingletonObject.note_type.TEXT
+		note_enum = Note.Type.TEXT
 		%TextNoteControl.visible = true
 		%AudioControl.visible = false
 		%ImageControl.visible = false
@@ -82,17 +87,17 @@ func change_note_type(button: CheckBox):
 		else: 
 			%AddNotePopUp.disabled = false
 	if button.text == "Audio Note":
-		note_enum = SingletonObject.note_type.AUDIO
+		note_enum = Note.Type.AUDIO
 		%TextNoteControl.visible = false
 		%AudioControl.visible = true
 		%ImageControl.visible = false
 		%btnVoice.visible = false
-		if audio_recording == null:
+		if audio_controls.audio == null:
 			%AddNotePopUp.disabled = true
 		else: 
 			%AddNotePopUp.disabled = false
 	if button.text == "Image Note":
-		note_enum = SingletonObject.note_type.IMAGE
+		note_enum = Note.Type.IMAGE
 		%TextNoteControl.visible = false
 		%AudioControl.visible = false
 		%ImageControl.visible = true
@@ -105,38 +110,51 @@ func change_note_type(button: CheckBox):
 
 #Creating new note
 func _on_add_note_pressed():
-	var Head = %NoteHead.text
-	var Description = %NoteDescription.text
+	var note_title = %NoteHead.text
+	var description = %NoteDescription.text
 	
+	# TODO: implement drawer
+	var notes_container: = SingletonObject.notes_container
+
 	match note_enum:
-		SingletonObject.note_type.TEXT:
-			if isDrawer:
-				SingletonObject.DrawerTab.add_note(Head, Description)
-			else:
-				SingletonObject.NotesTab.add_note(Head, Description)
-		SingletonObject.note_type.IMAGE:
-			var image_description = ""  # You can add an optional description field for images if needed
-			if isDrawer:
-				SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description)
-			else:
-				SingletonObject.NotesTab.add_image_note(Head, image_original_res, image_description,isDrawer)
-		SingletonObject.note_type.AUDIO:
-			if isDrawer:
-				SingletonObject.DrawerTab.add_audio_note(Head, audio_recording)
-			else:
-				SingletonObject.NotesTab.add_audio_note(Head, audio_recording,isDrawer)
+		Note.Type.TEXT:
+			notes_container.add_note(
+				Note.create_text_note(note_title, description)
+			)
+		
+		Note.Type.IMAGE:
+			notes_container.add_note(
+				Note.create_image_note(note_title, image_original_res)
+			)
+
+		Note.Type.AUDIO:
+			notes_container.add_note(
+				Note.create_audio_note(note_title, audio_controls.audio)
+			)
+		
+		# SingletonObject.note_type.IMAGE:
+		# 	var image_description = ""  # You can add an optional description field for images if needed
+		# 	if isDrawer:
+		# 		SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description)
+		# 	else:
+		# 		SingletonObject.notes_container.add_image_note(Head, image_original_res, image_description,isDrawer)
+		# SingletonObject.note_type.AUDIO:
+		# 	if isDrawer:
+		# 		SingletonObject.DrawerTab.add_audio_note(Head, audio_recording)
+		# 	else:
+		# 		SingletonObject.notes_container.add_audio_note(Head, audio_recording,isDrawer)
 	
 	# Clear all fields after adding note
 	%NoteHead.text = ""
 	%NoteDescription.text = ""
 	%ImagePreview.texture = null
 	image_original_res = null
-	audio_recording = null
+	audio_controls.audio = null
 	%ImageDropPanel.visible = true
 	%AddNotePopUp.disabled = true
 	
 	# Reset audio UI
-	if note_enum == SingletonObject.note_type.AUDIO:
+	if note_enum == Note.Type.AUDIO:
 		%RecordAudioButton.text = "Press To Record Note"
 		%PlayAudioButton.disabled = true
 		effect.set_recording_active(false)
@@ -271,7 +289,7 @@ func get_image_from_clipboard():
 # gets called when record button is pressed
 func _on_record_audio_button_pressed() -> void:
 	if effect.is_recording_active():
-		audio_recording = effect.get_recording() # type -> AudioStreamWAV
+		audio_controls.audio = effect.get_recording() # type -> AudioStreamWAV
 		%RecordAudioButton.text = "Press To Record Note"
 		effect.set_recording_active(false)
 		%PlayAudioButton.disabled = false
@@ -286,8 +304,7 @@ func _on_record_audio_button_pressed() -> void:
 
 # plays the recorded audio note
 func _on_play_audio_button_pressed() -> void:
-	%AudioNoteStreamPlayer.stream = audio_recording
-	%AudioNoteStreamPlayer.play()
+	audio_controls.paused = false
 
 #endregion Audio Note
 
@@ -296,7 +313,7 @@ func should_add_note_be_disabled() -> void:
 	var note_description: String = %NoteDescription.text.strip_edges()
 	var text_fields_filled: bool = !note_title.is_empty() and !note_description.is_empty()
 	var image_field_and_title: bool =!note_title.is_empty() and image_original_res != null
-	var audio_field_and_title: bool = !note_title.is_empty() and audio_recording != null
+	var audio_field_and_title: bool = !note_title.is_empty() and audio_controls.audio != null
 	
 	if text_fields_filled or image_field_and_title or audio_field_and_title:
 		%AddNotePopUp.disabled = false
@@ -313,3 +330,36 @@ func _on_note_description_text_changed() -> void:
 
 func _on_note_description_text_set() -> void:
 	should_add_note_be_disabled()
+
+
+func _on_audio_file_import_button_pressed() -> void:
+	audio_file_dialog.popup_centered()
+
+
+func _on_audio_note_file_import_file_selected(path: String) -> void:
+	var file: = FileAccess.open(path, FileAccess.READ)
+
+	var err: = file.get_error()
+
+	if err != OK:
+		push_error("Couldn't open the audio file")
+		SingletonObject.ErrorDisplay("Can't open file", "Couldn't open the audio file. %s" % error_string(err))
+		return
+
+	var audio_stream: AudioStream	
+	
+	match path.get_extension():
+		"mp3":
+			audio_stream = AudioStreamMP3.new()
+			audio_stream.data = file.get_buffer(file.get_length())
+		"ogg":
+			audio_stream = AudioStreamOggVorbis.new()
+			audio_stream.load_from_buffer(file.get_buffer(file.get_length()))
+		"wav":
+			audio_stream = AudioStreamWAV.new()
+			audio_stream.data = file.get_buffer(file.get_length())
+	
+	audio_controls.audio = audio_stream
+	
+	should_add_note_be_disabled()
+	

@@ -103,7 +103,7 @@ func _input(_event):
 			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "left":
 				SingletonObject.Chats.restore_deleted_tab(last_deleted_tab)
 			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "right":
-				SingletonObject.NotesTab.restore_deleted_tab(last_deleted_tab)
+				SingletonObject.notes_container.restore_deleted_tab(last_deleted_tab)
 
 
 func add_control(item: Node, name_: String) -> Node:

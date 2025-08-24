@@ -39,6 +39,18 @@ func _ready() -> void:
 	_update_project_label()
 	SingletonObject.updated_save_state.connect(_update_project_label)
 
+
+	# Set the reference to the notes container here as the singleton object is loaded before this one
+	SingletonObject.notes_container = %tcThreads
+
+	# TODO: remove
+	SingletonObject.notes_container.add_note(
+		Note.create_text_note("Test", "test note")
+	)
+	SingletonObject.notes_container.add_note(
+		Note.create_text_note("Test", "test note")
+	)
+
 var MAX: = 20
 
 
@@ -135,6 +147,7 @@ func _on_button_pressed() -> void:
 
 #btn attachment for notes
 func _on_btn_add_attachment_pressed():
+	# Not sure why its located in the chats
 	SingletonObject.Chats._on_btn_attach_file_pressed()
 
 

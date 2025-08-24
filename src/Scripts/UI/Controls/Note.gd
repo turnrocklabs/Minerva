@@ -1,539 +1,354 @@
 class_name Note
 extends VBoxContainer
 
-signal deleted()
-signal toggled(on: bool)
-signal deleted_drawer()
+static var _scene: = preload("res://Scenes/Note.tscn")
+static var _text_controls_scene: = preload("res://Scenes/note/note_controls/text_controls.tscn")
+static var _image_controls_scene: = preload("res://Scenes/note/note_controls/image_controls.tscn")
+static var _audio_controls_scene: = preload("res://Scenes/note/note_controls/audio_controls.tscn")
 
-## This signal is emitted each time the underlying memory item has been updated.
-signal changed()
+enum Type {
+	TEXT,
+	IMAGE,
+	VIDEO,
+	AUDIO,
+}
 
+static var _type_names: = {
+	Type.TEXT: "text",
+	Type.IMAGE: "image",
+	Type.AUDIO: "audio",
+	Type.VIDEO: "video",
+}
 
-@onready var remove_button: Button = %RemoveButton
+## Mapping of file extensions and their respective note type.[br]
+## For now, everything that doesn't match any of below is treated as a text file.
+static var _file_ext_map: = {
+	Type.AUDIO: ["mp3", "ogg", "wav"],
+	# https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_images.html#supported-image-formats
+	Type.IMAGE: ["png", "jpg", "jpeg", "bmp", "dds", "ktx", "exr", "hdr", "tga", "svg", "webp", "ico"],
+	Type.VIDEO: [],
+}
 
-@export_range(0.1, 2.0, 0.1) var expand_anim_duration: float = 0.5
-@export var expand_transition_type: Tween.TransitionType = Tween.TRANS_SPRING
-@export var expand_ease_type: Tween.EaseType = Tween.EASE_OUT
-@export var expand_icon_color: Color = Color.WHITE
-@export var max_note_size_limit: int = 400
-@export var min_note_size_limit: int = 30
+@export var minimum_expanded_height: float = 150
 
-@onready var checkbutton_node: CheckButton = %CheckButton
-@onready var label_node: LineEdit = %Title
-@onready var description_node: RichTextLabel = %NoteTextBody
-@onready var drag_texture_rect: TextureRect = %DragTextureRect
-@onready var video_label: Label = %VideoLabel
-@export var video_player_container: VBoxContainer
-@onready var _upper_separator: HSeparator = %UpperSeparator
-@onready var _lower_separator: HSeparator = %LowerSeparator
-@onready var v_box_container: VBoxContainer = %vBoxContainer
-@onready var expand_button: Button = %ExpandButton
-@onready var resize_drag_control: Control = %ResizeControl
-@onready var h_separator: HSeparator = %HSeparator
+var type: Type
 
-var _temp_controls: Array[Control] = []
+var uuid: String:
+	set(value):
+		if uuid.is_empty():
+			uuid = value
+		else:
+			push_warning("Tried to change the Note object uuid when the value is already set")
+
+var title: String:
+	set(value):
+		_title.text = value
+	get:
+		return _title.text
+
+var enabled: bool:
+	set(value):
+		_enabled.disabled = not value
+	get:
+		return not _enabled.disabled
 
 var expanded: bool = true:
 	set(value):
 		expanded = value
-		memory_item.Expanded = value
+		_node_expand_toggled()
 
-var last_min_size: float = 100.0:
-	set(value):
-		if value > 0:
-			if memory_item:
-				memory_item.LastYSize = value
-			if control_type and control_type.custom_minimum_size.y != value:
-				control_type.custom_minimum_size.y = value
-			last_min_size = value
+## String representation of this notes [member Note.type], or [code]"Unknown"[/code] if [member Note.type] is not set or found.
+var content_type: String:
+	get: return _type_names.get(type, "Unknown")
 
+var expanded_height: float = 150
 
-var control_type: Control
-var downscaled_image: Image
 
-# this will react each time memory item is changed
-var memory_item: MemoryItem:
-	set(value):
-		memory_item = value
+@onready var _title: LineEdit = %Title
+@onready var _enabled: CheckButton = %CheckButton
 
-		if not value: return
+@onready var _notes_control_container: Container = %NoteControlsContainer
+# container that holds all the content and gives the note its background
+@onready var _panel_container: PanelContainer = %PanelContainer
+@onready var _expand_button: Button = %ExpandButton
+@onready var _resize_control: Control = %ResizeControl
 
-		if not is_node_ready(): await ready
+@onready var _upper_drop_separator: HSeparator = %UpperSeparator
+@onready var _lower_drop_separator: HSeparator = %LowerSeparator
 
-		# when memory item is enabled trigger this notes signal
-		# sometimes notes are enabled/deisabled with code and check button doesnt emit the signal
-		if not memory_item.toggled.is_connected(toggled.emit):
-			memory_item.toggled.connect(toggled.emit)
+static func create_text_note(note_title: String, content: String) -> Note:
+	var text_controls: NoteTextControls = _text_controls_scene.instantiate()
+	var note_scene: Note = _scene.instantiate()
 
-		# TODO: improve the code below
-		# The code below dynamically creates new controls
-		# each time the memory item is updated, we just clear them here
-		for ctrl in _temp_controls:
-			ctrl.queue_free()
-
-		label_node.text = value.Title
-		checkbutton_node.button_pressed = value.Enabled
-		visible = value.Visible
-		if memory_item.Type == SingletonObject.note_type.TEXT:
-			description_node.text = value.Content
-			control_type = description_node
-		if memory_item.Type == SingletonObject.note_type.IMAGE:
-			
-			%EditButton.visible = SingletonObject.experimental_enabled
-			if value.MemoryImage:
-				print(value.MemoryImage.get_size())
-				var image_controls_inst: = SingletonObject.image_controls_scene.instantiate()
-				image_controls_inst.memory_item = value
-				v_box_container.add_child(image_controls_inst)
-				_temp_controls = [image_controls_inst]
-				control_type = image_controls_inst
-				image_controls_inst.size.y = 100
-				last_min_size = image_controls_inst.size.y
-		if memory_item.Type == SingletonObject.note_type.AUDIO:
-			var audio_control_inst: = SingletonObject.audio_contols_scene.instantiate()
-			audio_control_inst.audio = value.Audio
-			v_box_container.add_child(audio_control_inst)
-			control_type = audio_control_inst
-			v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
-			_temp_controls = [audio_control_inst]
-		if memory_item.Type == SingletonObject.note_type.VIDEO:
-			%EditButton.visible = false
-			var video_player_node: = SingletonObject.video_player_scene.instantiate()
-			video_label.text = "%s %s" % [value.Title, value.ContentType]
-			video_player_node.video_path = value.Content
-			video_player_container.add_child(video_player_node)
-			control_type = video_player_container
-		
-		if memory_item.LastYSize > min_note_size_limit:
-			last_min_size = memory_item.LastYSize
-		else:
-			if control_type:
-				last_min_size = control_type.custom_minimum_size.y
-		
-		expanded = memory_item.Expanded
-		if !memory_item.Expanded:
-			if last_min_size == 0:
-				last_min_size = 100
-				if control_type:
-					control_type.custom_minimum_size.y = last_min_size
-				resize_drag_control.custom_minimum_size.y = 10
-				expand_button.rotation = deg_to_rad(0.0)
-				expand_button.modulate = Color.WHITE
-				video_label.show()
-				control_type.show()
-				resize_drag_control.show()
-			else:
-				if control_type:
-					control_type.custom_minimum_size.y = 0
-					resize_drag_control.custom_minimum_size.y = 0
-					expand_button.rotation = deg_to_rad(-90.0)
-					expand_button.modulate = expand_icon_color
-					video_label.hide()
-					control_type.hide()
-					resize_drag_control.hide()
-		expand_button.disabled = false
-		
-		v_box_container.move_child(resize_drag_control,v_box_container.get_child_count())
-
-		check_editor_association()
-		
-		changed.emit()
-
-var isDrawer:bool = false:
-	set(value):
-		isDrawer = value
-		if remove_button:
-			if isDrawer:
-				remove_button.connect("pressed", _on_remove_drawer_button_pressed)
-				if remove_button.is_connected("pressed",_on_remove_button_pressed):
-					remove_button.disconnect("pressed", _on_remove_button_pressed)
-			else:
-				remove_button.connect("pressed", _on_remove_button_pressed)
-				if remove_button.is_connected("pressed",_on_remove_drawer_button_pressed):
-					remove_button.disconnect("pressed", _on_remove_drawer_button_pressed)
-#region New notes methods
-
-func new_text_note():
-	%NoteTextBody.set_deferred("visible", true)
-	return self
-
-
-func new_image_note():
-	%NoteTextBody.visible = false
-	return self
-
-
-func new_audio_note():
-	%NoteTextBody.visible = false
-	%EditButton.visible = false
-	return self
-
-
-func new_video_note():
-	%NoteTextBody.visible = false
-	%VideoVBoxContainer.visible = true
-
-
-#endregion New notes methods
-
-# TODO maybe we could move this function to Singleton so all images 
-# can be resized and add another parameter to place the 200 constant
-#  this method resizes the image so the texture rec doesn't render images at full res
-func downscale_image(image: Image) -> Image:
-	if image == null: return
-	var image_size = image.get_size()
-	if image_size.y > 200:
-		var image_ratio = image_size.y/ 200.0
-		image_size.y = image_size.y / image_ratio
-		image_size.x = image_size.x / image_ratio
-		image.resize(image_size.x, image_size.y, Image.INTERPOLATE_LANCZOS)
-	return image
-
-
-func _ready():
-	# connecting signal for changing the dots texture when the main theme changes
-	SingletonObject.theme_changed.connect(change_modulate_for_texture)
-	description_node.text = ""
-	#change_modulate_for_texture(SingletonObject.get_theme_enum())
-	
-	remove_button.connect("pressed", _on_remove_button_pressed)
-	label_node.text_changed.connect(
-		func(text):
-			if memory_item: memory_item.Title = text
-			_update_note_editor_title()
-	)
-
-
-#method for changing the dots texture when the main theme changes
-func change_modulate_for_texture(theme_enum: int):
-	#var theme_enum = SingletonObject.get_theme()
-	if theme_enum == SingletonObject.theme.LIGHT_MODE:
-		drag_texture_rect.modulate = Color("282828")
-	if theme_enum == SingletonObject.theme.DARK_MODE:
-		drag_texture_rect.modulate = Color("f0f0f0")
-
-
-func _to_string():
-	return "Note %s" % memory_item.Title
-
-# check if we are showing the separator.
-# if yes that means we were dragging the note above this note
-# but if the mouse is not above this note anymore, hide the separators
-func _process(_delta):
-	
-	if not _upper_separator.visible and not _lower_separator.visible: return
-	
-	if not get_global_rect().has_point(get_global_mouse_position()):
-		_upper_separator.visible = false
-		_lower_separator.visible = false
-
-
-func _notification(notification_type):
-	match notification_type:
-		NOTIFICATION_DRAG_END:
-			description_node.mouse_filter = Control.MOUSE_FILTER_STOP
-
-			_lower_separator.visible = false
-			_upper_separator.visible = false
-		
-		NOTIFICATION_DRAG_BEGIN:
-			description_node.mouse_filter = Control.MOUSE_FILTER_PASS
-
-# create a preview which is just duplicated Note node
-# and make the original node transparent
-func _get_drag_data(at_position: Vector2) -> Note:
-	var preview = Control.new()
-	var preview_note:  = duplicate(true)
-
-	preview.add_child(preview_note)
-
-	preview.custom_minimum_size = size
-	preview_note.custom_minimum_size = size
-	preview.rotation_degrees = 3.0
-	preview_note.position = -at_position
-
-	var tween = get_tree().create_tween()
-	tween.tween_property(preview, "modulate:a", 0.5, 0.2)
-
-	# preview.modulate.a = 0.5
-
-	set_drag_preview(preview)
-
-	#get_parent().remove_child(self)
-
-	return self
-
-
-func _can_drop_data(at_position: Vector2, data) -> bool:
-	if not data is Note: return false
-	if data == self: return false
-
-	if at_position.y < size.y / 2:
-		_upper_separator.visible = true
-		_lower_separator.visible = false
-	else:
-		_lower_separator.visible = true
-		_upper_separator.visible = false
-	return true
-	
-
-func _memory_thread_find(thread_id: String, note_type) -> MemoryThread:
-	return note_type.filter(
-		func(t: MemoryThread):
-			return t.ThreadId == thread_id
-	).pop_front()
-
-
-func _drop_data(_at_position: Vector2, data) -> void:
-	if not data is Note: return
-	if data == self: return
-
-	# Combine all possible thread locations
-	var all_threads = SingletonObject.ThreadList + SingletonObject.DrawerThreadList
-	
-	# Find current and target threads
-	var target_thread = all_threads.filter(
-		func(t): return t.ThreadId == memory_item.OwningThread
-	).front()
-	var source_thread = all_threads.filter(
-		func(t): return t.ThreadId == data.memory_item.OwningThread
-	).front()
-
-	if not target_thread or not source_thread:
-		return
-
-	# Calculate insert position
-	var target_pos = target_thread.MemoryItemList.find(memory_item)
-	var insert_index = target_pos
-	if _upper_separator.visible:
-		insert_index = target_pos
-	elif _lower_separator.visible:
-		insert_index = target_pos + 1
-
-	var current_index = source_thread.MemoryItemList.find(data.memory_item)
-	if current_index >= 0:
-		source_thread.MemoryItemList.remove_at(current_index)
-
-	# Adjust index only if moving within same thread
-	if source_thread == target_thread and current_index < insert_index:
-		insert_index -= 1
-
-	# Insert into target
-	if insert_index >= 0 and insert_index <= target_thread.MemoryItemList.size():
-		target_thread.MemoryItemList.insert(insert_index, data.memory_item)
-
-	if source_thread != target_thread:
-		SingletonObject.NotesTab.memories_updated.emit(source_thread)
-		SingletonObject.NotesTab.memories_updated.emit(target_thread)
-	else:
-		SingletonObject.NotesTab.memories_updated.emit(source_thread)
-
-	# Hide separators
-	_upper_separator.visible = false
-	_lower_separator.visible = false
-
-func _on_check_button_toggled(toggled_on: bool) -> void:
-	if memory_item:
-		memory_item.Enabled = toggled_on
-
-	# this is setup in memory item setter
-	# toggled.emit(toggled_on)
-
-
-func _on_remove_button_pressed():
-	pivot_offset = size / 2
-
-	var tween = get_tree().create_tween()
-	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
-	tween.tween_callback(queue_free)
-	
-	
-	deleted.emit()
-	
-
-## Connects this note and the given [parameter editor] and
-## reflects note title changes into the tab title.
-func associate_editor(editor: Editor):
-	editor.associated_object = self
-
-	set_meta("associated_editor", editor)
-
-func _update_note_editor_title():
-	
-	if has_meta("associated_editor"):
-		var editor: Editor = get_meta("associated_editor")
-		if editor:
-			editor.tab_title = label_node.text
-
-# If we create a note, open a editor associated with it and then rerender the memory_item
-# that will create completely new Note node and break the connection between note and the editor.
-# So here we check if there's editor associated with memory_item this note is rendering.
-func check_editor_association() -> Editor:
-	for editor in SingletonObject.editor_container.editor_pane.Tabs.get_children():
-		if editor.associated_object is Note:
-			if editor.associated_object.memory_item.UUID == memory_item.UUID:
-				associate_editor(editor)
-				return editor
-	
-	return null
-
-func _on_edit_button_pressed():
-	var ep: EditorPane = SingletonObject.editor_container.editor_pane
-
-	# Show the editor if it's hidden
-	SingletonObject.main_ui.set_editor_pane_visible(true)
-
-	# Try to find editor that's already associated with memory_item
-	for i in range(ep.Tabs.get_tab_count()):
-		var tab_control = ep.Tabs.get_tab_control(i)
-		
-		if tab_control is Editor and tab_control.associated_object == self:
-			ep.Tabs.current_tab = i # Change the current tab to that editor
-			return
-
-	var editor: Editor
-
-	if  memory_item.Type == SingletonObject.note_type.IMAGE:
-		SingletonObject.is_graph = true # this lines should be moved to the correct node rather that them being on SingletonObject
-		SingletonObject.is_picture = true
-		editor = ep.add(Editor.Type.GRAPHICS, memory_item.File, memory_item.Title, self, false)
-		# if there is a file, Editor.gd will set it up automatically
-		if not memory_item.File:
-			editor.graphics_editor.create_new_image_layer(memory_item.Title, memory_item.MemoryImage.duplicate())
-	else:
-		editor = ep.add(Editor.Type.TEXT, memory_item.File, memory_item.Title, self)
-		
-		# Get the old text from the code_edit before replacing it
-		var old_text: String = editor.code_edit.text
-		
-		# Set the new text
-		editor.code_edit.text = memory_item.Content
-		
-		# Call check_incomplete_snippet with the correct old_text and new_text
-		ep.check_incomplete_snippet(editor, old_text, editor.code_edit.text)
-		ep._is_Completed = memory_item.isCompleted
-	
-	associate_editor(editor)
-
-
-func _on_hide_button_pressed():
-	self.release_focus()
-	if memory_item.Type == SingletonObject.note_type.AUDIO:
-		control_type._on_stop_button_pressed()
-	if memory_item.Type == SingletonObject.note_type.VIDEO:
-		control_type.video_stream_player.paused = true
-	var tween = get_tree().create_tween()
-	tween.tween_property(self, "modulate:a", 0, 0.2)
-	tween.tween_callback(
+	note_scene.ready.connect(
 		func():
-			memory_item.Visible = false
-			memory_item = memory_item
+			await note_scene._set_controls_container(text_controls)
+			text_controls.setup(content)
+			
+			note_scene.title = note_title
+			note_scene.type = Type.TEXT
 	)
+
+	return note_scene
+
+static func create_dummy_note(note_title: String) -> Note:
+	var note_scene: Note = _scene.instantiate()
+
+	note_scene.ready.connect(
+		func():
+			note_scene.title = note_title
+	)
+
+	return note_scene
+
+static func create_image_note(note_title: String, image: Image, caption: String = "") -> Note:
+	var image_controls: NoteImageControls = _image_controls_scene.instantiate()
+	var note_scene: Note = _scene.instantiate()
+
+	note_scene.ready.connect(
+		func():
+			await note_scene._set_controls_container(image_controls)
+			image_controls.setup(image, caption)
+			
+			note_scene.title = note_title
+			note_scene.type = Type.IMAGE
+	)
+
+	return note_scene
+
+static func create_audio_note(note_title: String, audio: AudioStream) -> Note:
+	var audio_controls: NoteAudioControls = _audio_controls_scene.instantiate()
+	var note_scene: Note = _scene.instantiate()
+
+	note_scene.ready.connect(
+		func():
+			await note_scene._set_controls_container(audio_controls)
+			audio_controls.setup(audio)
+			
+			note_scene.title = note_title
+			note_scene.type = Type.IMAGE
+	)
+
+	return note_scene
+
+
+## Tries to create a note from the given file path.[br]
+## [member Note.type] is determined from the [param file_path] extension. On fail a text note with an error is returned.
+static func create_file_note(note_title: String, file_path: String) -> Note:
+
+	# determin the note type from the extension
+	var ext: = file_path.get_extension()
+
+	var note: Note
+
+	if ext in _file_ext_map[Type.IMAGE]:
+		var img: = Image.load_from_file(file_path)
+		if img == null:
+			push_error("Couldn't open the note file %s. Image object null." % file_path)
+			return create_text_note(note_title, "Couldn't open the note file %s. Image object null." % file_path)
+
+		note = create_image_note(note_title, img)
+
+	elif ext in _file_ext_map[Type.AUDIO]:
+		var fa: = FileAccess.open(file_path, FileAccess.READ)
+
+		if fa == null:
+			var err: = FileAccess.get_open_error()
+			push_error("Couldn't open the note file: %s" % error_string(err))
+			return create_text_note(note_title, "Couldn't open the note file: %s" % error_string(err))
+
+		var audio_stream: AudioStream	
+	
+		match ext:
+			"mp3":
+				audio_stream = AudioStreamMP3.new()
+				audio_stream.data = fa.get_buffer(fa.get_length())
+			"ogg":
+				audio_stream = AudioStreamOggVorbis.new()
+				audio_stream.load_from_buffer(fa.get_buffer(fa.get_length()))
+			"wav":
+				audio_stream = AudioStreamWAV.new()
+				audio_stream.data = fa.get_buffer(fa.get_length())
+
+		note = create_audio_note(note_title, audio_stream)
+	
+	else: # treat as text file
+		var fa: = FileAccess.open(file_path, FileAccess.READ)
+
+		if fa == null:
+			var err: = FileAccess.get_open_error()
+			push_error("Couldn't open the note file: %s" % error_string(err))
+			return create_text_note(note_title, "Couldn't open the note file: %s" % error_string(err))
+
+		note = create_text_note(note_title, fa.get_as_text())
+
+	
+	return note
+
+
+
+## Adds the note controls to the note hierarchy and waits one frame after adding.
+func _set_controls_container(controls_container: Control) -> void:
+	_notes_control_container.add_child(controls_container)
+	await get_tree().process_frame
+
+func _to_string() -> String:
+	return "%s note (%s)" % [content_type.capitalize(), title]
+
+func _on_remove_button_pressed() -> void:
+	queue_free()
+
+func _on_edit_button_pressed() -> void:
+	pass # Replace with function body.
+
+func _on_hide_button_pressed() -> void:
 	visible = false
 
 
-func _on_title_text_submitted(new_text: String) -> void:
-	label_node.release_focus()
-	if memory_item: memory_item.Title = new_text
+# region Expand
 
+var _tween: Tween
+# how fast the node height changes on expand
+var _anim_duration: = 0.2
+# how many seconds to rotate a degree of the expand button arrow
+var time_per_degree: = 0.0011 
 
-var resize_tween: Tween
-func expand_note() -> void:
-	if control_type == null: return
-	if resize_tween and resize_tween.is_running():
-		resize_tween.kill()
-		return
-	resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
-	resize_tween.finished.connect(enable_expand_button)
-	expand_button.disabled = true
-	if last_min_size == 0:
-		last_min_size = 100
-	resize_tween.tween_property(control_type, "custom_minimum_size:y", last_min_size, expand_anim_duration)
-	resize_tween.set_parallel()
-	resize_tween.tween_property(resize_drag_control, "custom_minimum_size:y", 10, 0.1)
-	resize_tween.set_parallel()
-	resize_tween.tween_property(expand_button,"rotation", deg_to_rad(0.0), expand_anim_duration)
-	resize_tween.set_parallel()
-	resize_tween.tween_property(expand_button, "modulate", Color.WHITE, expand_anim_duration)
-	
-	video_label.show()
-	resize_drag_control.show()
-	%HSeparator.show()
-	%BufferControl.hide()
-	control_type.show()
+func _node_expand_toggled():
 
-
-func contract_note() -> void:
-	if control_type == null: return
-	if resize_tween and resize_tween.is_running():
-		resize_tween.kill()
-		return
-	resize_tween = create_tween().set_ease(expand_ease_type).set_trans(expand_transition_type)
-	resize_tween.finished.connect(enable_expand_button)
-	expand_button.disabled = true
-	last_min_size = control_type.custom_minimum_size.y
-	resize_tween.tween_property(control_type, "custom_minimum_size:y", 0, expand_anim_duration)
-	resize_tween.set_parallel()
-	resize_tween.tween_property(resize_drag_control, "custom_minimum_size:y", 0, 0.1)
-	resize_tween.set_parallel()
-	resize_tween.tween_property(expand_button,"rotation", deg_to_rad(-90.0), expand_anim_duration)
-	resize_tween.set_parallel()
-	resize_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
-	
-	await resize_tween.finished
-	video_label.hide()
-	control_type.hide()
-	%HSeparator.hide()
-	%BufferControl.show()
-	resize_drag_control.hide()
-	
-
-
-func enable_expand_button() -> void:
-	expand_button.disabled = false
-
-var resize_dragging: bool = false
-var _last_mouse_posistion_y: float = 0.0
-func _on_resize_control_gui_input(event: InputEvent) -> void:
-	if _last_mouse_posistion_y == 0:
-		_last_mouse_posistion_y = get_global_mouse_position().y
 	if expanded:
-		if event is InputEventMouseButton:
-			if event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed():
-				resize_dragging = true
-			elif event.button_index == MOUSE_BUTTON_LEFT and !event.is_pressed():
-				resize_dragging = false
-	if resize_dragging:
-		_resize_vertical(get_global_mouse_position().y, _last_mouse_posistion_y)
-		_last_mouse_posistion_y = get_global_mouse_position().y
-
-func _resize_vertical(current_mouse_pos_y: float, last_mouse_pos_y: float) -> void:
-	#if control_type == null: return
-	var difference: float = current_mouse_pos_y - last_mouse_pos_y
-	
-	if control_type.custom_minimum_size.y + difference < min_note_size_limit and min_note_size_limit != 0:
-		control_type.custom_minimum_size.y = min_note_size_limit
-	elif control_type.custom_minimum_size.y + difference > max_note_size_limit and max_note_size_limit != 0:
-		control_type.custom_minimum_size.y = max_note_size_limit
+		_resize_control.mouse_default_cursor_shape = Control.CURSOR_VSIZE
+		_resize_control.mouse_filter = Control.MOUSE_FILTER_STOP
 	else:
-		control_type.custom_minimum_size.y += difference
-		last_min_size = control_type.custom_minimum_size.y
+		_resize_control.mouse_default_cursor_shape = Control.CURSOR_FORBIDDEN
+		_resize_control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	if is_instance_valid(_tween) and _tween.is_running():
+		_tween.stop()
+
+	_tween = create_tween()
+	_tween.set_parallel(true)
+
+	if expanded:
+		# custom_minimum_size.y = minimum_expanded_height
+		_tween.tween_property(self, "custom_minimum_size:y", max(minimum_expanded_height, expanded_height), _anim_duration)
+		_tween.tween_property(_expand_button, "rotation_degrees", 180, absf(180 - _expand_button.rotation_degrees) * time_per_degree)
+		_notes_control_container.visible = true
+
+	else:
+		_tween.tween_property(self, "custom_minimum_size:y", 0, _anim_duration)
+		_tween.tween_property(_expand_button, "rotation_degrees", 0, absf(_expand_button.rotation_degrees) * time_per_degree)
+		_notes_control_container.visible = false
+
 
 
 func _on_expand_button_pressed() -> void:
-	expanded = !expanded
-	if !expanded:
-		contract_note()
-	else:
-		expand_note()
+	expanded = not expanded
+
+var _dragging: = false
+func _on_resize_control_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		if event.button_mask == MOUSE_BUTTON_MASK_LEFT:
+			_dragging = event.pressed
+		
+		return
+	
+	if not _dragging: return
+
+	if event is InputEventMouseMotion:
+		# sometimes the controls is not catching the release event
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			_dragging = false
+			return
+
+		var current_min_y: = get_combined_minimum_size().y
+
+		custom_minimum_size.y = max(minimum_expanded_height, current_min_y + event.relative.y)
+		expanded_height = size.y
+
+# endregion
+
+# region Drag
+
+func _notification(what: int) -> void:
+	
+	match what:
+		NOTIFICATION_DRAG_BEGIN: pass
+		NOTIFICATION_DRAG_END: pass
+			# _upper_drop_separator.visible = false
+			# _lower_drop_separator.visible = false
 
 
-func _on_remove_drawer_button_pressed():
-	pivot_offset = size / 2
+func _get_drag_data(at_position: Vector2) -> Variant:
+	
+	var preview_control: = Control.new()
 
-	var tween = get_tree().create_tween()
-	tween.tween_property(self, "scale", Vector2.ZERO, 0.3)
-	tween.tween_callback(queue_free)
+	var note_dup: = create_dummy_note(title)
 
-	deleted_drawer.emit()
-	SingletonObject.drawer_save_data.emit()
+	note_dup.set_size.call_deferred(size)
+	note_dup.position = -at_position
+	note_dup.modulate.a = 0.5
+
+	preview_control.add_child(note_dup)
+
+	set_drag_preview(preview_control)
+
+	return self
+
+
+func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:	
+	# maybe check type, so drawer notes can't be dropped into normal ones?
+
+	# if at_position.y > size.y / 2:
+	# 	_upper_drop_separator.visible = false
+	# 	_lower_drop_separator.visible = true
+	# else:
+	# 	_upper_drop_separator.visible = true
+	# 	_lower_drop_separator.visible = false
+
+	return data is Note
+
+
+func _drop_data(at_position: Vector2, data: Variant) -> void:
+	pass
+
+
+# endregion
+
+
+static func deserialize(note_data: Dictionary) -> Note:
+	print(note_data)
+
+	var note: Note
+
+	match note_data.get("ContentType", "text"):
+		"text":
+			note = create_text_note(
+				note_data.get("Title", "Unknown"),
+				note_data.get("Content", ""),
+			)
+		"audio":
+			var audio_data = note_data.get("Audio", "")
+			note = create_audio_note(
+				note_data.get("Title", "Unknown"),
+				Marshalls.base64_to_variant(audio_data),
+			)
+		"image":
+			var image_data = note_data.get("MemoryImage", "")
+			note = create_image_note(
+				note_data.get("Title", "Unknown"),
+				Marshalls.base64_to_variant(image_data),
+				note_data.get("ImageCaption", ""),
+			)
+		_:
+			push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))
+			return
+
+	note.enabled = note_data.get("Enabled", true)
+	note.expanded = note_data.get("Expanded", true)
+	note.visible = note_data.get("Visible", true)
+
+	return note
+
+# { "Audio": <null>, "Content": "BRE", "ContentType": "text", "Enabled": false, "Expanded": true, "File": "", "ImageCaption": "", "LastYSize": 100.0,
+# "Locked": false, "MemoryImage": <null>, "Order": 0.0, "OwningThread": "fb8bcc6be53ed9fe4a15de8a1a959cfaa9c0bb441705004edd0e1bbf599fe0d1", "Pinned": false,
+# "Title": "test BRE", "Type": 0.0, "UUID": "345e77bebfb7efbb1206ab3b1bc19c9c8bace80490a2d8471533cb2d7893b492", "Visible": true, "isDrawer": false }

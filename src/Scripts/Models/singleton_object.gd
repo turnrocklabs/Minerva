@@ -131,6 +131,12 @@ func remove_recent_project(project_name: String) -> void:
 
 
 #region Notes
+
+var notes_container: NotesContainer
+
+
+
+
 enum note_type {
 	TEXT,
 	AUDIO, 
@@ -169,13 +175,15 @@ var DrawerThreadList: Array[MemoryThread]
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
 var DetachedNotes: Array[MemoryItem]
 
-var NotesTab: MemoryTabs
-var DrawerTab: DrawerTabs
+
+# var NotesTab: MemoryTabs
+# var DrawerTab: DrawerTabs
+
 ##reorder array
 func initialize_notes(threads: Array[MemoryThread] = []):
 	ThreadList = threads
 	
-	NotesTab.render_threads()
+	# NotesTab.render_threads()
 	pass
 
 @warning_ignore("unused_signal")
@@ -189,14 +197,15 @@ signal note_toggled(note: Note, on: bool)
 signal note_changed(note: Note)
 
 func toggle_all_notes(notes_enabled: bool):
-	if notes_enabled:
-		NotesTab.disable_all()
-		if DrawerTab.visible:
-			DrawerTab.disable_all()
-	if !notes_enabled:
-		NotesTab.enable_all()
-		if DrawerTab.visible:
-			DrawerTab.enable_all()
+	pass
+	# if notes_enabled:
+	# 	NotesTab.disable_all()
+	# 	if DrawerTab.visible:
+	# 		DrawerTab.disable_all()
+	# if !notes_enabled:
+	# 	NotesTab.enable_all()
+	# 	if DrawerTab.visible:
+	# 		DrawerTab.enable_all()
 
 ## Returns `MemoryThread` with the given `ThreadId` or null if none are found
 func get_thread(thread_id: String) -> MemoryThread:

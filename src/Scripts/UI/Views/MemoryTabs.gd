@@ -179,7 +179,7 @@ func _ready():
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 
 	SingletonObject.ThreadList = []
-	SingletonObject.NotesTab = self
+	SingletonObject.notes_container = self
 	SingletonObject.AttachNoteFile.connect(self.attach_file)
 	SingletonObject.create_notes_tab.connect(_on_btn_create_thread_pressed)
 	# Don't call render_threads() - tabs will be created as needed
