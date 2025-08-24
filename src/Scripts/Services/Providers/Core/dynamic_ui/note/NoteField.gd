@@ -6,7 +6,7 @@ static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/n
 @onready var _field_name_label: Label = %FieldName
 @onready var _field_rich_text_label: RichTextLabel = %RichTextLabel
 
-var _requested_fields: String
+var _requested_fields: Array
 
 var selected_notes: = 0:
 	set(value):
@@ -21,7 +21,7 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 	scn.ready.connect(
 		func():
 			scn._field_name_label.text = field_params["display_name"] + ":"
-			scn._requested_fields = field_params.get("fields", "")
+			scn._requested_fields = field_params.get("fields", [])
 
 			if input:
 				scn.selected_notes = scn.selected_notes
@@ -31,11 +31,11 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 							scn.selected_notes += 1
 				
 				SingletonObject.note_toggled.connect(
-					func(_note: Note, on: bool):
+					(func(_note: Note, on: bool, scn_: NoteField):
 						if on:
-							scn.selected_notes += 1
+							scn_.selected_notes += 1
 						else:
-							scn.selected_notes -= 1
+							scn_.selected_notes -= 1).bind(scn)
 				)
 
 			else:
@@ -71,6 +71,10 @@ func get_user_data():
 func update_output(notes: Array) -> void:
 
 	var orphans: Dictionary = {}
+
+	# if partial request don't try and recreate the notes
+	if not _requested_fields.is_empty():
+		return
 
 	for note_data in notes:
 		var item: = MemoryItem.Deserialize(note_data)
