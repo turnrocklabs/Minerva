@@ -1,6 +1,14 @@
 [gd_resource type="Theme" load_steps=6 format=3 uid="uid://cdp8qvjvdfebe"]
 
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
 [ext_resource type="FontFile" uid="uid://c3je46806fbc7" path="res://addons/markdownlabel/assets/fonts/Fira_Code/static/FiraCode-Regular.ttf" id="1_a62c1"]
+=======
+[ext_resource type="FontFile" uid="uid://cbwy6wioqdqwy" path="res://addons/markdownlabel/assets/fonts/Fira_Code/static/FiraCode-Regular.ttf" id="1_a62c1"]
+>>>>>>> Stashed changes
+=======
+[ext_resource type="FontFile" uid="uid://cbwy6wioqdqwy" path="res://addons/markdownlabel/assets/fonts/Fira_Code/static/FiraCode-Regular.ttf" id="1_a62c1"]
+>>>>>>> Stashed changes
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_lxph6"]
 bg_color = Color(0.0784314, 0.0784314, 0.0784314, 1)
