@@ -3,16 +3,23 @@ extends VBoxContainer
 
 var main_tab_container: BaseTabContainer
 var memory_thread: MemoryThread
-var disable_notes_button
+var disable_notes_button: CheckButton
+var reaload_file_notes_buton: Button
+var collapse_notes_button: Button
+var buttons_h_box_contianer: HBoxContainer
 var is_drawer_list: bool = false
 
 func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool = false):
 	# we add separation between the children of the HBoxContainer
 	add_theme_constant_override("Separation", 12)
 	
-	#we add a disable notes button
-	add_child(initialize_disable_button())
+	buttons_h_box_contianer = HBoxContainer.new()
 	
+	#we add a disable notes button
+	buttons_h_box_contianer.add_child(initialize_reaload_button())
+	buttons_h_box_contianer.add_child(initialize_disable_button())
+	
+	add_child(buttons_h_box_contianer)
 	main_tab_container = memory_tabs
 	memory_thread = thread
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -22,6 +29,17 @@ func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool 
 	
 	memory_tabs.memories_updated.connect(_on_memories_updated)
 
+
+
+#create a check button for toggling enabled notes 
+func initialize_reaload_button() -> Button:
+	disable_notes_button = Button.new()
+	disable_notes_button.text = "Reaload File Notes"
+	disable_notes_button.icon = preload("res://assets/icons/reload-icons/reload-24.svg")
+	disable_notes_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	disable_notes_button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	
+	return disable_notes_button
 
 #create a check button for toggling enabled notes 
 func initialize_disable_button() -> CheckButton:
@@ -116,6 +134,8 @@ func render_items():
 		var note: Note = cached_notes[item]
 
 		note.get_parent().move_child(note, i)
+	
+	move_child(buttons_h_box_contianer, 0)
 
 func render_item(item: MemoryItem, orphan_notes: Array[Note] = []) -> Note:
 
