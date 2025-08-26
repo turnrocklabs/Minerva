@@ -537,3 +537,11 @@ func _on_remove_drawer_button_pressed():
 
 	deleted_drawer.emit()
 	SingletonObject.drawer_save_data.emit()
+
+
+func on_collapse_all_button_pressed(new_value: bool) -> void:
+	expanded = new_value
+	if !expanded:
+		contract_note()
+	else:
+		expand_note()

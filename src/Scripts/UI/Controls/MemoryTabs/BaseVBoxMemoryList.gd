@@ -1,45 +1,75 @@
 class_name BaseVBoxMemoryList
 extends VBoxContainer
 
+signal collapse_all_notes(expanded: bool)
+
+var expanded_notes: bool = true
+
 var main_tab_container: BaseTabContainer
 var memory_thread: MemoryThread
 var disable_notes_button: CheckButton
-var reaload_file_notes_buton: Button
+var reload_file_notes_buton: Button
 var collapse_notes_button: Button
+var margin_cont: MarginContainer
 var buttons_h_box_contianer: HBoxContainer
+var h_sep: HSeparator
 var is_drawer_list: bool = false
 
+
 func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool = false):
-	# we add separation between the children of the HBoxContainer
-	add_theme_constant_override("Separation", 12)
-	
 	buttons_h_box_contianer = HBoxContainer.new()
+	buttons_h_box_contianer.add_theme_constant_override("separation", 12)
 	
+	buttons_h_box_contianer.add_child(initialize_collapse_button())
+	var buffer_control: = Control.new()
+	buffer_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons_h_box_contianer.add_child(buffer_control)
 	#we add a disable notes button
-	buttons_h_box_contianer.add_child(initialize_reaload_button())
+	buttons_h_box_contianer.add_child(initialize_reload_button())
 	buttons_h_box_contianer.add_child(initialize_disable_button())
 	
-	add_child(buttons_h_box_contianer)
+	margin_cont = MarginContainer.new()
+	margin_cont.add_theme_constant_override("margin_left", 6)
+	margin_cont.add_theme_constant_override("margin_right", 6)
+	margin_cont.add_theme_constant_override("margin_top", 8)
+	margin_cont.add_child(buttons_h_box_contianer)
+	add_child(margin_cont)
+	
+	h_sep = HSeparator.new()
+	add_child(h_sep)
 	main_tab_container = memory_tabs
 	memory_thread = thread
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	
+	add_theme_constant_override("separation", 10)
 	is_drawer_list = is_drawer
 	
 	memory_tabs.memories_updated.connect(_on_memories_updated)
 
 
+#create a check button for toggling enabled notes 
+func initialize_collapse_button() -> Button:
+	collapse_notes_button = Button.new()
+	collapse_notes_button.text = "Toggle Collapse Notes"
+	collapse_notes_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	collapse_notes_button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	collapse_notes_button.pressed.connect(_on_collapse_button_pressed)
+	return collapse_notes_button
+
+
+func _on_collapse_button_pressed() -> void:
+	expanded_notes = !expanded_notes
+	collapse_all_notes.emit(expanded_notes)
 
 #create a check button for toggling enabled notes 
-func initialize_reaload_button() -> Button:
-	disable_notes_button = Button.new()
-	disable_notes_button.text = "Reaload File Notes"
-	disable_notes_button.icon = preload("res://assets/icons/reload-icons/reload-24.svg")
-	disable_notes_button.size_flags_horizontal = Control.SIZE_SHRINK_END
-	disable_notes_button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+func initialize_reload_button() -> Button:
+	reload_file_notes_buton = Button.new()
+	reload_file_notes_buton.text = "Reload File Notes"
+	reload_file_notes_buton.icon = preload("res://assets/icons/reload-icons/reload-24.svg")
+	reload_file_notes_buton.size_flags_horizontal = Control.SIZE_SHRINK_END
+	reload_file_notes_buton.alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	
-	return disable_notes_button
+	return reload_file_notes_buton
 
 #create a check button for toggling enabled notes 
 func initialize_disable_button() -> CheckButton:
@@ -135,7 +165,8 @@ func render_items():
 
 		note.get_parent().move_child(note, i)
 	
-	move_child(buttons_h_box_contianer, 0)
+	move_child(margin_cont, 0)
+	move_child(h_sep, 1)
 
 func render_item(item: MemoryItem, orphan_notes: Array[Note] = []) -> Note:
 
@@ -160,7 +191,9 @@ func render_item(item: MemoryItem, orphan_notes: Array[Note] = []) -> Note:
 	add_child.call_deferred(note_control)
 	
 	await note_control.ready
-
+	
+	collapse_all_notes.connect(note_control.on_collapse_all_button_pressed)
+	
 	note_control.memory_item = item
 	
 	# Connect to the appropriate delete method based on drawer type
