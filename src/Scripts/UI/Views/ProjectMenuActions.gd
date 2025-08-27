@@ -137,16 +137,11 @@ func save_editor_panes(skip_selecting_items: bool = false):
 # serialize_project iterates through the notes and chats and creates an array
 # each line in the array is the contents of either the notes or the chats.
 func serialize_project() -> Dictionary:
-	var notes: Array[Dictionary] = []
+	var notes: = SingletonObject.notes_container.serialize()
 	var chats: Array[Dictionary] = []
 	# var active_notes_index: int = 0 ## which of the notes tabs is selected and active
 	# var active_chat_index: int = 0 ## which chat tab is active
 	var last_tab_index: int = 0 ##
-
-	# Serialize the notes first.
-	for note_tab: MemoryThread in SingletonObject.ThreadList:
-		var serialized_note_tab = note_tab.Serialize()
-		notes.append(serialized_note_tab)
 	
 	# # Now serialize the chats.
 	for chat_thread: ChatHistory in SingletonObject.ChatList:
