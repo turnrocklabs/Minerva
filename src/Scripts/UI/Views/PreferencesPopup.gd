@@ -10,6 +10,10 @@ extends PersistentWindow
 @onready var connect_button: Button = %CoreConnetButton
 @onready var hcp_url: LineEdit = %leCoreUrl # WebSocket URL for Core
 
+## Container with advanced core connection options
+@onready var _core_connection_advanced: Control = %CoreConnectionAdvanced
+@onready var _core_connection_advanced_separator: Separator = %CoreConnectionAdvancedSeparator
+
 # Authentication UI
 @onready var auth_preset_option_button: OptionButton = %AuthPresetOptionButton
 @onready var auth_base_url: LineEdit = %leAuthBaseUrl # HTTP Base URL for Auth
@@ -31,6 +35,8 @@ const PROVIDERS = {
 # --- Authentication Presets ---
 const AUTH_PRESET_PROD = "https://www.turnrock.ai:4040/v1/login"
 const AUTH_PRESET_LOCAL = "http://localhost:4040/v1/login"
+const WS_PRESET_PROD = "wss://www.turnrock.ai:27500/connect"
+const WS_PRESET_LOCAL = "wss://127.0.0.1:27500/connect"
 const AUTH_PRESET_CUSTOM_IDX = 2 # Index of the "Custom" option in the OptionButton
 
 @onready var _fields = {
@@ -69,7 +75,7 @@ func _ready():
 			config_file.set_value("USER", "last_name", "Available")
 
 			# Default HCP settings (including new auth base URL)
-			config_file.set_value("HCP", "url", "") # Default Core WS URL
+			config_file.set_value("HCP", "url", WS_PRESET_PROD) # Default Core WS URL
 			config_file.set_value("HCP", "auth_base_url", AUTH_PRESET_PROD) # Default Auth Base URL
 			config_file.set_value("HCP", "username", "")
 			config_file.set_value("HCP", "password", "")
@@ -126,7 +132,7 @@ func set_field_values():
 	_fields["anthropic"].text = config_file.get_value("API KEYS", "anthropic", "")
 	_fields["openai"].text = config_file.get_value("API KEYS", "openai", "")
 
-	_fields["hcp_url"].text = config_file.get_value("HCP", "url", "") # Core WS URL
+	_fields["hcp_url"].text = config_file.get_value("HCP", "url", WS_PRESET_PROD) # Core WS URL
 	_fields["hcp_auto_connect"].button_pressed = config_file.get_value("HCP", "auto_connect", false)
 	_fields["hcp_username"].text = config_file.get_value("HCP", "username", "")
 	_fields["hcp_password"].text = config_file.get_value("HCP", "password", "")
@@ -138,10 +144,10 @@ func set_field_values():
 	# Update the dropdown based on the loaded URL
 	if saved_auth_url == AUTH_PRESET_PROD:
 		auth_preset_option_button.select(0)
-		auth_base_url.get_parent().visible = false
+		_set_connection_options_visibility(false)
 	elif saved_auth_url == AUTH_PRESET_LOCAL:
 		auth_preset_option_button.select(1)
-		auth_base_url.get_parent().visible = false
+		_set_connection_options_visibility(false)
 	else:
 		auth_preset_option_button.select(AUTH_PRESET_CUSTOM_IDX) # Select "Custom"
 
@@ -150,14 +156,19 @@ func _on_auth_preset_option_button_item_selected(index: int) -> void:
 	match index:
 		0: # Production
 			auth_base_url.text = AUTH_PRESET_PROD
-			auth_base_url.get_parent().visible = false
+			hcp_url.text = WS_PRESET_PROD
+			_set_connection_options_visibility(false)
 		1: # Localhost
 			auth_base_url.text = AUTH_PRESET_LOCAL
-			auth_base_url.get_parent().visible = false
+			hcp_url.text = WS_PRESET_LOCAL
+			_set_connection_options_visibility(false)
 		2: # Custom
-			auth_base_url.get_parent().visible = true
-			pass
+			_set_connection_options_visibility(true)
 
+func _set_connection_options_visibility(on: bool):
+	auth_base_url.get_parent().visible = on
+	_core_connection_advanced.visible = on
+	_core_connection_advanced_separator.visible = on
 
 func _on_btn_save_prefs_pressed():
 	config_file.set_value("USER", "first_name", _fields["first_name"].text)
