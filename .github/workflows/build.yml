@@ -16,9 +16,7 @@ on:
     paths:
       - "src/**"
     branches:
-      - main
-      - user/milos/feature/terminal
-      - user/milos/core_ui
+      - development
 
 jobs:
   check-gdextension:
