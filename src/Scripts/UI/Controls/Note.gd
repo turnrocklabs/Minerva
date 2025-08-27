@@ -37,18 +37,21 @@ var uuid: String:
 	set(value):
 		if uuid.is_empty():
 			uuid = value
+			SingletonObject.save_state(false)
 		else:
 			push_warning("Tried to change the Note object uuid when the value is already set")
 
 var title: String:
 	set(value):
 		_title.text = value
+		SingletonObject.save_state(false)
 	get:
 		return _title.text
 
 var enabled: bool:
 	set(value):
 		_enabled.disabled = not value
+		SingletonObject.save_state(false)
 	get:
 		return not _enabled.disabled
 
@@ -56,10 +59,19 @@ var expanded: bool = true:
 	set(value):
 		expanded = value
 		_node_expand_toggled()
+		SingletonObject.save_state(false)
 
 ## String representation of this notes [member Note.type], or [code]"Unknown"[/code] if [member Note.type] is not set or found.
 var content_type: String:
 	get: return _type_names.get(type, "Unknown")
+
+
+## File path of the file attached to this note.[br]
+## Changing this property doesn't reload the note,
+## but makes the note load the content from that file on deserialization,
+## taking the [property type] into account.
+var file: String
+
 
 var expanded_height: float = 150
 
@@ -314,11 +326,73 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 
 # endregion
 
+# region Serialization
 
+## Serializes the [class Note] object into a JSON serializable dictionary.
+func serialize() -> Dictionary:
+	var note_data: = {}
+
+	match type:
+		Type.TEXT:
+			# note_data["Content"] = content
+			pass
+		
+		Type.IMAGE:
+			pass
+		
+		Type.AUDIO:
+			pass
+
+		_:
+			push_error("Can't serialize a Note object (%s) without a valid type" % self)
+
+
+	return note_data
+
+# { "Audio": <null>, "Content": "BRE", "ContentType": "text", "Enabled": false, "Expanded": true, "File": "", "ImageCaption": "", "LastYSize": 100.0,
+# "Locked": false, "MemoryImage": <null>, "Order": 0.0, "OwningThread": "fb8bcc6be53ed9fe4a15de8a1a959cfaa9c0bb441705004edd0e1bbf599fe0d1", "Pinned": false,
+# "Title": "test BRE", "Type": 0.0, "UUID": "345e77bebfb7efbb1206ab3b1bc19c9c8bace80490a2d8471533cb2d7893b492", "Visible": true, "isDrawer": false }
+
+
+## Serializes the controls (NoteTextControls, NoteImageControls, etc..) container.[br]
+## Tries to find the first child that is one of the above containers and returns it's data.
+func _serialize_controls_data():
+	var data: = {}
+	var controls_container
+
+	for child in _notes_control_container.get_children():
+		if (
+			child is NoteTextControls or
+			child is NoteImageControls or
+			child is NoteAudioControls or
+			child is NoteVideoControls
+		): controls_container = child
+
+	if not controls_container:
+		push_warning("Couldn't serialize Note object (%s) controls container as a valid child wasn't found." % self)
+		return {}
+	
+	if controls_container is NoteTextControls:
+		data["Content"] = controls_container.content
+	
+	elif controls_container is NoteAudioControls:
+		data["Audio"] = controls_container.audio
+	
+	elif controls_container is NoteImageControls:
+		pass
+
+
+
+## Deserializes the [param note_data] dictionary into a [class Note] object.
 static func deserialize(note_data: Dictionary) -> Note:
 	print(note_data)
 
 	var note: Note
+
+	# TODO:
+	# If a file is attached to a note, if takes priority
+	# over other content fileds in the data. If the file is not valid,
+	# the note will be loaded with an error message.
 
 	match note_data.get("ContentType", "text"):
 		"text":
@@ -352,3 +426,5 @@ static func deserialize(note_data: Dictionary) -> Note:
 # { "Audio": <null>, "Content": "BRE", "ContentType": "text", "Enabled": false, "Expanded": true, "File": "", "ImageCaption": "", "LastYSize": 100.0,
 # "Locked": false, "MemoryImage": <null>, "Order": 0.0, "OwningThread": "fb8bcc6be53ed9fe4a15de8a1a959cfaa9c0bb441705004edd0e1bbf599fe0d1", "Pinned": false,
 # "Title": "test BRE", "Type": 0.0, "UUID": "345e77bebfb7efbb1206ab3b1bc19c9c8bace80490a2d8471533cb2d7893b492", "Visible": true, "isDrawer": false }
+
+# endregion

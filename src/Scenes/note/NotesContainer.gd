@@ -94,7 +94,22 @@ func hide_notes(tab_idx: = -1):
         note.visible = true
 
 
-func deserialize_notes(notes_data: Array) -> void:
+func serialize() -> Array[Array]:
+    var data: Array[Array]
+
+    for i in range(get_tab_count()):
+        var notes_data: Array[Dictionary]
+        
+        var notes: = get_notes(i)
+
+        for note in notes:
+            notes_data.append(note.serialize())
+
+
+
+    return data
+
+func deserialize(notes_data: Array) -> void:
 
     # print(notes_data)
 

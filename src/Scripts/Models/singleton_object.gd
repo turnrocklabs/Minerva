@@ -477,7 +477,7 @@ func is_editor_file_open() -> bool:
 
 
 func is_notes_open() -> bool:# checks if a notes list exists
-	if ThreadList:
+	if notes_container:
 		return true
 	return false
 
