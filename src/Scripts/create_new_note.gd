@@ -48,6 +48,7 @@ func _on_close_requested() -> void:
 	%ImagePreview.texture = null
 	image_original_res = null
 	audio_controls.audio = null
+	audio_controls.remove_meta("file")
 	%ImageDropPanel.visible = true
 	if !isDrawer:
 		%CreateNewNote.exclusive = false
@@ -128,9 +129,15 @@ func _on_add_note_pressed():
 			)
 
 		Note.Type.AUDIO:
-			notes_container.add_note(
-				Note.create_audio_note(note_title, audio_controls.audio)
-			)
+			var associated_file = audio_controls.get_meta("file", "")
+
+			var audio_note: Note
+			if not associated_file:
+				audio_note = Note.create_audio_note(note_title, audio_controls.audio)
+			else:
+				audio_note = Note.create_file_note(note_title, associated_file)
+
+			notes_container.add_note(audio_note)
 		
 		# SingletonObject.note_type.IMAGE:
 		# 	var image_description = ""  # You can add an optional description field for images if needed
@@ -150,6 +157,7 @@ func _on_add_note_pressed():
 	%ImagePreview.texture = null
 	image_original_res = null
 	audio_controls.audio = null
+	audio_controls.remove_meta("file")
 	%ImageDropPanel.visible = true
 	%AddNotePopUp.disabled = true
 	
@@ -288,6 +296,8 @@ func get_image_from_clipboard():
 
 # gets called when record button is pressed
 func _on_record_audio_button_pressed() -> void:
+	audio_controls.remove_meta("file") # detach the file, since we're using a recording now
+
 	if effect.is_recording_active():
 		audio_controls.audio = effect.get_recording() # type -> AudioStreamWAV
 		%RecordAudioButton.text = "Press To Record Note"
@@ -360,6 +370,8 @@ func _on_audio_note_file_import_file_selected(path: String) -> void:
 			audio_stream.data = file.get_buffer(file.get_length())
 	
 	audio_controls.audio = audio_stream
-	
+	# set the file meta, so we can attach it to the created note
+	audio_controls.set_meta("file", path)
+
 	should_add_note_be_disabled()
 	

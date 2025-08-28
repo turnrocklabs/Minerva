@@ -23,7 +23,7 @@ var audio: AudioStream:
 	set(value):
 		_audio_stream_player.stream = value
 
-		_timeline_slider.max_value = _audio_stream_player.stream.get_length() if _audio_stream_player.stream else 0.
+		_timeline_slider.max_value = _audio_stream_player.stream.get_length() if _audio_stream_player.stream else 0.1
 
 		_audio_stream_player.play()
 		_audio_stream_player.stream_paused = true
@@ -31,6 +31,7 @@ var audio: AudioStream:
 		_timeline_slider.editable = value != null
 
 		if value: _format_time_label()
+		else: _time_label.text = ""
 	get:
 		return _audio_stream_player.stream
 
@@ -77,6 +78,106 @@ var muted: bool = false:
 
 func setup(note_audio: AudioStream):
 	audio = note_audio
+
+
+## Constructs a dictionary with all the audio stream data serialized.[br]
+## [method load_audio_from_data] can be used to load the data back.
+func get_audio_data() -> Dictionary:
+	if audio is AudioStreamMP3:
+		return {
+			"Type": "AudioStreamMP3",
+			"Data": Marshalls.raw_to_base64(audio.data),
+			"Loop": audio.loop,
+			"LoopOffset": audio.loop_offset,
+			"BarBeats": audio.bar_beats,
+			"BeatCount": audio.beat_count,
+			"Bpm": audio.bpm
+		}
+		
+	elif audio is AudioStreamOggVorbis:
+		var packet_data_base64 = []
+		if audio.packet_sequence:
+			for packet in audio.packet_sequence.packet_data:
+				packet_data_base64.append(Marshalls.raw_to_base64(packet))
+		
+		return {
+			"Type": "AudioStreamOggVorbis",
+			"PacketData": packet_data_base64,
+			"GranulePositions": audio.packet_sequence.granule_positions if audio.packet_sequence else PackedInt64Array(),
+			"SamplingRate": audio.packet_sequence.sampling_rate if audio.packet_sequence else 0.0,
+			"Loop": audio.loop,
+			"LoopOffset": audio.loop_offset,
+			"BarBeats": audio.bar_beats,
+			"BeatCount": audio.beat_count,
+			"Bpm": audio.bpm
+		}
+		
+	elif audio is AudioStreamWAV:
+		return {
+			"Type": "AudioStreamWAV",
+			"Data": Marshalls.raw_to_base64(audio.data),
+			"Format": audio.format,
+			"MixRate": audio.mix_rate,
+			"Stereo": audio.stereo,
+			"LoopMode": audio.loop_mode,
+			"LoopBegin": audio.loop_begin,
+			"LoopEnd": audio.loop_end
+		}
+	
+	return {}
+
+## Loads the data saved by [method get_audio_data] into a [class AudioStream].
+## Returns `null` on error.
+static func load_audio_from_data(audio_data: Dictionary) -> AudioStream:
+	if not audio_data.has("Type"):
+		return null
+	
+	match audio_data["Type"]:
+		"AudioStreamMP3":
+			var stream = AudioStreamMP3.new()
+			stream.data = Marshalls.base64_to_raw(audio_data["Data"])
+			stream.loop = audio_data.get("Loop", false)
+			stream.loop_offset = audio_data.get("LoopOffset", 0.0)
+			stream.bar_beats = audio_data.get("BarBeats", 0)
+			stream.beat_count = audio_data.get("BeatCount", 0)
+			stream.bpm = audio_data.get("Bpm", 0.0)
+			return stream
+			
+		"AudioStreamOggVorbis":
+			var stream = AudioStreamOggVorbis.new()
+			
+			# Reconstruct packet sequence
+			if audio_data.has("PacketData") and audio_data["PacketData"].size() > 0:
+				var packet_seq = OggPacketSequence.new()
+				
+				# Convert base64 packets back to PackedByteArray
+				packet_seq.packet_data = []
+				for packet_base64 in audio_data["PacketData"]:
+					packet_seq.packet_data.append(Marshalls.base64_to_raw(packet_base64))
+				
+				packet_seq.granule_positions = audio_data.get("GranulePositions", PackedInt64Array())
+				packet_seq.sampling_rate = audio_data.get("SamplingRate", 0.0)
+				stream.packet_sequence = packet_seq
+			
+			stream.loop = audio_data.get("Loop", false)
+			stream.loop_offset = audio_data.get("LoopOffset", 0.0)
+			stream.bar_beats = audio_data.get("BarBeats", 0)
+			stream.beat_count = audio_data.get("BeatCount", 0)
+			stream.bpm = audio_data.get("Bpm", 0.0)
+			return stream
+			
+		"AudioStreamWAV":
+			var stream = AudioStreamWAV.new()
+			stream.data = Marshalls.base64_to_raw(audio_data["Data"])
+			stream.format = audio_data.get("Format", AudioStreamWAV.FORMAT_16_BITS)
+			stream.mix_rate = audio_data.get("MixRate", 44100)
+			stream.stereo = audio_data.get("Stereo", false)
+			stream.loop_mode = audio_data.get("LoopMode", AudioStreamWAV.LOOP_DISABLED)
+			stream.loop_begin = audio_data.get("LoopBegin", 0)
+			stream.loop_end = audio_data.get("LoopEnd", 0)
+			return stream
+	
+	return null
 
 func _ready() -> void:
 

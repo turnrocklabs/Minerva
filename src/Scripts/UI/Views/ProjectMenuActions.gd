@@ -166,7 +166,7 @@ func deserialize_project(data: Dictionary):
 	# for thread_data in data.get("ThreadList", []):
 	# 	threads.append(MemoryThread.Deserialize(thread_data))
 	
-	SingletonObject.notes_container.deserialize_notes(data.get("ThreadList", []))
+	SingletonObject.notes_container.deserialize(data.get("ThreadList", []))
 
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("default_provider", 0))
