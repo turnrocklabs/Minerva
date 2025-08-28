@@ -69,24 +69,32 @@ var content_type: String:
 ## File path of the file attached to this note.[br]
 ## Changing this property doesn't reload the note,
 ## but makes the note load the content from that file on deserialization,
-## taking the [property type] into account.
+## and save to that file on serialize, taking the [property type] into account.
 var file: String
 
 
 var expanded_height: float = 150
 
+var _error: = false:
+	set(value):
+		_error = value
+		_on_error_changed()
+
 
 @onready var _title: LineEdit = %Title
 @onready var _enabled: CheckButton = %CheckButton
+@onready var _edit_button: Button = %EditButton
+@onready var _warning_button: Button = %WarningButton
+@onready var _hide_button: Button = %HideButton
 
 @onready var _notes_control_container: Container = %NoteControlsContainer
 # container that holds all the content and gives the note its background
 @onready var _panel_container: PanelContainer = %PanelContainer
+# container with top controls, expand, title, edit, hide, remove, etc
+# Has mouse filter set to stop, set to propagate up when dragging notes
+@onready var _top_controls: Container = %TopControls
 @onready var _expand_button: Button = %ExpandButton
 @onready var _resize_control: Control = %ResizeControl
-
-@onready var _upper_drop_separator: HSeparator = %UpperSeparator
-@onready var _lower_drop_separator: HSeparator = %LowerSeparator
 
 static func create_text_note(note_title: String, content: String) -> Note:
 	var text_controls: NoteTextControls = _text_controls_scene.instantiate()
@@ -100,8 +108,20 @@ static func create_text_note(note_title: String, content: String) -> Note:
 			note_scene.title = note_title
 			note_scene.type = Type.TEXT
 	)
+	
 
 	return note_scene
+
+static func create_error_note(note_title: String, content: String, warning: String = "This note is invalid") -> Note:
+	var note: = create_text_note(note_title, content)
+	
+	note.ready.connect(
+		func():
+			note._error = true
+			note._warning_button.tooltip_text = warning
+	)
+
+	return note
 
 static func create_dummy_note(note_title: String) -> Note:
 	var note_scene: Note = _scene.instantiate()
@@ -138,7 +158,7 @@ static func create_audio_note(note_title: String, audio: AudioStream) -> Note:
 			audio_controls.setup(audio)
 			
 			note_scene.title = note_title
-			note_scene.type = Type.IMAGE
+			note_scene.type = Type.AUDIO
 	)
 
 	return note_scene
@@ -157,7 +177,7 @@ static func create_file_note(note_title: String, file_path: String) -> Note:
 		var img: = Image.load_from_file(file_path)
 		if img == null:
 			push_error("Couldn't open the note file %s. Image object null." % file_path)
-			return create_text_note(note_title, "Couldn't open the note file %s. Image object null." % file_path)
+			return create_error_note(note_title, "Couldn't open the note file (%s). Image object null." % file_path)
 
 		note = create_image_note(note_title, img)
 
@@ -166,8 +186,8 @@ static func create_file_note(note_title: String, file_path: String) -> Note:
 
 		if fa == null:
 			var err: = FileAccess.get_open_error()
-			push_error("Couldn't open the note file: %s" % error_string(err))
-			return create_text_note(note_title, "Couldn't open the note file: %s" % error_string(err))
+			push_error("Couldn't open the note file (%s): %s" % [file_path, error_string(err)])
+			return create_error_note(note_title, "Couldn't open the note file (%s): %s" % [file_path, error_string(err)])
 
 		var audio_stream: AudioStream	
 	
@@ -189,11 +209,12 @@ static func create_file_note(note_title: String, file_path: String) -> Note:
 
 		if fa == null:
 			var err: = FileAccess.get_open_error()
-			push_error("Couldn't open the note file: %s" % error_string(err))
-			return create_text_note(note_title, "Couldn't open the note file: %s" % error_string(err))
+			push_error("Couldn't open the note file (%s): %s" % [file_path, error_string(err)])
+			return create_error_note(note_title, "Couldn't open the note file (%s): %s" % [file_path, error_string(err)])
 
 		note = create_text_note(note_title, fa.get_as_text())
 
+	note.file = file_path
 	
 	return note
 
@@ -204,6 +225,21 @@ func _set_controls_container(controls_container: Control) -> void:
 	_notes_control_container.add_child(controls_container)
 	await get_tree().process_frame
 
+## When the error property changes, update the note border color
+func _on_error_changed():
+	
+	if _error:
+		_panel_container.theme_type_variation = &"ErrorNote"
+	else:
+		_panel_container.theme_type_variation = &""
+
+	_expand_button.visible = not _error
+	_warning_button.visible = _error
+	_enabled.visible = not _error
+	_hide_button.visible = not _error
+	_edit_button.visible = not _error
+	
+
 func _to_string() -> String:
 	return "%s note (%s)" % [content_type.capitalize(), title]
 
@@ -211,7 +247,7 @@ func _on_remove_button_pressed() -> void:
 	queue_free()
 
 func _on_edit_button_pressed() -> void:
-	pass # Replace with function body.
+	_error = not _error
 
 func _on_hide_button_pressed() -> void:
 	visible = false
@@ -284,45 +320,126 @@ func _on_resize_control_gui_input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	
 	match what:
-		NOTIFICATION_DRAG_BEGIN: pass
-		NOTIFICATION_DRAG_END: pass
-			# _upper_drop_separator.visible = false
-			# _lower_drop_separator.visible = false
+		NOTIFICATION_DRAG_BEGIN:
+			if not _error:
+				_top_controls.mouse_filter = Control.MOUSE_FILTER_PASS
+		NOTIFICATION_DRAG_END:
+			if not _error:
+				_panel_container.theme_type_variation = &"ErrorNote" if _error else &""
+				_panel_container.remove_theme_stylebox_override("panel")
+				_top_controls.mouse_filter = Control.MOUSE_FILTER_STOP
 
+func _on_mouse_exited() -> void:
+	if _error:
+		_panel_container.theme_type_variation = &"ErrorNote"
+	else:
+		_panel_container.theme_type_variation = &""
+	
+	_panel_container.remove_theme_stylebox_override("panel")
+	
 
 func _get_drag_data(at_position: Vector2) -> Variant:
 	
+	# Invalid notes can't be dragged
+	if _error: return null
+
 	var preview_control: = Control.new()
 
 	var note_dup: = create_dummy_note(title)
-
-	note_dup.set_size.call_deferred(size)
-	note_dup.position = -at_position
-	note_dup.modulate.a = 0.5
-
 	preview_control.add_child(note_dup)
+
+	note_dup.ready.connect(
+		func():
+			note_dup.custom_minimum_size = size
+			note_dup.position = -at_position
+			note_dup.modulate.a = 0.25
+	)
+
+	# set private meta so the drop can be animated correctly
+	set_meta("_mouse_drag_offset", at_position)
 
 	set_drag_preview(preview_control)
 
 	return self
 
 
-func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:	
+func _can_drop_data(at_position: Vector2, data: Variant) -> bool:	
 	# maybe check type, so drawer notes can't be dropped into normal ones?
 
-	# if at_position.y > size.y / 2:
-	# 	_upper_drop_separator.visible = false
-	# 	_lower_drop_separator.visible = true
-	# else:
-	# 	_upper_drop_separator.visible = true
-	# 	_lower_drop_separator.visible = false
+	if data == self: return false
+
+	
+	_panel_container.theme_type_variation = &"DropZoneNote"
+
+	var new_stylebox_error: StyleBoxFlat = _panel_container.get_theme_stylebox("panel").duplicate()
+	
+	if at_position.y > size.y / 2:
+		# below the current node
+		new_stylebox_error.border_width_bottom = 3
+		new_stylebox_error.border_width_left = 1
+		new_stylebox_error.border_width_top = 0
+		new_stylebox_error.border_width_right = 1
+	else:
+		new_stylebox_error.border_width_bottom = 0
+		new_stylebox_error.border_width_left = 1
+		new_stylebox_error.border_width_top = 3
+		new_stylebox_error.border_width_right = 1
+
+	new_stylebox_error.border_color = Color.BLUE
+
+	_panel_container.add_theme_stylebox_override("panel", new_stylebox_error)
 
 	return data is Note
 
 
 func _drop_data(at_position: Vector2, data: Variant) -> void:
-	pass
+	
+	var note = data as Note
 
+	var note_dup: = create_dummy_note(note.title)
+
+	var _mouse_drag_offset = note.get_meta("_mouse_drag_offset", Vector2.ZERO)
+
+	var preview_control: = Control.new()
+	note_dup.set_size.call_deferred(size)
+	note_dup.position = -_mouse_drag_offset
+	note_dup.modulate.a = 0.50
+	
+	preview_control.global_position = get_global_mouse_position()
+	preview_control.add_child(note_dup)
+	
+	get_tree().root.add_child(preview_control)
+
+	var parent: = get_parent()
+
+	if note.get_parent() != parent:
+		note.reparent(parent)
+
+	var index: int
+
+	if at_position.y > size.y / 2:
+		index = get_index()+1
+	else:
+		index = get_index()
+	
+	# if dragged note is before the one we're dropping over
+	# we need to subtract one to account for that node
+	if note.get_index() < index:
+		index -= 1
+	
+	parent.move_child(note, index)
+	note.modulate.a = 0
+
+	# wait for he dragged note to move and get its updated position in the container
+	await get_tree().process_frame
+
+	var tween: = create_tween()
+
+	tween.tween_property(note_dup, "global_position", note.global_position, 0.2)
+	
+	await tween.finished
+	note.modulate.a = 1
+	preview_control.queue_free()
 
 # endregion
 
@@ -330,33 +447,27 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 
 ## Serializes the [class Note] object into a JSON serializable dictionary.
 func serialize() -> Dictionary:
-	var note_data: = {}
+	
+	# File field is handled by the _serialize_controls_data method
+	
+	var note_data: = {
+		"Title": title,
+		"Enabled": enabled,
+		"Expanded": expanded,
+		"ExpandedHeight": expanded_height,
+		"ContentType": content_type,
+	}
 
-	match type:
-		Type.TEXT:
-			# note_data["Content"] = content
-			pass
-		
-		Type.IMAGE:
-			pass
-		
-		Type.AUDIO:
-			pass
-
-		_:
-			push_error("Can't serialize a Note object (%s) without a valid type" % self)
-
+	# Merge the controls data
+	note_data.merge(_serialize_controls_data())
 
 	return note_data
 
-# { "Audio": <null>, "Content": "BRE", "ContentType": "text", "Enabled": false, "Expanded": true, "File": "", "ImageCaption": "", "LastYSize": 100.0,
-# "Locked": false, "MemoryImage": <null>, "Order": 0.0, "OwningThread": "fb8bcc6be53ed9fe4a15de8a1a959cfaa9c0bb441705004edd0e1bbf599fe0d1", "Pinned": false,
-# "Title": "test BRE", "Type": 0.0, "UUID": "345e77bebfb7efbb1206ab3b1bc19c9c8bace80490a2d8471533cb2d7893b492", "Visible": true, "isDrawer": false }
-
-
 ## Serializes the controls (NoteTextControls, NoteImageControls, etc..) container.[br]
-## Tries to find the first child that is one of the above containers and returns it's data.
-func _serialize_controls_data():
+## Tries to find the first child that is one of the above containers and returns it's data.[br]
+## If the note has file attached, the data will be saved to the file and `File` field
+## in the returned data will be populated by this method.
+func _serialize_controls_data() -> Dictionary:
 	var data: = {}
 	var controls_container
 
@@ -373,53 +484,101 @@ func _serialize_controls_data():
 		return {}
 	
 	if controls_container is NoteTextControls:
-		data["Content"] = controls_container.content
+		var fa: = _get_file_handle()
+		if fa:
+			fa.store_string(controls_container.content)
+			data["File"] = file
+		else:
+			data["Content"] = controls_container.content
 	
+	# Generally audio note's content can't be changed in terms of the audio
+	# But if the audio was recorded inside the app, we still need to save the data
+	# So if there's no file attached, that means we recorded the audio ourselves
+	# and we need to save it. Recorded audio is always in WAV format, see AudioEffectRecord.get_recording()
 	elif controls_container is NoteAudioControls:
-		data["Audio"] = controls_container.audio
-	
+		if file:
+			data["File"] = file
+		else:
+			data["Audio"] = controls_container.get_audio_data()
+			
 	elif controls_container is NoteImageControls:
-		pass
+		var fa: = _get_file_handle()
+		if fa:
+			fa.store_buffer(controls_container.image.save_png_to_buffer())
+			data["File"] = file
+		else:
+			data["MemoryImage"] = Marshalls.raw_to_base64(controls_container.image.save_png_to_buffer())
+		
+		data["ImageCaption"] = controls_container.caption
 
+	return data
+
+## Tries to retrieve a file handle for this Notes [property file].[br]
+## Returns `null` if there's no file attached or it couldn't be open.
+func _get_file_handle() -> FileAccess:
+	# if this note doesn't have a file attached return immediately
+	if not file: return null
+
+	var fa: = FileAccess.open(file, FileAccess.WRITE)
+
+	if fa == null:
+		var err: = FileAccess.get_open_error()
+		push_error("Couldn't retrieve a file handle for the Note object (%s) @ %s. %s" % [self, file, error_string(err)])
+		return null
+	
+	return fa
+	
 
 
 ## Deserializes the [param note_data] dictionary into a [class Note] object.
 static func deserialize(note_data: Dictionary) -> Note:
-	print(note_data)
+	# print(note_data)
 
 	var note: Note
 
-	# TODO:
 	# If a file is attached to a note, if takes priority
 	# over other content fileds in the data. If the file is not valid,
 	# the note will be loaded with an error message.
+	if note_data.has("File"):
+		note = Note.create_file_note(note_data.get("Title", "Unknown"), note_data["File"])
 
-	match note_data.get("ContentType", "text"):
-		"text":
-			note = create_text_note(
-				note_data.get("Title", "Unknown"),
-				note_data.get("Content", ""),
-			)
-		"audio":
-			var audio_data = note_data.get("Audio", "")
-			note = create_audio_note(
-				note_data.get("Title", "Unknown"),
-				Marshalls.base64_to_variant(audio_data),
-			)
-		"image":
-			var image_data = note_data.get("MemoryImage", "")
-			note = create_image_note(
-				note_data.get("Title", "Unknown"),
-				Marshalls.base64_to_variant(image_data),
-				note_data.get("ImageCaption", ""),
-			)
-		_:
-			push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))
-			return
+	else:
+		match note_data.get("ContentType", "text"):
+			"text":
+				note = create_text_note(
+					note_data.get("Title", "Unknown"),
+					note_data.get("Content", ""),
+				)
+			"audio":
+				var audio_data = note_data.get("Audio", "")
+				var audio_stream: = NoteAudioControls.load_audio_from_data(audio_data)
 
-	note.enabled = note_data.get("Enabled", true)
-	note.expanded = note_data.get("Expanded", true)
-	note.visible = note_data.get("Visible", true)
+				note = create_audio_note(
+					note_data.get("Title", "Unknown"),
+					audio_stream,
+				)
+			"image":
+				# embedded images are saved as PNG
+				var image_data = note_data.get("MemoryImage", "")
+				var image: = Image.new()
+				image.load_png_from_buffer(Marshalls.base64_to_raw(image_data))
+
+				note = create_image_note(
+					note_data.get("Title", "Unknown"),
+					image,
+					note_data.get("ImageCaption", ""),
+				)
+			_:
+				push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))
+				return
+
+	# can't edit until the node is ready
+	note.ready.connect(
+		func():
+			note.enabled = note_data.get("Enabled", true)
+			note.expanded = note_data.get("Expanded", true)
+			note.visible = note_data.get("Visible", true)
+	)
 
 	return note
 

@@ -44,12 +44,12 @@ func _ready() -> void:
 	SingletonObject.notes_container = %tcThreads
 
 	# TODO: remove
-	SingletonObject.notes_container.add_note(
-		Note.create_text_note("Test", "test note")
-	)
-	SingletonObject.notes_container.add_note(
-		Note.create_text_note("Test", "test note")
-	)
+	# SingletonObject.notes_container.add_note(
+	# 	Note.create_text_note("Test", "test note")
+	# )
+	# SingletonObject.notes_container.add_note(
+	# 	Note.create_text_note("Test", "test note")
+	# )
 
 var MAX: = 20
 

@@ -1,25 +1,40 @@
 class_name NotesContainer
 extends TabContainer
 
+
+func _ready() -> void:
+	# make tabs closeable
+	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
+
+	get_tab_bar().tab_close_pressed.connect(remote_tab)
+
+
 ## Creates a new tab with given name.[br]
 ## If the name is already taken godot will autimatically assing a new one.[br]
 ## Retuns the scroll container added as the new tab.
 func create_tab(tab_name: String = "Notes") -> Control:
-    if tab_name.is_empty():
-        tab_name = "Notes"
+	if tab_name.is_empty():
+		tab_name = "Notes"
 
-    var scroll: = ScrollContainer.new()
+	var scroll: = ScrollContainer.new()
 
-    var vbox: = VBoxContainer.new()
-    vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    
-    scroll.add_child(vbox)
-    scroll.name = tab_name
+	var vbox: = VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	scroll.add_child(vbox)
+	scroll.name = tab_name
 
-    # force readable name
-    add_child(scroll, true)
+	# force readable name
+	add_child(scroll, true)
 
-    return scroll
+	return scroll
+
+## Removes the tab specified with [param tab_idx].
+func remote_tab(tab_idx: int):	
+	var control: = get_tab_control(tab_idx)
+
+	if control:
+		control.queue_free()
 
 
 ## Adds the provided [parameter note] to the [parameter tab_idx] tab.[br]
@@ -28,94 +43,104 @@ func create_tab(tab_name: String = "Notes") -> Control:
 ## Returns true on success.
 func add_note(note: Note, tab_idx: int = -1, force: = true) -> bool:
 
-    if tab_idx == -1:
-        tab_idx = current_tab
+	if tab_idx == -1:
+		tab_idx = current_tab
 
-    # if still -1 there is no selected tab to add to
-    if tab_idx == -1:
-        if force:
-            var created_scroll: = create_tab()
-            var vbox_ = created_scroll.get_child(0)
-            if not vbox_:
-                push_error("Couldn't get the VBoxContainer to add the note to")
+	# if still -1 there is no selected tab to add to
+	if tab_idx == -1:
+		if force:
+			var created_scroll: = create_tab()
+			var vbox_ = created_scroll.get_child(0)
+			if not vbox_:
+				push_error("Couldn't get the VBoxContainer to add the note to")
 
-            vbox_.add_child(note)
+			vbox_.add_child(note)
 
-            return true
-        
-        return false
+			return true
+		
+		return false
 
-    var current_scroll: ScrollContainer = get_tab_control(current_tab)
-    var vbox = current_scroll.get_child(0)
+	var current_scroll: ScrollContainer = get_tab_control(current_tab)
+	var vbox = current_scroll.get_child(0)
 
-    if not vbox:
-        push_error("Couldn't get the VBoxContainer to add the note to")
+	if not vbox:
+		push_error("Couldn't get the VBoxContainer to add the note to")
 
-    vbox.add_child(note)
+	vbox.add_child(note)
 
-    return true
+	return true
 
 ## Returns an array of notes in the specified tab[br].
 ## If not tab is specified ([-1]) returns notes from the currently selected tab or empty array.
 func get_notes(tab_idx: = -1) -> Array[Note]:
-    tab_idx = tab_idx if tab_idx != -1 else current_tab
+	tab_idx = tab_idx if tab_idx != -1 else current_tab
 
-    if tab_idx == -1: return []
+	if tab_idx == -1: return []
 
-    var current_scroll: ScrollContainer = get_tab_control(current_tab)
-    var vbox = current_scroll.get_child(0)
+	var current_scroll: ScrollContainer = get_tab_control(current_tab)
+	var vbox = current_scroll.get_child(0)
 
-    if not vbox:
-        push_error("Couldn't get the VBoxContainer to get the notes")
-        return []
-    
-    var notes: Array[Note] = []
+	if not vbox:
+		push_error("Couldn't get the VBoxContainer to get the notes")
+		return []
+	
+	var notes: Array[Note] = []
 
-    for child in vbox.get_children():
-        if child is Note:
-            notes.append(child)
+	for child in vbox.get_children():
+		if child is Note:
+			notes.append(child)
 
-    return notes
+	return notes
 
 ## Makes all notes in the specified or currently active tab.
 func show_notes(tab_idx: = -1):
-    tab_idx = tab_idx if tab_idx != -1 else current_tab
-    if tab_idx == -1: return
+	tab_idx = tab_idx if tab_idx != -1 else current_tab
+	if tab_idx == -1: return
 
-    for note in get_notes(tab_idx):
-        note.visible = true
+	for note in get_notes(tab_idx):
+		note.visible = true
 
 ## Hides all notes in the specified or currently active tab.
 func hide_notes(tab_idx: = -1):
-    tab_idx = tab_idx if tab_idx != -1 else current_tab
-    if tab_idx == -1: return
+	tab_idx = tab_idx if tab_idx != -1 else current_tab
+	if tab_idx == -1: return
 
-    for note in get_notes(tab_idx):
-        note.visible = true
-
-
-func serialize() -> Array[Array]:
-    var data: Array[Array]
-
-    for i in range(get_tab_count()):
-        var notes_data: Array[Dictionary]
-        
-        var notes: = get_notes(i)
-
-        for note in notes:
-            notes_data.append(note.serialize())
+	for note in get_notes(tab_idx):
+		note.visible = true
 
 
+func serialize() -> Array[Dictionary]:
+	var data: Array[Dictionary]
 
-    return data
+	for i in range(get_tab_count()):
+		var notes_data: Array[Dictionary]
+
+		var notes: = get_notes(i)
+		for note in notes:
+			notes_data.append(note.serialize())
+
+		var tab_data: = {
+			"ThreadName": get_tab_control(i).name,
+			"ThreadId": "TODO",
+			"MemoryItemList": notes_data
+		}
+
+		data.append(tab_data)
+
+	return data
 
 func deserialize(notes_data: Array) -> void:
 
-    # print(notes_data)
+	# print(notes_data)
 
-    for tab_data in notes_data:
-        var tab_title: String = tab_data.get("ThreadName")
-        create_tab(tab_title)
+	for tab_data in notes_data:
+		var tab_title: String = tab_data.get("ThreadName")
+		var tab_control: = create_tab(tab_title)
 
-        for mem_item_data in tab_data.get("MemoryItemList", []):
-            Note.deserialize(mem_item_data)
+		var tab_idx: = get_tab_idx_from_control(tab_control)
+
+		for mem_item_data in tab_data.get("MemoryItemList", []):
+			add_note(
+				Note.deserialize(mem_item_data),
+				tab_idx
+			)
