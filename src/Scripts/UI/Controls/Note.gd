@@ -480,12 +480,13 @@ func contract_note() -> void:
 	resize_tween.set_parallel()
 	resize_tween.tween_property(expand_button, "modulate", expand_icon_color, expand_anim_duration)
 	
-	await resize_tween.finished
+	await get_tree().create_timer(expand_anim_duration - 0.25).timeout
 	video_label.hide()
 	control_type.hide()
 	%HSeparator.hide()
-	%BufferControl.show()
 	resize_drag_control.hide()
+	%BufferControl.show()
+	
 	
 
 
@@ -545,3 +546,11 @@ func on_collapse_all_button_pressed(new_value: bool) -> void:
 		contract_note()
 	else:
 		expand_note()
+
+
+func on_reaload_button_pressed() -> void:
+	if memory_item.File.is_empty():
+		print("No file associated to this note: %s" % memory_item.Title)
+		return
+	
+	print("this Note does have a File assosiated: %s" % memory_item.Title)

@@ -2,6 +2,7 @@ class_name BaseVBoxMemoryList
 extends VBoxContainer
 
 signal collapse_all_notes(expanded: bool)
+signal reload_file
 
 var expanded_notes: bool = true
 
@@ -20,11 +21,12 @@ func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool 
 	buttons_h_box_contianer = HBoxContainer.new()
 	buttons_h_box_contianer.add_theme_constant_override("separation", 12)
 	
-	buttons_h_box_contianer.add_child(initialize_collapse_button())
 	var buffer_control: = Control.new()
 	buffer_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	
+	# We add the controls for tab actions
+	buttons_h_box_contianer.add_child(initialize_collapse_button())
 	buttons_h_box_contianer.add_child(buffer_control)
-	#we add a disable notes button
 	buttons_h_box_contianer.add_child(initialize_reload_button())
 	buttons_h_box_contianer.add_child(initialize_disable_button())
 	
@@ -51,6 +53,7 @@ func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool 
 func initialize_collapse_button() -> Button:
 	collapse_notes_button = Button.new()
 	collapse_notes_button.text = "Toggle Collapse Notes"
+	collapse_notes_button.tooltip_text = "collapses all notes in the tab"
 	collapse_notes_button.size_flags_horizontal = Control.SIZE_SHRINK_END
 	collapse_notes_button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	collapse_notes_button.pressed.connect(_on_collapse_button_pressed)
@@ -65,16 +68,23 @@ func _on_collapse_button_pressed() -> void:
 func initialize_reload_button() -> Button:
 	reload_file_notes_buton = Button.new()
 	reload_file_notes_buton.text = "Reload File Notes"
+	reload_file_notes_buton.tooltip_text = "Reloads the files on the notes that have a file associated to it"
 	reload_file_notes_buton.icon = preload("res://assets/icons/reload-icons/reload-24.svg")
 	reload_file_notes_buton.size_flags_horizontal = Control.SIZE_SHRINK_END
 	reload_file_notes_buton.alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	
+	reload_file_notes_buton.pressed.connect(_reaload_files_button_pressed)
 	return reload_file_notes_buton
+
+
+func _reaload_files_button_pressed() -> void:
+	reload_file.emit()
+
 
 #create a check button for toggling enabled notes 
 func initialize_disable_button() -> CheckButton:
 	disable_notes_button = CheckButton.new()
 	disable_notes_button.text = "Notes Enabled"
+	disable_notes_button.tooltip_text = "Disables/Enables all the notes in the tab"
 	disable_notes_button.button_pressed = false
 	disable_notes_button.size_flags_horizontal = Control.SIZE_SHRINK_END
 	disable_notes_button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -193,7 +203,7 @@ func render_item(item: MemoryItem, orphan_notes: Array[Note] = []) -> Note:
 	await note_control.ready
 	
 	collapse_all_notes.connect(note_control.on_collapse_all_button_pressed)
-	
+	reload_file.connect(note_control.on_reaload_button_pressed)
 	note_control.memory_item = item
 	
 	# Connect to the appropriate delete method based on drawer type
