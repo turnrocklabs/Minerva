@@ -1,4 +1,4 @@
-[gd_scene load_steps=69 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=68 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -62,7 +62,6 @@
 [ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
 [ext_resource type="Script" uid="uid://1fueuihora3v" path="res://Scenes/note/NotesContainer.gd" id="57_jnakw"]
 [ext_resource type="Script" uid="uid://b172wgd7hty1f" path="res://Scripts/Drawer/Drawer_manager.gd" id="58_a7b38"]
-[ext_resource type="Script" uid="uid://br0s8055lcrgk" path="res://Scripts/Drawer/DrawerTabs.gd" id="58_jnakw"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -733,7 +732,7 @@ size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 drag_to_rearrange_enabled = true
 tab_focus_mode = 1
-script = ExtResource("58_jnakw")
+script = ExtResource("57_jnakw")
 
 [node name="DropForNode" type="ColorRect" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control"]
 unique_name_in_owner = true

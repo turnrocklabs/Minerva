@@ -259,7 +259,7 @@ func _on_fdg_open_file_tree_entered():
 
 func _on_open_recent_project_selected(project_name: String):
 	var project_path = SingletonObject.get_project_path(project_name)
-	var status = open_project_given_path(project_path)
+	var status = await open_project_given_path(project_path)
 	if status != OK:
 		SingletonObject.ErrorDisplay("Project file no found", "the project was not found at the path it was saved. \n Maybe it was moved or deleted")
 
@@ -278,6 +278,11 @@ func open_project_given_path(project_path: String) -> int:
 		push_error("Couldn't parse the project file at %s" % project_path)
 		return ERR_FILE_CORRUPT
 	
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.remove_tab(i)
+
+	await get_tree().process_frame
+
 	deserialize_project(json)
 	
 	# Since we just opened the project, the save state is true

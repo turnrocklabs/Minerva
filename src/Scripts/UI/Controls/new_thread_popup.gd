@@ -1,12 +1,11 @@
 extends PersistentWindow
 
 var tab_reference = null
-#var tab_title: String = ""
-var isDrawer:bool
-func _ready() -> void:
-	pass
-	# SingletonObject.associated_notes_tab.connect(_on_associated_notes_tab)
-	# SingletonObject.pop_up_new_tab.connect(_pop_up_new_tab)
+
+## Setting this property changes where the tab will be stored.[br]
+## By default it's added to the `SingletonObject.notes_container`.
+## After the tab has been added, the property reverts back to `null`.
+var notes_container_override: NotesContainer
 
 
 func _on_associated_notes_tab(tab_name: String, tab: Control)-> void:
@@ -37,16 +36,13 @@ func _on_btn_create_thread_pressed() -> void:
 
 	# TODO: if tab_reference, update tab
 
-	SingletonObject.notes_container.create_tab(%txtNewTabName.text)
+	var notes_container: NotesContainer = SingletonObject.notes_container if notes_container_override == null else notes_container_override
+
+	notes_container.create_tab(%txtNewTabName.text)
 
 	hide.call_deferred()
 
-	# if isDrawer: # TODO
-	# 	SingletonObject.create_drawer_tab.emit(%txtNewTabName.text,tab_reference)
-	# else:
-	# 	SingletonObject.create_notes_tab.emit(%txtNewTabName.text,tab_reference)
-	# %txtNewTabName.text = ""
-	# call_deferred("hide")
+	notes_container_override = null
 
 
 func _on_about_to_popup() -> void:
