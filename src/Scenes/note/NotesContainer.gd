@@ -8,6 +8,9 @@ func _ready() -> void:
 
 	get_tab_bar().tab_close_pressed.connect(remote_tab)
 
+	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
+	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
+
 
 ## Creates a new tab with given name.[br]
 ## If the name is already taken godot will autimatically assing a new one.[br]
@@ -41,8 +44,7 @@ func remote_tab(tab_idx: int):
 ## If [parameter tab_idx] is -1, currently selected tab is used, or it fails if no tab is selected.[br]
 ## If [parameter force] is true, and appropriate tab wasn't found, new one will be created.[br] 
 ## Returns true on success.
-func add_note(note: Note, tab_idx: int = -1, force: = true) -> bool:
-
+func add_note(note: Note, tab_idx: int = -1, force: = true, index: int = 0) -> bool:
 	if tab_idx == -1:
 		tab_idx = current_tab
 
@@ -60,13 +62,14 @@ func add_note(note: Note, tab_idx: int = -1, force: = true) -> bool:
 		
 		return false
 
-	var current_scroll: ScrollContainer = get_tab_control(current_tab)
+	var current_scroll: ScrollContainer = get_tab_control(tab_idx)
 	var vbox = current_scroll.get_child(0)
 
 	if not vbox:
 		push_error("Couldn't get the VBoxContainer to add the note to")
 
 	vbox.add_child(note)
+	vbox.move_child(note, index)
 
 	return true
 
@@ -144,3 +147,33 @@ func deserialize(notes_data: Array) -> void:
 				Note.deserialize(mem_item_data),
 				tab_idx
 			)
+
+
+# region Drop
+
+func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+	if not data is Note:
+		return false
+
+	# if drag_to_rearrange_enabled is enabled this won't work as expected
+
+	if get_tab_idx_at_point(at_position) == -1:
+		return false
+
+	current_tab = get_tab_idx_at_point(at_position)
+
+	return true
+
+func _drop_data(at_position: Vector2, data: Variant) -> void:
+	if not data is Note: return
+	
+	var note = data as Note
+
+	if note.get_parent() != null:
+		note.get_parent().remove_child(note)
+
+	add_note(note, get_tab_idx_at_point(at_position), false, 0)
+	
+
+
+# endregion
