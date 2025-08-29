@@ -552,5 +552,17 @@ func on_reaload_button_pressed() -> void:
 	if memory_item.File.is_empty():
 		print("No file associated to this note: %s" % memory_item.Title)
 		return
+	var new_data: = MemoryTabs._load_and_process_file(memory_item.File)
 	
-	print("this Note does have a File assosiated: %s" % memory_item.Title)
+	if new_data["content"] != null:
+		memory_item.Content = new_data["content"]
+		description_node.text = new_data["content"]
+	else:
+		memory_item.Content = "File not found"
+	
+	if new_data.has("memory_image") and new_data["memory_image"] != null:
+		memory_item.MemoryImage = new_data["image"]
+		control_type.memory_item = memory_item
+	if new_data.has("audio") and new_data.audio != null:
+		memory_item.Audio = new_data.audio
+		control_type.audio = new_data.Audio

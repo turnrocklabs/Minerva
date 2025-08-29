@@ -24,11 +24,27 @@ func save_data_if_needed():
 ## Function:
 # attach_file creates a memory item/note from a file.  It can detect file type
 func attach_file(the_file: String):
+	# Load and process the file
+	var file_data = _load_and_process_file(the_file)
+	if file_data == null:
+		return
+	
+	# Create and configure the memory item
+	_create_memory_item_from_file_data(file_data, the_file)
+
+
+static func _load_and_process_file(the_file: String) -> Dictionary:
 	# Check if the file exists
 	var file = FileAccess.open(the_file, FileAccess.READ)
 	if file == null:
 		SingletonObject.ErrorDisplay("File Error", "The file could not be opened.")
-		return
+		return {
+			"type": SingletonObject.note_type.TEXT,
+			"content": "File not found",
+			"content_type": "text/plain",
+			"memory_image": null,
+			"audio": null
+		}
 		
 	var file_ext = the_file.get_extension().to_lower()
 	
@@ -38,15 +54,8 @@ func attach_file(the_file: String):
 	var content = ""
 	var content_type = ""
 	var type
-	var title = the_file.get_file()
-	
-	# Get the active thread
-	if (SingletonObject.ThreadList == null) or current_tab < 0:
-		create_new_notes_tab()
-	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
-	
-	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
-	new_memory.File = the_file # associate the file with the new memory item
+	var memory_image = null
+	var audio = null
 	
 	if _is_text_file(the_file):
 		type = SingletonObject.note_type.TEXT
@@ -72,11 +81,13 @@ func attach_file(the_file: String):
 			"tga":
 				err = image.load_tga_from_buffer(file_data)
 		if err == OK:
-			new_memory.MemoryImage = image
+			memory_image = image
 			content = Marshalls.raw_to_base64(file_data)
 		else:
 			printerr("Error loading image file %s" % file)
 			SingletonObject.ErrorDisplay("Error loading image", "An error occurred while trying to load the image file %s" % file)
+			file.close()
+			return {}
 		content_type = "image/%s" % file_ext
 	elif file_ext in SingletonObject.supported_video_formats:
 		file_type = "video"
@@ -91,13 +102,13 @@ func attach_file(the_file: String):
 			"mp3":
 				var mp3AudioStream = AudioStreamMP3.new()
 				mp3AudioStream.data = buffer
-				new_memory.Audio = mp3AudioStream
+				audio = mp3AudioStream
 			"wav":
 				var wavAudioStream = AudioStreamWAV.load_from_buffer(buffer)
-				new_memory.Audio = wavAudioStream
+				audio = wavAudioStream
 			"ogg":
 				var oggAudioStream = AudioStreamOggVorbis.load_from_file(the_file)
-				new_memory.Audio = oggAudioStream
+				audio = oggAudioStream
 		content = Marshalls.raw_to_base64(buffer)
 		content_type = "audio/%s" % file_ext
 	elif _is_binary_file(the_file):
@@ -111,21 +122,44 @@ func attach_file(the_file: String):
 		content_type = "text/plain"
 		content = file.get_as_text()
 
+	file.close()
+	
+	return {
+		"type": type,
+		"content": content,
+		"content_type": content_type,
+		"memory_image": memory_image,
+		"audio": audio
+	}
+
+
+func _create_memory_item_from_file_data(file_data: Dictionary, the_file: String):
+	var title = the_file.get_file()
+	
+	if (SingletonObject.ThreadList == null) or current_tab < 0:
+		create_new_notes_tab()
+	var active_thread: MemoryThread = SingletonObject.ThreadList[self.current_tab]
+	
 	# Create a new memory item
+	var new_memory: MemoryItem = MemoryItem.new(active_thread.ThreadId)
+	new_memory.File = the_file # associate the file with the new memory item
 	new_memory.Enabled = true
 	new_memory.Title = title
-	new_memory.Content = content
-	new_memory.ContentType = content_type
-	new_memory.Type = type
+	new_memory.Content = file_data.content
+	new_memory.ContentType = file_data.content_type
+	new_memory.Type = file_data.type
 	new_memory.Visible = true
 	
-	# Append the new memory item to the active thread memory list
+	if file_data.has("memory_image") and file_data.memory_image != null:
+		new_memory.MemoryImage = file_data.memory_image
+	if file_data.has("audio") and file_data.audio != null:
+		new_memory.Audio = file_data.audio
+	
 	active_thread.MemoryItemList.append(new_memory)
 
-	file.close()
 
 # Helper function to check if a file is binary (opposite of text file)
-func _is_binary_file(file_path: String) -> bool:
+static func _is_binary_file(file_path: String) -> bool:
 	var file = FileAccess.open(file_path, FileAccess.READ)
 	if file == null:
 		return false  # Can't open file, assume it's not binary
@@ -146,7 +180,7 @@ func _is_binary_file(file_path: String) -> bool:
 	return false
 	
 # helper func to check if the file is text
-func _is_text_file(file_path: String) -> bool:
+static func _is_text_file(file_path: String) -> bool:
 	var file = FileAccess.open(file_path, FileAccess.READ)
 	if file == null:
 		return false
