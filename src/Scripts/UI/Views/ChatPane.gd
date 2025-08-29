@@ -124,7 +124,6 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 
 ## add new chat 
 func _on_new_chat():
-	
 	var last_chat_number: int = -1
 
 	# reverse loop and find last largest number after the Chat string literal
@@ -146,8 +145,7 @@ func _on_new_chat():
 
 	# If there are no open chat tabs, use provider from the dropdown as the provider
 	if SingletonObject.ChatList.is_empty():
-		var p_id = _provider_option_button.get_selected_id()
-		provider_obj = _provider_option_button.get_provider_from_id(p_id)
+		provider_obj = _provider_option_button.get_selected_provider()
 	
 	# if we're opening a new chat, by default select the first provider from the dropdown menu
 	else:
@@ -360,7 +358,7 @@ func execute_hcp_chat():
 
 
 	var chi = ChatHistoryItem.new()
-		
+	prints("bot_response", bot_response)
 	if bot_response != null: 
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
@@ -388,12 +386,12 @@ func execute_hcp_chat():
 		history.VBox.ensure_node_is_visible(model_msg_node)
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
+		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	else:
 		model_msg_node.queue_free()
 
 func execute_regular_chat(text: String) -> void:
-
-	if SingletonObject.Chats._provider_option_button.get_selected_provider() is CoreProvider:
+	if SingletonObject.ChatList[current_tab].provider is CoreProvider:
 		execute_hcp_chat()
 		return
 
@@ -899,8 +897,7 @@ func update_token_estimation(provider: BaseProvider = null):
 		# if we don't have any chats use the selected provider from the dropdown
 		if SingletonObject.ChatList.is_empty():
 
-			var p_id = _provider_option_button.get_selected_id()
-			provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[p_id].new()
+			provider = _provider_option_button.get_selected_provider()
 		else:
 			provider = SingletonObject.ChatList[current_tab].provider
 

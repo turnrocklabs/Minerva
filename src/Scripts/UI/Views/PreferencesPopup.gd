@@ -29,8 +29,8 @@ const PROVIDERS = {
 }
 
 # --- Authentication Presets ---
-const AUTH_PRESET_PROD = "https://www.turnrock.ai:3030/"
-const AUTH_PRESET_LOCAL = "http://localhost:4040/"
+const AUTH_PRESET_PROD = "https://www.turnrock.ai:4040/v1/login"
+const AUTH_PRESET_LOCAL = "http://localhost:4040/v1/login"
 const AUTH_PRESET_CUSTOM_IDX = 2 # Index of the "Custom" option in the OptionButton
 
 @onready var _fields = {
@@ -138,8 +138,10 @@ func set_field_values():
 	# Update the dropdown based on the loaded URL
 	if saved_auth_url == AUTH_PRESET_PROD:
 		auth_preset_option_button.select(0)
+		auth_base_url.get_parent().visible = false
 	elif saved_auth_url == AUTH_PRESET_LOCAL:
 		auth_preset_option_button.select(1)
+		auth_base_url.get_parent().visible = false
 	else:
 		auth_preset_option_button.select(AUTH_PRESET_CUSTOM_IDX) # Select "Custom"
 
