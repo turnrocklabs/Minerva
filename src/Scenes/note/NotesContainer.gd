@@ -6,7 +6,7 @@ func _ready() -> void:
 	# make tabs closeable
 	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 
-	get_tab_bar().tab_close_pressed.connect(remote_tab)
+	get_tab_bar().tab_close_pressed.connect(remove_tab)
 
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
@@ -33,7 +33,7 @@ func create_tab(tab_name: String = "Notes") -> Control:
 	return scroll
 
 ## Removes the tab specified with [param tab_idx].
-func remote_tab(tab_idx: int):	
+func remove_tab(tab_idx: int):	
 	var control: = get_tab_control(tab_idx)
 
 	if control:
@@ -94,6 +94,23 @@ func get_notes(tab_idx: = -1) -> Array[Note]:
 			notes.append(child)
 
 	return notes
+
+## Disables all notes in the specified or currently active tab.
+func disable_notes(tab_idx: = -1):
+	tab_idx = tab_idx if tab_idx != -1 else current_tab
+	if tab_idx == -1: return
+
+	for note in get_notes(tab_idx):
+		note.enabled = false
+
+
+## Enables all notes in the specified or currently active tab.
+func enable_notes(tab_idx: = -1):
+	tab_idx = tab_idx if tab_idx != -1 else current_tab
+	if tab_idx == -1: return
+
+	for note in get_notes(tab_idx):
+		note.enabled = true
 
 ## Makes all notes in the specified or currently active tab.
 func show_notes(tab_idx: = -1):

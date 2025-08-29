@@ -9,8 +9,13 @@ extends PersistentWindow
 @onready var audio_file_dialog: FileDialog = %AudioNoteFileImport
 @onready var audio_controls: NoteAudioControls = %AudioControls
 
+
+## Setting this property changes where the note will be stored.[br]
+## By default it's added to the `SingletonObject.notes_container`.[br]
+## After note has been added, the property reverts back to `null`.
+var notes_container_override: NotesContainer
+
 var note_enum: Note.Type
-var isDrawer:bool = false
 var effect: AudioEffect
 var audio_file = null
 var image_original_res: Image = null
@@ -50,8 +55,6 @@ func _on_close_requested() -> void:
 	audio_controls.audio = null
 	audio_controls.remove_meta("file")
 	%ImageDropPanel.visible = true
-	if !isDrawer:
-		%CreateNewNote.exclusive = false
 
 #endregion Window signal handler functions
 
@@ -114,8 +117,7 @@ func _on_add_note_pressed():
 	var note_title = %NoteHead.text
 	var description = %NoteDescription.text
 	
-	# TODO: implement drawer
-	var notes_container: = SingletonObject.notes_container
+	var notes_container: = SingletonObject.notes_container if notes_container_override == null else notes_container_override
 
 	match note_enum:
 		Note.Type.TEXT:
@@ -138,18 +140,6 @@ func _on_add_note_pressed():
 				audio_note = Note.create_file_note(note_title, associated_file)
 
 			notes_container.add_note(audio_note)
-		
-		# SingletonObject.note_type.IMAGE:
-		# 	var image_description = ""  # You can add an optional description field for images if needed
-		# 	if isDrawer:
-		# 		SingletonObject.DrawerTab.add_image_note(Head, image_original_res, image_description)
-		# 	else:
-		# 		SingletonObject.notes_container.add_image_note(Head, image_original_res, image_description,isDrawer)
-		# SingletonObject.note_type.AUDIO:
-		# 	if isDrawer:
-		# 		SingletonObject.DrawerTab.add_audio_note(Head, audio_recording)
-		# 	else:
-		# 		SingletonObject.notes_container.add_audio_note(Head, audio_recording,isDrawer)
 	
 	# Clear all fields after adding note
 	%NoteHead.text = ""
@@ -168,6 +158,8 @@ func _on_add_note_pressed():
 		effect.set_recording_active(false)
 	
 	%CreateNewNote.hide()
+
+	notes_container_override = null
 
 
 #region Image Note region

@@ -133,8 +133,7 @@ func remove_recent_project(project_name: String) -> void:
 #region Notes
 
 var notes_container: NotesContainer
-
-
+var drawer_notes_container: NotesContainer
 
 
 enum note_type {

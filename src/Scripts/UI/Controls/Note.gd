@@ -50,10 +50,10 @@ var title: String:
 
 var enabled: bool:
 	set(value):
-		_enabled.disabled = not value
+		_check_button.button_pressed = value
 		SingletonObject.save_state(false)
 	get:
-		return not _enabled.disabled
+		return _check_button.button_pressed
 
 var expanded: bool = true:
 	set(value):
@@ -82,7 +82,7 @@ var _error: = false:
 
 
 @onready var _title: LineEdit = %Title
-@onready var _enabled: CheckButton = %CheckButton
+@onready var _check_button: CheckButton = %CheckButton
 @onready var _edit_button: Button = %EditButton
 @onready var _warning_button: Button = %WarningButton
 @onready var _hide_button: Button = %HideButton
@@ -235,7 +235,7 @@ func _on_error_changed():
 
 	_expand_button.visible = not _error
 	_warning_button.visible = _error
-	_enabled.visible = not _error
+	_check_button.visible = not _error
 	_hide_button.visible = not _error
 	_edit_button.visible = not _error
 	
@@ -452,6 +452,7 @@ func serialize() -> Dictionary:
 	
 	var note_data: = {
 		"Title": title,
+		"UUID": uuid,
 		"Enabled": enabled,
 		"Expanded": expanded,
 		"ExpandedHeight": expanded_height,

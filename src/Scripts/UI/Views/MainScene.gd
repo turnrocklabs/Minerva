@@ -42,14 +42,8 @@ func _ready() -> void:
 
 	# Set the reference to the notes container here as the singleton object is loaded before this one
 	SingletonObject.notes_container = %tcThreads
+	SingletonObject.drawer_notes_container = %tcThreadsDrawer
 
-	# TODO: remove
-	# SingletonObject.notes_container.add_note(
-	# 	Note.create_text_note("Test", "test note")
-	# )
-	# SingletonObject.notes_container.add_note(
-	# 	Note.create_text_note("Test", "test note")
-	# )
 
 var MAX: = 20
 
@@ -139,7 +133,6 @@ func _gui_input(event):
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
 	%CreateNewNote.popup_centered()
-	%CreateNewNote.isDrawer = false
 
 # this method pops up the preferences window
 func _on_button_pressed() -> void:
@@ -248,7 +241,7 @@ func _input(event):
 					%DropForNode.visible = true
 
 
-@onready var bottom_drawer_control: Drawer_manager = %BottomDrawerControl
+@onready var bottom_drawer_control: DrawerNotesManager = %BottomDrawerControl
 @onready var notes_drawer_split: VSplitContainer = %NotesDrawerSplit
 var split_drawer_tween: Tween
 func _on_btn_drawer_pressed() -> void:
@@ -270,7 +263,10 @@ func _on_btn_drawer_pressed() -> void:
 		
 		await get_tree().create_timer(0.48).timeout
 		bottom_drawer_control.visible = false
-	SingletonObject.DrawerTab.disable_all()
+	
+	bottom_drawer_control.load_drawer_data()
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
 
 
 #reading file and create note in Drawer thread
