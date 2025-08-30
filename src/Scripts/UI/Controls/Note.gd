@@ -548,18 +548,19 @@ func on_collapse_all_button_pressed(new_value: bool) -> void:
 		expand_note()
 
 
-func on_reaload_button_pressed() -> void:
+func on_reload_button_pressed() -> void:
 	if memory_item.File.is_empty():
 		print("No file associated to this note: %s" % memory_item.Title)
 		return
-	var new_data: = MemoryTabs._load_and_process_file(memory_item.File)
+	var new_data: = MemoryTabs.reload_file(memory_item.File)
 	
+	print("the reload for %s finished" % memory_item.Title)
 	if new_data["content"] != null:
 		memory_item.Content = new_data["content"]
 		description_node.text = new_data["content"]
 	else:
-		memory_item.Content = "File not found"
-	
+		memory_item.Title = memory_item.Title + "- File not found on reload"
+		label_node.text = memory_item.Title
 	if new_data.has("memory_image") and new_data["memory_image"] != null:
 		memory_item.MemoryImage = new_data["image"]
 		control_type.memory_item = memory_item

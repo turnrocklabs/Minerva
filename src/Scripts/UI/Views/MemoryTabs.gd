@@ -33,6 +33,23 @@ func attach_file(the_file: String):
 	_create_memory_item_from_file_data(file_data, the_file)
 
 
+static func reload_file(path: String) -> Dictionary:
+	var thread: = Thread.new()
+	
+	var err: = thread.start(_load_and_process_file.bind(path))
+	
+	if err != OK:
+		return {
+			"type": SingletonObject.note_type.TEXT,
+			"content": "File not found",
+			"content_type": "text/plain",
+			"memory_image": null,
+			"audio": null
+		}
+	
+	return thread.wait_to_finish()
+
+
 static func _load_and_process_file(the_file: String) -> Dictionary:
 	# Check if the file exists
 	var file = FileAccess.open(the_file, FileAccess.READ)
@@ -45,7 +62,7 @@ static func _load_and_process_file(the_file: String) -> Dictionary:
 			"memory_image": null,
 			"audio": null
 		}
-		
+	
 	var file_ext = the_file.get_extension().to_lower()
 	
 	# Determine the file type

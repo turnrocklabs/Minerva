@@ -72,11 +72,11 @@ func initialize_reload_button() -> Button:
 	reload_file_notes_buton.icon = preload("res://assets/icons/reload-icons/reload-24.svg")
 	reload_file_notes_buton.size_flags_horizontal = Control.SIZE_SHRINK_END
 	reload_file_notes_buton.alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	reload_file_notes_buton.pressed.connect(_reaload_files_button_pressed)
+	reload_file_notes_buton.pressed.connect(_reload_files_button_pressed)
 	return reload_file_notes_buton
 
 
-func _reaload_files_button_pressed() -> void:
+func _reload_files_button_pressed() -> void:
 	reload_file.emit()
 
 
@@ -203,7 +203,7 @@ func render_item(item: MemoryItem, orphan_notes: Array[Note] = []) -> Note:
 	await note_control.ready
 	
 	collapse_all_notes.connect(note_control.on_collapse_all_button_pressed)
-	reload_file.connect(note_control.on_reaload_button_pressed)
+	reload_file.connect(note_control.on_reload_button_pressed)
 	note_control.memory_item = item
 	
 	# Connect to the appropriate delete method based on drawer type
