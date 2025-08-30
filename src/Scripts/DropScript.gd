@@ -7,6 +7,6 @@ func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
 func _drop_data(_at_position: Vector2, data: Variant) -> void:
 	data = data as String
 	
-	# TODO: implement
-	# SingletonObject.notes_draw_state_changed.emit(SingletonObject.NotesDrawState.DRAWING)
-	# SingletonObject.notes_container.add_note("Drag Note", data)
+	SingletonObject.notes_container.add_note(
+		Note.create_text_note("Drag Note", data)
+	)
