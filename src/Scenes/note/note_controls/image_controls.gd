@@ -4,6 +4,9 @@ class_name NoteImageControls
 @onready var _texture_rect: TextureRect = %TextureRect
 @onready var _caption_line_edit: LineEdit = %LineEdit
 
+var sha256: String:
+	get: return Note.generate_content_sha256(image.save_png_to_buffer())
+
 ## The image content of the note.[br]
 ## If set image has a [caption] meta attached to it
 ## it's used as the image caption.[br]

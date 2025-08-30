@@ -17,6 +17,17 @@ static var _speaker_icon: = preload("res://assets/icons/speaker-24.png")
 ## Used to update the time code label every one second, while the audio is playing
 @onready var _time_code_timer: Timer = %Timer
 
+var sha256: String:
+	get:
+		if audio is AudioStreamMP3 or audio is AudioStreamWAV:
+			return Note.generate_content_sha256(audio.data)
+		elif audio is AudioStreamOggVorbis:
+			var content_data = PackedByteArray()
+			for packet in audio.packet_sequence.packet_data:
+				content_data.append_array(packet)
+			return Note.generate_content_sha256(content_data)
+			
+		return ""
 
 ## This notes audio content.
 var audio: AudioStream:

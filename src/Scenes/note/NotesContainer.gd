@@ -2,6 +2,9 @@ class_name NotesContainer
 extends TabContainer
 
 
+## A dictionary that maps tab index to a corresponding uuid
+var _uuid_map: Dictionary[int, String] = {}
+
 func _ready() -> void:
 	# make tabs closeable
 	get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
@@ -15,7 +18,7 @@ func _ready() -> void:
 ## Creates a new tab with given name.[br]
 ## If the name is already taken godot will autimatically assing a new one.[br]
 ## Retuns the scroll container added as the new tab.
-func create_tab(tab_name: String = "Notes") -> Control:
+func create_tab(tab_name: String = "Notes", uuid: String = "") -> Control:
 	if tab_name.is_empty():
 		tab_name = "Notes"
 
@@ -29,6 +32,10 @@ func create_tab(tab_name: String = "Notes") -> Control:
 
 	# force readable name
 	add_child(scroll, true)
+
+	if uuid.is_empty():
+		uuid = SingletonObject.generate_UUID()
+		_uuid_map[current_tab] = uuid
 
 	return scroll
 
@@ -141,7 +148,7 @@ func serialize() -> Array[Dictionary]:
 
 		var tab_data: = {
 			"ThreadName": get_tab_control(i).name,
-			"ThreadId": "TODO",
+			"ThreadId": _uuid_map.get(i),
 			"MemoryItemList": notes_data
 		}
 
@@ -155,7 +162,7 @@ func deserialize(notes_data: Array) -> void:
 
 	for tab_data in notes_data:
 		var tab_title: String = tab_data.get("ThreadName")
-		var tab_control: = create_tab(tab_title)
+		var tab_control: = create_tab(tab_title, tab_data.get("ThreadId", ""))
 
 		var tab_idx: = get_tab_idx_from_control(tab_control)
 
