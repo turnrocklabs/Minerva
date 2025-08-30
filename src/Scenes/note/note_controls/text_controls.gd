@@ -3,6 +3,9 @@ class_name NoteTextControls
 
 @onready var _label: Label = %Label
 
+var sha256: String:
+    get: return Note.generate_content_sha256(content.to_utf8_buffer())
+
 ## The text content of the note.
 var content: String:
     set(value):

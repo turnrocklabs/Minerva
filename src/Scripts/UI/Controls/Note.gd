@@ -41,6 +41,9 @@ var uuid: String:
 		else:
 			push_warning("Tried to change the Note object uuid when the value is already set")
 
+var sha256: String:
+	get: return generate_sha256()
+
 var title: String:
 	set(value):
 		_title.text = value
@@ -238,7 +241,11 @@ func _on_error_changed():
 	_check_button.visible = not _error
 	_hide_button.visible = not _error
 	_edit_button.visible = not _error
-	
+
+
+func _ready() -> void:
+	if uuid.is_empty():
+		uuid = SingletonObject.generate_UUID()
 
 func _to_string() -> String:
 	return "%s note (%s)" % [content_type.capitalize(), title]
@@ -453,6 +460,7 @@ func serialize() -> Dictionary:
 	var note_data: = {
 		"Title": title,
 		"UUID": uuid,
+		"SHA256": sha256,
 		"Enabled": enabled,
 		"Expanded": expanded,
 		"ExpandedHeight": expanded_height,
@@ -528,8 +536,46 @@ func _get_file_handle() -> FileAccess:
 		return null
 	
 	return fa
-	
 
+
+## Call the controls container to generate the SHA256 hash for the content stored in this note.[br]
+## Controls container mush expose a property name "sha256" or this function returns an empty string.
+func generate_sha256() -> String:
+	var controls_container: Control
+
+	for child in _notes_control_container.get_children():
+		if (
+			child is NoteTextControls or
+			child is NoteImageControls or
+			child is NoteAudioControls or
+			child is NoteVideoControls
+		): controls_container = child
+
+	if not controls_container:
+		push_warning("Couldn't generate sha256 for Note object (%s) from controls container as a valid child wasn't found." % self)
+		return ""
+	
+	var hash_string = controls_container.get("sha256")
+
+	if hash_string == null:
+		push_error("Can't generate Notes (%s) SHA256 hash. Controls container (%s) returned null for property 'sha256'" % [self, controls_container])
+		return ""
+
+	return hash_string
+
+
+## This functions takes the [param input] and returns the SHA256 string.[br]
+## Returns empty string if input is invalid.
+static func generate_content_sha256(input: PackedByteArray) -> String:
+	if input.is_empty(): return ""
+
+	var ctx = HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	
+	ctx.update(input)
+	
+	var hashed = ctx.finish()
+	return hashed.hex_encode()
 
 ## Deserializes the [param note_data] dictionary into a [class Note] object.
 static func deserialize(note_data: Dictionary) -> Note:
