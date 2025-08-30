@@ -30,12 +30,15 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> Control:
 	scroll.add_child(vbox)
 	scroll.name = tab_name
 
-	# force readable name
-	add_child(scroll, true)
+	print(uuid)
 
 	if uuid.is_empty():
+		print("uuid is empty")
 		uuid = SingletonObject.generate_UUID()
-		_uuid_map[current_tab] = uuid
+		_uuid_map[get_tab_count()] = uuid
+
+	# force readable name
+	add_child(scroll, true)
 
 	return scroll
 
@@ -158,11 +161,15 @@ func serialize() -> Array[Dictionary]:
 
 func deserialize(notes_data: Array) -> void:
 
-	# print(notes_data)
-
 	for tab_data in notes_data:
 		var tab_title: String = tab_data.get("ThreadName")
-		var tab_control: = create_tab(tab_title, tab_data.get("ThreadId", ""))
+		var tab_id = tab_data.get("ThreadId")
+
+		# it could be explicit null or empty string so check here
+		if not tab_id:
+			tab_id = ""
+
+		var tab_control: = create_tab(tab_title, tab_id)
 
 		var tab_idx: = get_tab_idx_from_control(tab_control)
 
