@@ -27,7 +27,8 @@ func _init(memory_tabs: BaseTabContainer, thread: MemoryThread, is_drawer: bool 
 	# We add the controls for tab actions
 	buttons_h_box_contianer.add_child(initialize_collapse_button())
 	buttons_h_box_contianer.add_child(buffer_control)
-	buttons_h_box_contianer.add_child(initialize_reload_button())
+	if !is_drawer:
+		buttons_h_box_contianer.add_child(initialize_reload_button())
 	buttons_h_box_contianer.add_child(initialize_disable_button())
 	
 	margin_cont = MarginContainer.new()

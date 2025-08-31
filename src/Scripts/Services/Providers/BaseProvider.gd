@@ -177,6 +177,6 @@ func cancel_active_resquests() -> void:
 	for i: HTTPRequest in active_requests:
 		if i.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
 			i.cancel_request()
-			i.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
+			#i.request_completed.emit(HTTPRequest.RESULT_REQUEST_FAILED, 0, PackedStringArray(), PackedByteArray())
 			active_requests.erase(i)
 			i.queue_free()

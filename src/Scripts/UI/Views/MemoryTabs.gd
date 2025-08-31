@@ -35,7 +35,7 @@ func attach_file(the_file: String):
 
 static func reload_file(path: String) -> Dictionary:
 	var thread: = Thread.new()
-	
+	threads.append(thread)
 	var err: = thread.start(_load_and_process_file.bind(path))
 	
 	if err != OK:
@@ -237,3 +237,10 @@ func _ready():
 
 func _on_drawer_tab_clicked(tab: int): 
 	_on_tab_clicked(tab, %tcThreadsDrawer)
+
+static var threads: Array[Thread] = []
+func _exit_tree() -> void:
+	for thread in threads:
+		if thread.is_alive():
+			thread.wait_to_finish()
+	

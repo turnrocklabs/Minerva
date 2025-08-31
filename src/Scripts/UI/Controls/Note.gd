@@ -486,8 +486,6 @@ func contract_note() -> void:
 	%HSeparator.hide()
 	resize_drag_control.hide()
 	%BufferControl.show()
-	
-	
 
 
 func enable_expand_button() -> void:
@@ -541,6 +539,8 @@ func _on_remove_drawer_button_pressed():
 
 
 func on_collapse_all_button_pressed(new_value: bool) -> void:
+	if expanded == new_value:
+		return
 	expanded = new_value
 	if !expanded:
 		contract_note()
