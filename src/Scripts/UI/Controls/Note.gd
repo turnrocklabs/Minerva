@@ -6,6 +6,8 @@ static var _text_controls_scene: = preload("res://Scenes/note/note_controls/text
 static var _image_controls_scene: = preload("res://Scenes/note/note_controls/image_controls.tscn")
 static var _audio_controls_scene: = preload("res://Scenes/note/note_controls/audio_controls.tscn")
 
+signal title_changed
+
 enum Type {
 	TEXT,
 	IMAGE,
@@ -37,6 +39,7 @@ var uuid: String:
 	set(value):
 		if uuid.is_empty():
 			uuid = value
+			SingletonObject.register_object(self, &"uuid")
 			SingletonObject.save_state(false)
 		else:
 			push_warning("Tried to change the Note object uuid when the value is already set")
@@ -99,9 +102,11 @@ var _error: = false:
 @onready var _expand_button: Button = %ExpandButton
 @onready var _resize_control: Control = %ResizeControl
 
-static func create_text_note(note_title: String, content: String) -> Note:
+static func create_text_note(note_title: String, content: String, note_uuid: String = "") -> Note:
 	var text_controls: NoteTextControls = _text_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
+
+	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
 	note_scene.ready.connect(
 		func():
@@ -136,9 +141,11 @@ static func create_dummy_note(note_title: String) -> Note:
 
 	return note_scene
 
-static func create_image_note(note_title: String, image: Image, caption: String = "") -> Note:
+static func create_image_note(note_title: String, image: Image, caption: String = "", note_uuid: String = "") -> Note:
 	var image_controls: NoteImageControls = _image_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
+
+	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
 	note_scene.ready.connect(
 		func():
@@ -151,9 +158,11 @@ static func create_image_note(note_title: String, image: Image, caption: String 
 
 	return note_scene
 
-static func create_audio_note(note_title: String, audio: AudioStream) -> Note:
+static func create_audio_note(note_title: String, audio: AudioStream, note_uuid: String = "") -> Note:
 	var audio_controls: NoteAudioControls = _audio_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
+
+	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
 	note_scene.ready.connect(
 		func():
@@ -169,7 +178,7 @@ static func create_audio_note(note_title: String, audio: AudioStream) -> Note:
 
 ## Tries to create a note from the given file path.[br]
 ## [member Note.type] is determined from the [param file_path] extension. On fail a text note with an error is returned.
-static func create_file_note(note_title: String, file_path: String) -> Note:
+static func create_file_note(note_title: String, file_path: String, note_uuid: String = "") -> Note:
 
 	# determin the note type from the extension
 	var ext: = file_path.get_extension()
@@ -182,7 +191,7 @@ static func create_file_note(note_title: String, file_path: String) -> Note:
 			push_error("Couldn't open the note file %s. Image object null." % file_path)
 			return create_error_note(note_title, "Couldn't open the note file (%s). Image object null." % file_path)
 
-		note = create_image_note(note_title, img)
+		note = create_image_note(note_title, img, note_uuid)
 
 	elif ext in _file_ext_map[Type.AUDIO]:
 		var fa: = FileAccess.open(file_path, FileAccess.READ)
@@ -205,7 +214,7 @@ static func create_file_note(note_title: String, file_path: String) -> Note:
 				audio_stream = AudioStreamWAV.new()
 				audio_stream.data = fa.get_buffer(fa.get_length())
 
-		note = create_audio_note(note_title, audio_stream)
+		note = create_audio_note(note_title, audio_stream, note_uuid)
 	
 	else: # treat as text file
 		var fa: = FileAccess.open(file_path, FileAccess.READ)
@@ -215,7 +224,7 @@ static func create_file_note(note_title: String, file_path: String) -> Note:
 			push_error("Couldn't open the note file (%s): %s" % [file_path, error_string(err)])
 			return create_error_note(note_title, "Couldn't open the note file (%s): %s" % [file_path, error_string(err)])
 
-		note = create_text_note(note_title, fa.get_as_text())
+		note = create_text_note(note_title, fa.get_as_text(), note_uuid)
 
 	note.file = file_path
 	
@@ -227,6 +236,20 @@ static func create_file_note(note_title: String, file_path: String) -> Note:
 func _set_controls_container(controls_container: Control) -> void:
 	_notes_control_container.add_child(controls_container)
 	await get_tree().process_frame
+
+## Returns the controls container for this note.[br]
+## If not found returns `null`, but that shouldn't happen if the note
+## was created using the `create_*_note` functions from this class.
+func get_controls_container() -> Control:
+	for child in _notes_control_container.get_children():
+		if (
+			child is NoteTextControls or
+			child is NoteImageControls or
+			child is NoteAudioControls or
+			child is NoteVideoControls
+		): return child
+	
+	return null
 
 ## When the error property changes, update the note border color
 func _on_error_changed():
@@ -243,18 +266,46 @@ func _on_error_changed():
 	_edit_button.visible = not _error
 
 
-func _ready() -> void:
-	if uuid.is_empty():
-		uuid = SingletonObject.generate_UUID()
-
 func _to_string() -> String:
+	if not is_node_ready():
+		return "%s note (not ready)" % content_type.capitalize()
+	
 	return "%s note (%s)" % [content_type.capitalize(), title]
 
 func _on_remove_button_pressed() -> void:
 	queue_free()
 
+func _on_title_text_changed(_new_text: String) -> void:
+	title_changed.emit()
+
 func _on_edit_button_pressed() -> void:
-	_error = not _error
+	# The editor pane will listen to tree exiting signal
+	# and remove this note from the associated object ONLY if the note
+	# is queue for deletion as the note could be exiting tree
+	# just to be dropped to another tab.
+	# method content_matches is used to determine
+	# if editor content matches to note content.
+
+	var editor_pane: EditorPane = SingletonObject.editor_container.editor_pane
+
+	for editor in editor_pane.get_open_editors():
+		if editor.associated_object == self:
+			print("Already present")
+			return
+
+	# Show the editor if it's hidden
+	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+	match type:
+		Type.TEXT:
+			var editor: = editor_pane.add(Editor.Type.TEXT, null, title, self)
+			var controls = get_controls_container() as NoteTextControls
+			editor.code_edit.text = controls.content
+		Type.IMAGE:
+			var editor: = editor_pane.add(Editor.Type.GRAPHICS, null, title, self, false)
+			var controls = get_controls_container() as NoteImageControls
+			editor.graphics_editor.create_new_image_layer(title, controls.image, true)
+
 
 func _on_hide_button_pressed() -> void:
 	visible = false
@@ -595,6 +646,7 @@ static func deserialize(note_data: Dictionary) -> Note:
 				note = create_text_note(
 					note_data.get("Title", "Unknown"),
 					note_data.get("Content", ""),
+					note_data.get("UUID", ""),
 				)
 			"audio":
 				var audio_data = note_data.get("Audio", "")
@@ -603,6 +655,7 @@ static func deserialize(note_data: Dictionary) -> Note:
 				note = create_audio_note(
 					note_data.get("Title", "Unknown"),
 					audio_stream,
+					note_data.get("UUID", ""),
 				)
 			"image":
 				# embedded images are saved as PNG
@@ -614,6 +667,7 @@ static func deserialize(note_data: Dictionary) -> Note:
 					note_data.get("Title", "Unknown"),
 					image,
 					note_data.get("ImageCaption", ""),
+					note_data.get("UUID", ""),
 				)
 			_:
 				push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))
@@ -634,3 +688,18 @@ static func deserialize(note_data: Dictionary) -> Note:
 # "Title": "test BRE", "Type": 0.0, "UUID": "345e77bebfb7efbb1206ab3b1bc19c9c8bace80490a2d8471533cb2d7893b492", "Visible": true, "isDrawer": false }
 
 # endregion
+
+
+## Checks if provided content matches the content of this note.[br]
+## For text notes it compares the `content` field.[br]
+## For image notes if compares the `image` field.[br]
+func content_matches(input: Variant):
+
+	var content_container = get_controls_container()
+
+	match type:
+		Type.TEXT:
+			content_container = content_container as NoteTextControls
+			return str(input) == content_container.content
+
+	return true

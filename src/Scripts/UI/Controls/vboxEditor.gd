@@ -76,7 +76,8 @@ func serialize() -> Array:
 			"name": editor_pane.Tabs.get_tab_title(tab_idx),
 			"file": editor.file,
 			"type": editor.type,
-			"content": content
+			"content": content,
+			"associated_object": SingletonObject.registered_object_get_uuid(editor.associated_object),
 		}
 		editors_serialized.append(editor_data)
 		tab_idx += 1
@@ -87,7 +88,14 @@ func serialize() -> Array:
 static func deserialize(editors_array: Array) -> Array[Editor]:
 	var editor_instances: Array[Editor] = []
 	for editor_ser in editors_array:
-		var editor_inst = Editor.create(editor_ser.get("type"), editor_ser.get("file"), null, null, false)
+		prints("Getting registered object:", editor_ser.get("associated_object"))
+		var editor_inst = Editor.create(
+			editor_ser.get("type"),
+			editor_ser.get("file"),
+			null,
+			SingletonObject.get_registered_object(editor_ser.get("associated_object")),
+			false
+		)
 		editor_inst.tab_title = editor_ser.get("name")
 		
 		await SingletonObject.editor_container.get_tree().process_frame
