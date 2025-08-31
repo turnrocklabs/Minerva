@@ -53,6 +53,8 @@ layout_mode = 2
 
 [node name="VBoxContainer2" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer"]
 layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 theme_override_constants/separation = 15
 
 [node name="UserVBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
@@ -219,48 +221,49 @@ text = "Select Services"
 [node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
 layout_mode = 2
 
-[node name="VBoxContainer2" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
-custom_minimum_size = Vector2(512, 0)
+[node name="CoreConnectionAdvanced" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="ConnectionLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer2"]
+[node name="ConnectionLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnectionAdvanced"]
 layout_mode = 2
 bbcode_enabled = true
 text = "[b]Core WebSocket Connection[/b]"
 fit_content = true
 shortcut_keys_enabled = false
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer2"]
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnectionAdvanced"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer2/HBoxContainer"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnectionAdvanced/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
 text = "Core URL:"
 
-[node name="leCoreUrl" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer2/HBoxContainer"]
+[node name="leCoreUrl" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnectionAdvanced/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "ws://..."
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer2"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnectionAdvanced"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer2/HBoxContainer2"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnectionAdvanced/HBoxContainer2"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.3
 text = "Auto Connect:"
 
-[node name="leConnectAuto" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer2/HBoxContainer2"]
+[node name="leConnectAuto" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnectionAdvanced/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 2
 
-[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
+[node name="CoreConnectionAdvancedSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="ThemeVBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
