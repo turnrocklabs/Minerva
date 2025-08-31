@@ -55,19 +55,27 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	}
 
 # reimplemented to handle image notes properly
-func wrap_memory(item: MemoryItem) -> Variant:
+func wrap_memory(item: Note) -> Variant:
 	# Return either string for text notes or Image for image notes
 
-	if item.MemoryImage:
-		return item.MemoryImage
+	# TODO: handle other types
+
+	if item.type == Note.Type.IMAGE:
+		return (item.get_controls_container() as NoteImageControls).image
 	
-	else:
+	elif item.type == Note.Type.TEXT:
 		var output = "Given this background information:\n\n"
 		output += "### Reference Information ###\n"
-		output += item.Content
+		output += (item.get_controls_container() as NoteTextControls).content
 		output += "### End Reference Information ###\n\n"
-		output += "Respond to the user's message: \n\n"
+		output += "Use it as needed: \n\n"
 		return output.json_escape()
+	
+	else:
+		push_warning("Tried to wrap memory but the given note type is not implemented")
+		print_stack()
+
+	return ""
 
 
 func estimate_tokens(input: String) -> int:

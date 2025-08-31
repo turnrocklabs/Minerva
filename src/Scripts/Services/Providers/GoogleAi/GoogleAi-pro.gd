@@ -67,20 +67,28 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 
 	return item
 
-func wrap_memory(item: MemoryItem) -> Variant:
+func wrap_memory(item: Note) -> Variant:
 
 	# Return either string for text notes or dictionary for image notes
 
-	if item.Type == SingletonObject.note_type.IMAGE:
+	if item.type == Note.Type.IMAGE:
 		return {
 			"inline_data": {
 				"mime_type": "image/png",
-				"data": Marshalls.raw_to_base64(item.MemoryImage.save_png_to_buffer())
+				"data": Marshalls.raw_to_base64((item.get_controls_container() as NoteImageControls).image.save_png_to_buffer())
 			}
 		}
-	elif item.Type == SingletonObject.note_type.VIDEO and SingletonObject.google_supported_video_formats.has(item.Content.get_extension()):
-		# item.Content only contains the file path for the video
-		var file_content: = FileAccess.get_file_as_bytes(item.Content)
+	elif item.type == Note.Type.VIDEO:
+
+		if item.file.is_empty():
+			push_error("Tried to get note video when there is no file attached to it")
+			print_stack()
+			return ""
+		if not SingletonObject.google_supported_video_formats.has(item.file.get_extension()):
+			push_error("wrap_memory: Video format (%s) not supported, returning empty string" % [item.file])
+			return ""
+
+		var file_content: = FileAccess.get_file_as_bytes(item.file)
 		var video_mime: String = SingletonObject.google_supported_video_formats.get(item.Content.get_extension())
 		return {
 			"inline_data": {
@@ -88,22 +96,48 @@ func wrap_memory(item: MemoryItem) -> Variant:
 				"data": Marshalls.raw_to_base64(file_content)
 			}
 		}
-	elif item.Type == SingletonObject.note_type.AUDIO and SingletonObject.google_supported_audio_formats.has(item.File.get_extension()):
-		var file_content = FileAccess.get_file_as_bytes(item.File)
-		var audio_mime: String = SingletonObject.google_supported_audio_formats.get(item.File.get_extension())
+	
+	elif item.type == Note.Type.AUDIO:
+
+		# TODO: support in memory recordings, not just audio files
+
+		var controls_container: = item.get_controls_container() as NoteAudioControls
+		
+		var file_content: PackedByteArray
+
+		if item.file.is_empty():
+			# NOTICE: in this case the audio is recorded in app, which is always AudioStreamWAV
+
+			file_content = (controls_container.audio as AudioStreamWAV).data
+		
+		else:
+			if not SingletonObject.google_supported_audio_formats.has(item.file.get_extension()):
+				push_error("wrap_memory: Audio format (%s) not supported, returning empty string" % [item.file])
+				return ""
+			
+			else:
+				file_content = FileAccess.get_file_as_bytes(item.file)
+
+		var audio_mime: String = SingletonObject.google_supported_audio_formats.get(item.file.get_extension())
 		return {
 			"inline_data": {
 				"data": Marshalls.raw_to_base64(file_content),
 				"mime_type": audio_mime
 			}
 	}
-	else:
+	elif item.type == Note.Type.TEXT:
 		var output = "Given this background information:\n\n"
 		output += "### Reference Information ###\n"
-		output += item.Content
+		output += (item.get_controls_container() as NoteTextControls).content
 		output += "### End Reference Information ###\n\n"
 		output += "Respond to the user's message: \n\n"
 		return output
+
+	else:
+		push_warning("Tried to wrap memory but the given note type is not implemented")
+		print_stack()
+	
+	return ""
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
 	var role: String
