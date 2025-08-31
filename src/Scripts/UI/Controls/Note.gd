@@ -189,7 +189,7 @@ static func create_file_note(note_title: String, file_path: String, note_uuid: S
 		var img: = Image.load_from_file(file_path)
 		if img == null:
 			push_error("Couldn't open the note file %s. Image object null." % file_path)
-			return create_error_note(note_title, "Couldn't open the note file (%s). Image object null." % file_path)
+			return create_error_note(note_title, "Couldn't open the note file (%s). Image object is null." % file_path)
 
 		note = create_image_note(note_title, img, note_uuid)
 

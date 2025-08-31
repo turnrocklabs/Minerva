@@ -55,47 +55,47 @@ func get_user_data():
 func update_output(notes: Array) -> void:
 
 	var orphans: Dictionary = {}
+	# TODO: implement
+	# for note_data in notes:
+	# 	var item: = MemoryItem.Deserialize(note_data)
+	# 	var owning_thread: String = item.OwningThread if item.OwningThread else ""
+	# 	var item_uuid: String = item.UUID if item.UUID else ""
 
-	for note_data in notes:
-		var item: = MemoryItem.Deserialize(note_data)
-		var owning_thread: String = item.OwningThread if item.OwningThread else ""
-		var item_uuid: String = item.UUID if item.UUID else ""
+	# 	if owning_thread.is_empty():
+	# 		if orphans.has(owning_thread):
+	# 			orphans[owning_thread].append(item)
+	# 		else:
+	# 			orphans[owning_thread] = [item]
 
-		if owning_thread.is_empty():
-			if orphans.has(owning_thread):
-				orphans[owning_thread].append(item)
-			else:
-				orphans[owning_thread] = [item]
+	# 		continue
 
-			continue
-
-		var found: = false
+	# 	var found: = false
 		
-		for i in SingletonObject.ThreadList.size():
-			var thread: = SingletonObject.ThreadList[i]
-			if thread.ThreadId == owning_thread:
+	# 	for i in SingletonObject.ThreadList.size():
+	# 		var thread: = SingletonObject.ThreadList[i]
+	# 		if thread.ThreadId == owning_thread:
 				
-				# check if this memory item already exists
-				for existing_item in thread.MemoryItemList:
-					if existing_item.UUID == item_uuid:
-						thread.MemoryItemList[i] = item # just replace the item
+	# 			# check if this memory item already exists
+	# 			for existing_item in thread.MemoryItemList:
+	# 				if existing_item.UUID == item_uuid:
+	# 					thread.MemoryItemList[i] = item # just replace the item
 
-				# if not just append this note
-				if not thread.MemoryItemList.has(item):
-					thread.MemoryItemList.append(item)
+	# 			# if not just append this note
+	# 			if not thread.MemoryItemList.has(item):
+	# 				thread.MemoryItemList.append(item)
 				
-				found = true
+	# 			found = true
 
-				break
+	# 			break
 
-		# if we found the target thread, stop here
-		if found: continue
+	# 	# if we found the target thread, stop here
+	# 	if found: continue
 
-		# if we get here the item owner thread wasn't found
-		if orphans.has(owning_thread):
-			orphans[owning_thread].append(item)
-		else:
-			orphans[owning_thread] = [item]
+	# 	# if we get here the item owner thread wasn't found
+	# 	if orphans.has(owning_thread):
+	# 		orphans[owning_thread].append(item)
+	# 	else:
+	# 		orphans[owning_thread] = [item]
 
 
 	# if a note doesn't have a owning thread set (empty string)
