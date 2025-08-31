@@ -1050,9 +1050,9 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 
 # when tab changes, set the provider to one that that chat tab is using
 func _on_tab_changed(tab: int):
-	var active_provider = SingletonObject.get_active_provider(tab)
+	var active_provider = _provider_option_button.get_provider_for_tab(tab)
 
-	var item_index = _provider_option_button.get_item_index(active_provider)
+	var item_index = _provider_option_button.get_item_index_for_provider(active_provider)
 
 	_provider_option_button.select(item_index)
 
