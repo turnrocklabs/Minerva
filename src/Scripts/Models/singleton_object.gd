@@ -130,6 +130,65 @@ func remove_recent_project(project_name: String) -> void:
 #endregion Config File
 
 
+var _registered_objects: Dictionary[Variant, Object] = {}
+
+## Registers an objects by mapping it [param field_name] value to it
+## so even after the project has been reopened the correct objec can be found.
+## Example of registering a [class Note] object so editor can associate with it
+## event after reopening the project:
+## [codeblock]
+## 	SingletonObject.register_object(self, &"uuid")
+## 	...
+##	# to get the object:
+## 	SingletonObject.get_registered_object(uuid)
+## [/codeblock]
+## Returns `true` on success.
+func register_object(object: Object, field_name: StringName) -> bool:
+
+	var field_value = object.get(field_name)
+
+	if field_value == null:
+		push_error("Can't register object %s. Field %s is null." % [object, field_name])
+		return false
+
+	_registered_objects[field_value] = object
+
+	print("Registerd object %s under the value %s" % [object, field_value])
+
+	return true
+
+## Returns the object that has been registered using the [method register_object]
+## if the object is not `null` and [method is_instance_valid] returns `true`.
+func get_registered_object(value: Variant) -> Object:
+	prints("get_registered_object:", value)
+	var object = _registered_objects.get(value)
+
+	if object == null or not is_instance_valid(object):
+		# unregister object since it's not valid anymore
+		_registered_objects.erase(value)
+		return null
+
+	return object
+
+## Clears all registered objects.[br]
+## Primary use at project close.
+func clear_registered_objects():
+	print("Clearing registered object")
+	_registered_objects.clear()
+
+## Given the object, tries to find the uuid for that object
+## if it's registered. Returns `null` if object is not found.[br]
+## Eg. Editor serialization tries to get the [member Editor.associated_object]
+## and save it so that on the next load it can find the associated object again.
+## The Note must register itself with the uuid field for this to work.
+func registered_object_get_uuid(object: Object):
+	for key in _registered_objects.keys():
+		if _registered_objects[key] == object:
+			prints("Found registered object", key, object)
+			return key
+	
+	return null
+
 #region Notes
 
 var notes_container: NotesContainer

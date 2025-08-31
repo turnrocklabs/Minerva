@@ -47,6 +47,10 @@ func remove_tab(tab_idx: int):
 	var control: = get_tab_control(tab_idx)
 
 	if control:
+		# doing this so the notes is_queued_for_deletion returns true
+		for note in get_notes(tab_idx):
+			note.queue_free()
+
 		control.queue_free()
 
 
