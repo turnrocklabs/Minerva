@@ -15,7 +15,6 @@ func update_last_save_path(new_path: String) -> void:
 # _new_project empties all the tabs and lists currently stored as notes or chats.
 # it also blanks out the save file variable to force a save_as
 func _new_project():
-	SingletonObject.initialize_notes()
 	SingletonObject.initialize_chats(SingletonObject.Chats)
 	SingletonObject.editor_container.clear_editor_tabs() # deserialize empty files list, so it clears everything
 	save_path = ""

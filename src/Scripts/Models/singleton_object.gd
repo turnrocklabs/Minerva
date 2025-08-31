@@ -194,6 +194,8 @@ func registered_object_get_uuid(object: Object):
 var notes_container: NotesContainer
 var drawer_notes_container: NotesContainer
 
+## Notes that don't reside inside any thread. eg. Editor and terminal notes
+var detached_notes: Array[Note]
 
 enum note_type {
 	TEXT,
@@ -225,24 +227,6 @@ signal create_drawer_tab
 
 var notes_draw_state: int
 
-## THis variable stores the notes tabs threads
-var ThreadList: Array[MemoryThread]
-## THis variable stores the Drawers notes tabs threads
-var DrawerThreadList: Array[MemoryThread]
-
-## Notes that don't reside inside any thread. eg. Editor and terminal notes
-var DetachedNotes: Array[MemoryItem]
-
-
-# var NotesTab: MemoryTabs
-# var DrawerTab: DrawerTabs
-
-##reorder array
-func initialize_notes(threads: Array[MemoryThread] = []):
-	ThreadList = threads
-	
-	# NotesTab.render_threads()
-	pass
 
 @warning_ignore("unused_signal")
 signal AttachNoteFile(file_path:String)
@@ -255,20 +239,12 @@ signal note_toggled(note: Note, on: bool)
 signal note_changed(note: Note)
 
 func toggle_all_notes(notes_enabled: bool):
-	pass
-	# if notes_enabled:
-	# 	NotesTab.disable_all()
-	# 	if DrawerTab.visible:
-	# 		DrawerTab.disable_all()
-	# if !notes_enabled:
-	# 	NotesTab.enable_all()
-	# 	if DrawerTab.visible:
-	# 		DrawerTab.enable_all()
+	for i in SingletonObject.notes_container.get_tab_count():
+		(SingletonObject.notes_container.enable_notes if notes_enabled else SingletonObject.notes_container.disable_notes).call(i)
+	
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		(SingletonObject.drawer_notes_container.enable_notes if notes_enabled else SingletonObject.drawer_notes_container.disable_notes).call(i)
 
-## Returns `MemoryThread` with the given `ThreadId` or null if none are found
-func get_thread(thread_id: String) -> MemoryThread:
-	var r_arr = ThreadList.filter(func(thread: MemoryThread): return thread.ThreadId == thread_id)
-	return r_arr.pop_front()
 
 #endregion Notes
 

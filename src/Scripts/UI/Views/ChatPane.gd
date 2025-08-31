@@ -119,9 +119,12 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 	else:
 		model_msg_node.queue_free()
 	
-	# TODO: implement
-	# SingletonObject.notes_container.disable_all()
-	# SingletonObject.DrawerTab.disable_all()
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
+
 
 ## add new chat 
 func _on_new_chat():
@@ -294,9 +297,12 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.rendered_node.render()
 
 	existing_response.rendered_node.loading = false
-	# TODO: implement
-	# SingletonObject.notes_container.disable_all()
-	# SingletonObject.DrawerTab.disable_all()
+	
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
 
 
 func _on_chat_pressed():
@@ -411,9 +417,11 @@ func execute_regular_chat(text: String) -> void:
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
-		# TODO: implement
-		# SingletonObject.notes_container.disable_all()
-		# SingletonObject.DrawerTab.disable_all()
+		for i in SingletonObject.notes_container.get_tab_count():
+			SingletonObject.notes_container.disable_notes(i)
+
+		for i in SingletonObject.drawer_notes_container.get_tab_count():
+			SingletonObject.drawer_notes_container.disable_notes(i)
 		return # if user is using Human provider we finish here
 	
 	# Check is the last message is a user message and not do anything if true
@@ -464,9 +472,11 @@ func execute_sequential_chat(text_input: String) -> void:
 		# In execute_sequential_chat function, update this part:
 		if user_history_item.provider is HumanProvider:
 			handle_human_provider_message(history, user_history_item)
-			# TODO: implement
-			# SingletonObject.notes_container.disable_all()
-			# SingletonObject.DrawerTab.disable_all()
+			for j in SingletonObject.notes_container.get_tab_count():
+				SingletonObject.notes_container.disable_notes(j)
+
+			for j in SingletonObject.drawer_notes_container.get_tab_count():
+				SingletonObject.drawer_notes_container.disable_notes(j)
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
@@ -496,9 +506,12 @@ func execute_sequential_chat(text_input: String) -> void:
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	audio_stop_1.disabled = true
 	_active_chat_request = false
-	# TODO: implement
-	# SingletonObject.notes_container.disable_all()
-	# SingletonObject.DrawerTab.disable_all()
+	
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
 
 var parallel_loading: = preload("res://Scenes/multi_message_loading.tscn")
 var _mutex: Mutex = Mutex.new()

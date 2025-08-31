@@ -55,7 +55,6 @@ var graphics_editor: GraphicsEditorV2
 enum Type {
 	TEXT,
 	GRAPHICS,
-	NOTE_EDITOR,
 	VIDEO,
 }
 
@@ -763,24 +762,17 @@ func _on_mic_button_pressed() -> void:
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
-func _create_note() -> void:
-	# TODO: implement
-	pass
-	# var memory_item: = SingletonObject.notes_container.create_note("Editor Note")
+func _create_note() -> Note:
 	
-	# if type == Type.TEXT:
-	# 	memory_item.Type = SingletonObject.note_type.TEXT
-	# 	memory_item.Content = code_edit.text
-	
-	# elif type == Type.GRAPHICS:
-	# 	memory_item.Type = SingletonObject.note_type.IMAGE
-	# 	memory_item.MemoryImage = await graphics_editor.compose_final_image()
-	# 	print("CREATED GE D_NOTE")
+	match type:
+		Type.TEXT:
+			return Note.create_text_note("Editor Note", code_edit.text)
+		Type.GRAPHICS:
+			return Note.create_image_note("Editor Note", await graphics_editor.compose_final_image())
+		Type.VIDEO:
+			push_error("Video editor notes not supported")
 
-	# else:
-	# 	return null # type not supported
-	
-	# return memory_item
+	return null
 
 func _update_note(note: Note) -> void:
 	# TODO: implement
@@ -794,34 +786,28 @@ func _update_note(note: Note) -> void:
 		controls_container.image = await graphics_editor.compose_final_image()
 
 
-func _on_check_button_toggled(toggled_on: bool):
-	pass
-	# TODO: implement
-	# var item: 
+func _on_check_button_toggled(_toggled_on: bool):
+	return
 
-	# if not has_meta("memory_item"):
-	# 	item = await _create_note()
-	# 	if not item:
-	# 		SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the editor.")
-	# 		_note_check_button.button_pressed = false
-	# 		return
-		
-	# 	item.toggled.connect(
-	# 		func(on: bool):
-	# 			_note_check_button.button_pressed = on
-	# 	)
+	# FIXME:
+	# If the editor is checked and the content changes, the note content is not updated
+	# maybe just create a note and set associated object instead of creating a detached one,
+	# so the user can actually see the content they are sending
 
-	# 	set_meta("memory_item", item)
-	# 	SingletonObject.DetachedNotes.append(item)
-	# else:
-	# 	item = get_meta("memory_item")
-	# 	var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
+	# if not toggled_on:
+	# 	# TODO: remove the note if we decide to go this way instead of creating the actual note
+	# 	pass
 
-	# 	if not present:
-	# 		SingletonObject.DetachedNotes.append(item)
+	# prints(SingletonObject.detached_notes, toggled_on)
 
-	# _update_memory_item(item)
-	# item.Enabled = toggled_on
+	# var note: = await _create_note()
+
+	# if note == null:
+	# 	SingletonObject.ErrorDisplay("Not supported", "Notes for this editor type are not supported.")
+	# 	return null
+	
+	# SingletonObject.detached_notes.append(note)
+
 
 func _on_close_warrning(path):
 	path.visible = false;

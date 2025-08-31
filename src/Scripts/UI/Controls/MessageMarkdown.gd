@@ -318,30 +318,26 @@ func _on_clip_button_pressed():
 
 
 func _on_note_button_pressed():
-	# TODO: implement
-	# if history_item.Images.size() > 0:
-	# 	var caption_title: String = history_item.Images[0].get_meta("caption", "")
-	# 	if caption_title.length() > 24:
-	# 		caption_title = caption_title.substr(0, 15) + "..."
-		
-	# 	if linked_memory_item_UUID == "":
-	# 		linked_memory_item_UUID = SingletonObject.notes_container.\
-	# 									add_image_note(caption_title, history_item.Images[0], history_item.Images[0].get_meta("caption", "")).UUID
+
+
+	if history_item.Images.size() > 0:
+
+		for image in history_item.Images:
 			
-	# 	else:
-	# 		var return_memory = SingletonObject.notes_container.update_note(linked_memory_item_UUID, history_item.Images[0])
-	# 		if return_memory == null:
-	# 			linked_memory_item_UUID = SingletonObject.notes_container.\
-	# 									add_image_note(caption_title, history_item.Images[0], history_item.Images[0].get_meta("caption", "")).UUID
-	# else:
-	# 	if linked_memory_item_UUID == "":
-	# 		linked_memory_item_UUID = SingletonObject.notes_container.\
-	# 									add_note("Chat Note", label.markdown_text,history_item.Complete).UUID
-	# 	else:
-	# 		var return_memory = SingletonObject.notes_container.update_note(linked_memory_item_UUID, label.markdown_text)
-	# 		if return_memory == null:
-	# 			linked_memory_item_UUID = SingletonObject.notes_container.\
-	# 									add_note("Chat Note",label.markdown_text,history_item.Complete).UUID
+			var caption_title: String = image.get_meta("caption", "")
+			if caption_title.length() > 24:
+				caption_title = caption_title.substr(0, 15) + "..."
+
+			SingletonObject.notes_container.add_note(
+				Note.create_image_note(caption_title, image.duplicate()),
+				image.get_meta("caption", "")
+			)
+
+	else:
+		SingletonObject.notes_container.add_note(
+			Note.create_text_note("Chat Note", label.markdown_text),
+		)
+
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 
