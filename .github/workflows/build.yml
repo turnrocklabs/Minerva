@@ -16,9 +16,7 @@ on:
     paths:
       - "src/**"
     branches:
-      - main
-      - user/milos/feature/terminal
-      - user/milos/core_ui
+      - development
 
 jobs:
   check-gdextension:
@@ -173,7 +171,7 @@ jobs:
         
       - name: Install Godot
         run: |
-          GODOT_VERSION="4.3"
+          GODOT_VERSION="4.4"
           RELEASE="stable"
           curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64.zip"
           unzip ./godot.zip
@@ -181,7 +179,7 @@ jobs:
 
       - name: Install Godot Export Templates
         run: |
-          GODOT_VERSION="4.3"
+          GODOT_VERSION="4.4"
           RELEASE="stable"
           TEMPLATE_DIR="$HOME/.local/share/godot/export_templates"
           curl -L -o ./godot-templates.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_export_templates.tpz"
