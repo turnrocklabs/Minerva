@@ -78,13 +78,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	return chat_item.HcpData
 
 
-func wrap_memory(item: MemoryItem) -> Variant:
-	var output: String = "Given this background information:\n\n"
-	output += "### Reference Information ###\n"
-	output += item.Content
-	output += "### End Reference Information ###\n\n"
-	output += "Respond to the user's message: \n\n"
-	return output
+func wrap_memory(_item: Note) -> Variant:
+	return ""
 
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()

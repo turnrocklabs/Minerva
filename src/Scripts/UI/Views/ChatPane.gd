@@ -193,7 +193,9 @@ func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseP
 	
 	if not provider:
 		return []
+	
 	var working_memory: Array = SingletonObject.notes_container.to_prompt(provider)
+	
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)

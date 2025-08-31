@@ -142,6 +142,11 @@ func hide_notes(tab_idx: = -1):
 	for note in get_notes(tab_idx):
 		note.visible = true
 
+## 
+func to_prompt() -> String:
+	
+
+	return ""
 
 func serialize() -> Array[Dictionary]:
 	var data: Array[Dictionary]
