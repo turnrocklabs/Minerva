@@ -4,17 +4,18 @@
 resource_local_to_scene = true
 data = {
 "colorGroups": {
-"accessModifiers": "#FF79C6",
-"async": "#BD93F9",
-"booleanFalse": "#FF5555",
-"booleanTrue": "#50FA7B",
-"controlFlow": "#FFB86C",
-"errorHandling": "#F1FA8C",
-"functions": "#8BE9FD",
-"loops": "#FF79C6",
-"modules": "#E6DB74",
-"null": "#6272A4",
-"objectRelated": "#50FA7B",
-"types": "#8BE9FD"
+"accessModifiers": "#dd4444",
+"async": "#5B80AF",
+"booleanFalse": "#6893C0",
+"booleanTrue": "#71A6D1",
+"controlFlow": "#6AB6D9",
+"errorHandling": "#78CFDE",
+"functions": "#dd4444",
+"loops": "#5B80AF",
+"modules": "#6893C0",
+"null": "#ff007f",
+"objectRelated": "#6AB6D9",
+"types": "#78CFDE",
+"numbers": "#71A6D1"
 }
 }
