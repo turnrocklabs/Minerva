@@ -26,10 +26,10 @@
 [ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="15_rdxx4"]
 [ext_resource type="Texture2D" uid="uid://dmhyo26833yx8" path="res://assets/icons/save_icons/save-64-white.png" id="16_wgr4y"]
 [ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="18_nil3p"]
-[ext_resource type="Texture2D" uid="uid://cuujlcy08aj2d" path="res://assets/icons/apply_diff/apply_diff_24.png" id="19_d7gmq"]
+[ext_resource type="Texture2D" uid="uid://dpypbbq666lww" path="res://assets/icons/apply_diff/apply_diff_24.png" id="19_d7gmq"]
 [ext_resource type="Texture2D" uid="uid://dpphnihk74dd0" path="res://assets/icons/create_pencil_icons/pencil_icon_64_no_bg.png" id="19_tg3kk"]
-[ext_resource type="Texture2D" uid="uid://d3pg7du0mohaa" path="res://assets/icons/apply_diff/apply_diff_48.png" id="20_pqyk3"]
-[ext_resource type="Texture2D" uid="uid://bc36rgxl1proj" path="res://assets/icons/apply_diff/apply_diff_68.png" id="21_tfrx0"]
+[ext_resource type="Texture2D" uid="uid://c0wy1vv3x0h8e" path="res://assets/icons/apply_diff/apply_diff_48.png" id="20_pqyk3"]
+[ext_resource type="Texture2D" uid="uid://cyy3ulhoe0dg5" path="res://assets/icons/apply_diff/apply_diff_68.png" id="21_tfrx0"]
 
 [sub_resource type="InputEventAction" id="InputEventAction_1e7nj"]
 action = &"toggle_autowrap"
