@@ -1,6 +1,8 @@
 extends VBoxContainer
 class_name NoteAudioControls
 
+# TODO: implement note.changed signal in this class
+
 static var _pause_icon: = preload("res://assets/icons/pause_icons/pause-24.png")
 static var _play_icon: = preload("res://assets/icons/play_icons/play-24.png")
 static var _speaker_muted_icon: = preload("res://assets/icons/speaker-muted-24.png")
@@ -16,6 +18,8 @@ static var _speaker_icon: = preload("res://assets/icons/speaker-24.png")
 @onready var _audio_stream_player: AudioStreamPlayer = %AudioStreamPlayer
 ## Used to update the time code label every one second, while the audio is playing
 @onready var _time_code_timer: Timer = %Timer
+
+var note: Note
 
 var sha256: String:
 	get:
@@ -87,8 +91,11 @@ var muted: bool = false:
 		
 
 
-func setup(note_audio: AudioStream):
+func setup(owner_note: Note, note_audio: AudioStream):
+	note = owner_note
+	
 	audio = note_audio
+
 
 
 ## Constructs a dictionary with all the audio stream data serialized.[br]

@@ -59,25 +59,30 @@ func get_selected_provider() -> BaseProvider:
 	return get_provider_from_id(get_selected_id())
 
 var _core_actions: Array[Action] = []
-func _on_hcp_service_selected(service: Service, action: Action):
+func _on_hcp_service_selected(service: Service):
 	if _core_actions.is_empty():
 		add_separator()
 
-	if action in _core_actions:
-		print("Slected action is already present")
-		return
+	for action in service.actions:
+		# TODO: quick hack
+		# skip if the action doesnt contain chat in it's name
+		if not action.name.containsn("chat"): continue
 
-	var idx: = item_count
+		if action in _core_actions:
+			print("Slected action is already present")
+			return
 
-	var item_name: = action.name
-	item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
+		var idx: = item_count
 
-	add_item(item_name, idx)
-	set_item_tooltip(idx, service.name)
-	set_item_metadata(idx, [service, action])
+		var item_name: = action.name
+		item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
 
-	_core_actions.append(action)
-	prints("added hcp item at index:", idx)
+		add_item(item_name, idx)
+		set_item_tooltip(idx, service.name)
+		set_item_metadata(idx, [service, action])
+
+		_core_actions.append(action)
+		prints("added hcp item at index:", idx)
 
 # Returns the provider object for the given tab, handling both standard and CoreProvider types
 func get_provider_for_tab(tab: int) -> BaseProvider:

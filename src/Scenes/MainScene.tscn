@@ -1,4 +1,4 @@
-[gd_scene load_steps=68 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=69 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -35,6 +35,7 @@
 [ext_resource type="Texture2D" uid="uid://bnn2c6bwu3w0e" path="res://assets/icons/file/file_24.svg" id="21_wcf3l"]
 [ext_resource type="Texture2D" uid="uid://cde1opucpvcqd" path="res://assets/icons/file/file_48.svg" id="22_av2ut"]
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
+[ext_resource type="PackedScene" uid="uid://cjpdxr0r3wbo4" path="res://Scenes/ServicesPane.tscn" id="23_jnakw"]
 [ext_resource type="Texture2D" uid="uid://bjvsgln2l7hyt" path="res://assets/icons/file/file_68.svg" id="23_xw6gv"]
 [ext_resource type="Texture2D" uid="uid://buq3nkd4uw5hb" path="res://assets/icons/brush/brush-48._white.png" id="25_bqwub"]
 [ext_resource type="PackedScene" uid="uid://0ibvob5ejdhq" path="res://Scenes/IconsButton.tscn" id="25_yt5rh"]
@@ -434,7 +435,18 @@ custom_minimum_size = Vector2(540, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Chats" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ServicesPane" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer" instance=ExtResource("23_jnakw")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Chats" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer" instance=ExtResource("2_nwqxj")]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]

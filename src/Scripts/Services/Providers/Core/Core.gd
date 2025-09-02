@@ -1,7 +1,7 @@
 extends Node
 
 # Signal emitted when a specific service/action is chosen from the preferences popup
-signal service_selected(service: Service, action: Action)
+signal service_selected(service: Service)
 
 # Preload the client script
 @onready var _client_script: = preload("res://Scripts/Services/Providers/Core/core_client.gd")
