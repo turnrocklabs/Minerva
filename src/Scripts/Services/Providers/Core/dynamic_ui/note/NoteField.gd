@@ -24,19 +24,20 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 			scn._requested_fields = field_params.get("fields", [])
 
 			if input:
-				scn.selected_notes = scn.selected_notes
-				for t in SingletonObject.ThreadList:
-					for item in t.MemoryItemList:
-						if item.Enabled:
-							scn.selected_notes += 1
+				pass
+				# scn.selected_notes = scn.selected_notes
+				# for t in SingletonObject.ThreadList:
+				# 	for item in t.MemoryItemList:
+				# 		if item.Enabled:
+				# 			scn.selected_notes += 1
 				
-				SingletonObject.note_toggled.connect(
-					(func(_note: Note, on: bool, scn_: NoteField):
-						if on:
-							scn_.selected_notes += 1
-						else:
-							scn_.selected_notes -= 1).bind(scn)
-				)
+				# SingletonObject.note_toggled.connect(
+				# 	(func(_note: Note, on: bool, scn_: NoteField):
+				# 		if on:
+				# 			scn_.selected_notes += 1
+				# 		else:
+				# 			scn_.selected_notes -= 1).bind(scn)
+				# )
 
 			else:
 				# TODO: RECREATE THE NODES
@@ -48,23 +49,23 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 func get_user_data():
 	var data: Array[Dictionary] = []
 	
-	for t in SingletonObject.ThreadList:
-		for item in t.MemoryItemList:
-			if item.Enabled:
-				var serialized_note = item.Serialize(false)
+	# for t in SingletonObject.ThreadList:
+	# 	for item in t.MemoryItemList:
+	# 		if item.Enabled:
+	# 			var serialized_note = item.Serialize(false)
 				
-				if _requested_fields.is_empty():
-					data.append(serialized_note)
-				else:
-					print("Requested note fields are: %s" % _requested_fields)
-					var serialized_part: = {}
-					for field in _requested_fields:
-						serialized_part[field] = serialized_note.get(field, "")
+	# 			if _requested_fields.is_empty():
+	# 				data.append(serialized_note)
+	# 			else:
+	# 				print("Requested note fields are: %s" % _requested_fields)
+	# 				var serialized_part: = {}
+	# 				for field in _requested_fields:
+	# 					serialized_part[field] = serialized_note.get(field, "")
 
-						if not serialized_part[field]:
-							push_error("Couldn't extract requested field '%s' from the note" % field)
+	# 					if not serialized_part[field]:
+	# 						push_error("Couldn't extract requested field '%s' from the note" % field)
 
-					data.append(serialized_part)
+	# 				data.append(serialized_part)
 
 	return data
 
@@ -118,13 +119,13 @@ func update_output(notes: Array) -> void:
 	# the note will be duplicated each time since we can't know what it's associated with
 	# we may go through all threads and memory items and try to find the matching memory item UUID
 	# but this is a rare problem
-	for owning_thread in orphans.keys():
-		var thread = MemoryThread.new(owning_thread)
-		thread.ThreadName = "Remote Orphan Notes"
+	# for owning_thread in orphans.keys():
+	# 	var thread = MemoryThread.new(owning_thread)
+	# 	thread.ThreadName = "Remote Orphan Notes"
 		
-		for item: MemoryItem in orphans[owning_thread]:
-			thread.MemoryItemList.append(item)
+	# 	for item: MemoryItem in orphans[owning_thread]:
+	# 		thread.MemoryItemList.append(item)
 
-		SingletonObject.ThreadList.append(thread)
+	# 	SingletonObject.ThreadList.append(thread)
 
-	SingletonObject.notes_container.render_threads()
+	# SingletonObject.notes_container.render_threads()

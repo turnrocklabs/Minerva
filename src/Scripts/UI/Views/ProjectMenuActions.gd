@@ -17,6 +17,7 @@ func update_last_save_path(new_path: String) -> void:
 func _new_project():
 	SingletonObject.initialize_chats(SingletonObject.Chats)
 	SingletonObject.editor_container.clear_editor_tabs() # deserialize empty files list, so it clears everything
+	SingletonObject.clear_registered_objects()
 	save_path = ""
 	
 	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
@@ -281,6 +282,8 @@ func open_project_given_path(project_path: String) -> int:
 		SingletonObject.notes_container.remove_tab(i)
 
 	await get_tree().process_frame
+
+	SingletonObject.clear_registered_objects()
 
 	deserialize_project(json)
 	

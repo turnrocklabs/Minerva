@@ -8,6 +8,10 @@ var drag_start_position = Vector2()
 #variables where writing out notes Head and description
 @onready var project_name_label: RichTextLabel = %ProjectNameLabel
 
+@onready var service_pane_control: Control = %ServicesPane
+@onready var chats_control: Control = %Chats
+
+
 #these variables are for changing only the font size of the UI
 var _default_zoom: int
 var min_font_size:int 

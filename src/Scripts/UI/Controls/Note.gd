@@ -6,7 +6,14 @@ static var _text_controls_scene: = preload("res://Scenes/note/note_controls/text
 static var _image_controls_scene: = preload("res://Scenes/note/note_controls/image_controls.tscn")
 static var _audio_controls_scene: = preload("res://Scenes/note/note_controls/audio_controls.tscn")
 
+## Emitted when the title changes.
 signal title_changed
+
+## Emitted when any note content has been changed, both main and controls container.
+signal changed
+
+## Emitted when the Note has been created and all properties set
+signal initialized
 
 enum Type {
 	TEXT,
@@ -39,7 +46,6 @@ var uuid: String:
 	set(value):
 		if uuid.is_empty():
 			uuid = value
-			SingletonObject.register_object(self, &"uuid")
 			SingletonObject.save_state(false)
 		else:
 			push_warning("Tried to change the Note object uuid when the value is already set")
@@ -50,6 +56,8 @@ var sha256: String:
 var title: String:
 	set(value):
 		_title.text = value
+		changed.emit()
+		title_changed.emit()
 		SingletonObject.save_state(false)
 	get:
 		return _title.text
@@ -57,6 +65,7 @@ var title: String:
 var enabled: bool:
 	set(value):
 		_check_button.button_pressed = value
+		changed.emit()
 		SingletonObject.save_state(false)
 	get:
 		return _check_button.button_pressed
@@ -65,6 +74,7 @@ var expanded: bool = true:
 	set(value):
 		expanded = value
 		_node_expand_toggled()
+		changed.emit()
 		SingletonObject.save_state(false)
 
 ## String representation of this notes [member Note.type], or [code]"Unknown"[/code] if [member Note.type] is not set or found.
@@ -86,12 +96,15 @@ var _error: = false:
 		_error = value
 		_on_error_changed()
 
+var _initialized: = false
 
 @onready var _title: LineEdit = %Title
 @onready var _check_button: CheckButton = %CheckButton
 @onready var _edit_button: Button = %EditButton
 @onready var _warning_button: Button = %WarningButton
 @onready var _hide_button: Button = %HideButton
+
+@onready var sync_controller_button: Button = %SyncControllerButton
 
 @onready var _notes_control_container: Container = %NoteControlsContainer
 # container that holds all the content and gives the note its background
@@ -102,19 +115,29 @@ var _error: = false:
 @onready var _expand_button: Button = %ExpandButton
 @onready var _resize_control: Control = %ResizeControl
 
-static func create_text_note(note_title: String, content: String, note_uuid: String = "") -> Note:
+
+## Allow changing the default remove button handler.[br]
+## If the callable is not valid, the note is just freed from the memory.
+var remove_handle: Callable
+
+
+static func create_text_note(note_title: String, content: String, note_uuid: String = "", register: = true) -> Note:
 	var text_controls: NoteTextControls = _text_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
 
 	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
+	if register:
+		SingletonObject.register_object(note_scene, &"uuid")
+
 	note_scene.ready.connect(
 		func():
 			await note_scene._set_controls_container(text_controls)
-			text_controls.setup(content)
+			text_controls.setup(note_scene, content)
 			
 			note_scene.title = note_title
 			note_scene.type = Type.TEXT
+			note_scene.initialized.emit()
 	)
 	
 
@@ -127,6 +150,7 @@ static func create_error_note(note_title: String, content: String, warning: Stri
 		func():
 			note._error = true
 			note._warning_button.tooltip_text = warning
+			note.initialized.emit()
 	)
 
 	return note
@@ -137,40 +161,49 @@ static func create_dummy_note(note_title: String) -> Note:
 	note_scene.ready.connect(
 		func():
 			note_scene.title = note_title
+			note_scene.initialized.emit()
 	)
 
 	return note_scene
 
-static func create_image_note(note_title: String, image: Image, caption: String = "", note_uuid: String = "") -> Note:
+static func create_image_note(note_title: String, image: Image, caption: String = "", note_uuid: String = "", register: = true) -> Note:
 	var image_controls: NoteImageControls = _image_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
 
 	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
+	if register:
+		SingletonObject.register_object(note_scene, &"uuid")
+
 	note_scene.ready.connect(
 		func():
 			await note_scene._set_controls_container(image_controls)
-			image_controls.setup(image, caption)
+			image_controls.setup(note_scene, image, caption)
 			
 			note_scene.title = note_title
 			note_scene.type = Type.IMAGE
+			note_scene.initialized.emit()
 	)
 
 	return note_scene
 
-static func create_audio_note(note_title: String, audio: AudioStream, note_uuid: String = "") -> Note:
+static func create_audio_note(note_title: String, audio: AudioStream, note_uuid: String = "", register: = true) -> Note:
 	var audio_controls: NoteAudioControls = _audio_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
 
 	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
+	if register:
+		SingletonObject.register_object(note_scene, &"uuid")
+
 	note_scene.ready.connect(
 		func():
 			await note_scene._set_controls_container(audio_controls)
-			audio_controls.setup(audio)
+			audio_controls.setup(note_scene, audio)
 			
 			note_scene.title = note_title
 			note_scene.type = Type.AUDIO
+			note_scene.initialized.emit()
 	)
 
 	return note_scene
@@ -178,7 +211,7 @@ static func create_audio_note(note_title: String, audio: AudioStream, note_uuid:
 
 ## Tries to create a note from the given file path.[br]
 ## [member Note.type] is determined from the [param file_path] extension. On fail a text note with an error is returned.
-static func create_file_note(note_title: String, file_path: String, note_uuid: String = "") -> Note:
+static func create_file_note(note_title: String, file_path: String, note_uuid: String = "", register: = true) -> Note:
 
 	# determin the note type from the extension
 	var ext: = file_path.get_extension()
@@ -191,7 +224,7 @@ static func create_file_note(note_title: String, file_path: String, note_uuid: S
 			push_error("Couldn't open the note file %s. Image object null." % file_path)
 			return create_error_note(note_title, "Couldn't open the note file (%s). Image object is null." % file_path)
 
-		note = create_image_note(note_title, img, note_uuid)
+		note = create_image_note(note_title, img, "", note_uuid, register)
 
 	elif ext in _file_ext_map[Type.AUDIO]:
 		var fa: = FileAccess.open(file_path, FileAccess.READ)
@@ -214,7 +247,7 @@ static func create_file_note(note_title: String, file_path: String, note_uuid: S
 				audio_stream = AudioStreamWAV.new()
 				audio_stream.data = fa.get_buffer(fa.get_length())
 
-		note = create_audio_note(note_title, audio_stream, note_uuid)
+		note = create_audio_note(note_title, audio_stream, note_uuid, register)
 	
 	else: # treat as text file
 		var fa: = FileAccess.open(file_path, FileAccess.READ)
@@ -224,7 +257,7 @@ static func create_file_note(note_title: String, file_path: String, note_uuid: S
 			push_error("Couldn't open the note file (%s): %s" % [file_path, error_string(err)])
 			return create_error_note(note_title, "Couldn't open the note file (%s): %s" % [file_path, error_string(err)])
 
-		note = create_text_note(note_title, fa.get_as_text(), note_uuid)
+		note = create_text_note(note_title, fa.get_as_text(), note_uuid, register)
 
 	note.file = file_path
 	
@@ -272,11 +305,27 @@ func _to_string() -> String:
 	
 	return "%s note (%s)" % [content_type.capitalize(), title]
 
+
+func _init() -> void:
+	initialized.connect(_on_note_initialized)
+
+func _on_note_initialized():
+	_initialized = true
+
+## Return whether the note is ready and all fields are set
+func is_note_initialized() -> bool:
+	return _initialized
+
+
 func _on_remove_button_pressed() -> void:
-	queue_free()
+	if remove_handle and remove_handle.is_valid():
+		remove_handle.call()
+	else:
+		queue_free()
 
 func _on_title_text_changed(_new_text: String) -> void:
 	title_changed.emit()
+	changed.emit()
 
 func _on_edit_button_pressed() -> void:
 	# The editor pane will listen to tree exiting signal
@@ -309,6 +358,7 @@ func _on_edit_button_pressed() -> void:
 
 func _on_hide_button_pressed() -> void:
 	visible = false
+	changed.emit()
 
 
 # region Expand

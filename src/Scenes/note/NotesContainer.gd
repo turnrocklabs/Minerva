@@ -35,7 +35,8 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> Control:
 	if uuid.is_empty():
 		print("uuid is empty")
 		uuid = SingletonObject.generate_UUID()
-		_uuid_map[get_tab_count()] = uuid
+	
+	_uuid_map[get_tab_count()] = uuid
 
 	# force readable name
 	add_child(scroll, true)
@@ -53,6 +54,16 @@ func remove_tab(tab_idx: int):
 
 		control.queue_free()
 
+
+## Tries to find the index of tab that contains the provided [param note].[br]
+## Returns `-1` on failure.
+func find_note(note: Note) -> int:
+	
+	for i in get_tab_count():
+		if get_notes(i).has(note):
+			return i
+
+	return -1
 
 ## Adds the provided [parameter note] to the [parameter tab_idx] tab.[br]
 ## If [parameter tab_idx] is -1, currently selected tab is used, or it fails if no tab is selected.[br]
@@ -109,6 +120,25 @@ func get_notes(tab_idx: = -1) -> Array[Note]:
 
 	return notes
 
+## Returns the UUID of the specified tab, or `null` if it doesn't exist
+func get_tab_id(idx: int):
+	return _uuid_map.get(idx)
+
+## Returns the name of the specified tab, or `null` if it doesn't exist
+func get_tab_name(idx: int):
+	if idx < get_tab_count():
+		return get_tab_control(idx).name
+
+	return null
+
+## Sets the name of the specified tab, or silently fails if it doesn't exist.
+func set_tab_name(idx: int, new_name: String):
+	var control: = get_tab_control(idx)
+
+	if control:
+		control.name = new_name
+
+
 ## Disables all notes in the specified or currently active tab.
 func disable_notes(tab_idx: = -1):
 	tab_idx = tab_idx if tab_idx != -1 else current_tab
@@ -142,11 +172,31 @@ func hide_notes(tab_idx: = -1):
 	for note in get_notes(tab_idx):
 		note.visible = true
 
-## 
-func to_prompt() -> String:
+## Calls the [param provider] wrap_memory for each active node
+## in the notes and drawer notes container, and returns an array of all the return values.
+func to_prompt(provider: BaseProvider) -> Array[Variant]:
+	var output: Array[Variant] = []
 	
+	var notes: Array[Note]
 
-	return ""
+	for i in SingletonObject.notes_container.get_tab_count():
+		notes.append_array(SingletonObject.notes_container.get_notes())
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		notes.append_array(SingletonObject.drawer_notes_container.get_notes())
+
+	for note in notes:
+		if note.enabled:
+			output.append(provider.wrap_memory(note))
+
+
+	# loop through detached notes also
+	# for item in SingletonObject.DetachedNotes:
+	# 	if item.Enabled:
+	# 		output.append(provider.wrap_memory(item))
+	
+	return output
+
 
 func serialize() -> Array[Dictionary]:
 	var data: Array[Dictionary]

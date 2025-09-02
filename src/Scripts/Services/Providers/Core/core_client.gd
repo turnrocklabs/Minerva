@@ -328,7 +328,7 @@ func decode_u32(data, offset):
 	return value
 
 func _handle_message(data, binary_data = null):
-	print("Received message: ", JSON.stringify(data))
+	# print("Received message: ", JSON.stringify(data))
 	var cmd = data.get("cmd", "")
 	var topic = data.get("topic", "")
 	var entity_type = data.get("entity_type", "")

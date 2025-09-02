@@ -133,9 +133,11 @@ func remove_recent_project(project_name: String) -> void:
 var _registered_objects: Dictionary[Variant, Object] = {}
 
 ## Registers an objects by mapping it [param field_name] value to it
-## so even after the project has been reopened the correct objec can be found.
+## so even after the project has been reopened the correct object can be found.[br]
+## If an object is already registered with the same value,
+## nothing happens and `false` is returned.[br]
 ## Example of registering a [class Note] object so editor can associate with it
-## event after reopening the project:
+## even after reopening the project:
 ## [codeblock]
 ## 	SingletonObject.register_object(self, &"uuid")
 ## 	...
@@ -149,6 +151,10 @@ func register_object(object: Object, field_name: StringName) -> bool:
 
 	if field_value == null:
 		push_error("Can't register object %s. Field %s is null." % [object, field_name])
+		return false
+
+	# Object with same value already exists
+	if field_value in _registered_objects.keys():
 		return false
 
 	_registered_objects[field_value] = object
@@ -170,6 +176,12 @@ func get_registered_object(value: Variant) -> Object:
 
 	return object
 
+## Removes the [param value] key from registered object.[br]
+## Uses `Array.erase` to remove the object and
+## returns whether the object existed before this operation.
+func remove_registered_object(value: Variant) -> bool:
+	return _registered_objects.erase(value)
+	
 ## Clears all registered objects.[br]
 ## Primary use at project close.
 func clear_registered_objects():
@@ -190,6 +202,9 @@ func registered_object_get_uuid(object: Object):
 	return null
 
 #region Notes
+
+## Manages relations between [class Note] objects and core note services
+var notes_sync_manger: = NoteSyncManager.new()
 
 var notes_container: NotesContainer
 var drawer_notes_container: NotesContainer
@@ -396,6 +411,14 @@ func ErrorDisplay(error_title:String, error_message: String, on_close_focus: Nod
 
 	if on_close_focus and on_close_focus.has_method("grab_focus"):
 		errorPopup.close_requested.connect(func(): on_close_focus.grab_focus())
+
+func create_toast_notification(content: String, type: = ToastNotification.Type.INFO):
+	
+	var toast: = ToastNotification.create(type, content)
+
+	main_scene.add_child(toast)
+
+
 
 @onready var main_scene = $"/root/RootControl"
 

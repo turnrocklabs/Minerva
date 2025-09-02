@@ -36,7 +36,7 @@ const PROVIDERS = {
 const AUTH_PRESET_PROD = "https://www.turnrock.ai:4040/v1/login"
 const AUTH_PRESET_LOCAL = "http://localhost:4040/v1/login"
 const WS_PRESET_PROD = "wss://www.turnrock.ai:27500/connect"
-const WS_PRESET_LOCAL = "wss://127.0.0.1:27500/connect"
+const WS_PRESET_LOCAL = "ws://127.0.0.1:27500/connect"
 const AUTH_PRESET_CUSTOM_IDX = 2 # Index of the "Custom" option in the OptionButton
 
 @onready var _fields = {
@@ -369,13 +369,11 @@ func _on_select_services_button_pressed() -> void:
 	service_selection_window.popup_centered()
 
 var selected_service: Service
-var selected_action: Action
 
-func _on_service_selection_service_selected(service: Service, action: Action) -> void:
+func _on_service_selection_service_selected(service: Service) -> void:
 	selected_service = service
-	selected_action = action
 
-	Core.service_selected.emit(service, action)
+	Core.service_selected.emit(service)
 
 
 func _on_password_checkbox_toggled(toggled_on:bool) -> void:

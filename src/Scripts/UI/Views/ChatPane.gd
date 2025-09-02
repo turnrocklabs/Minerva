@@ -1127,3 +1127,8 @@ func _on_clone_chat_button_pressed() -> void:
 	if %tcChats.current_tab < 0:
 		return
 	clone_chat(%tcChats.current_tab)
+
+
+func _on_services_pane_button_pressed() -> void:
+	SingletonObject.main_scene.service_pane_control.visible = true
+	SingletonObject.main_scene.chats_control.visible = false
