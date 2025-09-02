@@ -26,7 +26,7 @@ signal compose_finished(image: Image)
 
 @onready var _tools_option_button: OptionButton = %ToolsOptionButton
 
-# tool options containers
+#region tool options containers
 @onready var _brush_options_container: Control = %BrushOptions
 @onready var _smudge_options_container: Control = %SmudgeOptions
 @onready var _bucket_options_container: Control = %BucketOptions
@@ -50,6 +50,7 @@ signal compose_finished(image: Image)
 	speech_bubble_tool: _speech_bubble_options,
 }
 
+#endregion
 var canvas_size: = Vector2i(1000, 1000)
 
 var _custom_cursor: Resource
@@ -275,9 +276,12 @@ func _gui_input(event: InputEvent) -> void:
 
 		if active_tool.handle_input_event(event):
 			_compose_result_expired = true
-		
+			saved = false
+			graphics_editor_changed.emit()
 		accept_event()
 
+
+signal graphics_editor_changed
 func _unhandled_key_input(event: InputEvent) -> void:
 	
 	if event.is_action_pressed("ui_undo"):

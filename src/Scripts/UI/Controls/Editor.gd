@@ -147,7 +147,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			
 			if initial_setup:
 				new_graphics_editor.ready.connect(new_graphics_editor.setup)
-
+				new_graphics_editor.graphics_editor_changed.connect(editor._on_graphics_editor_changed)
 			# new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
@@ -367,7 +367,7 @@ func get_saved_state() -> int:
 			if file and graphics_editor.saved:
 				state |= FILE_SAVED
 			
-			if associated_object:
+			elif associated_object and graphics_editor.saved:
 				if associated_object is Note:
 					state |= ASSOCIATED_OBJECT_SAVED
 					# associated_object.memory_item
@@ -492,7 +492,7 @@ func _on_create_note_button_pressed() -> void:
 	if is_instance_valid(associated_object) and associated_object is Note:
 		await _update_memory_item(associated_object.memory_item)
 		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
-		
+		graphics_editor.saved = true
 	else:
 		var memory_item: MemoryItem = null
 
@@ -512,7 +512,7 @@ func _on_create_note_button_pressed() -> void:
 				memory_item = SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
 			else:
 				memory_item = SingletonObject.NotesTab.add_image_note("From file Editor", editor_image, "Sketch")
-
+			graphics_editor.saved = true
 		if memory_item:
 			var note: = await SingletonObject.NotesTab._wait_for_rendered_note(memory_item)
 			if note: note.associate_editor(self)
@@ -844,3 +844,8 @@ func _on_code_syntax_button_toggled(toggled_on: bool) -> void:
 			code_edit.syntax_highlighter = update_code_hightlighter(file)
 		else:
 			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
+
+
+func _on_graphics_editor_changed() -> void:
+	print("content changed emited")
+	content_changed.emit()

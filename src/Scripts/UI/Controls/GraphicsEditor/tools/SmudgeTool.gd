@@ -144,7 +144,7 @@ func _start_smudge(event: InputEvent) -> void:
 
 func _perform_smudge(event: InputEvent) -> void:
 	var pos = event.position
-	var pressure = clamp(event.pressure if event is InputEventMouseMotion else 1.0, 0.1, 1.0)
+	var pressure = clamp(event.pressure if event is InputEventMouseMotion else 1.0, 0.05, 1.0)
 	
 	# Smooth pressure
 	_smoothed_pressure = lerp(_smoothed_pressure, pressure, _pressure_smoothing_factor)
