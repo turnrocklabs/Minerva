@@ -1,4 +1,4 @@
-[gd_scene load_steps=33 format=3 uid="uid://ve8kcrp3w1bi"]
+[gd_scene load_steps=36 format=3 uid="uid://ve8kcrp3w1bi"]
 
 [ext_resource type="Script" uid="uid://cxc0cbdhj2a0p" path="res://Scripts/UI/Controls/Editor.gd" id="1_8t5ew"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="4_0is2e"]
@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://c5gxq5cm5tpnk" path="res://assets/icons/autowrap/autowrap_icon.png" id="5_7o203"]
 [ext_resource type="Texture2D" uid="uid://exoijpiwrvi0" path="res://assets/icons/warning_icon.svg" id="5_blbtn"]
 [ext_resource type="Texture2D" uid="uid://bc6paa43h1umv" path="res://assets/icons/save_icons/save-all-24-white.png" id="5_oex5t"]
+[ext_resource type="Texture2D" uid="uid://cxlb82ejdnwli" path="res://assets/icons/code_syntax/code_syntax_24.png" id="6_6cyjk"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
 [ext_resource type="Script" uid="uid://cq5yob4ah4ow7" path="res://Scripts/UI/Views/icons_button.gd" id="6_jf4nm"]
@@ -17,8 +18,10 @@
 [ext_resource type="Texture2D" uid="uid://dskn0gjd7h730" path="res://assets/icons/m_glass_icons/search_icon_48_no_bg.png" id="8_cgl7l"]
 [ext_resource type="Texture2D" uid="uid://b7e8ub4l1hynh" path="res://assets/icons/autowrap/autowrap_icon_68.png" id="8_mxr1i"]
 [ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="8_r334w"]
+[ext_resource type="Texture2D" uid="uid://dgyp63s052qa1" path="res://assets/icons/code_syntax/code_syntax_48.png" id="8_rhomd"]
 [ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="9_65m80"]
 [ext_resource type="Texture2D" uid="uid://1qpbadp6okdw" path="res://assets/icons/m_glass_icons/search_icon_64_no_bg.png" id="9_iclxa"]
+[ext_resource type="Texture2D" uid="uid://4oe41nymd6ny" path="res://assets/icons/code_syntax/code_syntax_68.png" id="9_tritd"]
 [ext_resource type="Texture2D" uid="uid://cieg7eg003vd7" path="res://assets/icons/reload-icons/reload-48.svg" id="11_nrs0x"]
 [ext_resource type="Texture2D" uid="uid://dq5axtf0gpsp7" path="res://assets/icons/save_icons/save-all-48-white.png" id="12_jegqv"]
 [ext_resource type="Texture2D" uid="uid://cx8xu0burk3hm" path="res://assets/icons/reload-icons/reload-64.svg" id="12_yvsru"]
@@ -154,7 +157,11 @@ size_flags_horizontal = 3
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
-text = "CS"
+icon = ExtResource("6_6cyjk")
+script = ExtResource("6_jf4nm")
+icon_24 = ExtResource("6_6cyjk")
+icon_48 = ExtResource("8_rhomd")
+icon_68 = ExtResource("9_tritd")
 
 [node name="FindButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true

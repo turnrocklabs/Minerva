@@ -492,7 +492,8 @@ func _on_create_note_button_pressed() -> void:
 	if is_instance_valid(associated_object) and associated_object is Note:
 		await _update_memory_item(associated_object.memory_item)
 		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
-		graphics_editor.saved = true
+		if Type.GRAPHICS == type and graphics_editor:
+			graphics_editor.saved = true
 	else:
 		var memory_item: MemoryItem = null
 

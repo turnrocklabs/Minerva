@@ -820,7 +820,10 @@ func _on_compose_finished(image: Image):
 	# Clean up the thread
 	if _current_compose_thread != null and _current_compose_thread.is_alive():
 		_current_compose_thread.wait_to_finish()
-	_current_compose_thread = null
+		_current_compose_thread = null
+	else:
+		_current_compose_thread.wait_to_finish()
+		_current_compose_thread = null
 
 # Add this to handle cleanup when the node is being destroyed:
 func _exit_tree():
