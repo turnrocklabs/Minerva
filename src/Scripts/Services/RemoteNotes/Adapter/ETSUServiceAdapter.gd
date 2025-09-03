@@ -181,3 +181,41 @@ func get_all_notes() -> Array[Note]:
 		notes.append(note)
 
 	return notes
+
+
+func handle_action(action: Action, data: Variant) -> bool:
+	
+
+	if action.topic == "%s/get" % SERVICE_NAME:
+		SingletonObject.notes_sync_manger.sync_with_remote()
+		return true
+	
+	elif action.topic == "%s/save" % SERVICE_NAME:
+		if not data is Array:
+			return false
+		
+		var success: = await save_notes(data)
+
+		for note in data:
+			var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+			controller.set_state(NoteSyncController.SyncState.SYNCED if success else NoteSyncController.SyncState.LOCAL_CHANGES)
+
+		return success
+	
+	elif action.topic == "%s/delete" % SERVICE_NAME:
+		if not data is Array:
+			return false
+		
+		var success: = await delete_notes(data)
+
+		for note in data:
+			if success:
+				note.queue_free()
+			else:
+				var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+				controller.set_state(NoteSyncController.SyncState.SYNCED)
+		
+		return success
+
+	
+	return false
