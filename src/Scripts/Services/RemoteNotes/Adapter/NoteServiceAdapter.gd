@@ -32,6 +32,12 @@ func get_all_notes() -> Array[Note]:
 	return []
 
 
+func handle_action(action: Action, data: Variant) -> bool:
+	# dummy await so we get rid of the REDUNDANT_AWAIT warning
+	await Engine.get_main_loop().process_frame
+	push_error("get_all_notes not implemented")
+	return false
+
 func safe_extract(data: Dictionary, fields: Array[String], types: Array[int], default: Variant = null) -> Variant:
 	
 	var current = data
