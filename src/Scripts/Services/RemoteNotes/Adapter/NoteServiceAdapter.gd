@@ -9,16 +9,20 @@ func _init(service_: Service) -> void:
 func info(input):
 	print("#\n#### NoteServiceAdapter: %s\n#" % str(input))
 
-func delete_note(_note: Note) -> bool:
+static func get_service_name() -> StringName:
+	push_error("get_service_name not implemented")
+	return &""
+
+func delete_notes(_notes: Array[Note]) -> bool:
 	# dummy await so we get rid of the REDUNDANT_AWAIT warning
 	await Engine.get_main_loop().process_frame
-	push_error("delete_note not implemented")
+	push_error("delete_notes not implemented")
 	return false
 
-func save_note(_note: Note) -> bool:
+func save_notes(_notes: Array[Note]) -> bool:
 	# dummy await so we get rid of the REDUNDANT_AWAIT warning
 	await Engine.get_main_loop().process_frame
-	push_error("save_note not implemented") 
+	push_error("save_notes not implemented") 
 	return false
 
 func get_all_notes() -> Array[Note]:

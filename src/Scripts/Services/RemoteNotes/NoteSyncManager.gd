@@ -52,10 +52,47 @@ func sync_with_remote():
 			var should_update: = _create_remote_note_locally(remote_note, remote_thread_id, remote_thread_name)
 
 			if should_update:
-				adapter.save_note(remote_note)
+				adapter.save_notes([remote_note])
 			
 			else:
 				info("Note %s created locally, no need for update" % remote_note)
+		
+		# note exists locally, so check if they are not the same
+		# if not update the remote
+		else:
+			var temp_control: = Control.new()
+			temp_control.visible = false
+			SingletonObject.get_tree().root.add_child(temp_control)
+
+			temp_control.add_child(remote_note)
+
+			await remote_note.initialized
+
+			# create SyncStateInfo to check if remote and local don't match
+			var temp_sync_info: = NoteSyncController.SyncStateInfo.new(remote_note, remote_thread_id, remote_thread_name)
+			
+			var local_tab_idx: = SingletonObject.notes_container.find_note(local_note)
+
+			var in_sync: = temp_sync_info.is_out_of_sync(
+				local_note,
+				SingletonObject.notes_container.get_tab_id(local_tab_idx),
+				SingletonObject.notes_container.get_tab_name(local_tab_idx)
+			)
+
+			if in_sync: continue
+
+			# if not force update the remote
+			
+			var controller: = get_sync_controller(local_note)
+
+			var success: = await adapter.save_notes([local_note])
+
+			if success:
+				controller.set_state(NoteSyncController.SyncState.SYNCED)
+			else:
+				controller.set_state(NoteSyncController.SyncState.LOCAL_CHANGES)
+			
+			temp_control.queue_free()
 
 
 func get_sync_controller(note: Note) -> NoteSyncController:

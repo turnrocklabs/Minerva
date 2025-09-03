@@ -2,29 +2,38 @@ class_name NoteSyncController
 extends RefCounted
 
 
-## Describes a state of the Note the is synced.[br]
+## Describes a state of the Note, usually after it is synced.[br]
 ## Used to check if local note that has been changed
 ## is out of sync wil the last recorded remote content.
 class SyncStateInfo extends RefCounted:
 	var sha256: String
 	var title: String
 	var enabled: bool
+	var thread_id: String
+	var thread_name: String
 
-	func _init(note: Note) -> void:
+	func _init(note: Note, thread_id_: String, thread_name_: String) -> void:
 		sha256 = note.sha256
 		title = note.title
 		enabled = note.enabled
+		thread_id = thread_id_
+		thread_name = thread_name_
 
 		print("\n\n")
 		prints("Create sync state with values:", title, enabled, sha256)
 		print("\n\n")
 	
 	## Checks if the current note data is out of sync with this state object.
-	func is_out_of_sync(target_note: Note):
+	func is_out_of_sync(target_note: Note, thread_id_: String, thread_name_: String) -> bool:
+		print("is_out_of_sync")
+		prints(thread_id_, ":", thread_id)
+		prints(thread_name_, ":", thread_name)
 		return (
 			target_note.sha256 != sha256 or
-			target_note.title != title or 
-			target_note.enabled != enabled
+			target_note.title != title or
+			target_note.enabled != enabled or
+			thread_id_ != thread_id or
+			thread_name_ != thread_name
 		)
 
 
@@ -52,6 +61,7 @@ func _init(note_: Note, sync_manager_: NoteSyncManager) -> void:
 	sync_manager = sync_manager_
 
 	note.changed.connect(_on_note_change)
+	note.tab_changed.connect(_on_note_tab_changed)
 
 	_highjack_note_controls()
 
@@ -81,7 +91,7 @@ func _highjack_note_controls():
 	note.remove_handle = _on_note_remove_button_pressed
 
 ## Sets the new state for this controlles note.[br]
-## if [param when_ready] is `true` the state will be set ONLY when the note is ready.
+## if [param when_ready] is `true` the state will be set ONLY when the note is initialized.
 ## (is_note_initialized and initialized signals are used).
 func set_state(new_state: SyncState, when_ready: = true) -> void:
 
@@ -119,7 +129,15 @@ func _on_state_updated() -> void:
 
 			SyncState.SYNCED:
 				# record the current state info
-				_state_info = SyncStateInfo.new(note)
+				var tab_idx: = SingletonObject.notes_container.find_note(note)
+
+				info("SAVING STATE INFO: %s" % tab_idx)
+				info("SAVING STATE INFO: %s" % SingletonObject.notes_container.get_tab_name(tab_idx))
+				_state_info = SyncStateInfo.new(
+					note,
+					SingletonObject.notes_container.get_tab_id(tab_idx),
+					SingletonObject.notes_container.get_tab_name(tab_idx),
+				)
 
 				note.sync_controller_button.text = "☁"
 				note.sync_controller_button.tooltip_text = "Note synced with remote"
@@ -134,11 +152,11 @@ func _on_state_updated() -> void:
 
 func _on_sync_controller_button_pressed():
 	
-	info("Sync button pressed")
+	info("Sync button pressed for note: %s" % note)
 	
 	if state == SyncState.LOCAL_CHANGES:
 		state = SyncState.SYNCING
-		var success: = await adapter.save_note(note)
+		var success: = await adapter.save_notes([note])
 		
 		state = SyncState.SYNCED if success else SyncState.LOCAL_CHANGES
 
@@ -156,27 +174,53 @@ func _on_note_remove_button_pressed():
 		SyncState.SYNCED, SyncState.LOCAL_CHANGES:
 			# Delete from remote first, then local
 			set_state(SyncState.SYNCING)
-			var success = await adapter.delete_note(note)
+			var success = await adapter.delete_notes([note])
 			
 			if success:
 				note.queue_free()
 				sync_manager.cleanup_controller(note.uuid)
+				SingletonObject.create_toast_notification("Successfully deleted the remote %s" % note, ToastNotification.Type.INFO)
 			else:
 				# Revert state on failure, keep note
 				set_state(SyncState.LOCAL_CHANGES)
+				SingletonObject.create_toast_notification("Couldn't delete the remote %s" % note, ToastNotification.Type.ERROR)
 
 
-func _on_note_change():
+func _on_note_change() -> void:
 
 	if _state_info == null:
 		state = SyncState.LOCAL_CHANGES
 		return
 	
-	if _state_info.is_out_of_sync(note):
+	var tab_idx: = SingletonObject.notes_container.find_note(note)
+	
+	if _state_info.is_out_of_sync(
+		note,
+		SingletonObject.notes_container.get_tab_id(tab_idx),
+		SingletonObject.notes_container.get_tab_name(tab_idx),
+	):
 		info("Note %s changed and is OUT of sync" % note)
 		state = SyncState.LOCAL_CHANGES
 	else:
 		info("Note %s changed but is in sync" % note)
 		state = SyncState.SYNCED
 
+
+func _on_note_tab_changed(tab_idx: int) -> void:
+	if _state_info == null:
+		state = SyncState.LOCAL_CHANGES
+		return
+	
+	info("Note %s moved to tab %s" % [note, tab_idx])
+
+	if _state_info.is_out_of_sync(
+		note,
+		SingletonObject.notes_container.get_tab_id(tab_idx),
+		SingletonObject.notes_container.get_tab_name(tab_idx),
+	):
+		info("Note %s changed and is OUT of sync" % note)
+		state = SyncState.LOCAL_CHANGES
+	else:
+		info("Note %s changed but is in sync" % note)
+		state = SyncState.SYNCED
 	

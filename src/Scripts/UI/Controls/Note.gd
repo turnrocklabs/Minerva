@@ -9,7 +9,12 @@ static var _audio_controls_scene: = preload("res://Scenes/note/note_controls/aud
 ## Emitted when the title changes.
 signal title_changed
 
-## Emitted when any note content has been changed, both main and controls container.
+## Emitted when the note eneters a tab container, usually after dropping the note.[br]
+## [class NotesContainer] emits this signal only if the Note is initialized
+## by checking the [method Note.is_note_initialized].
+signal tab_changed(tab_idx: int)
+
+## Emitted when any note content has been changed, both main and controls container
 signal changed
 
 ## Emitted when the Note has been created and all properties set
