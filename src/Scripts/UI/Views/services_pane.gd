@@ -14,6 +14,10 @@ func _ready() -> void:
 
 func _on_service_selected(service: Service):
 	
+	if service.name.containsn("chat"):
+		print("Services pane: Service %s contains 'chat' literal, skipping..." % service.name)
+		return
+
 	for i in services_option_button.item_count:
 		var id: = services_option_button.get_item_id(i)
 		
@@ -23,25 +27,23 @@ func _on_service_selected(service: Service):
 		if service == attached_service:
 			return
 
-
-	var deselect = services_option_button.item_count == 0
-
 	var idx: = services_option_button.item_count
+
+	var selected_item: = services_option_button.selected
 
 	services_option_button.add_item(service.name, idx)
 	services_option_button.set_item_metadata(idx, service)
 
-	print(deselect)
-
-	if deselect:
-		services_option_button.select(-1)
+	services_option_button.selected = selected_item
 
 
 func _on_services_option_button_item_selected(index: int) -> void:
+	actions_option_button.disabled = index == -1
 
 	if index == -1:
 		actions_option_button.clear()
 		return
+	
 	
 	var id: = services_option_button.get_item_id(index)
 
@@ -57,9 +59,6 @@ func _on_services_option_button_item_selected(index: int) -> void:
 		var action = service.actions[i]
 		actions_option_button.add_item(action.name, i)
 
-	# service.actions
-
-	# Core.dynamic_ui_generator.process_parameters()
 
 
 func _on_actions_option_button_item_selected(index: int) -> void:
@@ -80,3 +79,27 @@ func _on_actions_option_button_item_selected(index: int) -> void:
 		_dynamic_ui_container.add_child(control)
 
 
+
+
+func _on_send_button_pressed() -> void:
+	# for now keep recreating the provider here
+
+	var service: Service = services_option_button.get_item_metadata(services_option_button.get_selected_id())
+
+	var action: = service.actions[actions_option_button.get_selected_id()]
+
+	var provider: = CoreProvider.new(service, action)
+
+	prints("Created: ", provider)
+
+	var data = Core.dynamic_ui_generator.get_user_input(_dynamic_ui_container)
+
+	print(data)
+
+	var response: BotResponse = await provider.generate_content([data])
+
+	Core.dynamic_ui_generator.set_output(_dynamic_ui_container, {"notes": []})
+
+	print(response.hcp_data)
+
+	

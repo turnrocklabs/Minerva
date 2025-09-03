@@ -1,7 +1,10 @@
 class_name ETSUNotesServiceAdapter
 extends NoteServiceAdapter
 
-static var SERVICE_NAME: = &"etsu-notes"
+
+static var SERVICE_NAME: StringName:
+	get: return get_service_name()
+
 
 var actions: Dictionary[String, Action] = {}
 
@@ -20,8 +23,10 @@ func _init(service_: Service) -> void:
 
 	info(actions)
 
+static func get_service_name() -> StringName:
+	return &"etsu-notes"
 
-func delete_note(note: Note) -> bool:
+func delete_notes(notes: Array[Note]) -> bool:
 
 	if "delete" not in actions:
 		info("delete not found in %s actions" % SERVICE_NAME)
@@ -29,11 +34,14 @@ func delete_note(note: Note) -> bool:
 
 	var action: = actions["delete"]
 	
-	var note_data: = {"UUID": note.uuid}
+	var notes_data: = []
+
+	for note in notes:
+		notes_data.append({"UUID": note.uuid})
 
 	var msg = await (
 		Core
-		.send_message(service, action, {"notes": [note_data]})
+		.send_message(service, action, {"notes": notes_data})
 		.receive()
 	)
 	
@@ -64,35 +72,42 @@ func delete_note(note: Note) -> bool:
 	return true
 
 
-func save_note(note: Note) -> bool:
+func save_notes(notes: Array[Note]) -> bool:
 	if "save" not in actions:
 		info("save not found in %s actions" % SERVICE_NAME)
 		return false
 
 	var action: = actions["save"]
 
-	if note.type != Note.Type.TEXT:
-		SingletonObject.ErrorDisplay("Can't save", "Can't save note unless it's a text note.")
-		return false
-	
-	# tab_id is int in the TabContainer, and thread_id is UUID
-	var tab_id: = SingletonObject.notes_container.find_note(note)
-				
-	var local_thread_id = SingletonObject.notes_container.get_tab_id(tab_id)
-	var local_thread_name: String = SingletonObject.notes_container.get_tab_name(tab_id)
+	var notes_data: = []
 
-	var note_data: = {
-		"UUID": note.uuid,
-		"Enabled": note.enabled,
-		"Title": note.title,
-		"Content": (note.get_controls_container() as NoteTextControls).content,
-		"ThreadName": local_thread_name,
-		"OwningThread": local_thread_id,
-	}
+	for note in notes:
+		if note.type != Note.Type.TEXT:
+			SingletonObject.ErrorDisplay("Can't save", "Can't save notes unless they are text notes.")
+			continue
+	
+		# tab_id is int in the TabContainer, and thread_id is UUID
+		var tab_id: = SingletonObject.notes_container.find_note(note)
+		
+		var local_thread_id = SingletonObject.notes_container.get_tab_id(tab_id)
+		var local_thread_name: String = SingletonObject.notes_container.get_tab_name(tab_id)
+
+		info("save_note: %s %s %s %s" % [note, tab_id, local_thread_name, local_thread_id])
+
+		notes_data.append({
+			"UUID": note.uuid,
+			"Enabled": note.enabled,
+			"Title": note.title,
+			"Content": (note.get_controls_container() as NoteTextControls).content,
+			"ThreadName": local_thread_name,
+			"OwningThread": local_thread_id,
+		})
+
+	info(notes_data)
 
 	var msg = await (
 		Core
-		.send_message(service, action, {"notes": [note_data]})
+		.send_message(service, action, {"notes": notes_data})
 		.receive()
 	)
 	

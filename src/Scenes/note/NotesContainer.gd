@@ -14,7 +14,6 @@ func _ready() -> void:
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 
-
 ## Creates a new tab with given name.[br]
 ## If the name is already taken godot will autimatically assing a new one.[br]
 ## Retuns the scroll container added as the new tab.
@@ -24,19 +23,24 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> Control:
 
 	var scroll: = ScrollContainer.new()
 
+	var new_tab_index: = get_tab_count()
+
 	var vbox: = VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.child_entered_tree.connect(
+		func(node: Node):
+			if node is Note and node.is_note_initialized():
+				node.tab_changed.emit(new_tab_index)
+	)
 	
 	scroll.add_child(vbox)
 	scroll.name = tab_name
-
-	print(uuid)
 
 	if uuid.is_empty():
 		print("uuid is empty")
 		uuid = SingletonObject.generate_UUID()
 	
-	_uuid_map[get_tab_count()] = uuid
+	_uuid_map[new_tab_index] = uuid
 
 	# force readable name
 	add_child(scroll, true)
@@ -58,7 +62,6 @@ func remove_tab(tab_idx: int):
 ## Tries to find the index of tab that contains the provided [param note].[br]
 ## Returns `-1` on failure.
 func find_note(note: Note) -> int:
-	
 	for i in get_tab_count():
 		if get_notes(i).has(note):
 			return i
@@ -105,7 +108,7 @@ func get_notes(tab_idx: = -1) -> Array[Note]:
 
 	if tab_idx == -1: return []
 
-	var current_scroll: ScrollContainer = get_tab_control(current_tab)
+	var current_scroll: ScrollContainer = get_tab_control(tab_idx)
 	var vbox = current_scroll.get_child(0)
 
 	if not vbox:
