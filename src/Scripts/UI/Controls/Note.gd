@@ -12,6 +12,7 @@ signal title_changed
 ## Emitted when the note eneters a tab container, usually after dropping the note.[br]
 ## [class NotesContainer] emits this signal only if the Note is initialized
 ## by checking the [method Note.is_note_initialized].
+@warning_ignore("unused_signal")
 signal tab_changed(tab_idx: int)
 
 ## Emitted when any note content has been changed, both main and controls container
@@ -323,10 +324,21 @@ func is_note_initialized() -> bool:
 
 
 func _on_remove_button_pressed() -> void:
+	remove()
+
+
+## Removes this note object. Used when user pressed the remove button or the tab is closed.[br]
+## [property Note.remove_handle] is used if it's set and valid, to delegate the the process.[br]
+## Otherwise `queue_free` is used.[br]
+## Returns whether the note has been deleted, or the deletiong was rejected.
+func remove() -> bool:
 	if remove_handle and remove_handle.is_valid():
-		remove_handle.call()
+		return type_convert(await remove_handle.call(), TYPE_BOOL)
 	else:
 		queue_free()
+	
+	return true
+
 
 func _on_title_text_changed(_new_text: String) -> void:
 	title_changed.emit()
@@ -392,7 +404,7 @@ func _node_expand_toggled():
 	if expanded:
 		# custom_minimum_size.y = minimum_expanded_height
 		_tween.tween_property(self, "custom_minimum_size:y", max(minimum_expanded_height, expanded_height), _anim_duration)
-		_tween.tween_property(_expand_button, "rotation_degrees", 180, absf(180 - _expand_button.rotation_degrees) * time_per_degree)
+		_tween.tween_property(_expand_button, "rotation_degrees", 90, absf(90 - _expand_button.rotation_degrees) * time_per_degree)
 		_notes_control_container.visible = true
 
 	else:

@@ -161,9 +161,9 @@ func _on_sync_controller_button_pressed():
 		state = SyncState.SYNCED if success else SyncState.LOCAL_CHANGES
 
 
-func _on_note_remove_button_pressed():
+func _on_note_remove_button_pressed() -> bool:
 
-	if state == SyncState.SYNCING: return
+	if state == SyncState.SYNCING: return false
 
 	match state:
 		SyncState.LOCAL_ONLY:
@@ -180,10 +180,14 @@ func _on_note_remove_button_pressed():
 				note.queue_free()
 				sync_manager.cleanup_controller(note.uuid)
 				SingletonObject.create_toast_notification("Successfully deleted the remote %s" % note, ToastNotification.Type.INFO)
+				return true
 			else:
 				# Revert state on failure, keep note
 				set_state(SyncState.LOCAL_CHANGES)
 				SingletonObject.create_toast_notification("Couldn't delete the remote %s" % note, ToastNotification.Type.ERROR)
+				return false
+	
+	return false
 
 
 func _on_note_change() -> void:

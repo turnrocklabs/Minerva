@@ -59,3 +59,28 @@ func safe_extract(data: Dictionary, fields: Array[String], types: Array[int], de
 			return default
 	
 	return current
+
+
+## Takes the local note and determins it's order value
+## from the all note
+func _get_note_order_for_remote(note: Note) -> int:
+	# Find which tab this note belongs to
+	var tab_idx = SingletonObject.notes_container.find_note(note)
+	if tab_idx == -1:
+		info("Note not found in any tab")
+		return 0
+	
+	# Get all notes in that tab
+	var notes_in_tab = SingletonObject.notes_container.get_notes(tab_idx)
+	
+	# Find the position of our note
+	var note_index = notes_in_tab.find(note)
+	if note_index == -1:
+		info("Could not find note in tab %d" % tab_idx)
+		return 0
+	
+	for i in range(tab_idx):
+		note_index += SingletonObject.notes_container.get_notes(i).size()
+
+	info("Note '%s' has order %d in tab %d (%d total notes)" % [note.title, note_index, tab_idx, notes_in_tab.size()])
+	return note_index
