@@ -51,13 +51,19 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> Control:
 func remove_tab(tab_idx: int):	
 	var control: = get_tab_control(tab_idx)
 
+	# if at least one note deletion was rejected, don't delete the tab
+	var all_deleted: = true
+
 	if control:
 		# doing this so the notes is_queued_for_deletion returns true
 		for note in get_notes(tab_idx):
-			note.queue_free()
+			all_deleted = await note.remove() and all_deleted
 
-		control.queue_free()
-
+		if all_deleted:
+			control.queue_free()
+		else:
+			print("Not all notes deleted, not removing the tab")
+	
 
 ## Tries to find the index of tab that contains the provided [param note].[br]
 ## Returns `-1` on failure.

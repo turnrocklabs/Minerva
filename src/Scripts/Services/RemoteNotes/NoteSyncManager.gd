@@ -36,6 +36,8 @@ func sync_with_remote():
 
 	_remote_note_uuids = PackedStringArray(remote_notes.map(func(note: Note): return note.uuid))
 
+	var notes_to_create_locally: Array[Note]
+
 	for remote_note in remote_notes:
 		# Access thread info from metadata
 		var remote_thread_id = remote_note.get_meta("remote_thread_id", "")
@@ -48,14 +50,16 @@ func sync_with_remote():
 		if not local_note:
 			info("No local note for %s in thread %s" % [remote_note, remote_thread_name])
 
-			# will make the remote_note exist locally
-			var should_update: = _create_remote_note_locally(remote_note, remote_thread_id, remote_thread_name)
+			notes_to_create_locally.append(remote_note)
 
-			if should_update:
-				adapter.save_notes([remote_note])
+			# will make the remote_note exist locally
+			# var should_update: = _create_remote_note_locally(remote_note, remote_thread_id, remote_thread_name)
+
+			# if should_update:
+			# 	adapter.save_notes([remote_note])
 			
-			else:
-				info("Note %s created locally, no need for update" % remote_note)
+			# else:
+			# 	info("Note %s created locally, no need for update" % remote_note)
 		
 		# note exists locally, so check if they are not the same
 		# if not update the remote
@@ -63,27 +67,30 @@ func sync_with_remote():
 			var temp_control: = Control.new()
 			temp_control.visible = false
 			SingletonObject.get_tree().root.add_child(temp_control)
-
 			temp_control.add_child(remote_note)
 
 			await remote_note.initialized
 
+			info("Note %s exists locally" % remote_note)
 			# create SyncStateInfo to check if remote and local don't match
 			var temp_sync_info: = NoteSyncController.SyncStateInfo.new(remote_note, remote_thread_id, remote_thread_name)
 			
 			var local_tab_idx: = SingletonObject.notes_container.find_note(local_note)
 
-			var in_sync: = temp_sync_info.is_out_of_sync(
+			var out_of_sync: = temp_sync_info.is_out_of_sync(
 				local_note,
 				SingletonObject.notes_container.get_tab_id(local_tab_idx),
 				SingletonObject.notes_container.get_tab_name(local_tab_idx)
 			)
 
-			if in_sync: continue
+			var controller: = get_sync_controller(local_note)
+
+			if not out_of_sync:
+				controller.set_state(NoteSyncController.SyncState.SYNCED)
+				continue
 
 			# if not force update the remote
-			
-			var controller: = get_sync_controller(local_note)
+			info("Local note %s is out of sync" % local_note)			
 
 			var success: = await adapter.save_notes([local_note])
 
@@ -93,6 +100,25 @@ func sync_with_remote():
 				controller.set_state(NoteSyncController.SyncState.LOCAL_CHANGES)
 			
 			temp_control.queue_free()
+
+
+	notes_to_create_locally.sort_custom(
+		func(note_a: Note, note_b: Note):
+			return note_a.get_meta("remote_order") < note_b.get_meta("remote_order")
+	)
+
+	for remote_note in notes_to_create_locally:
+		var remote_thread_id = remote_note.get_meta("remote_thread_id", "")
+		var remote_thread_name = remote_note.get_meta("remote_thread_name", "ETSU Notes")
+
+		# will make the remote_note exist locally
+		var should_update: = _create_remote_note_locally(remote_note, remote_thread_id, remote_thread_name)
+
+		if should_update:
+			adapter.save_notes([remote_note])
+		
+		else:
+			info("Note %s created locally, no need for update" % remote_note)
 
 
 func get_sync_controller(note: Note) -> NoteSyncController:
@@ -198,7 +224,7 @@ func _on_core_connected():
 
 		info(service.client_id)
 
-		if service.client_id == "service:%s" % ETSUNotesServiceAdapter.SERVICE_NAME:
+		if service.client_id == "%s" % ETSUNotesServiceAdapter.SERVICE_NAME:
 			adapter = ETSUNotesServiceAdapter.new(service)
 
 		if adapter:

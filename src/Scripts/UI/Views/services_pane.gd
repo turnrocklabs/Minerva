@@ -4,7 +4,12 @@ extends Control
 @onready var services_option_button: OptionButton = %ServicesOptionButton
 @onready var actions_option_button: OptionButton = %ActionsOptionButton
 
+@onready var _send_button: Button = %SendButton
+
 @onready var _dynamic_ui_container: Container = %DynamicUIContainer
+@onready var _service_selection_container: Container = %ServiceSelectionContainer
+@onready var _title_label: Label = %TitleLabel
+
 
 func _ready() -> void:
 
@@ -17,6 +22,8 @@ func _on_service_selected(service: Service):
 	if service.name.containsn("chat"):
 		print("Services pane: Service %s contains 'chat' literal, skipping..." % service.name)
 		return
+
+	_service_selection_container.visible = true
 
 	for i in services_option_button.item_count:
 		var id: = services_option_button.get_item_id(i)
@@ -36,18 +43,22 @@ func _on_service_selected(service: Service):
 
 	services_option_button.selected = selected_item
 
+	
+
 
 func _on_services_option_button_item_selected(index: int) -> void:
-	actions_option_button.disabled = index == -1
+	actions_option_button.visible = index != -1
 
 	if index == -1:
 		actions_option_button.clear()
+		_title_label.text = "Select a service to continue"
 		return
-	
 	
 	var id: = services_option_button.get_item_id(index)
 
 	var service: Service = services_option_button.get_item_metadata(id)
+	
+	_title_label.text = service.name
 
 	SingletonObject.notes_sync_manger.set_active_service(service)
 	
@@ -59,6 +70,7 @@ func _on_services_option_button_item_selected(index: int) -> void:
 		var action = service.actions[i]
 		actions_option_button.add_item(action.name, i)
 
+	actions_option_button.select(-1)
 
 
 func _on_actions_option_button_item_selected(index: int) -> void:
@@ -66,7 +78,7 @@ func _on_actions_option_button_item_selected(index: int) -> void:
 		child.queue_free()
 
 	if index == -1: return
-	
+
 	var id = actions_option_button.get_item_id(index)
 
 	var service: Service = services_option_button.get_item_metadata(services_option_button.get_selected_id())
@@ -77,6 +89,8 @@ func _on_actions_option_button_item_selected(index: int) -> void:
 
 	for control in controls:
 		_dynamic_ui_container.add_child(control)
+
+	_send_button.disabled = false
 
 
 
@@ -102,4 +116,7 @@ func _on_send_button_pressed() -> void:
 
 	print(response.hcp_data)
 
-	
+
+func _on_chat_pane_button_pressed() -> void:
+	SingletonObject.main_scene.service_pane_control.visible = false
+	SingletonObject.main_scene.chats_control.visible = true

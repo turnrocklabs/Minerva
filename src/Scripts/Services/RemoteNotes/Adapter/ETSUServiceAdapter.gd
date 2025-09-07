@@ -101,6 +101,7 @@ func save_notes(notes: Array[Note]) -> bool:
 			"Content": (note.get_controls_container() as NoteTextControls).content,
 			"ThreadName": local_thread_name,
 			"OwningThread": local_thread_id,
+			"Order": _get_note_order_for_remote(note),
 		})
 
 	info(notes_data)
@@ -177,6 +178,7 @@ func get_all_notes() -> Array[Note]:
 
 		note.set_meta("remote_thread_id", note_data.get("OwningThread", ""))
 		note.set_meta("remote_thread_name", note_data.get("ThreadName", "ETSU Notes"))
+		note.set_meta("remote_order", note_data.get("Order", 0))
 
 		notes.append(note)
 
