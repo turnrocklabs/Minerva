@@ -1,0 +1,410 @@
+[gd_scene load_steps=25 format=3 uid="uid://drcf5pucshg1x"]
+
+[ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
+[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
+[ext_resource type="ButtonGroup" uid="uid://da3bhcsoc4ruq" path="res://assets/data/GraphicsEditorToolsButtonGroup.tres" id="2_ymijy"]
+[ext_resource type="Script" uid="uid://ub4ntbcjuw4" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DrawingTool.gd" id="2_yti2r"]
+[ext_resource type="Script" uid="uid://i5o2j3imd6hw" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PanTool.gd" id="3_42ubw"]
+[ext_resource type="Script" uid="uid://cp1wg0srxc8hs" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EraserTool.gd" id="4_146eo"]
+[ext_resource type="Script" uid="uid://detvnetf4keir" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TransformTool.gd" id="5_sc07q"]
+[ext_resource type="Script" uid="uid://ek2a4h3bujgd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SpeechBubbleTool.gd" id="6_g8cav"]
+[ext_resource type="Script" uid="uid://cjbhjvhndont7" path="res://Scripts/UI/Controls/GraphicsEditor/tools/BucketTool.gd" id="7_g4vm0"]
+[ext_resource type="Script" uid="uid://dcrsoqmlvvpn6" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SmudgeTool.gd" id="8_3hqvt"]
+[ext_resource type="Script" uid="uid://dhme7wn27lxaa" path="res://Scripts/UI/Controls/GraphicsEditor/LayersContainer.gd" id="8_fjkto"]
+[ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="9_u8jc2"]
+[ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="10_vnb8d"]
+[ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="11_f1egf"]
+[ext_resource type="Texture2D" uid="uid://dxlwuia2g3di4" path="res://assets/icons/graphics_editor/eraser.svg" id="11_m2a1o"]
+[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+[ext_resource type="Texture2D" uid="uid://clwxau6kq0fot" path="res://assets/icons/graphics_editor/bucket.svg" id="12_u1itb"]
+[ext_resource type="Texture2D" uid="uid://bbgo8abr3t77d" path="res://assets/icons/graphics_editor/smudge.svg" id="13_nl4xv"]
+[ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="15_ow12a"]
+[ext_resource type="Texture2D" uid="uid://c4rbfgr3eg45t" path="res://assets/icons/graphics_editor/transform.svg" id="16_nin75"]
+[ext_resource type="Texture2D" uid="uid://cqj3j0kugb6ni" path="res://assets/icons/graphics_editor/center.svg" id="17_tml0f"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_u8jc2"]
+shader = ExtResource("9_u8jc2")
+shader_parameter/square_size = 0.05
+shader_parameter/color1 = Color(0.585, 0.585, 0.585, 1)
+shader_parameter/color2 = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3hqvt"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="LabelSettings" id="LabelSettings_v238w"]
+font_size = 36
+
+[node name="GraphicsEditorV2" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_yogh5")
+
+[node name="LayerCardsPopupPanel" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+size = Vector2i(208, 700)
+
+[node name="ScrollContainer" type="ScrollContainer" parent="LayerCardsPopupPanel"]
+custom_minimum_size = Vector2(200, 300)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 204.0
+offset_bottom = 696.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 10
+size_flags_vertical = 3
+mouse_filter = 0
+mouse_force_pass_scroll_events = false
+horizontal_scroll_mode = 0
+
+[node name="v2" type="VBoxContainer" parent="LayerCardsPopupPanel/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="NewLayerButton" type="Button" parent="LayerCardsPopupPanel/ScrollContainer/v2"]
+layout_mode = 2
+icon = ExtResource("2_dcy55")
+flat = true
+icon_alignment = 1
+
+[node name="LayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/ScrollContainer/v2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Tools" type="Node" parent="."]
+
+[node name="DrawingTool" type="Node" parent="Tools" node_paths=PackedStringArray("_color_picker_button", "_brush_size_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("2_yti2r")
+_color_picker_button = NodePath("../../h/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer/ColorPickerButton")
+_brush_size_slider = NodePath("../../h/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer2/VSlider")
+editor = NodePath("../..")
+
+[node name="PanTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("3_42ubw")
+editor = NodePath("../..")
+
+[node name="EraserTool" type="Node" parent="Tools" node_paths=PackedStringArray("_brush_size_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("4_146eo")
+_brush_size_slider = NodePath("../../h/v/HBoxContainer/h/ToolOptionsContainer/EraserOptions/VBoxContainer/VSlider")
+editor = NodePath("../..")
+
+[node name="TransformTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("5_sc07q")
+editor = NodePath("../..")
+
+[node name="SpeechBubbleTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("6_g8cav")
+editor = NodePath("../..")
+
+[node name="BucketTool" type="Node" parent="Tools" node_paths=PackedStringArray("_color_picker_button", "editor")]
+unique_name_in_owner = true
+script = ExtResource("7_g4vm0")
+_color_picker_button = NodePath("../../h/v/HBoxContainer/h/ToolOptionsContainer/BucketOptions/VBoxContainer/ColorPickerButton")
+editor = NodePath("../..")
+
+[node name="SmudgeTool" type="Node" parent="Tools" node_paths=PackedStringArray("_strength_slider", "_brush_size_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("8_3hqvt")
+_strength_slider = NodePath("../../h/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2/StrengthVSlider")
+_brush_size_slider = NodePath("../../h/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer/SizeVSlider")
+editor = NodePath("../..")
+
+[node name="h" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="v" type="VBoxContainer" parent="h"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="h/v"]
+layout_mode = 2
+
+[node name="h" type="HFlowContainer" parent="h/v/HBoxContainer"]
+custom_minimum_size = Vector2(350, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 0
+
+[node name="ToolsContainer" type="HFlowContainer" parent="h/v/HBoxContainer/h"]
+custom_minimum_size = Vector2(350, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 15
+
+[node name="ToolsOptionButton" type="OptionButton" parent="h/v/HBoxContainer/h/ToolsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+button_group = ExtResource("2_ymijy")
+allow_reselect = true
+item_count = 5
+popup/item_0/text = "Brush"
+popup/item_0/icon = ExtResource("10_vnb8d")
+popup/item_0/id = 0
+popup/item_1/text = "Eraser"
+popup/item_1/icon = ExtResource("11_m2a1o")
+popup/item_1/id = 1
+popup/item_2/text = "Bucket"
+popup/item_2/icon = ExtResource("12_u1itb")
+popup/item_2/id = 3
+popup/item_3/text = "Smudge"
+popup/item_3/icon = ExtResource("13_nl4xv")
+popup/item_3/id = 2
+popup/item_4/text = "Inset Image..."
+popup/item_4/id = 4
+
+[node name="PaneToolButton" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+icon = ExtResource("15_ow12a")
+
+[node name="TransformToolButton" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+icon = ExtResource("16_nin75")
+
+[node name="SpeechBubbleToolButton" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
+visible = false
+layout_mode = 2
+toggle_mode = true
+button_group = ExtResource("2_ymijy")
+text = "Speech"
+
+[node name="CenterViewButton" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
+visible = false
+layout_mode = 2
+tooltip_text = "Centers the viewport."
+icon = ExtResource("17_tml0f")
+
+[node name="ToolOptionsContainer" type="MarginContainer" parent="h/v/HBoxContainer/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BrushOptions" type="HBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions"]
+layout_mode = 2
+
+[node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions"]
+layout_mode = 2
+
+[node name="VSlider" type="VSlider" parent="h/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 3
+max_value = 46.0
+value = 1.0
+ticks_on_borders = true
+
+[node name="SmudgeOptions" type="HBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer"]
+layout_mode = 2
+text = "Brush Size:"
+
+[node name="SizeVSlider" type="VSlider" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 3
+max_value = 46.0
+value = 1.0
+ticks_on_borders = true
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2"]
+layout_mode = 2
+text = "Strength:"
+
+[node name="StrengthVSlider" type="VSlider" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_vertical = 4
+max_value = 5.0
+step = 0.05
+value = 0.5
+
+[node name="BucketOptions" type="HBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer/BucketOptions"]
+layout_mode = 2
+
+[node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/HBoxContainer/h/ToolOptionsContainer/BucketOptions/VBoxContainer"]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+
+[node name="EraserOptions" type="HBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer/EraserOptions"]
+layout_mode = 2
+
+[node name="VSlider" type="VSlider" parent="h/v/HBoxContainer/h/ToolOptionsContainer/EraserOptions/VBoxContainer"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+max_value = 46.0
+value = 1.0
+ticks_on_borders = true
+
+[node name="SpeechBubbleOptions" type="HBoxContainer" parent="h/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="EditModeCheckButton" type="CheckButton" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+text = "Edit Mode"
+
+[node name="LineEdit" type="LineEdit" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Bubble Text"
+expand_to_text_length = true
+
+[node name="ApplyButton" type="Button" parent="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions"]
+layout_mode = 2
+text = "Apply"
+
+[node name="VSeparator" type="VSeparator" parent="h/v/HBoxContainer"]
+layout_mode = 2
+
+[node name="LayerCardsButton" type="Button" parent="h/v/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 0
+toggle_mode = true
+icon = ExtResource("11_f1egf")
+
+[node name="HSeparator" type="HSeparator" parent="h/v"]
+layout_mode = 2
+
+[node name="MarginContainer" type="PanelContainer" parent="h/v"]
+material = SubResource("ShaderMaterial_u8jc2")
+clip_contents = true
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 1
+theme_override_styles/panel = SubResource("StyleBoxFlat_3hqvt")
+
+[node name="Control" type="Control" parent="h/v/MarginContainer"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="LayersContainer" type="Control" parent="h/v/MarginContainer/Control"]
+unique_name_in_owner = true
+layout_mode = 2
+anchors_preset = 0
+offset_right = 1851.0
+offset_bottom = 970.0
+mouse_filter = 1
+script = ExtResource("8_fjkto")
+
+[node name="MessageWindow" type="Window" parent="."]
+unique_name_in_owner = true
+size = Vector2i(700, 300)
+visible = false
+script = ExtResource("11_v238w")
+metadata/_custom_type_script = "uid://dxytye5uwyapu"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MessageWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MessageTitle" type="Label" parent="MessageWindow/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "test"
+label_settings = SubResource("LabelSettings_v238w")
+horizontal_alignment = 1
+
+[node name="MessageContent" type="Label" parent="MessageWindow/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 6
+text = "test"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="ProgressWindow" type="Window" parent="."]
+unique_name_in_owner = true
+size = Vector2i(700, 100)
+visible = false
+script = ExtResource("11_v238w")
+metadata/_custom_type_script = "uid://dxytye5uwyapu"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ProgressWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ProgressLabel" type="Label" parent="ProgressWindow/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="ProgressBar" type="ProgressBar" parent="ProgressWindow/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[connection signal="popup_hide" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_popup_hide"]
+[connection signal="pressed" from="LayerCardsPopupPanel/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
+[connection signal="item_selected" from="h/v/HBoxContainer/h/ToolsContainer/ToolsOptionButton" to="." method="_on_tools_option_button_item_selected"]
+[connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
+[connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
+[connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
+[connection signal="pressed" from="h/v/HBoxContainer/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
+[connection signal="toggled" from="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
+[connection signal="text_changed" from="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
+[connection signal="toggled" from="h/v/HBoxContainer/LayerCardsButton" to="." method="_on_layer_cards_button_toggled"]
+[connection signal="gui_input" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
+[connection signal="mouse_entered" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
+[connection signal="mouse_exited" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
