@@ -310,7 +310,7 @@ static func new_message() -> MessageMarkdown:
 func _on_continue_button_pressed():
 	if history_item:
 		loading = true
-		history_item = await SingletonObject.Chats.continue_response(history_item)
+		history_item = await SingletonObject.chat.continue_response(history_item)
 		loading = false
 
 func _on_clip_button_pressed():
@@ -341,6 +341,7 @@ func _on_note_button_pressed():
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 
+# methods that depend on SingletonObject.Chats are disabled if the service type is not chat
 func _on_delete_button_pressed():
 	SingletonObject.Chats.remove_chat_history_item(history_item)
 	

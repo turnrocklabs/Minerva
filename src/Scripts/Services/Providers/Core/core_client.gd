@@ -63,7 +63,6 @@ func _ready():
 	minerva_secret = OS.get_environment("MINERVA_SECRET")
 	if minerva_secret.is_empty():
 		print("Error: MINERVA_SECRET environment variable is not set")
-		minerva_secret = "m30wM1n3rv123456"
 
 
 

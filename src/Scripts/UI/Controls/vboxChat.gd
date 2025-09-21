@@ -19,7 +19,7 @@ signal multi_message_updated(container: MultiSliderContainer, index: int)
 
 @onready var scroll_container = get_parent() as ScrollContainer
 
-var chat_history: ChatHistory
+var chat_history: ServiceHistory
 var MainTabContainer
 
 var Parent
@@ -42,7 +42,8 @@ func _ready():
 
 	image_activated.connect(_on_image_activated)
 	
-	add_child(chat_history.provider)
+	if is_instance_valid(chat_history.provider) and not chat_history.provider.is_inside_tree():
+		add_child(chat_history.provider)
 
 
 func _notification(what):

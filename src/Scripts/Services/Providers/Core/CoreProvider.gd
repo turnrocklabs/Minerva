@@ -52,19 +52,14 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary={})
 	# If a notes adapter can handle this, delegate it to it
 	if service.client_id in SingletonObject.notes_sync_manger.service_adapters:
 		var adapter: = SingletonObject.notes_sync_manger.service_adapters[service.client_id]
-		# if not last_msg is Dictionary or not last_msg.get("notes") is Array:
-		# 	SingletonObject.create_toast_notification("Can't process notes: %s" % last_msg, ToastNotification.Type.ERROR)
-		# 	var br: = BotResponse.new()
-		# 	br.error = "Data is not a array of notes"
-		# 	return br
 
 		# handle action will handle state updates
-		var success: = await adapter.handle_action(action, last_msg.get("notes"))
+		await adapter.handle_action(action, last_msg.get("notes"))
 
 
-		# if not success:
-		# 	SingletonObject.create_toast_notification("Couldn't upload notes to remote", ToastNotification.Type.ERROR)
+		var bot_response:= _parse_request_results(adapter.get_last_action_response())
 
+		return bot_response
 
 
 	var msg = await Core.send_message(service, action, last_msg).receive()

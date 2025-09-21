@@ -121,8 +121,8 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _te
 
 	# take provider from active tab as one used, if there is one
 	# otherwise the code that initializes this object should set the provider
-	if not SingletonObject.ChatList.is_empty():
-		self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
+	# if not SingletonObject.ChatList.is_empty():
+	# 	self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
 	
 	
 	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator

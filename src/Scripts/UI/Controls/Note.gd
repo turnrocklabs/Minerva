@@ -704,11 +704,17 @@ static func deserialize(note_data: Dictionary) -> Note:
 	# If a file is attached to a note, if takes priority
 	# over other content fileds in the data. If the file is not valid,
 	# the note will be loaded with an error message.
-	if note_data.has("File"):
+	if note_data.has("File") and note_data["File"]:
 		note = Note.create_file_note(note_data.get("Title", "Unknown"), note_data["File"])
 
 	else:
 		match note_data.get("ContentType", "text"):
+			"": # assume empty could be a text file
+				note = create_text_note(
+					note_data.get("Title", "Unknown"),
+					note_data.get("Content", ""),
+					note_data.get("UUID", ""),
+				)
 			"text":
 				note = create_text_note(
 					note_data.get("Title", "Unknown"),

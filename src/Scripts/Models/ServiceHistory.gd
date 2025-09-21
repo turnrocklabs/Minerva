@@ -1,0 +1,154 @@
+class_name ServiceHistory
+extends RefCounted
+
+# Don't reorder, only add new entries
+enum ServiceType {
+    NONE,
+    CHAT,
+    NOTES,
+}
+
+var service_type: ServiceType
+
+var HistoryId: String:
+	set(value): SingletonObject.call_deferred("save_state", false); HistoryId = value
+
+var HistoryName: String:
+	set(value): SingletonObject.call_deferred("save_state", false); HistoryName = value
+
+var HistoryItemList: Array[ChatHistoryItem]:
+	set(value): SingletonObject.call_deferred("save_state", false); HistoryItemList = value
+
+var HasUsedSystemPrompt: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); HasUsedSystemPrompt = value
+
+var Temperature: float = 1:
+	set(value): SingletonObject.call_deferred("save_state", false); Temperature = value
+
+var TopP: float = 1:
+	set(value): SingletonObject.call_deferred("save_state", false); TopP = value
+
+var FrequencyPenalty: float = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); FrequencyPenalty = value
+
+var PresencePenalty: float = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); PresencePenalty = value
+
+var VBox: VBoxChat
+var provider: BaseProvider
+
+static var SERIALIZER_FIELDS = [
+	"HistoryId", 
+	"HistoryName", 
+	"HistoryItemList", 
+	"Provider",
+	"ServiceType",
+	"Temperature", 
+	"TopP",
+	"FrequencyPenalty",
+	"PresencePenalty"
+]
+
+## Initialize with a new HistoryId
+func _init(_provider, optional_historyId = null):
+	self.provider = _provider
+	if optional_historyId == null:
+		var rng = RandomNumberGenerator.new()
+		rng.randomize()
+		var random_number = rng.randi()
+		var hash256 = str(random_number).sha256_text()
+		self.HistoryId = hash256
+	else:
+		self.HistoryId = optional_historyId
+	HistoryItemList = []
+
+## Creates prompt from this history using the set provider.
+## The `predicate` parameter is a `Callable` that returns an `Array` of 2 booleans.
+## First determines if provided item should be added to the returned list,
+## while second determines if the execution of the function should stop and the value returned immediately.
+func to_prompt(predicate: Callable = Callable()) -> Array[Variant]:
+	var retVal:Array[Variant] = []
+
+	for chat: ChatHistoryItem in self.HistoryItemList:
+		
+		if predicate.is_valid():
+			var results = predicate.call(chat)
+			var should_add: bool = results[0]
+			var should_continue: bool = results[1]
+
+			if should_add:
+				var item: Variant = provider.Format(chat)
+				if item: retVal.append(item)
+
+			if not should_continue:
+				return retVal
+		else:
+			var item: Variant = provider.Format(chat)
+			if item: retVal.append(item)
+
+	return retVal
+
+## Serialize creates a JSON representation of this instance.
+func Serialize() -> Dictionary:
+	var serialized_items: Array[Dictionary] = []
+
+	for chat_history_item: ChatHistoryItem in HistoryItemList:
+		var serialized_item = chat_history_item.Serialize()
+		serialized_items.append(serialized_item)
+
+	var save_dict:Dictionary = {
+		"HistoryId" : HistoryId,
+		"HistoryName" : HistoryName,
+		# "Provider": SingletonObject.get_active_provider(SingletonObject.ChatList.find(self)),
+		"ServiceType": service_type,
+		"HistoryItemList" : serialized_items,
+		"Temperature": Temperature,
+		"TopP": TopP,
+		"FrequencyPenalty": FrequencyPenalty,
+		"PresencePenalty": PresencePenalty
+	}
+	return save_dict
+
+static func Deserialize(data: Dictionary) -> ServiceHistory:
+	# Get service type from data, default to CHAT for backwards compatibility
+	var service_type_value = data.get("ServiceType", ServiceType.CHAT)
+	
+	# will be float if loaded from json, cast it to int
+	var provider_enum_index = int(data.get("Provider", 0))
+	var provider_obj: BaseProvider
+
+	if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
+		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
+	else:
+		# Fallback to second defined model, skipping the human provider
+		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.values()[1].new()
+
+	# Create the appropriate service history type based on service_type
+	var history: ServiceHistory
+	match service_type_value:
+		ServiceType.CHAT:
+			history = ChatHistory.new(provider_obj, data.get("HistoryId"))
+		ServiceType.NOTES:
+			history = NotesServiceHistory.new(provider_obj, data.get("HistoryId"))
+		_:
+			# Default to ChatHistory for unknown types
+			history = ChatHistory.new(provider_obj, data.get("HistoryId"))
+
+	history.HistoryName = data.get("HistoryName")
+
+	for chi_data in data.get("HistoryItemList", []):
+		var chi = ChatHistoryItem.Deserialize(chi_data)
+		chi.provider = history.provider
+		history.HistoryItemList.append(chi)
+	
+	# Check if these params exist in the project (added after initial creation)
+	if data.get("Temperature"):
+		history.Temperature = data.get("Temperature")
+	if data.get("TopP"):
+		history.TopP = data.get("TopP")
+	if data.get("FrequencyPenalty"):
+		history.FrequencyPenalty = data.get("FrequencyPenalty")
+	if data.get("PresencePenalty"):
+		history.PresencePenalty = data.get("PresencePenalty")
+	
+	return history
