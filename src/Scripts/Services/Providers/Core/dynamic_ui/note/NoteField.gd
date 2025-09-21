@@ -9,6 +9,7 @@ static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/n
 
 @onready var _select_items_window: PersistentWindow = %SelectItemsPersistentWindow
 @onready var _notes_tree: Tree = %NoteTree
+@onready var _input_controls_container: Container = %ControlsContainer
 
 var _requested_fields: Array
 
@@ -25,6 +26,8 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 			scn._requested_fields = field_params.get("fields", [])
 	
 			scn._drop_panel_container.mouse_filter = Control.MOUSE_FILTER_PASS if input else Control.MOUSE_FILTER_IGNORE
+
+			scn._input_controls_container.visible = input
 	)
 
 	return scn

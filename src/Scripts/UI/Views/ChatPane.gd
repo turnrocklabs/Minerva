@@ -10,6 +10,7 @@ var container: TabContainer  # Store the TabContainer
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
 var _active_chat_request: = false
+
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
 
 # Script of the default provider to use when creating new chat tab
@@ -837,7 +838,7 @@ func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
-	SingletonObject.initialize_chats(self)
+	# SingletonObject.initialize_chats(self)
 	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
 	
 	#this is for overriding the separation in the open file dialog
@@ -845,9 +846,10 @@ func _ready():
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 	
-	
 	SingletonObject.note_toggled.connect(_on_note_toggled)
 	SingletonObject.note_changed.connect(_on_note_changed)
+
+	SingletonObject.Chats = self
 
 
 # if a note is enabled/disabled recalculate the token cost
@@ -1003,7 +1005,7 @@ func _on_btn_microphone_pressed():
 
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
-	SingletonObject.ChatList = []  # Clear the existing list
+	# SingletonObject.ChatList = []  # Comment this out temporarily
 	for child in get_children():
 		if child is ScrollContainer:
 			var vbox_chat = child.get_child(0)
@@ -1018,8 +1020,6 @@ func _on_system_button_pressed() -> void:
 
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	update_token_estimation(provider_)
-
-	print(provider_)
 
 	if provider_ is CoreProvider:
 		
@@ -1054,11 +1054,12 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 func _on_tab_changed(tab: int):
 	var active_provider = _provider_option_button.get_provider_for_tab(tab)
 
-	var item_index = _provider_option_button.get_item_index_for_provider(active_provider)
+	if is_instance_valid(active_provider):
+		var item_index = _provider_option_button.get_item_index_for_provider(active_provider)
 
-	_provider_option_button.select(item_index)
+		_provider_option_button.select(item_index)
 
-	SingletonObject.last_tab_index = tab
+		SingletonObject.last_tab_index = tab
 
 ## if enter is pressed, accept the event and trigger chat
 func _on_txt_main_user_input_gui_input(event: InputEvent):
@@ -1127,8 +1128,3 @@ func _on_clone_chat_button_pressed() -> void:
 	if %tcChats.current_tab < 0:
 		return
 	clone_chat(%tcChats.current_tab)
-
-
-func _on_services_pane_button_pressed() -> void:
-	SingletonObject.main_scene.service_pane_control.visible = true
-	SingletonObject.main_scene.chats_control.visible = false

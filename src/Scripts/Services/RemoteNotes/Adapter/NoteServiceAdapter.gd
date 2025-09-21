@@ -3,6 +3,9 @@ extends RefCounted
 
 var service: Service
 
+## See [method NoteServiceAdapter.get_last_action_response]
+var _last_response: Dictionary
+
 func _init(service_: Service) -> void:
 	service = service_
 
@@ -37,6 +40,12 @@ func handle_action(action: Action, data: Variant) -> bool:
 	await Engine.get_main_loop().process_frame
 	push_error("get_all_notes not implemented")
 	return false
+
+## Returns the latest response for any of the delete, save or get actions.[br]
+## As those methods returns the success status of the call, this is used to save
+## the actual response data. Similar to how [method FileAccess.get_open_error] works.
+func get_last_action_response() -> Dictionary:
+	return _last_response
 
 func safe_extract(data: Dictionary, fields: Array[String], types: Array[int], default: Variant = null) -> Variant:
 	
