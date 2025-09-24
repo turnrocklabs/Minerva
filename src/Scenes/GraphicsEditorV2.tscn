@@ -15,7 +15,7 @@
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="10_vnb8d"]
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="11_f1egf"]
 [ext_resource type="Texture2D" uid="uid://dxlwuia2g3di4" path="res://assets/icons/graphics_editor/eraser.svg" id="11_m2a1o"]
-[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+[ext_resource type="Script" uid="uid://dgvwmbh8gl2xv" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
 [ext_resource type="Texture2D" uid="uid://clwxau6kq0fot" path="res://assets/icons/graphics_editor/bucket.svg" id="12_u1itb"]
 [ext_resource type="Texture2D" uid="uid://bbgo8abr3t77d" path="res://assets/icons/graphics_editor/smudge.svg" id="13_nl4xv"]
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="15_ow12a"]
@@ -53,8 +53,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 204.0
-offset_bottom = 696.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 10
@@ -344,7 +344,6 @@ unique_name_in_owner = true
 size = Vector2i(700, 300)
 visible = false
 script = ExtResource("11_v238w")
-metadata/_custom_type_script = "uid://dxytye5uwyapu"
 
 [node name="VBoxContainer" type="VBoxContainer" parent="MessageWindow"]
 anchors_preset = 15
@@ -375,7 +374,6 @@ unique_name_in_owner = true
 size = Vector2i(700, 100)
 visible = false
 script = ExtResource("11_v238w")
-metadata/_custom_type_script = "uid://dxytye5uwyapu"
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ProgressWindow"]
 anchors_preset = 15

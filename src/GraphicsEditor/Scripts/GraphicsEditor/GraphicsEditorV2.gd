@@ -16,11 +16,11 @@ signal compose_finished(image: Image)
 @onready var layer_cards_popup_panel: PopupPanel = %LayerCardsPopupPanel
 @onready var layer_cards_toggle_button: Button = %LayerCardsButton
 
-@onready var message_window: Window = %MessageWindow
+@onready var message_window: PersistentWindow = %MessageWindow
 @onready var message_title: Label = %MessageTitle
 @onready var message_content: Label = %MessageContent
 
-@onready var progress_window: Window = %ProgressWindow
+@onready var progress_window: PersistentWindow = %ProgressWindow
 @onready var progress_window_bar: ProgressBar = %ProgressBar
 @onready var progress_window_label: Label = %ProgressLabel
 
@@ -93,7 +93,7 @@ func _ready() -> void:
 	# Connect pen inverted signals
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
-	# setup()
+	setup()
 
 
 
@@ -868,3 +868,17 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 	return relative_pos
 
 #endregion
+
+
+#region HTTP image gen
+var http_request: HTTPRequest = null
+
+func _on_prompt_button_pressed() -> void:
+	%ImageGenPopupPanel.popup_centered()
+
+
+
+func _on_send_prompt_button_pressed() -> void:
+	%ImageGenPopupPanel.hide()
+
+#endregion HTTP image gen

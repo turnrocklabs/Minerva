@@ -11,15 +11,16 @@ config_version=5
 [application]
 
 config/name="Independant Graphic Editor"
-run/main_scene="uid://1snj5jsurqrt"
+run/main_scene="uid://j2v0cf3kt0t8"
 config/features=PackedStringArray("4.4", "Mobile")
 config/icon="res://icon.svg"
 
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=720
+window/size/viewport_width=1600
+window/size/viewport_height=900
 window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [rendering]
 

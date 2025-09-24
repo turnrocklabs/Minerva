@@ -848,5 +848,4 @@ func _on_code_syntax_button_toggled(toggled_on: bool) -> void:
 
 
 func _on_graphics_editor_changed() -> void:
-	print("content changed emited")
 	content_changed.emit()

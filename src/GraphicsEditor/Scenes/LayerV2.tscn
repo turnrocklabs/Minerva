@@ -1,6 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://dfffqwg0xyekp"]
 
-[ext_resource type="Script" uid="uid://c2tgvvt6056bo" path="res://Scripts/UI/Controls/LayerV2.gd" id="1_fehm3"]
+[ext_resource type="Script" uid="uid://c2tgvvt6056bo" path="res://Scripts/LayerV2.gd" id="1_fehm3"]
+[ext_resource type="Texture2D" uid="uid://1i0aquyott2p" path="res://Assets/screenshot.png" id="2_ac76k"]
 
 [node name="LayerV2" type="Control"]
 z_index = 1
@@ -21,7 +22,15 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.235294, 0.298039, 0.470588, 0.298039)
 
-
+[node name="TextureRect" type="TextureRect" parent="."]
+unique_name_in_owner = true
+z_as_relative = false
+layout_mode = 2
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_ac76k")
+expand_mode = 1
 
 [node name="CenterContainer" type="Control" parent="."]
 unique_name_in_owner = true
