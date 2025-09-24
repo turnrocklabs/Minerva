@@ -110,12 +110,28 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	}
 
 
-func wrap_memory(item: MemoryItem) -> Variant:
+func wrap_memory(item: Note) -> Variant:
+	# TODO: handle other note types properly
+
+	var content: = ""
+
+	if item.type == Note.Type.TEXT:
+		var controls_container = item.get_controls_container() as NoteTextControls
+		content = controls_container.content
+	elif item.type == Note.Type.IMAGE:
+		var controls_container = item.get_controls_container() as NoteImageControls
+		content = controls_container.caption
+	else:
+		push_warning("Tried to wrap memory but the given note type is not implemented")
+		print_stack()
+
 	var output: String = "Given this background information:\n\n"
 	output += "### Reference Information ###\n"
-	output += item.Content
+	output += content
 	output += "### End Reference Information ###\n\n"
 	output += "Respond to the user's message: \n\n"
+
+
 	return output
 
 # {

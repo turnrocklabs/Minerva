@@ -1,0 +1,28 @@
+[gd_scene load_steps=3 format=3 uid="uid://c070y4dmyp5id"]
+
+[ext_resource type="Script" uid="uid://bcyu0wargmkqv" path="res://Scenes/note/note_controls/image_controls.gd" id="1_f81vq"]
+[ext_resource type="Texture2D" uid="uid://ccsnuxldc2g20" path="res://icon.png" id="2_7yu2p"]
+
+[node name="ImageControls" type="VBoxContainer"]
+custom_minimum_size = Vector2(0, 250)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("1_f81vq")
+
+[node name="TextureRect" type="TextureRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+texture = ExtResource("2_7yu2p")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="LineEdit" type="LineEdit" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Image caption"

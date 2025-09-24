@@ -8,6 +8,10 @@ var drag_start_position = Vector2()
 #variables where writing out notes Head and description
 @onready var project_name_label: RichTextLabel = %ProjectNameLabel
 
+@onready var service_pane_control: Control = %ServicesPane
+@onready var chats_control: Control = %Chats
+
+
 #these variables are for changing only the font size of the UI
 var _default_zoom: int
 var min_font_size:int 
@@ -38,6 +42,12 @@ func _ready() -> void:
 	
 	_update_project_label()
 	SingletonObject.updated_save_state.connect(_update_project_label)
+
+
+	# Set the reference to the notes container here as the singleton object is loaded before this one
+	SingletonObject.notes_container = %tcThreads
+	SingletonObject.drawer_notes_container = %tcThreadsDrawer
+
 
 var MAX: = 20
 
@@ -127,7 +137,6 @@ func _gui_input(event):
 #Show the window where we can add note
 func _on_btn_create_note_pressed():
 	%CreateNewNote.popup_centered()
-	%CreateNewNote.isDrawer = false
 
 # this method pops up the preferences window
 func _on_button_pressed() -> void:
@@ -135,6 +144,7 @@ func _on_button_pressed() -> void:
 
 #btn attachment for notes
 func _on_btn_add_attachment_pressed():
+	# Not sure why its located in the chats
 	SingletonObject.Chats._on_btn_attach_file_pressed()
 
 
@@ -235,7 +245,7 @@ func _input(event):
 					%DropForNode.visible = true
 
 
-@onready var bottom_drawer_control: Drawer_manager = %BottomDrawerControl
+@onready var bottom_drawer_control: DrawerNotesManager = %BottomDrawerControl
 @onready var notes_drawer_split: VSplitContainer = %NotesDrawerSplit
 var split_drawer_tween: Tween
 func _on_btn_drawer_pressed() -> void:
@@ -257,7 +267,10 @@ func _on_btn_drawer_pressed() -> void:
 		
 		await get_tree().create_timer(0.48).timeout
 		bottom_drawer_control.visible = false
-	SingletonObject.DrawerTab.disable_all()
+	
+	bottom_drawer_control.load_drawer_data()
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
 
 
 #reading file and create note in Drawer thread

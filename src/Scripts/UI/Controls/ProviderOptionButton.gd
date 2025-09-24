@@ -59,22 +59,57 @@ func get_selected_provider() -> BaseProvider:
 	return get_provider_from_id(get_selected_id())
 
 var _core_actions: Array[Action] = []
-func _on_hcp_service_selected(service: Service, action: Action):
+func _on_hcp_service_selected(service: Service):
 	if _core_actions.is_empty():
 		add_separator()
 
-	if action in _core_actions:
-		print("Slected action is already present")
-		return
+	for action in service.actions:
+		# TODO: quick hack
+		# skip if the action doesnt contain chat in it's name
+		if not action.name.containsn("chat"): continue
 
-	var idx: = item_count
+		if action in _core_actions:
+			print("Slected action is already present")
+			return
 
-	var item_name: = action.name
-	item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
+		var idx: = item_count
 
-	add_item(item_name, idx)
-	set_item_tooltip(idx, service.name)
-	set_item_metadata(idx, [service, action])
+		var item_name: = action.name
+		item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
 
-	_core_actions.append(action)
-	prints("added hcp item at index:", idx)
+		add_item(item_name, idx)
+		set_item_tooltip(idx, service.name)
+		set_item_metadata(idx, [service, action])
+
+		_core_actions.append(action)
+		prints("added hcp item at index:", idx)
+
+# Returns the provider object for the given tab, handling both standard and CoreProvider types
+func get_provider_for_tab(tab: int) -> BaseProvider:
+	if SingletonObject.ChatList.is_empty():
+		return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0].new()
+	else:
+		return SingletonObject.ChatList[tab].provider
+
+# Finds the dropdown item index that matches the given provider
+func get_item_index_for_provider(provider: BaseProvider) -> int:
+	for i in range(get_item_count()):
+		var item_id = get_item_id(i)
+		var metadata = get_item_metadata(item_id)
+		
+		# Handle CoreProvider items (they have Array metadata)
+		if metadata is Array and provider is CoreProvider:
+			var core_provider = provider as CoreProvider
+			# Compare the action to see if it's the same CoreProvider
+			if metadata.size() >= 2 and metadata[1] == core_provider.action:
+				return i
+		
+		# Handle standard providers (they use enum IDs)
+		elif not metadata is Array and not provider is CoreProvider:
+			# Check if this item ID corresponds to the provider's script
+			if item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+				var expected_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id]
+				if expected_script == provider.get_script():
+					return i
+	
+	return -1  # Provider not found in dropdown

@@ -1,0 +1,25 @@
+[gd_scene load_steps=2 format=3 uid="uid://cllesslgnilvn"]
+
+[ext_resource type="Script" uid="uid://cn1iptmaoj5ht" path="res://Scenes/note/note_controls/text_controls.gd" id="1_33frg"]
+
+[node name="TextControls" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("1_33frg")
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="ScrollContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(20, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Suspendisse malesuada hendrerit massa, eget malesuada elit finibus nec. Curabitur finibus ante vitae ante feugiat tristique sed at odio. Etiam in erat nisi. Ut pulvinar libero sed dapibus consequat. Aenean eu velit sed ligula elementum luctus. Morbi porta vehicula sapien vitae feugiat. Quisque ultricies, nunc quis mattis sollicitudin, nisl neque dignissim lectus, euismod malesuada sapien ante quis sem. Nulla eleifend mollis congue. Vestibulum fringilla mi eu erat vestibulum viverra. Maecenas scelerisque vulputate nisl, mattis laoreet eros venenatis ut. Vestibulum pharetra arcu vel nulla blandit euismod. "
+autowrap_mode = 3

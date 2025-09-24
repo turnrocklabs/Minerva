@@ -5,13 +5,14 @@ static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/n
 
 @onready var _field_name_label: Label = %FieldName
 @onready var _field_rich_text_label: RichTextLabel = %RichTextLabel
+@onready var _drop_panel_container: PanelContainer = %DropPanelContainer
+
+@onready var _select_items_window: PersistentWindow = %SelectItemsPersistentWindow
+@onready var _notes_tree: Tree = %NoteTree
 
 var _requested_fields: Array
 
-var selected_notes: = 0:
-	set(value):
-		selected_notes = value
-		_field_rich_text_label.text = "Selected %s notes" % selected_notes
+var _selected_notes: Array[Note]
 
 
 static func create(field_params: Dictionary, input: = true) -> NoteField:
@@ -22,113 +23,111 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 		func():
 			scn._field_name_label.text = field_params["display_name"] + ":"
 			scn._requested_fields = field_params.get("fields", [])
-
-			if input:
-				scn.selected_notes = scn.selected_notes
-				for t in SingletonObject.ThreadList:
-					for item in t.MemoryItemList:
-						if item.Enabled:
-							scn.selected_notes += 1
-				
-				SingletonObject.note_toggled.connect(
-					(func(_note: Note, on: bool, scn_: NoteField):
-						if on:
-							scn_.selected_notes += 1
-						else:
-							scn_.selected_notes -= 1).bind(scn)
-				)
-
-			else:
-				# TODO: RECREATE THE NODES
-				pass
+	
+			scn._drop_panel_container.mouse_filter = Control.MOUSE_FILTER_PASS if input else Control.MOUSE_FILTER_IGNORE
 	)
 
 	return scn
 
 func get_user_data():
-	var data: Array[Dictionary] = []
-	
-	for t in SingletonObject.ThreadList:
-		for item in t.MemoryItemList:
-			if item.Enabled:
-				var serialized_note = item.Serialize(false)
-				
-				if _requested_fields.is_empty():
-					data.append(serialized_note)
-				else:
-					print("Requested note fields are: %s" % _requested_fields)
-					var serialized_part: = {}
-					for field in _requested_fields:
-						serialized_part[field] = serialized_note.get(field, "")
-
-						if not serialized_part[field]:
-							push_error("Couldn't extract requested field '%s' from the note" % field)
-
-					data.append(serialized_part)
-
-	return data
+	return _selected_notes
 
 func update_output(notes: Array) -> void:
+	_selected_notes.clear()
+	_selected_notes.assign(notes)
+	_update_count_label()
 
-	var orphans: Dictionary = {}
 
-	# if partial request don't try and recreate the notes
-	if not _requested_fields.is_empty():
-		return
+func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+	return data is Note and not _selected_notes.has(data)
 
-	for note_data in notes:
-		var item: = MemoryItem.Deserialize(note_data)
-		var owning_thread: String = item.OwningThread if item.OwningThread else ""
-		var item_uuid: String = item.UUID if item.UUID else ""
+func _drop_data(_at_position: Vector2, data: Variant) -> void:
+	_selected_notes.append(data)
+	_update_count_label()
 
-		if owning_thread.is_empty():
-			if orphans.has(owning_thread):
-				orphans[owning_thread].append(item)
-			else:
-				orphans[owning_thread] = [item]
+func _update_count_label():
+	var lines: = PackedStringArray(["Selected %s notes:" % _selected_notes.size()])
+	
+	for note in _selected_notes:
+		lines.append(note.title)
 
-			continue
+	_field_rich_text_label.text = "\n".join(lines)
 
-		var found: = false
-		
-		for i in SingletonObject.ThreadList.size():
-			var thread: = SingletonObject.ThreadList[i]
-			if thread.ThreadId == owning_thread:
-				
-				# check if this memory item already exists
-				for existing_item in thread.MemoryItemList:
-					if existing_item.UUID == item_uuid:
-						thread.MemoryItemList[i] = item # just replace the item
 
-				# if not just append this note
-				if not thread.MemoryItemList.has(item):
-					thread.MemoryItemList.append(item)
-				
-				found = true
+func _on_select_items_button_pressed() -> void:
+	_notes_tree.clear()
 
-				break
+	var root: = _notes_tree.create_item()
+	root.set_text(0, "Notes")
 
-		# if we found the target thread, stop here
-		if found: continue
+	for i in SingletonObject.notes_container.get_tab_count():
+		var tab_item: = _notes_tree.create_item(root)
 
-		# if we get here the item owner thread wasn't found
-		if orphans.has(owning_thread):
-			orphans[owning_thread].append(item)
+		var tab_name = SingletonObject.notes_container.get_tab_name(i)
+	
+		tab_item.set_text(0, tab_name)
+
+		for note in SingletonObject.notes_container.get_notes(i):
+			var note_item: = _notes_tree.create_item(tab_item)
+			note_item.set_text(0, note.title)
+			note_item.set_metadata(0, note)
+			
+			if note in _selected_notes:
+				note_item.select(0)
+				_set_color_recursive(note_item, 0, true)
+
+	_select_items_window.popup_centered()
+
+
+func _on_note_tree_multi_selected(item: TreeItem, column: int, selected: bool) -> void:
+	if _notes_tree.get_next_selected(null) == null: return
+	_set_color_recursive.call_deferred(item, column, selected)
+	
+	
+func _set_color_recursive(item: TreeItem, column: int, selected: = true):
+	for child in item.get_children():
+		_set_color_recursive(child, column, selected)
+	
+	if selected:
+		item.set_custom_bg_color(column, Color.DARK_GREEN)
+		item.select(column)
+	else:
+		item.clear_custom_bg_color(column)
+		item.deselect(column)
+
+	
+
+
+func _on_finish_selection_button_pressed() -> void:
+	_selected_notes.clear()
+
+	var current_item: = _notes_tree.get_root()
+
+	while true:
+		var selected_item: = _notes_tree.get_next_selected(current_item)
+		if selected_item == null:
+			break
+
+		if not selected_item.get_metadata(0) is Note:
+			for note_item in selected_item.get_children():
+				var note: Note = note_item.get_metadata(0)
+				if note and note_item.is_selected(0) and not _selected_notes.has(note):
+					_selected_notes.append(note)
 		else:
-			orphans[owning_thread] = [item]
+				var note: Note = selected_item.get_metadata(0)
+				if note and selected_item.is_selected(0) and not _selected_notes.has(note):
+					_selected_notes.append(note)
+
+		current_item = selected_item
+	
+
+	_update_count_label()
+
+	_select_items_window.hide()
 
 
-	# if a note doesn't have a owning thread set (empty string)
-	# the note will be duplicated each time since we can't know what it's associated with
-	# we may go through all threads and memory items and try to find the matching memory item UUID
-	# but this is a rare problem
-	for owning_thread in orphans.keys():
-		var thread = MemoryThread.new(owning_thread)
-		thread.ThreadName = "Remote Orphan Notes"
-		
-		for item: MemoryItem in orphans[owning_thread]:
-			thread.MemoryItemList.append(item)
+func _on_clear_selection_button_pressed() -> void:
+	
+	_selected_notes.clear()
 
-		SingletonObject.ThreadList.append(thread)
-
-	SingletonObject.NotesTab.render_threads()
+	_update_count_label()

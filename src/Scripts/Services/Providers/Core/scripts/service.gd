@@ -15,3 +15,8 @@ func _init(service_data: Dictionary) -> void:
 
 	for ad in actions_arr:
 		actions.append(Action.new(ad))
+
+
+func is_equal_to(service: Service) -> bool:	
+	return name == service.name and client_id == service.client_id
+

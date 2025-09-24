@@ -171,8 +171,8 @@ func _on_view_id_pressed(id: int):
 		4: SingletonObject.main_scene.zoom_ui(2); return
 		5: SingletonObject.main_scene.zoom_ui(-2); return
 		6: SingletonObject.main_scene.reset_zoom(); return
-		8: _show_notes()
-		9: _show_messages()
+		8: _show_messages()
+		9: _show_notes()
 		11: SingletonObject.set_icon_size_24.emit(); return
 		12: SingletonObject.set_icon_size_48.emit(); return
 		13: SingletonObject.set_icon_size_68.emit(); return
@@ -189,19 +189,16 @@ func _on_view_id_pressed(id: int):
 	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(view.get_item_index(2)))
 	SingletonObject.main_ui.set_terminal_pane_visible(view.is_item_checked(view.get_item_index(10)))
 
-func _show_notes():
+func _show_messages():
 	for ch in SingletonObject.ChatList:
 		for chi in ch.HistoryItemList:
 			if not chi.Visible:
 				chi.Visible = true
 				chi.rendered_node.render()
 
-func _show_messages():
-	for thread in SingletonObject.ThreadList:
-		for item in thread.MemoryItemList:
-			if not item.Visible:
-				item.Visible = true
-	SingletonObject.NotesTab.render_threads()
+func _show_notes():
+	for i in range(SingletonObject.notes_container.get_tab_count()):
+		SingletonObject.notes_container.show_notes(i)
 
 func _on_view_about_to_popup():
 	view.set_item_checked(0, SingletonObject.main_ui.chat_pane.visible)

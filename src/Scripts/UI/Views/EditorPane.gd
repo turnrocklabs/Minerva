@@ -103,7 +103,7 @@ func _input(_event):
 			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "left":
 				SingletonObject.Chats.restore_deleted_tab(last_deleted_tab)
 			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "right":
-				SingletonObject.NotesTab.restore_deleted_tab(last_deleted_tab)
+				SingletonObject.notes_container.restore_deleted_tab(last_deleted_tab)
 
 
 func add_control(item: Node, name_: String) -> Node:
@@ -138,7 +138,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 	var editor_node = Editor.create(type, file, name_, associated_object, initial_setup)
 	
 	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
-	
+
 	Tabs.add_child(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count()-1
 	
@@ -165,11 +165,13 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				var tab_name = "tab " + str(Tabs.get_tab_count() )
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
+				editor_node.code_edit.grab_focus()
 				
 			Editor.Type.GRAPHICS:
 				var tab_name = "graphics " + str(Tabs.get_tab_count() )
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
+				editor_node.graphics_editor.grab_focus()
 	
 	return editor_node
 	

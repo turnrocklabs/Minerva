@@ -15,13 +15,12 @@ func update_last_save_path(new_path: String) -> void:
 # _new_project empties all the tabs and lists currently stored as notes or chats.
 # it also blanks out the save file variable to force a save_as
 func _new_project():
-	SingletonObject.initialize_notes()
 	SingletonObject.initialize_chats(SingletonObject.Chats)
 	SingletonObject.editor_container.clear_editor_tabs() # deserialize empty files list, so it clears everything
+	SingletonObject.clear_registered_objects()
 	save_path = ""
 	
 	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
-	update_buffer_controls()
 	SingletonObject.updated_save_state.emit("", true)
 
 
@@ -138,16 +137,11 @@ func save_editor_panes(skip_selecting_items: bool = false):
 # serialize_project iterates through the notes and chats and creates an array
 # each line in the array is the contents of either the notes or the chats.
 func serialize_project() -> Dictionary:
-	var notes: Array[Dictionary] = []
+	var notes: = SingletonObject.notes_container.serialize()
 	var chats: Array[Dictionary] = []
 	# var active_notes_index: int = 0 ## which of the notes tabs is selected and active
 	# var active_chat_index: int = 0 ## which chat tab is active
 	var last_tab_index: int = 0 ##
-
-	# Serialize the notes first.
-	for note_tab: MemoryThread in SingletonObject.ThreadList:
-		var serialized_note_tab = note_tab.Serialize()
-		notes.append(serialized_note_tab)
 	
 	# # Now serialize the chats.
 	for chat_thread: ChatHistory in SingletonObject.ChatList:
@@ -162,16 +156,17 @@ func serialize_project() -> Dictionary:
 		"Editors": editors,
 		"last_tab_index": SingletonObject.last_tab_index,
 		"active_chatindex": SingletonObject.Chats.current_tab,
-		"active_notes_index": SingletonObject.NotesTab.current_tab,
+		"active_notes_index": SingletonObject.notes_container.current_tab,
 		"active_editor_index": SingletonObject.editor_pane.Tabs.current_tab,
 		"default_provider": SingletonObject.get_active_provider(),
 	}
 
 func deserialize_project(data: Dictionary):
-	var threads: Array[MemoryThread] = []
-	for thread_data in data.get("ThreadList", []):
-		threads.append(MemoryThread.Deserialize(thread_data))
-	SingletonObject.initialize_notes(threads)
+	# var threads: Array[MemoryThread] = []
+	# for thread_data in data.get("ThreadList", []):
+	# 	threads.append(MemoryThread.Deserialize(thread_data))
+	
+	SingletonObject.notes_container.deserialize(data.get("ThreadList", []))
 
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("default_provider", 0))
@@ -206,8 +201,8 @@ func deserialize_project(data: Dictionary):
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 
 	var current_notes_tab = data.get("active_notes_index", 0)
-	if SingletonObject.NotesTab.get_tab_count()-1 >= current_notes_tab:
-		SingletonObject.NotesTab.current_tab = current_notes_tab
+	if SingletonObject.notes_container.get_tab_count()-1 >= current_notes_tab:
+		SingletonObject.notes_container.current_tab = current_notes_tab
 	
 	# Set the current tab only if it's within the present tabs
 	var current_chat_tab = data.get("active_chatindex", 0)
@@ -264,7 +259,7 @@ func _on_fdg_open_file_tree_entered():
 
 func _on_open_recent_project_selected(project_name: String):
 	var project_path = SingletonObject.get_project_path(project_name)
-	var status = open_project_given_path(project_path)
+	var status = await open_project_given_path(project_path)
 	if status != OK:
 		SingletonObject.ErrorDisplay("Project file no found", "the project was not found at the path it was saved. \n Maybe it was moved or deleted")
 
@@ -283,6 +278,13 @@ func open_project_given_path(project_path: String) -> int:
 		push_error("Couldn't parse the project file at %s" % project_path)
 		return ERR_FILE_CORRUPT
 	
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.remove_tab(i)
+
+	await get_tree().process_frame
+
+	SingletonObject.clear_registered_objects()
+
 	deserialize_project(json)
 	
 	# Since we just opened the project, the save state is true
@@ -301,7 +303,6 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		SingletonObject.DrawerTab.lock = true
 		save_editor_panes()
 		
 
@@ -325,10 +326,10 @@ func update_buffer_controls() -> void:
 		SingletonObject.Chats.buffer_control_chats.hide()
 	else:
 		SingletonObject.Chats.buffer_control_chats.show()
-	if SingletonObject.NotesTab.get_tab_count() > 0:
-		SingletonObject.NotesTab.buffer_control_notes.hide()
-	else:
-		SingletonObject.NotesTab.buffer_control_notes.show()
+	# if SingletonObject.notes_container.get_tab_count() > 0:
+	# 	SingletonObject.notes_container.buffer_control_notes.hide()
+	# else:
+	# 	SingletonObject.notes_container.buffer_control_notes.show()
 	if SingletonObject.editor_pane.Tabs.get_tab_count() > 0:
 		SingletonObject.editor_pane.buffer_control_editor.hide()
 	else:

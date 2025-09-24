@@ -130,7 +130,88 @@ func remove_recent_project(project_name: String) -> void:
 #endregion Config File
 
 
+var _registered_objects: Dictionary[Variant, Object] = {}
+
+## Registers an objects by mapping it [param field_name] value to it
+## so even after the project has been reopened the correct object can be found.[br]
+## If an object is already registered with the same value,
+## nothing happens and `false` is returned.[br]
+## Example of registering a [class Note] object so editor can associate with it
+## even after reopening the project:
+## [codeblock]
+## 	SingletonObject.register_object(self, &"uuid")
+## 	...
+##	# to get the object:
+## 	SingletonObject.get_registered_object(uuid)
+## [/codeblock]
+## Returns `true` on success.
+func register_object(object: Object, field_name: StringName) -> bool:
+
+	var field_value = object.get(field_name)
+
+	if field_value == null:
+		push_error("Can't register object %s. Field %s is null." % [object, field_name])
+		return false
+
+	# Object with same value already exists
+	if field_value in _registered_objects.keys():
+		return false
+
+	_registered_objects[field_value] = object
+
+	print("Registerd object %s under the value %s" % [object, field_value])
+
+	return true
+
+## Returns the object that has been registered using the [method register_object]
+## if the object is not `null` and [method is_instance_valid] returns `true`.
+func get_registered_object(value: Variant) -> Object:
+	prints("get_registered_object:", value)
+	var object = _registered_objects.get(value)
+
+	if object == null or not is_instance_valid(object):
+		# unregister object since it's not valid anymore
+		_registered_objects.erase(value)
+		return null
+
+	return object
+
+## Removes the [param value] key from registered object.[br]
+## Uses `Array.erase` to remove the object and
+## returns whether the object existed before this operation.
+func remove_registered_object(value: Variant) -> bool:
+	return _registered_objects.erase(value)
+	
+## Clears all registered objects.[br]
+## Primary use at project close.
+func clear_registered_objects():
+	print("Clearing registered object")
+	_registered_objects.clear()
+
+## Given the object, tries to find the uuid for that object
+## if it's registered. Returns `null` if object is not found.[br]
+## Eg. Editor serialization tries to get the [member Editor.associated_object]
+## and save it so that on the next load it can find the associated object again.
+## The Note must register itself with the uuid field for this to work.
+func registered_object_get_uuid(object: Object):
+	for key in _registered_objects.keys():
+		if _registered_objects[key] == object:
+			prints("Found registered object", key, object)
+			return key
+	
+	return null
+
 #region Notes
+
+## Manages relations between [class Note] objects and core note services
+var notes_sync_manger: = NoteSyncManager.new()
+
+var notes_container: NotesContainer
+var drawer_notes_container: NotesContainer
+
+## Notes that don't reside inside any thread. eg. Editor and terminal notes
+var detached_notes: Array[Note]
+
 enum note_type {
 	TEXT,
 	AUDIO, 
@@ -161,22 +242,6 @@ signal create_drawer_tab
 
 var notes_draw_state: int
 
-## THis variable stores the notes tabs threads
-var ThreadList: Array[MemoryThread]
-## THis variable stores the Drawers notes tabs threads
-var DrawerThreadList: Array[MemoryThread]
-
-## Notes that don't reside inside any thread. eg. Editor and terminal notes
-var DetachedNotes: Array[MemoryItem]
-
-var NotesTab: MemoryTabs
-var DrawerTab: DrawerTabs
-##reorder array
-func initialize_notes(threads: Array[MemoryThread] = []):
-	ThreadList = threads
-	
-	NotesTab.render_threads()
-	pass
 
 @warning_ignore("unused_signal")
 signal AttachNoteFile(file_path:String)
@@ -189,19 +254,12 @@ signal note_toggled(note: Note, on: bool)
 signal note_changed(note: Note)
 
 func toggle_all_notes(notes_enabled: bool):
-	if notes_enabled:
-		NotesTab.disable_all()
-		if DrawerTab.visible:
-			DrawerTab.disable_all()
-	if !notes_enabled:
-		NotesTab.enable_all()
-		if DrawerTab.visible:
-			DrawerTab.enable_all()
+	for i in SingletonObject.notes_container.get_tab_count():
+		(SingletonObject.notes_container.enable_notes if notes_enabled else SingletonObject.notes_container.disable_notes).call(i)
+	
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		(SingletonObject.drawer_notes_container.enable_notes if notes_enabled else SingletonObject.drawer_notes_container.disable_notes).call(i)
 
-## Returns `MemoryThread` with the given `ThreadId` or null if none are found
-func get_thread(thread_id: String) -> MemoryThread:
-	var r_arr = ThreadList.filter(func(thread: MemoryThread): return thread.ThreadId == thread_id)
-	return r_arr.pop_front()
 
 #endregion Notes
 
@@ -354,6 +412,14 @@ func ErrorDisplay(error_title:String, error_message: String, on_close_focus: Nod
 	if on_close_focus and on_close_focus.has_method("grab_focus"):
 		errorPopup.close_requested.connect(func(): on_close_focus.grab_focus())
 
+func create_toast_notification(content: String, type: = ToastNotification.Type.INFO):
+	
+	var toast: = ToastNotification.create(type, content)
+
+	main_scene.add_child(toast)
+
+
+
 @onready var main_scene = $"/root/RootControl"
 
 #endregion Common UI Tasks
@@ -468,7 +534,7 @@ func is_editor_file_open() -> bool:
 
 
 func is_notes_open() -> bool:# checks if a notes list exists
-	if ThreadList:
+	if notes_container:
 		return true
 	return false
 
