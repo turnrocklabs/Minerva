@@ -1,9 +1,17 @@
 class_name NotesContainer
 extends TabContainer
 
+signal tab_renamed(tab_idx: int)
+
+@onready var _new_thread_popup: PersistentWindow = %NewThreadPopup
 
 ## A dictionary that maps tab index to a corresponding uuid
 var _uuid_map: Dictionary[int, String] = {}
+
+var remote_adapter: NoteServiceAdapter = null:
+	set(value):
+		remote_adapter = value
+		_update_adapter_info()
 
 func _ready() -> void:
 	# make tabs closeable
@@ -11,44 +19,48 @@ func _ready() -> void:
 
 	get_tab_bar().tab_close_pressed.connect(remove_tab)
 
+	get_tab_bar().gui_input.connect(_on_tab_bar_gui_input)
+
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 
 ## Creates a new tab with given name.[br]
 ## If the name is already taken godot will autimatically assing a new one.[br]
 ## Retuns the scroll container added as the new tab.
-func create_tab(tab_name: String = "Notes", uuid: String = "") -> Control:
+func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 	if tab_name.is_empty():
 		tab_name = "Notes"
 
-	var scroll: = ScrollContainer.new()
+	var notes_vbox: = NoteVBox.create()
 
 	var new_tab_index: = get_tab_count()
 
-	var vbox: = VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.child_entered_tree.connect(
-		func(node: Node):
-			if node is Note and node.is_note_initialized():
-				node.tab_changed.emit(new_tab_index)
+	notes_vbox.note_added.connect(
+		func(note: Node):
+			if note.is_note_initialized():
+				note.tab_changed.emit(new_tab_index)
 	)
-	
-	scroll.add_child(vbox)
-	scroll.name = tab_name
+
+	notes_vbox.name = tab_name
 
 	if uuid.is_empty():
 		print("uuid is empty")
 		uuid = SingletonObject.generate_UUID()
 	
+	# NOTICE: this will break if tab reordering is enabled
 	_uuid_map[new_tab_index] = uuid
 
 	# force readable name
-	add_child(scroll, true)
+	add_child(notes_vbox, true)
 
-	return scroll
+	notes_vbox.renamed.connect(func(): tab_renamed.emit(new_tab_index))
+
+	_update_adapter_info()
+
+	return notes_vbox
 
 ## Removes the tab specified with [param tab_idx].
-func remove_tab(tab_idx: int):	
+func remove_tab(tab_idx: int, ignore_remove_override: = false):	
 	var control: = get_tab_control(tab_idx)
 
 	# if at least one note deletion was rejected, don't delete the tab
@@ -57,7 +69,10 @@ func remove_tab(tab_idx: int):
 	if control:
 		# doing this so the notes is_queued_for_deletion returns true
 		for note in get_notes(tab_idx):
-			all_deleted = await note.remove() and all_deleted
+			if ignore_remove_override:
+				note.queue_free()
+			else:
+				all_deleted = await note.remove() and all_deleted
 
 		if all_deleted:
 			control.queue_free()
@@ -85,49 +100,43 @@ func add_note(note: Note, tab_idx: int = -1, force: = true, index: int = 0) -> b
 	# if still -1 there is no selected tab to add to
 	if tab_idx == -1:
 		if force:
-			var created_scroll: = create_tab()
-			var vbox_ = created_scroll.get_child(0)
-			if not vbox_:
-				push_error("Couldn't get the VBoxContainer to add the note to")
+			var new_note_vbox: = create_tab()
+			
+			new_note_vbox.add_note(note)
 
-			vbox_.add_child(note)
-
+			if new_note_vbox.auto_upload: _sync_new_note(note)
 			return true
 		
 		return false
 
-	var current_scroll: ScrollContainer = get_tab_control(tab_idx)
-	var vbox = current_scroll.get_child(0)
+	var note_vbox: NoteVBox = get_tab_control(tab_idx)
+	
+	note_vbox.add_note(note, index)
 
-	if not vbox:
-		push_error("Couldn't get the VBoxContainer to add the note to")
-
-	vbox.add_child(note)
-	vbox.move_child(note, index)
-
+	if note_vbox.auto_upload: _sync_new_note(note)
 	return true
 
-## Returns an array of notes in the specified tab[br].
+
+## Synchronizes the new note if there is a adapter available
+func _sync_new_note(note: Note):
+	var sc: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+
+	if not sc.adapter:
+		SingletonObject.ErrorDisplay("Can't upload", "Couldn't auto upload the %s" % note)
+		return
+	
+	sc.sync_note()
+
+## Returns an array of notes in the specified tab.[br]
 ## If not tab is specified ([-1]) returns notes from the currently selected tab or empty array.
 func get_notes(tab_idx: = -1) -> Array[Note]:
 	tab_idx = tab_idx if tab_idx != -1 else current_tab
 
 	if tab_idx == -1: return []
 
-	var current_scroll: ScrollContainer = get_tab_control(tab_idx)
-	var vbox = current_scroll.get_child(0)
+	var note_vbox: NoteVBox = get_tab_control(tab_idx)
 
-	if not vbox:
-		push_error("Couldn't get the VBoxContainer to get the notes")
-		return []
-	
-	var notes: Array[Note] = []
-
-	for child in vbox.get_children():
-		if child is Note:
-			notes.append(child)
-
-	return notes
+	return note_vbox.get_notes()
 
 ## Returns the UUID of the specified tab, or `null` if it doesn't exist
 func get_tab_id(idx: int):
@@ -180,6 +189,26 @@ func hide_notes(tab_idx: = -1):
 
 	for note in get_notes(tab_idx):
 		note.visible = true
+
+
+func set_remote_adapter(adapter: NoteServiceAdapter):
+	remote_adapter = adapter
+
+## Updates [class NoteVBox] note tab controls with the active adapter.[br]
+## Used when the adapter changes or new tab is created
+func _update_adapter_info():
+	# if not remote_adapter:
+	# 	return
+
+	for i in get_tab_count():
+		var note_vbox: NoteVBox = get_tab_control(i)
+		if not remote_adapter:
+			note_vbox._remote_option_container.visible = false
+		else:
+			note_vbox._remote_option_container.visible = true
+			note_vbox._remote_service_label.text = remote_adapter.service.name
+
+
 
 ## Calls the [param provider] wrap_memory for each active node
 ## in the notes and drawer notes container, and returns an array of all the return values.
@@ -274,5 +303,29 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 	add_note(note, get_tab_idx_at_point(at_position), false, 0)
 	
 
+
+# endregion
+
+# region rename
+
+var last_click: float = -1
+
+func _on_tab_bar_gui_input(event: InputEvent) -> void:
+	
+	if event is InputEventMouseButton:
+		if not event.pressed: return
+
+		var tab_idx: = get_tab_idx_at_point(event.position)
+
+		if tab_idx == -1: return
+
+		if last_click == -1:
+			last_click = Time.get_unix_time_from_system()
+			return
+
+		if Time.get_unix_time_from_system() - last_click < 0.2:
+			_new_thread_popup.set_values(get_tab_name(tab_idx), get_tab_control(tab_idx))
+		
+		last_click = Time.get_unix_time_from_system()
 
 # endregion

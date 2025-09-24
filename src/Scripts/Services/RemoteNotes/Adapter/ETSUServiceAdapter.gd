@@ -183,7 +183,7 @@ func get_all_notes() -> Array[Note]:
 
 		note.set_meta("remote_thread_id", note_data.get("OwningThread", ""))
 		note.set_meta("remote_thread_name", note_data.get("ThreadName", "ETSU Notes"))
-		note.set_meta("remote_order", note_data.get("Order", 0))
+		note.set_meta("remote_order", int(note_data.get("Order", 0)))
 
 		notes.append(note)
 

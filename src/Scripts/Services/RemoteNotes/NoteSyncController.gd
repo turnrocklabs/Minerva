@@ -44,6 +44,10 @@ enum SyncState {
 	LOCAL_ONLY,    # New note, doesn't exist on remote yet
 }
 
+signal state_changed(state: SyncState)
+
+static var _cloud_off_icon: = preload("res://assets/icons/cloud_off.svg")
+
 var note: Note
 var sync_manager: NoteSyncManager
 var adapter: NoteServiceAdapter
@@ -51,7 +55,11 @@ var adapter: NoteServiceAdapter
 var state: SyncState = SyncState.LOCAL_ONLY:
 	set(value):
 		state = value
+		state_changed.emit(state)
+		print("Emitted signal for %s" % note)
 		_on_state_updated()
+
+var _sync_timer: SceneTreeTimer 
 
 var _state_info: SyncStateInfo
 
@@ -63,12 +71,11 @@ func _init(note_: Note, sync_manager_: NoteSyncManager) -> void:
 	note.changed.connect(_on_note_change)
 	note.tab_changed.connect(_on_note_tab_changed)
 
-	_highjack_note_controls()
-
 	# set initial state when the note is ready
-	if not note.is_node_ready():
-		note.ready.connect(
+	if not note.is_note_initialized():
+		note.initialized.connect(
 			func():
+				_highjack_note_controls()
 				_on_state_updated()
 		)
 
@@ -88,8 +95,6 @@ func set_adapter(adapter_: NoteServiceAdapter) -> void:
 func _highjack_note_controls():
 	if not note: return
 
-	note.remove_handle = _on_note_remove_button_pressed
-
 ## Sets the new state for this controlles note.[br]
 ## if [param when_ready] is `true` the state will be set ONLY when the note is initialized.
 ## (is_note_initialized and initialized signals are used).
@@ -98,29 +103,71 @@ func set_state(new_state: SyncState, when_ready: = true) -> void:
 	if when_ready:
 		if not note.is_note_initialized():
 			note.initialized.connect(
-				(func(): info("Marking %s as SYNCED" % note); state = new_state),
+				(func(): info("Marking %s with sync value %s" % [note, new_state]); state = new_state),
 				ConnectFlags.CONNECT_ONE_SHOT
 			)
 			return
 
-	info("Marking already ready %s as SYNCED" % note)
+	info("Marking already ready %s with sync value %s" % [note, new_state])
 
 	state = new_state
 
+
+## Tries to upload this controlles note to remote.[br]
+## If the note is not initialized yet, it waits for it to be.
+## See [method Note.is_note_initialized].[br]
+## In case of failure displays an error message if [param display_error] is `true`.
+func sync_note(display_error: = true) -> bool:
+	if not note.is_note_initialized():
+		await note.initialized
+
+	state = SyncState.SYNCING
+
+	var success: = await adapter.save_notes([note])
+
+	if success:
+		state = SyncState.SYNCED
+	else:
+		state = SyncState.LOCAL_CHANGES
+		if display_error:
+			SingletonObject.ErrorDisplay("Can't upload", "Couldn't auto upload the %s" % note)
+
+	return success
+
 func _on_state_updated() -> void:
-	
+	print("Updated %s state to %s" % [note, state])
 	# if not ready the _init function sets up a signal to update the note button
 	# so we don't connect multiple times if this function is run several times
-	if not note.is_node_ready():
+	if not note.is_note_initialized():
 		return
 	
+	if is_instance_valid(_sync_timer):
+		_sync_timer.timeout.disconnect(_on_sync_timer_timeout)
+		_sync_timer = null
+	
 	if state == SyncState.LOCAL_ONLY:
+		
+		# revert he remove button back
+		note.remove_handle = Callable()
+		note.remove_icon = null
+		note._remove_button.text = ""
+
+		# disable the button for half a second, so the user doesnt accidentally delete it locally also
+		note._remove_button.disabled = true
+		note.get_tree().create_timer(0.5).timeout.connect(
+			func(): if is_instance_valid(note): note._remove_button.disabled = false
+		)
+
 		note.sync_controller_button.visible = false
 		note.sync_controller_button.text = ""
 
 		if note.sync_controller_button.pressed.is_connected(_on_sync_controller_button_pressed):
 			note.sync_controller_button.pressed.disconnect(_on_sync_controller_button_pressed)
 	else:
+
+		note.remove_handle = _on_note_remove_button_pressed
+		note.remove_icon = _cloud_off_icon
+		note._remove_button.text = "Make Local"
 
 		match state:
 			SyncState.SYNCING:
@@ -142,12 +189,25 @@ func _on_state_updated() -> void:
 				note.sync_controller_button.text = "☁"
 				note.sync_controller_button.tooltip_text = "Note synced with remote"
 			SyncState.LOCAL_CHANGES:
+
+				# Start a timer that will update this note in 2 seconds of inactivity
+				# if any changes occurs again, the timer will be reset
+				_sync_timer = note.get_tree().create_timer(2)
+				_sync_timer.timeout.connect(_on_sync_timer_timeout)
+
 				note.sync_controller_button.tooltip_text = "Local changes"
 				note.sync_controller_button.text = "●"
 		
 		note.sync_controller_button.visible = true
 		if not note.sync_controller_button.pressed.is_connected(_on_sync_controller_button_pressed):
 			note.sync_controller_button.pressed.connect(_on_sync_controller_button_pressed)
+
+
+func _on_sync_timer_timeout() -> void:
+	if await sync_note(false):
+		SingletonObject.create_toast_notification("Synced the %s" % note)
+	else:
+		SingletonObject.create_toast_notification("Couldn't sync the %s" % note, ToastNotification.Type.ERROR)
 
 
 func _on_sync_controller_button_pressed():
@@ -172,13 +232,16 @@ func _on_note_remove_button_pressed() -> bool:
 			sync_manager.cleanup_controller(note.uuid)
 		
 		SyncState.SYNCED, SyncState.LOCAL_CHANGES:
-			# Delete from remote first, then local
+			# Delete from remote first
 			set_state(SyncState.SYNCING)
 			var success = await adapter.delete_notes([note])
 			
 			if success:
-				note.queue_free()
-				sync_manager.cleanup_controller(note.uuid)
+				set_state(SyncState.LOCAL_ONLY)
+
+				# DON'T delete the controller. it should just be left in the LOCAL_CHANGES mode
+				# sync_manager.cleanup_controller(note.uuid)
+
 				SingletonObject.create_toast_notification("Successfully deleted the remote %s" % note, ToastNotification.Type.INFO)
 				return true
 			else:
@@ -193,6 +256,9 @@ func _on_note_remove_button_pressed() -> bool:
 func _on_note_change() -> void:
 
 	if _state_info == null:
+		# if this was a local only note, just leave it as that
+		if state == SyncState.LOCAL_ONLY: return
+
 		state = SyncState.LOCAL_CHANGES
 		return
 	
