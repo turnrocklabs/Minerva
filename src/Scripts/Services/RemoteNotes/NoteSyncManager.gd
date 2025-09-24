@@ -107,6 +107,8 @@ func sync_with_remote():
 			return note_a.get_meta("remote_order") < note_b.get_meta("remote_order")
 	)
 
+	notes_to_create_locally.reverse()
+
 	for remote_note in notes_to_create_locally:
 		var remote_thread_id = remote_note.get_meta("remote_thread_id", "")
 		var remote_thread_name = remote_note.get_meta("remote_thread_name", "ETSU Notes")
@@ -119,6 +121,52 @@ func sync_with_remote():
 		
 		else:
 			info("Note %s created locally, no need for update" % remote_note)
+
+	if not SingletonObject.notes_container.tab_renamed.is_connected(_on_notes_tab_renamed):
+		SingletonObject.notes_container.tab_renamed.connect(_on_notes_tab_renamed)
+
+## Tries to upload provided notes to remote and all other in shared tabs to update their order field.[br]
+## If any note is not initialized yet, it waits for it to be.
+## If note is not added to tree, it won't be initialized, which would hand forever.[br]
+## See [method Note.is_note_initialized].[br]
+## In case of failure displays an error message if [param display_error] is `true`.
+func sync_notes(notes: Array[Note], display_error: = true) -> bool:
+	
+	# when we upload a new note, the order of ther notes may be changed
+	# because we can't touch backend that much, we're gonna just
+	# update ALL notes from tabs where provided ones are,
+	# to ensure order of each is updated
+	var target_tabs: Array[int]
+	
+	for note in notes:
+		if not note.is_note_initialized():
+			await note.initialized
+
+		var tab_idx: = SingletonObject.notes_container.find_note(note)
+
+		if tab_idx == -1:
+			push_error("NoteSyncManager.sync_notes can't update %s as it's tab index is -1, skipping..." % note)
+			continue # silent ignore, this probably can't happen
+		
+		target_tabs.append(tab_idx)
+
+	var notes_to_sync: Array[Note]
+
+	for tab_idx in target_tabs:
+		notes_to_sync.append_array(SingletonObject.notes_container.get_notes(tab_idx))
+
+	var adapter: = get_current_adapter()
+
+	var success: = await adapter.save_notes(notes_to_sync)
+
+	for note in notes_to_sync:
+		var controller: = get_sync_controller(note)
+		controller.set_state(NoteSyncController.SyncState.SYNCED if success else NoteSyncController.SyncState.LOCAL_CHANGES)
+
+	if not success and display_error:
+		SingletonObject.ErrorDisplay("Can't upload", "Couldn't sync notes to remote")
+
+	return success
 
 
 func get_sync_controller(note: Note) -> NoteSyncController:
@@ -149,6 +197,7 @@ func add_service_adapter(service: Service, adapter: NoteServiceAdapter):
 	service_adapters[service.client_id] = adapter
 
 func get_current_adapter() -> NoteServiceAdapter:
+	if not active_service: return null
 	return service_adapters.get(active_service.client_id)
 
 func set_active_service(service: Service):
@@ -158,6 +207,10 @@ func set_active_service(service: Service):
 		# Update all controllers with new adapter
 		for controller: NoteSyncController in sync_controllers.values():
 			controller.set_adapter(get_current_adapter())
+
+	var adapter: = get_current_adapter()
+
+	SingletonObject.notes_container.set_remote_adapter(adapter)
 
 
 ## Creates the remote note locally in the specified thread and created the thread if missing.[br]
@@ -177,6 +230,11 @@ func _create_remote_note_locally(remote_note: Note, thread_id: String, thread_na
 			break
 	
 	if target_tab_idx == -1:
+
+		for i in SingletonObject.notes_container.get_tab_count():
+			if SingletonObject.notes_container.get_tab_name(i) == thread_name:
+				SingletonObject.notes_container.set_tab_name(i, "%s (Local)" % thread_name)
+
 		var tab_control: = SingletonObject.notes_container.create_tab(thread_name, thread_id)
 
 		target_tab_idx = SingletonObject.notes_container.get_tab_idx_from_control(tab_control)
@@ -197,6 +255,13 @@ func _create_remote_note_locally(remote_note: Note, thread_id: String, thread_na
 		controller.set_state(NoteSyncController.SyncState.SYNCED)
 	
 	return update
+
+
+func _on_notes_tab_renamed(tab_idx: int) -> void:
+	if not await sync_notes(SingletonObject.notes_container.get_notes(tab_idx), false):
+		SingletonObject.ErrorDisplay("Can't update", "Couldn't update tab name")
+
+
 
 func _on_core_connected():
 	info("Waiting for registration message...")

@@ -6,6 +6,8 @@ static var _text_controls_scene: = preload("res://Scenes/note/note_controls/text
 static var _image_controls_scene: = preload("res://Scenes/note/note_controls/image_controls.tscn")
 static var _audio_controls_scene: = preload("res://Scenes/note/note_controls/audio_controls.tscn")
 
+static var _remove_icon: = preload("res://assets/icons/remove.svg")
+
 ## Emitted when the title changes.
 signal title_changed
 
@@ -109,6 +111,7 @@ var _initialized: = false
 @onready var _edit_button: Button = %EditButton
 @onready var _warning_button: Button = %WarningButton
 @onready var _hide_button: Button = %HideButton
+@onready var _remove_button: Button = %RemoveButton
 
 @onready var sync_controller_button: Button = %SyncControllerButton
 
@@ -126,6 +129,13 @@ var _initialized: = false
 ## If the callable is not valid, the note is just freed from the memory.
 var remove_handle: Callable
 
+var remove_icon: = _remove_icon:
+	set(value):
+		if not value:
+			_remove_button.icon = _remove_icon
+		else:
+			_remove_button.icon = value
+	get: return _remove_button.icon
 
 static func create_text_note(note_title: String, content: String, note_uuid: String = "", register: = true) -> Note:
 	var text_controls: NoteTextControls = _text_controls_scene.instantiate()
@@ -313,6 +323,8 @@ func _to_string() -> String:
 
 
 func _init() -> void:
+	# keep a meta with current timestamp
+	set_meta("timestamp", Time.get_unix_time_from_system())
 	initialized.connect(_on_note_initialized)
 
 func _on_note_initialized():
@@ -565,6 +577,8 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 	await tween.finished
 	note.modulate.a = 1
 	preview_control.queue_free()
+
+	SingletonObject.notes_sync_manger.sync_notes([note])
 
 # endregion
 

@@ -360,7 +360,7 @@ func open_project_given_path(project_path: String) -> int:
 	
 	# Clear existing content
 	for i in SingletonObject.notes_container.get_tab_count():
-		SingletonObject.notes_container.remove_tab(i)
+		SingletonObject.notes_container.remove_tab(i, false)
 
 	await get_tree().process_frame
 
