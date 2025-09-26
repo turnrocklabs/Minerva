@@ -327,22 +327,24 @@ func _on_core_connet_button_pressed() -> void:
 				.receive_all()
 		)
 
-		msg_received.connect(
-			func(msg: Dictionary):
-				var err: String
+		if msg_received:
+			msg_received.connect(
+				func(msg):
+					if not msg: return
+					var err: String
 
-				if msg.has("params") and msg["params"].has("error_code"):
-					err = "%s: %s" % [msg["params"]["error_code"], msg["params"]["error"]]
-				elif msg.has("params") and msg["params"].has("error"):
-					err = msg["params"]["error"]
-				else:
-					err = "Unknown error format: %s" % str(msg)
+					if msg.has("params") and msg["params"].has("error_code"):
+						err = "%s: %s" % [msg["params"]["error_code"], msg["params"]["error"]]
+					elif msg.has("params") and msg["params"].has("error"):
+						err = msg["params"]["error"]
+					else:
+						err = "Unknown error format: %s" % str(msg)
 
-				core_error_item_list.add_item(
-					err,
-					preload("res://.godot/imported/warning_icon.svg-0d14ac513b8003b886b4926b52005686.ctex"),
-					false
-				)
+					core_error_item_list.add_item(
+						err,
+						preload("res://.godot/imported/warning_icon.svg-0d14ac513b8003b886b4926b52005686.ctex"),
+						false
+					)
 		)
 	else:
 		# If Core.start returns false, it means authentication or WS connection failed.

@@ -60,7 +60,11 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 	return notes_vbox
 
 ## Removes the tab specified with [param tab_idx].
-func remove_tab(tab_idx: int, ignore_remove_override: = false):	
+## If [param user_action] is `true` that means that the user
+## deliberatly wanted to try and delete the tab which will
+## call each notes [method Note.remove] method.[br]
+## Else the tab and it's notes will be deleted only if they are local notes.[br]
+func remove_tab(tab_idx: int, user_action: = true):	
 	var control: = get_tab_control(tab_idx)
 
 	# if at least one note deletion was rejected, don't delete the tab
@@ -69,10 +73,14 @@ func remove_tab(tab_idx: int, ignore_remove_override: = false):
 	if control:
 		# doing this so the notes is_queued_for_deletion returns true
 		for note in get_notes(tab_idx):
-			if ignore_remove_override:
-				note.queue_free()
-			else:
+			if user_action:
 				all_deleted = await note.remove() and all_deleted
+			else:
+				var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+				if controller.state == NoteSyncController.SyncState.LOCAL_ONLY:
+					note.queue_free()
+				else:
+					all_deleted = false
 
 		if all_deleted:
 			control.queue_free()
@@ -240,6 +248,8 @@ func serialize() -> Array[Dictionary]:
 	var data: Array[Dictionary]
 
 	for i in range(get_tab_count()):
+		var note_vbox: NoteVBox = get_tab_control(i)
+
 		var notes_data: Array[Dictionary]
 
 		var notes: = get_notes(i)
@@ -247,9 +257,10 @@ func serialize() -> Array[Dictionary]:
 			notes_data.append(note.serialize())
 
 		var tab_data: = {
-			"ThreadName": get_tab_control(i).name,
+			"ThreadName": note_vbox.name,
 			"ThreadId": _uuid_map.get(i),
-			"MemoryItemList": notes_data
+			"MemoryItemList": notes_data,
+			"AutoUpload": note_vbox.auto_upload,
 		}
 
 		data.append(tab_data)
@@ -261,20 +272,59 @@ func deserialize(notes_data: Array) -> void:
 	for tab_data in notes_data:
 		var tab_title: String = tab_data.get("ThreadName")
 		var tab_id = tab_data.get("ThreadId")
+		var auto_upload = tab_data.get("AutoUpload", false)
 
 		# it could be explicit null or empty string so check here
 		if not tab_id:
 			tab_id = ""
 
-		var tab_control: = create_tab(tab_title, tab_id)
+		# check if this tab doesnt exist already
+		var note_vbox: NoteVBox
 
-		var tab_idx: = get_tab_idx_from_control(tab_control)
+		for i in SingletonObject.notes_container.get_tab_count():
+			if SingletonObject.notes_container.get_tab_id(i) == tab_id:
+				note_vbox = SingletonObject.notes_container.get_tab_control(i)
+
+		if not note_vbox:
+			note_vbox = create_tab(tab_title, tab_id)
+
+
+		note_vbox.auto_upload = auto_upload
+
+		var tab_idx: = get_tab_idx_from_control(note_vbox)
+
+		# NOTICE: this may not be the best place to check for sync of remote notes
+		var notes_to_update: Array[Note]
 
 		for mem_item_data in tab_data.get("MemoryItemList", []):
-			add_note(
-				Note.deserialize(mem_item_data),
-				tab_idx
-			)
+
+			var note_uuid: String = mem_item_data.get("UUID", "")
+
+			var existing_note: = SingletonObject.get_registered_object(note_uuid)
+
+			if not existing_note:
+				add_note(
+					Note.deserialize(mem_item_data),
+					tab_idx
+				)
+				continue
+			
+			# if note is already there, it may be the remote note.
+			# check if it's remote and update if so
+			
+			var controller: = SingletonObject.notes_sync_manger.get_sync_controller(existing_note)
+
+			# if this is somehow just a local note, just leave it as is
+			if controller.state == NoteSyncController.SyncState.LOCAL_ONLY: continue
+
+			# else update the remote just in case
+			notes_to_update.append(existing_note)
+
+		if not notes_to_update.is_empty():
+			SingletonObject.notes_sync_manger.sync_notes(notes_to_update)
+
+
+
 
 
 # region Drop

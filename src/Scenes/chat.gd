@@ -4,7 +4,6 @@ extends Control
 @onready var history_option_button: OptionButton = %HistoryOptionButton
 @onready var provider_option_button: ProviderOptionButton = %ProviderOptionButton
 
-
 @onready var tc_chats: Control = %tcChats
 @onready var chat_controls: Control = %ChatControls
 
@@ -26,14 +25,18 @@ var current_histories: Array = []
 
 var service_tab_states: Dictionary = {}  # ServiceType -> {current_tab: int, etc.}
 
+# NEW: Track services grouped by history type
+var services_by_type: Dictionary[ServiceHistory.ServiceType, Array] = {}  # ServiceType -> Array[Service]
+
 func _ready() -> void:
-
 	SingletonObject.chat = self
-
+	
+	# Initialize the services dictionary
+	_initialize_services_by_type()
+	
 	_setup_chats_service()
 
 	if Core:
-
 		# wait for core registration and fetch services
 		var registration_message = await (
 			Core
@@ -49,20 +52,27 @@ func _ready() -> void:
 		for service in services:
 			_on_hcp_service_selected(service)
 
+func _initialize_services_by_type():
+	services_by_type[ServiceHistory.ServiceType.CHAT] = []
+	services_by_type[ServiceHistory.ServiceType.NOTES] = []
 
 # sets up the internal chat service, and auto selects it
 func _setup_chats_service():
 	var chat_service: = Service.create_chat_service()
-
-	var item_id: = history_option_button.item_count
-	history_option_button.add_item("Chats", item_id)
-
-	history_option_button.set_item_metadata(history_option_button.get_item_index(item_id), chat_service)
 	
-	history_option_button.select(history_option_button.get_item_index(item_id))
-
-	# trigger the select callback	
-	_on_history_option_button_item_selected(history_option_button.get_item_index(item_id))
+	# Add the internal chat service to our tracking
+	services_by_type[ServiceHistory.ServiceType.CHAT].append(chat_service)
+	
+	# Only create dropdown item if it doesn't exist for this service type
+	if not _history_type_exists_in_dropdown(ServiceHistory.ServiceType.CHAT):
+		var item_id: = history_option_button.item_count
+		history_option_button.add_item("Chats", item_id)
+		# Store the service type as metadata instead of individual service
+		history_option_button.set_item_metadata(history_option_button.get_item_index(item_id), ServiceHistory.ServiceType.CHAT)
+		
+		history_option_button.select(history_option_button.get_item_index(item_id))
+		# trigger the select callback	
+		_on_history_option_button_item_selected(history_option_button.get_item_index(item_id))
 
 func _on_hcp_service_selected(service: Service) -> void:
 	var service_type = Core.get_service_history_type(service)
@@ -70,49 +80,60 @@ func _on_hcp_service_selected(service: Service) -> void:
 	if service_type == ServiceHistory.ServiceType.NONE:
 		return
 	
-	# Only add services we don't already have in the dropdown
-	if not _service_exists_in_dropdown(service):
+	# Add service to the appropriate type group
+	if service_type in services_by_type:
+		services_by_type[service_type].append(service)
+	else:
+		services_by_type[service_type] = [service]
+	
+	# Only add dropdown item if this service type doesn't already exist
+	if not _history_type_exists_in_dropdown(service_type):
 		var item_id: = history_option_button.item_count
-		var display_name = _get_service_display_name(service, service_type)
+		var display_name = _get_service_type_display_name(service_type)
 		history_option_button.add_item(display_name, item_id)
-		history_option_button.set_item_metadata(history_option_button.get_item_index(item_id), service)
+		history_option_button.set_item_metadata(history_option_button.get_item_index(item_id), service_type)
+	
+	# If this service type is currently selected, update the provider options
+	if service_type == current_service_type:
+		_update_provider_options_for_current_type()
 
-func _service_exists_in_dropdown(service: Service) -> bool:
+func _history_type_exists_in_dropdown(service_type: ServiceHistory.ServiceType) -> bool:
 	for i in range(history_option_button.get_item_count()):
 		var metadata = history_option_button.get_item_metadata(i)
-		if metadata is Service and metadata.client_id == service.client_id:
+		if metadata == service_type:
 			return true
 	return false
 
-func _get_service_display_name(service: Service, service_type: ServiceHistory.ServiceType) -> String:
+func _get_service_type_display_name(service_type: ServiceHistory.ServiceType) -> String:
 	match service_type:
 		ServiceHistory.ServiceType.CHAT:
 			return "Chats"
 		ServiceHistory.ServiceType.NOTES:
 			return "Notes"
 		_:
-			return service.name
+			return "Unknown"
 
 func _on_history_option_button_item_selected(index: int) -> void:
 	var item_id: = history_option_button.get_item_id(index)
-	var service: Service = history_option_button.get_item_metadata(item_id)
-	
-	var service_type = Core.get_service_history_type(service)
+	var service_type: ServiceHistory.ServiceType = history_option_button.get_item_metadata(item_id)
 	
 	# Switch to the appropriate history collection and UI
-	_switch_to_service_type(service_type, service)
+	_switch_to_service_type(service_type)
 
-func _switch_to_service_type(service_type: ServiceHistory.ServiceType, service: Service):
+func _switch_to_service_type(service_type: ServiceHistory.ServiceType):
 	print("Switching to service type: ", service_type)
 	print("ChatList count before switch: ", SingletonObject.ChatList.size())
 	
 	if current_service_type != service_type:
-		# _store_current_tab_state()
 		current_service_type = service_type
 		_load_histories_for_service_type(service_type)
-		_update_ui_for_service_type(service_type, service)
-	
-	provider_option_button.switch_to_provider_set_for_service(service)
+		_update_ui_for_service_type(service_type)
+		_update_provider_options_for_current_type()
+
+func _update_provider_options_for_current_type():
+	# Get all services for the current service type and update provider options
+	var services_for_type: Array = services_by_type.get(current_service_type, [])
+	provider_option_button.switch_to_provider_set_for_services(services_for_type)
 
 func _load_histories_for_service_type(service_type: ServiceHistory.ServiceType):
 	print("BEFORE load - ChatList count: ", SingletonObject.ChatList.size())
@@ -130,15 +151,14 @@ func _load_histories_for_service_type(service_type: ServiceHistory.ServiceType):
 	print("AFTER assignment - ChatList count: ", SingletonObject.ChatList.size())
 	print("Current histories count: ", current_histories.size())
 
-
-func _update_ui_for_service_type(service_type: ServiceHistory.ServiceType, service: Service):
+func _update_ui_for_service_type(service_type: ServiceHistory.ServiceType):
 	match service_type:
 		ServiceHistory.ServiceType.CHAT:
 			_show_chat_ui()
 		ServiceHistory.ServiceType.NOTES:
 			_show_notes_ui()
 		_:
-			_show_default_ui(service)
+			_show_default_ui()
 
 func _hide_tabs() -> void:
 	tc_chats.visible = false
@@ -167,12 +187,9 @@ func _show_notes_ui():
 	clone_chat_btn.visible = false
 	new_chat_button.visible = false
 
-func _show_default_ui(service: Service):
-	# Fallback UI based on service properties
-	if service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
-		_show_chat_ui()
-	else:
-		_show_notes_ui()
+func _show_default_ui():
+	# Fallback to chat UI
+	_show_chat_ui()
 
 func _on_tc_chats_tab_changed(tab: int) -> void:
 	# Handle tab switching within the current service type
@@ -193,6 +210,10 @@ func get_current_histories() -> Array[ServiceHistory]:
 func get_current_service_type() -> ServiceHistory.ServiceType:
 	return current_service_type
 
+# NEW: Get all services for the current service type
+func get_services_for_current_type() -> Array[Service]:
+	return services_by_type.get(current_service_type, [])
+
 func create_new_history_for_current_service() -> ServiceHistory:
 	var provider = provider_option_button.get_selected_provider()
 	var new_history: ServiceHistory
@@ -212,10 +233,7 @@ func create_new_history_for_current_service() -> ServiceHistory:
 	current_histories.append(new_history)
 	return new_history
 
-
-
 func continue_response(history_item: ChatHistoryItem) -> ChatHistoryItem:
-
 	if get_current_service_type() == ServiceHistory.ServiceType.CHAT:
 		return await SingletonObject.Chats.continue_response(history_item)
 	

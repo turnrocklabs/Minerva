@@ -89,6 +89,6 @@ func _get_note_order_for_remote(note: Note) -> int:
 		return 0
 
 	info("Note '%s' has order %d in tab %d (%d total notes)" % [note.title, note_index, tab_idx, notes_in_tab.size()])
-	info("Remote order is: %s" % note.get_meta("remote_order"))
+	# info("Remote order is: %s" % note.get_meta("remote_order"))
 	
 	return note_index

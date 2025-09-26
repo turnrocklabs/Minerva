@@ -54,6 +54,7 @@ var _active_transfers: = {}  # Dictionary to track transfers by msg_id
 
 func _ready():
 	_client.inbound_buffer_size = 32 * 1024 * 1024
+	_client.outbound_buffer_size = 32 * 1024 * 1024
 	print("Client ID is %s" % client_id)
 	_heartbeat_timer = Timer.new()
 	_heartbeat_timer.set_one_shot(false)

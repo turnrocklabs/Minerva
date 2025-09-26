@@ -211,8 +211,8 @@ func deserialize_project(data: Dictionary) -> int:
 		_initialize_chat_pane()
 
 	# Initialize notes pane with histories
-	if SingletonObject.Notes:
-		_initialize_notes_pane()
+	# if SingletonObject.Notes:
+		# _initialize_notes_pane()
 
 	# Deserialize editors
 	SingletonObject.editor_container.clear_editor_tabs()
@@ -364,7 +364,12 @@ func open_project_given_path(project_path: String) -> int:
 
 	await get_tree().process_frame
 
-	SingletonObject.clear_registered_objects()
+	# don't clear registered object, at least not all of them
+	# if project is opened and there are remote notes, this will get messed up
+	# because them we cant see if some note if already present.
+	# instead, when get_registered_object, it checks if the object is valid or not
+	# and returns null of it's deleted, so it's safe to leave them not deleted
+	# SingletonObject.clear_registered_objects()
 
 	# Deserialize with error handling
 	var deserialize_result = await deserialize_project(json)

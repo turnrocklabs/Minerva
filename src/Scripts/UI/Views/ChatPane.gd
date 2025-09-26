@@ -345,6 +345,8 @@ func execute_hcp_chat():
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 	user_history_item.Type = ChatHistoryItem.PartType.TEXT
 
+	Core.dynamic_ui_generator.clear_output(dynamic_ui_container)
+
 	var user_msg_node: = history.VBox.add_history_item(user_history_item)
 	
 	history.HistoryItemList.append(user_history_item)
@@ -388,7 +390,6 @@ func execute_hcp_chat():
 
 		# Change the history item and the message node will update itself
 		model_msg_node.history_item = chi
-		history.HistoryItemList.append(chi)
 
 		## Inform the user history item that the response has arrived
 		user_history_item.response_arrived.emit(chi)
@@ -1005,7 +1006,7 @@ func _on_btn_microphone_pressed():
 
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
-	# SingletonObject.ChatList = []  # Comment this out temporarily
+	SingletonObject.ChatList = []  # Comment this out temporarily
 	for child in get_children():
 		if child is ScrollContainer:
 			var vbox_chat = child.get_child(0)

@@ -100,6 +100,11 @@ func _highjack_note_controls():
 ## (is_note_initialized and initialized signals are used).
 func set_state(new_state: SyncState, when_ready: = true) -> void:
 
+	if not is_instance_valid(note):
+		push_warning("Tried to update state for note that has been deleted")
+		sync_manager.cleanup_controller(note.uuid)
+		return
+
 	if when_ready:
 		if not note.is_note_initialized():
 			note.initialized.connect(
@@ -134,6 +139,14 @@ func sync_note(display_error: = true) -> bool:
 
 	return success
 
+## [class NoteSyncController] automatically starts a sync timer 
+## when a remote notes state changes to [enum SyncState.LOCAL_CHANGES].[br]
+## The timer is reset if changes happen again, and times out only when there are
+## no changes for a set period of time.[br]
+## This methods returns whether or not this current controllers note has a timer running.
+func is_queued_for_sync() -> bool:
+	return is_instance_valid(_sync_timer) and _sync_timer.time_left > 0
+
 func _on_state_updated() -> void:
 	print("Updated %s state to %s" % [note, state])
 	# if not ready the _init function sets up a signal to update the note button
@@ -150,7 +163,7 @@ func _on_state_updated() -> void:
 		# revert he remove button back
 		note.remove_handle = Callable()
 		note.remove_icon = null
-		note._remove_button.text = ""
+		note._remove_button.tooltip_text = "Delete"
 
 		# disable the button for half a second, so the user doesnt accidentally delete it locally also
 		note._remove_button.disabled = true
@@ -167,7 +180,7 @@ func _on_state_updated() -> void:
 
 		note.remove_handle = _on_note_remove_button_pressed
 		note.remove_icon = _cloud_off_icon
-		note._remove_button.text = "Make Local"
+		note._remove_button.tooltip_text = "Make Local"
 
 		match state:
 			SyncState.SYNCING:
@@ -278,6 +291,9 @@ func _on_note_change() -> void:
 
 func _on_note_tab_changed(tab_idx: int) -> void:
 	if _state_info == null:
+		# if this was a local only note, just leave it as that
+		if state == SyncState.LOCAL_ONLY: return
+
 		state = SyncState.LOCAL_CHANGES
 		return
 	

@@ -36,5 +36,8 @@ static func create(field_params: Dictionary, input: = true) -> NumberField:
 func get_user_data():
 	return _field_spin_box.value
 
+func clear_data() -> void:
+	update_output(0)
+
 func update_output(value: float) -> void:
 	_field_spin_box.value = value

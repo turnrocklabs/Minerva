@@ -45,9 +45,13 @@ func get_user_data():
 	
 	return fa
 
+func clear_data() -> void:
+	update_output(null)
+
 func update_output(fa: FileAccess) -> void:
 	if not fa:
 		print_debug("FileAccess object is null")
+		_texture_rect.texture = null
 		return
 	
 	var img: = Image.new()
