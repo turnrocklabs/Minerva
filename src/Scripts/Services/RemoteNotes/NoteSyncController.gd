@@ -59,7 +59,15 @@ var state: SyncState = SyncState.LOCAL_ONLY:
 		print("Emitted signal for %s" % note)
 		_on_state_updated()
 
-var _sync_timer: SceneTreeTimer 
+
+## Amount of seconds to wait before attempting another auto sync on note change, if one already failed
+const FAILURE_COOLDOWN: = 10
+
+var _sync_timer: SceneTreeTimer
+## If last sync failed
+var _sync_failed: = false
+## Last sync timestamp
+var _last_sync: float
 
 var _state_info: SyncStateInfo
 
@@ -205,8 +213,11 @@ func _on_state_updated() -> void:
 
 				# Start a timer that will update this note in 2 seconds of inactivity
 				# if any changes occurs again, the timer will be reset
-				_sync_timer = note.get_tree().create_timer(2)
-				_sync_timer.timeout.connect(_on_sync_timer_timeout)
+				
+				# if last sync didn't failed or more than FAILURE_COOLDOWN
+				if not _sync_failed or Time.get_unix_time_from_system() - _last_sync > FAILURE_COOLDOWN:
+					_sync_timer = note.get_tree().create_timer(2)
+					_sync_timer.timeout.connect(_on_sync_timer_timeout)
 
 				note.sync_controller_button.tooltip_text = "Local changes"
 				note.sync_controller_button.text = "●"
@@ -217,7 +228,11 @@ func _on_state_updated() -> void:
 
 
 func _on_sync_timer_timeout() -> void:
-	if await sync_note(false):
+	_sync_failed = not await sync_note(false)
+	
+	_last_sync = Time.get_unix_time_from_system()
+
+	if not _sync_failed:
 		SingletonObject.create_toast_notification("Synced the %s" % note)
 	else:
 		SingletonObject.create_toast_notification("Couldn't sync the %s" % note, ToastNotification.Type.ERROR)
