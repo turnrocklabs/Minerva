@@ -26,5 +26,8 @@ static func create(field_params: Dictionary, input: = true) -> BoolField:
 func get_user_data():
 	return _field_check_box.button_pressed
 
+func clear_data() -> void:
+	update_output(false)
+
 func update_output(on: bool) -> void:
 	_field_check_box.button_pressed = on

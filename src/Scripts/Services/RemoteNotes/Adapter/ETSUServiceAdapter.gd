@@ -113,7 +113,7 @@ func save_notes(notes: Array[Note]) -> bool:
 		.receive()
 	)
 
-	_last_response = msg
+	_last_response = msg if msg != null else {}
 	
 	if not msg:
 		SingletonObject.ErrorDisplay("Can't save", "Couldn't save the note to remote")

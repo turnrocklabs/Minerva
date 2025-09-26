@@ -35,6 +35,9 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 func get_user_data():
 	return _selected_notes
 
+func clear_data() -> void:
+	update_output([])
+
 func update_output(notes: Array) -> void:
 	_selected_notes.clear()
 	_selected_notes.assign(notes)

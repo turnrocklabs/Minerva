@@ -254,3 +254,88 @@ func get_item_index_for_provider(provider: BaseProvider) -> int:
 					return i
 	
 	return -1
+
+
+func switch_to_provider_set_for_services(services: Array):
+	"""Switch provider set for multiple services of the same type"""
+	if services.is_empty():
+		switch_to_provider_set("default")
+		return
+	
+	# Create a combined key for multiple services
+	var combined_key = _create_combined_services_key(services)
+	
+	# Check if we already have a combined set for these services
+	if not provider_sets.has(combined_key):
+		_create_combined_services_provider_set(services, combined_key)
+	
+	current_set_key = combined_key
+	_rebuild_dropdown()
+
+func _create_combined_services_key(services: Array) -> String:
+	"""Create a unique key for a combination of services"""
+	var service_ids: Array[String] = []
+	for service in services:
+		service_ids.append(service.client_id)
+	service_ids.sort()
+	return "combined_" + "_".join(service_ids)
+
+func _create_combined_services_provider_set(services: Array, key: String):
+	"""Create a provider set that combines providers from multiple services"""
+	var combined_providers: Array[ProviderItemData] = []
+	
+	# Check if any service is the internal chat service
+	var has_internal_chat = false
+	for service in services:
+		if service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
+			has_internal_chat = true
+			break
+	
+	# If we have internal chat service, start with default providers
+	if has_internal_chat:
+		var default_providers = provider_sets.get("default", [])
+		for provider_data in default_providers:
+			if not provider_data.is_core_provider:  # Only add standard providers, not core ones
+				var new_data = ProviderItemData.new(
+					provider_data.display_name,
+					provider_data.id,
+					provider_data.metadata,
+					provider_data.tooltip,
+					provider_data.provider_script,
+					provider_data.is_core_provider
+				)
+				combined_providers.append(new_data)
+	
+	# Add core providers from all services
+	var next_core_id = combined_providers.size()
+	for service in services:
+		for action in service.actions:
+			# Check if this action already exists
+			if _action_exists_in_provider_list(action, combined_providers):
+				continue
+			
+			var item_name = action.name
+			item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
+			
+			var provider_data = ProviderItemData.new(
+				item_name,
+				next_core_id,
+				[service, action],
+				service.name,
+				null,
+				true
+			)
+			
+			combined_providers.append(provider_data)
+			next_core_id += 1
+	
+	# Store the combined provider set
+	provider_sets[key] = combined_providers
+
+func _action_exists_in_provider_list(action, provider_list: Array[ProviderItemData]) -> bool:
+	"""Check if an action already exists in a provider list"""
+	for provider_data in provider_list:
+		if provider_data.is_core_provider and provider_data.metadata is Array:
+			if provider_data.metadata.size() >= 2 and provider_data.metadata[1] == action:
+				return true
+	return false

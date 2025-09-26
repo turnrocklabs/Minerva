@@ -48,6 +48,9 @@ func get_user_data():
 
 	return data
 
+func clear_data() -> void:
+	update_output([])
+
 func update_output(data: Array) -> void:
 	
 	# first make sure we have enough items to match the output data size

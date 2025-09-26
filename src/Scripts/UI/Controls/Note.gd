@@ -578,7 +578,9 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 	note.modulate.a = 1
 	preview_control.queue_free()
 
-	SingletonObject.notes_sync_manger.sync_notes([note])
+	var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+	if controller.state != NoteSyncController.SyncState.LOCAL_ONLY:
+		SingletonObject.notes_sync_manger.sync_notes([note])
 
 # endregion
 

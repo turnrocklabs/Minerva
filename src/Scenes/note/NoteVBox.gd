@@ -44,7 +44,9 @@ func _on_vbox_child_entered_tree(node: Node):
 		
 
 func _on_vbox_child_exiting_tree(node: Node):
-	if node is Note: pass
+	if node is Note:
+		# call deferred so the note is gone from the vbox when _update_bulk_button is called
+		_update_bulk_button.call_deferred()
 
 ## Adds the [class Note] object to the VBox container of this instance.
 func add_note(note: Note, index: int = 0):
@@ -66,14 +68,17 @@ func _on_remote_check_button_toggled(toggled_on: bool) -> void:
 	auto_upload_toggled.emit(toggled_on)
 
 
-func _get_local_notes() -> Array:
+func _get_local_notes(exclude_queued_notes: = true) -> Array:
 	return get_notes().filter(
 		func(note: Note):
 			if note.is_queued_for_deletion(): return false
 			
 			var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
 			print("%s state is %s" % [note, controller.state])
-			return not controller.state in [NoteSyncController.SyncState.SYNCED, NoteSyncController.SyncState.SYNCING]
+			return (
+				not controller.state in [NoteSyncController.SyncState.SYNCED, NoteSyncController.SyncState.SYNCING] and
+				not exclude_queued_notes or not controller.is_queued_for_sync()
+			)
 	)
 
 
@@ -89,9 +94,6 @@ func _on_bulk_upload_button_pressed() -> void:
 
 
 func _update_bulk_button() -> void:
-	print("\n")
-	print("Upldate bulk button")
-	print("\n")
 	# get all notes that are not synced
 	var notes: = _get_local_notes()
 
