@@ -568,7 +568,6 @@ func get_service_actions(service_id: String) -> Array:
 
 
 func get_action_input_requirements(service_id: String, action_name: String) -> Dictionary:
-	"""Get the input requirements for a specific action"""
 	var actions = get_service_actions(service_id)
 	for action in actions:
 		if action.name == action_name:
