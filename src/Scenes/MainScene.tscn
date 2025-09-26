@@ -7,7 +7,7 @@
 [ext_resource type="Script" uid="uid://dslveoaldvc6v" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
 [ext_resource type="PackedScene" uid="uid://booxo77json0y" path="res://Scenes/windows/PreferencesPopup.tscn" id="3_3hcc1"]
-[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
+[ext_resource type="Script" uid="uid://dgvwmbh8gl2xv" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" uid="uid://c2endsksj28na" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="3_xdign"]
 [ext_resource type="Script" uid="uid://enk3c5lidc0h" path="res://Scripts/many_new_files_window.gd" id="4_0j15c"]

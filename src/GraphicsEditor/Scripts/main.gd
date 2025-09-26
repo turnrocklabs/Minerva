@@ -1,8 +1,8 @@
 extends Control
 
-@onready var _main_editor_container: VBoxContainer = %MainEditorContainer
+#@onready var _main_editor_container: VBoxContainer = %MainEditorContainer
 @onready var _editor_tab_bar: TabBar = %EditorTabBar
-@onready var _add_tab_button: Button = %AddTabButton
+#@onready var _add_tab_button: Button = %AddTabButton
 @onready var _tabs_panel_container: PanelContainer = %TabsPanelContainer
 
 
@@ -11,7 +11,7 @@ func _ready() -> void:
 
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	pass
 
 

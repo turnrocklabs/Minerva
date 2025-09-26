@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=26 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://Assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -21,6 +21,7 @@
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://Assets/icons/Hand.png" id="15_ow12a"]
 [ext_resource type="Texture2D" uid="uid://c4rbfgr3eg45t" path="res://Assets/icons/graphics_editor/transform.svg" id="16_nin75"]
 [ext_resource type="Texture2D" uid="uid://cqj3j0kugb6ni" path="res://Assets/icons/graphics_editor/center.svg" id="17_tml0f"]
+[ext_resource type="Script" uid="uid://b5c6larm7pjw6" path="res://Scripts/media_gen_socket.gd" id="22_nin75"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_u8jc2"]
 shader = ExtResource("9_u8jc2")
@@ -53,8 +54,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 204.0
+offset_bottom = 696.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 10
@@ -429,6 +430,9 @@ placeholder_text = "type prompt to generate image here ..."
 unique_name_in_owner = true
 layout_mode = 2
 text = "Send request"
+
+[node name="MediaGenSocket" type="Node" parent="."]
+script = ExtResource("22_nin75")
 
 [connection signal="popup_hide" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_popup_hide"]
 [connection signal="pressed" from="LayerCardsPopupPanel/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]

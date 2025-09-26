@@ -50,6 +50,11 @@ signal compose_finished(image: Image)
 	speech_bubble_tool: _speech_bubble_options,
 }
 
+@onready var media_gen_socket: Node = $MediaGenSocket
+@onready var image_gen_popup_panel: PopupPanel = %ImageGenPopupPanel
+@onready var prompt_text_edit: TextEdit = %PromptTextEdit
+@onready var send_prompt_button: Button = %SendPromptButton
+
 #endregion
 var canvas_size: = Vector2i(1000, 1000)
 
@@ -875,10 +880,12 @@ var http_request: HTTPRequest = null
 
 func _on_prompt_button_pressed() -> void:
 	%ImageGenPopupPanel.popup_centered()
+	
 
 
 
 func _on_send_prompt_button_pressed() -> void:
 	%ImageGenPopupPanel.hide()
+	media_gen_socket.send_media_gen_request(prompt_text_edit.text)
 
 #endregion HTTP image gen
