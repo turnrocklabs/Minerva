@@ -71,14 +71,19 @@ func _on_remote_check_button_toggled(toggled_on: bool) -> void:
 func _get_local_notes(exclude_queued_notes: = true) -> Array:
 	return get_notes().filter(
 		func(note: Note):
-			if note.is_queued_for_deletion(): return false
+			if note.is_queued_for_deletion(): 
+				return false
 			
 			var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
-			print("%s state is %s" % [note, controller.state])
-			return (
-				not controller.state in [NoteSyncController.SyncState.SYNCED, NoteSyncController.SyncState.SYNCING] and
-				not exclude_queued_notes or not controller.is_queued_for_sync()
-			)
+			
+			# Include notes that are not synced/syncing
+			var is_local = not controller.state in [NoteSyncController.SyncState.SYNCED, NoteSyncController.SyncState.SYNCING]
+			
+			# If we want to exclude queued notes, check that condition
+			if exclude_queued_notes and controller.is_queued_for_sync():
+				return false
+			
+			return is_local
 	)
 
 
