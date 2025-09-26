@@ -406,7 +406,7 @@ func await_message() -> AwaitMessage:
 
 
 func get_service_history_type(service: Service) -> ServiceHistory.ServiceType:
-	if service.client_id == "service:etsu-notes":
+	if service.client_id == "etsu-notes":
 		return NotesServiceHistory.ServiceType.NOTES
 	
 	elif service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
