@@ -55,9 +55,7 @@ var graphics_editor: GraphicsEditorV2
 enum Type {
 	TEXT,
 	GRAPHICS,
-	WhiteBoard, # TODO: To be removed
-	NOTE_EDITOR,
-	VIDEO
+	VIDEO,
 }
 
 
@@ -67,24 +65,35 @@ enum Type {
 ## opening a new one for same associated object.
 var associated_object:
 	set(value):
+		prints("AS SET TO:", value)
 		associated_object = value
+		_handle_associated_object_change()
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 
-var note_saved: bool = false
 ## Callable that overrides what happens when user clicks the editor "save" button.
 var _save_override: Callable
 
 var tab_title: String = "":
 	set(value):
 		tab_title = value
+		
+		if not SingletonObject.editor_pane.Tabs.is_ancestor_of(self):
+			return
+
+		var idx: = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(self)
+		if idx != -1:
+			SingletonObject.editor_pane.Tabs.set_tab_title(idx, value)
+
 		if code_edit:
 			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
+
 var file: String:
 	set(value):
 		file = value
 		if code_edit != null:
 			code_edit.syntax_highlighter = update_code_hightlighter(file)
 		%reloadButton.disabled = false
+
 #var file_path: String
 var type: Type
 var _file_saved := false
@@ -335,7 +344,7 @@ func get_saved_state() -> int:
 			# if there's associated_object and the content matches add the ASSOCIATED_OBJECT_SAVED flag
 			if associated_object:
 				if associated_object is Note:
-					if code_edit.text == associated_object.memory_item.Content:
+					if associated_object.content_matches(code_edit.text):
 						state |= ASSOCIATED_OBJECT_SAVED
 				
 				# if it's not a note, just mark it as saved
@@ -343,7 +352,7 @@ func get_saved_state() -> int:
 					state |= ASSOCIATED_OBJECT_SAVED
 			
 			# if we have no file or associated object, but the content is marked as saved
-			# that usually means that the editors was just created (content is emtry string)
+			# that usually means that the editors was just created (content is empty string)
 			if not (file or is_instance_valid(associated_object)) and code_edit.text == code_edit.saved_content:
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
@@ -357,7 +366,6 @@ func get_saved_state() -> int:
 			if associated_object:
 				if associated_object is Note:
 					state |= ASSOCIATED_OBJECT_SAVED
-					# associated_object.memory_item
 				
 				else:
 					state |= ASSOCIATED_OBJECT_SAVED
@@ -411,12 +419,8 @@ func save_file_to_disc(path: String) -> void:
 			code_edit.tag_saved_version()
 			code_edit.saved_content = code_edit.text
 			
-			# Update associated note if exists
-			if has_meta("memory_item"):
-				_update_memory_item(get_meta("memory_item"))
-			elif is_instance_valid(associated_object) and associated_object is Note:
-				_update_memory_item(associated_object.memory_item)
-				associated_object.memory_item = associated_object.memory_item  # Force update
+			if associated_object is Note:
+				_update_note(associated_object)
 
 		Type.GRAPHICS:
 			# Save image to file
@@ -435,12 +439,8 @@ func save_file_to_disc(path: String) -> void:
 				
 				dialog.filters = original_filters  # Restore original filters
 				
-				# Update associated note if exists
-				if has_meta("memory_item"):
-					_update_memory_item(get_meta("memory_item"))
-				elif is_instance_valid(associated_object) and associated_object is Note:
-					_update_memory_item(associated_object.memory_item)
-					associated_object.memory_item = associated_object.memory_item  # Force update
+				if associated_object is Note:
+					_update_note(associated_object)
 
 				graphics_editor.saved = true
 
@@ -475,32 +475,47 @@ func _on_save_button_pressed():
 
 
 func _on_create_note_button_pressed() -> void:
-
-	# breakpoint
-
+	
 	if is_instance_valid(associated_object) and associated_object is Note:
-		_update_memory_item(associated_object.memory_item)
-		associated_object.memory_item = associated_object.memory_item # force the setter to update the note
-		
-	else:
-		if Type.TEXT == type:
-			if file:
-				associated_object = SingletonObject.NotesTab.add_note(file.get_file(), code_edit.text)
-			elif tab_title:
-				associated_object = SingletonObject.NotesTab.add_note(tab_title, code_edit.text)
-			else:
-				associated_object = SingletonObject.NotesTab.add_note("Note from Editor", code_edit.text)
+		_update_note(associated_object)
+		SingletonObject.UpdateUnsavedTabIcon.emit()
+		return
+	
+	var new_note: Note
 
-		if Type.GRAPHICS == type:
-			var editor_image = await graphics_editor.compose_final_image()
-			if tab_title:
-				associated_object = SingletonObject.NotesTab.add_image_note("Graphic Note", editor_image)
-			elif file:
-				associated_object =  SingletonObject.NotesTab.add_image_note(file.get_file(), editor_image, "Sketch")
-			else:
-				associated_object = SingletonObject.NotesTab.add_image_note("From file Editor", editor_image, "Sketch")
+	match type:
+		Type.TEXT:
+			new_note = Note.create_text_note(tab_title, code_edit.text)
+		Type.GRAPHICS:
+			new_note = Note.create_image_note(tab_title, await graphics_editor.compose_final_image())
+		_:
+			new_note = Note.create_error_note(tab_title, "Can't create a note for the specified Editor type (%s)" % type)
 
+	SingletonObject.notes_container.add_note(new_note)
+	
+	associated_object = new_note
+	
+	await get_tree().process_frame
 	SingletonObject.UpdateUnsavedTabIcon.emit()
+
+
+func _handle_associated_object_change():
+	if associated_object == null: return
+
+	if associated_object is Note:
+		associated_object.title_changed.connect(
+			func():
+				tab_title = associated_object.title
+		)
+
+		# bind the editor to the lambda so we can unset the associated object it the note is getting deleted
+		associated_object.tree_exited.connect(
+			func():
+				if associated_object.is_queued_for_deletion():
+					associated_object = null
+					SingletonObject.UpdateUnsavedTabIcon.emit()
+		)
+
 
 ## Apply diff button stuff 
 func enable_apply_diff() -> void:
@@ -699,10 +714,6 @@ func _on_editor_changed(text: String = ""):
 		# _file_saved = false
 		# file_saved_in_disc = false
 
-	if has_meta("memory_item"):
-		var item: MemoryItem = get_meta("memory_item")
-		_update_memory_item(item)
-
 	content_changed.emit()
 
 #region Top Editor buttons
@@ -751,60 +762,52 @@ func _on_mic_button_pressed() -> void:
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
-func _create_note() -> MemoryItem:
-	var memory_item: = SingletonObject.NotesTab.create_note("Editor Note")
+func _create_note() -> Note:
+	
+	match type:
+		Type.TEXT:
+			return Note.create_text_note("Editor Note", code_edit.text)
+		Type.GRAPHICS:
+			return Note.create_image_note("Editor Note", await graphics_editor.compose_final_image())
+		Type.VIDEO:
+			push_error("Video editor notes not supported")
+
+	return null
+
+func _update_note(note: Note) -> void:
+	# TODO: implement
 	
 	if type == Type.TEXT:
-		memory_item.Type = SingletonObject.note_type.TEXT
-		memory_item.Content = code_edit.text
+		var controls_container = note.get_controls_container() as NoteTextControls
+		controls_container.content = code_edit.text
 	
 	elif type == Type.GRAPHICS:
-		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = await graphics_editor.compose_final_image()
-		print("CREATED GE D_NOTE")
+		var controls_container = note.get_controls_container() as NoteImageControls
+		controls_container.image = await graphics_editor.compose_final_image()
 
-	else:
-		return null # type not supported
+
+func _on_check_button_toggled(_toggled_on: bool):
+	return
+
+	# FIXME:
+	# If the editor is checked and the content changes, the note content is not updated
+	# maybe just create a note and set associated object instead of creating a detached one,
+	# so the user can actually see the content they are sending
+
+	# if not toggled_on:
+	# 	# TODO: remove the note if we decide to go this way instead of creating the actual note
+	# 	pass
+
+	# prints(SingletonObject.detached_notes, toggled_on)
+
+	# var note: = await _create_note()
+
+	# if note == null:
+	# 	SingletonObject.ErrorDisplay("Not supported", "Notes for this editor type are not supported.")
+	# 	return null
 	
-	return memory_item
+	# SingletonObject.detached_notes.append(note)
 
-func _update_memory_item(memory_item: MemoryItem) -> void:
-	if type == Type.TEXT:
-		memory_item.Type = SingletonObject.note_type.TEXT
-		memory_item.Content = code_edit.text
-	
-	elif type == Type.GRAPHICS:
-		memory_item.Type = SingletonObject.note_type.IMAGE
-		memory_item.MemoryImage = await graphics_editor.compose_final_image()
-
-
-
-func _on_check_button_toggled(toggled_on: bool):
-	var item: MemoryItem
-
-	if not has_meta("memory_item"):
-		item = await _create_note()
-		if not item:
-			SingletonObject.ErrorDisplay("Failed", "Failed to create memory item from the editor.")
-			_note_check_button.button_pressed = false
-			return
-		
-		item.toggled.connect(
-			func(on: bool):
-				_note_check_button.button_pressed = on
-		)
-
-		set_meta("memory_item", item)
-		SingletonObject.DetachedNotes.append(item)
-	else:
-		item = get_meta("memory_item")
-		var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
-
-		if not present:
-			SingletonObject.DetachedNotes.append(item)
-
-	_update_memory_item(item)
-	item.Enabled = toggled_on
 
 func _on_close_warrning(path):
 	path.visible = false;

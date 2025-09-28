@@ -45,15 +45,22 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 
 
 func generate_content(prompt: Array[Variant], _additional_params: Dictionary={}):
-	
-	if not SingletonObject.preferences_popup.selected_action:
-		var bot_response:= BotResponse.new()
-		bot_response.error = "No service selected in preferences"
-		return bot_response
-
 	var last_msg = prompt.back()
 	if not last_msg:
 		last_msg = {}
+
+	# If a notes adapter can handle this, delegate it to it
+	if service.client_id in SingletonObject.notes_sync_manger.service_adapters:
+		var adapter: = SingletonObject.notes_sync_manger.service_adapters[service.client_id]
+
+		# handle action will handle state updates
+		await adapter.handle_action(action, last_msg.get("notes"))
+
+
+		var bot_response:= _parse_request_results(adapter.get_last_action_response())
+
+		return bot_response
+
 
 	var msg = await Core.send_message(service, action, last_msg).receive()
 	
@@ -78,13 +85,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	return chat_item.HcpData
 
 
-func wrap_memory(item: MemoryItem) -> Variant:
-	var output: String = "Given this background information:\n\n"
-	output += "### Reference Information ###\n"
-	output += item.Content
-	output += "### End Reference Information ###\n\n"
-	output += "Respond to the user's message: \n\n"
-	return output
+func wrap_memory(_item: Note) -> Variant:
+	return ""
 
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()

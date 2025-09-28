@@ -1,7 +1,7 @@
 class_name ServiceSelection
 extends Window
 
-signal service_selected(service: Service, action: Action)
+signal service_selected(service: Service)
 
 @onready var item_list: ItemList = %ItemList
 @onready var description_label: Label = %DescriptionLabel
@@ -10,7 +10,6 @@ signal service_selected(service: Service, action: Action)
 @onready var choose_button: Button = %Button
 
 var selected_service: Service
-var selected_actions: Array[Action]
 
 func _ready() -> void:
 	close_requested.connect(hide)
@@ -40,35 +39,23 @@ func _on_item_list_item_selected(index: int) -> void:
 
 	
 	action_item_list.select(0)
-	_on_action_item_list_multi_selected(0, true)
+	_on_action_item_list_item_selected(0)
 
 	selected_service = service
 
+	choose_button.text = "Choose %s" % [selected_service.name]
+	choose_button.disabled = false
+
 func _on_button_pressed() -> void:
 
-	for selected_item_idx in action_item_list.get_selected_items():
-		var action: Action = action_item_list.get_item_metadata(selected_item_idx)
-
-		service_selected.emit(selected_service, action)
+	service_selected.emit(selected_service)
 
 	hide()
 
 
 
 
-func _on_action_item_list_multi_selected(index:int, _selected:bool) -> void:
-	if index == -1:
-		choose_button.disabled = true
-		return
-
-	choose_button.disabled = false
-	
+func _on_action_item_list_item_selected(index: int) -> void:	
 	var action: Action = action_item_list.get_item_metadata(index)
 	
 	action_description_button.text = action.description
-
-	# if selected:
-	# 	selected_actions.append(action)
-	# else:
-	# 	selected_actions.erase(action)
-

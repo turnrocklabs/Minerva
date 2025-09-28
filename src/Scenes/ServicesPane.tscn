@@ -1,0 +1,79 @@
+[gd_scene load_steps=4 format=3 uid="uid://cjpdxr0r3wbo4"]
+
+[ext_resource type="Script" uid="uid://bm2dm7vuljgw2" path="res://Scripts/UI/Views/services_pane.gd" id="1_nfv6s"]
+[ext_resource type="Texture2D" uid="uid://c4k11pujjnrg6" path="res://assets/icons/right-arrow-16.png" id="2_cafbx"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_cafbx"]
+font_size = 36
+
+[node name="ServicesPane" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_nfv6s")
+
+[node name="PanelContainer" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PanelContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ChatPaneButton" type="Button" parent="PanelContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+icon = ExtResource("2_cafbx")
+
+[node name="TitleLabel" type="Label" parent="PanelContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "No services selected"
+label_settings = SubResource("LabelSettings_cafbx")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ServiceSelectionContainer" type="VBoxContainer" parent="PanelContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ServicesOptionButton" type="OptionButton" parent="PanelContainer/VBoxContainer/HBoxContainer/ServiceSelectionContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HSeparator" type="HSeparator" parent="PanelContainer/VBoxContainer/HBoxContainer/ServiceSelectionContainer"]
+layout_mode = 2
+
+[node name="ActionsOptionButton" type="OptionButton" parent="PanelContainer/VBoxContainer/HBoxContainer/ServiceSelectionContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="DynamicUIContainer" type="VBoxContainer" parent="PanelContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 3.0
+
+[node name="SendButton" type="Button" parent="PanelContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "SEND"
+
+[connection signal="pressed" from="PanelContainer/VBoxContainer/ChatPaneButton" to="." method="_on_chat_pane_button_pressed"]
+[connection signal="item_selected" from="PanelContainer/VBoxContainer/HBoxContainer/ServiceSelectionContainer/ServicesOptionButton" to="." method="_on_services_option_button_item_selected"]
+[connection signal="item_selected" from="PanelContainer/VBoxContainer/HBoxContainer/ServiceSelectionContainer/ActionsOptionButton" to="." method="_on_actions_option_button_item_selected"]
+[connection signal="pressed" from="PanelContainer/VBoxContainer/SendButton" to="." method="_on_send_button_pressed"]

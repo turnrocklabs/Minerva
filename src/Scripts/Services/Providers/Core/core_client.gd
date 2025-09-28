@@ -54,6 +54,7 @@ var _active_transfers: = {}  # Dictionary to track transfers by msg_id
 
 func _ready():
 	_client.inbound_buffer_size = 32 * 1024 * 1024
+	_client.outbound_buffer_size = 32 * 1024 * 1024
 	print("Client ID is %s" % client_id)
 	_heartbeat_timer = Timer.new()
 	_heartbeat_timer.set_one_shot(false)
@@ -63,7 +64,6 @@ func _ready():
 	minerva_secret = OS.get_environment("MINERVA_SECRET")
 	if minerva_secret.is_empty():
 		print("Error: MINERVA_SECRET environment variable is not set")
-		minerva_secret = "m30wM1n3rv123456"
 
 
 
@@ -125,11 +125,9 @@ func set_entity_type(type):
 	_entity_type = type
 
 func connect_to_core(url: String) -> bool:
-	# FIXME: return this
-	# if minerva_secret.is_empty():
-	# 	print("Error: Cannot connect without MINERVA_SECRET set")
-	# 	return false
-	minerva_secret = "cat"
+	if minerva_secret.is_empty():
+		print("Error: Cannot connect without MINERVA_SECRET set")
+		return false
 
 	var err = _client.connect_to_url(url)
 	if err != OK:
@@ -328,7 +326,7 @@ func decode_u32(data, offset):
 	return value
 
 func _handle_message(data, binary_data = null):
-	print("Received message: ", JSON.stringify(data))
+	# print("Received message: ", JSON.stringify(data))
 	var cmd = data.get("cmd", "")
 	var topic = data.get("topic", "")
 	var entity_type = data.get("entity_type", "")

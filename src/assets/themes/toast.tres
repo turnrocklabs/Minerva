@@ -1,0 +1,41 @@
+[gd_resource type="Theme" load_steps=5 format=3 uid="uid://ip2e1pskfoes"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_6g6c6"]
+bg_color = Color(0.0918132, 0.10875, 0.135159, 1)
+border_width_left = 10
+border_color = Color(0.507244, 1.26945e-06, 1.92523e-07, 1)
+border_blend = true
+corner_radius_top_left = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_suutf"]
+bg_color = Color(0.0918132, 0.10875, 0.135159, 1)
+border_width_left = 10
+border_color = Color(0.154058, 2.38729e-05, 0.59725, 1)
+border_blend = true
+corner_radius_top_left = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ffl4h"]
+bg_color = Color(0.0918132, 0.10875, 0.135159, 1)
+border_width_left = 10
+corner_radius_top_left = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_wcv8o"]
+bg_color = Color(0.0918132, 0.10875, 0.135159, 1)
+border_width_left = 10
+border_color = Color(0.76572, 0.765719, 7.70092e-07, 1)
+border_blend = true
+corner_radius_top_left = 10
+corner_radius_bottom_left = 10
+
+[resource]
+ToastError/base_type = &"ToastNotification"
+ToastError/styles/panel = SubResource("StyleBoxFlat_6g6c6")
+ToastInfo/base_type = &"ToastNotification"
+ToastInfo/styles/panel = SubResource("StyleBoxFlat_suutf")
+ToastNotification/base_type = &"PanelContainer"
+ToastNotification/styles/panel = SubResource("StyleBoxFlat_ffl4h")
+ToastWarning/base_type = &"ToastNotification"
+ToastWarning/styles/panel = SubResource("StyleBoxFlat_wcv8o")

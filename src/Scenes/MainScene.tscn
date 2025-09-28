@@ -1,8 +1,7 @@
 [gd_scene load_steps=69 format=3 uid="uid://cw1ig4ql83b6a"]
 
-[ext_resource type="Script" uid="uid://de2uyvmvju8y2" path="res://Scripts/UI/Views/MemoryTabs.gd" id="1_gunt8"]
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
-[ext_resource type="Script" uid="uid://kdb2dck4ym74" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
+[ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
 [ext_resource type="Script" uid="uid://xj3syc210tqo" path="res://Scripts/UI/Views/MainScene.gd" id="2_65hnk"]
 [ext_resource type="PackedScene" uid="uid://d2so5me225hvr" path="res://Scripts/ProjectMenuActions.tscn" id="2_amibn"]
 [ext_resource type="Script" uid="uid://c50ehgelra5bk" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
@@ -36,6 +35,7 @@
 [ext_resource type="Texture2D" uid="uid://bnn2c6bwu3w0e" path="res://assets/icons/file/file_24.svg" id="21_wcf3l"]
 [ext_resource type="Texture2D" uid="uid://cde1opucpvcqd" path="res://assets/icons/file/file_48.svg" id="22_av2ut"]
 [ext_resource type="PackedScene" uid="uid://bbu6grgjnwrvw" path="res://Scenes/TerminalTabContainer.tscn" id="23_ejoiu"]
+[ext_resource type="PackedScene" uid="uid://cjpdxr0r3wbo4" path="res://Scenes/ServicesPane.tscn" id="23_jnakw"]
 [ext_resource type="Texture2D" uid="uid://bjvsgln2l7hyt" path="res://assets/icons/file/file_68.svg" id="23_xw6gv"]
 [ext_resource type="Texture2D" uid="uid://buq3nkd4uw5hb" path="res://assets/icons/brush/brush-48._white.png" id="25_bqwub"]
 [ext_resource type="PackedScene" uid="uid://0ibvob5ejdhq" path="res://Scenes/IconsButton.tscn" id="25_yt5rh"]
@@ -61,8 +61,8 @@
 [ext_resource type="Texture2D" uid="uid://bk13anfwduwom" path="res://assets/icons/plus_icons/add_68.svg" id="42_l3jum"]
 [ext_resource type="Texture2D" uid="uid://c3yhv44gc4qdl" path="res://assets/icons/drawer.png" id="47_dn1w2"]
 [ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
+[ext_resource type="Script" uid="uid://1fueuihora3v" path="res://Scenes/note/NotesContainer.gd" id="57_jnakw"]
 [ext_resource type="Script" uid="uid://b172wgd7hty1f" path="res://Scripts/Drawer/Drawer_manager.gd" id="58_a7b38"]
-[ext_resource type="Script" uid="uid://br0s8055lcrgk" path="res://Scripts/Drawer/DrawerTabs.gd" id="58_jnakw"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -435,7 +435,18 @@ custom_minimum_size = Vector2(540, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Chats" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane" instance=ExtResource("2_nwqxj")]
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ServicesPane" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer" instance=ExtResource("23_jnakw")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Chats" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/LeftPane/VBoxContainer" instance=ExtResource("2_nwqxj")]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="MiddlePane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
@@ -678,9 +689,7 @@ custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
-drag_to_rearrange_enabled = true
-tab_focus_mode = 1
-script = ExtResource("1_gunt8")
+script = ExtResource("57_jnakw")
 
 [node name="BottomDrawerControl" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit"]
 unique_name_in_owner = true
@@ -735,7 +744,7 @@ size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 drag_to_rearrange_enabled = true
 tab_focus_mode = 1
-script = ExtResource("58_jnakw")
+script = ExtResource("57_jnakw")
 
 [node name="DropForNode" type="ColorRect" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control"]
 unique_name_in_owner = true
@@ -836,7 +845,7 @@ visible = false
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnDrawer" to="." method="_on_btn_drawer_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachment_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_new_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="NewThreadPopup" method="_on_btn_new_tab_pressed" binds= [false]]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_tab_clicked"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddNote" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_note_pressed"]

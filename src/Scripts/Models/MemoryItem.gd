@@ -5,92 +5,100 @@ extends RefCounted ## so I get memory management and signals.
 
 ## This signal is emitted when [member Enabled] is changed.
 signal toggled(on: bool)
+signal changed(property: StringName)
+
+static var SERIALIZER_FIELDS = ["UUID" ,"Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "Visible", "Pinned", "Order", "Expanded", "LastYSize", "isDrawer"]
 
 
-static var SERIALIZER_FIELDS = ["UUID" ,"Enabled", "File", "Locked", "Type", "Title", "Content", "MemoryImage", "ImageCaption", "Audio", "DataType", "Visible", "Pinned", "Order", "Expanded", "LastYSize", "isDrawer"]
+## Emits a signal that the property [parameter prop_name] has been updated.[br]
+## if [parameter update_saved_state] is `true`, `SingletonObject.save_state(false)` will also be called.
+func _property_updated(prop_name: StringName, update_saved_state: = true) -> void:
+
+	changed.emit(prop_name)
+	
+	if update_saved_state:
+		SingletonObject.save_state(false)
+
 
 var UUID: String = "":
 	set(value):
 		if UUID == "":
-			UUID = value
-			SingletonObject.save_state(false)
+			UUID = value; _property_updated("UUID")
 		else: 
 			printerr("Tried to update UUID")
 
 var Enabled: bool = true:
 	set(value):
 		if Locked: return
-		Enabled = value
+		Enabled = value; _property_updated("Enabled")
 		toggled.emit(value)
-		SingletonObject.save_state(false)
 
 ## File from which this items content was loaded from
 var File: String:
-	set(value): SingletonObject.save_state(false); File = value
+	set(value): File = value; _property_updated("File")
 
 ## a sha-256 hash computed whenever the item is updated
 var Sha_256: String
 
 ## If memory item is locked, changing the `Enabled` property is not possible
 var Locked: bool = false:
-	set(value): SingletonObject.save_state(false); Locked = value
+	set(value): Locked = value; _property_updated("Locked")
 
 var Type: int = SingletonObject.note_type.TEXT:
-	set(value): SingletonObject.save_state(false); Type = value
+	set(value): Type = value; _property_updated("Type")
 
 var Title: String:
-	set(value): SingletonObject.save_state(false); Title = value
+	set(value): 
+		if not value.is_empty():
+			Title = value; _property_updated("Title")
 
 var Content: String = "":
 	set(value):
-		SingletonObject.save_state(false);
-		var hashed:String = hash_string(value)
-		Sha_256 = hashed
-		Content = value
+		Sha_256 = hash_string(value)
+		Content = value; _property_updated("Content")
 
 var MemoryImage: Image:
-	set(value): SingletonObject.save_state(false); MemoryImage = value
+	set(value): MemoryImage = value; _property_updated("MemoryImage")
 
 var ImageCaption: String = "":
-	set(value): SingletonObject.save_state(false); ImageCaption = value
+	set(value): ImageCaption = value; _property_updated("ImageCaption")
 
 var Audio: AudioStream:
-	set(value): SingletonObject.save_state(false); Audio = value
+	set(value): Audio = value; _property_updated("Audio")
 
 var ContentType: String:
-	set(value): SingletonObject.save_state(false); ContentType = value
+	set(value): ContentType = value; _property_updated("ContentType")
 
 var Visible: bool:
-	set(value): SingletonObject.save_state(false); Visible = value
+	set(value): Visible = value; _property_updated("Visible")
 
 var Pinned: bool:
-	set(value): SingletonObject.save_state(false); Pinned = value
+	set(value): Pinned = value; _property_updated("Pinned")
 
 var Order: int:
-	set(value): SingletonObject.save_state(false); Order = value;
-
-#var FilePath: String:
-	#set(value): SingletonObject.save_state(false); FilePath = value;
+	set(value): Order = value; _property_updated("Order")
 
 var Expanded: bool = true:
-	set(value): SingletonObject.save_state(false); Expanded = value
+	set(value): Expanded = value; _property_updated("Expanded")
 
 var LastYSize: float = 0.0:
-	set(value): SingletonObject.save_state(false); LastYSize = value
-###### ////////////////////////////////////////////////////////////////
-## Every time you add a field to the serializer be sure to add it to the SERIALIZER_FIELDS array at the top
-###### ////////////////////////////////////////////////////////////////
+	set(value): LastYSize = value; _property_updated("LastYSize")
 
 var isCompleted: bool:
-	set(value): SingletonObject.save_state(false); isCompleted = value;
+	set(value): isCompleted = value; _property_updated("isCompleted")
 
 var isDrawer: bool:
 	set(value): isDrawer = value
+
+###### ////////////////////////////////////////////////////////////////
+## Every time you add a field to the serializer be sure to add it to the SERIALIZER_FIELDS array at the top
+###### ////////////////////////////////////////////////////////////////
 
 var OwningThread
 
 func hash_string(input: String) -> String:
 	if input.length() < 1: return ""
+
 	var ctx = HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
 	ctx.update(input.to_utf8_buffer())
@@ -102,7 +110,6 @@ func _init(_OwningThread = null):
 	self.OwningThread = _OwningThread
 	self.Enabled = true
 
-	pass
 
 func _enable_toggle():
 	self.Enabled = !self.Enabled

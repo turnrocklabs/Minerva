@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://d1kf5de6b6g16"]
+[gd_scene load_steps=4 format=3 uid="uid://d1kf5de6b6g16"]
 
 [ext_resource type="Script" uid="uid://cm6qcfshtuoiw" path="res://Scripts/Services/Providers/Core/dynamic_ui/note/NoteField.gd" id="1_x1nt8"]
+[ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="2_rwrlb"]
+[ext_resource type="Texture2D" uid="uid://d255rlap2uelj" path="res://assets/icons/line_edit_clear.svg" id="3_qio8d"]
 
 [node name="Note" type="VBoxContainer"]
 anchors_preset = 15
@@ -12,6 +14,55 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 script = ExtResource("1_x1nt8")
 
+[node name="SelectItemsPersistentWindow" parent="." instance=ExtResource("2_rwrlb")]
+unique_name_in_owner = true
+size = Vector2i(400, 300)
+visible = false
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SelectItemsPersistentWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SelectItemsPersistentWindow/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="SelectItemsPersistentWindow/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+text = "Select available notes:"
+
+[node name="NoteTree" type="Tree" parent="SelectItemsPersistentWindow/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+hide_root = true
+select_mode = 2
+
+[node name="FinishSelectionButton" type="Button" parent="SelectItemsPersistentWindow/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Select"
+
+[node name="ControlsContainer" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SelectItemsButton" type="Button" parent="ControlsContainer"]
+layout_mode = 2
+text = "Select Notes"
+
+[node name="ClearSelectionButton" type="Button" parent="ControlsContainer"]
+layout_mode = 2
+tooltip_text = "Clear note selection"
+icon = ExtResource("3_qio8d")
+
 [node name="FieldName" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
@@ -21,5 +72,17 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 2
+mouse_filter = 1
 fit_content = true
 selection_enabled = true
+
+[node name="DropPanelContainer" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+
+[connection signal="multi_selected" from="SelectItemsPersistentWindow/ScrollContainer/VBoxContainer/NoteTree" to="." method="_on_note_tree_multi_selected"]
+[connection signal="pressed" from="SelectItemsPersistentWindow/ScrollContainer/VBoxContainer/FinishSelectionButton" to="." method="_on_finish_selection_button_pressed"]
+[connection signal="pressed" from="ControlsContainer/SelectItemsButton" to="." method="_on_select_items_button_pressed"]
+[connection signal="pressed" from="ControlsContainer/ClearSelectionButton" to="." method="_on_clear_selection_button_pressed"]

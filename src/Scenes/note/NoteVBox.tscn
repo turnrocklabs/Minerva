@@ -1,0 +1,94 @@
+[gd_scene load_steps=2 format=3 uid="uid://wj5djlbfq0dk"]
+
+[ext_resource type="Script" uid="uid://c1lo0eobpbmku" path="res://Scenes/note/NoteVBox.gd" id="1_njh8t"]
+
+[node name="NoteVBox" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_njh8t")
+
+[node name="RemoteOptionsContainer" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="RemoteOptionsContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Remote authority:"
+
+[node name="RemoteServiceLabel" type="Label" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "None"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RemoteCheckButton" type="CheckButton" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Checking this makes any new notes in this tab automatically upload"
+text = "Auto Upload New Notes in This Tab"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+
+[node name="BulkUploadButton" type="Button" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Upload all notes from the current tab"
+disabled = true
+text = "Upload local notes (0)"
+
+[node name="OptionsContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="OptionsContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ReloadFilesContentButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Reload File Notes"
+
+[node name="CollapseAllButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+text = "Expand All"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[connection signal="toggled" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer/RemoteCheckButton" to="." method="_on_remote_check_button_toggled"]
+[connection signal="pressed" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer2/BulkUploadButton" to="." method="_on_bulk_upload_button_pressed"]
+[connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/ReloadFilesContentButton" to="." method="_on_reload_files_content_button_pressed"]
+[connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/CollapseAllButton" to="." method="_on_collapse_all_button_toggled"]

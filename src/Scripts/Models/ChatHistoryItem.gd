@@ -8,6 +8,7 @@ static var SERIALIZER_FIELDS = [
 	"Role",
 	"InjectedNotes",
 	"Message",
+	"HcpStructure",
 	"HcpData",
 	"Images",
 	"Captions",
@@ -121,8 +122,8 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _te
 
 	# take provider from active tab as one used, if there is one
 	# otherwise the code that initializes this object should set the provider
-	if not SingletonObject.ChatList.is_empty():
-		self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
+	# if not SingletonObject.ChatList.is_empty():
+	# 	self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
 	
 	
 	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
@@ -144,9 +145,14 @@ func _on_response_arrived(item: ChatHistoryItem):
 	if rendered_node:
 		# Set the history_item again to trigger the setter
 		rendered_node.history_item = self
+
 	SingletonObject.play_chat_notification()
-	SingletonObject.NotesTab.Disable_All()
-	SingletonObject.DrawerTab.Disable_All()
+	
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
 
 
 func format(callback: Callable) -> String:
@@ -185,6 +191,7 @@ func Serialize() -> Dictionary:
 		"InjectedNotes": Marshalls.variant_to_base64(InjectedNotes),
 		"Message": Message,
 		"HcpData": HcpData,
+		"HcpStructure": HcpStructure,
 		"Order": Order,
 		"Type": Type,
 		"ModelName": ModelName,

@@ -55,11 +55,21 @@ func get_user_input(input_container: Control) -> Dictionary:
 
 	return data
 
+func clear_output(input_container: Control) -> void:
+	for child in input_container.get_children():
+		if child.has_method("clear_data"):
+			child.clear_data()
+
+
 func set_output(input_container: Control, data: Dictionary) -> Dictionary:
 	for child in input_container.get_children():
 		if child.has_method("update_output"):
 
 			var field_name = child.get_meta("field_name")
+
+			if not field_name in data:
+
+				continue
 
 			child.update_output(data[field_name])
 

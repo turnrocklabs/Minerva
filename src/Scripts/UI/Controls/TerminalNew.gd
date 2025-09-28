@@ -162,58 +162,60 @@ func _create_check_button(row: float) -> void:
 	_check_buttons_container.add_child(btn)
 
 
-func _on_check_button_toggled(toggled_on: bool, btn: CheckButton):
-	var item: MemoryItem
+func _on_check_button_toggled(_toggled_on: bool, _btn: CheckButton):
+	# See Editor._on_check_button_toggled for comment about detached notes
+	pass
+	# var item: MemoryItem
 
-	if not btn.has_meta("memory_item"):
-		item = MemoryItem.new()
-		item.Title = "Terminal Note"
+	# if not btn.has_meta("memory_item"):
+	# 	item = MemoryItem.new()
+	# 	item.Title = "Terminal Note"
 		
-		# content will be every line from this check buttons row to next check button
-		# if theres no next check button, got untill the end
+	# 	# content will be every line from this check buttons row to next check button
+	# 	# if theres no next check button, got untill the end
 
-		item.Content = ""
+	# 	item.Content = ""
 
-		var last: CheckButton
+	# 	var last: CheckButton
 
-		for i in range(_check_buttons_container.get_child_count()-1, -1, -1):
-			var ch = _check_buttons_container.get_child(i)
-			if ch is CheckButton:
-				# break when we reach btn that was toggled
-				if ch == btn:
-					break
+	# 	for i in range(_check_buttons_container.get_child_count()-1, -1, -1):
+	# 		var ch = _check_buttons_container.get_child(i)
+	# 		if ch is CheckButton:
+	# 			# break when we reach btn that was toggled
+	# 			if ch == btn:
+	# 				break
 				
-				last = ch
+	# 			last = ch
 
-		var last_line: int
+	# 	var last_line: int
 
-		# if this IS the last check button go until the end
-		if not last or btn == last:
-			last_line = text_layer.content.size()
-		else:
-			last_line = last.get_meta("row")+1
+	# 	# if this IS the last check button go until the end
+	# 	if not last or btn == last:
+	# 		last_line = text_layer.content.size()
+	# 	else:
+	# 		last_line = last.get_meta("row")+1
 		
-		for i in range(btn.get_meta("row"), last_line):
-			item.Content += "\n"
-			for line_part in text_layer.content[i]:
-				if line_part is String:
-					item.Content += line_part
+	# 	for i in range(btn.get_meta("row"), last_line):
+	# 		item.Content += "\n"
+	# 		for line_part in text_layer.content[i]:
+	# 			if line_part is String:
+	# 				item.Content += line_part
 
-		item.toggled.connect(
-			(func(on: bool, button: CheckButton):
-				button.button_pressed = on).bind(btn)
-		)
+	# 	item.toggled.connect(
+	# 		(func(on: bool, button: CheckButton):
+	# 			button.button_pressed = on).bind(btn)
+	# 	)
 
-		btn.set_meta("memory_item", item)
-		SingletonObject.DetachedNotes.append(item)
-	else:
-		item = btn.get_meta("memory_item")
-		var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
+	# 	btn.set_meta("memory_item", item)
+	# 	SingletonObject.DetachedNotes.append(item)
+	# else:
+	# 	item = btn.get_meta("memory_item")
+	# 	var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
 
-		if not present:
-			SingletonObject.DetachedNotes.append(item)
+	# 	if not present:
+	# 		SingletonObject.DetachedNotes.append(item)
 
-	item.Enabled = toggled_on
+	# item.Enabled = toggled_on
 
 
 func _on_output_received(text: String, type: Terminal.Type) -> void:

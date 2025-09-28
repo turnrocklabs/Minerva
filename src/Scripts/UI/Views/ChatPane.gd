@@ -10,6 +10,7 @@ var container: TabContainer  # Store the TabContainer
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
 var _active_chat_request: = false
+
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
 
 # Script of the default provider to use when creating new chat tab
@@ -26,7 +27,7 @@ func create_user_history_item(text: String) -> ChatHistoryItem:
 # Handle human provider message creation
 func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem) -> void:
 	# Get working memory/notes
-	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider)
+	var working_memory: Array = SingletonObject.notes_container.to_prompt(SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider)
 	
 	# Append working memory to the user history item
 	if working_memory:
@@ -119,8 +120,12 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 	else:
 		model_msg_node.queue_free()
 	
-	SingletonObject.NotesTab.Disable_All()
-	SingletonObject.DrawerTab.Disable_All()
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
+
 
 ## add new chat 
 func _on_new_chat():
@@ -174,7 +179,7 @@ func ensure_chat_open() -> void:
 ## Generates the full turn prompt using the history of the active chat and the selected provider.
 ## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.[br]
 ## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
-## Check `History.To_Prompt` for explanation on `predicate`.
+## Check `History.to_prompt` for explanation on `predicate`.
 func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
 	
 	# if we don't have any chats history_list will be empty
@@ -185,11 +190,13 @@ func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseP
 		var history: ChatHistory = SingletonObject.ChatList[current_tab]
 		if not provider:
 			provider = history.provider
-		history_list = history.To_Prompt(predicate)
+		history_list = history.to_prompt(predicate)
 	
 	if not provider:
 		return []
-	var working_memory: Array = SingletonObject.NotesTab.To_Prompt(provider)
+	
+	var working_memory: Array = SingletonObject.notes_container.to_prompt(provider)
+	
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
@@ -291,8 +298,12 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.rendered_node.render()
 
 	existing_response.rendered_node.loading = false
-	SingletonObject.NotesTab.Disable_All()
-	SingletonObject.DrawerTab.Disable_All()
+	
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
 
 
 func _on_chat_pressed():
@@ -333,6 +344,8 @@ func execute_hcp_chat():
 	user_history_item.HcpStructure = provider.action.input_parameters
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 	user_history_item.Type = ChatHistoryItem.PartType.TEXT
+
+	Core.dynamic_ui_generator.clear_output(dynamic_ui_container)
 
 	var user_msg_node: = history.VBox.add_history_item(user_history_item)
 	
@@ -377,7 +390,6 @@ func execute_hcp_chat():
 
 		# Change the history item and the message node will update itself
 		model_msg_node.history_item = chi
-		history.HistoryItemList.append(chi)
 
 		## Inform the user history item that the response has arrived
 		user_history_item.response_arrived.emit(chi)
@@ -407,8 +419,11 @@ func execute_regular_chat(text: String) -> void:
 	# if we're using the human provider, handle it here
 	if user_history_item.provider is HumanProvider:
 		handle_human_provider_message(history, user_history_item)
-		SingletonObject.NotesTab.Disable_All()
-		SingletonObject.DrawerTab.Disable_All()
+		for i in SingletonObject.notes_container.get_tab_count():
+			SingletonObject.notes_container.disable_notes(i)
+
+		for i in SingletonObject.drawer_notes_container.get_tab_count():
+			SingletonObject.drawer_notes_container.disable_notes(i)
 		return # if user is using Human provider we finish here
 	
 	# Check is the last message is a user message and not do anything if true
@@ -459,8 +474,11 @@ func execute_sequential_chat(text_input: String) -> void:
 		# In execute_sequential_chat function, update this part:
 		if user_history_item.provider is HumanProvider:
 			handle_human_provider_message(history, user_history_item)
-			SingletonObject.NotesTab.Disable_All()
-			SingletonObject.DrawerTab.Disable_All()
+			for j in SingletonObject.notes_container.get_tab_count():
+				SingletonObject.notes_container.disable_notes(j)
+
+			for j in SingletonObject.drawer_notes_container.get_tab_count():
+				SingletonObject.drawer_notes_container.disable_notes(j)
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
@@ -490,8 +508,12 @@ func execute_sequential_chat(text_input: String) -> void:
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 	audio_stop_1.disabled = true
 	_active_chat_request = false
-	SingletonObject.NotesTab.Disable_All()
-	SingletonObject.DrawerTab.Disable_All()
+	
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
 
 var parallel_loading: = preload("res://Scenes/multi_message_loading.tscn")
 var _mutex: Mutex = Mutex.new()
@@ -817,7 +839,7 @@ func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 	
-	SingletonObject.initialize_chats(self)
+	# SingletonObject.initialize_chats(self)
 	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
 	
 	#this is for overriding the separation in the open file dialog
@@ -825,9 +847,10 @@ func _ready():
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
 	
-	
 	SingletonObject.note_toggled.connect(_on_note_toggled)
 	SingletonObject.note_changed.connect(_on_note_changed)
+
+	SingletonObject.Chats = self
 
 
 # if a note is enabled/disabled recalculate the token cost
@@ -952,9 +975,9 @@ func _on_btn_attach_file_pressed():
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	%AttachFileDialog.exclusive = false
 	for fp in paths:
-		SingletonObject.AttachNoteFile.emit(fp)
-		await get_tree().process_frame
-	SingletonObject.NotesTab.render_threads()
+		SingletonObject.notes_container.add_note(
+			Note.create_file_note(fp.get_file(), fp)
+		)
 
 
 func _on_btn_chat_settings_pressed():
@@ -983,7 +1006,7 @@ func _on_btn_microphone_pressed():
 
 func _on_child_order_changed():
 	# Update ChatList in the SingletonObject
-	SingletonObject.ChatList = []  # Clear the existing list
+	SingletonObject.ChatList = []  # Comment this out temporarily
 	for child in get_children():
 		if child is ScrollContainer:
 			var vbox_chat = child.get_child(0)
@@ -998,8 +1021,6 @@ func _on_system_button_pressed() -> void:
 
 func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	update_token_estimation(provider_)
-
-	print(provider_)
 
 	if provider_ is CoreProvider:
 		
@@ -1032,13 +1053,14 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 
 # when tab changes, set the provider to one that that chat tab is using
 func _on_tab_changed(tab: int):
-	var active_provider = SingletonObject.get_active_provider(tab)
+	var active_provider = _provider_option_button.get_provider_for_tab(tab)
 
-	var item_index = _provider_option_button.get_item_index(active_provider)
+	if is_instance_valid(active_provider):
+		var item_index = _provider_option_button.get_item_index_for_provider(active_provider)
 
-	_provider_option_button.select(item_index)
+		_provider_option_button.select(item_index)
 
-	SingletonObject.last_tab_index = tab
+		SingletonObject.last_tab_index = tab
 
 ## if enter is pressed, accept the event and trigger chat
 func _on_txt_main_user_input_gui_input(event: InputEvent):

@@ -34,5 +34,9 @@ static func create(field_params: Dictionary, input: = true) -> String_Field:
 func get_user_data():
 	return _field_line_edit.text
 
+func clear_data() -> void:
+	update_output("")
+	_field_line_edit.text = ""
+
 func update_output(text: String) -> void:
 	_field_rich_text_label.text = text

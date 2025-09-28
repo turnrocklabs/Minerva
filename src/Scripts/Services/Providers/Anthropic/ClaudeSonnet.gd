@@ -79,17 +79,26 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	return item
 
 
-func wrap_memory(item: MemoryItem) -> Variant:
-	if item.MemoryImage:
-		return item.MemoryImage
+func wrap_memory(item: Note) -> Variant:
+
+	# TODO: handle other types
+
+	if item.type == Note.Type.IMAGE:
+		return (item.get_controls_container() as NoteImageControls).image
 	
-	else:
+	elif item.type == Note.Type.TEXT:
 		var output = "Given this background information:\n\n"
 		output += "### Reference Information ###\n"
-		output += item.Content
+		output += (item.get_controls_container() as NoteTextControls).content
 		output += "### End Reference Information ###\n\n"
 		output += "Respond to the user's message: \n\n"
 		return output
+
+	else:
+		push_warning("Tried to wrap memory but the given note type is not implemented")
+		print_stack()
+
+	return ""
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:

@@ -5,12 +5,11 @@ extends PanelContainer
 
 @warning_ignore("unused_signal")
 signal image_active_state_changed(active: bool)
-signal created_image_note(index, memory_item_UUID)
 const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 @onready var _save_dialog = %SaveFileDialog as FileDialog
 @onready var _mask_button = %MaskButton as Button
 
-var linked_memory_item: String = ""
+var linked_note: Note
 var dict_index: String = ""
 
 @export var image: Image:
@@ -95,14 +94,12 @@ func _on_edit_button_pressed():
 
 
 func _on_note_button_pressed():
-	#var caption_title: String = image.get_meta("caption", "")
-	#if caption_title.length() > 25:
-		#caption_title = caption_title.substr(0, 25) + "..."
-	if linked_memory_item == "":
-		var return_memory = SingletonObject.NotesTab.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
-		created_image_note.emit(dict_index, return_memory.UUID)
-	else:
-		var return_memory = SingletonObject.NotesTab.update_note(linked_memory_item, image)
-		if return_memory == null:
-			return_memory = SingletonObject.NotesTab.add_image_note("Graphic Note", image, image.get_meta("caption", ""))
-			created_image_note.emit(dict_index, return_memory.UUID)
+	# TODO: make sure linked_note uuid is serialized and used when reopening the project
+	# like the editor is doing, so we dont loose the connection after reopen
+
+	# Note already exists
+	if is_instance_valid(linked_note) and linked_note.is_inside_tree(): return
+	
+	linked_note = Note.create_image_note("Chat Image", image.duplicate(), image.get_meta("caption", ""))
+
+	SingletonObject.notes_container.add_note(linked_note)

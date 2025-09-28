@@ -1,13 +1,14 @@
-[gd_scene load_steps=12 format=3 uid="uid://cqgltib53weii"]
+[gd_scene load_steps=13 format=3 uid="uid://cqgltib53weii"]
 
 [ext_resource type="Script" uid="uid://cufod2luxi0bf" path="res://Scripts/create_new_note.gd" id="1_jtoh0"]
 [ext_resource type="ButtonGroup" uid="uid://d0g0dmabuooyv" path="res://resources/create_note_type_button_group.tres" id="3_0e5iv"]
-[ext_resource type="Script" uid="uid://63wcsxjjtlug" path="res://Scripts/UI/Views/icons_button.gd" id="3_1xf7d"]
+[ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="3_1xf7d"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file/file.svg" id="4_46txl"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="4_tenly"]
 [ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="5_nij35"]
 [ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="5_tuaww"]
 [ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="6_6vlg8"]
+[ext_resource type="PackedScene" uid="uid://b5er5qmcorg15" path="res://Scenes/note/note_controls/audio_controls.tscn" id="7_jxkij"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="10_wn3ce"]
 [ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="11_pwa0c"]
 [ext_resource type="Texture2D" uid="uid://dpphnihk74dd0" path="res://assets/icons/create_pencil_icons/pencil_icon_64_no_bg.png" id="12_c1ai6"]
@@ -35,6 +36,14 @@ dialog_hide_on_ok = true
 file_mode = 0
 access = 2
 filters = PackedStringArray("*.png", "*.jpg", "*.webp", "*.jpeg", "*.svg", "*.bmp")
+
+[node name="AudioNoteFileImport" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Open a File"
+ok_button_text = "Open"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.mp3 ; MP3 Files", "*.wav ; WAV Files", "*.ogg ; OGG Files")
 
 [node name="Panel" type="Panel" parent="."]
 custom_minimum_size = Vector2(425, 680)
@@ -149,17 +158,9 @@ visible = false
 custom_minimum_size = Vector2(0, 350)
 layout_mode = 2
 
-[node name="RecordAudioButton" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = 85.0
-offset_top = 150.0
-offset_right = 290.0
-offset_bottom = 190.0
-text = "Press To Record Note"
-
 [node name="PlayAudioButton" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 0
 offset_right = 12.0
 offset_bottom = 40.0
@@ -169,6 +170,28 @@ text = "play audio "
 [node name="AudioNoteStreamPlayer" type="AudioStreamPlayer" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl"]
 unique_name_in_owner = true
 volume_db = 1.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="AudioControls" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/VBoxContainer" instance=ExtResource("7_jxkij")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 50)
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/VBoxContainer"]
+layout_mode = 2
+
+[node name="RecordAudioButton" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Press To Record Note"
+
+[node name="AudioFileImportButton" type="Button" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Import"
 
 [node name="ImageControl" type="Control" parent="Panel/MarginContainer/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
@@ -284,12 +307,14 @@ icon_68 = ExtResource("12_c1ai6")
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
 [connection signal="canceled" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_canceled"]
 [connection signal="file_selected" from="ImageNoteFileDialog" to="." method="_on_image_note_file_dialog_file_selected"]
+[connection signal="file_selected" from="AudioNoteFileImport" to="." method="_on_audio_note_file_import_file_selected"]
 [connection signal="text_changed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/NoteHead" to="." method="_on_note_head_text_changed"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/btnVoiceForHeader" to="." method="_on_btn_voice_for_header_pressed"]
 [connection signal="text_changed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/TextNoteControl/NoteDescription" to="." method="_on_note_description_text_changed"]
 [connection signal="text_set" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/TextNoteControl/NoteDescription" to="." method="_on_note_description_text_set"]
-[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/PlayAudioButton" to="." method="_on_play_audio_button_pressed"]
+[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/VBoxContainer/HBoxContainer/RecordAudioButton" to="." method="_on_record_audio_button_pressed"]
+[connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/AudioControl/VBoxContainer/HBoxContainer/AudioFileImportButton" to="." method="_on_audio_file_import_button_pressed"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/ImageControl/OpenImageFileButton" to="." method="_on_open_image_file_button_pressed"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer/btnVoice" to="." method="_on_btn_voice_pressed"]
 [connection signal="pressed" from="Panel/MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer/AddNotePopUp" to="." method="_on_add_note_pressed"]

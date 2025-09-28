@@ -5,7 +5,6 @@ extends Control
 signal save_as_dialog_exited()
 
 var save_path: String
-
 var last_save_path: String
 
 func update_last_save_path(new_path: String) -> void:
@@ -15,15 +14,24 @@ func update_last_save_path(new_path: String) -> void:
 # _new_project empties all the tabs and lists currently stored as notes or chats.
 # it also blanks out the save file variable to force a save_as
 func _new_project():
-	SingletonObject.initialize_notes()
-	SingletonObject.initialize_chats(SingletonObject.Chats)
-	SingletonObject.editor_container.clear_editor_tabs() # deserialize empty files list, so it clears everything
+	# Clear all service histories
+	SingletonObject.ChatList.clear()
+	SingletonObject.NotesList.clear()
+	
+	# Initialize chat pane
+	if SingletonObject.Chats:
+		SingletonObject.Chats.clear_all_chats()
+	
+	# Clear notes pane if it exists
+	if SingletonObject.Notes:
+		SingletonObject.Notes.clear_all_notes()
+	
+	SingletonObject.editor_container.clear_editor_tabs()
+	SingletonObject.clear_registered_objects()
 	save_path = ""
 	
-	await get_tree().process_frame # we need to process frame  in case there are a lot of things in the tabs to delete
-	update_buffer_controls()
+	await get_tree().process_frame
 	SingletonObject.updated_save_state.emit("", true)
-
 
 func open_project(path: = ""):
 	if path.is_empty():
@@ -48,7 +56,6 @@ func save_project_as(file=""):
 		save_path=file
 		save_project()
 
-
 func package_project():
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
@@ -57,20 +64,14 @@ func package_project():
 		editor.queue_free()
 
 	var ppw: PackageProjectWindow = %PackageProjectWindow
-
 	ppw.data = serialize_project()
-	
 	ppw.popup_centered()
-
 
 func unpackage_project():
 	var upw: UnpackageProjectWindow = %UnpackageProjectWindow
-
 	upw.popup_centered()
 
-
 func save_unsaved_editors() -> void:
-	#var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
 	var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 	for item_idx in item_list.get_selected_items():
 		var editor: Editor = item_list.get_item_metadata(item_idx)
@@ -81,35 +82,26 @@ func save_unsaved_editors() -> void:
 	
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
-
 func save_project():
-	
 	save_unsaved_editors()
 
 	if save_path == null or save_path == "":
 		await save_project_as()
 		return
 	
-	# ask the singleton to serialize all state vars.
 	var proj_data: = serialize_project()
 
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
 	save_file.store_line(JSON.stringify(proj_data, "\t"))
 	
-	# get the file path and add it to config file
 	SingletonObject.save_recent_project(save_path)
-	
 	SingletonObject.save_state(true)
 	SingletonObject.updated_save_state.emit(save_path.get_file(), true)
 
-
-# this function checks if there are unsaved editor panes and saves them
 func save_editor_panes(skip_selecting_items: bool = false):
 	var unsaved_editors = SingletonObject.editor_container.editor_pane.unsaved_editors()
-		# if the state is unsaved or we have unsaved editors open
+	
 	if not SingletonObject.saved_state or unsaved_editors:
-		# user want to quit
-		# ask the user which unsaved editors he wants saved
 		var item_list: ItemList = %ExitConfirmationDialog.get_node("v/ItemList")
 		item_list.clear()
 		for editor in unsaved_editors:
@@ -126,7 +118,6 @@ func save_editor_panes(skip_selecting_items: bool = false):
 				counter += 1
 			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
 			save_unsaved_editors()
-			
 		else:
 			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
 			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
@@ -134,68 +125,101 @@ func save_editor_panes(skip_selecting_items: bool = false):
 		get_tree().quit()
 
 #region Serialize/Deserialize Project
-## Function:
-# serialize_project iterates through the notes and chats and creates an array
-# each line in the array is the contents of either the notes or the chats.
-func serialize_project() -> Dictionary:
-	var notes: Array[Dictionary] = []
-	var chats: Array[Dictionary] = []
-	# var active_notes_index: int = 0 ## which of the notes tabs is selected and active
-	# var active_chat_index: int = 0 ## which chat tab is active
-	var last_tab_index: int = 0 ##
 
-	# Serialize the notes first.
-	for note_tab: MemoryThread in SingletonObject.ThreadList:
-		var serialized_note_tab = note_tab.Serialize()
-		notes.append(serialized_note_tab)
+## Serialize project with multiple service types
+func serialize_project() -> Dictionary:
+	var notes: = SingletonObject.notes_container.serialize()
+	var chats: Array[Dictionary] = []
+	var notes_histories: Array[Dictionary] = []
 	
-	# # Now serialize the chats.
+	# Serialize chat histories
 	for chat_thread: ChatHistory in SingletonObject.ChatList:
-		var serialized_chat_tab = chat_thread.Serialize()
-		chats.append(serialized_chat_tab)
+		var serialized_chat = chat_thread.Serialize()
+		chats.append(serialized_chat)
+
+	# Serialize notes histories
+	for notes_thread: NotesServiceHistory in SingletonObject.NotesList:
+		var serialized_notes = notes_thread.Serialize()
+		notes_histories.append(serialized_notes)
 
 	var editors = SingletonObject.editor_container.serialize()
 
+	# Get current tab indices with fallbacks
+	var active_chat_index = 0
+	var active_notes_index = 0
+	
+	if SingletonObject.Chats and SingletonObject.Chats.get_tab_count() > 0:
+		active_chat_index = SingletonObject.Chats.current_tab
+	
+	if SingletonObject.Notes and SingletonObject.Notes.get_tab_count() > 0:
+		active_notes_index = SingletonObject.Notes.current_tab
+
 	return {
-		"ThreadList" : notes,
-		"ChatList" : chats,
+		"ThreadList": notes,
+		"ChatList": chats,
+		"NotesHistories": notes_histories,
 		"Editors": editors,
 		"last_tab_index": SingletonObject.last_tab_index,
-		"active_chatindex": SingletonObject.Chats.current_tab,
-		"active_notes_index": SingletonObject.NotesTab.current_tab,
+		"active_chatindex": active_chat_index,
+		"active_notes_index": SingletonObject.notes_container.current_tab,
+		"active_notes_history_index": active_notes_index,
 		"active_editor_index": SingletonObject.editor_pane.Tabs.current_tab,
-		"default_provider": SingletonObject.get_active_provider(),
+		"version": "2.0"  # Version for future migration handling
 	}
 
-func deserialize_project(data: Dictionary):
-	var threads: Array[MemoryThread] = []
-	for thread_data in data.get("ThreadList", []):
-		threads.append(MemoryThread.Deserialize(thread_data))
-	SingletonObject.initialize_notes(threads)
-
-	# will be float if loaded from json, cast it to int
-	var provider_enum_index = int(data.get("default_provider", 0))
-	if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
-		SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index]
-	else:
-		# Fallback to second defined model, skipping the human provider
-		SingletonObject.Chats.default_provider_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.values()[1]
-
-
-	var chats: Array[ChatHistory] = []
-	for chat_data in data.get("ChatList", []):
-		chats.append(ChatHistory.Deserialize(chat_data))
-	SingletonObject.initialize_chats(SingletonObject.Chats, chats)
-
-	# We need to cast Array to Array[String] because deserialize expects that type
-	#var editor_files: Array[String] = []
+func deserialize_project(data: Dictionary) -> int:
+	# Handle legacy and new formats gracefully
+	var version = data.get("version", "1.0")
 	
-	#editor_files.assign(data.get("Editors", []))
-	#SingletonObject.editor_container.deserialize(editor_files)
+	# Deserialize notes container (legacy notes system)
+	SingletonObject.notes_container.deserialize(data.get("ThreadList", []))
+
+	# Clear existing histories
+	SingletonObject.ChatList.clear()
+	SingletonObject.NotesList.clear()
+
+	# Deserialize chat histories
+	var chat_data = data.get("ChatList", [])
+	for chat_item in chat_data:
+		var chat_history = ServiceHistory.Deserialize(chat_item)
+		if chat_history is ChatHistory:
+			SingletonObject.ChatList.append(chat_history)
+		else:
+			# Fallback: create ChatHistory if deserialization returns wrong type
+			var fallback_provider = _get_fallback_provider()
+			var fallback_chat = ChatHistory.new(fallback_provider)
+			fallback_chat.HistoryName = chat_item.get("HistoryName", "Chat")
+			SingletonObject.ChatList.append(fallback_chat)
+
+	var notes_data = data.get("NotesHistories", [])
+	print("Loading ", notes_data.size(), " notes histories")
+	for notes_item in notes_data:
+		print("Notes history: ", notes_item.get("HistoryName"), " with ", notes_item.get("HistoryItemList", []).size(), " items")
+		var notes_history = ServiceHistory.Deserialize(notes_item)
+		if notes_history is NotesServiceHistory:
+			print("Successfully created NotesServiceHistory with ", notes_history.HistoryItemList.size(), " items")
+			SingletonObject.NotesList.append(notes_history)
+		else:
+			# Fallback: create NotesServiceHistory if deserialization fails
+			var fallback_provider = _get_fallback_provider()
+			var fallback_notes = NotesServiceHistory.new(fallback_provider)
+			fallback_notes.HistoryName = notes_item.get("HistoryName", "Notes")
+			SingletonObject.NotesList.append(fallback_notes)
+
+	# Initialize chat pane with histories
+	if SingletonObject.Chats:
+		_initialize_chat_pane()
+
+	# Initialize notes pane with histories
+	# if SingletonObject.Notes:
+		# _initialize_notes_pane()
+
+	# Deserialize editors
 	SingletonObject.editor_container.clear_editor_tabs()
 	var editor_nodes: Array = []
 	if data.get("Editors"):
 		editor_nodes = await EditorContainer.deserialize(data.get("Editors", []))
+	
 	for editor in editor_nodes:
 		SingletonObject.editor_pane.Tabs.add_child(editor)
 		var tab_idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
@@ -203,30 +227,83 @@ func deserialize_project(data: Dictionary):
 		if editor.file:
 			SingletonObject.editor_pane.Tabs.set_tab_tooltip(tab_idx, editor.file)
 	
+	# Restore tab indices with bounds checking
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 
+	# Restore notes container tab
 	var current_notes_tab = data.get("active_notes_index", 0)
-	if SingletonObject.NotesTab.get_tab_count()-1 >= current_notes_tab:
-		SingletonObject.NotesTab.current_tab = current_notes_tab
-	
-	# Set the current tab only if it's within the present tabs
+	if SingletonObject.notes_container.get_tab_count() > current_notes_tab:
+		SingletonObject.notes_container.current_tab = current_notes_tab
+
+	# Restore chat pane tab
 	var current_chat_tab = data.get("active_chatindex", 0)
-	if SingletonObject.Chats.get_tab_count()-1 >= current_chat_tab:
-		SingletonObject.Chats.current_tab = data.get("active_chatindex", 0)
-	
+	if SingletonObject.Chats and SingletonObject.Chats.get_tab_count() > current_chat_tab:
+		SingletonObject.Chats.current_tab = current_chat_tab
+
+	# Restore notes pane tab
+	var current_notes_history_tab = data.get("active_notes_history_index", 0)
+	if SingletonObject.Notes and SingletonObject.Notes.get_tab_count() > current_notes_history_tab:
+		SingletonObject.Notes.current_tab = current_notes_history_tab
+
 	update_buffer_controls()
+	
+	return OK
+
+func _get_fallback_provider() -> BaseProvider:
+	"""Get a fallback provider when deserialization fails"""
+	if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.size() > 1:
+		# Skip human provider (index 0), use second provider
+		var provider_enum = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys()[1]
+		return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum].new()
+	elif SingletonObject.API_MODEL_PROVIDER_SCRIPTS.size() > 0:
+		# Fallback to first available provider
+		var provider_enum = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys()[0]
+		return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum].new()
+	else:
+		push_error("No providers available for fallback")
+		return null
+
+func _initialize_chat_pane():
+	"""Initialize chat pane with existing chat histories"""
+	if not SingletonObject.Chats:
+		return
+		
+	SingletonObject.Chats.clear_all_chats()
+	
+	for i in SingletonObject.ChatList.size():
+		var chat_history: = SingletonObject.ChatList[i]
+		print(chat_history)
+
+		if not is_instance_valid(chat_history.provider):
+			chat_history.provider = _get_fallback_provider()
+		
+		SingletonObject.Chats.render_history(chat_history)
+
+func _initialize_notes_pane():
+	"""Initialize notes pane with existing notes histories"""
+	if not SingletonObject.Notes:
+		return
+		
+	SingletonObject.Notes.clear_all_notes()
+	
+	print("NOTES")
+	for notes_history in SingletonObject.NotesList:
+		print(notes_history)
+		# Ensure provider is valid before rendering
+		if not is_instance_valid(notes_history.provider):
+			notes_history.provider = _get_fallback_provider()
+		
+		SingletonObject.Notes.render_history(notes_history)
 
 #endregion Serialize/Deserialize Project
 
 func close_project():
 	save_project()
 	_new_project()
-	pass
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	get_tree().set_auto_accept_quit(false)
-	# We want additional exit button, so we have 'Save', 'Cancel' and 'Exit'
 	(%ExitConfirmationDialog as ConfirmationDialog).add_button("Exit", true, "exit")
 	
 	var hbox_save_as: HBoxContainer = %fdgSaveAs.get_vbox().get_child(0)
@@ -235,6 +312,7 @@ func _ready():
 	var hbox_open_proj: HBoxContainer = %fdgOpenProject.get_vbox().get_child(0)
 	hbox_open_proj.set("theme_override_constants/separation", 14)
 	
+	# Connect signals
 	SingletonObject.NewProject.connect(self._new_project)
 	SingletonObject.SaveProject.connect(self.save_project)
 	SingletonObject.SaveProjectAs.connect(self.save_project_as)
@@ -243,7 +321,7 @@ func _ready():
 	SingletonObject.CloseProject.connect(self.close_project)
 	SingletonObject.OpenProject.connect(self.open_project)
 	SingletonObject.OpenRecentProject.connect(self._on_open_recent_project_selected)
-	SingletonObject.SaveOpenEditorTabs.connect( save_editor_panes.bind(true))
+	SingletonObject.SaveOpenEditorTabs.connect(save_editor_panes.bind(true))
 	SingletonObject.UpdateLastSavePath.connect(update_last_save_path)
 
 #region FDG Dialog
@@ -251,7 +329,6 @@ func _ready():
 func _on_fdg_save_as_file_selected(path):
 	self.save_path = path
 	self.save_project()
-
 
 func _on_fdg_open_project_file_selected(path):
 	open_project_given_path(path)
@@ -264,17 +341,15 @@ func _on_fdg_open_file_tree_entered():
 
 func _on_open_recent_project_selected(project_name: String):
 	var project_path = SingletonObject.get_project_path(project_name)
-	var status = open_project_given_path(project_path)
+	var status = await open_project_given_path(project_path)
 	if status != OK:
-		SingletonObject.ErrorDisplay("Project file no found", "the project was not found at the path it was saved. \n Maybe it was moved or deleted")
-
+		SingletonObject.ErrorDisplay("Project file not found", "The project was not found at the saved path.\nMaybe it was moved or deleted")
 
 func open_project_given_path(project_path: String) -> int:
-	#SingletonObject.show_loading_screen("loading project...")
 	var proj_file = FileAccess.open(project_path, FileAccess.READ)
 	
 	if proj_file == null:
-		push_error("Couldn't parse the proj	ect file at %s. Error code: %s" % [project_path, FileAccess.get_open_error()])
+		push_error("Couldn't open the project file at %s. Error code: %s" % [project_path, FileAccess.get_open_error()])
 		return ERR_FILE_NOT_FOUND
 	
 	var json = JSON.parse_string(proj_file.get_as_text())
@@ -283,52 +358,62 @@ func open_project_given_path(project_path: String) -> int:
 		push_error("Couldn't parse the project file at %s" % project_path)
 		return ERR_FILE_CORRUPT
 	
-	deserialize_project(json)
+	# Clear existing content
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.remove_tab(i, false)
+
+	await get_tree().process_frame
+
+	# don't clear registered object, at least not all of them
+	# if project is opened and there are remote notes, this will get messed up
+	# because them we cant see if some note if already present.
+	# instead, when get_registered_object, it checks if the object is valid or not
+	# and returns null of it's deleted, so it's safe to leave them not deleted
+	# SingletonObject.clear_registered_objects()
+
+	# Deserialize with error handling
+	var deserialize_result = await deserialize_project(json)
+	if deserialize_result != OK:
+		push_error("Error during project deserialization")
+		return deserialize_result
 	
-	# Since we just opened the project, the save state is true
-	# Why deferred?
-	# If not some of the deserialized object alter the state after this function ends
-	# even tho we called deserialize above. Probably because the nodes are not added
-	# to the hierarchy until the idle time, when they call set_state(false).
-	# So we just delay this call to that idle time also.
+	# Mark as saved
 	SingletonObject.save_state(true)
 	SingletonObject.updated_save_state.emit(project_path.get_file(), true)
 	self.save_path = project_path
 	return OK
-	#SingletonObject.hide_loading_screen()
-# end of open_project_given_path function
-
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		SingletonObject.drawer_save_data.emit()
 		save_editor_panes()
-		
-
 
 func _on_exit_confirmation_dialog_canceled():
 	%ExitConfirmationDialog.hide()
-
 
 func _on_exit_confirmation_dialog_confirmed():
 	await self.save_project()
 	get_tree().quit()
 
-
 func _on_exit_confirmation_dialog_custom_action(action: StringName):
 	if action == "exit":
 		get_tree().quit()
 
-
 func update_buffer_controls() -> void:
-	if SingletonObject.Chats.get_tab_count() > 0:
-		SingletonObject.Chats.buffer_control_chats.hide()
-	else:
-		SingletonObject.Chats.buffer_control_chats.show()
-	if SingletonObject.NotesTab.get_tab_count() > 0:
-		SingletonObject.NotesTab.buffer_control_notes.hide()
-	else:
-		SingletonObject.NotesTab.buffer_control_notes.show()
+	# Update chat pane buffer
+	if SingletonObject.Chats:
+		if SingletonObject.Chats.get_tab_count() > 0:
+			SingletonObject.Chats.buffer_control_chats.hide()
+		else:
+			SingletonObject.Chats.buffer_control_chats.show()
+	
+	# Update notes pane buffer
+	# if SingletonObject.Notes:
+	# 	if SingletonObject.Notes.get_tab_count() > 0:
+	# 		SingletonObject.Notes.buffer_control_notes.hide()
+	# 	else:
+	# 		SingletonObject.Notes.buffer_control_notes.show()
+	
+	# Update editor buffer
 	if SingletonObject.editor_pane.Tabs.get_tab_count() > 0:
 		SingletonObject.editor_pane.buffer_control_editor.hide()
 	else:
