@@ -229,7 +229,7 @@ static func create_audio_note(note_title: String, audio: AudioStream, note_uuid:
 ## [member Note.type] is determined from the [param file_path] extension. On fail a text note with an error is returned.
 static func create_file_note(note_title: String, file_path: String, note_uuid: String = "", register: = true) -> Note:
 
-	# determin the note type from the extension
+	# determine the note type from the extension
 	var ext: = file_path.get_extension()
 
 	var note: Note
@@ -280,6 +280,65 @@ static func create_file_note(note_title: String, file_path: String, note_uuid: S
 	return note
 
 
+## Reloads the file content of the note, if not was loaded from a file that's accessable.[br]
+## Returns `ERR_UNAVAILABLE` if file is not set, any other error that occured, or `OK`.
+func refresh_file_note() -> int:
+	if not file: return ERR_UNAVAILABLE
+
+
+	var fa: = FileAccess.open(file, FileAccess.READ)
+
+	if fa == null:
+		return FileAccess.get_open_error()
+	
+	var ext: = file.get_extension()
+	
+	if type == Type.IMAGE:
+
+		if not ext in _file_ext_map[Type.IMAGE]:
+			return ERR_INVALID_DATA
+
+		var img: = Image.load_from_file(file)
+		if img == null:
+			push_error("Couldn't open the note file %s. Image object null." % file)
+			return ERR_CANT_OPEN
+		
+		(get_controls_container() as NoteImageControls).image = img
+
+	elif type == Type.AUDIO:
+		if not ext in _file_ext_map[Type.AUDIO]:
+			return ERR_INVALID_DATA
+
+		if fa == null:
+			var err: = FileAccess.get_open_error()
+			push_error("Couldn't open the note file (%s): %s" % [file, error_string(err)])
+
+			return err
+
+		var audio_stream: AudioStream	
+	
+		match ext:
+			"mp3":
+				audio_stream = AudioStreamMP3.new()
+				audio_stream.data = fa.get_buffer(fa.get_length())
+			"ogg":
+				audio_stream = AudioStreamOggVorbis.new()
+				audio_stream.load_from_buffer(fa.get_buffer(fa.get_length()))
+			"wav":
+				audio_stream = AudioStreamWAV.new()
+				audio_stream.data = fa.get_buffer(fa.get_length())
+
+		(get_controls_container() as NoteAudioControls).audio = audio_stream
+	
+	elif type == Type.TEXT:
+		
+		if fa == null:
+			var err: = FileAccess.get_open_error()
+			push_error("Couldn't open the note file (%s): %s" % [file, error_string(err)])
+
+		(get_controls_container() as NoteTextControls).content = fa.get_as_text()
+
+	return OK
 
 ## Adds the note controls to the note hierarchy and waits one frame after adding.
 func _set_controls_container(controls_container: Control) -> void:

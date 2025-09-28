@@ -56,6 +56,28 @@ tooltip_text = "Upload all notes from the current tab"
 disabled = true
 text = "Upload local notes (0)"
 
+[node name="OptionsContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="OptionsContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ReloadFilesContentButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Reload File Notes"
+
+[node name="CollapseAllButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+text = "Expand All"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
+layout_mode = 2
+
 [node name="ScrollContainer" type="ScrollContainer" parent="."]
 layout_mode = 2
 size_flags_vertical = 3
@@ -68,3 +90,5 @@ size_flags_vertical = 3
 
 [connection signal="toggled" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer/RemoteCheckButton" to="." method="_on_remote_check_button_toggled"]
 [connection signal="pressed" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer2/BulkUploadButton" to="." method="_on_bulk_upload_button_pressed"]
+[connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/ReloadFilesContentButton" to="." method="_on_reload_files_content_button_pressed"]
+[connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/CollapseAllButton" to="." method="_on_collapse_all_button_toggled"]

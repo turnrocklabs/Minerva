@@ -16,6 +16,8 @@ static var _scene: = preload("res://Scenes/note/NoteVBox.tscn")
 @onready var _bulk_upload_button: Button = %BulkUploadButton
 const _bulk_button_text: = "Upload local notes (%s)"
 
+@onready var _toggle_expand_button: Button = %CollapseAllButton
+
 var auto_upload: bool:
 	set(value): _remote_check_buttion.button_pressed = value
 	get: return _remote_check_buttion.button_pressed
@@ -108,3 +110,30 @@ func _update_bulk_button() -> void:
 
 	if notes.is_empty():
 		_bulk_upload_button.release_focus()
+
+
+func _on_collapse_all_button_toggled(toggled_on: bool) -> void:
+	
+	_toggle_expand_button.text = (
+		"Expand All" if not toggled_on else "Collapse All"
+	)
+
+	_toggle_expand_button.tooltip_text = (
+		"%s all notes in this tab" % ["Collapse" if toggled_on else "Expand"]
+	)
+
+	for note in get_notes():
+		note.expanded = toggled_on
+
+
+func _on_reload_files_content_button_pressed() -> void:
+	for note in get_notes():
+		if not note.file: continue
+
+		var err: = note.refresh_file_note()
+
+		if err != OK:
+			SingletonObject.create_toast_notification(
+				"Couldn't refresh (%s): %s" % [note, error_string(err)],
+				ToastNotification.Type.ERROR
+			)
