@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://wj5djlbfq0dk"]
+[gd_scene load_steps=4 format=3 uid="uid://wj5djlbfq0dk"]
 
 [ext_resource type="Script" uid="uid://c1lo0eobpbmku" path="res://Scenes/note/NoteVBox.gd" id="1_njh8t"]
+[ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="2_x85us"]
+[ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="3_cq3g1"]
 
 [node name="NoteVBox" type="VBoxContainer"]
 anchors_preset = 15
@@ -58,6 +60,9 @@ text = "Upload local notes (0)"
 
 [node name="OptionsContainer" type="MarginContainer" parent="."]
 layout_mode = 2
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 5
 
 [node name="VBoxContainer" type="VBoxContainer" parent="OptionsContainer"]
 layout_mode = 2
@@ -65,15 +70,23 @@ layout_mode = 2
 [node name="HBoxContainer" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
 layout_mode = 2
 
+[node name="ToggleNotesCheckButton" type="CheckButton" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Selects all notes in this tab"
+text = "Select All"
+
 [node name="ReloadFilesContentButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Reload File Notes"
+icon = ExtResource("2_x85us")
 
 [node name="CollapseAllButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 toggle_mode = true
 text = "Expand All"
+icon = ExtResource("3_cq3g1")
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
 layout_mode = 2
@@ -90,5 +103,6 @@ size_flags_vertical = 3
 
 [connection signal="toggled" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer/RemoteCheckButton" to="." method="_on_remote_check_button_toggled"]
 [connection signal="pressed" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer2/BulkUploadButton" to="." method="_on_bulk_upload_button_pressed"]
+[connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/ToggleNotesCheckButton" to="." method="_on_toggle_notes_check_button_toggled"]
 [connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/ReloadFilesContentButton" to="." method="_on_reload_files_content_button_pressed"]
 [connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/CollapseAllButton" to="." method="_on_collapse_all_button_toggled"]

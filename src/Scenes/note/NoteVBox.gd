@@ -17,6 +17,7 @@ static var _scene: = preload("res://Scenes/note/NoteVBox.tscn")
 const _bulk_button_text: = "Upload local notes (%s)"
 
 @onready var _toggle_expand_button: Button = %CollapseAllButton
+@onready var _toggle_selection_button: CheckButton = %ToggleNotesCheckButton
 
 var auto_upload: bool:
 	set(value): _remote_check_buttion.button_pressed = value
@@ -137,3 +138,18 @@ func _on_reload_files_content_button_pressed() -> void:
 				"Couldn't refresh (%s): %s" % [note, error_string(err)],
 				ToastNotification.Type.ERROR
 			)
+
+
+func _on_toggle_notes_check_button_toggled(toggled_on: bool) -> void:
+	
+	_toggle_selection_button.text = (
+		"Select All" if not toggled_on else "Deselect All"
+	)
+
+	_toggle_selection_button.tooltip_text = (
+		"%s all notes in this tab" % ["Selects" if toggled_on else "Deselects"]
+	)
+
+	for note in get_notes():
+		note.enabled = toggled_on
+
