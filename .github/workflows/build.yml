@@ -12,6 +12,11 @@ on:
         - all
         - windows
         - linux
+      create_release:
+        description: 'Create GitHub Release'
+        required: false
+        default: true
+        type: boolean
   push:
     paths:
       - "src/**"
@@ -216,6 +221,23 @@ jobs:
             godot --headless --export-debug "Windows Release" build/windows/Minerva.exe
             godot --headless --export-debug "Linux/X11 Release" build/linux/Minerva.x86_64 
           fi
+
+      # Create ZIP archives for release
+      - name: Create Release Archives
+        run: |
+          mkdir -p release-assets
+          
+          if [ -d "src/build/windows" ]; then
+            cd src/build/windows
+            zip -r ../../../release-assets/Minerva-Windows.zip ./*
+            cd ../../..
+          fi
+          
+          if [ -d "src/build/linux" ]; then
+            cd src/build/linux
+            tar -czf ../../../release-assets/Minerva-Linux.tar.gz ./*
+            cd ../../..
+          fi
           
       - name: Upload Windows Build
         if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' )
@@ -232,3 +254,77 @@ jobs:
           name: Minerva-Linux-Build
           path: |
             src/build/linux/*
+
+  create-release:
+    needs: [build-godot]
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true') || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v2
+        
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Minerva-*-Build
+          path: downloads
+          merge-multiple: true
+          
+      - name: Create Release Archives
+        run: |
+          mkdir -p release-assets
+          
+          # Create Windows ZIP if files exist
+          if [ -d "downloads" ] && find downloads -name "*.exe" -type f | grep -q .; then
+            cd downloads
+            zip -r ../release-assets/Minerva-Windows.zip $(find . -name "*.exe" -o -name "*.dll" -o -name "*.pck")
+            cd ..
+          fi
+          
+          # Create Linux archive if files exist  
+          if [ -d "downloads" ] && find downloads -name "*.x86_64" -type f | grep -q .; then
+            cd downloads
+            tar -czf ../release-assets/Minerva-Linux.tar.gz $(find . -name "*.x86_64" -o -name "*.so" -o -name "*.pck")
+            cd ..
+          fi
+          
+          ls -la release-assets/
+          
+      - name: Generate release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="manual-build-$(date +'%Y%m%d-%H%M%S')"
+          else
+            TAG="auto-build-$(date +'%Y%m%d-%H%M%S')"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Minerva Development Build ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Minerva Development Build
+            
+            ⚠️ **This is a development build** - expect bugs and incomplete features!
+            
+            **Build Information:**
+            - Platform: ${{ github.event.inputs.platform || 'all' }}
+            - Trigger: ${{ github.event_name }}
+            - Commit: ${{ github.sha }}
+            - Branch: ${{ github.ref_name }}
+            
+            **Download Instructions:**
+            - **Windows**: Download `Minerva-Windows.zip`, extract and run `Minerva.exe`
+            - **Linux**: Download `Minerva-Linux.tar.gz`, extract and run `./Minerva.x86_64`
+            
+            Built automatically from the development branch.
+          files: release-assets/*
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
