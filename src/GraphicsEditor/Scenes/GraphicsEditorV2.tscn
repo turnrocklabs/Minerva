@@ -1,4 +1,4 @@
-[gd_scene load_steps=26 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=27 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://Assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -34,6 +34,17 @@ bg_color = Color(0.6, 0.6, 0.6, 0)
 
 [sub_resource type="LabelSettings" id="LabelSettings_v238w"]
 font_size = 36
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nin75"]
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.301961, 0.376471, 0.423529, 1)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
 
 [node name="GraphicsEditorV2" type="PanelContainer"]
 anchors_preset = 15
@@ -405,13 +416,13 @@ layout_mode = 2
 [node name="ImageGenPopupPanel" type="PopupPanel" parent="."]
 unique_name_in_owner = true
 initial_position = 4
-size = Vector2i(400, 300)
+size = Vector2i(400, 500)
 
 [node name="MarginContainer" type="MarginContainer" parent="ImageGenPopupPanel"]
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 396.0
-offset_bottom = 296.0
+offset_bottom = 496.0
 theme_override_constants/margin_left = 5
 theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 5
@@ -420,11 +431,57 @@ theme_override_constants/margin_bottom = 5
 [node name="VBoxContainer" type="VBoxContainer" parent="ImageGenPopupPanel/MarginContainer"]
 layout_mode = 2
 
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Prompt:"
+
+[node name="Label2" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Negative prompts are for
+keywords that describe something 
+you dont want in your image"
+mouse_filter = 0
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleBoxFlat_nin75")
+text = "  ?  "
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="PromptTextEdit" type="TextEdit" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 placeholder_text = "type prompt to generate image here ..."
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+text = "Negative prompt:"
+
+[node name="Label2" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+tooltip_text = "Negative prompts are for
+keywords that describe something 
+you dont want in your image"
+mouse_filter = 0
+theme_override_font_sizes/font_size = 24
+theme_override_styles/normal = SubResource("StyleBoxFlat_nin75")
+text = "  ?  "
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NegativeTextEdit" type="TextEdit" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "blurry, dark, ugly, low quality"
+wrap_mode = 1
+caret_blink = true
 
 [node name="SendPromptButton" type="Button" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true

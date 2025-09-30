@@ -59,7 +59,7 @@ layout_mode = 2
 [node name="TabContainer" type="TabContainer" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 1
+current_tab = 2
 
 [node name="GraphicsEditor" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("1_jjgbg")]
 visible = false
@@ -68,7 +68,12 @@ size_flags_vertical = 3
 metadata/_tab_index = 0
 
 [node name="GraphicsEditorV2" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("2_bo1nx")]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 1
+
+[node name="GraphicsEditorV3" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("2_bo1nx")]
+layout_mode = 2
+metadata/_tab_index = 2
 
 [connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/HBoxContainer/AddTabButton" to="." method="_on_add_tab_button_pressed"]

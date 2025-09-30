@@ -1,6 +1,6 @@
-extends Node
+class_name MediaGenSocket extends Node
 
-
+signal  pass_image_to_editor(filename: String, image: PackedByteArray)
 # Configuration from the working test
 var REST_BRIDGE_LOGIN_URL = "https://www.turnrock.ai:4040/v1/login"
 var CORE_WS_URL = "wss://www.turnrock.ai:27500/connect"
@@ -29,6 +29,8 @@ func _ready() -> void:
 	add_child(client)
 	add_child(http_request)
 	
+	client.binary_file_saved.connect(_on_binary_file_saved_received)
+	client.image_received.connect(_on_image_response_received)
 	http_request.request_completed.connect(on_log_in_http_request_completed)
 	
 	get_access_token(TEST_USERNAME, TEST_PASSWORD)
@@ -94,6 +96,9 @@ func get_access_token(username: String, password: String) -> bool:
 	registered = true # Mark as registered (might need better tracking based on CoreClient signals)
 
 	print("Core registration initiated with token.")
+	await get_tree().create_timer(0.1).timeout
+	print("====================================")
+	print(client.get_service_actions("media-gen"))
 	return true
 
 
@@ -112,9 +117,7 @@ func on_log_in_http_request_completed(result: int, response_code: int, _headers:
 		var jwt: = JWT.decode(_jwt_token)
 		_client_id = jwt.get_claim("sub")
 		
-		print(_jwt_token)
-		print("===============================")
-		print(_client_id)
+		
 		client.client_id = _client_id 
 		client.TOKEN = _jwt_token
 	elif response_code in range(400, 451):
@@ -125,8 +128,18 @@ func on_log_in_http_request_completed(result: int, response_code: int, _headers:
 	else:
 		print("Unknown Error")
 
-func send_media_gen_request(user_input: String) -> void:
-	client.send_media_gen_request(user_input)
+func send_media_gen_request(prompt: String, negative_prompt: String) -> void:
+	var dic: Dictionary = {"prompt"= prompt, "negative_prompt" = negative_prompt}
+	client.send_media_gen_request(dic)
 
 func _exit_tree() -> void:
 	client.close_connection()
+
+
+func _on_binary_file_saved_received(file_index: int, filename: String, path: String) -> void:
+	#pass_image_to_editor.emit(file_index, filename, path)
+	pass
+
+
+func _on_image_response_received(fname: String, buffer: PackedByteArray) -> void:
+	pass_image_to_editor.emit(fname, buffer)

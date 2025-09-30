@@ -54,6 +54,7 @@ signal compose_finished(image: Image)
 @onready var image_gen_popup_panel: PopupPanel = %ImageGenPopupPanel
 @onready var prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var send_prompt_button: Button = %SendPromptButton
+@onready var negative_text_edit: TextEdit = %NegativeTextEdit
 
 #endregion
 var canvas_size: = Vector2i(1000, 1000)
@@ -99,6 +100,8 @@ func _ready() -> void:
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
 	setup()
+	
+	media_gen_socket.pass_image_to_editor.connect(_on_image_received)
 
 
 
@@ -876,16 +879,37 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 
 
 #region HTTP image gen
-var http_request: HTTPRequest = null
 
 func _on_prompt_button_pressed() -> void:
 	%ImageGenPopupPanel.popup_centered()
 	
 
 
-
 func _on_send_prompt_button_pressed() -> void:
 	%ImageGenPopupPanel.hide()
-	media_gen_socket.send_media_gen_request(prompt_text_edit.text)
+	media_gen_socket.send_media_gen_request(prompt_text_edit.text, negative_text_edit.text)
+
+
+#func _on_image_received(image_buffer: PackedByteArray) -> void:
+	#if image_buffer.is_empty():
+		#return
+	#var image = Image.new()
+	#var err = image.load_png_from_buffer(image_buffer)
+	#if err == OK:
+		#create_new_image_layer("Result from prompt", image)
+	#else:
+		#push_error("An error occured when loaindg the image: %s" % err)
+
+
+func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
+	if buffer.is_empty():
+		return
+	
+	var image: = Image.new()
+	image.load_png_from_buffer(buffer)
+	
+	var l: = LayerV2.create_image_layer(filename, image)
+
+	add_layer(l)
 
 #endregion HTTP image gen
