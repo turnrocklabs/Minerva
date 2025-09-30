@@ -123,6 +123,7 @@ var _initialized: = false
 @onready var _top_controls: Container = %TopControls
 @onready var _expand_button: Button = %ExpandButton
 @onready var _resize_control: Control = %ResizeControl
+@onready var _note_header_separator: Control = %HSeparator
 
 
 ## Allow changing the default remove button handler.[br]
@@ -458,6 +459,8 @@ var _anim_duration: = 0.2
 var time_per_degree: = 0.0011 
 
 func _node_expand_toggled():
+
+	_note_header_separator.visible = expanded
 
 	if expanded:
 		_resize_control.mouse_default_cursor_shape = Control.CURSOR_VSIZE

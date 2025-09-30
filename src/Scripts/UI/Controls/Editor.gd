@@ -313,7 +313,9 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
 func save():
-	if SingletonObject.last_saved_path:
+	if associated_object is Note and associated_object.file:
+		await prompt_close(true, false, associated_object.file)
+	elif SingletonObject.last_saved_path:
 		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
 		await prompt_close(true)
@@ -328,7 +330,7 @@ func save():
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
 			graphics_editor.saved = true
-			SingletonObject.UpdateUnsavedTabIcon.emit()
+	
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 ## Returns the bitmask of the saved state for the editor.
