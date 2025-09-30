@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3 uid="uid://wj5djlbfq0dk"]
+[gd_scene load_steps=5 format=3 uid="uid://wj5djlbfq0dk"]
 
 [ext_resource type="Script" uid="uid://c1lo0eobpbmku" path="res://Scenes/note/NoteVBox.gd" id="1_njh8t"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="2_x85us"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="3_cq3g1"]
+[ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_cq3g1"]
 
 [node name="NoteVBox" type="VBoxContainer"]
 anchors_preset = 15
@@ -88,6 +89,13 @@ toggle_mode = true
 text = "Expand All"
 icon = ExtResource("3_cq3g1")
 
+[node name="RemoveAllButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Removes All Notes From This Tab"
+text = "Remove All"
+icon = ExtResource("4_cq3g1")
+
 [node name="HBoxContainer2" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
 layout_mode = 2
 
@@ -106,3 +114,4 @@ size_flags_vertical = 3
 [connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/ToggleNotesCheckButton" to="." method="_on_toggle_notes_check_button_toggled"]
 [connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/ReloadFilesContentButton" to="." method="_on_reload_files_content_button_pressed"]
 [connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/CollapseAllButton" to="." method="_on_collapse_all_button_toggled"]
+[connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/RemoveAllButton" to="." method="_on_remove_all_button_pressed"]

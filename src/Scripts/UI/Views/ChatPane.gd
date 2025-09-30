@@ -974,9 +974,9 @@ func _on_btn_attach_file_pressed():
 func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 	%AttachFileDialog.exclusive = false
 	for fp in paths:
-		SingletonObject.notes_container.add_note(
-			Note.create_file_note(fp.get_file(), fp)
-		)
+		var note: = Note.create_file_note(fp.get_file(), fp)
+		note.initialized.connect(func(): note.expanded = false)
+		SingletonObject.notes_container.add_note(note)
 
 
 func _on_btn_chat_settings_pressed():

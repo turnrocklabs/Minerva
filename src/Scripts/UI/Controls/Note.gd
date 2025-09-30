@@ -460,6 +460,8 @@ var time_per_degree: = 0.0011
 
 func _node_expand_toggled():
 
+	if not is_note_initialized(): return
+	
 	_note_header_separator.visible = expanded
 
 	if expanded:

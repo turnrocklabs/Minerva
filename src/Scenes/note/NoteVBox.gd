@@ -19,6 +19,8 @@ const _bulk_button_text: = "Upload local notes (%s)"
 @onready var _toggle_expand_button: Button = %CollapseAllButton
 @onready var _toggle_selection_button: CheckButton = %ToggleNotesCheckButton
 
+@onready var _remove_all_button: Button = %RemoveAllButton
+
 var auto_upload: bool:
 	set(value): _remote_check_buttion.button_pressed = value
 	get: return _remote_check_buttion.button_pressed
@@ -40,8 +42,14 @@ func _on_vbox_child_entered_tree(node: Node):
 		# update the bulk button on state change, or when the note is removed from the tree
 		controller.state_changed.connect(func(_state): _update_bulk_button())
 		node.tree_exiting.connect(_update_bulk_button)
+		node.tree_exiting.connect(_update_remove_all_button)
+
+		node.changed.connect(_update_collapse_all_button)
+		node.tree_exiting.connect(_update_collapse_all_button)
 
 		_update_bulk_button() # and update now for the state already set in the controller _init
+		_update_remove_all_button()
+		_update_collapse_all_button()
 
 		note_added.emit(node)
 		
@@ -50,6 +58,8 @@ func _on_vbox_child_exiting_tree(node: Node):
 	if node is Note:
 		# call deferred so the note is gone from the vbox when _update_bulk_button is called
 		_update_bulk_button.call_deferred()
+		_update_remove_all_button.call_deferred()
+		_update_collapse_all_button.call_deferred()
 
 ## Adds the [class Note] object to the VBox container of this instance.
 func add_note(note: Note, index: int = -1):
@@ -112,6 +122,22 @@ func _update_bulk_button() -> void:
 	if notes.is_empty():
 		_bulk_upload_button.release_focus()
 
+func _update_remove_all_button() -> void:
+	_remove_all_button.disabled = get_notes().size() == 0
+
+
+func _update_collapse_all_button() -> void:
+	var any_expanded: = get_notes().any(func(note: Note): return note.expanded)
+
+	_toggle_expand_button.set_pressed_no_signal(any_expanded)
+
+	_toggle_expand_button.text = (
+		"Expand All" if not any_expanded else "Collapse All"
+	)
+
+	_toggle_expand_button.tooltip_text = (
+		"%s all notes in this tab" % ["Collapse" if any_expanded else "Expand"]
+	)
 
 func _on_collapse_all_button_toggled(toggled_on: bool) -> void:
 	
@@ -153,3 +179,8 @@ func _on_toggle_notes_check_button_toggled(toggled_on: bool) -> void:
 	for note in get_notes():
 		note.enabled = toggled_on
 
+
+
+func _on_remove_all_button_pressed() -> void:
+	for note in get_notes():
+		note.remove()
