@@ -107,7 +107,7 @@ func sync_with_remote():
 			return note_a.get_meta("remote_order") < note_b.get_meta("remote_order")
 	)
 
-	notes_to_create_locally.reverse()
+	# notes_to_create_locally.reverse()
 
 	for remote_note in notes_to_create_locally:
 		var remote_thread_id = remote_note.get_meta("remote_thread_id", "")

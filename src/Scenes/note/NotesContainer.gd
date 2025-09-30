@@ -101,7 +101,7 @@ func find_note(note: Note) -> int:
 ## If [parameter tab_idx] is -1, currently selected tab is used, or it fails if no tab is selected.[br]
 ## If [parameter force] is true, and appropriate tab wasn't found, new one will be created.[br] 
 ## Returns true on success.
-func add_note(note: Note, tab_idx: int = -1, force: = true, index: int = 0) -> bool:
+func add_note(note: Note, tab_idx: int = -1, force: = true, index: int = -1) -> bool:
 	if tab_idx == -1:
 		tab_idx = current_tab
 

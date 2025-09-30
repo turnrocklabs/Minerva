@@ -52,7 +52,7 @@ func _on_vbox_child_exiting_tree(node: Node):
 		_update_bulk_button.call_deferred()
 
 ## Adds the [class Note] object to the VBox container of this instance.
-func add_note(note: Note, index: int = 0):
+func add_note(note: Note, index: int = -1):
 	_vbox.add_child(note)
 	_vbox.move_child(note, index)
 
