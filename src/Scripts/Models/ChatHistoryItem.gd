@@ -84,8 +84,8 @@ var TokenCost: int = 0:
 
 var provider: BaseProvider:
 	set(value):
-		_provider_updated()
 		provider = value
+		_provider_updated()
 
 var Expanded: bool = true:
 	set(value): SingletonObject.call_deferred("save_state", false); Expanded = value
@@ -215,6 +215,10 @@ func Serialize() -> Dictionary:
 
 static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	# region Backwards compatibility
+
+	print("\n\n")
+	print("data: ", data)
+	print("\n\n")
 
 	# 1. In case we don't have model specified just use this as a fallback
 	# 2. Old project files don't have "Images" field

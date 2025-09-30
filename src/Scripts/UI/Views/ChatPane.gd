@@ -371,7 +371,6 @@ func execute_hcp_chat():
 
 
 	var chi = ChatHistoryItem.new()
-	prints("bot_response", bot_response)
 	if bot_response != null: 
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL

@@ -138,7 +138,7 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 
 	for chi_data in data.get("HistoryItemList", []):
 		var chi = ChatHistoryItem.Deserialize(chi_data)
-		chi.provider = history.provider
+		# chi.provider = history.provider
 		history.HistoryItemList.append(chi)
 	
 	# Check if these params exist in the project (added after initial creation)
