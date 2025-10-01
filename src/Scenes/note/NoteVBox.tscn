@@ -62,6 +62,7 @@ text = "Upload local notes (0)"
 [node name="OptionsContainer" type="MarginContainer" parent="."]
 layout_mode = 2
 theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 15
 theme_override_constants/margin_bottom = 5
 
@@ -71,29 +72,47 @@ layout_mode = 2
 [node name="HBoxContainer" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
 layout_mode = 2
 
+[node name="Control2" type="Control" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(45, 0)
+layout_mode = 2
+
+[node name="CollapseAllButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer/Control2"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -19.0
+offset_top = -18.0
+offset_right = 19.0
+offset_bottom = 18.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(19, 18)
+toggle_mode = true
+icon = ExtResource("3_cq3g1")
+flat = true
+
 [node name="ToggleNotesCheckButton" type="CheckButton" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Selects all notes in this tab"
-text = "Select All"
+
+[node name="Control" type="Control" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="ReloadFilesContentButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-text = "Reload File Notes"
+tooltip_text = "Reloads All File Notes In Current Tab"
 icon = ExtResource("2_x85us")
-
-[node name="CollapseAllButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-toggle_mode = true
-text = "Expand All"
-icon = ExtResource("3_cq3g1")
 
 [node name="RemoveAllButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Removes All Notes From This Tab"
-text = "Remove All"
 icon = ExtResource("4_cq3g1")
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
@@ -111,7 +130,7 @@ size_flags_vertical = 3
 
 [connection signal="toggled" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer/RemoteCheckButton" to="." method="_on_remote_check_button_toggled"]
 [connection signal="pressed" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer2/BulkUploadButton" to="." method="_on_bulk_upload_button_pressed"]
+[connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/Control2/CollapseAllButton" to="." method="_on_collapse_all_button_toggled"]
 [connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/ToggleNotesCheckButton" to="." method="_on_toggle_notes_check_button_toggled"]
 [connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/ReloadFilesContentButton" to="." method="_on_reload_files_content_button_pressed"]
-[connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/CollapseAllButton" to="." method="_on_collapse_all_button_toggled"]
 [connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/RemoveAllButton" to="." method="_on_remove_all_button_pressed"]

@@ -7,6 +7,9 @@ signal auto_upload_toggled(on: bool)
 
 static var _scene: = preload("res://Scenes/note/NoteVBox.tscn")
 
+static var _cloud_off_icon: = preload("res://assets/icons/cloud_off.svg")
+static var _remove_icon: = preload("res://assets/icons/remove.svg")
+
 @onready var _vbox: VBoxContainer = %VBoxContainer
 
 @onready var _remote_option_container: Container = %RemoteOptionsContainer
@@ -40,7 +43,8 @@ func _on_vbox_child_entered_tree(node: Node):
 		var controller: = SingletonObject.notes_sync_manger.get_sync_controller(node)
 
 		# update the bulk button on state change, or when the note is removed from the tree
-		controller.state_changed.connect(func(_state): _update_bulk_button())
+		controller.state_changed.connect(func(_state): _update_bulk_button(); _update_remove_all_button())
+
 		node.tree_exiting.connect(_update_bulk_button)
 		node.tree_exiting.connect(_update_remove_all_button)
 
@@ -123,7 +127,36 @@ func _update_bulk_button() -> void:
 		_bulk_upload_button.release_focus()
 
 func _update_remove_all_button() -> void:
-	_remove_all_button.disabled = get_notes().size() == 0
+
+	var notes: = get_notes()
+
+	var remote_count: = 0
+
+	for note in notes:
+		var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+
+		if controller.state in [NoteSyncController.SyncState.SYNCED, NoteSyncController.SyncState.SYNCING]:
+			remote_count += 1
+
+	if remote_count > 0:
+		_remove_all_button.text = "(%s)" % remote_count
+		_remove_all_button.icon = _cloud_off_icon
+		_remove_all_button.set_meta("mode", "remote")
+		_remove_all_button.disabled = false
+		return
+
+
+	_remove_all_button.text = "(%s)" % notes.size()
+	_remove_all_button.icon = _remove_icon
+
+	_remove_all_button.disabled = true
+	
+	# if mode is being changed, disable the button for brief time so user doesn't accidentally delete them completely
+	if not _remove_all_button.has_meta("mode") or _remove_all_button.get_meta("mode") != "local" and not notes.is_empty():
+		get_tree().create_timer(0.2).timeout.connect(func(): _remove_all_button.disabled = notes.is_empty())
+	
+	_remove_all_button.set_meta("mode", "local")
+
 
 
 func _update_collapse_all_button() -> void:
@@ -131,46 +164,56 @@ func _update_collapse_all_button() -> void:
 
 	_toggle_expand_button.set_pressed_no_signal(any_expanded)
 
-	_toggle_expand_button.text = (
-		"Expand All" if not any_expanded else "Collapse All"
-	)
-
 	_toggle_expand_button.tooltip_text = (
 		"%s all notes in this tab" % ["Collapse" if any_expanded else "Expand"]
 	)
 
+	_toggle_expand_button.rotation_degrees = 0 if any_expanded else -90
+
+	_toggle_expand_button.release_focus()
+
 func _on_collapse_all_button_toggled(toggled_on: bool) -> void:
-	
-	_toggle_expand_button.text = (
-		"Expand All" if not toggled_on else "Collapse All"
-	)
 
 	_toggle_expand_button.tooltip_text = (
 		"%s all notes in this tab" % ["Collapse" if toggled_on else "Expand"]
 	)
 
+	_toggle_expand_button.rotation_degrees = 0 if toggled_on else -90
+
 	for note in get_notes():
 		note.expanded = toggled_on
+	
+	_toggle_expand_button.release_focus()
 
 
 func _on_reload_files_content_button_pressed() -> void:
-	for note in get_notes():
+	
+	var notes: = get_notes()
+
+	if not notes.any(func(note: Note): return not note.file.is_empty()):
+		SingletonObject.create_toast_notification("No File Notes Present")
+		return
+
+	var errors: Array[int]
+	
+	for note in notes:
 		if not note.file: continue
 
 		var err: = note.refresh_file_note()
 
+		errors.append(err)
+		
 		if err != OK:
 			SingletonObject.create_toast_notification(
 				"Couldn't refresh (%s): %s" % [note, error_string(err)],
 				ToastNotification.Type.ERROR
 			)
 
+	if not errors.any(func(err: int): return err != OK):
+		SingletonObject.create_toast_notification("Reloaded All File Notes")
+
 
 func _on_toggle_notes_check_button_toggled(toggled_on: bool) -> void:
-	
-	_toggle_selection_button.text = (
-		"Select All" if not toggled_on else "Deselect All"
-	)
 
 	_toggle_selection_button.tooltip_text = (
 		"%s all notes in this tab" % ["Selects" if toggled_on else "Deselects"]

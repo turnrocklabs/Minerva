@@ -111,6 +111,7 @@ var _initialized: = false
 @onready var _edit_button: Button = %EditButton
 @onready var _warning_button: Button = %WarningButton
 @onready var _hide_button: Button = %HideButton
+@onready var _reload_file_content_button: Button = %ReloadFileContentButton
 @onready var _remove_button: Button = %RemoveButton
 
 @onready var sync_controller_button: Button = %SyncControllerButton
@@ -388,6 +389,9 @@ func _init() -> void:
 	initialized.connect(_on_note_initialized)
 
 func _on_note_initialized():
+
+	_reload_file_content_button.visible = file != null and not file.is_empty()
+
 	_initialized = true
 
 ## Return whether the note is ready and all fields are set
@@ -448,6 +452,18 @@ func _on_edit_button_pressed() -> void:
 func _on_hide_button_pressed() -> void:
 	visible = false
 	changed.emit()
+
+
+func _on_reload_file_content_button_pressed() -> void:
+	var err: = refresh_file_note()
+
+	if err == OK:
+		SingletonObject.create_toast_notification("Successfully reloaded %s" % self)
+	else:
+		SingletonObject.create_toast_notification(
+			"%s: %s" % [self, error_string(err)],
+			ToastNotification.Type.ERROR
+		)
 
 
 # region Expand

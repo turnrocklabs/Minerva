@@ -35,11 +35,19 @@ static func create(type_: Type, text: String) -> ToastNotification:
 
 func _ready() -> void:
 
+	var parent: = get_parent()
+
+	var count: = 1
+
+	for child in parent.get_children():
+		if child is ToastNotification and not child.is_queued_for_deletion():
+			count += 1
+
 	var screen_size: = get_viewport_rect().size
 
 	position = Vector2(
 		screen_size.x - _panel_container.size.x - 15,
-		screen_size.y - _panel_container.size.y - 50
+		screen_size.y - (_panel_container.size.y+5)*count - 50
 	)
 
 	_content_label.text = content
@@ -53,6 +61,10 @@ func _ready() -> void:
 	tween.tween_property(_fade_in_control, "size:x", 0, 3)
 	tween.tween_property(_fade_in_control, "position:x", 400, 3)
 
+	tween.set_parallel(false)
+
+	tween.tween_property(self, "position:x", screen_size.x, 0.5).set_trans(Tween.TransitionType.TRANS_BACK)
+	
 	await tween.finished
 
 	queue_free()

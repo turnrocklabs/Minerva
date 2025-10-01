@@ -314,7 +314,7 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## and then updates the unsaved changes icon.
 func save():
 	if associated_object is Note and associated_object.file:
-		await prompt_close(true, false, associated_object.file)
+		save_file_to_disc(associated_object.file)
 	elif SingletonObject.last_saved_path:
 		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
