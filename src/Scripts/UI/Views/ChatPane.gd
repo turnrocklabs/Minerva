@@ -27,7 +27,7 @@ func create_user_history_item(text: String) -> ChatHistoryItem:
 # Handle human provider message creation
 func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem) -> void:
 	# Get working memory/notes
-	var working_memory: Array = SingletonObject.notes_container.to_prompt(SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider)
+	var working_memory: Array = await SingletonObject.notes_container.to_prompt(SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider, )
 	
 	# Append working memory to the user history item
 	if working_memory:
@@ -125,6 +125,9 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
+	
+	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+	SingletonObject.detached_note_proxies.clear()
 
 
 ## add new chat 
@@ -178,9 +181,10 @@ func ensure_chat_open() -> void:
 
 ## Generates the full turn prompt using the history of the active chat and the selected provider.
 ## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.[br]
+## If [param refresh_detached] is `true`, [method NotesContainer.to_prompt] will regenerate the editor notes.[br]
 ## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
 ## Check `History.to_prompt` for explanation on `predicate`.
-func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
+func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
 	
 	# if we don't have any chats history_list will be empty
 	var history_list: Array[Variant] = []
@@ -195,7 +199,8 @@ func create_prompt(append_item: ChatHistoryItem = null, provider_fallback: BaseP
 	if not provider:
 		return []
 	
-	var working_memory: Array = SingletonObject.notes_container.to_prompt(provider)
+	# any notes container `to_prompt` will go over both standard and drawer notes
+	var working_memory: Array = await SingletonObject.notes_container.to_prompt(provider, refresh_detached)
 	
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
@@ -217,7 +222,7 @@ func _on_btn_inspect_pressed():
 	new_history_item.Role = ChatHistoryItem.ChatRole.USER
 
 	## generate the dictionary we would send to the model.
-	var history_list: Array[Variant] = create_prompt(new_history_item)
+	var history_list: Array[Variant] = await create_prompt(new_history_item)
 
 	# we wont add the message to the history
 
@@ -276,7 +281,7 @@ func regenerate_response(chi: ChatHistoryItem):
 			history.HistoryItemList.find(item) < index,
 		]
 
-	var history_list = create_prompt(chi, null, predicate)
+	var history_list = await create_prompt(chi, false, null, predicate)
 
 	existing_response.rendered_node.loading = true
 
@@ -304,6 +309,9 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
+	
+	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+	SingletonObject.detached_note_proxies.clear()
 
 
 func _on_chat_pressed():
@@ -351,7 +359,7 @@ func execute_hcp_chat():
 	
 	history.HistoryItemList.append(user_history_item)
 	
-	var history_list: = create_prompt(user_history_item)
+	var history_list: = await create_prompt(user_history_item)
 
 	# rerender the message since we changed the history item
 	user_msg_node.first_time_message = true
@@ -423,13 +431,17 @@ func execute_regular_chat(text: String) -> void:
 
 		for i in SingletonObject.drawer_notes_container.get_tab_count():
 			SingletonObject.drawer_notes_container.disable_notes(i)
+		
+		SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+		SingletonObject.detached_note_proxies.clear()
+
 		return # if user is using Human provider we finish here
 	
 	# Check is the last message is a user message and not do anything if true
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
 	
 	# make a chat request
-	var history_list: = create_prompt(user_history_item)
+	var history_list: = await create_prompt(user_history_item)
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
@@ -478,13 +490,17 @@ func execute_sequential_chat(text_input: String) -> void:
 
 			for j in SingletonObject.drawer_notes_container.get_tab_count():
 				SingletonObject.drawer_notes_container.disable_notes(j)
+			
+			SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+			SingletonObject.detached_note_proxies.clear()
+
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
 		if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
 		
 		# make a chat request
-		var history_list: = create_prompt(user_history_item)
+		var history_list: = await create_prompt(user_history_item)
 		# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 		history.HistoryItemList.append(user_history_item)
 		user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
@@ -513,6 +529,9 @@ func execute_sequential_chat(text_input: String) -> void:
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
+	
+	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+	SingletonObject.detached_note_proxies.clear()
 
 var parallel_loading: = preload("res://Scenes/multi_message_loading.tscn")
 var _mutex: Mutex = Mutex.new()
@@ -612,7 +631,7 @@ func create_message_new(inputs_idx: int) -> void:
 		return
 	
 	# make a chat request
-	var history_list: = create_prompt(user_history_item)
+	var history_list: = await create_prompt(user_history_item)
 	
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	
@@ -660,7 +679,7 @@ func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 	# make a chat request with temporary chat history item
 	var temp_chi = partial_chi.provider.continue_partial_response(partial_chi)
 
-	var history_list: Array[Variant] = SingletonObject.Chats.create_prompt(temp_chi)
+	var history_list: Array[Variant] = await SingletonObject.Chats.create_prompt(temp_chi)
 	
 	# remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
 
@@ -926,7 +945,7 @@ func update_token_estimation(provider: BaseProvider = null):
 	var chi = ChatHistoryItem.new()
 	chi.Message = %txtMainUserInput.text
 
-	var token_count = provider.estimate_tokens_from_prompt(create_prompt(chi, provider))
+	var token_count = provider.estimate_tokens_from_prompt(await create_prompt(chi, false, provider))
 
 	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) * 100, 0.01)]
 	if (provider.token_cost * token_count) * 100 < 0.01:

@@ -20,7 +20,7 @@ signal tab_changed(tab_idx: int)
 ## Emitted when any note content has been changed, both main and controls container
 signal changed
 
-## Emitted when the Note has been created and all properties set
+## Emitted when the Note has been created, is ready in tree and all properties set
 signal initialized
 
 enum Type {
@@ -61,22 +61,39 @@ var uuid: String:
 var sha256: String:
 	get: return generate_sha256()
 
+# _*_backing field are "Transient State Pattern" or something idk.
+# if note is not in the tree, setters and getters cant handle the value
+# because the UI element doesn't exist. backing fields allow notes to work
+# even if they are not added to the tree (eg. detached notes)
+# backing values need to be set in _ready, in case a note gets added to the UI
+# the backing fields are reset on ready so they dont waste memory if not needed anymore
+
+var _title_backing: String
 var title: String:
 	set(value):
-		_title.text = value
+		if is_node_ready():
+			_title.text = value
+			SingletonObject.save_state(false)
+		else:
+			_title_backing = value
+
 		changed.emit()
 		title_changed.emit()
-		SingletonObject.save_state(false)
 	get:
-		return _title.text
+		return _title.text if is_node_ready() else _title_backing
 
+var _enabled_backing: bool
 var enabled: bool:
 	set(value):
-		_check_button.button_pressed = value
+		if is_node_ready():
+			_check_button.button_pressed = value
+			SingletonObject.save_state(false)
+		else:
+			_enabled_backing = value
+
 		changed.emit()
-		SingletonObject.save_state(false)
 	get:
-		return _check_button.button_pressed
+		return _check_button.button_pressed if is_node_ready() else _enabled_backing
 
 var expanded: bool = true:
 	set(value):
@@ -127,6 +144,8 @@ var _initialized: = false
 @onready var _note_header_separator: Control = %HSeparator
 
 
+var _backing_note_controls: Array[Control]
+
 ## Allow changing the default remove button handler.[br]
 ## If the callable is not valid, the note is just freed from the memory.
 var remove_handle: Callable
@@ -139,22 +158,34 @@ var remove_icon: = _remove_icon:
 			_remove_button.icon = value
 	get: return _remove_button.icon
 
+
+func _ready() -> void:
+	_title.text = _title_backing
+	_check_button.button_pressed = _enabled_backing
+
+	_title_backing = ""
+
+
 static func create_text_note(note_title: String, content: String, note_uuid: String = "", register: = true) -> Note:
 	var text_controls: NoteTextControls = _text_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
+	
+	note_scene._backing_note_controls.append(text_controls)
 
 	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
 	if register:
 		SingletonObject.register_object(note_scene, &"uuid")
 
+	text_controls.setup(note_scene, content)
+	
+	note_scene.title = note_title
+	note_scene.type = Type.TEXT
+	
+
 	note_scene.ready.connect(
 		func():
-			await note_scene._set_controls_container(text_controls)
-			text_controls.setup(note_scene, content)
-			
-			note_scene.title = note_title
-			note_scene.type = Type.TEXT
+			note_scene._set_controls_container(text_controls)
 			note_scene.initialized.emit()
 	)
 	
@@ -188,18 +219,21 @@ static func create_image_note(note_title: String, image: Image, caption: String 
 	var image_controls: NoteImageControls = _image_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
 
+	note_scene._backing_note_controls.append(image_controls)
+
 	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
 	if register:
 		SingletonObject.register_object(note_scene, &"uuid")
 
+	image_controls.setup(note_scene, image, caption)
+	
+	note_scene.title = note_title
+	note_scene.type = Type.IMAGE
+	
 	note_scene.ready.connect(
 		func():
-			await note_scene._set_controls_container(image_controls)
-			image_controls.setup(note_scene, image, caption)
-			
-			note_scene.title = note_title
-			note_scene.type = Type.IMAGE
+			note_scene._set_controls_container(image_controls)
 			note_scene.initialized.emit()
 	)
 
@@ -209,18 +243,21 @@ static func create_audio_note(note_title: String, audio: AudioStream, note_uuid:
 	var audio_controls: NoteAudioControls = _audio_controls_scene.instantiate()
 	var note_scene: Note = _scene.instantiate()
 
+	note_scene._backing_note_controls.append(audio_controls)
+
 	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
 
 	if register:
 		SingletonObject.register_object(note_scene, &"uuid")
 
+	audio_controls.setup(note_scene, audio)
+	
+	note_scene.title = note_title
+	note_scene.type = Type.AUDIO
+	
 	note_scene.ready.connect(
 		func():
-			await note_scene._set_controls_container(audio_controls)
-			audio_controls.setup(note_scene, audio)
-			
-			note_scene.title = note_title
-			note_scene.type = Type.AUDIO
+			note_scene._set_controls_container(audio_controls)
 			note_scene.initialized.emit()
 	)
 
@@ -342,22 +379,21 @@ func refresh_file_note() -> int:
 
 	return OK
 
-## Adds the note controls to the note hierarchy and waits one frame after adding.
+## Adds the note controls to the note hierarchy
 func _set_controls_container(controls_container: Control) -> void:
 	_notes_control_container.add_child(controls_container)
-	await get_tree().process_frame
 
 ## Returns the controls container for this note.[br]
 ## If not found returns `null`, but that shouldn't happen if the note
 ## was created using the `create_*_note` functions from this class.
 func get_controls_container() -> Control:
-	for child in _notes_control_container.get_children():
+	for control in _backing_note_controls:
 		if (
-			child is NoteTextControls or
-			child is NoteImageControls or
-			child is NoteAudioControls or
-			child is NoteVideoControls
-		): return child
+			control is NoteTextControls or
+			control is NoteImageControls or
+			control is NoteAudioControls or
+			control is NoteVideoControls
+		): return control
 	
 	return null
 
@@ -692,15 +728,7 @@ func serialize() -> Dictionary:
 ## in the returned data will be populated by this method.
 func _serialize_controls_data() -> Dictionary:
 	var data: = {}
-	var controls_container
-
-	for child in _notes_control_container.get_children():
-		if (
-			child is NoteTextControls or
-			child is NoteImageControls or
-			child is NoteAudioControls or
-			child is NoteVideoControls
-		): controls_container = child
+	var controls_container: = get_controls_container()
 
 	if not controls_container:
 		push_warning("Couldn't serialize Note object (%s) controls container as a valid child wasn't found." % self)
@@ -755,15 +783,7 @@ func _get_file_handle() -> FileAccess:
 ## Call the controls container to generate the SHA256 hash for the content stored in this note.[br]
 ## Controls container mush expose a property name "sha256" or this function returns an empty string.
 func generate_sha256() -> String:
-	var controls_container: Control
-
-	for child in _notes_control_container.get_children():
-		if (
-			child is NoteTextControls or
-			child is NoteImageControls or
-			child is NoteAudioControls or
-			child is NoteVideoControls
-		): controls_container = child
+	var controls_container: = get_controls_container()
 
 	if not controls_container:
 		push_warning("Couldn't generate sha256 for Note object (%s) from controls container as a valid child wasn't found." % self)
@@ -872,3 +892,42 @@ func content_matches(input: Variant):
 			return str(input) == content_container.content
 
 	return true
+
+
+# region Proxy Note
+
+## This class is used to create a Note Proxy objects, that don't initialize the note immediately,
+## but instead take a [class Callable] that is called on [method Proxy.create_note] that will construct a Note object.
+class Proxy extends RefCounted:
+	# Emitted when [method Proxy.create_note] is called but only if a valid [class Note] object is returned.
+	signal note_created(note: Note)
+	
+	var _cache: Note
+	var _initializer: Callable
+
+	func _init(initializer: Callable) -> void:
+		_initializer = initializer
+	
+	## Calls the initializer callable to construct the [class Note] object.[br]
+	## If [param use_cached] is `true` and this method was used to create a valid [class Note] object,
+	## that object will be reused IF the object is still valid (`is_instance_valid`).
+	func create_note(use_cached: = false) -> Note:
+		
+		if use_cached and is_instance_valid(_cache):
+			return _cache
+
+		if _initializer and _initializer.is_valid():
+			var result = await _initializer.call()
+
+			if not result is Note:
+				push_error("Note.Proxy initializer return value is not a Note object, but instead: %s" % result)
+				return null
+
+			_cache = result
+			note_created.emit(result)
+			return result
+
+		push_error("Note.Proxy initializer is not a valid Callable: %s" % _initializer)
+		return null
+
+# endregion

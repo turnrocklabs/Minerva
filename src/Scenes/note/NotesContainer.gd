@@ -219,28 +219,36 @@ func _update_adapter_info():
 
 
 ## Calls the [param provider] wrap_memory for each active node
-## in the notes and drawer notes container, and returns an array of all the return values.
-func to_prompt(provider: BaseProvider) -> Array[Variant]:
+## in the notes and drawer notes container, and returns an array of all the return values.[br]
+## If [param refresh_detached] is `true`, detached notes will be regenerated to match current editor content.
+func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Variant]:
 	var output: Array[Variant] = []
 	
 	var notes: Array[Note]
 
 	for i in SingletonObject.notes_container.get_tab_count():
-		notes.append_array(SingletonObject.notes_container.get_notes())
+		notes.append_array(SingletonObject.notes_container.get_notes().filter(func(note: Note): return note.enabled))
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
-		notes.append_array(SingletonObject.drawer_notes_container.get_notes())
+		notes.append_array(SingletonObject.drawer_notes_container.get_notes().filter(func(note: Note): return note.enabled))
 
+	for proxy_note in SingletonObject.detached_note_proxies:
+		var note: = await proxy_note.create_note(not refresh_detached)
+		
+		print("\n\nProxy note created:")
+		print((note.get_controls_container() as NoteTextControls).content)
+		
+		if note:
+			notes.append(note)
+			note.enabled = false # so the editor/terminal can catch and disable the check button
+		else:
+			SingletonObject.ErrorDisplay("Note Error", "Couldn't generate a Note object")
+
+	# notes are filtered for enabled ones, except for detached note
+	# if detached notes are present
 	for note in notes:
-		if note.enabled:
-			output.append(provider.wrap_memory(note))
+		output.append(provider.wrap_memory(note))
 
-
-	# loop through detached notes also
-	# for item in SingletonObject.DetachedNotes:
-	# 	if item.Enabled:
-	# 		output.append(provider.wrap_memory(item))
-	
 	return output
 
 

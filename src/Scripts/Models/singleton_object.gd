@@ -210,7 +210,7 @@ var notes_container: NotesContainer
 var drawer_notes_container: NotesContainer
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
-var detached_notes: Array[Note]
+var detached_note_proxies: Array[Note.Proxy]
 
 enum note_type {
 	TEXT,

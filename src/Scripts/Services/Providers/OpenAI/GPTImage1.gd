@@ -38,16 +38,24 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 
 func generate_content(prompt_array: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
+	
+	# FIXME: Disable the provider temporarily
+	# mask functionality is being worked on, detached notes and thread lists don't work like before
+	# also, other providers usually handle notes in the "to_prompt" function that generates the prompt_array
+	var temp_bt: = BotResponse.new()
+	temp_bt.error = "Provider currently not supported"
+	return temp_bt
+
 	var source_images_for_api: Array[Image] = []
 	var image_mask_for_inpainting: Image = null # Will store the actual mask Image if found from the first relevant note
 
 	# --- Determine active source images and if a mask is explicitly provided ---
 	# Prioritize DetachedNotes (explicitly selected/added by user for this turn)
-	var detached_notes_used: Array[MemoryItem] = []
+	var detached_note_proxies_used: Array[MemoryItem] = []
 	for item: MemoryItem in SingletonObject.DetachedNotes:
 		if item.Type == SingletonObject.note_type.IMAGE and item.Enabled and item.MemoryImage:
 			source_images_for_api.append(item.MemoryImage)
-			detached_notes_used.append(item) # Keep track to disable them later
+			detached_note_proxies_used.append(item) # Keep track to disable them later
 			# If this is the first image note and it has a mask, use it
 			if image_mask_for_inpainting == null and item.MemoryImage.has_meta("mask"):
 				var potential_mask = item.MemoryImage.get_meta("mask")
@@ -57,7 +65,7 @@ func generate_content(prompt_array: Array[Variant], additional_params: Dictionar
 					push_warning("GPTImage1: Note image has 'mask' meta, but it's not a valid Image object.")
 	
 	# Disable the detached notes that were collected
-	for item_to_disable: MemoryItem in detached_notes_used:
+	for item_to_disable: MemoryItem in detached_note_proxies_used:
 		item_to_disable.Enabled = false
 
 	# Fallback: If no images from DetachedNotes, check ThreadList for a single "active" image
