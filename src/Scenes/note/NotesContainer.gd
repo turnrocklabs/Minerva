@@ -5,9 +5,6 @@ signal tab_renamed(tab_idx: int)
 
 @onready var _new_thread_popup: PersistentWindow = %NewThreadPopup
 
-## A dictionary that maps tab index to a corresponding uuid
-var _uuid_map: Dictionary[int, String] = {}
-
 var remote_adapter: NoteServiceAdapter = null:
 	set(value):
 		remote_adapter = value
@@ -23,6 +20,8 @@ func _ready() -> void:
 
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
+
+	get_tab_bar().active_tab_rearranged.connect(_on_active_tab_rearranged)
 
 ## Creates a new tab with given name.[br]
 ## If the name is already taken godot will autimatically assing a new one.[br]
@@ -44,11 +43,9 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 	notes_vbox.name = tab_name
 
 	if uuid.is_empty():
-		print("uuid is empty")
 		uuid = SingletonObject.generate_UUID()
 	
-	# NOTICE: this will break if tab reordering is enabled
-	_uuid_map[new_tab_index] = uuid
+	notes_vbox.uuid = uuid
 
 	# force readable name
 	add_child(notes_vbox, true)
@@ -150,7 +147,9 @@ func get_notes(tab_idx: = -1) -> Array[Note]:
 
 ## Returns the UUID of the specified tab, or `null` if it doesn't exist
 func get_tab_id(idx: int):
-	return _uuid_map.get(idx)
+	var control = get_tab_control(idx)
+	if control is NoteVBox: return control.uuid
+	return null
 
 ## Returns the name of the specified tab, or `null` if it doesn't exist
 func get_tab_name(idx: int):
@@ -266,7 +265,7 @@ func serialize() -> Array[Dictionary]:
 
 		var tab_data: = {
 			"ThreadName": note_vbox.name,
-			"ThreadId": _uuid_map.get(i),
+			"ThreadId": note_vbox.uuid,
 			"MemoryItemList": notes_data,
 			"AutoUpload": note_vbox.auto_upload,
 		}
@@ -387,3 +386,7 @@ func _on_tab_bar_gui_input(event: InputEvent) -> void:
 		last_click = Time.get_unix_time_from_system()
 
 # endregion
+
+
+func _on_active_tab_rearranged(idx_to: int) -> void:
+	pass

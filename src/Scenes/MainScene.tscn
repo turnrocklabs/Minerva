@@ -689,6 +689,7 @@ custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
+drag_to_rearrange_enabled = true
 script = ExtResource("57_jnakw")
 
 [node name="BottomDrawerControl" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit"]
@@ -743,6 +744,7 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/icon_separation = 16
 drag_to_rearrange_enabled = true
+use_hidden_tabs_for_min_size = true
 tab_focus_mode = 1
 script = ExtResource("57_jnakw")
 

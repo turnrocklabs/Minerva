@@ -24,6 +24,8 @@ const _bulk_button_text: = "Upload local notes (%s)"
 
 @onready var _remove_all_button: Button = %RemoveAllButton
 
+var uuid: = ""
+
 var auto_upload: bool:
 	set(value): _remote_check_buttion.button_pressed = value
 	get: return _remote_check_buttion.button_pressed
