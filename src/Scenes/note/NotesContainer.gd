@@ -235,12 +235,10 @@ func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Varia
 	for proxy_note in SingletonObject.detached_note_proxies:
 		var note: = await proxy_note.create_note(not refresh_detached)
 		
-		print("\n\nProxy note created:")
-		print((note.get_controls_container() as NoteTextControls).content)
-		
 		if note:
 			notes.append(note)
-			note.enabled = false # so the editor/terminal can catch and disable the check button
+			if refresh_detached:
+				note.enabled = false # so the editor/terminal can catch and disable the check button
 		else:
 			SingletonObject.ErrorDisplay("Note Error", "Couldn't generate a Note object")
 
