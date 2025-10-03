@@ -57,6 +57,8 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 
 	_update_adapter_info()
 
+	current_tab = new_tab_index
+
 	return notes_vbox
 
 ## Removes the tab specified with [param tab_idx].
@@ -227,10 +229,10 @@ func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Varia
 	var notes: Array[Note]
 
 	for i in SingletonObject.notes_container.get_tab_count():
-		notes.append_array(SingletonObject.notes_container.get_notes().filter(func(note: Note): return note.enabled))
+		notes.append_array(SingletonObject.notes_container.get_notes(i).filter(func(note: Note): return note.enabled))
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
-		notes.append_array(SingletonObject.drawer_notes_container.get_notes().filter(func(note: Note): return note.enabled))
+		notes.append_array(SingletonObject.drawer_notes_container.get_notes(i).filter(func(note: Note): return note.enabled))
 
 	for proxy_note in SingletonObject.detached_note_proxies:
 		var note: = await proxy_note.create_note(not refresh_detached)
