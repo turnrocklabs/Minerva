@@ -69,7 +69,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 
 func wrap_memory(item: Note) -> Variant:
 
-	# Return either string for text notes or dictionary for image notes
+	# Return either string for text notes or dictionary for image/audio/video notes
 
 	if item.type == Note.Type.IMAGE:
 		return {
@@ -126,12 +126,7 @@ func wrap_memory(item: Note) -> Variant:
 			}
 	}
 	elif item.type == Note.Type.TEXT:
-		var output = "Given this background information:\n\n"
-		output += "### Reference Information ###\n"
-		output += (item.get_controls_container() as NoteTextControls).content
-		output += "### End Reference Information ###\n\n"
-		output += "Respond to the user's message: \n\n"
-		return output
+		return (item.get_controls_container() as NoteTextControls).content
 
 	else:
 		push_warning("Tried to wrap memory but the given note type is not implemented")
@@ -153,19 +148,22 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "model"
 	
-	# text_notes will be added straight to the text that's passed as the prompt message
+	# Collect text notes and media notes separately
 	var text_notes: = PackedStringArray()
-
-	# image_notes should be formatted properly inside the wrap_memory method
-	var image_notes: Array[Dictionary] = []
+	var media_notes: Array[Dictionary] = []
 
 	for note: Variant in chat_item.InjectedNotes:
 		if note is String:
 			text_notes.append(note)
-		
 		elif note is Dictionary:
-			image_notes.append(note)
+			media_notes.append(note)
 
+	# Wrap all text notes together once
+	var notes_section := ""
+	if not text_notes.is_empty():
+		notes_section = "### Reference Information ###\n"
+		notes_section += "\n\n".join(text_notes)
+		notes_section += "\n### End Reference Information ###\n\n"
 
 	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
 	var image_captions: String
@@ -173,9 +171,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	if not image_captions_array.is_empty():
 		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
 
-
-	var text := "%s\n%s\n%s" % [image_captions, "\n".join(text_notes), chat_item.Message]
-	text += "\nHCP Data: %s" % chat_item.HcpData if chat_item.HcpData != null and not chat_item.HcpData.is_empty() else ""
+	# Combine everything
+	var text := "%s\n%s\n%s" % [image_captions, notes_section, chat_item.Message]
 	text = text.strip_edges()
 
 	var output = {
@@ -185,20 +182,32 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		]
 	}
 
-	output["parts"].append_array(image_notes)
+	# Add media notes (images, audio, video) to parts array
+	output["parts"].append_array(media_notes)
 	return output
 
 func estimate_tokens(input) -> int:
 	return roundi(input.get_slice_count(" ") * 1.335)
 
 func estimate_tokens_from_prompt(input: Array[Variant]):
-	var all_messages: Array[String] = []
-
-	for msg: Dictionary in input:
-		for part in msg["parts"]:
-			if "text" in part: all_messages.append(part["text"])
+	var all_text: = PackedStringArray()
 	
-	return estimate_tokens("".join(all_messages))
+	for msg: Variant in input:
+		if not msg is Dictionary:
+			continue
+		
+		var parts = msg.get("parts", [])
+		if not parts is Array:
+			continue
+		
+		for part in parts:
+			if not part is Dictionary:
+				continue
+			
+			if "text" in part:
+				all_text.append(part["text"])
+	
+	return estimate_tokens("\n".join(all_text))
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
