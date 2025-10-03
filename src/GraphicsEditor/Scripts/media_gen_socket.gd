@@ -128,9 +128,11 @@ func on_log_in_http_request_completed(result: int, response_code: int, _headers:
 	else:
 		print("Unknown Error")
 
-func send_media_gen_request(prompt: String, negative_prompt: String) -> void:
-	var dic: Dictionary = {"prompt"= prompt, "negative_prompt" = negative_prompt}
-	client.send_media_gen_request(dic)
+func send_media_gen_request(params: Dictionary) -> void:
+	if !params.has("prompt") and !params.has("negative_prompt"):
+		return
+	
+	client.send_media_gen_request(params)
 
 func _exit_tree() -> void:
 	client.close_connection()
@@ -143,3 +145,17 @@ func _on_binary_file_saved_received(file_index: int, filename: String, path: Str
 
 func _on_image_response_received(fname: String, buffer: PackedByteArray) -> void:
 	pass_image_to_editor.emit(fname, buffer)
+
+
+func send_media_edit_request(prompt: String, negative_prompt: String, image_buffer: PackedByteArray, image_filename: String = "input_image.png") -> void:
+	var params: Dictionary = {
+		"positive_prompt": prompt,
+		"negative_prompt": negative_prompt,
+		# You can add more parameters here if you want to allow them to be customized from the UI
+		"width": 1024,
+		"height": 1024,
+		"steps": 8,
+		"cfg": 7.0,
+		"denoise": 0.75
+	}
+	client.send_media_edit_request(params, image_buffer, image_filename)

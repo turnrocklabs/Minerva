@@ -50,13 +50,18 @@ signal compose_finished(image: Image)
 	speech_bubble_tool: _speech_bubble_options,
 }
 
-@onready var media_gen_socket: Node = $MediaGenSocket
+@onready var media_gen_socket: MediaGenSocket = $MediaGenSocket
 @onready var image_gen_popup_panel: PopupPanel = %ImageGenPopupPanel
 @onready var prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var send_prompt_button: Button = %SendPromptButton
 @onready var negative_text_edit: TextEdit = %NegativeTextEdit
+@onready var image_width_line_edit: LineEdit = %ImageWidthLineEdit
+@onready var image_height_line_edit: LineEdit = %ImageHeightLineEdit
 
 #endregion
+
+const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
+
 var canvas_size: = Vector2i(1000, 1000)
 
 var _custom_cursor: Resource
@@ -882,23 +887,18 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 
 func _on_prompt_button_pressed() -> void:
 	%ImageGenPopupPanel.popup_centered()
-	
 
 
 func _on_send_prompt_button_pressed() -> void:
 	%ImageGenPopupPanel.hide()
-	media_gen_socket.send_media_gen_request(prompt_text_edit.text, negative_text_edit.text)
-
-
-#func _on_image_received(image_buffer: PackedByteArray) -> void:
-	#if image_buffer.is_empty():
-		#return
-	#var image = Image.new()
-	#var err = image.load_png_from_buffer(image_buffer)
-	#if err == OK:
-		#create_new_image_layer("Result from prompt", image)
-	#else:
-		#push_error("An error occured when loaindg the image: %s" % err)
+	var params : Dictionary = {
+		"prompt"= prompt_text_edit.text, 
+		"negative_prompt" = negative_text_edit.text,
+		# The total number of pixels must be divisible by 64
+		"width" = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"height" = image_height_line_edit.text.to_int() if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
+	}
+	media_gen_socket.send_media_gen_request(params)
 
 
 func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
@@ -913,3 +913,42 @@ func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
 	add_layer(l)
 
 #endregion HTTP image gen
+
+
+func _on_edit_img_button_pressed() -> void:
+	if not active_layer or not active_layer.image or active_layer.image.is_empty():
+		display_message("Error", "No active layer with an image to edit. Select an image layer first.")
+		return
+		
+	if prompt_text_edit.text.is_empty():
+		display_message("Input Required", "Please enter a positive prompt for image editing.")
+		return
+
+	# 1. Get the image from the active layer
+	var image_to_edit: Image = active_layer.image
+	var image_filename: String = active_layer.name + ".png" # Use layer name as filename
+
+	# 2. Convert Image to PackedByteArray (PNG format)
+	# The image must be converted to RGBA8 for PNG export if it's not already.
+	# Duplicate to avoid modifying the original layer image directly during conversion.
+	var image_for_export: Image = image_to_edit.duplicate()
+	if image_for_export.get_format() != Image.FORMAT_RGBA8:
+		image_for_export.convert(Image.FORMAT_RGBA8)
+	
+	var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
+	
+	if image_buffer.is_empty():
+		display_message("Error", "Failed to convert active layer image to PNG buffer.")
+		return
+
+	# 3. Get prompts from UI
+	var prompt: String = prompt_text_edit.text
+	var negative_prompt: String = negative_text_edit.text
+
+	# 4. Show progress window
+	progress_window.popup_centered()
+	progress_window_label.text = "Sending image for editing..."
+	progress_window_bar.value = 0 # Reset progress bar
+
+	# 5. Send the request via MediaGenSocket
+	media_gen_socket.send_media_edit_request(prompt, negative_prompt, image_buffer, image_filename)

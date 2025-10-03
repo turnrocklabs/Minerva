@@ -44,6 +44,8 @@ const FILE_INFO = 1
 const FILE_DATA = 2
 const FILE_END = 3
 
+const MEDIA_GEN_DIVISIBLE_BY: = 64 # The total numgber of pixels must be divisible by 64
+
 var _client: WebSocketPeer = WebSocketPeer.new() # Explicitly type _client
 var _entity_type: EntityType = EntityType.SOFTWARE_AGENT # Explicitly type _entity_type
 var client_id: String = ""
@@ -481,18 +483,11 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				var buffer_copy_for_modify: PackedByteArray = (file_data_dict["buffer"] as PackedByteArray) # Get a copy of buffer from the dictionary
 				var current_received_bytes: int = file_data_dict["received"] as int
 				
-				print("DEBUG_BINARY: FILE_DATA idx=%s. Buffer size BEFORE append: %s bytes. Current received: %s. Appending %s bytes." % [file_index, buffer_copy_for_modify.size(), current_received_bytes, current_chunk.size()])
-				
-				# --- Use append_array to add the chunk to the buffer copy ---
+				# Use append_array to add the chunk to the buffer copy
 				buffer_copy_for_modify.append_array(current_chunk) 
-				# --- End CRITICAL FIX ---
 				
-				file_data_dict["received"] += current_chunk.size() # Use current_chunk.size()
-				# *** CRITICAL FIX: Re-assign the modified copy back to the dictionary after modification ***
+				file_data_dict["received"] += current_chunk.size()
 				file_data_dict["buffer"] = buffer_copy_for_modify
-				# *** End CRITICAL FIX ***
-				
-				print("DEBUG_BINARY: FILE_DATA idx=%s. Buffer size AFTER append: %s bytes. New received: %s." % [file_index, buffer_copy_for_modify.size(), file_data_dict["received"]])
 				
 				# Log progress periodically (every 1MB)
 				if int(current_received_bytes / (1024 * 1024)) != int((file_data_dict["received"] as int) / (1024 * 1024)): # Ensure int division
@@ -526,7 +521,9 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					print("❌ FILE_END: Buffer size (%s bytes) does not match expected size (%s bytes). Cannot save file." % [buf.size(), expected_file_size])
 					return
 				
-				var fname: String = _binary_filenames[file_index] + Time.get_datetime_string_from_system() # Explicitly type
+				var ext: String = _binary_filenames[file_index].get_extension()
+				
+				var fname: String = _binary_filenames[file_index].replace(ext, "") + Time.get_datetime_string_from_system()  + ext# Explicitly type
 				var out_path: String = "user://temp/" + fname # Using user:// for persistence in Godot (Explicitly type)
 				image_received.emit(fname, buf) # Emit the raw image buffer
 				
@@ -609,6 +606,7 @@ func send_request(service_topic: String, user_input: String) -> void: # Explicit
 	
 	send_message_to_core(message)
 
+
 func send_media_gen_request(generation_params: Dictionary) -> void: # Accepts a dictionary of parameters
 	var request_id: String = UUID.v7() # Generate request_id once (Explicitly type)
 	var message: Dictionary = { # Explicitly type
@@ -620,17 +618,19 @@ func send_media_gen_request(generation_params: Dictionary) -> void: # Accepts a 
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
-				"workflow": "image_generation",  # Updated workflow
-				"positive_prompt": generation_params.get("prompt"),
-				"negative_prompt": generation_params.get("negative_prompt"),
-				"width": 1024,
-				"height": 1024,
+				## These are now being merged below
+				#"workflow": "image_generation",  # Updated workflow
+				#"positive_prompt": generation_params.get("prompt"),
+				#"negative_prompt": generation_params.get("negative_prompt"),
+				#"width": 1024, # The total numgber of pixels must be divisible by 64
+				#"height": 1024,
 				"steps": 8,
 				"cfg": 1.0,
 			},
 			"auth": TOKEN
 		}
 	}
+	
 	# Merge the provided generation_params into the 'data' dictionary
 	(message["params"] as Dictionary)["data"] = merge_dictionaries((message["params"] as Dictionary)["data"] as Dictionary, generation_params)
 	
@@ -638,6 +638,73 @@ func send_media_gen_request(generation_params: Dictionary) -> void: # Accepts a 
 	_current_binary_request_id = request_id
 	send_message_to_core(message)
 
+
+func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByteArray, image_filename: String = "input_image.png") -> void:
+	var request_id: String = UUID.v7()
+	
+	# Base64 encode the image buffer
+	var base64_image_data: String = Marshalls.raw_to_base64(image_buffer)#.base64_encode(image_buffer).get_string_from_utf8()
+
+	var message: Dictionary = {
+		"cmd": "request",
+		"topic": "media_gen/image_editing", # <--- IMPORTANT: Correct topic for image editing
+		"entity_type": "client",
+		"params": {
+			"client_id": client_id,
+			"request_id": request_id,
+			"target_service_id": "media-gen",
+			"data": {
+				"workflow": "image_editing", # <--- IMPORTANT: Correct workflow for image editing
+				"positive_prompt": editing_params.get("positive_prompt", ""), 
+				"negative_prompt": editing_params.get("negative_prompt", ""),
+				"width": editing_params.get("width", 1024),
+				"height": editing_params.get("height", 1024),
+				"steps": editing_params.get("steps", 8),
+				"cfg": editing_params.get("cfg", 7.0),   # From Python test 2 params
+				"denoise": editing_params.get("denoise", 0.75), # From Python test 2 params
+				"files": [ # Attach the image here
+					{
+						"filename": image_filename,
+						"role": "image",
+						"data": base64_image_data,
+						"content_type": "image/png" # Assuming PNG as default
+					}
+				]
+			},
+			"auth": TOKEN
+		}
+	}
+	
+	_current_binary_request_id = request_id
+	send_message_to_core(message)
+
+
+func send_media_mask_edit_request(editing_params: Dictionary) -> void:
+	var request_id: String = UUID.v7() # Generate request_id once (Explicitly type)
+	var message: Dictionary = { # Explicitly type
+		"cmd": "request",
+		"topic": "media_gen/image_generation",  # Updated topic
+		"entity_type": "client",
+		"params": {
+			"client_id": client_id,
+			"request_id": request_id,
+			"target_service_id": "media-gen",
+			"data": {
+				"workflow": "image_editing",  # Updated workflow
+				"positive_prompt": editing_params.get("prompt"),
+				"negative_prompt": editing_params.get("negative_prompt"),
+				"width": 1024,
+				"height": 1024,
+				"steps": 8,
+				"cfg": 1.0,
+			},
+			"files": [],
+			"auth": TOKEN
+		}
+	}
+	
+	_current_binary_request_id = request_id
+	send_message_to_core(message)
 
 func send_discovery_request() -> void:
 	if !register_timer.is_stopped():
