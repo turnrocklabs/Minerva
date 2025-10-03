@@ -49,11 +49,13 @@ func _on_vbox_child_entered_tree(node: Node):
 		node.tree_exiting.connect(_update_remove_all_button)
 
 		node.changed.connect(_update_collapse_all_button)
+		node.changed.connect(_update_toggle_notes_button.call_deferred)
 		node.tree_exiting.connect(_update_collapse_all_button)
 
 		_update_bulk_button() # and update now for the state already set in the controller _init
 		_update_remove_all_button()
 		_update_collapse_all_button()
+		_update_toggle_notes_button()
 
 		note_added.emit(node)
 		
@@ -70,7 +72,6 @@ func add_note(note: Note, index: int = -1):
 	_vbox.add_child(note)
 	_vbox.move_child(note, index)
 
-	prints("NoteVBox added note at:", index)
 
 func get_notes() -> Array[Note]:
 	var notes: Array[Note]
@@ -141,12 +142,14 @@ func _update_remove_all_button() -> void:
 	if remote_count > 0:
 		_remove_all_button.text = "(%s)" % remote_count
 		_remove_all_button.icon = _cloud_off_icon
+		_remove_all_button.tooltip_text = "Makes All Notes From This Tab Local"
 		_remove_all_button.set_meta("mode", "remote")
 		_remove_all_button.disabled = false
 		return
 
 
 	_remove_all_button.text = "(%s)" % notes.size()
+	_remove_all_button.tooltip_text = "Removes All Notes From This Tab"
 	_remove_all_button.icon = _remove_icon
 	
 	# if mode is being changed, disable the button for brief time so user doesn't accidentally delete them completely
@@ -212,6 +215,17 @@ func _on_reload_files_content_button_pressed() -> void:
 
 	if not errors.any(func(err: int): return err != OK):
 		SingletonObject.create_toast_notification("Reloaded All File Notes")
+
+
+func _update_toggle_notes_button() -> void:
+	var any_disabled: = get_notes().any(func(note: Note): return not note.enabled)
+
+	if any_disabled and _toggle_selection_button.button_pressed:
+		
+		_toggle_selection_button.set_pressed_no_signal(false)
+		_toggle_selection_button.tooltip_text = (
+			"Selects all notes in this tab"
+		)
 
 
 func _on_toggle_notes_check_button_toggled(toggled_on: bool) -> void:

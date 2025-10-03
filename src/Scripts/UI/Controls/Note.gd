@@ -456,6 +456,9 @@ func _on_title_text_changed(_new_text: String) -> void:
 	title_changed.emit()
 	changed.emit()
 
+func _on_check_button_toggled(_toggled_on: bool) -> void:
+	changed.emit()
+
 func _on_edit_button_pressed() -> void:
 	# The editor pane will listen to tree exiting signal
 	# and remove this note from the associated object ONLY if the note
