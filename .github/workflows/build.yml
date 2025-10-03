@@ -203,13 +203,21 @@ jobs:
         run: |
           mkdir -p build
 
-          timeout 20s "godot" --headless --import || true
+          timeout 20s godot --headless --import || true
           
-          if [ "${{ github.event.inputs.platform }}" = "windows" ]; then
+          # Determine which platforms to build
+          PLATFORM="${{ github.event.inputs.platform }}"
+          
+          # For push events, build all platforms
+          if [ "${{ github.event_name }}" = "push" ]; then
+            PLATFORM="all"
+          fi
+          
+          if [ "$PLATFORM" = "windows" ]; then
             mkdir -p build/windows
             godot --headless --export-debug "Windows Release" build/windows/Minerva.exe
           
-          elif [ "${{ github.event.inputs.platform }}" = "linux" ]; then
+          elif [ "$PLATFORM" = "linux" ]; then
             mkdir -p build/linux
             godot --headless --export-debug "Linux/X11 Release" build/linux/Minerva.x86_64
           
@@ -222,38 +230,25 @@ jobs:
             godot --headless --export-debug "Linux/X11 Release" build/linux/Minerva.x86_64 
           fi
 
-      # Create ZIP archives for release
-      - name: Create Release Archives
-        run: |
-          mkdir -p release-assets
-          
-          if [ -d "src/build/windows" ]; then
-            cd src/build/windows
-            zip -r ../../../release-assets/Minerva-Windows.zip ./*
-            cd ../../..
-          fi
-          
-          if [ -d "src/build/linux" ]; then
-            cd src/build/linux
-            tar -czf ../../../release-assets/Minerva-Linux.tar.gz ./*
-            cd ../../..
-          fi
-          
       - name: Upload Windows Build
-        if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' )
+        if: |
+          github.event_name == 'push' || 
+          github.event.inputs.platform == 'windows' || 
+          github.event.inputs.platform == 'all'
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Windows-Build
-          path: |
-            src/build/windows/*
+          path: src/build/windows/*
           
       - name: Upload Linux Build
-        if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' )
+        if: |
+          github.event_name == 'push' || 
+          github.event.inputs.platform == 'linux' || 
+          github.event.inputs.platform == 'all'
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Linux-Build
-          path: |
-            src/build/linux/*
+          path: src/build/linux/*
 
   create-release:
     needs: [build-godot]
@@ -269,26 +264,30 @@ jobs:
         with:
           pattern: Minerva-*-Build
           path: downloads
-          merge-multiple: true
           
       - name: Create Release Archives
         run: |
           mkdir -p release-assets
           
           # Create Windows ZIP if files exist
-          if [ -d "downloads" ] && find downloads -name "*.exe" -type f | grep -q .; then
-            cd downloads
-            zip -r ../release-assets/Minerva-Windows.zip $(find . -name "*.exe" -o -name "*.dll" -o -name "*.pck")
-            cd ..
+          if [ -d "downloads/Minerva-Windows-Build" ]; then
+            cd downloads/Minerva-Windows-Build
+            zip -r ../../release-assets/Minerva-Windows.zip *
+            cd ../..
+            echo "Created Windows archive"
+            ls -lh release-assets/Minerva-Windows.zip
           fi
           
           # Create Linux archive if files exist  
-          if [ -d "downloads" ] && find downloads -name "*.x86_64" -type f | grep -q .; then
-            cd downloads
-            tar -czf ../release-assets/Minerva-Linux.tar.gz $(find . -name "*.x86_64" -o -name "*.so" -o -name "*.pck")
-            cd ..
+          if [ -d "downloads/Minerva-Linux-Build" ]; then
+            cd downloads/Minerva-Linux-Build
+            tar -czf ../../release-assets/Minerva-Linux.tar.gz *
+            cd ../..
+            echo "Created Linux archive"
+            ls -lh release-assets/Minerva-Linux.tar.gz
           fi
           
+          echo "Final release assets:"
           ls -la release-assets/
           
       - name: Generate release tag
