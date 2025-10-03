@@ -1,4 +1,4 @@
-[gd_scene load_steps=27 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=28 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://Assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -21,6 +21,7 @@
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://Assets/icons/Hand.png" id="15_ow12a"]
 [ext_resource type="Texture2D" uid="uid://c4rbfgr3eg45t" path="res://Assets/icons/graphics_editor/transform.svg" id="16_nin75"]
 [ext_resource type="Texture2D" uid="uid://cqj3j0kugb6ni" path="res://Assets/icons/graphics_editor/center.svg" id="17_tml0f"]
+[ext_resource type="Texture2D" uid="uid://cdjhorjk1o0na" path="res://Assets/icons/robot.png" id="19_tml0f"]
 [ext_resource type="Script" uid="uid://b5c6larm7pjw6" path="res://Scripts/media_gen_socket.gd" id="22_nin75"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_u8jc2"]
@@ -334,7 +335,7 @@ icon_alignment = 1
 [node name="PromptButton" type="Button" parent="h/v/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Robot Icon"
+icon = ExtResource("19_tml0f")
 
 [node name="HSeparator" type="HSeparator" parent="h/v"]
 layout_mode = 2
@@ -420,6 +421,7 @@ layout_mode = 2
 unique_name_in_owner = true
 initial_position = 4
 size = Vector2i(400, 500)
+visible = true
 
 [node name="MarginContainer" type="MarginContainer" parent="ImageGenPopupPanel"]
 offset_left = 4.0
@@ -443,9 +445,8 @@ text = "Prompt:"
 
 [node name="Label2" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
-tooltip_text = "Negative prompts are for
-keywords that describe something 
-you dont want in your image"
+tooltip_text = "Prompts are where you describe what you want your image to be
+"
 mouse_filter = 0
 theme_override_font_sizes/font_size = 24
 theme_override_styles/normal = SubResource("StyleBoxFlat_nin75")
@@ -458,6 +459,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 placeholder_text = "type prompt to generate image here ..."
+wrap_mode = 1
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -499,12 +501,17 @@ text = "Widh: "
 
 [node name="ImageWidthLineEdit" type="LineEdit" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer4/HBoxContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 text = "1024"
 max_length = 5
 virtual_keyboard_type = 2
 clear_button_enabled = true
 caret_blink = true
+
+[node name="ImageWidthOptionButton" type="OptionButton" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer4/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer4"]
 layout_mode = 2
@@ -516,12 +523,17 @@ text = "Height: "
 
 [node name="ImageHeightLineEdit" type="LineEdit" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer4/HBoxContainer2"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 text = "1024"
 max_length = 5
 virtual_keyboard_type = 2
 clear_button_enabled = true
 caret_blink = true
+
+[node name="ImageHeightOptionButton" type="OptionButton" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer4/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
 
 [node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2

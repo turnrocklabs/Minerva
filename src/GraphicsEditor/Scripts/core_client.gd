@@ -428,8 +428,6 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					"buffer": new_buffer 
 				}
 				
-				# Debugging: Initial buffer size after FILE_INFO setup
-				print("DEBUG_BINARY: FILE_INFO idx=%s. Buffer created, initial size: %s bytes (expected %s)." % [file_index, ((_binary_files[file_index] as Dictionary)["buffer"] as PackedByteArray).size(), file_size])
 				
 				# Apply any buffered chunks for this file_index
 				if _binary_pending_chunks.has(file_index):
@@ -483,12 +481,13 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				var buffer_copy_for_modify: PackedByteArray = (file_data_dict["buffer"] as PackedByteArray) # Get a copy of buffer from the dictionary
 				var current_received_bytes: int = file_data_dict["received"] as int
 				
+				print("DEBUG_BINARY: FILE_DATA idx=%s. Buffer size BEFORE append: %s bytes. Current received: %s. Appending %s bytes." % [file_index, buffer_copy_for_modify.size(), current_received_bytes, current_chunk.size()])
 				# Use append_array to add the chunk to the buffer copy
 				buffer_copy_for_modify.append_array(current_chunk) 
 				
 				file_data_dict["received"] += current_chunk.size()
 				file_data_dict["buffer"] = buffer_copy_for_modify
-				
+				print("DEBUG_BINARY: FILE_DATA idx=%s. Buffer size AFTER append: %s bytes. New received: %s." % [file_index, buffer_copy_for_modify.size(), file_data_dict["received"]])
 				# Log progress periodically (every 1MB)
 				if int(current_received_bytes / (1024 * 1024)) != int((file_data_dict["received"] as int) / (1024 * 1024)): # Ensure int division
 					var pct: float = 0.0 # Explicitly type
@@ -521,9 +520,9 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					print("❌ FILE_END: Buffer size (%s bytes) does not match expected size (%s bytes). Cannot save file." % [buf.size(), expected_file_size])
 					return
 				
-				var ext: String = _binary_filenames[file_index].get_extension()
-				
-				var fname: String = _binary_filenames[file_index].replace(ext, "") + Time.get_datetime_string_from_system()  + ext# Explicitly type
+				var ext: String = "." + _binary_filenames[file_index].get_extension()
+				var time: = Time.get_datetime_string_from_system().replace(":", "_")
+				var fname: String = _binary_filenames[file_index].replace(ext, "") + time  + ext# Explicitly type
 				var out_path: String = "user://temp/" + fname # Using user:// for persistence in Godot (Explicitly type)
 				image_received.emit(fname, buf) # Emit the raw image buffer
 				
@@ -535,6 +534,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("Failed to create directory 'user://temp/'. Error: %s" % err) # Corrected string formatting
 						return # Abort if directory can't be created
 				
+				
 				var file = FileAccess.open(out_path, FileAccess.WRITE)
 				if file:
 					file.store_buffer(buf)
@@ -543,7 +543,9 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					print("   ✅ FILE_END idx=%s saved to %s (%s bytes). Total completed: %s/%s" % [file_index, out_path, buf.size(), _binary_files_completed, _binary_expected_files]) # Corrected string formatting
 					binary_file_saved.emit(file_index, fname, out_path)
 				else:
+					print(FileAccess.get_open_error())
 					print("   ❌ Could not save file %s" % out_path) # Corrected string formatting
+				_reset_binary_transfer_state()
 			else:
 				print("   ⚠️ FILE_END for unknown file index %s" % file_index) # Corrected string formatting
 		
@@ -618,8 +620,8 @@ func send_media_gen_request(generation_params: Dictionary) -> void: # Accepts a 
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
-				## These are now being merged below
 				#"workflow": "image_generation",  # Updated workflow
+				## These are now being merged below
 				#"positive_prompt": generation_params.get("prompt"),
 				#"negative_prompt": generation_params.get("negative_prompt"),
 				#"width": 1024, # The total numgber of pixels must be divisible by 64
@@ -811,9 +813,10 @@ func validate_message(message: Dictionary) -> bool: # Explicitly type parameter 
 
 
 func merge_dictionaries(dict1: Dictionary, dict2: Dictionary) -> Dictionary: # Explicitly type parameters and return
-	var result: Dictionary = dict1.duplicate() # Explicitly type
+	var result: Dictionary = dict1.duplicate() 
 	for key in dict2.keys():
 		result[key] = dict2[key]
+	
 	return result
 
 

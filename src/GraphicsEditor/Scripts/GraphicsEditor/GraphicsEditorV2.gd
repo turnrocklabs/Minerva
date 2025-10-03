@@ -57,10 +57,13 @@ signal compose_finished(image: Image)
 @onready var negative_text_edit: TextEdit = %NegativeTextEdit
 @onready var image_width_line_edit: LineEdit = %ImageWidthLineEdit
 @onready var image_height_line_edit: LineEdit = %ImageHeightLineEdit
+@onready var image_width_option_button: OptionButton = %ImageWidthOptionButton
+@onready var image_height_option_button: OptionButton = %ImageHeightOptionButton
 
 #endregion
 
 const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
+const MAX_IMAGE_GEN_RES: int = 2500
 
 var canvas_size: = Vector2i(1000, 1000)
 
@@ -107,6 +110,13 @@ func _ready() -> void:
 	setup()
 	
 	media_gen_socket.pass_image_to_editor.connect(_on_image_received)
+	
+	var temp_res: = 640
+	while temp_res + 64 <= MAX_IMAGE_GEN_RES:
+		var res: = str(temp_res)
+		image_width_option_button.add_item(res)
+		image_height_option_button.add_item(res)
+		temp_res += 128
 
 
 
@@ -892,7 +902,7 @@ func _on_prompt_button_pressed() -> void:
 func _on_send_prompt_button_pressed() -> void:
 	%ImageGenPopupPanel.hide()
 	var params : Dictionary = {
-		"prompt"= prompt_text_edit.text, 
+		"positive_prompt"= prompt_text_edit.text, 
 		"negative_prompt" = negative_text_edit.text,
 		# The total number of pixels must be divisible by 64
 		"width" = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
@@ -949,6 +959,16 @@ func _on_edit_img_button_pressed() -> void:
 	progress_window.popup_centered()
 	progress_window_label.text = "Sending image for editing..."
 	progress_window_bar.value = 0 # Reset progress bar
-
-	# 5. Send the request via MediaGenSocket
-	media_gen_socket.send_media_edit_request(prompt, negative_prompt, image_buffer, image_filename)
+	
+	var params: Dictionary = {
+		"positive_prompt": prompt,
+		"negative_prompt": negative_prompt,
+		# You can add more parameters here if you want to allow them to be customized from the UI
+		"width": 1024,
+		"height": 1024,
+		"steps": 8,
+		"cfg": 7.0,
+		"denoise": 0.75
+	}
+	
+	media_gen_socket.send_media_edit_request(params, image_buffer, image_filename)
