@@ -125,10 +125,6 @@ func set_entity_type(type):
 	_entity_type = type
 
 func connect_to_core(url: String) -> bool:
-	if minerva_secret.is_empty():
-		print("Error: Cannot connect without MINERVA_SECRET set")
-		return false
-
 	var err = _client.connect_to_url(url)
 	if err != OK:
 		connection_error.emit(err)
