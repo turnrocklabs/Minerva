@@ -79,7 +79,7 @@ func _ready():
 			config_file.set_value("HCP", "auth_base_url", AUTH_PRESET_PROD) # Default Auth Base URL
 			config_file.set_value("HCP", "username", "")
 			config_file.set_value("HCP", "password", "")
-			config_file.set_value("HCP", "auto_connect", false)
+			config_file.set_value("HCP", "auto_connect", true)
 
 	set_field_values()
 
@@ -133,7 +133,7 @@ func set_field_values():
 	_fields["openai"].text = config_file.get_value("API KEYS", "openai", "")
 
 	_fields["hcp_url"].text = config_file.get_value("HCP", "url", WS_PRESET_PROD) # Core WS URL
-	_fields["hcp_auto_connect"].button_pressed = config_file.get_value("HCP", "auto_connect", false)
+	_fields["hcp_auto_connect"].button_pressed = config_file.get_value("HCP", "auto_connect", true)
 	_fields["hcp_username"].text = config_file.get_value("HCP", "username", "")
 	_fields["hcp_password"].text = config_file.get_value("HCP", "password", "")
 
