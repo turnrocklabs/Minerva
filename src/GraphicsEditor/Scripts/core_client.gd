@@ -657,13 +657,13 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 			"target_service_id": "media-gen",
 			"data": {
 				"workflow": "image_editing", # <--- IMPORTANT: Correct workflow for image editing
-				"positive_prompt": editing_params.get("positive_prompt", ""), 
-				"negative_prompt": editing_params.get("negative_prompt", ""),
-				"width": editing_params.get("width", 1024),
-				"height": editing_params.get("height", 1024),
-				"steps": editing_params.get("steps", 8),
-				"cfg": editing_params.get("cfg", 7.0),   # From Python test 2 params
-				"denoise": editing_params.get("denoise", 0.75), # From Python test 2 params
+				#"positive_prompt": editing_params.get("positive_prompt", ""), 
+				#"negative_prompt": editing_params.get("negative_prompt", ""),
+				#"width": editing_params.get("width", 1024),
+				#"height": editing_params.get("height", 1024),
+				#"steps": editing_params.get("steps", 8),
+				#"cfg": editing_params.get("cfg", 7.0),   # From Python test 2 params
+				#"denoise": editing_params.get("denoise", 0.75), # From Python test 2 params
 				"files": [ # Attach the image here
 					{
 						"filename": image_filename,
@@ -676,7 +676,7 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 			"auth": TOKEN
 		}
 	}
-	
+	(message["params"] as Dictionary)["data"] = merge_dictionaries((message["params"] as Dictionary)["data"] as Dictionary, editing_params)
 	_current_binary_request_id = request_id
 	send_message_to_core(message)
 

@@ -59,12 +59,15 @@ signal compose_finished(image: Image)
 @onready var image_height_line_edit: LineEdit = %ImageHeightLineEdit
 @onready var image_width_option_button: OptionButton = %ImageWidthOptionButton
 @onready var image_height_option_button: OptionButton = %ImageHeightOptionButton
+@onready var advanced_settings_check_button: CheckButton = %AdvancedSettingsCheckButton
+@onready var advanced_settings_container: VBoxContainer = %AdvancedSettingsContainer
+@onready var prompt_button: Button = %PromptButton
 
 #endregion
 
 const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
 const MAX_IMAGE_GEN_RES: int = 2500
-
+const MIN_IMAGE_RES: int = 512
 var canvas_size: = Vector2i(1000, 1000)
 
 var _custom_cursor: Resource
@@ -111,7 +114,7 @@ func _ready() -> void:
 	
 	media_gen_socket.pass_image_to_editor.connect(_on_image_received)
 	
-	var temp_res: = 640
+	var temp_res: = MIN_IMAGE_RES
 	while temp_res + 64 <= MAX_IMAGE_GEN_RES:
 		var res: = str(temp_res)
 		image_width_option_button.add_item(res)
@@ -724,7 +727,7 @@ func compose_final_image(show_dialog: = true) -> Image:
 	
 	if show_dialog:
 		# Show progress window
-		progress_window.popup_centered()
+		progress_window.popup()
 		progress_window_label.text = "Composing image..."
 		progress_window_bar.value = 0
 	
@@ -896,7 +899,19 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 #region HTTP image gen
 
 func _on_prompt_button_pressed() -> void:
-	%ImageGenPopupPanel.popup_centered()
+	if !image_gen_popup_panel.visible:
+		image_gen_popup_panel.position = Vector2(
+			(
+				prompt_button.global_position.x 
+				-image_gen_popup_panel.size.x/2.0
+				+prompt_button.size.x/2.0
+			),
+			prompt_button.global_position.y + 50
+		)
+		image_gen_popup_panel.popup()
+	else:
+		image_gen_popup_panel.hide()
+	
 
 
 func _on_send_prompt_button_pressed() -> void:
@@ -905,8 +920,11 @@ func _on_send_prompt_button_pressed() -> void:
 		"positive_prompt"= prompt_text_edit.text, 
 		"negative_prompt" = negative_text_edit.text,
 		# The total number of pixels must be divisible by 64
-		"width" = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
-		"height" = image_height_line_edit.text.to_int() if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
+		"width" = image_width_line_edit.text.to_int(), #if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"height" = image_height_line_edit.text.to_int(),# if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
+		"steps" = 8,
+		"cfg" = 7.0,   # From Python test 2 params
+		"denoise" = 0.75, # From Python test 2 params
 	}
 	media_gen_socket.send_media_gen_request(params)
 
@@ -956,7 +974,7 @@ func _on_edit_img_button_pressed() -> void:
 	var negative_prompt: String = negative_text_edit.text
 
 	# 4. Show progress window
-	progress_window.popup_centered()
+	progress_window.popup()
 	progress_window_label.text = "Sending image for editing..."
 	progress_window_bar.value = 0 # Reset progress bar
 	
@@ -972,3 +990,7 @@ func _on_edit_img_button_pressed() -> void:
 	}
 	
 	media_gen_socket.send_media_edit_request(params, image_buffer, image_filename)
+
+
+func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
+	advanced_settings_container.visible = toggled_on
