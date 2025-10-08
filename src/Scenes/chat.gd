@@ -36,21 +36,30 @@ func _ready() -> void:
 	
 	_setup_chats_service()
 
-	if Core:
-		# wait for core registration and fetch services
-		var registration_message = await (
-			Core
-			.await_message()
-			.with_topic("system")
-			.with_cmd("registration_confirmed")
-			.receive()
-		)
+	Core.client.connection_established.connect(_on_core_connected)
 
-		if not registration_message: return
-		
-		var services: = await Core.fetch_services()
-		for service in services:
-			_on_hcp_service_selected(service)
+	# Right now, if core is disconnected the model response should indicate that
+	# In the future we may want to completely remove the item from the dropdown
+	# Core.client.connection_closed.connect(_on_core_disconnected)
+	# Core.client.message_received.connect(_on_core_message_received)
+
+
+func _on_core_connected():
+	var registration_message = await (
+		Core
+		.await_message()
+		.with_topic("system")
+		.with_cmd("registration_confirmed")
+		.receive()
+	)
+
+	if not registration_message:
+		push_error("No registration message received")
+		return
+	
+	var services: = await Core.fetch_services()
+	for service in services:
+		_on_hcp_service_selected(service)
 
 func _initialize_services_by_type():
 	services_by_type[ServiceHistory.ServiceType.CHAT] = []
