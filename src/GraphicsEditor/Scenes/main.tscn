@@ -52,10 +52,6 @@ layout_mode = 2
 size_flags_horizontal = 8
 icon = ExtResource("3_8gbba")
 
-[node name="TabsPanelContainer" type="PanelContainer" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-
 [node name="TabContainer" type="TabContainer" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer"]
 layout_mode = 2
 size_flags_vertical = 3

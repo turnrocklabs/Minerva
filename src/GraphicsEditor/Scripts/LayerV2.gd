@@ -5,6 +5,7 @@ enum Type {
 	IMAGE,
 	DRAWING,
 	SPEECH_BUBBLE,
+	MASK
 }
 
 @onready var texture_rect: TextureRect = %TextureRect

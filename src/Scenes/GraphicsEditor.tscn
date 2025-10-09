@@ -118,7 +118,6 @@ rounded = true
 
 [node name="ApplyMaskButton" type="Button" parent="VBoxContainer/MarginContainer/HFlowContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Apply created mask"

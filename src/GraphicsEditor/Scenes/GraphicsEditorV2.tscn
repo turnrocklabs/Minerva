@@ -1,4 +1,4 @@
-[gd_scene load_steps=28 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=30 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://Assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -23,6 +23,8 @@
 [ext_resource type="Texture2D" uid="uid://dduw6wyhunxff" path="res://Assets/icons/layers_icons/layers-24.png" id="18_tml0f"]
 [ext_resource type="Texture2D" uid="uid://dkq31owppnmm7" path="res://Assets/icons/robot_AI.png" id="19_tml0f"]
 [ext_resource type="Script" uid="uid://b5c6larm7pjw6" path="res://Scripts/media_gen_socket.gd" id="22_nin75"]
+[ext_resource type="Texture2D" uid="uid://cro2wpn0cmdal" path="res://Assets/icons/generate_image/generate_image_icon_new.png" id="23_hm28v"]
+[ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://Assets/icons/edit_icons/edit.svg" id="24_spfkh"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_u8jc2"]
 shader = ExtResource("9_u8jc2")
@@ -203,6 +205,11 @@ visible = false
 layout_mode = 2
 tooltip_text = "Centers the viewport."
 icon = ExtResource("17_tml0f")
+
+[node name="Button" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
+layout_mode = 2
+text = "add mask
+"
 
 [node name="ToolOptionsContainer" type="MarginContainer" parent="h/v/HBoxContainer/h"]
 unique_name_in_owner = true
@@ -421,6 +428,7 @@ layout_mode = 2
 unique_name_in_owner = true
 position = Vector2i(538, 110)
 size = Vector2i(400, 500)
+visible = true
 
 [node name="MarginContainer" type="MarginContainer" parent="ImageGenPopupPanel"]
 offset_left = 4.0
@@ -563,7 +571,9 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "add Image"
-text = "add Image"
+text = "Generate Image"
+icon = ExtResource("23_hm28v")
+alignment = 0
 
 [node name="EditImgButton" type="Button" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
@@ -571,6 +581,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Edit selected Image"
 text = "Edit selected Image"
+icon = ExtResource("24_spfkh")
 
 [node name="MediaGenSocket" type="Node" parent="."]
 script = ExtResource("22_nin75")
