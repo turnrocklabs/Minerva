@@ -36,11 +36,12 @@ func _on_file_index_pressed(index):
 			if current_editor_tab:
 				current_editor_tab.prompt_close(true, true)
 		4:
-			## Set a target size, have a border, and display the preferences popup.
-			#var target_size = %VBoxRoot.size / 2
-			#%PreferencesPopup.borderless = false
-			#%PreferencesPopup.size = target_size
-			%PreferencesPopup.popup_centered()
+			var preferences_popup: PreferencesPopup = %PreferencesPopup
+
+			if not preferences_popup.visible:
+				preferences_popup.popup_centered()
+			else:
+				preferences_popup.grab_focus()
 
 # Handle new file creation
 func handle_new_file():

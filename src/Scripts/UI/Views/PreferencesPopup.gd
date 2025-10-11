@@ -21,8 +21,7 @@ extends PersistentWindow
 @onready var hcp_password: LineEdit = %lePassword
 
 @onready var service_selection_window: ServiceSelection = %ServiceSelection
-@onready var core_error_item_list: ItemList = %CoreErrorItemList
-@onready var hcp_logs_window: PersistentWindow = %HcpLogs
+@onready var logs_window: HcpLogs = %Logs
 
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
@@ -288,7 +287,6 @@ func _on_output_device_button_item_selected(index: int) -> void:
 
 # MODIFIED: Now handles both authentication and WebSocket connection
 func _on_core_connet_button_pressed() -> void:
-	core_error_item_list.clear() # Clear previous errors on new attempt
 
 	var core_ws_url = hcp_url.text
 	var auth_http_base_url = auth_base_url.text
@@ -313,52 +311,17 @@ func _on_core_connet_button_pressed() -> void:
 		pword
 	)
 
-	prints("Attempting connection. Core WS:", core_ws_url, "Auth Base:", auth_http_base_url)
-	prints("Connection successful:", connected)
-
-	if connected:
-		# Connection status labels will be updated by the Core.client signals (_ready connects them)
-		# Setup error listener (this remains the same, handles WebSocket message errors)
-		var msg_received = (
-			Core
-				.await_message()
-				.with_cmd("error")
-				.with_topic("system")
-				.receive_all()
-		)
-
-		if msg_received:
-			msg_received.connect(
-				func(msg):
-					if not msg: return
-					var err: String
-
-					if msg.has("params") and msg["params"].has("error_code"):
-						err = "%s: %s" % [msg["params"]["error_code"], msg["params"]["error"]]
-					elif msg.has("params") and msg["params"].has("error"):
-						err = msg["params"]["error"]
-					else:
-						err = "Unknown error format: %s" % str(msg)
-
-					core_error_item_list.add_item(
-						err,
-						preload("res://.godot/imported/warning_icon.svg-0d14ac513b8003b886b4926b52005686.ctex"),
-						false
-					)
-		)
-	else:
+	if not connected:
 		# If Core.start returns false, it means authentication or WS connection failed.
 		# The Core.start function should ideally push a more specific error message.
 		connection_label.text = "Failed to connect/authenticate"
 		connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
 		connect_button.disabled = false
-		# Add a generic error if Core.start didn't provide one
-		if core_error_item_list.item_count == 0:
-			core_error_item_list.add_item(
-				"Authentication or WebSocket connection failed. Check URLs and credentials.",
-				preload("res://.godot/imported/warning_icon.svg-0d14ac513b8003b886b4926b52005686.ctex"),
-				false
-			)
+		
+		logs_window.add_log_line(
+			"Authentication or WebSocket connection failed. Check URLs and credentials",
+			HcpLogs.LOG_TYPE.ERROR
+		)
 
 
 func _on_select_services_button_pressed() -> void:
@@ -383,4 +346,4 @@ func _on_password_checkbox_toggled(toggled_on:bool) -> void:
 
 
 func _on_hcp_logs_button_pressed() -> void:
-	hcp_logs_window.popup_centered()
+	logs_window.popup_centered()
