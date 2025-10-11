@@ -1130,15 +1130,23 @@ func _on_audio_stop_1_pressed() -> void:
 
 
 func clone_chat(tab_idx: int) -> void:
-	var serialized_chat_to_clone: = SingletonObject.ChatList[tab_idx].Serialize()
-	var provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[serialized_chat_to_clone.get("Provider")].new()
-	var new_chat_history: ChatHistory = ChatHistory.new(provider)
-	new_chat_history.HistoryName = serialized_chat_to_clone.get("HistoryName") + " clone"
+	var chat_to_clone: ChatHistory = SingletonObject.ChatList[tab_idx]
 	
-	var chat_items: Array[ChatHistoryItem] = []
-	for i: Dictionary in serialized_chat_to_clone.get("HistoryItemList"):
-		chat_items.append(ChatHistoryItem.Deserialize(i))
-	new_chat_history.HistoryItemList = chat_items
+	# Clone using the live provider reference, not serialization
+	var new_provider = chat_to_clone.provider.get_script().new()
+	var new_chat_history: ChatHistory = ChatHistory.new(new_provider)
+	new_chat_history.HistoryName = chat_to_clone.HistoryName + " clone"
+	new_chat_history.Temperature = chat_to_clone.Temperature
+	new_chat_history.TopP = chat_to_clone.TopP
+	new_chat_history.PresencePenalty = chat_to_clone.PresencePenalty
+	new_chat_history.FrequencyPenalty = chat_to_clone.FrequencyPenalty
+	
+	# Deep clone history items
+	for item in chat_to_clone.HistoryItemList:
+		var serialized = item.Serialize()
+		var cloned_item = ChatHistoryItem.Deserialize(serialized)
+		new_chat_history.HistoryItemList.append(cloned_item)
+	
 	SingletonObject.ChatList.append(new_chat_history)
 	render_history(new_chat_history)
 
