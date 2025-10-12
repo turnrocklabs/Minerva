@@ -991,11 +991,68 @@ func get_params_image_gen() -> Dictionary:
 		return {}
 	
 	return {
-		"positive_prompt": prompt_text_edit.text,
-		"negative_prompt": negative_text_edit.text,
-		"width": image_width_line_edit.text.to_int(),
-		"height": image_height_line_edit.text.to_int(),
-		"steps": steps_spin_box.value,
-		"cfg": cfg_spin_box.value,
-		"denoise": denoise_spin_box.value
+		"positive_prompt" = prompt_text_edit.text,
+		"negative_prompt" = negative_text_edit.text,
+		"width" = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"height" = image_height_line_edit.text.to_int() if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"steps" = steps_spin_box.value,
+		"cfg" = cfg_spin_box.value,
+		"denoise" = denoise_spin_box.value
 	}
+
+
+func _on_mask_edit_button_pressed() -> void: 
+	if not active_layer or not active_layer.image or active_layer.image.is_empty():
+		display_message("Error", "No active layer with an image to edit. Select an image layer first.")
+		return
+		
+	if prompt_text_edit.text.is_empty():
+		display_message("Input Required", "Please enter a positive prompt for masked image editing.")
+		return
+	
+	var base_image_to_edit: Image = active_layer.image
+	var base_image_filename: String = active_layer.name + ".png" 
+	
+	
+	var base_image_for_export: Image = base_image_to_edit.duplicate()
+	if base_image_for_export.get_format() != Image.FORMAT_RGBA8:
+		base_image_for_export.convert(Image.FORMAT_RGBA8)
+	
+	var base_image_buffer: PackedByteArray = base_image_for_export.save_png_to_buffer()
+	
+	if base_image_buffer.is_empty():
+		display_message("Error", "Failed to convert active layer image to PNG buffer for mask editing.")
+		return
+
+	# 3. Get prompts and dimensions from UI, or use defaults
+	#var prompt: String = prompt_text_edit.text
+	#var negative_prompt: String = negative_text_edit.text
+	var width_val: int = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
+	var height_val: int = image_height_line_edit.text.to_int() if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
+
+	# Ensure width and height are divisible by MEDIA_GEN_DIVISIBLE_BY (64) for editing
+	if width_val % media_gen_socket.MEDIA_GEN_DIVISIBLE_BY != 0:
+		width_val = (float(width_val) / media_gen_socket.MEDIA_GEN_DIVISIBLE_BY).ceil() * media_gen_socket.MEDIA_GEN_DIVISIBLE_BY
+		print("Adjusted masked editing width to be divisible by %s: %s" % [media_gen_socket.MEDIA_GEN_DIVISIBLE_BY, width_val])
+	if height_val % media_gen_socket.MEDIA_GEN_DIVISIBLE_BY != 0:
+		height_val = (float(height_val) / media_gen_socket.MEDIA_GEN_DIVISIBLE_BY).ceil() * media_gen_socket.MEDIA_GEN_DIVISIBLE_BY
+		print("Adjusted masked editing height to be divisible by %s: %s" % [media_gen_socket.MEDIA_GEN_DIVISIBLE_BY, height_val])
+
+	# 4. Generate the circular mask dynamically
+	var mask_size = max(width_val, height_val) # Mask should cover the image
+	var mask_radius = mask_size / 4 # Example radius, adjust as needed
+	var mask_image_buffer: PackedByteArray = media_gen_socket.generate_circular_mask_bytes(mask_size, mask_radius)
+	var mask_image_filename: String = "generated_circular_mask.png" # Standard name for generated mask
+	
+	if mask_image_buffer.is_empty():
+		display_message("Error", "Failed to generate circular mask image.")
+		return
+
+	# 5. Show progress window
+	progress_window.popup_centered()
+	progress_window_label.text = "Sending image and mask for selective editing..."
+	progress_window_bar.value = 0 # Reset progress bar
+
+	# 6. Send the request via MediaGenSocket
+	var selective_editing_params: Dictionary = get_params_image_gen()
+	media_gen_socket.send_media_selective_edit_request(selective_editing_params, base_image_buffer, base_image_filename, mask_image_buffer, mask_image_filename)

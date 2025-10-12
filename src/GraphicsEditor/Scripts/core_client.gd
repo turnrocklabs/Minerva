@@ -681,32 +681,53 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 	send_message_to_core(message)
 
 
-func send_media_mask_edit_request(editing_params: Dictionary) -> void:
-	var request_id: String = UUID.v7() # Generate request_id once (Explicitly type)
-	var message: Dictionary = { # Explicitly type
+func send_media_selective_edit_request(editing_params: Dictionary, base_image_buffer: PackedByteArray, base_image_filename: String, mask_image_buffer: PackedByteArray, mask_image_filename: String = "generated_mask.png") -> void:
+	var request_id: String = UUID.v7()
+	
+	# Base64 encode the base image and mask image buffers
+	var base64_base_image_data: String = (Marshalls.raw_to_base64(base_image_buffer))
+	var base64_mask_image_data: String = (Marshalls.raw_to_base64(mask_image_buffer))
+
+	var message: Dictionary = {
 		"cmd": "request",
-		"topic": "media_gen/image_generation",  # Updated topic
+		"topic": "media_gen/image_selective_editing", # Match Python's Test 3 topic
 		"entity_type": "client",
 		"params": {
 			"client_id": client_id,
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
-				"workflow": "image_editing",  # Updated workflow
-				"positive_prompt": editing_params.get("prompt"),
-				"negative_prompt": editing_params.get("negative_prompt"),
-				"width": 1024,
-				"height": 1024,
-				"steps": 8,
-				"cfg": 1.0,
+				"workflow": "image_selective_editing", # Match Python's Test 3 workflow
+				# All editing_params passed directly here
 			},
-			"files": [],
 			"auth": TOKEN
 		}
 	}
 	
+	# Merge the provided editing_params into the 'data' dictionary
+	var data_payload: Dictionary = (message["params"] as Dictionary)["data"] as Dictionary
+	data_payload = merge_dictionaries(data_payload, editing_params)
+	
+	# Attach both the base image and the mask image to the files array
+	data_payload["files"] = [
+		{
+			"filename": base_image_filename,
+			"role": "image",
+			"data": base64_base_image_data,
+			"content_type": "image/png"
+		},
+		{
+			"filename": mask_image_filename,
+			"role": "mask",
+			"data": base64_mask_image_data,
+			"content_type": "image/png" # Assuming mask is also PNG
+		}
+	]
+	(message["params"] as Dictionary)["data"] = data_payload
+	
 	_current_binary_request_id = request_id
 	send_message_to_core(message)
+
 
 func send_discovery_request() -> void:
 	if !register_timer.is_stopped():

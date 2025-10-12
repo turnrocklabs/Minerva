@@ -68,8 +68,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 204.0
+offset_bottom = 696.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 10
@@ -430,12 +430,13 @@ layout_mode = 2
 [node name="ImageGenPopupPanel" type="PopupPanel" parent="."]
 unique_name_in_owner = true
 position = Vector2i(234, 0)
-size = Vector2i(530, 590)
+size = Vector2i(525, 590)
+visible = true
 
 [node name="MarginContainer" type="MarginContainer" parent="ImageGenPopupPanel"]
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 526.0
+offset_right = 521.0
 offset_bottom = 586.0
 theme_override_constants/margin_left = 5
 theme_override_constants/margin_top = 5
@@ -658,6 +659,11 @@ text = "Edit selected Image"
 icon = ExtResource("24_spfkh")
 alignment = 0
 
+[node name="MaskEditButton" type="Button" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Mask Edit Image"
+
 [node name="MediaGenSocket" type="Node" parent="."]
 script = ExtResource("22_nin75")
 
@@ -678,3 +684,4 @@ script = ExtResource("22_nin75")
 [connection signal="toggled" from="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
 [connection signal="pressed" from="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
 [connection signal="pressed" from="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_img_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/MarginContainer/VBoxContainer/HBoxContainer3/MaskEditButton" to="." method="_on_mask_edit_button_pressed"]

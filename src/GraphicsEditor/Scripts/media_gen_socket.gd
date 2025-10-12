@@ -24,7 +24,7 @@ var _jwt_token: String = ""
 # Client ID returned after successful login
 var _client_id: String = ""
 
-
+const MEDIA_GEN_DIVISIBLE_BY: int = 64
 func _ready() -> void:
 	add_child(client)
 	add_child(http_request)
@@ -147,5 +147,51 @@ func _on_image_response_received(fname: String, buffer: PackedByteArray) -> void
 	pass_image_to_editor.emit(fname, buffer)
 
 
-func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByteArray, image_filename: String = "input_image.png") -> void:
+func send_media_edit_request(editing_params: Dictionary, \
+							image_buffer: PackedByteArray, \
+							image_filename: String = "input_image.png") -> void:
 	client.send_media_edit_request(editing_params, image_buffer, image_filename)
+
+
+# NEW: Method to generate a circular grayscale mask as a PackedByteArray (PNG format)
+func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) -> PackedByteArray:
+	print("Generating circular mask with Image API...")
+	
+	var mask_image := Image.create(size, size, false, Image.FORMAT_L8) # Grayscale image
+	mask_image.fill(Color.BLACK) # Black background (value 0)
+	
+	var center_x: int = size / 2
+	var center_y: int = size / 2
+	
+	#mask_image.lock() # Lock for pixel manipulation
+	
+	for y in range(size):
+		for x in range(size):
+			var dist_sq: float = float((x - center_x) * (x - center_x) + (y - center_y) * (y - center_y))
+			if dist_sq <= float(circle_radius * circle_radius):
+				mask_image.set_pixel(x, y, Color.WHITE) # White circle (value 255)
+	
+	#mask_image.unlock() # Unlock after manipulation
+	
+	# Convert to RGBA8 for consistent PNG saving if needed, although L8 should be fine.
+	# The Python client's PIL saves a 'L' mode image directly to PNG.
+	# Let's keep it L8, as it's a mask, but convert if PNG saving fails or produces odd results.
+	# If output image expects RGBA, it can be converted before use.
+	
+	var mask_buffer: PackedByteArray = mask_image.save_png_to_buffer()
+	
+	if mask_buffer.is_empty():
+		push_error("Failed to save generated mask to PNG buffer.")
+		return PackedByteArray()
+	
+	print("   📊 Generated mask: %s bytes." % mask_buffer.size())
+	return mask_buffer
+
+
+func send_media_selective_edit_request(params: Dictionary, \
+									base_image_buffer: PackedByteArray, \
+									base_image_filename: String, \
+									mask_image_buffer: PackedByteArray, \
+									mask_image_filename: String = "generated_mask.png") -> void:
+										
+	client.send_media_selective_edit_request(params, base_image_buffer, base_image_filename, mask_image_buffer, mask_image_filename)
