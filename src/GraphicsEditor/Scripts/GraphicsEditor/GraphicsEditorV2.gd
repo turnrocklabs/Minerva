@@ -62,6 +62,10 @@ signal compose_finished(image: Image)
 @onready var advanced_settings_check_button: CheckButton = %AdvancedSettingsCheckButton
 @onready var advanced_settings_container: VBoxContainer = %AdvancedSettingsContainer
 @onready var prompt_button: Button = %PromptButton
+@onready var steps_spin_box: SpinBox = %StepsSpinBox
+@onready var cfg_spin_box: SpinBox = %CFGSpinBox
+@onready var denoise_spin_box: SpinBox = %DenoiseSpinBox
+@onready var seed_line_edit: LineEdit = %SeedLineEdit
 
 #endregion
 
@@ -916,16 +920,9 @@ func _on_prompt_button_pressed() -> void:
 
 func _on_send_prompt_button_pressed() -> void:
 	%ImageGenPopupPanel.hide()
-	var params : Dictionary = {
-		"positive_prompt"= prompt_text_edit.text, 
-		"negative_prompt" = negative_text_edit.text,
-		# The total number of pixels must be divisible by 64
-		"width" = image_width_line_edit.text.to_int(), #if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
-		"height" = image_height_line_edit.text.to_int(),# if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
-		"steps" = 8,
-		"cfg" = 7.0,   # From Python test 2 params
-		"denoise" = 0.75, # From Python test 2 params
-	}
+	var params : Dictionary = get_params_image_gen()
+	if params.is_empty():
+		return
 	media_gen_socket.send_media_gen_request(params)
 
 
@@ -968,29 +965,37 @@ func _on_edit_img_button_pressed() -> void:
 	if image_buffer.is_empty():
 		display_message("Error", "Failed to convert active layer image to PNG buffer.")
 		return
-
-	# 3. Get prompts from UI
-	var prompt: String = prompt_text_edit.text
-	var negative_prompt: String = negative_text_edit.text
-
+	
 	# 4. Show progress window
 	progress_window.popup()
 	progress_window_label.text = "Sending image for editing..."
 	progress_window_bar.value = 0 # Reset progress bar
 	
-	var params: Dictionary = {
-		"positive_prompt": prompt,
-		"negative_prompt": negative_prompt,
-		# You can add more parameters here if you want to allow them to be customized from the UI
-		"width": 1024,
-		"height": 1024,
-		"steps": 8,
-		"cfg": 7.0,
-		"denoise": 0.75
-	}
+	var params: Dictionary = get_params_image_gen()
+	
+	if params.is_empty():
+		return
+	
+	if !seed_line_edit.text.is_empty():
+		params["seed"] = seed_line_edit.text
 	
 	media_gen_socket.send_media_edit_request(params, image_buffer, image_filename)
 
 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 	advanced_settings_container.visible = toggled_on
+
+
+func get_params_image_gen() -> Dictionary:
+	if prompt_text_edit.text.is_empty():
+		return {}
+	
+	return {
+		"positive_prompt": prompt_text_edit.text,
+		"negative_prompt": negative_text_edit.text,
+		"width": image_width_line_edit.text.to_int(),
+		"height": image_height_line_edit.text.to_int(),
+		"steps": steps_spin_box.value,
+		"cfg": cfg_spin_box.value,
+		"denoise": denoise_spin_box.value
+	}

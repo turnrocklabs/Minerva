@@ -68,8 +68,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 204.0
-offset_bottom = 696.0
+offset_right = -4.0
+offset_bottom = -4.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 10
@@ -207,6 +207,7 @@ tooltip_text = "Centers the viewport."
 icon = ExtResource("17_tml0f")
 
 [node name="Button" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
+visible = false
 layout_mode = 2
 text = "add mask
 "
@@ -333,6 +334,7 @@ layout_mode = 2
 
 [node name="LayerCardsButton" type="Button" parent="h/v/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
+texture_filter = 1
 layout_mode = 2
 size_flags_vertical = 0
 toggle_mode = true
@@ -341,6 +343,7 @@ icon_alignment = 1
 
 [node name="PromptButton" type="Button" parent="h/v/HBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
+texture_filter = 1
 layout_mode = 2
 icon = ExtResource("19_tml0f")
 
@@ -426,15 +429,14 @@ layout_mode = 2
 
 [node name="ImageGenPopupPanel" type="PopupPanel" parent="."]
 unique_name_in_owner = true
-position = Vector2i(538, 110)
-size = Vector2i(400, 500)
-visible = true
+position = Vector2i(234, 0)
+size = Vector2i(530, 590)
 
 [node name="MarginContainer" type="MarginContainer" parent="ImageGenPopupPanel"]
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 396.0
-offset_bottom = 496.0
+offset_right = 526.0
+offset_bottom = 586.0
 theme_override_constants/margin_left = 5
 theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 5
@@ -442,6 +444,7 @@ theme_override_constants/margin_bottom = 5
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ImageGenPopupPanel/MarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 8
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -485,9 +488,9 @@ layout_mode = 2
 
 [node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/separation = 6
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer"]
 layout_mode = 2
@@ -563,6 +566,77 @@ caret_blink = true
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Steps: "
+
+[node name="StepsSpinBox" type="SpinBox" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+min_value = 1.0
+max_value = 40.0
+value = 8.0
+rounded = true
+alignment = 1
+custom_arrow_step = 1.0
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "Cfg: "
+
+[node name="CFGSpinBox" type="SpinBox" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+min_value = 1.0
+max_value = 8.0
+value = 1.0
+alignment = 1
+custom_arrow_step = 1.0
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer3"]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "Denoise:"
+
+[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+value = 0.75
+alignment = 1
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer3"]
+layout_mode = 2
+text = "Seed:"
+
+[node name="SeedLineEdit" type="LineEdit" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
 [node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenPopupPanel/MarginContainer/VBoxContainer"]
 layout_mode = 2
 
@@ -582,6 +656,7 @@ size_flags_horizontal = 3
 tooltip_text = "Edit selected Image"
 text = "Edit selected Image"
 icon = ExtResource("24_spfkh")
+alignment = 0
 
 [node name="MediaGenSocket" type="Node" parent="."]
 script = ExtResource("22_nin75")

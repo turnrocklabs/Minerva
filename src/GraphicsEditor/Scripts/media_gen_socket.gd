@@ -148,14 +148,4 @@ func _on_image_response_received(fname: String, buffer: PackedByteArray) -> void
 
 
 func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByteArray, image_filename: String = "input_image.png") -> void:
-	#var params: Dictionary = {
-		#"positive_prompt": prompt,
-		#"negative_prompt": negative_prompt,
-		## You can add more parameters here if you want to allow them to be customized from the UI
-		#"width": 1024,
-		#"height": 1024,
-		#"steps": 8,
-		#"cfg": 7.0,
-		#"denoise": 0.75
-	#}
 	client.send_media_edit_request(editing_params, image_buffer, image_filename)

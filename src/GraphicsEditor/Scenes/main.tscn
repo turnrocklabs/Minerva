@@ -1,9 +1,8 @@
-[gd_scene load_steps=5 format=3 uid="uid://j2v0cf3kt0t8"]
+[gd_scene load_steps=4 format=3 uid="uid://j2v0cf3kt0t8"]
 
 [ext_resource type="PackedScene" uid="uid://1snj5jsurqrt" path="res://Scenes/GraphicsEditor.tscn" id="1_jjgbg"]
 [ext_resource type="Script" uid="uid://d247gg2o8vf8t" path="res://Scripts/main.gd" id="1_jjvhh"]
 [ext_resource type="PackedScene" uid="uid://drcf5pucshg1x" path="res://Scenes/GraphicsEditorV2.tscn" id="2_bo1nx"]
-[ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://Assets/icons/plus_icons/add.svg" id="3_8gbba"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -37,25 +36,10 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HBoxContainer" type="HBoxContainer" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer"]
-visible = false
-layout_mode = 2
-
-[node name="EditorTabBar" type="TabBar" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-drag_to_rearrange_enabled = true
-
-[node name="AddTabButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 8
-icon = ExtResource("3_8gbba")
-
 [node name="TabContainer" type="TabContainer" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 2
+current_tab = 1
 
 [node name="GraphicsEditor" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("1_jjgbg")]
 visible = false
@@ -64,12 +48,10 @@ size_flags_vertical = 3
 metadata/_tab_index = 0
 
 [node name="GraphicsEditorV2" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("2_bo1nx")]
-visible = false
 layout_mode = 2
 metadata/_tab_index = 1
 
 [node name="GraphicsEditorV3" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("2_bo1nx")]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 2
-
-[connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/HBoxContainer/AddTabButton" to="." method="_on_add_tab_button_pressed"]
