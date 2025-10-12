@@ -91,6 +91,20 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "assistant"
 	
+	# Collect text notes
+	var text_notes: = PackedStringArray()
+	
+	for note: Variant in chat_item.InjectedNotes:
+		if note is String:
+			text_notes.append(note)
+
+	# Wrap all text notes together once
+	var notes_section := ""
+	if not text_notes.is_empty():
+		notes_section = "### Reference Information ###\n"
+		notes_section += "\n\n".join(text_notes)
+		notes_section += "\n### End Reference Information ###\n\n"
+
 	# Get all image captions in array of strings
 	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
 	var image_captions: String
@@ -99,9 +113,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	if not image_captions_array.is_empty():
 		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
 	
-	var text_notes = chat_item.InjectedNotes.filter(func(note): return note is String)
-	var text := "%s\n%s\n%s" % [image_captions, "\n".join(text_notes), chat_item.Message]
-	text += "\nHCP Data: %s" % chat_item.HcpData if chat_item.HcpData != null and not chat_item.HcpData.is_empty() else ""
+	# Combine everything
+	var text := "%s\n%s\n%s" % [image_captions, notes_section, chat_item.Message]
 	text = text.strip_edges()
 
 	return {
@@ -111,28 +124,17 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 
 
 func wrap_memory(item: Note) -> Variant:
-	# TODO: handle other note types properly
-
-	var content: = ""
-
 	if item.type == Note.Type.TEXT:
 		var controls_container = item.get_controls_container() as NoteTextControls
-		content = controls_container.content
+		return controls_container.content
 	elif item.type == Note.Type.IMAGE:
 		var controls_container = item.get_controls_container() as NoteImageControls
-		content = controls_container.caption
+		return controls_container.caption
 	else:
 		push_warning("Tried to wrap memory but the given note type is not implemented")
 		print_stack()
 
-	var output: String = "Given this background information:\n\n"
-	output += "### Reference Information ###\n"
-	output += content
-	output += "### End Reference Information ###\n\n"
-	output += "Respond to the user's message: \n\n"
-
-
-	return output
+	return ""
 
 # {
 #   "id": "chatcmpl-9LJ12Ijrr2MAwBtHQdO3xHMut1pAn",

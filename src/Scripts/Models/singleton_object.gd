@@ -210,7 +210,7 @@ var notes_container: NotesContainer
 var drawer_notes_container: NotesContainer
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
-var detached_notes: Array[Note]
+var detached_note_proxies: Array[Note.Proxy]
 
 enum note_type {
 	TEXT,
@@ -268,16 +268,18 @@ func toggle_all_notes(notes_enabled: bool):
 signal chat_completed(response: BotResponse)
 var current_message: MessageMarkdown = null
 
-var ChatList: Array[ChatHistory]:
-	set(value):
-		# save_state(false)
-		ChatList = value
+var ChatList: Array[ChatHistory]
+var NotesList: Array[NotesServiceHistory]
 
 var last_thread_index: int
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab
 # var Provider: BaseProvider
 var Chats: ChatPane
+var Notes: NotesPane
+
+var chat: Chat
+
 #Add undo to use it through the singleton
 var undo: undoMain = undoMain.new()
 #Add AtT to use it through the singleton
@@ -458,19 +460,19 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
 }
 
-## This function will return the `API_MODEL_PROVIDERS` enum value
-## for the provider currently in use by passed tab or the active one
-func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MODEL_PROVIDERS:
+# ## This function will return the `API_MODEL_PROVIDERS` enum value
+# ## for the provider currently in use by passed tab or the active one
+# func get_active_provider(tab: int = SingletonObject.Chats.current_tab) -> API_MODEL_PROVIDERS:
 	
-	# get currently used provider script or the chats default one
-	var provider_script = Chats.default_provider_script if ChatList.is_empty() else ChatList[tab].provider.get_script()
+# 	# get currently used provider script or the chats default one
+# 	var provider_script = Chats.default_provider_script if ChatList.is_empty() else ChatList[tab].provider.get_script()
 
-	for key: API_MODEL_PROVIDERS in API_MODEL_PROVIDER_SCRIPTS:
-		if API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
-			return key
+# 	for key: API_MODEL_PROVIDERS in API_MODEL_PROVIDER_SCRIPTS:
+# 		if API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
+# 			return key
 
-	# fallback to first provider shown in the chat dropdown
-	return Chats._provider_option_button.get_item_id(0) as API_MODEL_PROVIDERS
+# 	# fallback to first provider shown in the chat dropdown
+# 	return Chats._provider_option_button.get_item_id(0) as API_MODEL_PROVIDERS
 
 @onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 

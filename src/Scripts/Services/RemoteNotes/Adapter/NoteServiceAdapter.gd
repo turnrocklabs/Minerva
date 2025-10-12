@@ -3,6 +3,9 @@ extends RefCounted
 
 var service: Service
 
+## See [method NoteServiceAdapter.get_last_action_response]
+var _last_response: Dictionary
+
 func _init(service_: Service) -> void:
 	service = service_
 
@@ -38,6 +41,12 @@ func handle_action(action: Action, data: Variant) -> bool:
 	push_error("get_all_notes not implemented")
 	return false
 
+## Returns the latest response for any of the delete, save or get actions.[br]
+## As those methods returns the success status of the call, this is used to save
+## the actual response data. Similar to how [method FileAccess.get_open_error] works.
+func get_last_action_response() -> Dictionary:
+	return _last_response
+
 func safe_extract(data: Dictionary, fields: Array[String], types: Array[int], default: Variant = null) -> Variant:
 	
 	var current = data
@@ -69,18 +78,17 @@ func _get_note_order_for_remote(note: Note) -> int:
 	if tab_idx == -1:
 		info("Note not found in any tab")
 		return 0
-	
+
 	# Get all notes in that tab
-	var notes_in_tab = SingletonObject.notes_container.get_notes(tab_idx)
+	var notes_in_tab: = SingletonObject.notes_container.get_notes(tab_idx)
 	
 	# Find the position of our note
 	var note_index = notes_in_tab.find(note)
 	if note_index == -1:
 		info("Could not find note in tab %d" % tab_idx)
 		return 0
-	
-	for i in range(tab_idx):
-		note_index += SingletonObject.notes_container.get_notes(i).size()
 
 	info("Note '%s' has order %d in tab %d (%d total notes)" % [note.title, note_index, tab_idx, notes_in_tab.size()])
+	# info("Remote order is: %s" % note.get_meta("remote_order"))
+	
 	return note_index

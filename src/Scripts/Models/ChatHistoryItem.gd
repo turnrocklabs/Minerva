@@ -8,6 +8,7 @@ static var SERIALIZER_FIELDS = [
 	"Role",
 	"InjectedNotes",
 	"Message",
+	"HcpStructure",
 	"HcpData",
 	"Images",
 	"Captions",
@@ -83,8 +84,8 @@ var TokenCost: int = 0:
 
 var provider: BaseProvider:
 	set(value):
-		_provider_updated()
 		provider = value
+		_provider_updated()
 
 var Expanded: bool = true:
 	set(value): SingletonObject.call_deferred("save_state", false); Expanded = value
@@ -121,8 +122,8 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _te
 
 	# take provider from active tab as one used, if there is one
 	# otherwise the code that initializes this object should set the provider
-	if not SingletonObject.ChatList.is_empty():
-		self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
+	# if not SingletonObject.ChatList.is_empty():
+	# 	self.provider = SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider
 	
 	
 	var rng = RandomNumberGenerator.new() # Instantiate the RandomNumberGenerator
@@ -190,6 +191,7 @@ func Serialize() -> Dictionary:
 		"InjectedNotes": Marshalls.variant_to_base64(InjectedNotes),
 		"Message": Message,
 		"HcpData": HcpData,
+		"HcpStructure": HcpStructure,
 		"Order": Order,
 		"Type": Type,
 		"ModelName": ModelName,
@@ -213,6 +215,10 @@ func Serialize() -> Dictionary:
 
 static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 	# region Backwards compatibility
+
+	print("\n\n")
+	print("data: ", data)
+	print("\n\n")
 
 	# 1. In case we don't have model specified just use this as a fallback
 	# 2. Old project files don't have "Images" field

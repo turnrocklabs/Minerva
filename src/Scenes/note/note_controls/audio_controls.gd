@@ -33,22 +33,26 @@ var sha256: String:
 			
 		return ""
 
+var _audio_backing: AudioStream
 ## This notes audio content.
 var audio: AudioStream:
 	set(value):
-		_audio_stream_player.stream = value
+		if is_node_ready():
+			_audio_stream_player.stream = value
 
-		_timeline_slider.max_value = _audio_stream_player.stream.get_length() if _audio_stream_player.stream else 0.1
+			_timeline_slider.max_value = _audio_stream_player.stream.get_length() if _audio_stream_player.stream else 0.1
 
-		_audio_stream_player.play()
-		_audio_stream_player.stream_paused = true
+			_audio_stream_player.play()
+			_audio_stream_player.stream_paused = true
 
-		_timeline_slider.editable = value != null
+			_timeline_slider.editable = value != null
 
-		if value: _format_time_label()
-		else: _time_label.text = ""
+			if value: _format_time_label()
+			else: _time_label.text = ""
+		else:
+			_audio_backing = value
 	get:
-		return _audio_stream_player.stream
+		return _audio_stream_player.stream if is_node_ready() else _audio_backing
 
 ## Setting this property pauses/resumes the audio player.
 var paused: bool:
@@ -198,6 +202,10 @@ static func load_audio_from_data(audio_data: Dictionary) -> AudioStream:
 	return null
 
 func _ready() -> void:
+
+	_audio_stream_player.stream = _audio_backing
+
+	_audio_backing = null
 
 	set_process(false) # when the audio is unpaused it will start processing again
 	_time_code_timer.paused = true

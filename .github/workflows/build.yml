@@ -12,6 +12,11 @@ on:
         - all
         - windows
         - linux
+      create_release:
+        description: 'Create GitHub Release'
+        required: false
+        default: true
+        type: boolean
   push:
     paths:
       - "src/**"
@@ -198,13 +203,21 @@ jobs:
         run: |
           mkdir -p build
 
-          timeout 20s "godot" --headless --import || true
+          timeout 20s godot --headless --import || true
           
-          if [ "${{ github.event.inputs.platform }}" = "windows" ]; then
+          # Determine which platforms to build
+          PLATFORM="${{ github.event.inputs.platform }}"
+          
+          # For push events, build all platforms
+          if [ "${{ github.event_name }}" = "push" ]; then
+            PLATFORM="all"
+          fi
+          
+          if [ "$PLATFORM" = "windows" ]; then
             mkdir -p build/windows
             godot --headless --export-debug "Windows Release" build/windows/Minerva.exe
           
-          elif [ "${{ github.event.inputs.platform }}" = "linux" ]; then
+          elif [ "$PLATFORM" = "linux" ]; then
             mkdir -p build/linux
             godot --headless --export-debug "Linux/X11 Release" build/linux/Minerva.x86_64
           
@@ -216,19 +229,101 @@ jobs:
             godot --headless --export-debug "Windows Release" build/windows/Minerva.exe
             godot --headless --export-debug "Linux/X11 Release" build/linux/Minerva.x86_64 
           fi
-          
+
       - name: Upload Windows Build
-        if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' )
+        if: |
+          github.event_name == 'push' || 
+          github.event.inputs.platform == 'windows' || 
+          github.event.inputs.platform == 'all'
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Windows-Build
-          path: |
-            src/build/windows/*
+          path: src/build/windows/*
           
       - name: Upload Linux Build
-        if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' )
+        if: |
+          github.event_name == 'push' || 
+          github.event.inputs.platform == 'linux' || 
+          github.event.inputs.platform == 'all'
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Linux-Build
-          path: |
-            src/build/linux/*
+          path: src/build/linux/*
+
+  create-release:
+    needs: [build-godot]
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true') || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v2
+        
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Minerva-*-Build
+          path: downloads
+          
+      - name: Create Release Archives
+        run: |
+          mkdir -p release-assets
+          
+          # Create Windows ZIP if files exist
+          if [ -d "downloads/Minerva-Windows-Build" ]; then
+            cd downloads/Minerva-Windows-Build
+            zip -r ../../release-assets/Minerva-Windows.zip *
+            cd ../..
+            echo "Created Windows archive"
+            ls -lh release-assets/Minerva-Windows.zip
+          fi
+          
+          # Create Linux archive if files exist  
+          if [ -d "downloads/Minerva-Linux-Build" ]; then
+            cd downloads/Minerva-Linux-Build
+            tar -czf ../../release-assets/Minerva-Linux.tar.gz *
+            cd ../..
+            echo "Created Linux archive"
+            ls -lh release-assets/Minerva-Linux.tar.gz
+          fi
+          
+          echo "Final release assets:"
+          ls -la release-assets/
+          
+      - name: Generate release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="manual-build-$(date +'%Y%m%d-%H%M%S')"
+          else
+            TAG="auto-build-$(date +'%Y%m%d-%H%M%S')"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Minerva Development Build ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Minerva Development Build
+            
+            ⚠️ **This is a development build** - expect bugs and incomplete features!
+            
+            **Build Information:**
+            - Platform: ${{ github.event.inputs.platform || 'all' }}
+            - Trigger: ${{ github.event_name }}
+            - Commit: ${{ github.sha }}
+            - Branch: ${{ github.ref_name }}
+            
+            **Download Instructions:**
+            - **Windows**: Download `Minerva-Windows.zip`, extract and run `Minerva.exe`
+            - **Linux**: Download `Minerva-Linux.tar.gz`, extract and run `./Minerva.x86_64`
+            
+            Built automatically from the development branch.
+          files: release-assets/*
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

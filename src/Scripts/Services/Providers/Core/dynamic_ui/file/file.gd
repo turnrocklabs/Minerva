@@ -42,9 +42,13 @@ func get_user_data():
 
 	return fa
 
+func clear_data() -> void:
+	update_output(null)
+
 func update_output(fa: FileAccess) -> void:
 	if not fa:
 		print_debug("FileAccess object is null")
+		_file_label.text = ""
 		return
 	
 	_file_label.text = fa.get_path()

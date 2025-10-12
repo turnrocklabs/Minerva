@@ -50,14 +50,15 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Select"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="."]
+[node name="ControlsContainer" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
 layout_mode = 2
 
-[node name="SelectItemsButton" type="Button" parent="HBoxContainer"]
+[node name="SelectItemsButton" type="Button" parent="ControlsContainer"]
 layout_mode = 2
 text = "Select Notes"
 
-[node name="ClearSelectionButton" type="Button" parent="HBoxContainer"]
+[node name="ClearSelectionButton" type="Button" parent="ControlsContainer"]
 layout_mode = 2
 tooltip_text = "Clear note selection"
 icon = ExtResource("3_qio8d")
@@ -83,5 +84,5 @@ layout_mode = 2
 
 [connection signal="multi_selected" from="SelectItemsPersistentWindow/ScrollContainer/VBoxContainer/NoteTree" to="." method="_on_note_tree_multi_selected"]
 [connection signal="pressed" from="SelectItemsPersistentWindow/ScrollContainer/VBoxContainer/FinishSelectionButton" to="." method="_on_finish_selection_button_pressed"]
-[connection signal="pressed" from="HBoxContainer/SelectItemsButton" to="." method="_on_select_items_button_pressed"]
-[connection signal="pressed" from="HBoxContainer/ClearSelectionButton" to="." method="_on_clear_selection_button_pressed"]
+[connection signal="pressed" from="ControlsContainer/SelectItemsButton" to="." method="_on_select_items_button_pressed"]
+[connection signal="pressed" from="ControlsContainer/ClearSelectionButton" to="." method="_on_clear_selection_button_pressed"]

@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://fr1vfchpwjq2"]
+[gd_scene load_steps=14 format=3 uid="uid://fr1vfchpwjq2"]
 
 [ext_resource type="Script" uid="uid://buuiyjeuj7bch" path="res://Scripts/UI/Controls/Note.gd" id="1_bjbgn"]
 [ext_resource type="Texture2D" uid="uid://cu0vsfkdca6ah" path="res://assets/icons/drag_icons/drag_24px_no_bg_3_dots.png" id="2_enjbp"]
@@ -7,6 +7,7 @@
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_05ydn"]
 [ext_resource type="Texture2D" uid="uid://exoijpiwrvi0" path="res://assets/icons/warning_icon.svg" id="4_frbta"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="4_vm57c"]
+[ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="6_60qv4"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_frbta"]
 content_margin_left = 10.0
@@ -190,6 +191,12 @@ tooltip_text = "Hide this note"
 mouse_filter = 1
 icon = ExtResource("3_x4kas")
 
+[node name="ReloadFileContentButton" type="Button" parent="PanelContainer/VBoxContainer/TopControls"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Reload File Content"
+icon = ExtResource("6_60qv4")
+
 [node name="EditButton" type="Button" parent="PanelContainer/VBoxContainer/TopControls" groups=["Experimental"]]
 unique_name_in_owner = true
 layout_mode = 2
@@ -221,8 +228,10 @@ mouse_default_cursor_shape = 9
 
 [connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
 [connection signal="pressed" from="PanelContainer/VBoxContainer/TopControls/Control/ExpandButton" to="." method="_on_expand_button_pressed"]
+[connection signal="toggled" from="PanelContainer/VBoxContainer/TopControls/CheckButton" to="." method="_on_check_button_toggled"]
 [connection signal="text_changed" from="PanelContainer/VBoxContainer/TopControls/Title" to="." method="_on_title_text_changed"]
 [connection signal="pressed" from="PanelContainer/VBoxContainer/TopControls/HideButton" to="." method="_on_hide_button_pressed"]
+[connection signal="pressed" from="PanelContainer/VBoxContainer/TopControls/ReloadFileContentButton" to="." method="_on_reload_file_content_button_pressed"]
 [connection signal="pressed" from="PanelContainer/VBoxContainer/TopControls/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/VBoxContainer/TopControls/RemoveButton" to="." method="_on_remove_button_pressed"]
 [connection signal="gui_input" from="PanelContainer/VBoxContainer/ResizeControl" to="." method="_on_resize_control_gui_input"]

@@ -79,7 +79,7 @@ func _ready():
 			config_file.set_value("HCP", "auth_base_url", AUTH_PRESET_PROD) # Default Auth Base URL
 			config_file.set_value("HCP", "username", "")
 			config_file.set_value("HCP", "password", "")
-			config_file.set_value("HCP", "auto_connect", false)
+			config_file.set_value("HCP", "auto_connect", true)
 
 	set_field_values()
 
@@ -133,7 +133,7 @@ func set_field_values():
 	_fields["openai"].text = config_file.get_value("API KEYS", "openai", "")
 
 	_fields["hcp_url"].text = config_file.get_value("HCP", "url", WS_PRESET_PROD) # Core WS URL
-	_fields["hcp_auto_connect"].button_pressed = config_file.get_value("HCP", "auto_connect", false)
+	_fields["hcp_auto_connect"].button_pressed = config_file.get_value("HCP", "auto_connect", true)
 	_fields["hcp_username"].text = config_file.get_value("HCP", "username", "")
 	_fields["hcp_password"].text = config_file.get_value("HCP", "password", "")
 
@@ -327,22 +327,24 @@ func _on_core_connet_button_pressed() -> void:
 				.receive_all()
 		)
 
-		msg_received.connect(
-			func(msg: Dictionary):
-				var err: String
+		if msg_received:
+			msg_received.connect(
+				func(msg):
+					if not msg: return
+					var err: String
 
-				if msg.has("params") and msg["params"].has("error_code"):
-					err = "%s: %s" % [msg["params"]["error_code"], msg["params"]["error"]]
-				elif msg.has("params") and msg["params"].has("error"):
-					err = msg["params"]["error"]
-				else:
-					err = "Unknown error format: %s" % str(msg)
+					if msg.has("params") and msg["params"].has("error_code"):
+						err = "%s: %s" % [msg["params"]["error_code"], msg["params"]["error"]]
+					elif msg.has("params") and msg["params"].has("error"):
+						err = msg["params"]["error"]
+					else:
+						err = "Unknown error format: %s" % str(msg)
 
-				core_error_item_list.add_item(
-					err,
-					preload("res://.godot/imported/warning_icon.svg-0d14ac513b8003b886b4926b52005686.ctex"),
-					false
-				)
+					core_error_item_list.add_item(
+						err,
+						preload("res://.godot/imported/warning_icon.svg-0d14ac513b8003b886b4926b52005686.ctex"),
+						false
+					)
 		)
 	else:
 		# If Core.start returns false, it means authentication or WS connection failed.

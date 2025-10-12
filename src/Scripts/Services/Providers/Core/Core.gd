@@ -3,6 +3,8 @@ extends Node
 # Signal emitted when a specific service/action is chosen from the preferences popup
 signal service_selected(service: Service)
 
+signal service_connected(service: Service)
+
 # Preload the client script
 @onready var _client_script: = preload("res://Scripts/Services/Providers/Core/core_client.gd")
 
@@ -35,6 +37,13 @@ func _ready() -> void:
 	add_child(http_request)
 	# Connect the request_completed signal to handle the HTTP response
 	http_request.request_completed.connect(_on_auth_request_completed)
+
+	client.service_registered.connect(
+		func(service_data: Dictionary):
+			var new_service: = Service.new(service_data)
+			service_connected.emit(new_service)
+			services.append(new_service)
+	)
 
 
 # --- MODIFIED Start Function ---
@@ -393,3 +402,18 @@ class AwaitMessage extends RefCounted:
 # Factory function to create a new AwaitMessage instance
 func await_message() -> AwaitMessage:
 	return AwaitMessage.new(client)
+
+
+
+func get_service_history_type(service: Service) -> ServiceHistory.ServiceType:
+	if service.client_id == "etsu-notes":
+		return NotesServiceHistory.ServiceType.NOTES
+	
+	elif service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
+		return NotesServiceHistory.ServiceType.CHAT
+	
+	elif service.client_id.containsn("chat"):
+		return NotesServiceHistory.ServiceType.CHAT
+
+	# fallback
+	return NotesServiceHistory.ServiceType.NONE

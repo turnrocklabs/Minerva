@@ -34,11 +34,12 @@ func _on_btn_voice_for_note_tab_pressed():
 
 func _on_btn_create_thread_pressed() -> void:
 
-	# TODO: if tab_reference, update tab
-
 	var notes_container: NotesContainer = SingletonObject.notes_container if notes_container_override == null else notes_container_override
 
-	notes_container.create_tab(%txtNewTabName.text)
+	if tab_reference:
+		tab_reference.name = %txtNewTabName.text
+	else:
+		notes_container.create_tab(%txtNewTabName.text)
 
 	hide.call_deferred()
 

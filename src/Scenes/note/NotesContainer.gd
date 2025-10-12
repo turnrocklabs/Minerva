@@ -1,9 +1,14 @@
 class_name NotesContainer
 extends TabContainer
 
+signal tab_renamed(tab_idx: int)
 
-## A dictionary that maps tab index to a corresponding uuid
-var _uuid_map: Dictionary[int, String] = {}
+@onready var _new_thread_popup: PersistentWindow = %NewThreadPopup
+
+var remote_adapter: NoteServiceAdapter = null:
+	set(value):
+		remote_adapter = value
+		_update_adapter_info()
 
 func _ready() -> void:
 	# make tabs closeable
@@ -11,44 +16,54 @@ func _ready() -> void:
 
 	get_tab_bar().tab_close_pressed.connect(remove_tab)
 
+	get_tab_bar().gui_input.connect(_on_tab_bar_gui_input)
+
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
+
+	get_tab_bar().active_tab_rearranged.connect(_on_active_tab_rearranged)
 
 ## Creates a new tab with given name.[br]
 ## If the name is already taken godot will autimatically assing a new one.[br]
 ## Retuns the scroll container added as the new tab.
-func create_tab(tab_name: String = "Notes", uuid: String = "") -> Control:
+func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 	if tab_name.is_empty():
 		tab_name = "Notes"
 
-	var scroll: = ScrollContainer.new()
+	var notes_vbox: = NoteVBox.create()
 
 	var new_tab_index: = get_tab_count()
 
-	var vbox: = VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.child_entered_tree.connect(
-		func(node: Node):
-			if node is Note and node.is_note_initialized():
-				node.tab_changed.emit(new_tab_index)
+	notes_vbox.note_added.connect(
+		func(note: Node):
+			if note.is_note_initialized():
+				note.tab_changed.emit(new_tab_index)
 	)
-	
-	scroll.add_child(vbox)
-	scroll.name = tab_name
+
+	notes_vbox.name = tab_name
 
 	if uuid.is_empty():
-		print("uuid is empty")
 		uuid = SingletonObject.generate_UUID()
 	
-	_uuid_map[new_tab_index] = uuid
+	notes_vbox.uuid = uuid
 
 	# force readable name
-	add_child(scroll, true)
+	add_child(notes_vbox, true)
 
-	return scroll
+	notes_vbox.renamed.connect(func(): tab_renamed.emit(new_tab_index))
+
+	_update_adapter_info()
+
+	current_tab = new_tab_index
+
+	return notes_vbox
 
 ## Removes the tab specified with [param tab_idx].
-func remove_tab(tab_idx: int):	
+## If [param user_action] is `true` that means that the user
+## deliberatly wanted to try and delete the tab which will
+## call each notes [method Note.remove] method.[br]
+## Else the tab and it's notes will be deleted only if they are local notes.[br]
+func remove_tab(tab_idx: int, user_action: = true):	
 	var control: = get_tab_control(tab_idx)
 
 	# if at least one note deletion was rejected, don't delete the tab
@@ -57,7 +72,14 @@ func remove_tab(tab_idx: int):
 	if control:
 		# doing this so the notes is_queued_for_deletion returns true
 		for note in get_notes(tab_idx):
-			all_deleted = await note.remove() and all_deleted
+			if user_action:
+				all_deleted = await note.remove() and all_deleted
+			else:
+				var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+				if controller.state == NoteSyncController.SyncState.LOCAL_ONLY:
+					note.queue_free()
+				else:
+					all_deleted = false
 
 		if all_deleted:
 			control.queue_free()
@@ -78,60 +100,56 @@ func find_note(note: Note) -> int:
 ## If [parameter tab_idx] is -1, currently selected tab is used, or it fails if no tab is selected.[br]
 ## If [parameter force] is true, and appropriate tab wasn't found, new one will be created.[br] 
 ## Returns true on success.
-func add_note(note: Note, tab_idx: int = -1, force: = true, index: int = 0) -> bool:
+func add_note(note: Note, tab_idx: int = -1, force: = true, index: int = -1) -> bool:
 	if tab_idx == -1:
 		tab_idx = current_tab
 
 	# if still -1 there is no selected tab to add to
 	if tab_idx == -1:
 		if force:
-			var created_scroll: = create_tab()
-			var vbox_ = created_scroll.get_child(0)
-			if not vbox_:
-				push_error("Couldn't get the VBoxContainer to add the note to")
+			var new_note_vbox: = create_tab()
+			
+			new_note_vbox.add_note(note)
 
-			vbox_.add_child(note)
-
+			if new_note_vbox.auto_upload: _sync_new_note(note)
 			return true
 		
 		return false
 
-	var current_scroll: ScrollContainer = get_tab_control(tab_idx)
-	var vbox = current_scroll.get_child(0)
+	var note_vbox: NoteVBox = get_tab_control(tab_idx)
+	
+	note_vbox.add_note(note, index)
 
-	if not vbox:
-		push_error("Couldn't get the VBoxContainer to add the note to")
-
-	vbox.add_child(note)
-	vbox.move_child(note, index)
-
+	if note_vbox.auto_upload: _sync_new_note(note)
 	return true
 
-## Returns an array of notes in the specified tab[br].
+
+## Synchronizes the new note if there is a adapter available
+func _sync_new_note(note: Note):
+	var sc: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+
+	if not sc.adapter:
+		SingletonObject.ErrorDisplay("Can't upload", "Couldn't auto upload the %s" % note)
+		return
+	
+	sc.sync_note()
+
+## Returns an array of notes in the specified tab.[br]
 ## If not tab is specified ([-1]) returns notes from the currently selected tab or empty array.
 func get_notes(tab_idx: = -1) -> Array[Note]:
 	tab_idx = tab_idx if tab_idx != -1 else current_tab
 
 	if tab_idx == -1: return []
 
-	var current_scroll: ScrollContainer = get_tab_control(tab_idx)
-	var vbox = current_scroll.get_child(0)
+	var note_vbox: NoteVBox = get_tab_control(tab_idx)
 
-	if not vbox:
-		push_error("Couldn't get the VBoxContainer to get the notes")
-		return []
-	
-	var notes: Array[Note] = []
-
-	for child in vbox.get_children():
-		if child is Note:
-			notes.append(child)
-
-	return notes
+	return note_vbox.get_notes()
 
 ## Returns the UUID of the specified tab, or `null` if it doesn't exist
 func get_tab_id(idx: int):
-	return _uuid_map.get(idx)
+	var control = get_tab_control(idx)
+	if control is NoteVBox: return control.uuid
+	return null
 
 ## Returns the name of the specified tab, or `null` if it doesn't exist
 func get_tab_name(idx: int):
@@ -181,29 +199,55 @@ func hide_notes(tab_idx: = -1):
 	for note in get_notes(tab_idx):
 		note.visible = true
 
+
+func set_remote_adapter(adapter: NoteServiceAdapter):
+	remote_adapter = adapter
+
+## Updates [class NoteVBox] note tab controls with the active adapter.[br]
+## Used when the adapter changes or new tab is created
+func _update_adapter_info():
+	# if not remote_adapter:
+	# 	return
+
+	for i in get_tab_count():
+		var note_vbox: NoteVBox = get_tab_control(i)
+		if not remote_adapter:
+			note_vbox._remote_option_container.visible = false
+		else:
+			note_vbox._remote_option_container.visible = true
+			note_vbox._remote_service_label.text = remote_adapter.service.name
+
+
+
 ## Calls the [param provider] wrap_memory for each active node
-## in the notes and drawer notes container, and returns an array of all the return values.
-func to_prompt(provider: BaseProvider) -> Array[Variant]:
+## in the notes and drawer notes container, and returns an array of all the return values.[br]
+## If [param refresh_detached] is `true`, detached notes will be regenerated to match current editor content.
+func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Variant]:
 	var output: Array[Variant] = []
 	
 	var notes: Array[Note]
 
 	for i in SingletonObject.notes_container.get_tab_count():
-		notes.append_array(SingletonObject.notes_container.get_notes())
+		notes.append_array(SingletonObject.notes_container.get_notes(i).filter(func(note: Note): return note.enabled))
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
-		notes.append_array(SingletonObject.drawer_notes_container.get_notes())
+		notes.append_array(SingletonObject.drawer_notes_container.get_notes(i).filter(func(note: Note): return note.enabled))
 
+	for proxy_note in SingletonObject.detached_note_proxies:
+		var note: = await proxy_note.create_note(not refresh_detached)
+		
+		if note:
+			notes.append(note)
+			if refresh_detached:
+				note.enabled = false # so the editor/terminal can catch and disable the check button
+		else:
+			SingletonObject.ErrorDisplay("Note Error", "Couldn't generate a Note object")
+
+	# notes are filtered for enabled ones, except for detached note
+	# if detached notes are present
 	for note in notes:
-		if note.enabled:
-			output.append(provider.wrap_memory(note))
+		output.append(provider.wrap_memory(note))
 
-
-	# loop through detached notes also
-	# for item in SingletonObject.DetachedNotes:
-	# 	if item.Enabled:
-	# 		output.append(provider.wrap_memory(item))
-	
 	return output
 
 
@@ -211,6 +255,8 @@ func serialize() -> Array[Dictionary]:
 	var data: Array[Dictionary]
 
 	for i in range(get_tab_count()):
+		var note_vbox: NoteVBox = get_tab_control(i)
+
 		var notes_data: Array[Dictionary]
 
 		var notes: = get_notes(i)
@@ -218,9 +264,10 @@ func serialize() -> Array[Dictionary]:
 			notes_data.append(note.serialize())
 
 		var tab_data: = {
-			"ThreadName": get_tab_control(i).name,
-			"ThreadId": _uuid_map.get(i),
-			"MemoryItemList": notes_data
+			"ThreadName": note_vbox.name,
+			"ThreadId": note_vbox.uuid,
+			"MemoryItemList": notes_data,
+			"AutoUpload": note_vbox.auto_upload,
 		}
 
 		data.append(tab_data)
@@ -232,20 +279,59 @@ func deserialize(notes_data: Array) -> void:
 	for tab_data in notes_data:
 		var tab_title: String = tab_data.get("ThreadName")
 		var tab_id = tab_data.get("ThreadId")
+		var auto_upload = tab_data.get("AutoUpload", false)
 
 		# it could be explicit null or empty string so check here
 		if not tab_id:
 			tab_id = ""
 
-		var tab_control: = create_tab(tab_title, tab_id)
+		# check if this tab doesnt exist already
+		var note_vbox: NoteVBox
 
-		var tab_idx: = get_tab_idx_from_control(tab_control)
+		for i in SingletonObject.notes_container.get_tab_count():
+			if SingletonObject.notes_container.get_tab_id(i) == tab_id:
+				note_vbox = SingletonObject.notes_container.get_tab_control(i)
+
+		if not note_vbox:
+			note_vbox = create_tab(tab_title, tab_id)
+
+
+		note_vbox.auto_upload = auto_upload
+
+		var tab_idx: = get_tab_idx_from_control(note_vbox)
+
+		# NOTICE: this may not be the best place to check for sync of remote notes
+		var notes_to_update: Array[Note]
 
 		for mem_item_data in tab_data.get("MemoryItemList", []):
-			add_note(
-				Note.deserialize(mem_item_data),
-				tab_idx
-			)
+
+			var note_uuid: String = mem_item_data.get("UUID", "")
+
+			var existing_note: = SingletonObject.get_registered_object(note_uuid)
+
+			if not existing_note:
+				add_note(
+					Note.deserialize(mem_item_data),
+					tab_idx
+				)
+				continue
+			
+			# if note is already there, it may be the remote note.
+			# check if it's remote and update if so
+			
+			var controller: = SingletonObject.notes_sync_manger.get_sync_controller(existing_note)
+
+			# if this is somehow just a local note, just leave it as is
+			if controller.state == NoteSyncController.SyncState.LOCAL_ONLY: continue
+
+			# else update the remote just in case
+			notes_to_update.append(existing_note)
+
+		if not notes_to_update.is_empty():
+			SingletonObject.notes_sync_manger.sync_notes(notes_to_update)
+
+
+
 
 
 # region Drop
@@ -276,3 +362,31 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 
 
 # endregion
+
+# region rename
+
+var last_click: float = -1
+
+func _on_tab_bar_gui_input(event: InputEvent) -> void:
+	
+	if event is InputEventMouseButton:
+		if not event.pressed: return
+
+		var tab_idx: = get_tab_idx_at_point(event.position)
+
+		if tab_idx == -1: return
+
+		if last_click == -1:
+			last_click = Time.get_unix_time_from_system()
+			return
+
+		if Time.get_unix_time_from_system() - last_click < 0.2:
+			_new_thread_popup.set_values(get_tab_name(tab_idx), get_tab_control(tab_idx))
+		
+		last_click = Time.get_unix_time_from_system()
+
+# endregion
+
+
+func _on_active_tab_rearranged(idx_to: int) -> void:
+	pass

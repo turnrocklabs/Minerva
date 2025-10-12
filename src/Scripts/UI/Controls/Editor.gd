@@ -220,6 +220,10 @@ func _ready():
 	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
 
 
+func _exit_tree() -> void:
+	if _proxy_note:
+		SingletonObject.detached_note_proxies.erase(_proxy_note)
+
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
 
@@ -320,7 +324,9 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 ## Calls the save implementation that could be altered by [method override_save],[br]
 ## and then updates the unsaved changes icon.
 func save():
-	if SingletonObject.last_saved_path:
+	if associated_object is Note and associated_object.file:
+		save_file_to_disc(associated_object.file)
+	elif SingletonObject.last_saved_path:
 		await prompt_close(true, false, SingletonObject.last_saved_path)
 	else:
 		await prompt_close(true)
@@ -335,7 +341,7 @@ func save():
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
 			graphics_editor.saved = true
-			SingletonObject.UpdateUnsavedTabIcon.emit()
+	
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 ## Returns the bitmask of the saved state for the editor.
@@ -766,24 +772,30 @@ func _on_mic_button_pressed() -> void:
 #endregion Top Editor buttons
 #endregion Code Editor
 
+## Returns whether or not this editor instance can be turned into a [class Note] objects
+func _supports_note():
+	return type in [Type.TEXT, Type.GRAPHICS]
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
 func _create_note() -> Note:
 	
+	if not _supports_note():
+		return null
+
+	var note: Note
+
 	match type:
 		Type.TEXT:
-			return Note.create_text_note("Editor Note", code_edit.text)
+			note = Note.create_text_note("Editor Note", code_edit.text)
 		Type.GRAPHICS:
-			return Note.create_image_note("Editor Note", await graphics_editor.compose_final_image())
-		Type.VIDEO:
-			push_error("Video editor notes not supported")
+			note = Note.create_image_note("Editor Note", await graphics_editor.compose_final_image())
+	
+	note.enabled = true
 
-	return null
+	return note
 
 func _update_note(note: Note) -> void:
-	# TODO: implement
-	
 	if type == Type.TEXT:
 		var controls_container = note.get_controls_container() as NoteTextControls
 		controls_container.content = code_edit.text
@@ -793,28 +805,30 @@ func _update_note(note: Note) -> void:
 		controls_container.image = await graphics_editor.compose_final_image()
 
 
-func _on_check_button_toggled(_toggled_on: bool):
-	return
+var _proxy_note: Note.Proxy
+func _on_check_button_toggled(toggled_on: bool):
 
-	# FIXME:
-	# If the editor is checked and the content changes, the note content is not updated
-	# maybe just create a note and set associated object instead of creating a detached one,
-	# so the user can actually see the content they are sending
+	if not _supports_note():
+		SingletonObject.ErrorDisplay("Not supported", "Notes for this editor type are not supported.")
+		_note_check_button.set_pressed_no_signal(false)
+		return
 
-	# if not toggled_on:
-	# 	# TODO: remove the note if we decide to go this way instead of creating the actual note
-	# 	pass
+	if toggled_on:
+		_proxy_note = Note.Proxy.new(_create_note)
+		_proxy_note.create_note()
+		
+		_proxy_note.note_created.connect(func(note: Note): note.changed.connect(_on_proxy_note_changed.bind(note)))
 
-	# prints(SingletonObject.detached_notes, toggled_on)
+		SingletonObject.detached_note_proxies.append(_proxy_note)
+		
+	else:
+		if _proxy_note:
+			SingletonObject.detached_note_proxies.erase(_proxy_note)
 
-	# var note: = await _create_note()
+		_proxy_note = null
 
-	# if note == null:
-	# 	SingletonObject.ErrorDisplay("Not supported", "Notes for this editor type are not supported.")
-	# 	return null
-	
-	# SingletonObject.detached_notes.append(note)
-
+func _on_proxy_note_changed(note: Note) -> void:
+	_note_check_button.set_pressed_no_signal(note.enabled)
 
 func _on_close_warrning(path):
 	path.visible = false;

@@ -8,7 +8,6 @@ static var SERVICE_NAME: StringName:
 
 var actions: Dictionary[String, Action] = {}
 
-
 func _init(service_: Service) -> void:
 	super(service_)
 
@@ -44,6 +43,8 @@ func delete_notes(notes: Array[Note]) -> bool:
 		.send_message(service, action, {"notes": notes_data})
 		.receive()
 	)
+
+	_last_response = msg
 	
 	if not msg:
 		SingletonObject.ErrorDisplay("Can't delete", "Couldn't delete the note to remote")
@@ -111,6 +112,8 @@ func save_notes(notes: Array[Note]) -> bool:
 		.send_message(service, action, {"notes": notes_data})
 		.receive()
 	)
+
+	_last_response = msg if msg != null else {}
 	
 	if not msg:
 		SingletonObject.ErrorDisplay("Can't save", "Couldn't save the note to remote")
@@ -151,6 +154,8 @@ func get_all_notes() -> Array[Note]:
 		.receive()
 	)
 
+	_last_response = msg
+
 	if not msg is Dictionary:
 		return []
 
@@ -178,7 +183,7 @@ func get_all_notes() -> Array[Note]:
 
 		note.set_meta("remote_thread_id", note_data.get("OwningThread", ""))
 		note.set_meta("remote_thread_name", note_data.get("ThreadName", "ETSU Notes"))
-		note.set_meta("remote_order", note_data.get("Order", 0))
+		note.set_meta("remote_order", int(note_data.get("Order", 0)))
 
 		notes.append(note)
 
@@ -187,6 +192,8 @@ func get_all_notes() -> Array[Note]:
 
 func handle_action(action: Action, data: Variant) -> bool:
 	
+	prints("HANDLE ACTION", action.topic, "%s/get" % SERVICE_NAME)
+	print(data)
 
 	if action.topic == "%s/get" % SERVICE_NAME:
 		SingletonObject.notes_sync_manger.sync_with_remote()

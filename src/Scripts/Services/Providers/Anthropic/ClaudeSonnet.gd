@@ -81,18 +81,11 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 
 func wrap_memory(item: Note) -> Variant:
 
-	# TODO: handle other types
-
 	if item.type == Note.Type.IMAGE:
 		return (item.get_controls_container() as NoteImageControls).image
 	
 	elif item.type == Note.Type.TEXT:
-		var output = "Given this background information:\n\n"
-		output += "### Reference Information ###\n"
-		output += (item.get_controls_container() as NoteTextControls).content
-		output += "### End Reference Information ###\n\n"
-		output += "Respond to the user's message: \n\n"
-		return output
+		return (item.get_controls_container() as NoteTextControls).content
 
 	else:
 		push_warning("Tried to wrap memory but the given note type is not implemented")
@@ -115,33 +108,46 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "assistant"
 
+	# Collect text notes and media notes separately
+	var text_notes: = PackedStringArray()
+	var media_notes: Array = []
+
+	for note: Variant in chat_item.InjectedNotes:
+		if note is String:
+			text_notes.append(note)
+		elif note is Image:
+			media_notes.append(note)
+
+	# Wrap all text notes together once
+	var notes_section := ""
+	if not text_notes.is_empty():
+		notes_section = "### Reference Information ###\n"
+		notes_section += "\n\n".join(text_notes)
+		notes_section += "\n### End Reference Information ###\n\n"
+
+	# Combine notes section with user message
+	var full_text := "%s%s" % [notes_section, chat_item.Message]
+	full_text = full_text.strip_edges()
+
 	# content can be a string, but also an array of dictionaries, to handle different media types
 	# message and each note will be it's own dictionary
 	var content: = [
 		{
 			"type": "text",
-			"text": "%s\nHcp Data: %s" % [chat_item.Message, chat_item.HcpData]
+			"text": full_text
 		},
 	]
 
-	# handle text and image notes
-	for note: Variant in chat_item.InjectedNotes:
-		if note is String:
-			content.append({
-				"type": "text",
-				"text": note
-			})
-		
-		# if we have a image, encode it to base64 and send it as a b64 encoded image
-		elif note is Image:
-			content.append({
-				"type": "image",
-				"source": {
-					"type": "base64",
-					"media_type": "image/png",
-					"data": Marshalls.raw_to_base64(note.save_png_to_buffer()),
-				}
-			})
+	# Add image notes
+	for img in media_notes:
+		content.append({
+			"type": "image",
+			"source": {
+				"type": "base64",
+				"media_type": "image/png",
+				"data": Marshalls.raw_to_base64(img.save_png_to_buffer()),
+			}
+		})
 
 	return {
 		"role": role,
