@@ -33,14 +33,30 @@ static func create(field_params: Dictionary, input: = true) -> NoteField:
 	return scn
 
 func get_user_data():
-	return _selected_notes
+	var serialized_notes_data: Array[Dictionary]
+
+	for note in _selected_notes:
+		var note_vbox: = SingletonObject.find_notes_vbox_parent(note)
+		
+		serialized_notes_data.append(
+			note.serialize().merged({
+				"ThreadID": note_vbox.uuid if note_vbox else ""
+			})
+		)
+
+	return serialized_notes_data
 
 func clear_data() -> void:
 	update_output([])
 
 func update_output(notes: Array) -> void:
 	_selected_notes.clear()
-	_selected_notes.assign(notes)
+	for note in notes:
+		if note is Note:
+			_selected_notes.append(note)
+		elif note is Dictionary:
+			_selected_notes.append(Note.deserialize(note))
+		
 	_update_count_label()
 
 

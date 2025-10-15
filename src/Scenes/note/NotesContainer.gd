@@ -58,13 +58,34 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 
 	return notes_vbox
 
+func add_note_vbox(notes_vbox: NoteVBox) -> void:
+	var new_tab_index: = get_tab_count()
+
+	notes_vbox.note_added.connect(
+		func(note: Node):
+			if note.is_note_initialized():
+				note.tab_changed.emit(new_tab_index)
+	)
+
+	if notes_vbox.uuid.is_empty():
+		notes_vbox.uuid = SingletonObject.generate_UUID()
+	
+	# force readable name
+	add_child(notes_vbox, true)
+
+	notes_vbox.renamed.connect(func(): tab_renamed.emit(new_tab_index))
+
+	_update_adapter_info()
+
+	current_tab = new_tab_index
+
 ## Removes the tab specified with [param tab_idx].
 ## If [param user_action] is `true` that means that the user
 ## deliberatly wanted to try and delete the tab which will
 ## call each notes [method Note.remove] method.[br]
 ## Else the tab and it's notes will be deleted only if they are local notes.[br]
 func remove_tab(tab_idx: int, user_action: = true):	
-	var control: = get_tab_control(tab_idx)
+	var control: NoteVBox = get_tab_control(tab_idx)
 
 	# if at least one note deletion was rejected, don't delete the tab
 	var all_deleted: = true
@@ -82,7 +103,12 @@ func remove_tab(tab_idx: int, user_action: = true):
 					all_deleted = false
 
 		if all_deleted:
-			control.queue_free()
+			# if all notes we're deleted remove the thread from remote
+			if user_action and await remote_adapter.delete_thread(control.uuid, false):
+				control.queue_free()
+			else:
+				SingletonObject.ErrorDisplay("Threads Error", "Couldn't remove remote tab (Notes deleted)")
+			
 		else:
 			print("Not all notes deleted, not removing the tab")
 	
@@ -124,15 +150,16 @@ func add_note(note: Note, tab_idx: int = -1, force: = true, index: int = -1) -> 
 	return true
 
 
-## Synchronizes the new note if there is a adapter available
+## Synchronizes the new note
 func _sync_new_note(note: Note):
-	var sc: = SingletonObject.notes_sync_manger.get_sync_controller(note)
-
-	if not sc.adapter:
-		SingletonObject.ErrorDisplay("Can't upload", "Couldn't auto upload the %s" % note)
-		return
 	
-	sc.sync_note()
+	var success: = await SingletonObject.notes_sync_manger.sync_notes([note], false)
+	
+	# we'll just display the warning for notes we passed, even tho sync_notes updates other notes also,
+	# that update is just the order field
+	if not success:
+		SingletonObject.ErrorDisplay("Failed", "Couldn't upload the following:\n %s" % note)
+
 
 ## Returns an array of notes in the specified tab.[br]
 ## If not tab is specified ([-1]) returns notes from the currently selected tab or empty array.
@@ -388,5 +415,22 @@ func _on_tab_bar_gui_input(event: InputEvent) -> void:
 # endregion
 
 
-func _on_active_tab_rearranged(idx_to: int) -> void:
-	pass
+func _on_active_tab_rearranged(_idx_to: int) -> void:
+	var adapter = remote_adapter
+	
+	if not adapter: return
+	
+	# Update ALL tabs to reflect new order
+	for i in get_tab_count():
+		var vbox: NoteVBox = get_tab_control(i)
+		
+		var success = await adapter.update_thread(
+			vbox.uuid,
+			vbox.name,
+			i,  # Current position in UI
+			vbox.get_meta("remote_metadata", {})
+		)
+		
+		if not success:
+			SingletonObject.ErrorDisplay("Can't update", "Couldn't update tab order on remote")
+			return  # Stop on first failure

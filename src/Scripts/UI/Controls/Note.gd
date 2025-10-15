@@ -814,8 +814,9 @@ static func generate_content_sha256(input: PackedByteArray) -> String:
 	var hashed = ctx.finish()
 	return hashed.hex_encode()
 
-## Deserializes the [param note_data] dictionary into a [class Note] object.
-static func deserialize(note_data: Dictionary) -> Note:
+## Deserializes the [param note_data] dictionary into a [class Note] object.[br]
+## For [param register] see [method create_text_note] or similar methods.
+static func deserialize(note_data: Dictionary, register = true) -> Note:
 	# print(note_data)
 
 	var note: Note
@@ -833,12 +834,14 @@ static func deserialize(note_data: Dictionary) -> Note:
 					note_data.get("Title", "Unknown"),
 					note_data.get("Content", ""),
 					note_data.get("UUID", ""),
+					register,
 				)
 			"text":
 				note = create_text_note(
 					note_data.get("Title", "Unknown"),
 					note_data.get("Content", ""),
 					note_data.get("UUID", ""),
+					register,
 				)
 			"audio":
 				var audio_data = note_data.get("Audio", "")
@@ -848,6 +851,7 @@ static func deserialize(note_data: Dictionary) -> Note:
 					note_data.get("Title", "Unknown"),
 					audio_stream,
 					note_data.get("UUID", ""),
+					register,
 				)
 			"image":
 				# embedded images are saved as PNG
@@ -860,6 +864,7 @@ static func deserialize(note_data: Dictionary) -> Note:
 					image,
 					note_data.get("ImageCaption", ""),
 					note_data.get("UUID", ""),
+					register,
 				)
 			_:
 				push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))

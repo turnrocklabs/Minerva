@@ -509,7 +509,8 @@ func get_service_history_type(service: Service) -> ServiceHistory.ServiceType:
 	elif service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
 		return NotesServiceHistory.ServiceType.CHAT
 	
-	elif service.client_id.containsn("chat"):
+	# TODO: revert
+	elif service.client_id.containsn("chat") or service.client_id == "service:etsu-notes":
 		return NotesServiceHistory.ServiceType.CHAT
 
 	# fallback
