@@ -184,6 +184,15 @@ visible = false
 layout_mode = 2
 flat = true
 
+[node name="UseStateButton" type="Button" parent="PanelContainer/VBoxContainer/TopControls"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+flat = true
+
+[node name="VSeparator" type="VSeparator" parent="PanelContainer/VBoxContainer/TopControls"]
+layout_mode = 2
+
 [node name="HideButton" type="Button" parent="PanelContainer/VBoxContainer/TopControls"]
 unique_name_in_owner = true
 layout_mode = 2

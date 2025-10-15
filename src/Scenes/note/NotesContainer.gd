@@ -345,6 +345,10 @@ func deserialize(notes_data: Array) -> void:
 			
 			# if note is already there, it may be the remote note.
 			# check if it's remote and update if so
+
+			# NOTICE: this part doesn't check if the thread actually needs the update
+			# but the thread update is not data heavy
+			# example: { "uuid": "67e06497867de0023fce35e519c7ca3eb82310274858d6da4d93439de57760b2", "name": "Rules", "order": 1 }
 			
 			var controller: = SingletonObject.notes_sync_manger.get_sync_controller(existing_note)
 

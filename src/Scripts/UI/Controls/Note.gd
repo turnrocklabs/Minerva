@@ -132,6 +132,7 @@ var _initialized: = false
 @onready var _remove_button: Button = %RemoveButton
 
 @onready var sync_controller_button: Button = %SyncControllerButton
+@onready var use_state_button: Button = %UseStateButton
 
 @onready var _notes_control_container: Container = %NoteControlsContainer
 # container that holds all the content and gives the note its background

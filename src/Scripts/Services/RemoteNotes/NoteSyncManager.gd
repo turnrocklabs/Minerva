@@ -126,13 +126,16 @@ func _sync_notes_from_remote(adapter: NoteServiceAdapter):
 			# Note exists locally - check if out of sync
 			info("Note %s exists locally, checking sync" % remote_note.uuid)
 			
+			# NOTICE: note and control scenes have backing fields to store data until the note is
+			# added to a tree and marked as ready and initialized
+			# so the below shouldn't be necessary
 			# Create temporary control to initialize remote note for comparison
-			var temp_control = Control.new()
-			temp_control.visible = false
-			SingletonObject.get_tree().root.add_child(temp_control)
-			temp_control.add_child(remote_note)
+			# var temp_control = Control.new()
+			# temp_control.visible = false
+			# SingletonObject.get_tree().root.add_child(temp_control)
+			# temp_control.add_child(remote_note)
 			
-			await remote_note.initialized
+			# await remote_note.initialized
 			
 			var local_tab_idx = SingletonObject.notes_container.find_note(local_note)
 			var local_thread_id = SingletonObject.notes_container.get_tab_id(local_tab_idx)
@@ -164,7 +167,7 @@ func _sync_notes_from_remote(adapter: NoteServiceAdapter):
 				local_note.set_meta("remote_metadata", remote_metadata)
 				controller.set_state(NoteSyncController.SyncState.SYNCED)
 			
-			temp_control.queue_free()
+			# temp_control.queue_free()
 	
 	# Sort notes by order before creating
 	notes_to_create_locally.sort_custom(
@@ -246,19 +249,17 @@ func sync_notes(notes: Array[Note], display_error = true) -> bool:
 			success = false
 			continue
 		
-		# Now upload all notes in this tab
-		var tab_notes = SingletonObject.notes_container.get_notes(tab_idx)
-		var notes_success = await adapter.save_notes(tab_notes)
+		var notes_success = await adapter.save_notes(notes)
 		
 		if notes_success:
 			# Mark all notes as synced
-			for note in tab_notes:
+			for note in notes:
 				var controller = get_sync_controller(note)
 				controller.set_state(NoteSyncController.SyncState.SYNCED)
 		else:
 			success = false
 			# Mark notes as having local changes
-			for note in tab_notes:
+			for note in notes:
 				var controller = get_sync_controller(note)
 				controller.set_state(NoteSyncController.SyncState.LOCAL_CHANGES)
 	
