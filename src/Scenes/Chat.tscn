@@ -11,7 +11,7 @@
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="7_51nod"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="7_pery3"]
 [ext_resource type="Texture2D" uid="uid://lmmhfyqj83jd" path="res://assets/icons/gear_icons/gears_icon_48_no_bg.png" id="8_0o5iw"]
-[ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="8_rhvdc"]
+[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="8_rhvdc"]
 [ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/eraser/ink_eraser_off.svg" id="9_4ngla"]
 [ext_resource type="Script" uid="uid://c84qwwavvllhj" path="res://Scripts/UI/Views/NotesChatTab.gd" id="9_rtmbh"]
 [ext_resource type="Texture2D" uid="uid://ctva8p3u2141v" path="res://assets/icons/chat_apps_script.svg" id="9_thmy6"]
@@ -25,8 +25,8 @@
 [ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="15_t0aqa"]
 [ext_resource type="Texture2D" uid="uid://dflw78ayjikvx" path="res://assets/icons/stop_icons/stop-sign-48.png" id="17_0g7mq"]
 [ext_resource type="Texture2D" uid="uid://bvxolgw4msf57" path="res://assets/icons/stop_icons/stop-sign-68.png" id="18_libyp"]
-[ext_resource type="Script" path="res://Scripts/UI/Views/multi_send_button.gd" id="24_qs864"]
-[ext_resource type="Script" uid="uid://dxaj7lx4x7540" path="res://Scripts/UI/Views/UnsplitedChatMessages.gd" id="27_jeocu"]
+[ext_resource type="Script" uid="uid://cqa0adukk04nh" path="res://Scripts/UI/Views/multi_send_button.gd" id="24_qs864"]
+[ext_resource type="Script" uid="uid://dp7swt2flw1ui" path="res://Scripts/UI/Views/UnsplitedChatMessages.gd" id="27_jeocu"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="27_rtmbh"]
 [ext_resource type="Texture2D" uid="uid://dd64jugx3u72c" path="res://assets/icons/send_icons/send_icon_24_no_bg.png" id="28_c5fqk"]
 [ext_resource type="Texture2D" uid="uid://54susds7lngy" path="res://assets/icons/check_mark16.webp" id="28_t8wf8"]
@@ -257,7 +257,6 @@ fit_to_longest_item = false
 
 [node name="ChatControls" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 theme_override_constants/separation = 8
 
@@ -333,7 +332,6 @@ icon_alignment = 1
 script = ExtResource("24_qs864")
 
 [node name="Control" type="Control" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/btnChat"]
-visible = false
 show_behind_parent = true
 anchors_preset = 0
 offset_right = 40.0
@@ -342,12 +340,11 @@ mouse_filter = 2
 
 [node name="SendMessageButton" type="OptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/btnChat/Control"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
-offset_left = 14.0
-offset_top = 4.0
-offset_right = 36.0
-offset_bottom = 34.0
+offset_left = 28.0
+offset_top = 3.0
+offset_right = 50.0
+offset_bottom = 33.0
 mouse_filter = 1
 theme_override_icons/icon = ExtResource("27_rtmbh")
 theme_override_icons/arrow = SubResource("ImageTexture_qs864")

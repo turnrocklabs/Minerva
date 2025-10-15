@@ -142,8 +142,9 @@ func get_notes(tab_idx: = -1) -> Array[Note]:
 	if tab_idx == -1: return []
 
 	var note_vbox: NoteVBox = get_tab_control(tab_idx)
-
-	return note_vbox.get_notes()
+	if note_vbox != null:
+		return note_vbox.get_notes()
+	return []
 
 ## Returns the UUID of the specified tab, or `null` if it doesn't exist
 func get_tab_id(idx: int):
