@@ -186,8 +186,8 @@ flat = true
 
 [node name="UseStateButton" type="Button" parent="PanelContainer/VBoxContainer/TopControls"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
+toggle_mode = true
 flat = true
 
 [node name="VSeparator" type="VSeparator" parent="PanelContainer/VBoxContainer/TopControls"]

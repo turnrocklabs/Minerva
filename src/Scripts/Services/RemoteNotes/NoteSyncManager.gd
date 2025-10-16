@@ -94,6 +94,14 @@ func _sync_threads_from_remote(adapter: NoteServiceAdapter):
 		else:
 			# Thread doesn't exist locally - create it
 			info("Creating local thread from remote: %s" % remote_name)
+
+			for i in SingletonObject.notes_container.get_tab_count():
+				var note_vbox: NoteVBox = SingletonObject.notes_container.get_tab_control(i)
+
+				if note_vbox.name == remote_name:
+					note_vbox.name = "%s (Local)" % note_vbox.name
+					break
+
 			var new_vbox = SingletonObject.notes_container.create_tab(remote_name, remote_uuid)
 			new_vbox.set_meta("remote_metadata", remote_metadata)
 			
@@ -137,6 +145,9 @@ func _sync_notes_from_remote(adapter: NoteServiceAdapter):
 			
 			# await remote_note.initialized
 			
+			# set the local metadata first, since it's not saved locally and it's surely empty in local note
+			local_note.set_meta("remote_metadata", remote_metadata)
+
 			var local_tab_idx = SingletonObject.notes_container.find_note(local_note)
 			var local_thread_id = SingletonObject.notes_container.get_tab_id(local_tab_idx)
 			var local_thread_name = SingletonObject.notes_container.get_tab_name(local_tab_idx)

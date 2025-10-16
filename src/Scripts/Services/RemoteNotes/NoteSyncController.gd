@@ -91,7 +91,9 @@ func info(input):
 
 func set_adapter(adapter_: NoteServiceAdapter) -> void:
 	adapter = adapter_
-	print(adapter)
+
+	# trigger state change when adapter changes to update the buttons
+	_on_state_updated()
 
 func _highjack_note_controls():
 	if not note: return
@@ -138,13 +140,23 @@ func sync_note(display_error = true) -> bool:
 
 	return success
 
+
+## Resets the pending sync timer and runs it's on timeout callback to sync with remote.[br]
+## If timer is not active, nothing happens.
+func flush_changes():
+	if is_queued_for_sync():
+		_sync_timer.timeout.disconnect(_on_sync_timer_timeout)
+		await _on_sync_timer_timeout()
+		_sync_timer = null
+
+
 ## [class NoteSyncController] automatically starts a sync timer 
 ## when a remote notes state changes to [enum SyncState.LOCAL_CHANGES].
 ## The timer is reset if changes happen again, and times out only when there are
 ## no changes for a set period of time.
 ## This methods returns whether or not this current controllers note has a timer running.
 func is_queued_for_sync() -> bool:
-	return is_instance_valid(_sync_timer) and _sync_timer.time_left > 0
+	return is_instance_valid(_sync_timer) and _sync_timer != null and _sync_timer.time_left > 0
 
 func _on_state_updated() -> void:
 	print("Updated %s state to %s" % [note, state])
@@ -153,9 +165,17 @@ func _on_state_updated() -> void:
 	if not note.is_note_initialized():
 		return
 	
-	if is_instance_valid(_sync_timer):
+	if adapter is ETSUNotesServiceAdapter:
+		adapter.handle_note_special_state(self)
+
+	if is_queued_for_sync():
 		_sync_timer.timeout.disconnect(_on_sync_timer_timeout)
 		_sync_timer = null
+	
+	# this will be reverted if adapter is not available
+	note.sync_controller_button.visible = true
+	if not note.sync_controller_button.pressed.is_connected(_on_sync_controller_button_pressed):
+		note.sync_controller_button.pressed.connect(_on_sync_controller_button_pressed)
 	
 	if state == SyncState.LOCAL_ONLY:
 		
@@ -170,11 +190,18 @@ func _on_state_updated() -> void:
 			func(): if is_instance_valid(note): note._remove_button.disabled = false
 		)
 
-		note.sync_controller_button.visible = false
-		note.sync_controller_button.text = ""
+		if adapter:
+			note.sync_controller_button.visible = true # keep visible so users can upload still
+			note.sync_controller_button.tooltip_text = "Upload to remote"
+			note.sync_controller_button.text = "⤴"
 
-		if note.sync_controller_button.pressed.is_connected(_on_sync_controller_button_pressed):
-			note.sync_controller_button.pressed.disconnect(_on_sync_controller_button_pressed)
+		else:
+			note.sync_controller_button.visible = false
+			note.sync_controller_button.tooltip_text = ""
+			note.sync_controller_button.text = ""
+
+			if note.sync_controller_button.pressed.is_connected(_on_sync_controller_button_pressed):
+				note.sync_controller_button.pressed.disconnect(_on_sync_controller_button_pressed)
 	else:
 
 		note.remove_handle = _on_note_remove_button_pressed
@@ -212,10 +239,6 @@ func _on_state_updated() -> void:
 
 				note.sync_controller_button.tooltip_text = "Local changes"
 				note.sync_controller_button.text = "●"
-		
-		note.sync_controller_button.visible = true
-		if not note.sync_controller_button.pressed.is_connected(_on_sync_controller_button_pressed):
-			note.sync_controller_button.pressed.connect(_on_sync_controller_button_pressed)
 
 func _on_sync_timer_timeout() -> void:
 	_sync_failed = not await sync_note(false)
@@ -231,7 +254,7 @@ func _on_sync_controller_button_pressed():
 	
 	info("Sync button pressed for note: %s" % note)
 	
-	if state == SyncState.LOCAL_CHANGES:
+	if state in [SyncState.LOCAL_CHANGES, SyncState.LOCAL_ONLY]:
 		await sync_note(true)
 
 func _on_note_remove_button_pressed() -> bool:

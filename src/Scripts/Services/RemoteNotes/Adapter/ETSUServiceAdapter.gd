@@ -1,6 +1,9 @@
 class_name ETSUNotesServiceAdapter
 extends NoteServiceAdapter
 
+static var _robot_icon = preload("res://assets/generated/robot-simple.svg")
+static var _robot_crossed_icon = preload("res://assets/generated/robot-simple-crossed.svg")
+
 static var SERVICE_NAME: StringName:
 	get: return get_service_name()
 
@@ -295,3 +298,68 @@ func handle_action(action: Action, data: Variant) -> bool:
 		return success
 	
 	return false
+
+
+const USE_STATE_FIELD_NAME = "NoUse"
+
+func handle_note_special_state(controller: NoteSyncController):
+	var note = controller.note
+
+	# if this is just a local note, hide the special state button
+	if controller.state == NoteSyncController.SyncState.LOCAL_ONLY:
+		if note.use_state_button.pressed.is_connected(_on_use_state_button_pressed.bind(controller)):
+			note.use_state_button.pressed.disconnect(_on_use_state_button_pressed.bind(controller))
+
+		note.use_state_button.visible = false
+		
+		return
+	
+	# else show it
+	note.use_state_button.visible = true
+	if not note.use_state_button.pressed.is_connected(_on_use_state_button_pressed.bind(controller)):
+		note.use_state_button.pressed.connect(_on_use_state_button_pressed.bind(controller))
+	
+	# if the note is synced or has local changes, determine the actual state
+	if controller.state in [NoteSyncController.SyncState.SYNCED, NoteSyncController.SyncState.LOCAL_CHANGES]:
+		var remote_meta: = note.get_remote_metadata()
+
+		var no_use_active: bool = remote_meta.get(USE_STATE_FIELD_NAME, false)
+
+		if no_use_active:
+			note.use_state_button.icon = _robot_crossed_icon
+			note.use_state_button.tooltip_text = "Enable as chatbot context"
+		else:
+			note.use_state_button.icon = _robot_icon
+			note.use_state_button.tooltip_text = "Remove from chatbot context"
+
+		note.use_state_button.disabled = false
+
+	elif controller.state == NoteSyncController.SyncState.SYNCING:
+		note.use_state_button.disabled = true
+
+
+
+
+func _on_use_state_button_pressed(controller: NoteSyncController):
+	# switch the use state first
+	var note: = controller.note
+
+	var current_state: bool = note.get_remote_metadata().get(USE_STATE_FIELD_NAME, false)
+
+	note.update_remote_metadata({
+		USE_STATE_FIELD_NAME: not current_state
+	})
+
+	# if it's already queued for sync, force sync now
+	# that will update the remote metadata field by itself
+	if controller.is_queued_for_sync():
+		await controller.flush_changes()
+	
+	# else just patch the meta field
+	else:
+		controller.state = NoteSyncController.SyncState.SYNCING
+
+		var success: = await patch_notes([note], ["Metadata"])
+
+		controller.state = NoteSyncController.SyncState.SYNCED if success else NoteSyncController.SyncState.LOCAL_CHANGES
+

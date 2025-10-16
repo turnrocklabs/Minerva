@@ -414,8 +414,8 @@ func _on_error_changed():
 
 
 func _to_string() -> String:
-	if not is_node_ready():
-		return "%s note (not ready)" % content_type.capitalize()
+	# if not is_node_ready():
+	# 	return "%s note (not ready)" % content_type.capitalize()
 	
 	return "%s note (%s)" % [content_type.capitalize(), title]
 
@@ -938,5 +938,28 @@ class Proxy extends RefCounted:
 
 		push_error("Note.Proxy initializer is not a valid Callable: %s" % _initializer)
 		return null
+
+# endregion
+
+# region remote
+
+## Returns this controllers note remote metadata, fetched from remote
+## or empty dict if it's not set
+func get_remote_metadata() -> Dictionary:
+	return get_meta("remote_metadata", {})
+
+## This function alters the data locally, to update the remote use:
+## [codeblock]NoteServiceAdapter.patch_notes([note], ["Metadata"])[/codeblock][br]
+## Updates this controllers note remote metadata,
+## by using [method Dictionary.merge] on existing metadata[br]
+## and passing the supplied [param data].[br]
+## [code]remote_metadata.merge(data, true)[/code]
+func update_remote_metadata(data: Dictionary):
+	var remote_metadata: = get_remote_metadata()
+	
+	remote_metadata.merge(data, true)
+
+	set_meta("remote_metadata", remote_metadata)
+
 
 # endregion
