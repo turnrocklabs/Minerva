@@ -46,7 +46,15 @@ func _ready() -> void:
 
 	# Set the reference to the notes container here as the singleton object is loaded before this one
 	SingletonObject.notes_container = %tcThreads
+	SingletonObject.notes_container.create_note_callback = %CreateNewNote.popup_centered
+
 	SingletonObject.drawer_notes_container = %tcThreadsDrawer
+	SingletonObject.drawer_notes_container.supports_remote = false
+	SingletonObject.drawer_notes_container.create_note_callback = (
+		func():
+			%CreateNewNote.popup_centered()
+			%CreateNewNote.notes_container_override = SingletonObject.drawer_notes_container
+	)
 
 
 var MAX: = 20

@@ -65,6 +65,11 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	# Clear previous token
 	_jwt_token = ""
 
+	SingletonObject.preferences_popup.logs_window.add_log_line(
+		"Attempting authentication to %s" % auth_endpoint,
+		HcpLogs.LOG_TYPE.INFO
+	)
+
 	print("Attempting authentication to: ", auth_endpoint)
 	var err = http_request.request(auth_endpoint, headers, HTTPClient.METHOD_POST, body)
 
@@ -72,6 +77,12 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 		var err_msg = "HTTP Auth Request failed immediately: %s" % error_string(err)
 		push_error(err_msg)
 		SingletonObject.ErrorDisplay("Authentication Failed", err_msg)
+
+		SingletonObject.preferences_popup.logs_window.add_log_line(
+			"Authentication failed: %s" % err_msg,
+			HcpLogs.LOG_TYPE.ERROR
+		)
+		
 		# Ensure button is re-enabled in PreferencesPopup if needed (handled there)
 		return false
 
@@ -91,14 +102,31 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 	print("Authentication successful. Token received.")
 
+	SingletonObject.preferences_popup.logs_window.add_log_line(
+		"Authentication successful",
+		HcpLogs.LOG_TYPE.SUCCESS,
+	)
+
 	# --- 3. Connect to Core WebSocket ---
 	print("Attempting WebSocket connection to: ", core_ws_url)
+
+	SingletonObject.preferences_popup.logs_window.add_log_line(
+		"Attempting WebSocket connection to: %s" % core_ws_url,
+		HcpLogs.LOG_TYPE.INFO,
+	)
+
 	var connected_ws: bool = client.connect_to_core(core_ws_url)
 
 	if not connected_ws:
 		var err_msg = "WebSocket connection failed."
 		push_error(err_msg)
 		SingletonObject.ErrorDisplay("Connection Failed", err_msg)
+		
+		SingletonObject.preferences_popup.logs_window.add_log_line(
+			"WebSocket connection failed",
+			HcpLogs.LOG_TYPE.ERROR,
+		)
+
 		# Reset token maybe? Or let user retry.
 		_jwt_token = ""
 		_client_id = ""
@@ -107,6 +135,11 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	# Wait for the WebSocket connection to be established
 	await client.connection_established
 	print("WebSocket connection established.")
+
+	SingletonObject.preferences_popup.logs_window.add_log_line(
+		"WebSocket connection established",
+		HcpLogs.LOG_TYPE.SUCCESS,
+	)
 
 	# --- 4. Register with Core using the obtained JWT ---
 	client.register_with_core(_jwt_token, _client_id) # Use the JWT token for registration
@@ -133,24 +166,60 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 	print("Auth Response Code: ", response_code)
 	print("Auth Response Body: ", response_body_text)
 
+	var json = JSON.parse_string(response_body_text)
+
+	SingletonObject.preferences_popup.logs_window.add_log_line(
+		"Auth response received",
+		HcpLogs.LOG_TYPE.INFO,
+		{
+			"status": response_code,
+			"response_body": json if json else response_body_text
+		}
+	)
+
 	if response_code != 200: # Check for successful HTTP status
 		var err_msg = "Authentication Failed: Server returned status %d. Response: %s" % [response_code, response_body_text]
 		push_error(err_msg)
+
+		var core_error_message: String = json.get("error", {}).get("message", "") if json else ""
+
+		if core_error_message.is_empty():
+			core_error_message = "Server returned status %d. Unknown error, check logs." % response_code
+
 		SingletonObject.ErrorDisplay(
 			"Authentication Failed",
-			"Server returned status %d. Check credentials or server logs." % response_code,
+			core_error_message,
 			SingletonObject.preferences_popup
 		)
+
+		SingletonObject.preferences_popup.logs_window.add_log_line(
+			"Authentication failed: %s" % core_error_message,
+			HcpLogs.LOG_TYPE.ERROR,
+			{
+				"status": response_code,
+				"response_body": json if json else response_body_text
+			}
+		)
+
 		_jwt_token = ""
 		_client_id = ""
 		return
 
 	# Parse the JSON response
-	var json = JSON.parse_string(response_body_text)
+	
 	if typeof(json) != TYPE_DICTIONARY:
 		var err_msg = "Failed to parse authentication response JSON."
 		push_error(err_msg)
 		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+
+		SingletonObject.preferences_popup.logs_window.add_log_line(
+			"Authentication failed: Failed to parse authentication response JSON",
+			HcpLogs.LOG_TYPE.ERROR,
+			{
+				"invalid_json": response_body_text
+			}
+		)
+
 		_jwt_token = ""
 		return
 
@@ -160,25 +229,53 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 			var err_msg = "Authentication response token is invalid or empty."
 			push_error(err_msg)
 			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+			
+			SingletonObject.preferences_popup.logs_window.add_log_line(
+				"Authentication failed: Authentication response token is invalid or empty",
+				HcpLogs.LOG_TYPE.ERROR,
+				json
+			)
+			
 			_jwt_token = ""
 	else:
 		var err_msg = "Authentication response does not contain a 'token'."
 		push_error(err_msg, " Received JSON: ", json)
 		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		
+		SingletonObject.preferences_popup.logs_window.add_log_line(
+			"Authentication failed: Authentication response does not contain a 'token'",
+			HcpLogs.LOG_TYPE.ERROR,
+			json
+		)
+
 		_jwt_token = ""
 		return
 	
 	if json.has("data") and json["data"].has("user") and json["data"]["user"].has("id"):
 		_client_id = json["data"]["user"]["id"]
 		if typeof(_client_id) != TYPE_STRING or _client_id.is_empty():
-			var err_msg = "Authentication response token is invalid or empty."
+			var err_msg = "Authentication response client id is invalid or empty."
 			push_error(err_msg)
 			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+			
+			SingletonObject.preferences_popup.logs_window.add_log_line(
+				"Authentication failed: Authentication response client id is invalid or empty",
+				HcpLogs.LOG_TYPE.ERROR,
+				json
+			)
+
 			_client_id = ""
 	else:
 		var err_msg = "Authentication response does not contain a 'client_id'."
 		push_error(err_msg, " Received JSON: ", json)
 		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		
+		SingletonObject.preferences_popup.logs_window.add_log_line(
+			"Authentication failed: Authentication response does not contain a 'client_id'",
+			HcpLogs.LOG_TYPE.ERROR,
+			json
+		)
+		
 		_client_id = ""
 		return
 
@@ -424,13 +521,16 @@ func await_message() -> AwaitMessage:
 
 
 func get_service_history_type(service: Service) -> ServiceHistory.ServiceType:
+	prints("Service client_id:", service.client_id)
+
 	if service.client_id == "etsu-notes":
 		return NotesServiceHistory.ServiceType.NOTES
 	
 	elif service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
 		return NotesServiceHistory.ServiceType.CHAT
-	
-	elif service.client_id.containsn("chat"):
+
+
+	elif service.client_id.containsn("chat") or service.name.containsn("chat"):
 		return NotesServiceHistory.ServiceType.CHAT
 
 	# fallback

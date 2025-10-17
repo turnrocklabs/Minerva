@@ -14,6 +14,7 @@ var _field_scenes: = {
 	"array": ListField,
 	"bool": BoolField,
 	"number": NumberField,
+	"object": ObjectField,
 	
 	# complex data types
 	"notes": NoteField,

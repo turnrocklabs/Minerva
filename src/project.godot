@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="AgentInator"
+config/name="Minerva"
 config/tags=PackedStringArray("desktop")
 run/main_scene="res://Scenes/MainScene.tscn"
 run/enable_alt_space_menu=true
