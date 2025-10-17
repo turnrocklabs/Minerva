@@ -8,6 +8,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+size_flags_vertical = 3
 script = ExtResource("1_m3wwg")
 
 [node name="FieldName" type="Label" parent="."]
@@ -23,7 +24,9 @@ focus_mode = 2
 fit_content = true
 selection_enabled = true
 
-[node name="LineEdit" type="LineEdit" parent="."]
+[node name="LineEdit" type="TextEdit" parent="."]
 unique_name_in_owner = true
 visible = false
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
+size_flags_vertical = 3

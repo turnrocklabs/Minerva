@@ -347,8 +347,18 @@ func execute_hcp_chat():
 
 	var provider: CoreProvider = history.provider
 
+	var input_data: = Core.dynamic_ui_generator.get_user_input(dynamic_ui_container)
+
+	for field_name in provider.action.input_parameters.keys():
+		var f_params: Dictionary = provider.action.input_parameters[field_name]
+		if not f_params.get("required", false): continue
+		
+		if input_data[field_name] is String:
+			if input_data[field_name].is_empty():
+				return
+
 	var user_history_item: = ChatHistoryItem.new()
-	user_history_item.HcpData = Core.dynamic_ui_generator.get_user_input(dynamic_ui_container)
+	user_history_item.HcpData = input_data
 	user_history_item.HcpStructure = provider.action.input_parameters
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 	user_history_item.Type = ChatHistoryItem.PartType.TEXT
