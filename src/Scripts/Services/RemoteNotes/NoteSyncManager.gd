@@ -450,7 +450,7 @@ func _on_core_connected():
 		
 		info("Found service: %s" % service.client_id)
 		
-		if service.client_id == "service:%s" % ETSUNotesServiceAdapter.SERVICE_NAME:
+		if service.client_id == ETSUNotesServiceAdapter.SERVICE_NAME:
 			adapter = ETSUNotesServiceAdapter.new(service)
 		
 		if adapter:
