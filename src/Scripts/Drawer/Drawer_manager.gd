@@ -4,8 +4,6 @@ class_name DrawerNotesManager
 var data_path: String = "user://drawer_data.json"
 
 
-
-
 func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_WM_CLOSE_REQUEST:

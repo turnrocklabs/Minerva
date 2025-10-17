@@ -132,6 +132,8 @@ var _initialized: = false
 @onready var _remove_button: Button = %RemoveButton
 
 @onready var sync_controller_button: Button = %SyncControllerButton
+@onready var sync_texture_rect: TextureRect = %SyncStateTextureRect
+@onready var use_state_button: Button = %UseStateButton
 
 @onready var _notes_control_container: Container = %NoteControlsContainer
 # container that holds all the content and gives the note its background
@@ -413,8 +415,8 @@ func _on_error_changed():
 
 
 func _to_string() -> String:
-	if not is_node_ready():
-		return "%s note (not ready)" % content_type.capitalize()
+	# if not is_node_ready():
+	# 	return "%s note (not ready)" % content_type.capitalize()
 	
 	return "%s note (%s)" % [content_type.capitalize(), title]
 
@@ -471,7 +473,8 @@ func _on_edit_button_pressed() -> void:
 
 	for editor in editor_pane.get_open_editors():
 		if editor.associated_object == self:
-			print("Already present")
+			var curr_idx: = editor_pane.Tabs.get_tab_idx_from_control(editor)
+			editor_pane.Tabs.current_tab = curr_idx
 			return
 
 	# Show the editor if it's hidden
@@ -595,7 +598,8 @@ func _on_mouse_exited() -> void:
 	
 
 func _get_drag_data(at_position: Vector2) -> Variant:
-	
+	if not at_position.y < size.y/3: return # just limit dragging to first third
+
 	# Invalid notes can't be dragged
 	if _error: return null
 
@@ -622,7 +626,7 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 func _can_drop_data(at_position: Vector2, data: Variant) -> bool:	
 	# maybe check type, so drawer notes can't be dropped into normal ones?
 
-	if data == self: return false
+	if data is String and data == self: return false
 
 	
 	_panel_container.theme_type_variation = &"DropZoneNote"
@@ -814,8 +818,9 @@ static func generate_content_sha256(input: PackedByteArray) -> String:
 	var hashed = ctx.finish()
 	return hashed.hex_encode()
 
-## Deserializes the [param note_data] dictionary into a [class Note] object.
-static func deserialize(note_data: Dictionary) -> Note:
+## Deserializes the [param note_data] dictionary into a [class Note] object.[br]
+## For [param register] see [method create_text_note] or similar methods.
+static func deserialize(note_data: Dictionary, register = true) -> Note:
 	# print(note_data)
 
 	var note: Note
@@ -833,12 +838,14 @@ static func deserialize(note_data: Dictionary) -> Note:
 					note_data.get("Title", "Unknown"),
 					note_data.get("Content", ""),
 					note_data.get("UUID", ""),
+					register,
 				)
 			"text":
 				note = create_text_note(
 					note_data.get("Title", "Unknown"),
 					note_data.get("Content", ""),
 					note_data.get("UUID", ""),
+					register,
 				)
 			"audio":
 				var audio_data = note_data.get("Audio", "")
@@ -848,6 +855,7 @@ static func deserialize(note_data: Dictionary) -> Note:
 					note_data.get("Title", "Unknown"),
 					audio_stream,
 					note_data.get("UUID", ""),
+					register,
 				)
 			"image":
 				# embedded images are saved as PNG
@@ -860,6 +868,7 @@ static func deserialize(note_data: Dictionary) -> Note:
 					image,
 					note_data.get("ImageCaption", ""),
 					note_data.get("UUID", ""),
+					register,
 				)
 			_:
 				push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))
@@ -932,5 +941,28 @@ class Proxy extends RefCounted:
 
 		push_error("Note.Proxy initializer is not a valid Callable: %s" % _initializer)
 		return null
+
+# endregion
+
+# region remote
+
+## Returns this controllers note remote metadata, fetched from remote
+## or empty dict if it's not set
+func get_remote_metadata() -> Dictionary:
+	return get_meta("remote_metadata", {})
+
+## This function alters the data locally, to update the remote use:
+## [codeblock]NoteServiceAdapter.patch_notes([note], ["Metadata"])[/codeblock][br]
+## Updates this controllers note remote metadata,
+## by using [method Dictionary.merge] on existing metadata[br]
+## and passing the supplied [param data].[br]
+## [code]remote_metadata.merge(data, true)[/code]
+func update_remote_metadata(data: Dictionary):
+	var remote_metadata: = get_remote_metadata()
+	
+	remote_metadata.merge(data, true)
+
+	set_meta("remote_metadata", remote_metadata)
+
 
 # endregion

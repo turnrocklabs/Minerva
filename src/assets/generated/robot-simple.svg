@@ -1,0 +1,18 @@
+<svg width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Antenna -->
+  <circle cx="24" cy="6" r="2.5" fill="black"/>
+  <rect x="23" y="8" width="2" height="6" fill="black"/>
+  
+  <!-- Head -->
+  <rect x="10" y="14" width="28" height="24" rx="4" stroke="black" stroke-width="2.5" fill="white"/>
+  
+  <!-- Eyes -->
+  <circle cx="17" cy="24" r="3.5" fill="black"/>
+  <circle cx="31" cy="24" r="3.5" fill="black"/>
+  
+  <!-- Smile -->
+  <path d="M 17 32 Q 24 35 31 32" stroke="black" stroke-width="2" stroke-linecap="round" fill="none"/>
+  
+  <!-- Detail lines on head -->
+  <line x1="12" y1="16" x2="36" y2="16" stroke="black" stroke-width="1" opacity="0.3"/>
+</svg>

@@ -9,9 +9,12 @@ var container: TabContainer  # Store the TabContainer
 @onready var _provider_option_button: ProviderOptionButton = %ProviderOptionButton
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
+@onready var _chat_button: Button = %btnChat
 var _active_chat_request: = false
 
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
+
+var _initializing_pane := false
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
@@ -347,8 +350,18 @@ func execute_hcp_chat():
 
 	var provider: CoreProvider = history.provider
 
+	var input_data: = Core.dynamic_ui_generator.get_user_input(dynamic_ui_container)
+
+	for field_name in provider.action.input_parameters.keys():
+		var f_params: Dictionary = provider.action.input_parameters[field_name]
+		if not f_params.get("required", false): continue
+		
+		if input_data[field_name] is String:
+			if input_data[field_name].is_empty():
+				return
+
 	var user_history_item: = ChatHistoryItem.new()
-	user_history_item.HcpData = Core.dynamic_ui_generator.get_user_input(dynamic_ui_container)
+	user_history_item.HcpData = input_data
 	user_history_item.HcpStructure = provider.action.input_parameters
 	user_history_item.Role = ChatHistoryItem.ChatRole.USER
 	user_history_item.Type = ChatHistoryItem.PartType.TEXT
@@ -1022,7 +1035,10 @@ func _on_btn_microphone_pressed():
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
 	SingletonObject.AtT.btnStop = %AudioStop1
 
+
 func _on_child_order_changed():
+	if _initializing_pane: return
+
 	# Update ChatList in the SingletonObject
 	SingletonObject.ChatList = []  # Comment this out temporarily
 	for child in get_children():
@@ -1054,9 +1070,13 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 
 		txt_main_user_input.visible = false
 		dynamic_ui_container.visible = true
+
+		_chat_button.enabled = false
+		_chat_button.hide_overhang_button()
 	else:
 		txt_main_user_input.visible = true
 		dynamic_ui_container.visible = false
+		_chat_button.enabled = true
 
 	if SingletonObject.ChatList.is_empty(): return
 
@@ -1132,15 +1152,23 @@ func _on_audio_stop_1_pressed() -> void:
 
 
 func clone_chat(tab_idx: int) -> void:
-	var serialized_chat_to_clone: = SingletonObject.ChatList[tab_idx].Serialize()
-	var provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[serialized_chat_to_clone.get("Provider")].new()
-	var new_chat_history: ChatHistory = ChatHistory.new(provider)
-	new_chat_history.HistoryName = serialized_chat_to_clone.get("HistoryName") + " clone"
+	var chat_to_clone: ChatHistory = SingletonObject.ChatList[tab_idx]
 	
-	var chat_items: Array[ChatHistoryItem] = []
-	for i: Dictionary in serialized_chat_to_clone.get("HistoryItemList"):
-		chat_items.append(ChatHistoryItem.Deserialize(i))
-	new_chat_history.HistoryItemList = chat_items
+	# Clone using the live provider reference, not serialization
+	var new_provider = chat_to_clone.provider.get_script().new()
+	var new_chat_history: ChatHistory = ChatHistory.new(new_provider)
+	new_chat_history.HistoryName = chat_to_clone.HistoryName + " clone"
+	new_chat_history.Temperature = chat_to_clone.Temperature
+	new_chat_history.TopP = chat_to_clone.TopP
+	new_chat_history.PresencePenalty = chat_to_clone.PresencePenalty
+	new_chat_history.FrequencyPenalty = chat_to_clone.FrequencyPenalty
+	
+	# Deep clone history items
+	for item in chat_to_clone.HistoryItemList:
+		var serialized = item.Serialize()
+		var cloned_item = ChatHistoryItem.Deserialize(serialized)
+		new_chat_history.HistoryItemList.append(cloned_item)
+	
 	SingletonObject.ChatList.append(new_chat_history)
 	render_history(new_chat_history)
 

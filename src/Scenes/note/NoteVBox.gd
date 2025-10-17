@@ -4,31 +4,40 @@ extends VBoxContainer
 ## Emitted when a new Note node is added to this objects vbox container.
 signal note_added(note: Note)
 signal auto_upload_toggled(on: bool)
+signal add_note_requested()
 
 static var _scene: = preload("res://Scenes/note/NoteVBox.tscn")
 
-static var _cloud_off_icon: = preload("res://assets/icons/cloud_off.svg")
+static var _broken_link_icon = preload("res://assets/generated/broken-link-icon.svg")
 static var _remove_icon: = preload("res://assets/icons/remove.svg")
 
 @onready var _vbox: VBoxContainer = %VBoxContainer
 
 @onready var _remote_option_container: Container = %RemoteOptionsContainer
-@onready var _remote_check_buttion: CheckButton = %RemoteCheckButton
+@onready var _remote_check_box: CheckBox = %RemoteCheckBox
 @onready var _remote_service_label: Label = %RemoteServiceLabel
 
 @onready var _bulk_upload_button: Button = %BulkUploadButton
-const _bulk_button_text: = "Upload local notes (%s)"
+const _bulk_button_tooltip: = "Upload local notes (%s)"
 
 @onready var _toggle_expand_button: Button = %CollapseAllButton
 @onready var _toggle_selection_button: CheckButton = %ToggleNotesCheckButton
 
 @onready var _remove_all_button: Button = %RemoveAllButton
 
+var supports_remote: = true
+
 var uuid: = ""
 
+var _auto_upload_backing: bool = false
 var auto_upload: bool:
-	set(value): _remote_check_buttion.button_pressed = value
-	get: return _remote_check_buttion.button_pressed
+	set(value):
+		if is_node_ready():
+			_remote_check_box.button_pressed = value
+		else:
+			_auto_upload_backing = value
+
+	get: return _remote_check_box.button_pressed if is_node_ready() else _auto_upload_backing
 
 static func create() -> NoteVBox:
 	var scn: = _scene.instantiate()
@@ -39,8 +48,16 @@ func _ready() -> void:
 	_vbox.child_entered_tree.connect(_on_vbox_child_entered_tree)
 	_vbox.child_exiting_tree.connect(_on_vbox_child_exiting_tree)
 
+	if not supports_remote:
+		_remote_check_box.visible = false
+		_remote_service_label.visible = false
+		_remote_option_container.visible = false
+	
+	auto_upload = _auto_upload_backing
+	
+
 func _on_vbox_child_entered_tree(node: Node):
-	if node is Note:
+	if node is Note and supports_remote:
 		
 		var controller: = SingletonObject.notes_sync_manger.get_sync_controller(node)
 
@@ -59,7 +76,7 @@ func _on_vbox_child_entered_tree(node: Node):
 		_update_collapse_all_button()
 		_update_toggle_notes_button()
 
-		note_added.emit(node)
+	note_added.emit(node)
 		
 
 func _on_vbox_child_exiting_tree(node: Node):
@@ -124,7 +141,7 @@ func _update_bulk_button() -> void:
 
 	_bulk_upload_button.disabled = notes.is_empty()
 
-	_bulk_upload_button.text = _bulk_button_text % [notes.size()]
+	_bulk_upload_button.tooltip_text = _bulk_button_tooltip % [notes.size()]
 
 	if notes.is_empty():
 		_bulk_upload_button.release_focus()
@@ -143,7 +160,7 @@ func _update_remove_all_button() -> void:
 
 	if remote_count > 0:
 		_remove_all_button.text = "(%s)" % remote_count
-		_remove_all_button.icon = _cloud_off_icon
+		_remove_all_button.icon = _broken_link_icon
 		_remove_all_button.tooltip_text = "Makes All Notes From This Tab Local"
 		_remove_all_button.set_meta("mode", "remote")
 		_remove_all_button.disabled = false
@@ -244,3 +261,7 @@ func _on_toggle_notes_check_button_toggled(toggled_on: bool) -> void:
 func _on_remove_all_button_pressed() -> void:
 	for note in get_notes():
 		note.remove()
+
+
+func _on_add_note_button_pressed() -> void:
+	add_note_requested.emit()

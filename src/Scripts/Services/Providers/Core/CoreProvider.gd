@@ -62,8 +62,8 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary={})
 		return bot_response
 
 
-	var msg = await Core.send_message(service, action, last_msg).receive()
-	
+	var msg = await Core.send_message(service, action, last_msg).with_timeout(220).receive()
+
 	if not msg:
 		var bot_response:= BotResponse.new()
 		bot_response.error = "No response received"

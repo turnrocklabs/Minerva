@@ -85,7 +85,7 @@ jobs:
     - name: Build Extension
       run: |
         cd src
-        scons platform=windows target=template_debug
+        scons platform=windows target=template_release
         
     - name: Upload Extension
       uses: actions/upload-artifact@v4
@@ -138,7 +138,7 @@ jobs:
     - name: Build Extension
       run: |
         cd src
-        scons platform=linux target=template_debug
+        scons platform=linux target=template_release
         
     - name: Upload Extension
       uses: actions/upload-artifact@v4
@@ -215,19 +215,19 @@ jobs:
           
           if [ "$PLATFORM" = "windows" ]; then
             mkdir -p build/windows
-            godot --headless --export-debug "Windows Release" build/windows/Minerva.exe
+            godot --headless --export-release "Windows Release" build/windows/Minerva.exe
           
           elif [ "$PLATFORM" = "linux" ]; then
             mkdir -p build/linux
-            godot --headless --export-debug "Linux/X11 Release" build/linux/Minerva.x86_64
+            godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64
           
           else  
             mkdir -p build/windows
             mkdir -p build/linux
 
             # For 'all' option or push events, export both
-            godot --headless --export-debug "Windows Release" build/windows/Minerva.exe
-            godot --headless --export-debug "Linux/X11 Release" build/linux/Minerva.x86_64 
+            godot --headless --export-release "Windows Release" build/windows/Minerva.exe
+            godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64 
           fi
 
       - name: Upload Windows Build

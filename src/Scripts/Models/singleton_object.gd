@@ -260,6 +260,20 @@ func toggle_all_notes(notes_enabled: bool):
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		(SingletonObject.drawer_notes_container.enable_notes if notes_enabled else SingletonObject.drawer_notes_container.disable_notes).call(i)
 
+## Tries to find the [class NoteVbox] object that the [param note] resides in.[br]
+## returns `null` if not found.
+func find_notes_vbox_parent(note: Note) -> NoteVBox:
+	var tab_idx: int
+
+	tab_idx = SingletonObject.notes_container.find_note(note)
+	if tab_idx != -1:
+		return SingletonObject.notes_container.get_tab_control(tab_idx)
+	
+	tab_idx = SingletonObject.drawer_notes_container.find_note(note)
+	if tab_idx != -1:
+		return SingletonObject.drawer_notes_container.get_tab_control(tab_idx)
+
+	return null
 
 #endregion Notes
 
