@@ -280,19 +280,21 @@ func _setup_model_message():
 		)
 
 		%ImagesGridContainer.add_child(img_node)
-	
+
 	label.set("theme_override_colors/default_color", Color.BLACK)
-	
+
 	var style: StyleBox = get_node("%PanelContainer").get("theme_override_styles/panel")
 
 	var continue_btn = get_node("%ContinueButton") as Button
 	continue_btn.visible = not history_item.Complete
-	
+
 	if history_item.HcpData:
 		set_dynamic_data(history_item.HcpStructure, history_item.HcpData)
 	elif history_item.Error:
 		label.text = "An error occurred:\n%s" % history_item.Error
 		style.bg_color = error_message_color
+		# Ensure controls are enabled for error messages so user can copy/delete/etc
+		_toggle_controls(true)
 	else:
 		label.markdown_text = history_item.Message
 		style.bg_color = bot_message_color
@@ -323,7 +325,7 @@ func _on_note_button_pressed():
 	if history_item.Images.size() > 0:
 
 		for image in history_item.Images:
-			
+
 			var caption_title: String = image.get_meta("caption", "")
 			if caption_title.length() > 24:
 				caption_title = caption_title.substr(0, 15) + "..."
@@ -334,8 +336,21 @@ func _on_note_button_pressed():
 			)
 
 	else:
+		# Determine what text to add to notes
+		var note_text: String = ""
+
+		# First try to use the Message field (for regular chat services)
+		if history_item.Message and not history_item.Message.is_empty():
+			note_text = history_item.Message
+		# If HcpData exists (for HCP Core services), serialize it to JSON
+		elif history_item.HcpData and not history_item.HcpData.is_empty():
+			note_text = JSON.stringify(history_item.HcpData, "\t")
+		# Fallback to the label's markdown text
+		else:
+			note_text = label.markdown_text
+
 		SingletonObject.notes_container.add_note(
-			Note.create_text_note("Chat Note", label.markdown_text),
+			Note.create_text_note("Chat Note", note_text),
 		)
 
 	SingletonObject.main_ui.set_notes_pane_visible(true)

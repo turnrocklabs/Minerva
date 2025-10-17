@@ -448,7 +448,7 @@ enum API_MODEL_PROVIDERS {
 ## Dictionary of all model providers and scripts that implement their functionality
 var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
-	API_MODEL_PROVIDERS.FREE_MODEL: LocalProvider.Gemma3,
+	# API_MODEL_PROVIDERS.FREE_MODEL: LocalProvider.Gemma3,  # Orphaned - local provider disabled
 	API_MODEL_PROVIDERS.LOW_COST: GoogleAi,
 	API_MODEL_PROVIDERS.BEST_GENERALIST: ChatGPTo3.GPT5,
 	API_MODEL_PROVIDERS.BEST_CODER: ClaudeSonnet.Sonnet4,

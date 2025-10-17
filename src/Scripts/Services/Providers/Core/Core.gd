@@ -326,11 +326,21 @@ class AwaitMessage extends RefCounted:
 
 	# Handler for the timeout timer
 	func _on_timeout():
-		#print("AwaitMessage timed out.") # Debug
+		print("AwaitMessage: Timeout reached after %d seconds" % int(timeout))
 		_stop = true
 		if _signal_connection.is_valid():
 			client.message_received.disconnect(_signal_connection)
 		_timer = null # Timer is done
+
+	# Handler for connection closed
+	func _on_connection_closed():
+		print("AwaitMessage: Connection closed, cancelling wait")
+		_stop = true
+		if _signal_connection.is_valid():
+			client.message_received.disconnect(_signal_connection)
+		if is_instance_valid(_timer):
+			_timer.timeout.disconnect(_on_timeout)
+			_timer = null
 
 	# Waits for a single message matching the criteria or times out.
 	func receive():
@@ -345,20 +355,28 @@ class AwaitMessage extends RefCounted:
 		_signal_connection = Callable(self, "_on_client_message")
 		client.message_received.connect(_signal_connection)
 
+		# Monitor connection state - cancel if disconnected
+		var connection_callback = Callable(self, "_on_connection_closed")
+		client.connection_closed.connect(connection_callback)
+
 		# Setup timeout timer
 		_timer = client.get_tree().create_timer(timeout)
 		_timer.timeout.connect(_on_timeout)
 
-		# Wait until stopped (by message received or timeout)
+		# Wait until stopped (by message received, timeout, or disconnection)
 		while not _stop:
 			await client.get_tree().process_frame # Use process_frame for non-physics waiting
 
-		# Disconnect signal if it wasn't already disconnected by _on_client_message
+		# Disconnect signals if they weren't already disconnected
 		if _signal_connection.is_valid() and client.message_received.is_connected(_signal_connection):
 			client.message_received.disconnect(_signal_connection)
 
+		if client.connection_closed.is_connected(connection_callback):
+			client.connection_closed.disconnect(connection_callback)
+
 		# Clean up timer if it still exists (e.g., message arrived before timeout)
 		if is_instance_valid(_timer):
+			_timer.timeout.disconnect(_on_timeout)
 			_timer.queue_free()
 			_timer = null
 

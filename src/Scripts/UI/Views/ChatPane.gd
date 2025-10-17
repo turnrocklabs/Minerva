@@ -303,6 +303,9 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.rendered_node.render()
 
 	existing_response.rendered_node.loading = false
+
+	# Emit response_arrived signal to trigger notification sound
+	chi.response_arrived.emit(existing_response)
 	
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)
@@ -410,9 +413,13 @@ func execute_hcp_chat():
 		model_msg_node.queue_free()
 
 func execute_regular_chat(text: String) -> void:
+	# Check if it's a CoreProvider that requires HCP-style execution
 	if SingletonObject.ChatList[current_tab].provider is CoreProvider:
-		execute_hcp_chat()
-		return
+		var core_provider := SingletonObject.ChatList[current_tab].provider as CoreProvider
+		# Only use HCP chat for non-OpenAI services (ETSU, etc.)
+		if not core_provider._is_openai_compatible_service():
+			execute_hcp_chat()
+			return
 
 	if text.is_empty(): return
 	
@@ -1041,19 +1048,27 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	update_token_estimation(provider_)
 
 	if provider_ is CoreProvider:
-		
-		var o_params: = (provider_ as CoreProvider).action.input_parameters
+		var core_provider := provider_ as CoreProvider
 
-		var controls: = Core.dynamic_ui_generator.process_parameters(o_params)
-		
-		for ch in dynamic_ui_container.get_children():
-			ch.queue_free()
+		# Check if this is an OpenAI-compatible chat service (like model-chat)
+		# These should use the normal text input, not dynamic UI
+		if core_provider._is_openai_compatible_service():
+			txt_main_user_input.visible = true
+			dynamic_ui_container.visible = false
+		else:
+			# HCP services use dynamic UI based on input_parameters
+			var o_params: = core_provider.action.input_parameters
 
-		for ctrl in controls:
-			dynamic_ui_container.add_child(ctrl)
+			var controls: = Core.dynamic_ui_generator.process_parameters(o_params)
 
-		txt_main_user_input.visible = false
-		dynamic_ui_container.visible = true
+			for ch in dynamic_ui_container.get_children():
+				ch.queue_free()
+
+			for ctrl in controls:
+				dynamic_ui_container.add_child(ctrl)
+
+			txt_main_user_input.visible = false
+			dynamic_ui_container.visible = true
 	else:
 		txt_main_user_input.visible = true
 		dynamic_ui_container.visible = false

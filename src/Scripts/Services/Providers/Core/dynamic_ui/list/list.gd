@@ -25,9 +25,17 @@ static func create(field_params: Dictionary, input: = true) -> ListField:
 	scn.ready.connect(
 		func():
 			scn._is_input = input
-			scn._field_params = field_params["values"] if field_params.has("values") else field_params["items"]
 
-			scn._label.text = field_params["display_name"]
+			# Handle both "values" and "items" keys, with fallback to empty dict
+			if field_params.has("values"):
+				scn._field_params = field_params["values"]
+			elif field_params.has("items"):
+				scn._field_params = field_params["items"]
+			else:
+				scn._field_params = {}
+				push_warning("ListField: field_params has neither 'values' nor 'items'. Full params: %s" % str(field_params))
+
+			scn._label.text = field_params.get("display_name", "List")
 
 			scn._button.visible = input
 
