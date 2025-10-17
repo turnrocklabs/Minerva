@@ -155,15 +155,11 @@ func send_media_edit_request(editing_params: Dictionary, \
 
 # NEW: Method to generate a circular grayscale mask as a PackedByteArray (PNG format)
 func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) -> PackedByteArray:
-	print("Generating circular mask with Image API...")
-	
 	var mask_image := Image.create(size, size, false, Image.FORMAT_L8) # Grayscale image
 	mask_image.fill(Color.BLACK) # Black background (value 0)
 	
 	var center_x: int = size / 2
 	var center_y: int = size / 2
-	
-	#mask_image.lock() # Lock for pixel manipulation
 	
 	for y in range(size):
 		for x in range(size):
@@ -171,7 +167,6 @@ func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) ->
 			if dist_sq <= float(circle_radius * circle_radius):
 				mask_image.set_pixel(x, y, Color.WHITE) # White circle (value 255)
 	
-	#mask_image.unlock() # Unlock after manipulation
 	
 	# Convert to RGBA8 for consistent PNG saving if needed, although L8 should be fine.
 	# The Python client's PIL saves a 'L' mode image directly to PNG.
@@ -188,10 +183,46 @@ func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) ->
 	return mask_buffer
 
 
-func send_media_selective_edit_request(params: Dictionary, \
-									base_image_buffer: PackedByteArray, \
-									base_image_filename: String, \
-									mask_image_buffer: PackedByteArray, \
-									mask_image_filename: String = "generated_mask.png") -> void:
-										
-	client.send_media_selective_edit_request(params, base_image_buffer, base_image_filename, mask_image_buffer, mask_image_filename)
+func generate_mask_bytes(mask_layer_image: Image, mask_color: Color, channel: String) -> PackedByteArray:
+	
+	var mask_image := Image.create(mask_layer_image.get_width(), mask_layer_image.get_height(), false, Image.FORMAT_L8) # Grayscale image
+	mask_image.fill(Color.BLACK) 
+	var final_mask_color: Color = Color.WHITE
+	#match channel:
+		#"red":
+			#final_mask_color = Color.RED
+		#"blue":
+			#final_mask_color = Color.BLUE
+		#"green":
+			#final_mask_color = Color.GREEN
+		#_:
+			#final_mask_color = Color.WHITE
+	for y in range(mask_layer_image.get_height()):
+		for x in range(mask_layer_image.get_width()):
+			if mask_layer_image.get_pixel(x, y).a != 0:
+				mask_image.set_pixel(x, y, final_mask_color)
+	
+	
+	
+	var mask_buffer: PackedByteArray = mask_image.save_png_to_buffer()
+	
+	
+	var time: = Time.get_datetime_string_from_system().replace(":", "_")
+	var fname: String = "generated_mask_" + time  + ".png"# Explicitly type
+	var out_path: String = "user://temp/" + fname
+	
+	var file = FileAccess.open(out_path, FileAccess.WRITE)
+	if file:
+		file.store_buffer(mask_buffer)
+		file.close()
+		print("   ✅ mask saved to temp folder")
+	
+	if mask_buffer.is_empty():
+		push_error("Failed to save generated mask to PNG buffer.")
+		return PackedByteArray()
+	
+	print("   📊 Generated mask: %s bytes." % mask_buffer.size())
+	return mask_buffer
+
+func send_media_selective_edit_request(params: Dictionary, images_dir: Array) -> void:
+	client.send_media_selective_edit_request(params, images_dir)

@@ -681,13 +681,9 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 	send_message_to_core(message)
 
 
-func send_media_selective_edit_request(editing_params: Dictionary, base_image_buffer: PackedByteArray, base_image_filename: String, mask_image_buffer: PackedByteArray, mask_image_filename: String = "generated_mask.png") -> void:
+func send_media_selective_edit_request(editing_params: Dictionary, images_dir: Array) -> void:
 	var request_id: String = UUID.v7()
 	
-	# Base64 encode the base image and mask image buffers
-	var base64_base_image_data: String = (Marshalls.raw_to_base64(base_image_buffer))
-	var base64_mask_image_data: String = (Marshalls.raw_to_base64(mask_image_buffer))
-
 	var message: Dictionary = {
 		"cmd": "request",
 		"topic": "media_gen/image_selective_editing", # Match Python's Test 3 topic
@@ -709,20 +705,7 @@ func send_media_selective_edit_request(editing_params: Dictionary, base_image_bu
 	data_payload = merge_dictionaries(data_payload, editing_params)
 	
 	# Attach both the base image and the mask image to the files array
-	data_payload["files"] = [
-		{
-			"filename": base_image_filename,
-			"role": "image",
-			"data": base64_base_image_data,
-			"content_type": "image/png"
-		},
-		{
-			"filename": mask_image_filename,
-			"role": "mask",
-			"data": base64_mask_image_data,
-			"content_type": "image/png" # Assuming mask is also PNG
-		}
-	]
+	data_payload["files"] = images_dir
 	(message["params"] as Dictionary)["data"] = data_payload
 	
 	_current_binary_request_id = request_id

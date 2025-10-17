@@ -1,4 +1,4 @@
-[gd_scene load_steps=30 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=36 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://Assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -25,6 +25,36 @@
 [ext_resource type="Script" uid="uid://b5c6larm7pjw6" path="res://Scripts/media_gen_socket.gd" id="22_nin75"]
 [ext_resource type="Texture2D" uid="uid://cro2wpn0cmdal" path="res://Assets/icons/generate_image/generate_image_icon_new.png" id="23_hm28v"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://Assets/icons/edit_icons/edit.svg" id="24_spfkh"]
+
+[sub_resource type="Gradient" id="Gradient_spfkh"]
+offsets = PackedFloat32Array(0.609626, 1)
+colors = PackedColorArray(1, 0, 0, 0.588235, 1, 0, 0, 0.588235)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_4bhbc"]
+gradient = SubResource("Gradient_spfkh")
+width = 24
+height = 24
+repeat = 1
+
+[sub_resource type="Gradient" id="Gradient_4bhbc"]
+offsets = PackedFloat32Array(0)
+colors = PackedColorArray(0, 0, 1, 0.588235)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_m1bgl"]
+gradient = SubResource("Gradient_4bhbc")
+width = 24
+height = 24
+use_hdr = true
+
+[sub_resource type="Gradient" id="Gradient_m1bgl"]
+offsets = PackedFloat32Array(0)
+colors = PackedColorArray(0, 1, 0, 0.392157)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_oylf0"]
+gradient = SubResource("Gradient_m1bgl")
+width = 24
+height = 24
+use_hdr = true
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_u8jc2"]
 shader = ExtResource("9_u8jc2")
@@ -83,11 +113,22 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="NewLayerButton" type="Button" parent="LayerCardsPopupPanel/ScrollContainer/v2"]
+[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/ScrollContainer/v2"]
 layout_mode = 2
+
+[node name="NewLayerButton" type="Button" parent="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
 icon = ExtResource("2_dcy55")
 flat = true
 icon_alignment = 1
+
+[node name="NewMaskLayerButton" type="Button" parent="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "add Mask"
+flat = true
 
 [node name="LayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/ScrollContainer/v2"]
 unique_name_in_owner = true
@@ -147,12 +188,14 @@ size_flags_horizontal = 3
 
 [node name="HBoxContainer" type="HBoxContainer" parent="h/v"]
 layout_mode = 2
+theme_override_constants/separation = 8
 
 [node name="h" type="HFlowContainer" parent="h/v/HBoxContainer"]
 custom_minimum_size = Vector2(350, 80)
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 0
+theme_override_constants/h_separation = 20
 
 [node name="ToolsContainer" type="HFlowContainer" parent="h/v/HBoxContainer/h"]
 custom_minimum_size = Vector2(350, 0)
@@ -163,6 +206,7 @@ theme_override_constants/h_separation = 15
 [node name="ToolsOptionButton" type="OptionButton" parent="h/v/HBoxContainer/h/ToolsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 4
 button_group = ExtResource("2_ymijy")
 allow_reselect = true
 item_count = 5
@@ -183,12 +227,14 @@ popup/item_4/id = 4
 
 [node name="PaneToolButton" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
+size_flags_vertical = 4
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
 icon = ExtResource("15_ow12a")
 
 [node name="TransformToolButton" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
+size_flags_vertical = 4
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
 icon = ExtResource("16_nin75")
@@ -206,11 +252,37 @@ layout_mode = 2
 tooltip_text = "Centers the viewport."
 icon = ExtResource("17_tml0f")
 
-[node name="Button" type="Button" parent="h/v/HBoxContainer/h/ToolsContainer"]
-visible = false
+[node name="Control" type="Control" parent="h/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
-text = "add mask
-"
+size_flags_horizontal = 3
+
+[node name="MaskContainer" type="HBoxContainer" parent="h/v/HBoxContainer/h/ToolsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Label" type="Label" parent="h/v/HBoxContainer/h/ToolsContainer/MaskContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "Mask Color: "
+
+[node name="MaskColorOptionButton" type="OptionButton" parent="h/v/HBoxContainer/h/ToolsContainer/MaskContainer"]
+unique_name_in_owner = true
+texture_filter = 1
+layout_mode = 2
+size_flags_horizontal = 8
+alignment = 1
+selected = 0
+item_count = 3
+popup/item_0/text = "Red"
+popup/item_0/icon = SubResource("GradientTexture2D_4bhbc")
+popup/item_0/id = 0
+popup/item_1/text = "Blue"
+popup/item_1/icon = SubResource("GradientTexture2D_m1bgl")
+popup/item_1/id = 1
+popup/item_2/text = "Green"
+popup/item_2/icon = SubResource("GradientTexture2D_oylf0")
+popup/item_2/id = 2
 
 [node name="ToolOptionsContainer" type="MarginContainer" parent="h/v/HBoxContainer/h"]
 unique_name_in_owner = true
@@ -227,6 +299,7 @@ theme_override_constants/separation = 20
 layout_mode = 2
 
 [node name="ColorPickerButton" type="ColorPickerButton" parent="h/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 
@@ -431,7 +504,6 @@ layout_mode = 2
 unique_name_in_owner = true
 position = Vector2i(234, 0)
 size = Vector2i(525, 590)
-visible = true
 
 [node name="MarginContainer" type="MarginContainer" parent="ImageGenPopupPanel"]
 offset_left = 4.0
@@ -668,12 +740,14 @@ text = "Mask Edit Image"
 script = ExtResource("22_nin75")
 
 [connection signal="popup_hide" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_popup_hide"]
-[connection signal="pressed" from="LayerCardsPopupPanel/ScrollContainer/v2/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
+[connection signal="pressed" from="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
+[connection signal="pressed" from="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer/NewMaskLayerButton" to="." method="_on_new_mask_layer_button_pressed"]
 [connection signal="item_selected" from="h/v/HBoxContainer/h/ToolsContainer/ToolsOptionButton" to="." method="_on_tools_option_button_item_selected"]
 [connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
 [connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
 [connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
 [connection signal="pressed" from="h/v/HBoxContainer/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
+[connection signal="item_selected" from="h/v/HBoxContainer/h/ToolsContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
 [connection signal="toggled" from="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
 [connection signal="text_changed" from="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
 [connection signal="toggled" from="h/v/HBoxContainer/VBoxContainer/LayerCardsButton" to="." method="_on_layer_cards_button_toggled"]

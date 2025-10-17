@@ -80,7 +80,7 @@ func _draw() -> void:
 
 	name_line_edit.text = layer.name
 	match layer.type:
-		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING:
+		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING, LayerV2.Type.MASK:
 			texture_rect.texture = ImageTexture.create_from_image(layer.image)
 		LayerV2.Type.SPEECH_BUBBLE:
 			texture_rect.texture = await get_texture(layer.speech_bubble)
