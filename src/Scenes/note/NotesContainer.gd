@@ -5,6 +5,11 @@ signal tab_renamed(tab_idx: int)
 
 @onready var _new_thread_popup: PersistentWindow = %NewThreadPopup
 
+var supports_remote: = true
+
+## Callable to be called when add note button is pressed. Not set by default
+var create_note_callback: Callable
+
 var remote_adapter: NoteServiceAdapter = null:
 	set(value):
 		remote_adapter = value
@@ -47,10 +52,13 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 	
 	notes_vbox.uuid = uuid
 
+	notes_vbox.supports_remote = supports_remote
+
 	# force readable name
 	add_child(notes_vbox, true)
 
 	notes_vbox.renamed.connect(func(): tab_renamed.emit(new_tab_index))
+	notes_vbox.add_note_requested.connect(func(): if create_note_callback.is_valid(): create_note_callback.call())
 
 	_update_adapter_info()
 
@@ -70,10 +78,13 @@ func add_note_vbox(notes_vbox: NoteVBox) -> void:
 	if notes_vbox.uuid.is_empty():
 		notes_vbox.uuid = SingletonObject.generate_UUID()
 	
+	notes_vbox.supports_remote = supports_remote
+
 	# force readable name
 	add_child(notes_vbox, true)
 
 	notes_vbox.renamed.connect(func(): tab_renamed.emit(new_tab_index))
+	notes_vbox.add_note_requested.connect(func(): if create_note_callback.is_valid(): create_note_callback.call())
 
 	_update_adapter_info()
 
@@ -104,7 +115,7 @@ func remove_tab(tab_idx: int, user_action: = true):
 
 		if all_deleted:
 			# if all notes we're deleted remove the thread from remote
-			if user_action and await remote_adapter.delete_thread(control.uuid, false):
+			if not remote_adapter or (user_action and await remote_adapter.delete_thread(control.uuid, false)):
 				control.queue_free()
 			else:
 				SingletonObject.ErrorDisplay("Threads Error", "Couldn't remove remote tab (Notes deleted)")
@@ -238,7 +249,7 @@ func _update_adapter_info():
 
 	for i in get_tab_count():
 		var note_vbox: NoteVBox = get_tab_control(i)
-		if not remote_adapter:
+		if not supports_remote or not remote_adapter:
 			note_vbox._remote_option_container.visible = false
 		else:
 			note_vbox._remote_option_container.visible = true

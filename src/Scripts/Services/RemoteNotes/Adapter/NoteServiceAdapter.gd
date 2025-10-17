@@ -36,13 +36,13 @@ func list_threads() -> Array[NoteVBox]:
 	return []
 
 ## Create a new thread - returns true on success
-func create_thread(_thread_name: String, _thread_uuid: String = "", _order: int = -1, _metadata: Dictionary = {}) -> bool:
+func create_thread(_thread_name: String, _thread_uuid: String = "", _order: int = -1, _auto_upload: = false, _metadata: Dictionary = {}) -> bool:
 	await Engine.get_main_loop().process_frame
 	push_error("create_thread not implemented")
 	return false
 
 ## Update thread properties - returns true on success
-func update_thread(_thread_uuid: String, _thread_name: String = "", _order: int = -1, _metadata: Dictionary = {}, _display_error: = true) -> bool:
+func update_thread(_thread_uuid: String, _thread_name: String = "", _order: int = -1, _auto_upload: = false, _metadata: Dictionary = {}, _display_error: = true) -> bool:
 	await Engine.get_main_loop().process_frame
 	push_error("update_thread not implemented")
 	return false

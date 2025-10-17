@@ -1,7 +1,8 @@
-[gd_scene load_steps=5 format=3 uid="uid://wj5djlbfq0dk"]
+[gd_scene load_steps=6 format=3 uid="uid://wj5djlbfq0dk"]
 
 [ext_resource type="Script" uid="uid://c1lo0eobpbmku" path="res://Scenes/note/NoteVBox.gd" id="1_njh8t"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="2_x85us"]
+[ext_resource type="Texture2D" uid="uid://c48b7t07xvrlk" path="res://assets/icons/folder_up.svg" id="3_a5lnq"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="3_cq3g1"]
 [ext_resource type="Texture2D" uid="uid://d2h5rwylwgbk6" path="res://assets/icons/remove.svg" id="4_cq3g1"]
 
@@ -12,52 +13,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_njh8t")
-
-[node name="RemoteOptionsContainer" type="MarginContainer" parent="."]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/margin_left = 15
-theme_override_constants/margin_top = 5
-theme_override_constants/margin_right = 15
-theme_override_constants/margin_bottom = 5
-
-[node name="VBoxContainer" type="VBoxContainer" parent="RemoteOptionsContainer"]
-layout_mode = 2
-
-[node name="HBoxContainer" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-text = "Remote authority:"
-
-[node name="RemoteServiceLabel" type="Label" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "None"
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer"]
-layout_mode = 2
-
-[node name="HBoxContainer" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="RemoteCheckButton" type="CheckButton" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-tooltip_text = "Checking this makes any new notes in this tab automatically upload"
-text = "Auto Upload New Notes in This Tab"
-
-[node name="HBoxContainer2" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-
-[node name="BulkUploadButton" type="Button" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer2"]
-unique_name_in_owner = true
-layout_mode = 2
-tooltip_text = "Upload all notes from the current tab"
-disabled = true
-text = "Upload local notes (0)"
 
 [node name="OptionsContainer" type="MarginContainer" parent="."]
 layout_mode = 2
@@ -71,6 +26,10 @@ layout_mode = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="OptionsContainer/VBoxContainer"]
 layout_mode = 2
+
+[node name="AddNoteButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "+"
 
 [node name="Control2" type="Control" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
 custom_minimum_size = Vector2(45, 0)
@@ -104,6 +63,23 @@ tooltip_text = "Selects all notes in this tab"
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="RemoteCheckButton" type="CheckButton" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Checking this makes any new notes in this tab automatically upload"
+icon = ExtResource("3_a5lnq")
+
+[node name="Control3" type="Control" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BulkUploadButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Upload all notes from the current tab"
+disabled = true
+text = "↑↑"
+
 [node name="ReloadFilesContentButton" type="Button" parent="OptionsContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Reloads All File Notes In Current Tab"
@@ -128,9 +104,33 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[connection signal="toggled" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer/RemoteCheckButton" to="." method="_on_remote_check_button_toggled"]
-[connection signal="pressed" from="RemoteOptionsContainer/VBoxContainer/HBoxContainer2/HBoxContainer2/BulkUploadButton" to="." method="_on_bulk_upload_button_pressed"]
+[node name="RemoteOptionsContainer" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/margin_left = 15
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 15
+theme_override_constants/margin_bottom = 5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="RemoteOptionsContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="RemoteOptionsContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Remote authority:"
+
+[node name="RemoteServiceLabel" type="Label" parent="RemoteOptionsContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "None"
+
+[connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/AddNoteButton" to="." method="_on_add_note_button_pressed"]
 [connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/Control2/CollapseAllButton" to="." method="_on_collapse_all_button_toggled"]
 [connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/ToggleNotesCheckButton" to="." method="_on_toggle_notes_check_button_toggled"]
+[connection signal="toggled" from="OptionsContainer/VBoxContainer/HBoxContainer/RemoteCheckButton" to="." method="_on_remote_check_button_toggled"]
+[connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/BulkUploadButton" to="." method="_on_bulk_upload_button_pressed"]
 [connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/ReloadFilesContentButton" to="." method="_on_reload_files_content_button_pressed"]
 [connection signal="pressed" from="OptionsContainer/VBoxContainer/HBoxContainer/RemoveAllButton" to="." method="_on_remove_all_button_pressed"]

@@ -69,6 +69,7 @@ func _sync_threads_from_remote(adapter: NoteServiceAdapter):
 		if found_locally:
 			# Thread exists locally - check if name/order/metadata differs
 			var local_name = local_vbox.name
+			var local_auto_upload = local_vbox.auto_upload
 			var local_idx = SingletonObject.notes_container.get_tab_idx_from_control(local_vbox)
 			var local_metadata = local_vbox.get_meta("remote_metadata", {})
 			
@@ -85,12 +86,17 @@ func _sync_threads_from_remote(adapter: NoteServiceAdapter):
 					remote_uuid,
 					local_name,
 					local_idx,
+					local_auto_upload,
 					local_metadata
 				)
 			else:
 				info("Local thread %s matches remote" % remote_uuid)
 				# Store remote metadata in local
 				local_vbox.set_meta("remote_metadata", remote_metadata)
+			
+			if not local_vbox.auto_upload_toggled.is_connected(_note_vbox_auto_upload_toggled.bind(local_vbox)):
+				local_vbox.auto_upload_toggled.connect(_note_vbox_auto_upload_toggled.bind(local_vbox))
+
 		else:
 			# Thread doesn't exist locally - create it
 			info("Creating local thread from remote: %s" % remote_name)
@@ -104,10 +110,31 @@ func _sync_threads_from_remote(adapter: NoteServiceAdapter):
 
 			var new_vbox = SingletonObject.notes_container.create_tab(remote_name, remote_uuid)
 			new_vbox.set_meta("remote_metadata", remote_metadata)
+
+			new_vbox.auto_upload_toggled.connect(_note_vbox_auto_upload_toggled.bind(new_vbox))
 			
 			# Move to correct position if needed
 			if remote_order < SingletonObject.notes_container.get_tab_count() - 1:
 				SingletonObject.notes_container.move_child(new_vbox, remote_order)
+
+
+func _note_vbox_auto_upload_toggled(on: bool, note_vbox: NoteVBox):
+	var adapter = get_current_adapter()
+	if not adapter:
+		SingletonObject.ErrorDisplay("No Adapter", "No remote service available")
+		return
+	
+	# make most of the fields empty or negative because that way they should be discarded by the service adapter
+	var success: = await adapter.update_thread(
+		note_vbox.uuid,
+		"",
+		-1,
+		on
+	)
+
+	if not success:
+		SingletonObject.ErrorDisplay("Update error", "Couldn't update the tab auto upload state")
+
 
 ## Syncs notes: creates missing, updates conflicts (local wins)
 func _sync_notes_from_remote(adapter: NoteServiceAdapter):
@@ -234,6 +261,7 @@ func sync_notes(notes: Array[Note], display_error = true) -> bool:
 		var vbox: NoteVBox = SingletonObject.notes_container.get_tab_control(tab_idx)
 		var thread_uuid = vbox.uuid
 		var thread_name = vbox.name
+		var auto_upload = vbox.auto_upload
 		var thread_metadata = vbox.get_meta("remote_metadata", {})
 		
 		# Try to update thread first (creates if missing)
@@ -241,6 +269,7 @@ func sync_notes(notes: Array[Note], display_error = true) -> bool:
 			thread_uuid,
 			thread_name,
 			tab_idx,
+			auto_upload,
 			thread_metadata,
 			false,
 		)
@@ -252,6 +281,7 @@ func sync_notes(notes: Array[Note], display_error = true) -> bool:
 				thread_name,
 				thread_uuid,
 				tab_idx,
+				auto_upload,
 				thread_metadata
 			)
 		
@@ -389,6 +419,7 @@ func _on_notes_tab_renamed(tab_idx: int):
 		vbox.uuid,
 		vbox.name,
 		tab_idx,
+		vbox.auto_upload,
 		vbox.get_meta("remote_metadata", {})
 	)
 	

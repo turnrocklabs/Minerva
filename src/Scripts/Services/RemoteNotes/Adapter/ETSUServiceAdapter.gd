@@ -65,13 +65,13 @@ func list_threads() -> Array[NoteVBox]:
 	
 	return thread_vboxes
 
-func create_thread(thread_name: String, thread_uuid: String = "", order: int = -1, metadata: Dictionary = {}) -> bool:
+func create_thread(thread_name: String, thread_uuid: String = "", order: int = -1, auto_upload: = false, metadata: Dictionary = {}) -> bool:
 	var action: Action = actions.get(ACTION_TYPE.CREATE_THREAD)
 	if not action:
 		info("Create thread action not found")
 		return false
 	
-	var data = {"name": thread_name}
+	var data = {"name": thread_name, "auto_upload": auto_upload}
 	if thread_uuid: data["uuid"] = thread_uuid
 	if order >= 0: data["order"] = order
 	if not metadata.is_empty(): data["metadata"] = metadata
@@ -86,13 +86,13 @@ func create_thread(thread_name: String, thread_uuid: String = "", order: int = -
 	
 	return true
 
-func update_thread(thread_uuid: String, thread_name: String = "", order: int = -1, metadata: Dictionary = {}, display_error: = true) -> bool:
+func update_thread(thread_uuid: String, thread_name: String = "", order: int = -1, auto_upload: = false, metadata: Dictionary = {}, display_error: = true) -> bool:
 	var action: Action = actions.get(ACTION_TYPE.UPDATE_THREAD)
 	if not action:
 		info("Update thread action not found")
 		return false
-	
-	var data = {"uuid": thread_uuid}
+
+	var data = {"uuid": thread_uuid, "auto_upload": auto_upload}
 	if thread_name: data["name"] = thread_name
 	if order >= 0: data["order"] = order
 	if not metadata.is_empty(): data["metadata"] = metadata

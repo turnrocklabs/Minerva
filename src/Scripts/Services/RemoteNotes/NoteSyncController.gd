@@ -44,7 +44,7 @@ enum SyncState {
 
 signal state_changed(state: SyncState)
 
-static var _cloud_off_icon = preload("res://assets/icons/cloud_off.svg")
+static var _broken_link_icon = preload("res://assets/generated/broken-link-icon.svg")
 
 var note: Note
 var sync_manager: NoteSyncManager
@@ -162,7 +162,7 @@ func _on_state_updated() -> void:
 	print("Updated %s state to %s" % [note, state])
 	# if not ready the _init function sets up a signal to update the note button
 	# so we don't connect multiple times if this function is run several times
-	if not note.is_note_initialized():
+	if not is_instance_valid(note) or not note.is_note_initialized():
 		return
 	
 	if adapter is ETSUNotesServiceAdapter:
@@ -205,7 +205,7 @@ func _on_state_updated() -> void:
 	else:
 
 		note.remove_handle = _on_note_remove_button_pressed
-		note.remove_icon = _cloud_off_icon
+		note.remove_icon = _broken_link_icon
 		note._remove_button.tooltip_text = "Make Local"
 
 		match state:
@@ -287,11 +287,11 @@ func _on_note_remove_button_pressed() -> bool:
 
 func _on_note_change() -> void:
 
-	if _state_info == null:
-		# if this was a local only note, just leave it as that
-		if state == SyncState.LOCAL_ONLY: 
-			return
+	# if this was a local only note, just leave it as that
+	if state == SyncState.LOCAL_ONLY: 
+		return
 
+	if _state_info == null:
 		state = SyncState.LOCAL_CHANGES
 		return
 	
