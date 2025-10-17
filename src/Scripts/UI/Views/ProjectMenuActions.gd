@@ -269,6 +269,8 @@ func _initialize_chat_pane():
 		return
 		
 	SingletonObject.Chats.clear_all_chats()
+
+	SingletonObject.Chats._initializing_pane = true
 	
 	for i in SingletonObject.ChatList.size():
 		var chat_history: = SingletonObject.ChatList[i]
@@ -278,6 +280,8 @@ func _initialize_chat_pane():
 			chat_history.provider = _get_fallback_provider()
 		
 		SingletonObject.Chats.render_history(chat_history)
+	
+	SingletonObject.Chats._initializing_pane = false
 
 func _initialize_notes_pane():
 	"""Initialize notes pane with existing notes histories"""

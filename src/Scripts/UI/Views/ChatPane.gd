@@ -14,6 +14,8 @@ var _active_chat_request: = false
 
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
 
+var _initializing_pane := false
+
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
@@ -1033,7 +1035,10 @@ func _on_btn_microphone_pressed():
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
 	SingletonObject.AtT.btnStop = %AudioStop1
 
+
 func _on_child_order_changed():
+	if _initializing_pane: return
+
 	# Update ChatList in the SingletonObject
 	SingletonObject.ChatList = []  # Comment this out temporarily
 	for child in get_children():
