@@ -120,7 +120,7 @@ func _ready():
 
 	# if auto connect is checked act like the connect button was pressed
 	if _fields["hcp_auto_connect"].button_pressed:
-		_on_core_connet_button_pressed()
+		_on_core_connet_button_pressed.call_deferred()
 
 
 func set_field_values():
