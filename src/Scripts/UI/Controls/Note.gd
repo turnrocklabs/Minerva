@@ -132,6 +132,7 @@ var _initialized: = false
 @onready var _remove_button: Button = %RemoveButton
 
 @onready var sync_controller_button: Button = %SyncControllerButton
+@onready var sync_texture_rect: TextureRect = %SyncStateTextureRect
 @onready var use_state_button: Button = %UseStateButton
 
 @onready var _notes_control_container: Container = %NoteControlsContainer
@@ -143,7 +144,6 @@ var _initialized: = false
 @onready var _expand_button: Button = %ExpandButton
 @onready var _resize_control: Control = %ResizeControl
 @onready var _note_header_separator: Control = %HSeparator
-@onready var _drag_texture_rect: Control = %DragTextureRect
 
 
 var _backing_note_controls: Array[Control]
@@ -626,7 +626,7 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 func _can_drop_data(at_position: Vector2, data: Variant) -> bool:	
 	# maybe check type, so drawer notes can't be dropped into normal ones?
 
-	if data == self: return false
+	if data is String and data == self: return false
 
 	
 	_panel_container.theme_type_variation = &"DropZoneNote"

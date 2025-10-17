@@ -1,8 +1,8 @@
 class_name ETSUNotesServiceAdapter
 extends NoteServiceAdapter
 
-static var _robot_icon = preload("res://assets/generated/robot-simple.svg")
-static var _robot_crossed_icon = preload("res://assets/generated/robot-simple-crossed.svg")
+static var _robot_icon = preload("res://assets/generated/robot.svg")
+static var _robot_crossed_icon = preload("res://assets/generated/robot_crossed.svg")
 
 static var SERVICE_NAME: StringName:
 	get: return get_service_name()
@@ -58,6 +58,7 @@ func list_threads() -> Array[NoteVBox]:
 		var vbox = NoteVBox.create()
 		vbox.uuid = thread.get("UUID", "")
 		vbox.name = thread.get("Name", "")
+		vbox.auto_upload = thread.get("AutoUpload", false)
 		vbox.set_meta("order", thread.get("Order", 0))
 		vbox.set_meta("created_at", thread.get("CreatedAt", 0.0))
 		vbox.set_meta("metadata", thread.get("Metadata", {}))

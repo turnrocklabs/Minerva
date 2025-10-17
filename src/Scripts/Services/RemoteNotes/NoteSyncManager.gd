@@ -51,6 +51,7 @@ func _sync_threads_from_remote(adapter: NoteServiceAdapter):
 	# For each remote thread, check if it exists locally
 	for remote_vbox in remote_threads:
 		var remote_uuid = remote_vbox.uuid
+		var auto_upload = remote_vbox.auto_upload
 		var remote_name = remote_vbox.name
 		var remote_order = remote_vbox.get_meta("order", 0)
 		var remote_metadata = remote_vbox.get_meta("metadata", {})
@@ -111,6 +112,7 @@ func _sync_threads_from_remote(adapter: NoteServiceAdapter):
 			var new_vbox = SingletonObject.notes_container.create_tab(remote_name, remote_uuid)
 			new_vbox.set_meta("remote_metadata", remote_metadata)
 
+			new_vbox.auto_upload = auto_upload
 			new_vbox.auto_upload_toggled.connect(_note_vbox_auto_upload_toggled.bind(new_vbox))
 			
 			# Move to correct position if needed

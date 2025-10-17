@@ -45,6 +45,8 @@ enum SyncState {
 signal state_changed(state: SyncState)
 
 static var _broken_link_icon = preload("res://assets/generated/broken-link-icon.svg")
+static var _cloud_icon = preload("res://assets/generated/cloud_done.svg")
+static var _upload_icon = preload("res://assets/generated/upload.svg")
 
 var note: Note
 var sync_manager: NoteSyncManager
@@ -177,6 +179,8 @@ func _on_state_updated() -> void:
 	if not note.sync_controller_button.pressed.is_connected(_on_sync_controller_button_pressed):
 		note.sync_controller_button.pressed.connect(_on_sync_controller_button_pressed)
 	
+	note.sync_texture_rect.visible = false # will be set below if needed
+
 	if state == SyncState.LOCAL_ONLY:
 		
 		# revert the remove button back
@@ -193,7 +197,8 @@ func _on_state_updated() -> void:
 		if adapter:
 			note.sync_controller_button.visible = true # keep visible so users can upload still
 			note.sync_controller_button.tooltip_text = "Upload to remote"
-			note.sync_controller_button.text = "⤴"
+			note.sync_controller_button.text = ""
+			note.sync_controller_button.icon = _upload_icon
 
 		else:
 			note.sync_controller_button.visible = false
@@ -212,6 +217,7 @@ func _on_state_updated() -> void:
 			SyncState.SYNCING:
 				note.sync_controller_button.text = "⟳"
 				note.sync_controller_button.tooltip_text = "Syncing in progress..."
+				note.sync_controller_button.visible = true
 
 			SyncState.SYNCED:
 				# record the current state info
@@ -225,8 +231,13 @@ func _on_state_updated() -> void:
 					SingletonObject.notes_container.get_tab_name(tab_idx),
 				)
 
-				note.sync_controller_button.text = "☁"
-				note.sync_controller_button.tooltip_text = "Note synced with remote"
+				note.sync_controller_button.text = ""
+				note.sync_controller_button.visible = false
+			
+				note.sync_texture_rect.texture = _cloud_icon
+				note.sync_texture_rect.tooltip_text = "Note synced with remote"
+				note.sync_texture_rect.visible = true
+
 			SyncState.LOCAL_CHANGES:
 
 				# Start a timer that will update this note in 2 seconds of inactivity
@@ -239,6 +250,7 @@ func _on_state_updated() -> void:
 
 				note.sync_controller_button.tooltip_text = "Local changes"
 				note.sync_controller_button.text = "●"
+				note.sync_controller_button.visible = true
 
 func _on_sync_timer_timeout() -> void:
 	_sync_failed = not await sync_note(false)

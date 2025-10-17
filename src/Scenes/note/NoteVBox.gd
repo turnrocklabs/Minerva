@@ -14,7 +14,7 @@ static var _remove_icon: = preload("res://assets/icons/remove.svg")
 @onready var _vbox: VBoxContainer = %VBoxContainer
 
 @onready var _remote_option_container: Container = %RemoteOptionsContainer
-@onready var _remote_check_buttion: CheckButton = %RemoteCheckButton
+@onready var _remote_check_box: CheckBox = %RemoteCheckBox
 @onready var _remote_service_label: Label = %RemoteServiceLabel
 
 @onready var _bulk_upload_button: Button = %BulkUploadButton
@@ -29,9 +29,15 @@ var supports_remote: = true
 
 var uuid: = ""
 
+var _auto_upload_backing: bool = false
 var auto_upload: bool:
-	set(value): _remote_check_buttion.button_pressed = value
-	get: return _remote_check_buttion.button_pressed
+	set(value):
+		if is_node_ready():
+			_remote_check_box.button_pressed = value
+		else:
+			_auto_upload_backing = value
+
+	get: return _remote_check_box.button_pressed if is_node_ready() else _auto_upload_backing
 
 static func create() -> NoteVBox:
 	var scn: = _scene.instantiate()
@@ -43,9 +49,11 @@ func _ready() -> void:
 	_vbox.child_exiting_tree.connect(_on_vbox_child_exiting_tree)
 
 	if not supports_remote:
-		_remote_check_buttion.visible = false
+		_remote_check_box.visible = false
 		_remote_service_label.visible = false
 		_remote_option_container.visible = false
+	
+	auto_upload = _auto_upload_backing
 	
 
 func _on_vbox_child_entered_tree(node: Node):
