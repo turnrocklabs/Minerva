@@ -8,6 +8,8 @@ extends IconsButton
 var tween: Tween
 var timer: Timer
 
+var enabled: = true
+
 func _ready() -> void:
 	timer = Timer.new()
 	timer.wait_time = timer_duration
@@ -18,6 +20,8 @@ func _ready() -> void:
 
 
 func _on_mouse_entered() -> void:
+	if not enabled: return
+
 	if tween  and tween.is_running():
 		return
 	if send_message_button.visible:
@@ -30,6 +34,7 @@ func _on_mouse_entered() -> void:
 
 
 func _on_mouse_exited() -> void:
+	if not enabled: return
 	if !send_message_button.visible and !send_message_button.has_focus():
 		return
 	timer.start()

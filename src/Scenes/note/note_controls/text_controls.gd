@@ -1,7 +1,7 @@
 extends VBoxContainer
 class_name NoteTextControls
 
-@onready var _label: Label = %Label
+@onready var _label: RichTextLabel = %Label
 
 var note: Note
 

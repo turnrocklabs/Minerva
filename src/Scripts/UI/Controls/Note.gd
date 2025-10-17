@@ -143,6 +143,7 @@ var _initialized: = false
 @onready var _expand_button: Button = %ExpandButton
 @onready var _resize_control: Control = %ResizeControl
 @onready var _note_header_separator: Control = %HSeparator
+@onready var _drag_texture_rect: Control = %DragTextureRect
 
 
 var _backing_note_controls: Array[Control]
@@ -472,7 +473,8 @@ func _on_edit_button_pressed() -> void:
 
 	for editor in editor_pane.get_open_editors():
 		if editor.associated_object == self:
-			print("Already present")
+			var curr_idx: = editor_pane.Tabs.get_tab_idx_from_control(editor)
+			editor_pane.Tabs.current_tab = curr_idx
 			return
 
 	# Show the editor if it's hidden
@@ -596,7 +598,8 @@ func _on_mouse_exited() -> void:
 	
 
 func _get_drag_data(at_position: Vector2) -> Variant:
-	
+	if not at_position.y < size.y/3: return # just limit dragging to first third
+
 	# Invalid notes can't be dragged
 	if _error: return null
 

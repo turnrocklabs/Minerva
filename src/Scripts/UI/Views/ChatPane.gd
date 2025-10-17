@@ -9,6 +9,7 @@ var container: TabContainer  # Store the TabContainer
 @onready var _provider_option_button: ProviderOptionButton = %ProviderOptionButton
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
+@onready var _chat_button: Button = %btnChat
 var _active_chat_request: = false
 
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
@@ -1064,9 +1065,13 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 
 		txt_main_user_input.visible = false
 		dynamic_ui_container.visible = true
+
+		_chat_button.enabled = false
+		_chat_button.hide_overhang_button()
 	else:
 		txt_main_user_input.visible = true
 		dynamic_ui_container.visible = false
+		_chat_button.enabled = true
 
 	if SingletonObject.ChatList.is_empty(): return
 
