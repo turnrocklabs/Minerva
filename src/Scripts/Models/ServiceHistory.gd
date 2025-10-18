@@ -3,9 +3,9 @@ extends RefCounted
 
 # Don't reorder, only add new entries
 enum ServiceType {
-    NONE,
-    CHAT,
-    NOTES,
+	NONE,
+	CHAT,
+	NOTES,
 }
 
 var service_type: ServiceType

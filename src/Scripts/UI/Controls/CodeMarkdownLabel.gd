@@ -90,14 +90,17 @@ func _copy_code_label():
 
 func _extract_code_label():
 	var text_without_tags: String = _parse_code_block(%CodeLabel.text)
-	# TODO: implement
-	# if linked_memory_item == "":
-	# 	linked_memory_item = SingletonObject.notes_container.add_note(%SyntaxLabel.text, text_without_tags).UUID
-	# 	created_text_note.emit(dict_index, linked_memory_item)
-	# else:
-	# 	var return_memory = SingletonObject.notes_container.update_note(linked_memory_item, text_without_tags)
-	# 	if return_memory == null:
-	# 		linked_memory_item = SingletonObject.notes_container.add_note(%SyntaxLabel.text, text_without_tags).UUID
+
+	# Create a note from the code block
+	var note_title = "Code: %s" % %SyntaxLabel.text
+	var new_note = Note.create_text_note(note_title, text_without_tags)
+	SingletonObject.notes_container.add_note(new_note)
+
+	# Track the linked note for this code block
+	if linked_memory_item == "":
+		linked_memory_item = new_note.uuid
+		created_text_note.emit(dict_index, linked_memory_item)
+
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
 static var code_markdown_label: = preload("res://Scenes/CodeMarkdownLabel.tscn")

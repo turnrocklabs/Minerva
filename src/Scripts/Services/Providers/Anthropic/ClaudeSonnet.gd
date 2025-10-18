@@ -9,10 +9,10 @@ func _init():
 	provider_name = "Anthropic"
 	BASE_URL = "https://api.anthropic.com/v1"
 	PROVIDER = SingletonObject.API_PROVIDER.ANTHROPIC
-	self.api_model_id = "claude-3-7-sonnet-20250219"
+	self.api_model_id = "claude-sonnet-4-5-20250929"
 	self.max_tokens = 64000
 
-	model_name = "claude-37-sonnet"
+	model_name = "claude-45-sonnet"
 	short_name = "CS"
 	token_cost = 0.000015 # https://claude101.com/claude-3-5-sonnet/
 
@@ -235,9 +235,9 @@ class Opus4_1 extends ClaudeSonnet:
 class Sonnet4 extends ClaudeSonnet:
 	func _init():
 		super()
-		self.api_model_id = "claude-sonnet-4-0"
+		self.api_model_id = "claude-sonnet-4-5"
 		self.max_tokens = 64000
 
-		model_name = "claude-sonnet-4"
-		short_name = "S4"
+		model_name = "claude-sonnet-45"
+		short_name = "S45"
 		token_cost = 1.1 / 1_000_000 * 100

@@ -180,8 +180,9 @@ func get_notes(tab_idx: = -1) -> Array[Note]:
 	if tab_idx == -1: return []
 
 	var note_vbox: NoteVBox = get_tab_control(tab_idx)
-
-	return note_vbox.get_notes()
+	if note_vbox != null:
+		return note_vbox.get_notes()
+	return []
 
 ## Returns the UUID of the specified tab, or `null` if it doesn't exist
 func get_tab_id(idx: int):
@@ -434,7 +435,7 @@ func _on_active_tab_rearranged(_idx_to: int) -> void:
 	var adapter = remote_adapter
 	
 	if not adapter: return
-	
+
 	# Update ALL tabs to reflect new order
 	for i in get_tab_count():
 		var vbox: NoteVBox = get_tab_control(i)
@@ -445,7 +446,6 @@ func _on_active_tab_rearranged(_idx_to: int) -> void:
 			i,  # Current position in UI
 			vbox.get_meta("remote_metadata", {})
 		)
-		
 		if not success:
 			SingletonObject.ErrorDisplay("Can't update", "Couldn't update tab order on remote")
 			return  # Stop on first failure
