@@ -820,7 +820,7 @@ func _on_check_button_toggled(toggled_on: bool):
 
 		_proxy_note = null
 
-func _on_proxy_note_changed(note: Note) -> void:
+func _on_proxy_note_changed(_prop_name: StringName, note: Note) -> void:
 	_note_check_button.set_pressed_no_signal(note.enabled)
 
 func _on_close_warrning(path):
