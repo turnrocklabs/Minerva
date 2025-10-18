@@ -73,8 +73,8 @@ func _on_vbox_child_entered_tree(node: Node):
 
 		_update_bulk_button() # and update now for the state already set in the controller _init
 		_update_remove_all_button()
-		_update_collapse_all_button()
-		_update_toggle_notes_button()
+		_update_collapse_all_button("")
+		_update_toggle_notes_button("")
 
 	note_added.emit(node)
 		
@@ -182,7 +182,7 @@ func _update_remove_all_button() -> void:
 
 
 
-func _update_collapse_all_button() -> void:
+func _update_collapse_all_button(_prop_name: StringName) -> void:
 	var any_expanded: = get_notes().any(func(note: Note): return note.expanded)
 
 	_toggle_expand_button.set_pressed_no_signal(any_expanded)
@@ -236,7 +236,7 @@ func _on_reload_files_content_button_pressed() -> void:
 		SingletonObject.create_toast_notification("Reloaded All File Notes")
 
 
-func _update_toggle_notes_button() -> void:
+func _update_toggle_notes_button(_prop_name: StringName) -> void:
 	var any_disabled: = get_notes().any(func(note: Note): return not note.enabled)
 
 	if any_disabled and _toggle_selection_button.button_pressed:
