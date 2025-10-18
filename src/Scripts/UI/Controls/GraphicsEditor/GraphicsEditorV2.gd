@@ -3,6 +3,7 @@ extends PanelContainer
 
 signal active_tool_changed(tool_: BaseTool)
 signal active_layer_changed(layer: LayerV2)
+signal active_layer_is_mask_layer(is_mask_layer: bool)
 
 signal compose_progress_updated(progress: float)
 signal compose_finished(image: Image)
@@ -50,7 +51,31 @@ signal compose_finished(image: Image)
 	speech_bubble_tool: _speech_bubble_options,
 }
 
+#@onready var media_gen_socket: MediaGenSocket = $MediaGenSocket
+@onready var image_gen_popup_panel: PopupPanel = %ImageGenPopupPanel
+@onready var prompt_text_edit: TextEdit = %PromptTextEdit
+@onready var send_prompt_button: Button = %SendPromptButton
+@onready var negative_text_edit: TextEdit = %NegativeTextEdit
+@onready var image_width_line_edit: LineEdit = %ImageWidthLineEdit
+@onready var image_height_line_edit: LineEdit = %ImageHeightLineEdit
+@onready var image_width_option_button: OptionButton = %ImageWidthOptionButton
+@onready var image_height_option_button: OptionButton = %ImageHeightOptionButton
+@onready var advanced_settings_check_button: CheckButton = %AdvancedSettingsCheckButton
+@onready var advanced_settings_container: VBoxContainer = %AdvancedSettingsContainer
+@onready var prompt_button: Button = %PromptButton
+@onready var steps_spin_box: SpinBox = %StepsSpinBox
+@onready var cfg_spin_box: SpinBox = %CFGSpinBox
+@onready var denoise_spin_box: SpinBox = %DenoiseSpinBox
+@onready var seed_line_edit: LineEdit = %SeedLineEdit
+@onready var mask_container: HBoxContainer = %MaskContainer
+@onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
+@onready var color_picker_button: ColorPickerButton = %ColorPickerButton
+
 #endregion
+
+const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
+const MAX_IMAGE_GEN_RES: int = 2500
+const MIN_IMAGE_RES: int = 512
 var canvas_size: = Vector2i(1000, 1000)
 
 var _custom_cursor: Resource
@@ -68,7 +93,14 @@ var layers: Array[LayerV2]
 var selected_layers: Array[LayerV2] = []
 
 var active_layer: LayerV2:
-	get: return selected_layers.get(0) if not selected_layers.is_empty() else null
+	get: 
+		return selected_layers.get(0) if not selected_layers.is_empty() else null
+	set(value):
+		active_layer = value
+		if value.type == LayerV2.Type.MASK:
+			active_layer_is_mask_layer.emit(true)
+		else:
+			active_layer_is_mask_layer.emit(false)
 
 var active_tool: BaseTool:
 	set(value):
@@ -89,11 +121,20 @@ func _ready() -> void:
 	_tools_option_button.item_selected.emit(0)
 	compose_progress_updated.connect(_on_compose_progress)
 	compose_finished.connect(_on_compose_complete)
-	
+	active_layer_is_mask_layer.connect(_on_active_layer_mask_layer)
 	# Connect pen inverted signals
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
-	# setup()
+	setup()
+	
+	#media_gen_socket.pass_image_to_editor.connect(_on_image_received)
+	
+	var temp_res: = MIN_IMAGE_RES
+	while temp_res + 64 <= MAX_IMAGE_GEN_RES:
+		var res: = str(temp_res)
+		image_width_option_button.add_item(res)
+		image_height_option_button.add_item(res)
+		temp_res += 128
 
 
 
@@ -117,6 +158,16 @@ func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = C
 func create_new_image_layer(layer_name: String, image: Image, select: = true) -> LayerV2:
 	var layer: = LayerV2.create_image_layer(layer_name, image)
 	
+	add_layer(layer, select)
+
+	return layer
+
+
+func create_new_mask_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true, locked: = false) -> LayerV2:
+	var layer: = LayerV2.create_mask_layer(layer_name, dimensions, color)
+	
+	layer.locked = locked
+
 	add_layer(layer, select)
 
 	return layer
@@ -152,9 +203,19 @@ func _on_layer_tree_exiting(layer: LayerV2):
 func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
 	if not selected_layers.has(layer):
 		selected_layers.append(layer)
+	
+	if selected_layers.size() > 0 and selected_layers.get(0).type == LayerV2.Type.MASK:
+		active_layer_is_mask_layer.emit(true)
+	else:
+		active_layer_is_mask_layer.emit(false)
 
 func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
 	selected_layers.erase(layer)
+	
+	if selected_layers.size() > 0 and selected_layers.get(0).type == LayerV2.Type.MASK:
+		active_layer_is_mask_layer.emit(true)
+	else:
+		active_layer_is_mask_layer.emit(false)
 
 func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 	if button_index == MOUSE_BUTTON_LEFT:
@@ -701,7 +762,7 @@ func compose_final_image(show_dialog: = true) -> Image:
 	
 	if show_dialog:
 		# Show progress window
-		progress_window.popup_centered()
+		progress_window.popup()
 		progress_window_label.text = "Composing image..."
 		progress_window_bar.value = 0
 	
@@ -868,3 +929,234 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 	return relative_pos
 
 #endregion
+
+
+#region HTTP image gen
+
+func _on_prompt_button_pressed() -> void:
+	if !image_gen_popup_panel.visible:
+		image_gen_popup_panel.position = Vector2(
+			(
+				prompt_button.global_position.x 
+				-image_gen_popup_panel.size.x/2.0
+				+prompt_button.size.x/2.0
+			),
+			prompt_button.global_position.y + 50
+		)
+		image_gen_popup_panel.popup()
+	else:
+		image_gen_popup_panel.hide()
+	
+
+
+func _on_send_prompt_button_pressed() -> void:
+	%ImageGenPopupPanel.hide()
+	var params : Dictionary = get_params_image_gen()
+	if params.is_empty():
+		return
+	
+	progress_window.popup_centered()
+	progress_window_label.text = "Generating Image..."
+	#media_gen_socket.send_media_gen_request(params)
+
+
+func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
+	if buffer.is_empty():
+		return
+	
+	var image: = Image.new()
+	image.load_png_from_buffer(buffer)
+	
+	var l: = LayerV2.create_image_layer(filename, image)
+
+	add_layer(l)
+
+#endregion HTTP image gen
+
+
+func _on_edit_img_button_pressed() -> void:
+	if not active_layer or not active_layer.image or active_layer.image.is_empty():
+		display_message("Error", "No active layer with an image to edit. Select an image layer first.")
+		return
+		
+	if prompt_text_edit.text.is_empty():
+		display_message("Input Required", "Please enter a positive prompt for image editing.")
+		return
+
+	# 1. Get the image from the active layer
+	var image_to_edit: Image = active_layer.image
+	var image_filename: String = active_layer.name + ".png" # Use layer name as filename
+
+	# 2. Convert Image to PackedByteArray (PNG format)
+	# The image must be converted to RGBA8 for PNG export if it's not already.
+	# Duplicate to avoid modifying the original layer image directly during conversion.
+	var image_for_export: Image = image_to_edit.duplicate()
+	if image_for_export.get_format() != Image.FORMAT_RGBA8:
+		image_for_export.convert(Image.FORMAT_RGBA8)
+	
+	var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
+	
+	if image_buffer.is_empty():
+		display_message("Error", "Failed to convert active layer image to PNG buffer.")
+		return
+	
+	# 4. Show progress window
+	progress_window.popup()
+	progress_window_label.text = "Sending image for editing..."
+	progress_window_bar.value = 0 # Reset progress bar
+	
+	var params: Dictionary = get_params_image_gen()
+	
+	if params.is_empty():
+		return
+	
+	if !seed_line_edit.text.is_empty():
+		params["seed"] = seed_line_edit.text
+	
+	#media_gen_socket.send_media_edit_request(params, image_buffer, image_filename)
+
+
+func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
+	advanced_settings_container.visible = toggled_on
+
+
+func get_params_image_gen() -> Dictionary:
+	if prompt_text_edit.text.is_empty():
+		return {}
+	
+	return {
+		"positive_prompt" = prompt_text_edit.text,
+		"negative_prompt" = negative_text_edit.text,
+		"width" = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"height" = image_height_line_edit.text.to_int() if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"steps" = steps_spin_box.value,
+		"cfg" = cfg_spin_box.value,
+		"denoise" = denoise_spin_box.value
+	}
+
+
+func selected_layers_has_mask() -> bool:
+	for i in selected_layers:
+		if i.type == LayerV2.Type.MASK:
+			return true
+	return false
+
+
+func selected_layers_has_image() -> bool:
+	for i in selected_layers:
+		if i.type == LayerV2.Type.IMAGE:
+			return true
+	return false
+
+
+func get_first_image_layer() -> LayerV2:
+	for i in selected_layers:
+		if i.type == LayerV2.Type.IMAGE:
+			return i
+	return null
+
+
+func _on_mask_edit_button_pressed() -> void: 
+	if not active_layer or not active_layer.image or active_layer.image.is_empty():
+		display_message("Error", "No active layer with an image to edit. Select an image layer first.")
+		return
+	
+	if selected_layers.size() < 2 and (!selected_layers_has_mask() or !selected_layers_has_image()):
+		display_message("Error", "No mask or no image selected")
+		return
+	if prompt_text_edit.text.is_empty():
+		display_message("Input Required", "Please enter a positive prompt for masked image editing.")
+		return
+	
+	var images_dir: Array = []
+	
+	
+	var image_layer_to_edit: = get_first_image_layer()
+	var base_image_to_edit: Image = image_layer_to_edit.image
+	var base_image_filename: String = image_layer_to_edit.name + ".png" 
+	
+	
+	var base_image_for_export: Image = base_image_to_edit.duplicate()
+	if base_image_for_export.get_format() != Image.FORMAT_RGBA8:
+		base_image_for_export.convert(Image.FORMAT_RGBA8)
+	
+	var base_image_buffer: PackedByteArray = base_image_for_export.save_png_to_buffer()
+	
+	if base_image_buffer.is_empty():
+		display_message("Error", "Failed to convert active layer image to PNG buffer for mask editing.")
+		return
+	var base64_base_image_data: String = Marshalls.raw_to_base64(base_image_buffer)
+	
+	var image_file: = {
+			"filename": base_image_filename,
+			"role": "image",
+			"data": base64_base_image_data,
+			"content_type": "image/png"
+		}
+	images_dir.append(image_file)
+	
+	var mask_dir: = {}
+	var mask_color_channel: = ""
+	for i in selected_layers:
+		if i.type == LayerV2.Type.MASK:
+			var base_mask_image: = i.image
+			var mask_layer_name: = i.name + ".png"
+			mask_color_channel = i.mask_color_name
+			var base_mask_image_for_export: Image = base_mask_image.duplicate()
+			if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
+				base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
+			
+			var base_mask_buffer: PackedByteArray = []#media_gen_socket.generate_mask_bytes(base_mask_image_for_export, i.mask_color, mask_color_channel)
+			#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
+			if base_mask_buffer.is_empty():
+				display_message("Error", "Error generating the mask image")
+				return
+			var base64_mask_image_data: String = (Marshalls.raw_to_base64(base_mask_buffer))
+			
+			var mask_file: = {
+			"filename": mask_layer_name,
+			"role": "mask",
+			"data": base64_mask_image_data,
+			"content_type": "image/png"
+			}
+			images_dir.append(mask_file)
+	
+	#var mask_size = max(canvas_size.x, canvas_size.y) # Mask should cover the image
+	#var mask_radius = mask_size / 4 # Example radius, adjust as needed
+	#var mask_image_buffer: PackedByteArray = media_gen_socket.generate_circular_mask_bytes(mask_size, mask_radius)
+	#var mask_image_filename: String = "generated_circular_mask.png" # Standard name for generated mask
+	#
+	#if mask_image_buffer.is_empty():
+		#display_message("Error", "Failed to generate circular mask image.")
+		#return
+	
+	progress_window.popup_centered()
+	progress_window_label.text = "Sending image and mask for selective editing..."
+	
+	var selective_editing_params: Dictionary = get_params_image_gen()
+	selective_editing_params["mask_channel"] = mask_color_channel #"blue"
+	#media_gen_socket.send_media_selective_edit_request(selective_editing_params, images_dir)
+
+
+func _on_new_mask_layer_button_pressed() -> void:
+		# clear layers and create a new one
+	for c: LayerCard in layer_cards_container.get_children():
+		c.selected = false
+	
+	create_new_mask_layer("Mask Layer", canvas_size)
+
+
+func _on_active_layer_mask_layer(is_mask_layer: bool) -> void:
+	mask_container.visible = is_mask_layer
+	color_picker_button.visible = !is_mask_layer
+
+
+func _on_mask_color_option_button_item_selected(index: int) -> void:
+	if active_layer and active_layer.type == active_layer.Type.MASK :
+		var mask_color: Color = mask_color_option_button.get_item_icon(index).get_image().get_pixel(0,0)
+		color_picker_button.color = mask_color
+		active_layer.mask_color = mask_color
+		active_layer.mask_color_name = mask_color_option_button.get_item_text(index).to_lower()
+		#mask_color_option_button.disabled = true
+		printt("Mask Color:",mask_color)
+	active_layer.lock_color = true

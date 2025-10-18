@@ -18,7 +18,7 @@
 [ext_resource type="Texture2D" uid="uid://bq7obdp4qb1qm" path="res://assets/icons/editor_arrows/editor_arrow_up.png" id="10_tpp25"]
 [ext_resource type="Texture2D" uid="uid://dmkhqqoc15i8a" path="res://assets/icons/editor_arrows/editor_arrow_down.png" id="11_cph1y"]
 [ext_resource type="Texture2D" uid="uid://ws8ig4iufap5" path="res://assets/icons/editor_arrows/editor_arrow_right.png" id="12_hpuv1"]
-[ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers-24.png" id="18_yov21"]
+[ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers_icons/layers-24.png" id="18_yov21"]
 
 [node name="GraphicsEditor" type="PanelContainer"]
 anchors_preset = -1

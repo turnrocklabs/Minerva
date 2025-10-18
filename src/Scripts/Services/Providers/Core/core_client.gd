@@ -7,6 +7,18 @@ signal connection_closed
 signal connection_error(error: int)
 signal service_registered(service_data: Dictionary)
 signal response_received(data, binary_data)
+@warning_ignore("unused_signal")
+signal log_in_response_arrived
+signal registered_with_core
+signal auth_failed
+
+# New signals for binary transfer
+signal binary_new_message_received(header: Dictionary, num_files: int)
+signal binary_file_info_received(file_index: int, filename: String, size: int)
+signal binary_file_progress(file_index: int, received: int, total_size: int, progress_pct: float)
+signal binary_file_saved(file_index: int, filename: String, path: String)
+signal binary_transfer_complete(request_id: String) # Emitted when the final text response confirms all files for a request are saved.
+signal image_received(filename: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
 
 enum EntityType {
 	HUMAN_AGENT,
@@ -50,6 +62,15 @@ class Transfer extends RefCounted:
 
 # has msg_id, and fa
 var _active_transfers: = {}  # Dictionary to track transfers by msg_id
+
+
+# Binary transfer state (new variables)
+var _binary_files: Dictionary = {}  # file_index -> {"size": int, "received": int, "buffer": PackedByteArray}
+var _binary_filenames: Dictionary = {}  # file_index -> filename (String)
+var _binary_pending_chunks: Dictionary = {}  # file_index -> [PackedByteArray] for defensive buffering
+var _binary_expected_files: int = 0
+var _binary_files_completed: int = 0
+var _current_binary_request_id: String = "" # request_id associated with the *currently streaming* binary data
 
 
 func _ready():
@@ -670,3 +691,106 @@ func send_heartbeat():
 		}
 		send_text_message_to_core(heartbeat_msg)
 		print("Heartbeat sent")
+
+
+func send_media_gen_request(generation_params: Dictionary) -> void: # Accepts a dictionary of parameters
+	var request_id: String = UUID.v7() # Generate request_id once (Explicitly type)
+	var message: Dictionary = { # Explicitly type
+		"cmd": "request",
+		"topic": "media_gen/image_generation",  # Updated topic
+		"entity_type": "client",
+		"params": {
+			"client_id": Core._client_id,
+			"request_id": request_id,
+			"target_service_id": "media-gen",
+			"data": {
+				#"workflow": "image_generation",  # Updated workflow
+				## These are now being merged below
+				#"positive_prompt": generation_params.get("prompt"),
+				#"negative_prompt": generation_params.get("negative_prompt"),
+				#"width": 1024, # The total numgber of pixels must be divisible by 64
+				#"height": 1024,
+				#"steps": 8,
+				#"cfg": 1.0,
+			},
+			"auth": Core._jwt_token
+		}
+	}
+	
+	# Merge the provided generation_params into the 'data' dictionary
+	(message["params"] as Dictionary)["data"] = merge_dictionaries((message["params"] as Dictionary)["data"] as Dictionary, generation_params)
+	
+	# Store the request_id locally, so _handle_message can track the binary response.
+	_current_binary_request_id = request_id
+	send_text_message_to_core(message)
+
+
+func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByteArray, image_filename: String = "input_image.png") -> void:
+	var request_id: String = UUID.v7()
+	
+	# Base64 encode the image buffer
+	var base64_image_data: String = Marshalls.raw_to_base64(image_buffer)#.base64_encode(image_buffer).get_string_from_utf8()
+
+	var message: Dictionary = {
+		"cmd": "request",
+		"topic": "media_gen/image_editing", # <--- IMPORTANT: Correct topic for image editing
+		"entity_type": "client",
+		"params": {
+			"client_id": Core._client_id,
+			"request_id": request_id,
+			"target_service_id": "media-gen",
+			"data": {
+				"workflow": "image_editing", # <--- IMPORTANT: Correct workflow for image editing
+				#"positive_prompt": editing_params.get("positive_prompt", ""), 
+				#"negative_prompt": editing_params.get("negative_prompt", ""),
+				#"width": editing_params.get("width", 1024),
+				#"height": editing_params.get("height", 1024),
+				#"steps": editing_params.get("steps", 8),
+				#"cfg": editing_params.get("cfg", 7.0),   # From Python test 2 params
+				#"denoise": editing_params.get("denoise", 0.75), # From Python test 2 params
+				"files": [ # Attach the image here
+					{
+						"filename": image_filename,
+						"role": "image",
+						"data": base64_image_data,
+						"content_type": "image/png" # Assuming PNG as default
+					}
+				]
+			},
+			"auth": Core._jwt_token
+		}
+	}
+	(message["params"] as Dictionary)["data"] = merge_dictionaries((message["params"] as Dictionary)["data"] as Dictionary, editing_params)
+	_current_binary_request_id = request_id
+	send_text_message_to_core(message)
+
+
+func send_media_selective_edit_request(editing_params: Dictionary, images_dir: Array) -> void:
+	var request_id: String = UUID.v7()
+	
+	var message: Dictionary = {
+		"cmd": "request",
+		"topic": "media_gen/image_selective_editing", # Match Python's Test 3 topic
+		"entity_type": "client",
+		"params": {
+			"client_id": Core._client_id,
+			"request_id": request_id,
+			"target_service_id": "media-gen",
+			"data": {
+				"workflow": "image_selective_editing", # Match Python's Test 3 workflow
+				# All editing_params passed directly here
+			},
+			"auth": Core._jwt_token
+		}
+	}
+	
+	# Merge the provided editing_params into the 'data' dictionary
+	var data_payload: Dictionary = (message["params"] as Dictionary)["data"] as Dictionary
+	data_payload = merge_dictionaries(data_payload, editing_params)
+	
+	# Attach both the base image and the mask image to the files array
+	data_payload["files"] = images_dir
+	(message["params"] as Dictionary)["data"] = data_payload
+	
+	_current_binary_request_id = request_id
+	send_text_message_to_core(message)

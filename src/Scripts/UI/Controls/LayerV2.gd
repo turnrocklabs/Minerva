@@ -5,6 +5,7 @@ enum Type {
 	IMAGE,
 	DRAWING,
 	SPEECH_BUBBLE,
+	MASK
 }
 
 @onready var texture_rect: TextureRect = %TextureRect
@@ -82,6 +83,11 @@ var speech_bubble: CloudControl:
 
 		center_container.add_child(speech_bubble)
 
+var lock_color: bool = false
+var mask_color: Color = Color.WHITE
+var mask_color_name: String = "blue"
+
+
 
 func _ready() -> void:
 	# Prevent automatic positioning while allowing manual size control
@@ -112,6 +118,7 @@ static func create_drawing_layer(name_: String, size_: Vector2i, background_colo
 
 	return layer
 
+
 static func create_speech_bubble_layer(name_: String, type_: CloudControl.Type = CloudControl.Type.ELLIPSE) -> LayerV2:
 	var layer: LayerV2 = _scene.instantiate()
 	
@@ -121,6 +128,20 @@ static func create_speech_bubble_layer(name_: String, type_: CloudControl.Type =
 	layer.type = Type.SPEECH_BUBBLE
 
 	return layer
+
+
+static func create_mask_layer(name_: String, size_: Vector2i, background_color: = Color.TRANSPARENT) -> LayerV2:
+	var layer: = _scene.instantiate()
+	
+	var img = Image.create(size_.x, size_.y, false, Image.Format.FORMAT_RGBA8)
+	img.fill(background_color)
+	
+	layer.image = img
+	layer.name = name_
+	layer.type = Type.MASK
+	
+	return layer
+
 
 ## Return the [enum TransformPoint] type of the rect thats under the given [parameter mouse_position]
 func get_rect_by_mouse_position(mouse_position: Vector2) -> TransformPoint:
@@ -135,7 +156,7 @@ func get_rect_by_mouse_position(mouse_position: Vector2) -> TransformPoint:
 
 func _draw() -> void:
 	match type:
-		Type.IMAGE, Type.DRAWING:
+		Type.IMAGE, Type.DRAWING, Type.MASK:
 			var img = ImageTexture.create_from_image(image)
 			texture_rect.texture = img
 		Type.SPEECH_BUBBLE:
@@ -209,7 +230,7 @@ func localize_input(event: InputEvent):
 	var local_event = event.duplicate()
 	
 	match type:
-		Type.IMAGE, Type.DRAWING:
+		Type.IMAGE, Type.DRAWING, Type.MASK:
 			# Use global_position to bypass all parent UI element offsets
 			local_event.position = texture_rect.get_local_mouse_position()
 		Type.SPEECH_BUBBLE:
@@ -289,7 +310,7 @@ func _adjust_control_size() -> void:
 
 				image.copy_from(scaled_image)
 		
-		Type.DRAWING:
+		Type.DRAWING, Type.MASK:
 			texture_rect.size = size
 			if abs(image.get_width() - size.x) > 1 or abs(image.get_height() - size.y) > 1:
 
