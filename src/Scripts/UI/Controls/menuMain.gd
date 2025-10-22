@@ -143,6 +143,9 @@ func _ready():
 	terminal_shortcut.events.append(terminal_input_event)
 	%View.set_item_shortcut(3, terminal_shortcut, true)
 
+	# Initialize Open Recent submenu at startup
+	load_recent_projects_sub()
+
 func _on_project_index_pressed(index):
 	match index:
 		0:
