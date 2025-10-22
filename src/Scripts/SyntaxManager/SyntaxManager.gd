@@ -28,8 +28,10 @@ func _load_color_groups():
 		
 		# Check if the resource is valid and has JSON data
 		if groups_resource and groups_resource.data:
+			print("this is executing")
 		# Access the "colorGroups" dictionary from the JSON data
 			if groups_resource.data.has("colorGroups"):
+				print("this is also executing")
 				_color_groups = groups_resource.data.colorGroups
 			else:
 				push_warning("JSON resource doesn't contain 'colorGroups' key")
@@ -41,6 +43,10 @@ func _load_color_groups():
 func get_syntax_for_language(lang_name: String) -> Dictionary:
 	# Strip any numbers or special characters from the language name
 	var clean_lang: = lang_name.rstrip("01234567890!#$%&/()=.,+*{}[]").strip_edges()
+	var ext: = clean_lang.get_extension()
+	
+	if !ext.is_empty():
+		clean_lang = ext
 	# extensions dictionary
 	if _ext_to_name.has(clean_lang):
 		clean_lang = _ext_to_name.get(clean_lang)
@@ -50,19 +56,17 @@ func get_syntax_for_language(lang_name: String) -> Dictionary:
 	
 	var file_path: = "res://resources/syntax/" + clean_lang + ".tres"
 	if ResourceLoader.exists(file_path):
-		var err := ResourceLoader.load_threaded_request(file_path)
 		
-		if err == OK:
-			var lang_resource: JSON = ResourceLoader.load_threaded_get(file_path)
-			# Check if the resource is valid and has JSON data
-			if lang_resource and lang_resource.data:
-				if lang_resource.data.has("keywords"):
-					_syntax_cache.set(clean_lang, lang_resource.data.keywords)
-					return lang_resource.data.keywords
-				else:
-					push_warning("JSON resource doesn't contain 'colorGroups' key")
+		var lang_resource: JSON = ResourceLoader.load(file_path)
+		# Check if the resource is valid and has JSON data
+		if lang_resource and lang_resource.data:
+			if lang_resource.data.has("keywords"):
+				_syntax_cache.set(clean_lang, lang_resource.data.keywords)
+				return lang_resource.data.keywords
 			else:
-				push_warning("Invalid JSON resource format")
+				push_warning("JSON resource doesn't contain 'colorGroups' key")
+		else:
+			push_warning("Invalid JSON resource format")
 	else: return {}
 	# Return empty dictionary if loading failed
 	return {}

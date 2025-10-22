@@ -642,13 +642,13 @@ func hide_loading_screen():
 
 #endregion Loading screen stuff
 
-#region Prealoaded static scenes
+#region Preloaded static scenes
 static var video_player_scene: = preload("res://Scenes/video_player.tscn")
 static var audio_contols_scene: = preload("res://Scenes/audio_note_controls.tscn")
 static var image_controls_scene: = preload("res://Scenes/image_note_controls.tscn")
 static var notes_scene: = preload("res://Scenes/Note.tscn")
 
-#endregion Prealoaded static scenes
+#endregion Preloaded static scenes
 
 #region ChatNotification Player
 func play_chat_notification() -> void:
