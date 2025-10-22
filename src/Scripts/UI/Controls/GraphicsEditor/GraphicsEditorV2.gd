@@ -1116,7 +1116,7 @@ func _on_mask_edit_button_pressed() -> void:
 			if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
 				base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
 			
-			var base_mask_buffer: PackedByteArray = []#media_gen_socket.generate_mask_bytes(base_mask_image_for_export, i.mask_color, mask_color_channel)
+			var base_mask_buffer: PackedByteArray = media_gen_socket.generate_mask_bytes(base_mask_image_for_export, i.mask_color, mask_color_channel)
 			#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
 			if base_mask_buffer.is_empty():
 				display_message("Error", "Error generating the mask image")
@@ -1144,8 +1144,8 @@ func _on_mask_edit_button_pressed() -> void:
 	progress_window_label.text = "Sending image and mask for selective editing..."
 	
 	var selective_editing_params: Dictionary = get_params_image_gen()
-	selective_editing_params["mask_channel"] = mask_color_channel #"blue"
-	#media_gen_socket.send_media_selective_edit_request(selective_editing_params, images_dir)
+	selective_editing_params["mask_channel"] = mask_color_channel
+	media_gen_socket.send_media_selective_edit_request(selective_editing_params, images_dir)
 
 
 func _on_new_mask_layer_button_pressed() -> void:

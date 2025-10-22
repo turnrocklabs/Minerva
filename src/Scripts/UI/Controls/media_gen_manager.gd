@@ -192,19 +192,19 @@ func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) ->
 
 
 func generate_mask_bytes(mask_layer_image: Image, mask_color: Color, channel: String) -> PackedByteArray:
-	
-	var mask_image := Image.create(mask_layer_image.get_width(), mask_layer_image.get_height(), false, Image.FORMAT_L8) # Grayscale image
-	mask_image.fill(Color.BLACK) 
+
+	var mask_image := Image.create(mask_layer_image.get_width(), mask_layer_image.get_height(), false, Image.FORMAT_RGBA8) # RGBA image for color channel support
+	mask_image.fill(Color.BLACK)
 	var final_mask_color: Color = Color.WHITE
-	#match channel:
-		#"red":
-			#final_mask_color = Color.RED
-		#"blue":
-			#final_mask_color = Color.BLUE
-		#"green":
-			#final_mask_color = Color.GREEN
-		#_:
-			#final_mask_color = Color.WHITE
+	match channel:
+		"red":
+			final_mask_color = Color.RED
+		"blue":
+			final_mask_color = Color.BLUE
+		"green":
+			final_mask_color = Color.GREEN
+		_:
+			final_mask_color = Color.WHITE
 	for y in range(mask_layer_image.get_height()):
 		for x in range(mask_layer_image.get_width()):
 			if mask_layer_image.get_pixel(x, y).a != 0:
