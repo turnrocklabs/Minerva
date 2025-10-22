@@ -2,6 +2,7 @@ extends Node
 
 # Signal emitted when a specific service/action is chosen from the preferences popup
 signal service_selected(service: Service)
+signal service_deselected(service: Service)
 
 signal service_connected(service: Service)
 
@@ -177,10 +178,18 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 	# --- 4. Register with Core using the obtained JWT ---
 	client.register_with_core(_jwt_token, _client_id) # Use the JWT token for registration
-	# Note: We assume registration happens quickly. If it could fail and require feedback,
-	# we might need an await signal for registration completion/error from CoreClient.
-	# For now, assume connection_established + register_with_core implies success.
-	registered = true # Mark as registered (might need better tracking based on CoreClient signals)
+	
+	var registration_message = await (
+		Core
+		.await_message()
+		.with_topic("system")
+		.with_cmd("registration_confirmed")
+		.receive()
+	)
+	
+	if not registration_message: return false
+
+	registered = true
 
 	print("Core registration initiated with token.")
 	

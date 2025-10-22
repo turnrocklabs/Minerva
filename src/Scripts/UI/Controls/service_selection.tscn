@@ -1,20 +1,16 @@
-[gd_scene load_steps=2 format=3 uid="uid://bx4qo4lmxtd8q"]
+[gd_scene load_steps=3 format=3 uid="uid://bx4qo4lmxtd8q"]
 
 [ext_resource type="Script" uid="uid://bcqvwv71e34qh" path="res://Scripts/UI/Controls/service_selection.gd" id="1_lvev7"]
+[ext_resource type="Texture2D" uid="uid://exoijpiwrvi0" path="res://assets/icons/warning_icon.svg" id="2_t8x77"]
 
-[node name="ServiceSelection" type="Window"]
-title = "Service Selection"
-position = Vector2i(0, 36)
-size = Vector2i(900, 700)
-popup_window = true
+[node name="ServiceSelection" type="VBoxContainer"]
+offset_top = 36.0
+offset_right = 900.0
+offset_bottom = 736.0
 script = ExtResource("1_lvev7")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
@@ -22,15 +18,49 @@ size_flags_vertical = 3
 layout_mode = 2
 text = "Available services:"
 
-[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
+[node name="WarningContainer" type="HBoxContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="VBoxContainer/WarningContainer"]
+layout_mode = 2
+texture = ExtResource("2_t8x77")
+
+[node name="WarningLabel" type="Label" parent="VBoxContainer/WarningContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 0
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer2/VBoxContainer2"]
+custom_minimum_size = Vector2(0, 2.5)
+layout_mode = 2
+
+[node name="CheckBoxesContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2/VBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/HBoxContainer2/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="ItemList" type="ItemList" parent="VBoxContainer/ScrollContainer"]
+[node name="ItemList" type="ItemList" parent="VBoxContainer/HBoxContainer2/VBoxContainer/ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_constants/v_separation = 7
 auto_height = true
 
 [node name="DescriptionLabel" type="Label" parent="VBoxContainer"]
@@ -42,9 +72,11 @@ custom_minimum_size = Vector2(0, 15)
 layout_mode = 2
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
+visible = false
 layout_mode = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 
@@ -72,18 +104,21 @@ size_flags_vertical = 3
 context_menu_enabled = true
 
 [node name="Control2" type="Control" parent="VBoxContainer"]
+visible = false
 custom_minimum_size = Vector2(0, 15)
 layout_mode = 2
 
 [node name="HSeparator2" type="HSeparator" parent="VBoxContainer"]
+visible = false
 layout_mode = 2
 
 [node name="Button" type="Button" parent="VBoxContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 disabled = true
 text = "Choose"
 
-[connection signal="item_selected" from="VBoxContainer/ScrollContainer/ItemList" to="." method="_on_item_list_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/HBoxContainer2/VBoxContainer/ScrollContainer/ItemList" to="." method="_on_item_list_item_selected"]
 [connection signal="item_selected" from="VBoxContainer/HBoxContainer/VBoxContainer/ActionItemList" to="." method="_on_action_item_list_item_selected"]
 [connection signal="pressed" from="VBoxContainer/Button" to="." method="_on_button_pressed"]

@@ -38,6 +38,9 @@ func _ready() -> void:
 
 	Core.client.connection_established.connect(_on_core_connected)
 
+	Core.service_selected.connect(_on_hcp_service_selected)
+	Core.service_deselected.connect(_on_hcp_service_deselected)
+
 	# Right now, if core is disconnected the model response should indicate that
 	# In the future we may want to completely remove the item from the dropdown
 	# Core.client.connection_closed.connect(_on_core_disconnected)
@@ -57,9 +60,10 @@ func _on_core_connected():
 		push_error("No registration message received")
 		return
 	
-	var services: = await Core.fetch_services()
-	for service in services:
-		_on_hcp_service_selected(service)
+	# let the services in preferences pane trigger service selection
+	# var services: = await Core.fetch_services()
+	# for service in services:
+	# 	_on_hcp_service_selected(service)
 
 func _initialize_services_by_type():
 	services_by_type[ServiceHistory.ServiceType.CHAT] = []
@@ -82,6 +86,47 @@ func _setup_chats_service():
 		history_option_button.select(history_option_button.get_item_index(item_id))
 		# trigger the select callback	
 		_on_history_option_button_item_selected(history_option_button.get_item_index(item_id))
+
+
+func _on_hcp_service_deselected(service: Service) -> void:
+	var service_type = Core.get_service_history_type(service)
+	if service_type == ServiceHistory.ServiceType.NONE:
+		return
+	
+	# Remove from tracking
+	if service_type in services_by_type:
+		services_by_type[service_type].erase(service)
+		
+		# If no services left for this type, remove dropdown item
+		if services_by_type[service_type].is_empty():
+			_remove_history_type_from_dropdown(service_type)
+	
+	# If this was the current service type, update providers
+	if service_type == current_service_type:
+		_update_provider_options_for_current_type()
+		
+		# If current provider no longer available, switch to first available
+		var current_provider = provider_option_button.get_selected_provider()
+		if not _is_provider_available(current_provider):
+			_select_first_available_provider()
+
+func _remove_history_type_from_dropdown(service_type: ServiceHistory.ServiceType):
+	for i in range(history_option_button.get_item_count()):
+		if history_option_button.get_item_metadata(i) == service_type:
+			history_option_button.remove_item(i)
+			return
+
+func _is_provider_available(provider) -> bool:
+	var services = services_by_type.get(current_service_type, [])
+	for service in services:
+		if service == provider: # or however you check provider match
+			return true
+	return false
+
+func _select_first_available_provider():
+	if provider_option_button.item_count > 0:
+		provider_option_button.select(0)
+		provider_option_button.item_selected.emit(0)
 
 func _on_hcp_service_selected(service: Service) -> void:
 	var service_type = Core.get_service_history_type(service)

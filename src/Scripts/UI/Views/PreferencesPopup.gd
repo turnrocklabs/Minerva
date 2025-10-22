@@ -79,6 +79,9 @@ func _ready():
 			config_file.set_value("HCP", "username", "")
 			config_file.set_value("HCP", "password", "")
 			config_file.set_value("HCP", "auto_connect", true)
+			config_file.set_value("HCP", "auto_connect", true)
+
+			config_file.set_value("HCP", "selected_services", [])
 
 	set_field_values()
 
@@ -136,6 +139,10 @@ func set_field_values():
 	_fields["hcp_username"].text = config_file.get_value("HCP", "username", "")
 	_fields["hcp_password"].text = config_file.get_value("HCP", "password", "")
 
+	var selected_service_ids = config_file.get_value("HCP", "selected_services", [])
+	for service_id in selected_service_ids:
+		service_selection_window.mark_service_as_selected(service_id)
+
 	# --- Set Auth Base URL and Preset Dropdown ---
 	var saved_auth_url = config_file.get_value("HCP", "auth_base_url", AUTH_PRESET_PROD)
 	_fields["hcp_auth_base_url"].text = saved_auth_url
@@ -183,6 +190,7 @@ func _on_btn_save_prefs_pressed():
 	config_file.set_value("HCP", "username", _fields["hcp_username"].text)
 	config_file.set_value("HCP", "password", _fields["hcp_password"].text)
 	config_file.set_value("HCP", "auto_connect", _fields["hcp_auto_connect"].button_pressed)
+	config_file.set_value("HCP", "selected_services", service_selection_window.get_selected_service_ids())
 
 	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 
@@ -325,22 +333,23 @@ func _on_core_connet_button_pressed(display_error: = true) -> void:
 		)
 
 
-func _on_select_services_button_pressed() -> void:
+func _on_service_selection_visibility_changed() -> void:
+	if not service_selection_window.is_visible_in_tree(): return
+
+	if Core.connecting: return
+
 	var services: Array[Service] = await Core.fetch_services()
 	if services.is_empty() and not Core.client._connected:
-		SingletonObject.ErrorDisplay("Not Connected", "Cannot fetch services. Please connect to Core first.", self)
+		service_selection_window.set_warning("Cannot fetch services. Please connect to Core first.")
 		return
 
-	service_selection_window.set_services(services)
-	service_selection_window.popup_centered()
-
-var selected_service: Service
+	service_selection_window.set_services(services) # will clear the warning by default
 
 func _on_service_selection_service_selected(service: Service) -> void:
-	selected_service = service
-
 	Core.service_selected.emit(service)
 
+func _on_service_selection_service_deselected(service: Service) -> void:
+	Core.service_deselected.emit(service)
 
 func _on_password_checkbox_toggled(toggled_on:bool) -> void:
 	hcp_password.secret = not toggled_on
