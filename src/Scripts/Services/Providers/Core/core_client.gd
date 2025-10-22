@@ -21,7 +21,8 @@ signal image_received(filename: String, image_buffer: PackedByteArray) # Renamed
 enum EntityType {
 	HUMAN_AGENT,
 	SOFTWARE_AGENT,
-	SERVICE
+	SERVICE,
+	CLIENT
 }
 
 #enum FrameType {
@@ -592,16 +593,14 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 
 func register_with_core(auth_token: String, client_id_: String):
 	client_id = client_id_
-	var entity_type_str = "human_agent" if _entity_type == EntityType.HUMAN_AGENT else "software_agent" if _entity_type == EntityType.SOFTWARE_AGENT else "service"
 	var register_msg = {
 		"cmd": "register",
-		"entity_type": entity_type_str,
+		"entity_type": "client",
 		"topic": TOPIC_SYSTEM,
 		"params": {
-			# "secret": minerva_secret,
-			"auth": auth_token,
 			"client_id": client_id,
-			# "topics": [TOPIC_SYSTEM, TOPIC_DISCOVERY, client_id]
+			"auth": auth_token,
+			"request_id": UUIDGen.v7()
 		}
 	}
 	send_text_message_to_core(register_msg)

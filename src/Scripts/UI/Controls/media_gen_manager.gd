@@ -3,6 +3,11 @@ class_name MediaGenManager extends Node
 var client: CoreClient = Core.client
 
 signal  pass_image_to_editor(filename: String, image: PackedByteArray)
+
+func _ready() -> void:
+	# Connect Core.client signals to our handlers
+	client.binary_file_saved.connect(_on_binary_file_saved_received)
+	client.image_received.connect(_on_image_response_received)
 ## Configuration from the working test
 #var REST_BRIDGE_LOGIN_URL = "https://www.turnrock.ai:4040/v1/login"
 #var CORE_WS_URL = "wss://www.turnrock.ai:27500/connect"

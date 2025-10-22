@@ -126,8 +126,9 @@ func _ready() -> void:
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
 	setup()
-	
-	#media_gen_socket.pass_image_to_editor.connect(_on_image_received)
+
+	# Connect media generation signal to receive generated images
+	media_gen_socket.pass_image_to_editor.connect(_on_image_received)
 	
 	var temp_res: = MIN_IMAGE_RES
 	while temp_res + 64 <= MAX_IMAGE_GEN_RES:
@@ -961,12 +962,21 @@ func _on_send_prompt_button_pressed() -> void:
 
 
 func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
+	# Always hide progress window when receiving response (success or failure)
+	if progress_window.visible:
+		progress_window.hide()
+
 	if buffer.is_empty():
+		display_message("Error", "Received empty image data from media generation service")
 		return
-	
+
 	var image: = Image.new()
-	image.load_png_from_buffer(buffer)
-	
+	var err = image.load_png_from_buffer(buffer)
+
+	if err != OK:
+		display_message("Error", "Failed to load generated image (error: %s)" % err)
+		return
+
 	var l: = LayerV2.create_image_layer(filename, image)
 
 	add_layer(l)
