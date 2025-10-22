@@ -1,7 +1,7 @@
 class_name PanTool
 extends BaseTool
 
-var hand_icon: = preload("res://assets/icons/drag_hand.png")
+var hand_icon: = preload("res://Assets/icons/drag_hand.png")
 var dragging: = false
 var last_mouse_position: Vector2 = Vector2.ZERO
 

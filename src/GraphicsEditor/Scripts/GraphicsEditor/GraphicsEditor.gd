@@ -4,7 +4,7 @@ extends PanelContainer
 
 signal UpdateUnsavedTabIcon
 signal masking_ended()
-var circle_cursor: =  preload("res://assets/icons/cursor_circle.png")
+var circle_cursor: =  preload("res://Assets/icons/cursor_circle.png")
 
 var Bubble = preload("res://Scenes/CloudControl.tscn")
 #region onready control declarations
@@ -38,7 +38,7 @@ var loaded_layers: Array[Layer]
 var layer_number = 1 #we might not need this variable anymore and just use layers.size()
 var layers_array: Array[Layer] # we put every layer we create here except fot the transparency layer
 
-var _transparency_texture: CompressedTexture2D = preload("res://assets/generated/transparency.bmp")
+var _transparency_texture: CompressedTexture2D = preload("res://Assets/generated/transparency.bmp")
 
 var image: Image:
 	get: return _draw_layer.image if _draw_layer else null
@@ -645,9 +645,9 @@ func LayerVisible(Hbox: HBoxContainer):
 	# Update the visibility button icon
 	var VisibleButton = Hbox.get_child(1)
 	if layer.visible:
-		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")
+		VisibleButton.icon = preload("res://Assets/icons/eye_icons/visibility_visible.svg")
 	else:
-		VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_not_visible.png")
+		VisibleButton.icon = preload("res://Assets/icons/eye_icons/visibility_not_visible.png")
 
 	# Ensure the layer's size and content remain unchanged
 	layer.custom_minimum_size = layer.image.get_size()
@@ -966,25 +966,25 @@ func layers_buttons():
 	LayerButton.connect("pressed", self.selectButton.bind(LayerButton,Hbox))
 	
 	var VisibleButton = Button.new()
-	VisibleButton.icon = preload("res://assets/icons/eye_icons/visibility_visible.svg")
+	VisibleButton.icon = preload("res://Assets/icons/eye_icons/visibility_visible.svg")
 	VisibleButton.connect("pressed", self.LayerVisible.bind(Hbox))
 	
 	var RemoveButton = Button.new()
 	RemoveButton.connect("pressed", self.RemoveLayer.bind(Hbox, layer_number))
-	RemoveButton.icon = preload("res://assets/icons/remove.svg")
+	RemoveButton.icon = preload("res://Assets/icons/remove.svg")
 	
 	%LayersList.add_child(Hbox)
 	
 	var Translate = Button.new()
-	Translate.icon = preload("res://assets/icons/layers_icons/move-16.png")
+	Translate.icon = preload("res://Assets/icons/layers_icons/move-16.png")
 	Translate.connect("pressed", self._transfer.bind(Hbox))
 	
 	var Rotate = Button.new()
-	Rotate.icon = preload("res://assets/icons/layers_icons/rotate-16.png")
+	Rotate.icon = preload("res://Assets/icons/layers_icons/rotate-16.png")
 	Rotate.connect("pressed", self._rotate.bind(Hbox))
 	
 	var Scale = Button.new()
-	Scale.icon = preload("res://assets/icons/layers_icons/resize-16.png")
+	Scale.icon = preload("res://Assets/icons/layers_icons/resize-16.png")
 	Scale.connect("pressed", self._scale.bind(Hbox))
 	
 	Hbox.add_child(LayerButton)
