@@ -591,6 +591,8 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 
 
 
+
+
 func register_with_core(auth_token: String, client_id_: String):
 	client_id = client_id_
 	var register_msg = {

@@ -297,7 +297,10 @@ func _on_note_remove_button_pressed() -> bool:
 	
 	return false
 
-func _on_note_change() -> void:
+func _on_note_change(prop_name: StringName) -> void:
+
+	if prop_name in ["enabled", "visible", "expanded"]:
+		return
 
 	# if this was a local only note, just leave it as that
 	if state == SyncState.LOCAL_ONLY: 

@@ -258,7 +258,6 @@ fit_to_longest_item = false
 
 [node name="ChatControls" type="HBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
@@ -344,12 +343,11 @@ mouse_filter = 2
 
 [node name="SendMessageButton" type="OptionButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/btnChat/Control"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
-offset_left = 14.0
-offset_top = 4.0
-offset_right = 36.0
-offset_bottom = 34.0
+offset_left = 28.0
+offset_top = 3.0
+offset_right = 50.0
+offset_bottom = 33.0
 mouse_filter = 1
 theme_override_icons/icon = ExtResource("27_rtmbh")
 theme_override_icons/arrow = SubResource("ImageTexture_qs864")

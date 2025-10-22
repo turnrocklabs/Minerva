@@ -18,7 +18,7 @@ signal title_changed
 signal tab_changed(tab_idx: int)
 
 ## Emitted when any note content has been changed, both main and controls container
-signal changed
+signal changed(property_name: StringName)
 
 ## Emitted when the Note has been created, is ready in tree and all properties set
 signal initialized
@@ -77,7 +77,7 @@ var title: String:
 		else:
 			_title_backing = value
 
-		changed.emit()
+		changed.emit(&"title")
 		title_changed.emit()
 	get:
 		return _title.text if is_node_ready() else _title_backing
@@ -91,7 +91,7 @@ var enabled: bool:
 		else:
 			_enabled_backing = value
 
-		changed.emit()
+		changed.emit(&"enabled")
 	get:
 		return _check_button.button_pressed if is_node_ready() else _enabled_backing
 
@@ -99,7 +99,7 @@ var expanded: bool = true:
 	set(value):
 		expanded = value
 		_node_expand_toggled()
-		changed.emit()
+		changed.emit(&"expanded")
 		SingletonObject.save_state(false)
 
 ## String representation of this notes [member Note.type], or [code]"Unknown"[/code] if [member Note.type] is not set or found.
@@ -456,10 +456,10 @@ func remove() -> bool:
 
 func _on_title_text_changed(_new_text: String) -> void:
 	title_changed.emit()
-	changed.emit()
+	changed.emit(&"title")
 
 func _on_check_button_toggled(_toggled_on: bool) -> void:
-	changed.emit()
+	changed.emit(&"enabled")
 
 func _on_edit_button_pressed() -> void:
 	# The editor pane will listen to tree exiting signal
@@ -493,7 +493,7 @@ func _on_edit_button_pressed() -> void:
 
 func _on_hide_button_pressed() -> void:
 	visible = false
-	changed.emit()
+	changed.emit(&"visible")
 
 
 func _on_reload_file_content_button_pressed() -> void:

@@ -240,3 +240,4 @@ func to_bot_response(data: Variant) -> BotResponse:
 	#else:
 		#response.completion_tokens = 60000
 	return response
+

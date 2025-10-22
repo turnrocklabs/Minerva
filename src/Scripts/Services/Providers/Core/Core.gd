@@ -5,6 +5,9 @@ signal service_selected(service: Service)
 
 signal service_connected(service: Service)
 
+## Emitted when the HTTP authentication connection with the core is started/stopped.[br]
+signal http_connection_changed(active: bool)
+
 # Preload the client script
 @onready var _client_script: = preload("res://Scripts/Services/Providers/Core/core_client.gd")
 
@@ -26,6 +29,16 @@ var _jwt_token: String = ""
 # Client ID returned after successful login
 var _client_id: String = ""
 
+
+var _connecting: = false:
+	set(value):
+		_connecting = value
+		http_connection_changed.emit(value)
+
+# Whether we're currently trying to make a connection
+var connecting:
+	get: return _connecting
+
 func _ready() -> void:
 	# Instantiate and add the CoreClient node
 	var cn = Node.new()
@@ -45,11 +58,19 @@ func _ready() -> void:
 			services.append(new_service)
 	)
 
+## Cancels the current connection request if there is one.[br]
+## If there is none, or the client is already connected, nothing happends.
+func cancel_request() -> void:
+	# NOTICE: this doesn't work for some reason.
+	# the request still doesnt cancel and times out after some period of time
+	http_request.cancel_request()
 
 # --- MODIFIED Start Function ---
 # Attempts to authenticate via HTTP and then connect to the Core WebSocket.
 # Returns true if both authentication and WebSocket connection/registration succeed, false otherwise.
 func start(core_ws_url: String, auth_http_base_url: String, username: String, password: String) -> bool:
+
+	_connecting = true
 
 	# --- 1. Authentication via HTTP ---
 	var auth_endpoint = auth_http_base_url #.path_join("login") # Construct the full login URL
@@ -73,10 +94,13 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	print("Attempting authentication to: ", auth_endpoint)
 	var err = http_request.request(auth_endpoint, headers, HTTPClient.METHOD_POST, body)
 
+	
+
 	if err != OK:
+		_connecting = false
 		var err_msg = "HTTP Auth Request failed immediately: %s" % error_string(err)
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Failed", err_msg)
+		SingletonObject.ErrorDisplay("Authentication Failed", err_msg, SingletonObject.preferences_popup)
 
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: %s" % err_msg,
@@ -87,16 +111,18 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 		return false
 
 	# Wait for the HTTP request to complete (handled by _on_auth_request_completed)
-	var result = await http_request.request_completed
+	await http_request.request_completed
 
 	# --- 2. Check Authentication Result (Set by Signal Handler) ---
 	if _jwt_token.is_empty():
 		# Error occurred during HTTP request or token extraction (error already displayed)
 		prints("Authentication failed or token not received.")
+		_connecting = false
 		return false # _on_auth_request_completed handles error display
 
 	if _client_id.is_empty():
 		prints("Authentication failed or client ID not received.")
+		_connecting = false
 		return false # _on_auth_request_completed handles error display
 
 
@@ -130,6 +156,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 		# Reset token maybe? Or let user retry.
 		_jwt_token = ""
 		_client_id = ""
+		_connecting = false
 		return false
 
 	# Wait for the WebSocket connection to be established
@@ -149,6 +176,8 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	registered = true # Mark as registered (might need better tracking based on CoreClient signals)
 
 	print("Core registration initiated with token.")
+	
+	_connecting = false
 	return true
 
 
@@ -206,7 +235,6 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 		return
 
 	# Parse the JSON response
-	
 	if typeof(json) != TYPE_DICTIONARY:
 		var err_msg = "Failed to parse authentication response JSON."
 		push_error(err_msg)
@@ -221,10 +249,29 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 		)
 
 		_jwt_token = ""
+		_client_id = ""
 		return
 
-	if json.has("data") and json["data"].has("token"):
-		_jwt_token = json["data"]["token"]
+	if not json.has("data"):
+		var err_msg = "Authentication response missing data."
+		push_error(err_msg, " Received JSON: ", json)
+		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		
+		SingletonObject.preferences_popup.logs_window.add_log_line(
+			"Authentication failed: Authentication response does not contain required data field",
+			HcpLogs.LOG_TYPE.ERROR,
+			json
+		)
+
+		_jwt_token = ""
+		_client_id = ""
+		return
+
+	var data: Dictionary = json["data"]
+
+	# Extract and validate JWT token
+	if data.has("token"):
+		_jwt_token = data["token"]
 		if typeof(_jwt_token) != TYPE_STRING or _jwt_token.is_empty():
 			var err_msg = "Authentication response token is invalid or empty."
 			push_error(err_msg)
@@ -237,6 +284,8 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 			)
 			
 			_jwt_token = ""
+			_client_id = ""
+			return
 	else:
 		var err_msg = "Authentication response does not contain a 'token'."
 		push_error(err_msg, " Received JSON: ", json)
@@ -249,37 +298,41 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 		)
 
 		_jwt_token = ""
+		_client_id = ""
 		return
 	
-	if json.has("data") and json["data"].has("user") and json["data"]["user"].has("id"):
-		_client_id = json["data"]["user"]["id"]
+	if data.has("user") and data["user"].has("id"):
+		_client_id = data["user"]["id"]
 		if typeof(_client_id) != TYPE_STRING or _client_id.is_empty():
-			var err_msg = "Authentication response client id is invalid or empty."
+			var err_msg = "Authentication response doesn't contain client id (user/id)."
 			push_error(err_msg)
 			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 			
 			SingletonObject.preferences_popup.logs_window.add_log_line(
-				"Authentication failed: Authentication response client id is invalid or empty",
+				"Authentication failed: Authentication response client id (user/id) is invalid or empty",
 				HcpLogs.LOG_TYPE.ERROR,
 				json
 			)
-
+			
+			_jwt_token = ""
 			_client_id = ""
+			return
 	else:
-		var err_msg = "Authentication response does not contain a 'client_id'."
+		var err_msg = "Authentication response does not contain a client id (user/id)."
 		push_error(err_msg, " Received JSON: ", json)
 		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
-			"Authentication failed: Authentication response does not contain a 'client_id'",
+			"Authentication failed: Authentication response does not contain a client id (user/id)",
 			HcpLogs.LOG_TYPE.ERROR,
 			json
 		)
-		
+
+		_jwt_token = ""
 		_client_id = ""
 		return
 
-	# If we reach here, token *should* be set. The await in 'start' will resume.
+	# If we reach here, token and client_id are successfully set
 
 
 # Helper to convert HTTPRequest result enum to string
@@ -423,11 +476,21 @@ class AwaitMessage extends RefCounted:
 
 	# Handler for the timeout timer
 	func _on_timeout():
-		#print("AwaitMessage timed out.") # Debug
+		print("AwaitMessage: Timeout reached after %d seconds" % int(timeout))
 		_stop = true
 		if _signal_connection.is_valid():
 			client.message_received.disconnect(_signal_connection)
 		_timer = null # Timer is done
+
+	# Handler for connection closed
+	func _on_connection_closed():
+		print("AwaitMessage: Connection closed, cancelling wait")
+		_stop = true
+		if _signal_connection.is_valid():
+			client.message_received.disconnect(_signal_connection)
+		if is_instance_valid(_timer):
+			_timer.timeout.disconnect(_on_timeout)
+			_timer = null
 
 	# Waits for a single message matching the criteria or times out.
 	func receive():
@@ -442,20 +505,28 @@ class AwaitMessage extends RefCounted:
 		_signal_connection = Callable(self, "_on_client_message")
 		client.message_received.connect(_signal_connection)
 
+		# Monitor connection state - cancel if disconnected
+		var connection_callback = Callable(self, "_on_connection_closed")
+		client.connection_closed.connect(connection_callback)
+
 		# Setup timeout timer
 		_timer = client.get_tree().create_timer(timeout)
 		_timer.timeout.connect(_on_timeout)
 
-		# Wait until stopped (by message received or timeout)
+		# Wait until stopped (by message received, timeout, or disconnection)
 		while not _stop:
 			await client.get_tree().process_frame # Use process_frame for non-physics waiting
 
-		# Disconnect signal if it wasn't already disconnected by _on_client_message
+		# Disconnect signals if they weren't already disconnected
 		if _signal_connection.is_valid() and client.message_received.is_connected(_signal_connection):
 			client.message_received.disconnect(_signal_connection)
 
+		if client.connection_closed.is_connected(connection_callback):
+			client.connection_closed.disconnect(connection_callback)
+
 		# Clean up timer if it still exists (e.g., message arrived before timeout)
 		if is_instance_valid(_timer):
+			_timer.timeout.disconnect(_on_timeout)
 			_timer.queue_free()
 			_timer = null
 
