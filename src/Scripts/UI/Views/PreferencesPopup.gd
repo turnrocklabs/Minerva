@@ -120,7 +120,7 @@ func _ready():
 
 	# if auto connect is checked act like the connect button was pressed
 	if _fields["hcp_auto_connect"].button_pressed:
-		_on_core_connet_button_pressed.call_deferred()
+		_on_core_connet_button_pressed.call_deferred(false) # dont display error
 
 
 func set_field_values():
@@ -286,7 +286,7 @@ func _on_output_device_button_item_selected(index: int) -> void:
 
 
 # MODIFIED: Now handles both authentication and WebSocket connection
-func _on_core_connet_button_pressed() -> void:
+func _on_core_connet_button_pressed(display_error: = true) -> void:
 
 	var core_ws_url = hcp_url.text
 	var auth_http_base_url = auth_base_url.text
@@ -308,7 +308,8 @@ func _on_core_connet_button_pressed() -> void:
 		core_ws_url,        # Core WebSocket URL
 		auth_http_base_url, # Auth HTTP Base URL
 		uname,
-		pword
+		pword,
+		display_error,
 	)
 
 	if not connected:

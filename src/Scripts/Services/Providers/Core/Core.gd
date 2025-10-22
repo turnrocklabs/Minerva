@@ -65,12 +65,17 @@ func cancel_request() -> void:
 	# the request still doesnt cancel and times out after some period of time
 	http_request.cancel_request()
 
+
+var should_display_error: = true
+
 # --- MODIFIED Start Function ---
 # Attempts to authenticate via HTTP and then connect to the Core WebSocket.
 # Returns true if both authentication and WebSocket connection/registration succeed, false otherwise.
-func start(core_ws_url: String, auth_http_base_url: String, username: String, password: String) -> bool:
+func start(core_ws_url: String, auth_http_base_url: String, username: String, password: String, display_error: = true) -> bool:
 
 	_connecting = true
+
+	should_display_error = display_error
 
 	# --- 1. Authentication via HTTP ---
 	var auth_endpoint = auth_http_base_url #.path_join("login") # Construct the full login URL
@@ -100,7 +105,8 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 		_connecting = false
 		var err_msg = "HTTP Auth Request failed immediately: %s" % error_string(err)
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Failed", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Failed", err_msg, SingletonObject.preferences_popup)
 
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: %s" % err_msg,
@@ -146,7 +152,8 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	if not connected_ws:
 		var err_msg = "WebSocket connection failed."
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Connection Failed", err_msg)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Connection Failed", err_msg)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"WebSocket connection failed",
@@ -186,7 +193,8 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 	if result != HTTPRequest.RESULT_SUCCESS:
 		var err_msg = "HTTP Auth Request Failed: %s" % _get_http_result_string(result)
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Network Error", err_msg)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Network Error", err_msg)
 		_jwt_token = "" # Ensure token is empty on failure
 		_client_id = ""
 		return
@@ -215,11 +223,12 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 		if core_error_message.is_empty():
 			core_error_message = "Server returned status %d. Unknown error, check logs." % response_code
 
-		SingletonObject.ErrorDisplay(
-			"Authentication Failed",
-			core_error_message,
-			SingletonObject.preferences_popup
-		)
+		if should_display_error:
+			SingletonObject.ErrorDisplay(
+				"Authentication Failed",
+				core_error_message,
+				SingletonObject.preferences_popup
+			)
 
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: %s" % core_error_message,
@@ -238,7 +247,8 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 	if typeof(json) != TYPE_DICTIONARY:
 		var err_msg = "Failed to parse authentication response JSON."
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Failed to parse authentication response JSON",
@@ -255,7 +265,8 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 	if not json.has("data"):
 		var err_msg = "Authentication response missing data."
 		push_error(err_msg, " Received JSON: ", json)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain required data field",
@@ -275,7 +286,8 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 		if typeof(_jwt_token) != TYPE_STRING or _jwt_token.is_empty():
 			var err_msg = "Authentication response token is invalid or empty."
 			push_error(err_msg)
-			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+			if should_display_error:
+				SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 			
 			SingletonObject.preferences_popup.logs_window.add_log_line(
 				"Authentication failed: Authentication response token is invalid or empty",
@@ -289,7 +301,8 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 	else:
 		var err_msg = "Authentication response does not contain a 'token'."
 		push_error(err_msg, " Received JSON: ", json)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain a 'token'",
@@ -306,7 +319,8 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 		if typeof(_client_id) != TYPE_STRING or _client_id.is_empty():
 			var err_msg = "Authentication response doesn't contain client id (user/id)."
 			push_error(err_msg)
-			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+			if should_display_error:
+				SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 			
 			SingletonObject.preferences_popup.logs_window.add_log_line(
 				"Authentication failed: Authentication response client id (user/id) is invalid or empty",
@@ -320,7 +334,8 @@ func _on_auth_request_completed(result: int, response_code: int, headers: Packed
 	else:
 		var err_msg = "Authentication response does not contain a client id (user/id)."
 		push_error(err_msg, " Received JSON: ", json)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain a client id (user/id)",
