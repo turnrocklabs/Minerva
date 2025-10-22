@@ -1,4 +1,4 @@
-class_name UUID
+class_name UUIDGen
 
 static var fallback_random = BuildInRandom.new()
 

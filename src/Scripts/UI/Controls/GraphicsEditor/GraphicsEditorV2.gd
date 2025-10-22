@@ -51,7 +51,7 @@ signal compose_finished(image: Image)
 	speech_bubble_tool: _speech_bubble_options,
 }
 
-#@onready var media_gen_socket: MediaGenSocket = $MediaGenSocket
+@onready var media_gen_socket: MediaGenManager = $MediaGenSocket
 @onready var image_gen_popup_panel: PopupPanel = %ImageGenPopupPanel
 @onready var prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var send_prompt_button: Button = %SendPromptButton
@@ -957,7 +957,7 @@ func _on_send_prompt_button_pressed() -> void:
 	
 	progress_window.popup_centered()
 	progress_window_label.text = "Generating Image..."
-	#media_gen_socket.send_media_gen_request(params)
+	media_gen_socket.send_media_gen_request(params)
 
 
 func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
@@ -1013,7 +1013,7 @@ func _on_edit_img_button_pressed() -> void:
 	if !seed_line_edit.text.is_empty():
 		params["seed"] = seed_line_edit.text
 	
-	#media_gen_socket.send_media_edit_request(params, image_buffer, image_filename)
+	media_gen_socket.send_media_edit_request(params, image_buffer, image_filename)
 
 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:

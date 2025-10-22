@@ -115,7 +115,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 		HcpLogs.LOG_TYPE.INFO,
 	)
 
-	var connected_ws: bool = client.connect_to_core(core_ws_url)
+	var connected_ws: bool = await client.connect_to_core(core_ws_url)
 
 	if not connected_ws:
 		var err_msg = "WebSocket connection failed."
@@ -310,7 +310,7 @@ func send_message(service: Service, action: Action, msg: Dictionary) -> AwaitMes
 		awaiter.timeout = 0.1 # Make it timeout quickly
 		return awaiter
 
-	var request_id: String = client.send_message(service, action, msg)
+	var request_id: String = client.send_text_message(service, action, msg)
 	return await_message().with_request_id(request_id)
 
 # Fetches the list of available services from the Core
