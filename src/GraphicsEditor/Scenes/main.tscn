@@ -1,0 +1,57 @@
+[gd_scene load_steps=4 format=3 uid="uid://j2v0cf3kt0t8"]
+
+[ext_resource type="PackedScene" uid="uid://1snj5jsurqrt" path="res://Scenes/GraphicsEditor.tscn" id="1_jjgbg"]
+[ext_resource type="Script" uid="uid://d247gg2o8vf8t" path="res://Scripts/main.gd" id="1_jjvhh"]
+[ext_resource type="PackedScene" uid="uid://drcf5pucshg1x" path="res://Scenes/GraphicsEditorV2.tscn" id="2_bo1nx"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_jjvhh")
+
+[node name="PanelContainer" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PanelContainer/MarginContainer"]
+layout_mode = 2
+
+[node name="MainEditorContainer" type="VBoxContainer" parent="PanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TabContainer" type="TabContainer" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 1
+
+[node name="GraphicsEditor" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("1_jjgbg")]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+metadata/_tab_index = 0
+
+[node name="GraphicsEditorV2" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("2_bo1nx")]
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="GraphicsEditorV3" parent="PanelContainer/MarginContainer/VBoxContainer/MainEditorContainer/TabContainer" instance=ExtResource("2_bo1nx")]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 2

@@ -333,7 +333,8 @@ func _on_editor_content_changed(editor: Editor):
 			icon = null
 			tooltip = "File and \"%s\" saved" % associated_object_name
 
-		0: # nothing is saved in this case
+		_: # nothing is saved in this case
+			icon = _unsaved_changes_icon
 			if editor.file and editor.associated_object:
 				tooltip = "File and \"%s\" unsaved" % associated_object_name
 				icon = _unsaved_changes_icon
