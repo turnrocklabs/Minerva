@@ -53,6 +53,7 @@ var _active_transfers: = {}  # Dictionary to track transfers by msg_id
 
 
 func _ready():
+	set_process(false)
 	_client.inbound_buffer_size = 32 * 1024 * 1024
 	_client.outbound_buffer_size = 32 * 1024 * 1024
 	print("Client ID is %s" % client_id)
@@ -62,8 +63,6 @@ func _ready():
 	_heartbeat_timer.timeout.connect(send_heartbeat)
 	add_child(_heartbeat_timer)
 	minerva_secret = OS.get_environment("MINERVA_SECRET")
-	if minerva_secret.is_empty():
-		print("Error: MINERVA_SECRET environment variable is not set")
 
 
 
@@ -379,15 +378,16 @@ func _handle_message(data, binary_data = null):
 
 func register_with_core(auth_token: String, client_id_: String):
 	client_id = client_id_
-	var entity_type_str = "human_agent" if _entity_type == EntityType.HUMAN_AGENT else "software_agent" if _entity_type == EntityType.SOFTWARE_AGENT else "service"
+
+	# var entity_type_str = "human_agent" if _entity_type == EntityType.HUMAN_AGENT else "software_agent" if _entity_type == EntityType.SOFTWARE_AGENT else "service"
+	
 	var register_msg = {
 		"cmd": "register",
-		"entity_type": entity_type_str,
+		"entity_type": "client",
 		"topic": TOPIC_SYSTEM,
 		"params": {
-			# "secret": minerva_secret,
 			"auth": auth_token,
-			"client_id": client_id,
+			"client_id": client_id_,
 			# "topics": [TOPIC_SYSTEM, TOPIC_DISCOVERY, client_id]
 		}
 	}
@@ -397,7 +397,7 @@ func request_connections() -> String:
 	var req_id: = generate_unique_request_id()
 	var request_msg = {
 		"cmd": "request",
-		"entity_type": "software_agent",
+		"entity_type": "client",
 		"topic": TOPIC_SYSTEM,
 		"params": {
 			"client_id": client_id,
@@ -416,7 +416,7 @@ func send_request(service_topic, user_input):
 	var message = {
 		"cmd": "request",
 		"topic": service_topic,
-		"entity_type": "software_agent",
+		"entity_type": "client",
 		"params": {
 			"client_id": client_id,
 			"request_id": request_id
@@ -462,7 +462,7 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 	var message = {
 		"cmd": "request",
 		"topic": action.topic,
-		"entity_type": "software_agent",
+		"entity_type": "client",
 		"params": {
 			"client_id": client_id,
 			"request_id": request_id,
@@ -489,7 +489,7 @@ func send_binary_message(service: Service, action: Action, params: Dictionary, a
 	var message = {
 		"cmd": "request",
 		"topic": action.topic,
-		"entity_type": "software_agent",
+		"entity_type": "client",
 		"params": {
 			"client_id": client_id,
 			"request_id": request_id,
@@ -665,7 +665,7 @@ func send_heartbeat():
 		var heartbeat_msg = {
 			"cmd": "heartbeat",
 			"topic": "system",
-			"entity_type": "software_agent",
+			"entity_type": "client",
 			"params": {}
 		}
 		send_text_message_to_core(heartbeat_msg)
