@@ -117,12 +117,10 @@ func save_editor_panes(skip_selecting_items: bool = false):
 				item_list.select(counter, false)
 				counter += 1
 			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
-			save_unsaved_editors()
+			await save_unsaved_editors()
 		else:
 			%ExitConfirmationDialog.get_node("v").visible = item_list.item_count > 0
 			%ExitConfirmationDialog.popup_centered(Vector2i(400, 150))
-	else:
-		get_tree().quit()
 
 #region Serialize/Deserialize Project
 
@@ -389,7 +387,8 @@ func open_project_given_path(project_path: String) -> int:
 
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		save_editor_panes()
+		await save_editor_panes()
+		get_tree().quit()
 
 func _on_exit_confirmation_dialog_canceled():
 	%ExitConfirmationDialog.hide()
