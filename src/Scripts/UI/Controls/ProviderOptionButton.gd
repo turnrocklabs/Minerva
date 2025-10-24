@@ -1,341 +1,309 @@
 class_name ProviderOptionButton
 extends OptionButton
 
+## Emitted when a provider is selected from the dropdown
 signal provider_selected(provider: BaseProvider)
 
-# Dictionary to store different provider sets
-# Key: Service object or "default" string
-# Value: Array of provider data
-var provider_sets: Dictionary = {}
-var current_set_key: Variant = "default"
-
-# Structure to hold provider item data
-class ProviderItemData:
+## Stores data for a single dropdown item
+class ProviderItem:
 	var display_name: String
 	var id: int
-	var metadata: Variant
 	var tooltip: String
-	var provider_script: Script
-	var is_core_provider: bool = false
+	var provider_script: Script  ## Script reference for standard providers
+	var metadata: Variant  ## [Service, Action] array for CoreProviders, null for standard
 	
-	func _init(name: String, item_id: int, meta: Variant = null, tip: String = "", script: Script = null, core: bool = false):
+	func _init(name: String, item_id: int, script: Script = null, meta: Variant = null, tip: String = ""):
 		display_name = name
 		id = item_id
+		provider_script = script
 		metadata = meta
 		tooltip = tip
-		provider_script = script
-		is_core_provider = core
+	
+	## Returns true if this represents a CoreProvider (service action wrapper)
+	func is_core_provider() -> bool:
+		return metadata is Array and metadata.size() == 2
+
+## Dictionary mapping set keys to provider item arrays
+## Key: "default" (String) for standard providers, or Service object for service-specific sets
+var _provider_sets: Dictionary = {}
+var _current_set_key: Variant = "default"
+
 
 func _ready():
-	# Initialize default provider set
 	_setup_default_provider_set()
-	
-	# Set to show default providers
 	switch_to_provider_set("default")
 	
-	# Connect to service selection for dynamic CoreProvider additions
 	if Core:
-		Core.service_selected.connect(_on_hcp_service_selected)
+		Core.service_selected.connect(_on_service_selected)
 	
-	# Load saved provider if exists
-	if SingletonObject.config_has_saved_section("Providers"):
-		var provider = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
-		if provider != null:
-			var index = _find_item_index_by_id(provider)
-			if index != -1:
-				select(index)
+	_load_saved_provider()
 
-func _setup_default_provider_set():
-	# Create default provider set with standard providers
-	var default_providers: Array[ProviderItemData] = []
-	
-	# Get sorted provider keys (same logic as before)
-	var sorted_keys: Array = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
-	sorted_keys.erase(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
-	sorted_keys.erase(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
-	
-	# Sort by token cost
-	sorted_keys.sort_custom(
-		func(a: SingletonObject.API_MODEL_PROVIDERS, b: SingletonObject.API_MODEL_PROVIDERS):
-			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
-	)
-	
-	sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
-	
-	# Add standard providers to default set
-	for key in sorted_keys:
-		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
-		var instance = script.new()
-		var item_data = ProviderItemData.new(
-			instance.display_name,
-			key,
-			null,
-			"",
-			script,
-			false
-		)
-		default_providers.append(item_data)
-	
-	# Store the default provider set
-	provider_sets["default"] = default_providers
 
+## Switches to the appropriate provider set for a single service
 func switch_to_provider_set_for_service(service: Service):
-	"""Switch provider set based on a service - main method you'll use"""
 	if service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
 		switch_to_provider_set("default")
 	else:
 		switch_to_provider_set(service)
 
-func switch_to_provider_set(key: Variant):
-	"""Switch to a different provider set by key"""
-	if not provider_sets.has(key):
-		# If it's a service that doesn't have a set yet, create one
-		if key is Service:
-			_create_service_provider_set(key)
-		else:
-			push_warning("Provider set with key '%s' does not exist" % str(key))
-			return
+
+## Switches to provider set for multiple services (combines their providers)
+func switch_to_provider_set_for_services(services: Array):
+	if services.is_empty():
+		switch_to_provider_set("default")
+		return
 	
-	current_set_key = key
+	var combined_key := _create_combined_key(services)
+	
+	if not _provider_sets.has(combined_key):
+		var has_internal_chat := _contains_internal_chat_service(services)
+		_create_combined_set(services, combined_key, has_internal_chat)
+	
+	_current_set_key = combined_key
 	_rebuild_dropdown()
 
-func _create_service_provider_set(service: Service):
-	"""Create a provider set for a specific service with its actions"""
-	var service_providers: Array[ProviderItemData] = []
+
+## Switches to a specific provider set by key
+func switch_to_provider_set(key: Variant):
+	if not _provider_sets.has(key):
+		if key is Service:
+			_create_service_set(key)
+		else:
+			push_warning("Provider set '%s' does not exist" % str(key))
+			return
 	
-	# Add core providers from this service's actions
+	_current_set_key = key
+	_rebuild_dropdown()
+
+
+## Returns the currently selected provider instance
+func get_selected_provider() -> BaseProvider:
+	return _get_provider_from_id(get_selected_id())
+
+
+## Returns the dropdown index for a given provider (for programmatic selection)
+func get_item_index_for_provider(provider: BaseProvider) -> int:
+	for i in range(get_item_count()):
+		var item_id := get_item_id(i)
+		var metadata = get_item_metadata(item_id)
+		
+		if provider is CoreProvider and metadata is Array:
+			var core_provider := provider as CoreProvider
+			if metadata.size() >= 2 and metadata[1] == core_provider.action:
+				return i
+		
+		elif not provider is CoreProvider and item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+			var expected_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id]
+			if expected_script == provider.get_script():
+				return i
+	
+	return -1
+
+
+## Clears all combined provider sets (forces rebuild on next switch)
+func clear_combined_provider_sets():
+	var keys_to_remove := []
+	for key in _provider_sets.keys():
+		if key is String and key.begins_with("combined_"):
+			keys_to_remove.append(key)
+	
+	for key in keys_to_remove:
+		_provider_sets.erase(key)
+
+
+#region Private Methods
+
+## Creates the default provider set with all standard AI providers
+func _setup_default_provider_set():
+	var items: Array[ProviderItem] = []
+	
+	var sorted_keys: Array = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
+	sorted_keys.erase(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
+	sorted_keys.erase(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
+	
+	sorted_keys.sort_custom(
+		func(a, b):
+			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < \
+				   SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
+	)
+	
+	sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
+	
+	for key in sorted_keys:
+		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
+		var instance = script.new()
+		var item := ProviderItem.new(instance.display_name, key, script, null, "")
+		items.append(item)
+	
+	_provider_sets["default"] = items
+
+
+## Creates a provider set for a specific service (all its actions as CoreProviders)
+func _create_service_set(service: Service):
+	var items: Array[ProviderItem] = []
+	
 	for action in service.actions:
-		var item_name = action.name
-		item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
-		
-		var provider_data = ProviderItemData.new(
-			item_name,
-			service_providers.size(),  # Use array index as ID
-			[service, action],
-			service.name,
-			null,
-			true
-		)
-		
-		service_providers.append(provider_data)
+		var item_name := _truncate_name(action.name)
+		var item := ProviderItem.new(item_name, items.size(), null, [service, action], service.name)
+		items.append(item)
 	
-	# Store the service provider set
-	provider_sets[service] = service_providers
+	_provider_sets[service] = items
 
-func get_current_provider_set() -> Array[ProviderItemData]:
-	"""Get the currently active provider set"""
-	if current_set_key and provider_sets.has(current_set_key):
-		return provider_sets[current_set_key]
-	return []
 
+## Creates a combined set from multiple services
+func _create_combined_set(services: Array, key: String, include_standard: bool):
+	var items: Array[ProviderItem] = []
+	
+	# Include standard providers if internal chat service is present
+	if include_standard:
+		var default_items: Array = _provider_sets.get("default", [])
+		for item in default_items:
+			if not item.is_core_provider():
+				var copy := ProviderItem.new(item.display_name, item.id, item.provider_script, null, item.tooltip)
+				items.append(copy)
+	
+	# Add all service actions as CoreProviders
+	var next_id := items.size()
+	for service in services:
+		for action in service.actions:
+			if _action_exists(action, items):
+				continue
+			
+			var item_name := _truncate_name(action.name)
+			var item := ProviderItem.new(item_name, next_id, null, [service, action], service.name)
+			items.append(item)
+			next_id += 1
+	
+	_provider_sets[key] = items
+
+
+## Rebuilds the dropdown UI from current provider set
 func _rebuild_dropdown():
-	"""Rebuild the dropdown with the current provider set"""
 	clear()
 	
-	var current_providers = get_current_provider_set()
-	var separator_added = false
+	var items: Array = _provider_sets.get(_current_set_key, [])
+	var separator_added := false
 	
-	for provider_data in current_providers:
-		# Add separator before core providers if we have standard providers
-		if provider_data.is_core_provider and not separator_added and get_item_count() > 0:
+	for item: ProviderItem in items:
+		# Add visual separator before first CoreProvider
+		if item.is_core_provider() and not separator_added and get_item_count() > 0:
 			add_separator()
 			separator_added = true
 		
-		add_item(provider_data.display_name, provider_data.id)
-		var item_index = get_item_count() - 1
+		add_item(item.display_name, item.id)
+		var item_index := get_item_count() - 1
 		
-		if provider_data.metadata != null:
-			set_item_metadata(provider_data.id, provider_data.metadata)
+		if item.metadata != null:
+			set_item_metadata(item.id, item.metadata)
 		
-		if provider_data.tooltip != "":
-			set_item_tooltip(item_index, provider_data.tooltip)
+		if item.tooltip != "":
+			set_item_tooltip(item_index, item.tooltip)
 
-func _on_hcp_service_selected(service: Service):
-	"""Handle dynamic CoreProvider additions"""
-	# If this is the internal chat service, add to default set
-	if service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
-		_add_service_actions_to_default(service)
-	else:
-		# Create or update service-specific provider set
-		_create_service_provider_set(service)
+
+## Converts dropdown item ID back to actual provider instance
+func _get_provider_from_id(item_id: int) -> BaseProvider:
+	if item_id == -1:
+		return null
 	
-	# Rebuild if we're currently showing this service's set
-	if (service.client_id == Service.INTERNAL_CHAT_SERVICE_ID and current_set_key == "default") or (current_set_key is Service and current_set_key == service):
-		_rebuild_dropdown()
-
-func _add_service_actions_to_default(service: Service):
-	"""Add service actions to the default provider set"""
-	var default_providers = provider_sets["default"]
+	var metadata = get_item_metadata(item_id)
+	var provider: BaseProvider
 	
-	for action in service.actions:
-		# Check if action already exists
-		if _action_exists_in_set(action, default_providers):
-			continue
-		
-		var item_name = action.name
-		item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
-		
-		var provider_data = ProviderItemData.new(
-			item_name,
-			default_providers.size(),
-			[service, action],
-			service.name,
-			null,
-			true
-		)
-		
-		default_providers.append(provider_data)
+	# CoreProvider: metadata is [Service, Action]
+	if metadata is Array and metadata.size() == 2:
+		provider = CoreProvider.new.callv(metadata)
+	# Standard provider: use script from dictionary
+	elif item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+		provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
+	
+	if provider:
+		print("Selected provider: ", provider.model_name)
+	
+	return provider
 
-func _action_exists_in_set(action, provider_set: Array[ProviderItemData]) -> bool:
-	"""Check if an action already exists in a provider set"""
-	for provider_data in provider_set:
-		if provider_data.is_core_provider and provider_data.metadata is Array:
-			if provider_data.metadata.size() >= 2 and provider_data.metadata[1] == action:
-				return true
-	return false
 
+## Loads previously saved provider selection from config
+func _load_saved_provider():
+	if not SingletonObject.config_has_saved_section("Providers"):
+		return
+	
+	var provider_id = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
+	if provider_id == null:
+		return
+	
+	var index := _find_item_index_by_id(provider_id)
+	if index != -1:
+		select(index)
+
+
+## Finds dropdown index by item ID
 func _find_item_index_by_id(id: int) -> int:
-	"""Find dropdown item index by ID"""
 	for i in range(get_item_count()):
 		if get_item_id(i) == id:
 			return i
 	return -1
 
-func _on_provider_option_button_item_selected(index: int):
-	var provider_object: BaseProvider = get_provider_from_id(get_item_id(index))
-	if provider_object:
-		provider_selected.emit(provider_object)
 
-func get_provider_from_id(item_id: int) -> BaseProvider:
-	if item_id == -1: 
-		return null
-
-	var provider_object: BaseProvider
-	
-	# Check if this is a core provider by looking at metadata
-	var metadata = get_item_metadata(item_id)
-	if metadata is Array:
-		provider_object = CoreProvider.new.callv(metadata)
-	else:
-		# Standard provider from scripts
-		if item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
-			provider_object = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
-
-	if provider_object:
-		print("The result provider is: ", provider_object.model_name)
-
-	return provider_object
-
-func get_selected_provider() -> BaseProvider:
-	return get_provider_from_id(get_selected_id())
-
-func get_provider_for_tab(tab: int) -> BaseProvider:
-	if SingletonObject.ChatList.is_empty():
-		return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0].new()
-	else:
-		return SingletonObject.ChatList[tab].provider
-
-func get_item_index_for_provider(provider: BaseProvider) -> int:
-	for i in range(get_item_count()):
-		var item_id = get_item_id(i)
-		var metadata = get_item_metadata(item_id)
-		
-		# Handle CoreProvider items (they have Array metadata)
-		if metadata is Array and provider is CoreProvider:
-			var core_provider = provider as CoreProvider
-			if metadata.size() >= 2 and metadata[1] == core_provider.action:
-				return i
-		
-		# Handle standard providers (they use enum IDs)
-		elif not metadata is Array and not provider is CoreProvider:
-			if item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
-				var expected_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id]
-				if expected_script == provider.get_script():
-					return i
-	
-	return -1
-
-
-func switch_to_provider_set_for_services(services: Array):
-	"""Switch provider set for multiple services of the same type"""
-	if services.is_empty():
-		switch_to_provider_set("default")
-		return
-	
-	# Create a combined key for multiple services
-	var combined_key = _create_combined_services_key(services)
-	
-	# Check if we already have a combined set for these services
-	if not provider_sets.has(combined_key):
-		_create_combined_services_provider_set(services, combined_key)
-	
-	current_set_key = combined_key
-	_rebuild_dropdown()
-
-func _create_combined_services_key(services: Array) -> String:
-	"""Create a unique key for a combination of services"""
+## Creates unique key for combination of services
+func _create_combined_key(services: Array) -> String:
 	var service_ids: Array[String] = []
 	for service in services:
 		service_ids.append(service.client_id)
 	service_ids.sort()
 	return "combined_" + "_".join(service_ids)
 
-func _create_combined_services_provider_set(services: Array, key: String):
-	"""Create a provider set that combines providers from multiple services"""
-	var combined_providers: Array[ProviderItemData] = []
-	
-	# Check if any service is the internal chat service
-	var has_internal_chat = false
+
+## Checks if action already exists in items array
+func _action_exists(action: Action, items: Array) -> bool:
+	for item: ProviderItem in items:
+		if item.is_core_provider() and item.metadata[1] == action:
+			return true
+	return false
+
+
+## Checks if internal chat service is in services array
+func _contains_internal_chat_service(services: Array) -> bool:
 	for service in services:
 		if service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
-			has_internal_chat = true
-			break
-	
-	# If we have internal chat service, start with default providers
-	if has_internal_chat:
-		var default_providers = provider_sets.get("default", [])
-		for provider_data in default_providers:
-			if not provider_data.is_core_provider:  # Only add standard providers, not core ones
-				var new_data = ProviderItemData.new(
-					provider_data.display_name,
-					provider_data.id,
-					provider_data.metadata,
-					provider_data.tooltip,
-					provider_data.provider_script,
-					provider_data.is_core_provider
-				)
-				combined_providers.append(new_data)
-	
-	# Add core providers from all services
-	var next_core_id = combined_providers.size()
-	for service in services:
-		for action in service.actions:
-			# Check if this action already exists
-			if _action_exists_in_provider_list(action, combined_providers):
-				continue
-			
-			var item_name = action.name
-			item_name = "%s..." % item_name.left(20) if item_name.length() > 17 else item_name 
-			
-			var provider_data = ProviderItemData.new(
-				item_name,
-				next_core_id,
-				[service, action],
-				service.name,
-				null,
-				true
-			)
-			
-			combined_providers.append(provider_data)
-			next_core_id += 1
-	
-	# Store the combined provider set
-	provider_sets[key] = combined_providers
-
-func _action_exists_in_provider_list(action, provider_list: Array[ProviderItemData]) -> bool:
-	"""Check if an action already exists in a provider list"""
-	for provider_data in provider_list:
-		if provider_data.is_core_provider and provider_data.metadata is Array:
-			if provider_data.metadata.size() >= 2 and provider_data.metadata[1] == action:
-				return true
+			return true
 	return false
+
+
+## Truncates long action names for display
+func _truncate_name(name: String) -> String:
+	if name.length() > 17:
+		return "%s..." % name.left(20)
+	return name
+
+
+## Handles dynamic service selection (adds CoreProviders)
+func _on_service_selected(service: Service):
+	if service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
+		_add_service_to_default(service)
+		if _current_set_key == "default":
+			_rebuild_dropdown()
+	else:
+		_create_service_set(service)
+		if _current_set_key is Service and _current_set_key == service:
+			_rebuild_dropdown()
+
+
+## Adds service actions to default set (for internal chat service)
+func _add_service_to_default(service: Service):
+	var default_items: Array = _provider_sets["default"]
+	
+	for action in service.actions:
+		if _action_exists(action, default_items):
+			continue
+		
+		var item_name := _truncate_name(action.name)
+		var item := ProviderItem.new(item_name, default_items.size(), null, [service, action], service.name)
+		default_items.append(item)
+
+
+## Signal handler for dropdown item selection
+func _on_provider_option_button_item_selected(index: int):
+	var provider := _get_provider_from_id(get_item_id(index))
+	if provider:
+		provider_selected.emit(provider)
+
+#endregion

@@ -101,14 +101,15 @@ func _on_hcp_service_deselected(service: Service) -> void:
 		if services_by_type[service_type].is_empty():
 			_remove_history_type_from_dropdown(service_type)
 	
-	# If this was the current service type, update providers
+	# If this was the current service type, force rebuild providers
 	if service_type == current_service_type:
+		provider_option_button.clear_combined_provider_sets()  # Add this method
 		_update_provider_options_for_current_type()
 		
-		# If current provider no longer available, switch to first available
 		var current_provider = provider_option_button.get_selected_provider()
 		if not _is_provider_available(current_provider):
 			_select_first_available_provider()
+
 
 func _remove_history_type_from_dropdown(service_type: ServiceHistory.ServiceType):
 	for i in range(history_option_button.get_item_count()):
@@ -184,10 +185,14 @@ func _switch_to_service_type(service_type: ServiceHistory.ServiceType):
 		_update_ui_for_service_type(service_type)
 		_update_provider_options_for_current_type()
 
+
+
 func _update_provider_options_for_current_type():
 	# Get all services for the current service type and update provider options
 	var services_for_type: Array = services_by_type.get(current_service_type, [])
 	provider_option_button.switch_to_provider_set_for_services(services_for_type)
+
+
 
 func _load_histories_for_service_type(service_type: ServiceHistory.ServiceType):
 	print("BEFORE load - ChatList count: ", SingletonObject.ChatList.size())
