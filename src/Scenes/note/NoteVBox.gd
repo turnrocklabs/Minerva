@@ -69,7 +69,7 @@ func _on_vbox_child_entered_tree(node: Node):
 
 		node.changed.connect(_update_collapse_all_button)
 		node.changed.connect(_update_toggle_notes_button.call_deferred)
-		node.tree_exiting.connect(_update_collapse_all_button)
+		node.tree_exiting.connect(_update_collapse_all_button.bind(""))
 
 		_update_bulk_button() # and update now for the state already set in the controller _init
 		_update_remove_all_button()
