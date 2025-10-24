@@ -241,3 +241,4 @@ class Sonnet4 extends ClaudeSonnet:
 		model_name = "claude-sonnet-45"
 		short_name = "S45"
 		token_cost = 1.1 / 1_000_000 * 100
+

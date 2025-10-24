@@ -20,7 +20,7 @@ var _initializing_pane := false
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
 var latest_msg: Control
-
+var latest_usr_msg: MessageMarkdown
 # Extract common functionality for handling user history item creation
 func create_user_history_item(text: String) -> ChatHistoryItem:
 	return ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
@@ -471,7 +471,7 @@ func execute_regular_chat(text: String) -> void:
 	user_msg_node.first_time_message = true
 	history.VBox.ensure_node_is_visible(user_msg_node)
 	user_msg_node.render()
-
+	latest_usr_msg = user_msg_node
 	# Add empty history item, to show the loading state
 	var dummy_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
 										ChatHistoryItem.ChatRole.MODEL,
@@ -1158,8 +1158,10 @@ func _on_audio_stop_1_pressed() -> void:
 		audio_stop_1.disabled = true
 		_active_chat_request = false
 		_cancelled_chat_requests = true
-		if latest_msg:
-			latest_msg.loading = false
+		for i in history.VBox.get_children():
+			if i is MessageMarkdown:
+				if i.loading:
+					i.loading = false
 	else:
 		SingletonObject.AtT._StopConverting()
 

@@ -85,13 +85,15 @@ var tab_title: String = "":
 			SingletonObject.editor_pane.Tabs.set_tab_title(idx, value)
 
 		if code_edit:
-			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
+			if code_syntax_enabled:
+				code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
 
 var file: String:
 	set(value):
 		file = value
 		if code_edit != null:
-			code_edit.syntax_highlighter = update_code_hightlighter(file)
+			if code_syntax_enabled:
+				code_edit.syntax_highlighter = update_code_hightlighter(file)
 		%reloadButton.disabled = false
 
 #var file_path: String
@@ -104,6 +106,8 @@ var prompt_save:= true
 
 # checks if the editor has been saved at least once
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
+
+static var code_syntax_enabled: = true
 
 static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null, initial_setup: = true) -> Editor:
 	var editor = editor_scene.instantiate()
@@ -124,18 +128,19 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_code_edit)
 			
-			if name_:
+			if name_ and code_syntax_enabled:
 				name_ = name_ as String
 				
 				var lang_keywords: Dictionary = SingletonObject.syntax_manager.get_syntax_for_language(name_)
 				var code_highlighter: = CodeHighlighter.new()
 				if !lang_keywords.is_empty():
 					code_highlighter.keyword_colors = lang_keywords
-				code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
-				code_highlighter.number_color = Color.FLORAL_WHITE
-				code_highlighter.symbol_color = Color.AQUAMARINE
-				code_highlighter.function_color = Color.DEEP_PINK
-				code_highlighter.member_variable_color = Color.BLANCHED_ALMOND
+				var color_group: = SingletonObject.syntax_manager.get_color_groups()
+				code_highlighter.member_keyword_colors = color_group
+				code_highlighter.number_color = color_group.get("numbers")
+				code_highlighter.symbol_color = color_group.get("objectRelated")
+				code_highlighter.function_color = color_group.get("functions")
+				code_highlighter.member_variable_color = color_group.get("types")
 				new_code_edit.syntax_highlighter = code_highlighter
 			
 			editor.code_edit = new_code_edit
@@ -145,7 +150,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			
 			if initial_setup:
 				new_graphics_editor.ready.connect(new_graphics_editor.setup)
-
+				new_graphics_editor.graphics_editor_changed.connect(editor._on_graphics_editor_changed)
 			# new_graphics_editor.masking_color = Color(0.25098, 0.227451, 0.243137, 0.6)
 			#new_graphics_editor.changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_graphics_editor)
@@ -171,11 +176,12 @@ func update_code_hightlighter(lang: String) -> CodeHighlighter:
 	var code_highlighter: = CodeHighlighter.new()
 	if !lang_keywords.is_empty():
 		code_highlighter.keyword_colors = lang_keywords
-	code_highlighter.member_keyword_colors = SingletonObject.syntax_manager.get_color_groups()
-	code_highlighter.number_color = Color.FLORAL_WHITE
-	code_highlighter.symbol_color = Color.AQUAMARINE
-	code_highlighter.function_color = Color.DEEP_PINK
-	code_highlighter.member_variable_color = Color.BLUE
+	var color_group: = SingletonObject.syntax_manager.get_color_groups()
+	code_highlighter.member_keyword_colors = color_group
+	code_highlighter.number_color = color_group.get("numbers")
+	code_highlighter.symbol_color = color_group.get("objectRelated")
+	code_highlighter.function_color = color_group.get("functions")
+	code_highlighter.member_variable_color = color_group.get("types")
 	return code_highlighter
 
 
@@ -223,10 +229,11 @@ func update_last_path(new_path: String) -> void:
 
 
 func _load_text_file(filename: String):
-	if !filename.get_extension().is_empty():
-		code_edit.syntax_highlighter = update_code_hightlighter(filename.get_extension())
-	else:
-		code_edit.syntax_highlighter = update_code_hightlighter(filename)
+	if code_syntax_enabled:
+		if !filename.get_extension().is_empty():
+			code_edit.syntax_highlighter = update_code_hightlighter(filename.get_extension())
+		else:
+			code_edit.syntax_highlighter = update_code_hightlighter(filename)
 	var fa_object = FileAccess.open(filename, FileAccess.READ)
 	if fa_object == null:
 				var error: = error_string(FileAccess.get_open_error())
@@ -369,7 +376,7 @@ func get_saved_state() -> int:
 			if file and graphics_editor.saved:
 				state |= FILE_SAVED
 			
-			if associated_object:
+			elif associated_object and graphics_editor.saved:
 				if associated_object is Note:
 					state |= ASSOCIATED_OBJECT_SAVED
 				
@@ -831,3 +838,20 @@ func _on_find_button_pressed() -> void:
 	code_edit.highlight_all_occurrences = false
 	code_edit.set_search_text('')
 	find_string_container.visible = !find_string_container.visible
+
+
+func _on_code_syntax_button_toggled(toggled_on: bool) -> void:
+	code_syntax_enabled = toggled_on
+	
+	if !code_syntax_enabled:
+		code_edit.syntax_highlighter = null
+		#code_edit.syntax_highlighter.update_cache()
+	else:
+		if file:
+			code_edit.syntax_highlighter = update_code_hightlighter(file)
+		else:
+			code_edit.syntax_highlighter = update_code_hightlighter(tab_title)
+
+
+func _on_graphics_editor_changed() -> void:
+	content_changed.emit()

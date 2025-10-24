@@ -1,6 +1,6 @@
 [gd_scene load_steps=4 format=3 uid="uid://brm1w121bm61d"]
 
-[ext_resource type="Script" uid="uid://cgbf8yxnoy3hq" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_cqyqj"]
+[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_cqyqj"]
 [ext_resource type="Script" uid="uid://6djlivwuoitq" path="res://Scripts/shelf_popup.gd" id="2_hbbme"]
 [ext_resource type="Texture2D" uid="uid://b0e162p81b5qb" path="res://assets/icons/create_arrow_icons/create_arrow.png" id="6_mw14t"]
 
@@ -8,7 +8,7 @@
 position = Vector2i(0, 36)
 size = Vector2i(500, 110)
 script = ExtResource("1_cqyqj")
-metadata/_custom_type_script = "uid://cgbf8yxnoy3hq"
+metadata/_custom_type_script = "uid://dxytye5uwyapu"
 
 [node name="Panel" type="Panel" parent="."]
 anchors_preset = 15

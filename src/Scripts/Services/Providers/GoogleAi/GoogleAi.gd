@@ -227,12 +227,17 @@ func to_bot_response(data: Variant) -> BotResponse:
 		response.complete = false
 	
 	var content = candidate["content"]
-
-	for part in content["parts"]:
-		if "text" in part:
-			response.text += "\n%s" % part["text"]
+	
+	if content.has("parts"):
+		for part in content["parts"]:
+			if "text" in part:
+				response.text += "\n%s" % part["text"]
 
 	response.prompt_tokens = data["usageMetadata"]["promptTokenCount"]
 	response.completion_tokens = data["usageMetadata"]["candidatesTokenCount"]
-	
+	#if data["usageMetadata"].has("candidatesTokenCount"):
+		#response.completion_tokens = data["usageMetadata"]["candidatesTokenCount"]
+	#else:
+		#response.completion_tokens = 60000
 	return response
+
