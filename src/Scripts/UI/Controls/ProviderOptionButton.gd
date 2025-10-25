@@ -55,9 +55,9 @@ func switch_to_provider_set_for_services(services: Array):
 	
 	var combined_key := _create_combined_key(services)
 	
-	if not _provider_sets.has(combined_key):
-		var has_internal_chat := _contains_internal_chat_service(services)
-		_create_combined_set(services, combined_key, has_internal_chat)
+	# ALWAYS recreate - don't reuse cached combined sets
+	var has_internal_chat := _contains_internal_chat_service(services)
+	_create_combined_set(services, combined_key, has_internal_chat)
 	
 	_current_set_key = combined_key
 	_rebuild_dropdown()
@@ -109,6 +109,11 @@ func clear_combined_provider_sets():
 	
 	for key in keys_to_remove:
 		_provider_sets.erase(key)
+
+
+## Clears a specific service's provider set
+func clear_service_provider_set(service: Service):
+	_provider_sets.erase(service)
 
 
 #region Private Methods

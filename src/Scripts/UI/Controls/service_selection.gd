@@ -58,7 +58,6 @@ func get_selected_service_ids() -> PackedStringArray:
 	
 	return selected
 
-var _initial: = true
 
 ## Sets the available services, and clear the present warning if [param clear_warning] is true.
 func set_services(services: Array[Service], clear_warning_: = true):
@@ -81,11 +80,8 @@ func set_services(services: Array[Service], clear_warning_: = true):
 		_checkboxes[service.client_id] = check_box
 
 		if _selected_service_ids.has(service.client_id):
-			if _initial:
-				check_box.button_pressed = true
-				_initial = false
-			else:
-				check_box.set_pressed_no_signal(true)
+			check_box.button_pressed = true
+
 
 
 func mark_service_as_selected(service_id: String, state: = true) -> void:
@@ -120,10 +116,8 @@ func _on_service_check_box_toggled(on: bool, service: Service) -> void:
 	mark_service_as_selected(service.client_id, on)
 	
 	if on:
-		prints("scv: EMIT for:", service.name, on)
 		service_selected.emit(service)
 	else:
-		prints("scv: EMIT DESELECT for:", service.name, on)
 		service_deselected.emit(service)
 
 func _on_item_list_item_selected(index: int) -> void:
