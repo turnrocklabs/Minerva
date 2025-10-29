@@ -103,22 +103,34 @@ func _ready():
 		func():
 			connection_label.text = "You are connected to core"
 			connection_texture_rect.texture = preload("res://.godot/imported/check_mark16.webp-ee4b5638509d469382c7cad2d0cf364b.ctex")
-			connect_button.disabled = true
-			# Maybe disable auth fields too once connected? Optional.
+			connect_button.text = "Disconnect"
+			connect_button.tooltip_text = "Disconnect from the Core"
 	)
 
 	Core.client.connection_error.connect(
 		func(error: int):
 			connection_label.text = "Core WS Error (%s)" % error_string(error)
 			connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
-			connect_button.disabled = false
+			connect_button.text = "Connect"
+			connect_button.tooltip_text = "Connect to the Core"
 	)
 
 	Core.client.connection_closed.connect(
 		func():
 			connection_label.text = "You are not connected to core"
 			connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
-			connect_button.disabled = false
+			connect_button.text = "Connect"
+			connect_button.tooltip_text = "Connect to the Core"
+	)
+
+	Core.http_connection_changed.connect(
+		func(_active: bool):
+			if not Core.connected:
+				connection_label.text = "You are not connected to core"
+				connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
+			
+			connect_button.text = "Disconnect" if Core.connected else "Connect"
+			connect_button.tooltip_text = "Disconnect from the Core" if Core.connected else "Connect to the Core"
 	)
 
 	# if auto connect is checked act like the connect button was pressed
@@ -139,10 +151,10 @@ func set_field_values():
 	_fields["hcp_username"].text = config_file.get_value("HCP", "username", "")
 	_fields["hcp_password"].text = config_file.get_value("HCP", "password", "")
 
-	var selected_service_ids = config_file.get_value("HCP", "selected_services", [])
-	for service_id in selected_service_ids:
-		service_selection_window.mark_service_as_selected(service_id)
-
+	var selected_services_data = config_file.get_value("HCP", "selected_services", [])
+	
+	service_selection_window.load_saved_selected_services(selected_services_data)
+	
 	# --- Set Auth Base URL and Preset Dropdown ---
 	var saved_auth_url = config_file.get_value("HCP", "auth_base_url", AUTH_PRESET_PROD)
 	_fields["hcp_auth_base_url"].text = saved_auth_url
@@ -190,7 +202,7 @@ func _on_btn_save_prefs_pressed():
 	config_file.set_value("HCP", "username", _fields["hcp_username"].text)
 	config_file.set_value("HCP", "password", _fields["hcp_password"].text)
 	config_file.set_value("HCP", "auto_connect", _fields["hcp_auto_connect"].button_pressed)
-	config_file.set_value("HCP", "selected_services", service_selection_window.get_selected_service_ids())
+	config_file.set_value("HCP", "selected_services", service_selection_window.get_selected_service_data())
 
 	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 
@@ -295,6 +307,9 @@ func _on_output_device_button_item_selected(index: int) -> void:
 
 # MODIFIED: Now handles both authentication and WebSocket connection
 func _on_core_connet_button_pressed(display_error: = true) -> void:
+	if Core.connected:
+		Core.close_connection()
+		return
 
 	var core_ws_url = hcp_url.text
 	var auth_http_base_url = auth_base_url.text
@@ -308,7 +323,6 @@ func _on_core_connet_button_pressed(display_error: = true) -> void:
 	# Update status immediately - maybe "Connecting..."
 	connection_label.text = "Authenticating..."
 	connection_texture_rect.texture = null # Or a spinner icon
-	connect_button.disabled = true
 
 	# Call Core.start with the new parameters
 	# NOTE: Core.start signature needs to be updated to accept these
@@ -325,7 +339,6 @@ func _on_core_connet_button_pressed(display_error: = true) -> void:
 		# The Core.start function should ideally push a more specific error message.
 		connection_label.text = "Failed to connect/authenticate"
 		connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
-		connect_button.disabled = false
 		
 		logs_window.add_log_line(
 			"Authentication or WebSocket connection failed. Check URLs and credentials",
@@ -338,12 +351,13 @@ func _on_service_selection_visibility_changed() -> void:
 
 	if Core.connecting: return
 
-	var services: Array[Service] = await Core.fetch_services()
+	var services: Array[Service] = await Core.fetch_services(true)
+	service_selection_window.set_services(services) # will clear the warning by default
+	
 	if services.is_empty() and not Core.client._connected:
 		service_selection_window.set_warning("Cannot fetch services. Please connect to Core first.")
 		return
 
-	service_selection_window.set_services(services) # will clear the warning by default
 
 func _on_service_selection_service_selected(service: Service) -> void:
 	Core.service_selected.emit(service)

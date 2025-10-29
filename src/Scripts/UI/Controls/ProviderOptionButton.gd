@@ -182,8 +182,10 @@ func _create_combined_set(services: Array, key: String, include_standard: bool):
 	_provider_sets[key] = items
 
 
-## Rebuilds the dropdown UI from current provider set
 func _rebuild_dropdown():
+	# Store current selection before rebuilding
+	var current_provider = get_selected_provider()
+	
 	clear()
 	
 	var items: Array = _provider_sets.get(_current_set_key, [])
@@ -203,6 +205,13 @@ func _rebuild_dropdown():
 		
 		if item.tooltip != "":
 			set_item_tooltip(item_index, item.tooltip)
+	
+	# Restore previous selection if it still exists
+	if current_provider:
+		var provider_index = get_item_index_for_provider(current_provider)
+		if provider_index != -1:
+			select(provider_index)
+		
 
 
 ## Converts dropdown item ID back to actual provider instance
@@ -225,6 +234,12 @@ func _get_provider_from_id(item_id: int) -> BaseProvider:
 	
 	return provider
 
+## Returns the provider for a specific tab index
+func get_provider_for_tab(tab: int) -> BaseProvider:
+	if SingletonObject.ChatList.is_empty():
+		return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0].new()
+	else:
+		return SingletonObject.ChatList[tab].provider
 
 ## Loads previously saved provider selection from config
 func _load_saved_provider():

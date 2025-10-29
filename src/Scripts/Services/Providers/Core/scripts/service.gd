@@ -18,7 +18,7 @@ func _init(service_data: Dictionary) -> void:
 
 
 func is_equal_to(service: Service) -> bool:	
-	return name == service.name and client_id == service.client_id
+	return client_id == service.client_id
 
 
 const INTERNAL_CHAT_SERVICE_ID: = "_minerva_chats_service"

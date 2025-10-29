@@ -25,6 +25,11 @@ var http_request: HTTPRequest = HTTPRequest.new()
 # Array to store fetched services (might be populated after connection)
 var services: Array[Service]
 
+## How long the chached services list is valid
+var _services_cache_timeout: float = 15
+## Last time the services were fetched
+var _services_last_fetch: float = -1
+
 # JWT token obtained after successful login
 var _jwt_token: String = ""
 # Client ID returned after successful login
@@ -39,6 +44,12 @@ var _connecting: = false:
 # Whether we're currently trying to make a connection
 var connecting:
 	get: return _connecting
+
+
+# Whether we're currently connecting to the auth server or connected to the core websocket.[br]
+var connected:
+	get: return connecting or client._connected
+
 
 func _ready() -> void:
 	# Instantiate and add the CoreClient node
@@ -61,10 +72,19 @@ func _ready() -> void:
 
 ## Cancels the current connection request if there is one.[br]
 ## If there is none, or the client is already connected, nothing happends.
-func cancel_request() -> void:
+func close_connection() -> void:
 	# NOTICE: this doesn't work for some reason.
 	# the request still doesnt cancel and times out after some period of time
+	print("core: cancel auth request")
+	
 	http_request.cancel_request()
+
+	Core.client.close_connection("User disconnected")
+
+	_connecting = false
+	registered = false
+	_jwt_token = ""
+	_client_id = ""
 
 
 var should_display_error: = true
@@ -98,6 +118,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	)
 
 	print("Attempting authentication to: ", auth_endpoint)
+	print("core: starting auth request")
 	var err = http_request.request(auth_endpoint, headers, HTTPClient.METHOD_POST, body)
 
 	
@@ -119,6 +140,8 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 	# Wait for the HTTP request to complete (handled by _on_auth_request_completed)
 	await http_request.request_completed
+
+	print("core: auth request awaited")
 
 	# --- 2. Check Authentication Result (Set by Signal Handler) ---
 	if _jwt_token.is_empty():
@@ -199,6 +222,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 # --- NEW: Handles the response from the HTTP authentication request ---
 func _on_auth_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+	print("core: auth request callback")
 	if result != HTTPRequest.RESULT_SUCCESS:
 		var err_msg = "HTTP Auth Request Failed: %s" % _get_http_result_string(result)
 		push_error(err_msg)
@@ -390,11 +414,26 @@ func send_message(service: Service, action: Action, msg: Dictionary) -> AwaitMes
 	var request_id: String = client.send_text_message(service, action, msg)
 	return await_message().with_request_id(request_id)
 
-# Fetches the list of available services from the Core
-func fetch_services() -> Array[Service]:
+## Updates the [member _services_cache_timeout].
+func set_services_cache_timeout(timeout: float) -> void:
+	_services_cache_timeout = timeout
+
+## Invalidates the service list caches, and makes the new fetch_services call fetch again.
+func invalidate_services_cache() -> void:
+	_services_last_fetch = -1
+	services.clear()
+
+## Fetches the list of available services from the Core.[br]
+## If [param use_cache] is `true` it will use cached list of services it they
+## were fetched in the last [member _services_cache_timeout] seconds.
+func fetch_services(use_cache: = false) -> Array[Service]:
 	if not client._connected:
 		push_warning("Attempted to fetch services while not connected.")
 		return []
+	
+	if use_cache and Time.get_unix_time_from_system() - _services_last_fetch < _services_cache_timeout:
+		_services_last_fetch = Time.get_unix_time_from_system()
+		return services
 
 	var req_id: = client.request_connections() # Send the request to the core
 
@@ -425,6 +464,8 @@ func fetch_services() -> Array[Service]:
 
 	#print("\n\nParsed Services:") # Debug
 	#print(services)               # Debug
+
+	_services_last_fetch = Time.get_unix_time_from_system()
 
 	return services
 

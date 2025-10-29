@@ -34,7 +34,7 @@ layout_mode = 2
 [node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 2
+current_tab = 3
 
 [node name="Account" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
@@ -366,6 +366,7 @@ popup/item_2/text = "Windows"
 popup/item_2/id = 2
 
 [node name="API Keys" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 10
 metadata/_tab_index = 2
@@ -459,7 +460,6 @@ layout_mode = 2
 theme_type_variation = &"visibilityCheckButton"
 
 [node name="Services" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
-visible = false
 layout_mode = 2
 theme_override_constants/separation = 10
 metadata/_tab_index = 3
