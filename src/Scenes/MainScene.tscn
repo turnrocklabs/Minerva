@@ -24,7 +24,7 @@
 [ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_icons/undo_arrow.png" id="11_srtkx"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="12_6jk4t"]
 [ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload-icons/reload-16.svg" id="13_xhsmd"]
-[ext_resource type="Script" uid="uid://3x3cxh20wmu2" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
+[ext_resource type="Script" uid="uid://dge3cj0ar0mj6" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="14_sknqf"]
 [ext_resource type="Texture2D" uid="uid://bququhfphcsic" path="res://assets/icons/file/file.svg" id="18_mitgl"]
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="20_cqinw"]

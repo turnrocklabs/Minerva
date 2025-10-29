@@ -65,7 +65,9 @@ theme_override_constants/v_separation = 7
 
 [node name="DescriptionLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 20)
 layout_mode = 2
+autowrap_mode = 3
 
 [node name="Control" type="Control" parent="VBoxContainer"]
 custom_minimum_size = Vector2(0, 15)

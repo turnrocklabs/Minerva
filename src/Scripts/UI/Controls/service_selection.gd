@@ -107,19 +107,65 @@ func set_services(services: Array[Service], clear_warning_: = true):
 		if service_id:
 			loaded_service_ids.append(service_id)
 	
-	# Remove services that are no longer available (not in services array and not in loaded)
+	# First, remove services that are no longer in loaded_services at all
+	# (user deselected and saved, so they should disappear completely)
 	var service_ids_to_remove: Array[String] = []
 	for service_id in _checkboxes.keys():
+		# If the service is not in incoming services AND not in loaded services, remove it
 		if not incoming_service_ids.has(service_id) and not loaded_service_ids.has(service_id):
 			service_ids_to_remove.append(service_id)
 	
+	# Handle services that are no longer available but ARE in loaded_services
+	# These should be disabled (grayed out) but kept
+	for service_id in _checkboxes.keys():
+		if not incoming_service_ids.has(service_id) and loaded_service_ids.has(service_id):
+			# Service is loaded but not available - disable it
+			for i in range(item_list.item_count):
+				var metadata = item_list.get_item_metadata(i)
+				var tooltip = item_list.get_item_tooltip(i)
+				
+				# Match by tooltip (service_id) or by metadata
+				if tooltip == service_id or (metadata and metadata is Service and metadata.client_id == service_id):
+					item_list.set_item_disabled(i, true)
+					item_list.set_item_metadata(i, null)  # Clear metadata since it's not available
+					item_list.set_item_tooltip(i, service_id)  # Keep tooltip so we can find it later
+					break
+			
+			# Uncheck the checkbox and emit deselect
+			var checkbox = _checkboxes.get(service_id)
+			if checkbox and not checkbox.is_queued_for_deletion():
+				if checkbox.button_pressed:
+					checkbox.button_pressed = false
+				# Remove service metadata from checkbox
+				if checkbox.has_meta("service"):
+					checkbox.remove_meta("service")
+				# Reconnect signal without service parameter
+				if checkbox.toggled.is_connected(_on_service_check_box_toggled):
+					# Get the connection info to check if it has a service bound
+					checkbox.toggled.disconnect(_on_service_check_box_toggled)
+				checkbox.toggled.connect(_on_service_check_box_toggled)
+			
+			# Always emit deselect for unavailable services
+			var dummy_service: = Service.new({})
+			dummy_service.client_id = service_id
+			service_deselected.emit(dummy_service)
+	
 	for service_id in service_ids_to_remove:
-		# Find and remove from item_list
+		# Find and remove from item_list by searching for the service_id stored in tooltip
+		var item_index_to_remove = -1
 		for i in range(item_list.item_count):
+			# Check metadata first
 			var metadata = item_list.get_item_metadata(i)
 			if metadata and metadata is Service and metadata.client_id == service_id:
-				item_list.remove_item(i)
+				item_index_to_remove = i
 				break
+			# Check tooltip (where we store service_id)
+			elif item_list.get_item_tooltip(i) == service_id:
+				item_index_to_remove = i
+				break
+		
+		if item_index_to_remove != -1:
+			item_list.remove_item(item_index_to_remove)
 		
 		# Remove checkbox
 		var checkbox = _checkboxes.get(service_id)
@@ -127,11 +173,10 @@ func set_services(services: Array[Service], clear_warning_: = true):
 			checkbox.queue_free()
 		_checkboxes.erase(service_id)
 		
-		# Emit deselected signal if it was selected
-		if current_selections.get(service_id, false):
-			var dummy_service: = Service.new({})
-			dummy_service.client_id = service_id
-			service_deselected.emit(dummy_service)
+		# Always emit deselected signal
+		var dummy_service: = Service.new({})
+		dummy_service.client_id = service_id
+		service_deselected.emit(dummy_service)
 	
 	# Track which services from loaded_services we've processed
 	var processed_loaded_ids: PackedStringArray = []
@@ -161,6 +206,7 @@ func set_services(services: Array[Service], clear_warning_: = true):
 			# New loaded service - add it
 			var idx: = item_list.add_item(service_name)
 			item_list.set_item_disabled(idx, true)
+			item_list.set_item_tooltip(idx, service_id)  # Store service_id for easy lookup
 			
 			var check_box = CheckBox.new()
 			check_box.toggled.connect(_on_service_check_box_toggled)
@@ -181,6 +227,9 @@ func set_services(services: Array[Service], clear_warning_: = true):
 			# Check if it was previously selected before we update anything
 			var was_previously_selected = current_selections.get(service_id, false)
 			
+			# Check if service was previously available
+			var was_previously_available = checkbox.has_meta("service")
+			
 			# Update the checkbox meta if it doesn't have the service object yet
 			if not checkbox.has_meta("service"):
 				checkbox.set_meta("service", service)
@@ -189,32 +238,33 @@ func set_services(services: Array[Service], clear_warning_: = true):
 				checkbox.toggled.connect(_on_service_check_box_toggled.bind(service))
 			
 			# Find the corresponding item in item_list
-			# We need to search by matching against loaded services or by existing metadata
+			# We search by tooltip (service_id) or by metadata
 			var item_found = false
 			for i in range(item_list.item_count):
 				var existing_meta = item_list.get_item_metadata(i)
+				var tooltip = item_list.get_item_tooltip(i)
 				
-				# Check if this is our service either by metadata OR by being a loaded service
+				# Check if this is our service by tooltip or metadata
 				var is_match = false
-				if existing_meta and existing_meta is Service and existing_meta.client_id == service_id:
+				if tooltip == service_id:
 					is_match = true
-				elif not existing_meta and processed_loaded_ids.has(service_id):
-					# This is a loaded service (no metadata yet) - match by checking if it's at the expected position
-					# We'll match by service name as a fallback
-					var item_text = item_list.get_item_text(i)
-					if item_text == service.name:
-						is_match = true
+				elif existing_meta and existing_meta is Service and existing_meta.client_id == service_id:
+					is_match = true
 				
 				if is_match:
 					item_list.set_item_metadata(i, service)
 					item_list.set_item_text(i, service.name)
 					item_list.set_item_disabled(i, false)
+					item_list.set_item_tooltip(i, service_id)  # Ensure tooltip is set
 					item_found = true
 					break
 			
 			# Restore previous selection state
 			if current_selections.has(service_id):
 				checkbox.button_pressed = current_selections[service_id]
+				# If it was selected and service just became available (reconnection), emit signal
+				if current_selections[service_id] and not was_previously_available:
+					services_to_emit.append(service)
 			elif processed_loaded_ids.has(service_id):
 				# This was a loaded service, keep it selected
 				checkbox.button_pressed = true
@@ -226,6 +276,7 @@ func set_services(services: Array[Service], clear_warning_: = true):
 			# New service - add it
 			var idx: = item_list.add_item(service.name)
 			item_list.set_item_metadata(idx, service)
+			item_list.set_item_tooltip(idx, service_id)  # Store service_id for easy lookup
 			
 			var check_box = CheckBox.new()
 			check_box.set_meta("service", service)
