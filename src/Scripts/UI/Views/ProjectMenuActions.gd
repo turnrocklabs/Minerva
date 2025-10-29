@@ -388,7 +388,6 @@ func open_project_given_path(project_path: String) -> int:
 func _notification(what):
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		await save_editor_panes()
-		get_tree().quit()
 
 func _on_exit_confirmation_dialog_canceled():
 	%ExitConfirmationDialog.hide()
