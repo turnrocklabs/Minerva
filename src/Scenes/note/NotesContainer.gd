@@ -28,6 +28,8 @@ func _ready() -> void:
 
 	get_tab_bar().active_tab_rearranged.connect(_on_active_tab_rearranged)
 
+	get_tab_bar().set_drag_forwarding(Callable(), _can_drop_data, _drop_data)
+
 ## Creates a new tab with given name.[br]
 ## If the name is already taken godot will autimatically assing a new one.[br]
 ## Retuns the scroll container added as the new tab.
@@ -373,18 +375,18 @@ func deserialize(notes_data: Array) -> void:
 		if not notes_to_update.is_empty():
 			SingletonObject.notes_sync_manger.sync_notes(notes_to_update)
 
-
-
-
-
 # region Drop
 
 func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
 	if not data is Note:
 		return false
 
-	# if drag_to_rearrange_enabled is enabled this won't work as expected
+	if at_position.x < 42: # move left
+		current_tab = current_tab-1 if current_tab > 0 else 0
 
+	elif get_tab_bar().size.x - at_position.x < 42: # move right
+		current_tab = current_tab+1 if current_tab < get_tab_count()-1 else current_tab
+		
 	if get_tab_idx_at_point(at_position) == -1:
 		return false
 
@@ -413,7 +415,7 @@ var last_click: float = -1
 func _on_tab_bar_gui_input(event: InputEvent) -> void:
 	
 	if event is InputEventMouseButton:
-		if not event.pressed: return
+		if not (event.pressed and event.button_index == MOUSE_BUTTON_LEFT): return
 
 		var tab_idx: = get_tab_idx_at_point(event.position)
 

@@ -64,12 +64,20 @@ func _on_vbox_child_entered_tree(node: Node):
 		# update the bulk button on state change, or when the note is removed from the tree
 		controller.state_changed.connect(func(_state): _update_bulk_button(); _update_remove_all_button())
 
-		node.tree_exiting.connect(_update_bulk_button)
-		node.tree_exiting.connect(_update_remove_all_button)
+		if not node.tree_exiting.is_connected(_update_bulk_button):
+			node.tree_exiting.connect(_update_bulk_button)
+		
+		if not node.tree_exiting.is_connected(_update_remove_all_button):
+			node.tree_exiting.connect(_update_remove_all_button)
 
-		node.changed.connect(_update_collapse_all_button)
-		node.changed.connect(_update_toggle_notes_button.call_deferred)
-		node.tree_exiting.connect(_update_collapse_all_button.bind(""))
+		if not node.changed.is_connected(_update_collapse_all_button):
+			node.changed.connect(_update_collapse_all_button)
+		
+		if not node.changed.is_connected(_update_toggle_notes_button.call_deferred):
+			node.changed.connect(_update_toggle_notes_button.call_deferred)
+		
+		if not node.changed.is_connected(_update_collapse_all_button.bind("")):
+			node.tree_exiting.connect(_update_collapse_all_button.bind(""))
 
 		_update_bulk_button() # and update now for the state already set in the controller _init
 		_update_remove_all_button()
@@ -84,7 +92,7 @@ func _on_vbox_child_exiting_tree(node: Node):
 		# call deferred so the note is gone from the vbox when _update_bulk_button is called
 		_update_bulk_button.call_deferred()
 		_update_remove_all_button.call_deferred()
-		_update_collapse_all_button.call_deferred()
+		_update_collapse_all_button.call_deferred("")
 
 ## Adds the [class Note] object to the VBox container of this instance.
 func add_note(note: Note, index: int = -1):
