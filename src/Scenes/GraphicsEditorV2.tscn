@@ -600,7 +600,6 @@ size_flags_vertical = 3
 
 [node name="ImageGenPopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 mouse_filter = 2
 
@@ -842,7 +841,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
 toggle_mode = true
-text = "Mask Edit Image"
+text = "Selective Editing"
 
 [node name="SelectiveEditingPopupPanel" type="PopupPanel" parent="."]
 unique_name_in_owner = true

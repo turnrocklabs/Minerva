@@ -1162,8 +1162,8 @@ func _on_mask_edit_button_pressed() -> void:
 	
 	if image_layer_to_edit == null:
 		return
-	var base_image_to_edit: Image = image_layer_to_edit.image
-	var base_image_filename: String = image_layer_to_edit.name + ".png" 
+	var base_image_to_edit: Image = image_layer_to_edit.layer.image
+	var base_image_filename: String = image_layer_to_edit.layer.name + ".png" 
 	
 	
 	var base_image_for_export: Image = base_image_to_edit.duplicate()
@@ -1188,15 +1188,15 @@ func _on_mask_edit_button_pressed() -> void:
 	var mask_dir: = {}
 	var mask_color_channel: = ""
 	for i: LayerCard in mask_media_gen_layers_container.get_children():
-		if i.type == LayerV2.Type.MASK:
+		if i.layer.type == LayerV2.Type.MASK and i.selected:
 			var base_mask_image: = i.layer.image
 			var mask_layer_name: = i.layer.name + ".png"
-			mask_color_channel = i.mask_color_name
+			mask_color_channel = i.layer.mask_color_name
 			var base_mask_image_for_export: Image = base_mask_image.duplicate()
 			if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
 				base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
 			
-			var base_mask_buffer: PackedByteArray = media_gen_socket.generate_mask_bytes(base_mask_image_for_export, i.mask_color, mask_color_channel)
+			var base_mask_buffer: PackedByteArray = media_gen_socket.generate_mask_bytes(base_mask_image_for_export, i.layer.mask_color, mask_color_channel)
 			#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
 			if base_mask_buffer.is_empty():
 				display_message("Error", "Error generating the mask image")
