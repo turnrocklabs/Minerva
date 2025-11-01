@@ -34,6 +34,8 @@ signal toggle_experimental(enabled)
 
 var syntax_manager: SyntaxManager
 
+# used by the old editor.
+# TODO: clean up at some point properly
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false

@@ -30,6 +30,7 @@ var video_player: VideoPlayer:
 
 var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditorV2
+var package_editor: PackageEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -56,6 +57,7 @@ enum Type {
 	TEXT,
 	GRAPHICS,
 	VIDEO,
+	PACKAGE,
 }
 
 
@@ -164,6 +166,12 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.video_player = new_video_player
 			editor.get_node("%ButtonsHBoxContainer").queue_free()
 			editor.get_node("%FindStringContainer").queue_free()
+		
+		Editor.Type.PACKAGE:
+			editor.package_editor = PackageEditor.create()
+			
+			editor.package_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(editor.package_editor)
 			
 	return editor
 
