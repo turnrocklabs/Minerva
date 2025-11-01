@@ -7,9 +7,10 @@ signal active_layer_is_mask_layer(is_mask_layer: bool)
 
 signal compose_progress_updated(progress: float)
 signal compose_finished(image: Image)
+signal delete_layer(layer: LayerV2)
 
-@onready var mutex: = Mutex.new()
-@onready var thread: = Thread.new()
+#@onready var mutex: = Mutex.new()
+#@onready var thread: = Thread.new()
 
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
@@ -52,7 +53,7 @@ signal compose_finished(image: Image)
 }
 
 @onready var media_gen_socket: MediaGenManager = $MediaGenSocket
-@onready var image_gen_popup_panel: PopupPanel = %ImageGenPopupPanel
+@onready var image_gen_popup_panel: Control = %ImageGenPopupPanel
 @onready var prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var send_prompt_button: Button = %SendPromptButton
 @onready var negative_text_edit: TextEdit = %NegativeTextEdit
@@ -67,9 +68,19 @@ signal compose_finished(image: Image)
 @onready var cfg_spin_box: SpinBox = %CFGSpinBox
 @onready var denoise_spin_box: SpinBox = %DenoiseSpinBox
 @onready var seed_line_edit: LineEdit = %SeedLineEdit
-@onready var mask_container: HBoxContainer = %MaskContainer
+
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
+@onready var mask_layer_cards_container: VBoxContainer = %MaskLayerCardsContainer
+@onready var mask_layer_cards_popup_panel: PopupPanel = %MaskLayerCardsPopupPanel
+@onready var image_gen_panel_container: PanelContainer = %ImageGenPanelContainer
+@onready var mask_layer_cards_panel_container: PanelContainer = %MaskLayerCardsPanelContainer
+@onready var mask_edit_button: Button = %MaskEditButton
+@onready var mask_h_slider: HSlider = %MaskHSlider
+@onready var tool_size_v_slider: VSlider = %ToolSizeVSlider
+@onready var copy_layer_button: Button = %CopyLayerButton
+@onready var merge_layers_button: Button = %MergeLayersButton
+@onready var delete_layer_button: Button = %DeleteLayerButton
 
 #endregion
 
@@ -91,6 +102,7 @@ var layers: Array[LayerV2]
 
 ## Array of selected layers, in order in which they were selected
 var selected_layers: Array[LayerV2] = []
+var selected_mask_layers: Array[LayerV2] = []
 
 var active_layer: LayerV2:
 	get: 
@@ -101,6 +113,16 @@ var active_layer: LayerV2:
 			active_layer_is_mask_layer.emit(true)
 		else:
 			active_layer_is_mask_layer.emit(false)
+
+#var active_mask_layer: LayerV2:
+	#get: 
+		#return selected_mask_layers.get(0) if not selected_mask_layers.is_empty() else null
+	#set(value):
+		#active_layer = value
+		#if value.type == LayerV2.Type.MASK:
+			#active_layer_is_mask_layer.emit(true)
+		#else:
+			#active_layer_is_mask_layer.emit(false)
 
 var active_tool: BaseTool:
 	set(value):
@@ -125,8 +147,7 @@ func _ready() -> void:
 	# Connect pen inverted signals
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
-	setup()
-
+	
 	# Connect media generation signal to receive generated images
 	media_gen_socket.pass_image_to_editor.connect(_on_image_received)
 	
@@ -136,6 +157,8 @@ func _ready() -> void:
 		image_width_option_button.add_item(res)
 		image_height_option_button.add_item(res)
 		temp_res += 128
+	
+	delete_layer.connect(_on_delete_layer)
 
 
 
@@ -144,7 +167,6 @@ func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 	create_new_layer("Background", canvas_size_, Color.WHITE, false)
 	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
 	create_new_layer("Drawing", canvas_size_, Color.TRANSPARENT, true)  # Selected by default
-
 
 
 func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true, locked: = false) -> LayerV2:
@@ -169,8 +191,30 @@ func create_new_mask_layer(layer_name: String, dimensions: Vector2i, color: Colo
 	
 	layer.locked = locked
 
-	add_layer(layer, select)
+	add_mask_layer(layer, select)
 
+	return layer
+
+
+func add_mask_layer(layer: LayerV2, select: = true):
+	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
+
+	var layer_card: = LayerCard.create(self, layer)
+
+	layer_card.layer_selected.connect(_on_layer_card_selected.bind(layer, layer_card))
+	layer_card.layer_deselected.connect(_on_layer_card_deselected.bind(layer, layer_card))
+	layer_card.reorder.connect(_on_layer_card_reorder.bind(layer_card))
+	layer_card.layer_clicked.connect(_on_layer_card_clicked.bind(layer_card))
+
+	mask_layer_cards_container.add_child(layer_card)
+	mask_layer_cards_container.move_child(layer_card, 0)
+	layer_card.selected = select
+
+	layers_container.add_child(layer, true)
+
+	layers.append(layer)
+
+	
 	return layer
 
 
@@ -228,6 +272,8 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 		
 		else:
 			for c: LayerCard in layer_cards_container.get_children():
+				c.selected = false
+			for c: LayerCard in mask_layer_cards_container.get_children():
 				c.selected = false
 			layer_card.selected = true
 
@@ -324,6 +370,14 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 # When using layers container, pan tool acts wierd and i don't know why exactly.
 # Control with tools is set to stop the mouse events to accommodate for the below input hadnling
 func _gui_input(event: InputEvent) -> void:
+	
+	if image_gen_popup_panel.is_visible_in_tree():
+		if event is InputEventMouseButton and event.is_pressed():
+			if !image_gen_popup_panel.get_rect().has_point(get_global_mouse_position()):
+				image_gen_popup_panel.hide()
+				return
+	
+	
 	# if we have a active tool and at least one of selected layers is visible
 	if active_tool and selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
 
@@ -422,13 +476,25 @@ func _on_pen_normal_detected() -> void:
 			_tools_option_button.select(3)  # Smudge
 		_previous_tool_before_eraser = null
 
+#region LayersCards PopUp panel
+
 func _on_new_layer_button_pressed() -> void:
 	# clear layers and create a new one
 	for c: LayerCard in layer_cards_container.get_children():
 		c.selected = false
+	for c: LayerCard in mask_layer_cards_container.get_children():
+		c.selected = false
 	
 	create_new_layer("Layer", canvas_size)
 
+
+
+func _on_delete_layer_button_pressed() -> void:
+	for i: LayerCard in layer_cards_container.get_children():
+		if i.selected:
+			i.delete_layer()
+
+#endregion LayersCards PopUp panel
 
 func _on_brush_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = drawing_tool if toggled_on else null
@@ -662,7 +728,7 @@ func _on_layer_cards_button_toggled(toggled_on: bool) -> void:
 				-layer_cards_popup_panel.size.x/2.0
 				+layer_cards_toggle_button.size.x/2.0
 			),
-			layer_cards_toggle_button.global_position.y + 50
+			layer_cards_toggle_button.global_position.y + layer_cards_toggle_button.size.y + 30
 		)
 		layer_cards_popup_panel.popup()
 	else:
@@ -936,29 +1002,34 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 
 func _on_prompt_button_pressed() -> void:
 	if !image_gen_popup_panel.visible:
-		image_gen_popup_panel.position = Vector2(
+		image_gen_panel_container.global_position = Vector2(
 			(
 				prompt_button.global_position.x 
-				-image_gen_popup_panel.size.x/2.0
-				+prompt_button.size.x/2.0
+				-image_gen_panel_container.size.x
+				+prompt_button.size.x
 			),
 			prompt_button.global_position.y + 50
 		)
-		image_gen_popup_panel.popup()
+		image_gen_popup_panel.show()
 	else:
 		image_gen_popup_panel.hide()
 	
 
 
 func _on_send_prompt_button_pressed() -> void:
-	%ImageGenPopupPanel.hide()
+	image_gen_popup_panel.hide()
 	var params : Dictionary = get_params_image_gen()
+	var toast: ToastNotification
 	if params.is_empty():
-		return
+		toast =ToastNotification.create(ToastNotification.Type.WARNING, "Please enter a valid prompt for image generation")
 	
-	progress_window.popup_centered()
-	progress_window_label.text = "Generating Image..."
-	media_gen_socket.send_media_gen_request(params)
+	else:
+		toast =ToastNotification.create(ToastNotification.Type.INFO, "Sending Image Gen request...")
+		media_gen_socket.send_media_gen_request(params)
+	SingletonObject.main_scene.add_child(toast)
+	
+	
+	
 
 
 func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
@@ -1010,10 +1081,8 @@ func _on_edit_img_button_pressed() -> void:
 		display_message("Error", "Failed to convert active layer image to PNG buffer.")
 		return
 	
-	# 4. Show progress window
-	progress_window.popup()
-	progress_window_label.text = "Sending image for editing..."
-	progress_window_bar.value = 0 # Reset progress bar
+	var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
+	SingletonObject.main_scene.add_child(toast)
 	
 	var params: Dictionary = get_params_image_gen()
 	
@@ -1131,6 +1200,7 @@ func _on_mask_edit_button_pressed() -> void:
 			}
 			images_dir.append(mask_file)
 	
+	## THis part call for a function to generate a circle mask layer (intended for testing)
 	#var mask_size = max(canvas_size.x, canvas_size.y) # Mask should cover the image
 	#var mask_radius = mask_size / 4 # Example radius, adjust as needed
 	#var mask_image_buffer: PackedByteArray = media_gen_socket.generate_circular_mask_bytes(mask_size, mask_radius)
@@ -1140,8 +1210,8 @@ func _on_mask_edit_button_pressed() -> void:
 		#display_message("Error", "Failed to generate circular mask image.")
 		#return
 	
-	progress_window.popup_centered()
-	progress_window_label.text = "Sending image and mask for selective editing..."
+	var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
+	SingletonObject.main_scene.add_child(toast)
 	
 	var selective_editing_params: Dictionary = get_params_image_gen()
 	selective_editing_params["mask_channel"] = mask_color_channel
@@ -1153,12 +1223,16 @@ func _on_new_mask_layer_button_pressed() -> void:
 	for c: LayerCard in layer_cards_container.get_children():
 		c.selected = false
 	
+	for c: LayerCard in mask_layer_cards_container.get_children():
+		c.selected = false
+	
 	create_new_mask_layer("Mask Layer", canvas_size)
+	_on_mask_color_option_button_item_selected(mask_color_option_button.selected)
 
 
 func _on_active_layer_mask_layer(is_mask_layer: bool) -> void:
-	mask_container.visible = is_mask_layer
-	color_picker_button.visible = !is_mask_layer
+	_brush_options_container.visible = !is_mask_layer
+	_tools_option_button.visible = !is_mask_layer
 
 
 func _on_mask_color_option_button_item_selected(index: int) -> void:
@@ -1167,6 +1241,27 @@ func _on_mask_color_option_button_item_selected(index: int) -> void:
 		color_picker_button.color = mask_color
 		active_layer.mask_color = mask_color
 		active_layer.mask_color_name = mask_color_option_button.get_item_text(index).to_lower()
-		#mask_color_option_button.disabled = true
-		printt("Mask Color:",mask_color)
+		tool_size_v_slider.value = mask_h_slider.value
 	active_layer.lock_color = true
+
+
+func _on_mask_edit_button_toggled(toggled_on: bool) -> void:
+	if toggled_on:
+		mask_layer_cards_popup_panel.position = Vector2(
+			(
+				mask_edit_button.global_position.x 
+				+ mask_edit_button.size.x
+			),
+			mask_edit_button.global_position.y - mask_layer_cards_popup_panel.size.y/2.0
+		)
+		mask_layer_cards_popup_panel.show()
+	else:
+		mask_layer_cards_popup_panel.hide()
+
+
+func _on_mask_h_slider_value_changed(value: float) -> void:
+	tool_size_v_slider.value = value
+
+
+func _on_delete_layer(layer: LayerV2) -> void:
+	layers.erase(layer)

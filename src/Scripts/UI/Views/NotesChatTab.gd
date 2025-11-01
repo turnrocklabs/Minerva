@@ -230,7 +230,7 @@ func clear_all_notes():
 	SingletonObject.NotesList.clear()
 
 # Show title edit dialog for notes tabs
-func show_title_edit_dialog(tab: int):
+func show_title_edit_dialog(_tab: int):
 	# You can implement this similar to ChatPane if needed
 	pass
 

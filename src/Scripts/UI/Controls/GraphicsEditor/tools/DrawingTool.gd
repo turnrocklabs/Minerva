@@ -88,9 +88,9 @@ func handle_input_event(event: InputEvent) -> bool:
 
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if editor.selected_layers.size() > 1:
-				display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
-				return false
+			#if editor.selected_layers.size() > 1:
+				#display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
+				#return false
 			
 			if event.is_pressed():
 				_start_stroke(event)
@@ -210,8 +210,8 @@ func _add_stroke_point(event: InputEvent) -> void:
 		# Expand & localize before optional "touchdown" stamp
 		var radius := get_actual_brush_radius(_smoothed_pressure)
 		var bounds_point := get_bounds_point_for_expansion(pos, radius)
-		var offset := editor.active_layer.expand_to_point(bounds_point)
-		editor.active_layer.position -= offset
+		var _offset := editor.active_layer.expand_to_point(bounds_point)
+		editor.active_layer.position -= _offset
 		event = editor.active_layer.localize_input(event)
 		pos = event.position
 		

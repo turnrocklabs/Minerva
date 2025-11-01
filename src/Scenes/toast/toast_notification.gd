@@ -12,6 +12,7 @@ enum Type {
 	INFO,
 	WARNING,
 	ERROR,
+	SUCCESS
 }
 
 var content: String
@@ -21,6 +22,7 @@ static var _theme_variations: Dictionary[Type, StringName] = {
 	Type.INFO: &"ToastInfo",
 	Type.WARNING: &"ToastWarning",
 	Type.ERROR: &"ToastError",
+	Type.SUCCESS: &"ToastSuccess",
 }
 
 static func create(type_: Type, text: String) -> ToastNotification:

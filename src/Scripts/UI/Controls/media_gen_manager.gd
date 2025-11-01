@@ -146,9 +146,8 @@ func send_media_gen_request(params: Dictionary) -> void:
 		#client.close_connection()
 
 
-func _on_binary_file_saved_received(file_index: int, filename: String, path: String) -> void:
-	#pass_image_to_editor.emit(file_index, filename, path)
-	pass
+func _on_binary_file_saved_received(file_index: int, filename: String, _path: String) -> void:
+	pass_image_to_editor.emit(file_index, filename)
 
 
 func _on_image_response_received(fname: String, buffer: PackedByteArray) -> void:

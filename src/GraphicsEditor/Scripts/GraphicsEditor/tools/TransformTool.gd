@@ -76,9 +76,9 @@ func handle_input_event(event: InputEvent) -> bool:
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		
-		if editor.selected_layers.size() > 1:
-			display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
-			return false
+		#if editor.selected_layers.size() > 1:
+			#display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
+			#return false
 
 		if event.pressed:
 			_start_transform(event)

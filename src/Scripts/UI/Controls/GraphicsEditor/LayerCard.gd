@@ -14,8 +14,8 @@ enum ContextMenuItem {
 
 const _scene: = preload("res://Scenes/LayerCard.tscn")
 
-var _active_color: Color = Color.from_string("2d3648", Color.BLACK)
-var _color: Color = Color.from_string("2f2c2c", Color.BLACK)
+@export var  _active_color: Color = Color.from_string("2d3648", Color.BLACK)
+@export var _color: Color = Color.from_string("2f2c2c", Color.BLACK)
 
 
 var selected: = false:
@@ -80,7 +80,7 @@ func _draw() -> void:
 
 	name_line_edit.text = layer.name
 	match layer.type:
-		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING:
+		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING, LayerV2.Type.MASK:
 			texture_rect.texture = ImageTexture.create_from_image(layer.image)
 		LayerV2.Type.SPEECH_BUBBLE:
 			texture_rect.texture = await get_texture(layer.speech_bubble)
@@ -210,8 +210,8 @@ func _on_context_menu_id_pressed(id: int) -> void:
 		ContextMenuItem.VISIBILITY:
 			layer.visible = not layer.visible
 		ContextMenuItem.REMOVE:
-			layer.queue_free()
-			queue_free()
+			delete_layer()
+			
 		ContextMenuItem.MERGE:
 			editor.merge_layers(editor.selected_layers.duplicate())
 
@@ -232,3 +232,10 @@ func _on_name_focus_exited() -> void:
 
 	# godot will change the name is already taken and append a number to it, so update the line edit
 	name_line_edit.text = layer.name
+
+
+func delete_layer() -> void:
+	if editor != null:
+		editor.delete_layer.emit(layer)
+	layer.queue_free()
+	queue_free()
