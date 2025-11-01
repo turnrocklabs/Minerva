@@ -1138,14 +1138,6 @@ func get_first_image_layer() -> LayerV2:
 @onready var mask_media_gen_layers_container: VBoxContainer = %MaskMediaGenLayersContainer
 
 func _on_mask_edit_button_pressed() -> void: 
-	#if not active_layer or not active_layer.image or active_layer.image.is_empty():
-		#display_message("Error", "No active layer with an image to edit. Select an image layer first.")
-		#return
-	#
-	#if selected_layers.size() < 2 and (!selected_layers_has_mask() or !selected_layers_has_image()):
-		#display_message("Error", "No mask or no image selected")
-		#return
-	
 	if media_gen_layers_container.get_child_count() < 1 or mask_media_gen_layers_container.get_child_count() < 1:
 		return
 		
@@ -1290,10 +1282,6 @@ func _on_mask_edit_panel_button_pressed() -> void:
 		%SelectiveEditingPopupPanel.show()
 	else:
 		%SelectiveEditingPopupPanel.hide()
-		for i in %MediaGenLayersContainer.get_children():
-			i.queue_free()
-		for i in %MaskMediaGenLayersContainer.get_children():
-			i.queue_free()
 
 
 

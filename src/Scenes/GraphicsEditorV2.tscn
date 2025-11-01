@@ -1,4 +1,4 @@
-[gd_scene load_steps=38 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=39 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -27,6 +27,7 @@
 [ext_resource type="Script" uid="uid://b5c6larm7pjw6" path="res://Scripts/UI/Controls/media_gen_manager.gd" id="22_nin75"]
 [ext_resource type="Texture2D" uid="uid://cro2wpn0cmdal" path="res://assets/icons/generate_image/generate_image_icon_new.png" id="23_hm28v"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="24_spfkh"]
+[ext_resource type="Texture2D" uid="uid://coj8ug8ba8d1k" path="res://assets/icons/Mask-24-24.png" id="28_oylf0"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_u8jc2"]
 shader = ExtResource("9_u8jc2")
@@ -600,6 +601,7 @@ size_flags_vertical = 3
 
 [node name="ImageGenPopupPanel" type="Control" parent="."]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 mouse_filter = 2
 
@@ -646,12 +648,6 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_nin75")
 text = "  ?  "
 horizontal_alignment = 1
 vertical_alignment = 1
-
-[node name="ShowLayersButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 10
-text = "Mask Layers"
 
 [node name="PromptTextEdit" type="TextEdit" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
@@ -836,12 +832,33 @@ icon = ExtResource("23_hm28v")
 alignment = 0
 icon_alignment = 1
 
+[node name="EditImgButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "Edit selected Image (edits the currently selected layer with the current prompt)"
+icon = ExtResource("24_spfkh")
+
+[node name="SendMaskEditButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Mask"
+icon = ExtResource("28_oylf0")
+
+[node name="ShowLayersButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Add Mask..."
+
 [node name="MaskEditPanelButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
 toggle_mode = true
-text = "Selective Editing"
+text = "Select Layers...
+"
 
 [node name="SelectiveEditingPopupPanel" type="PopupPanel" parent="."]
 unique_name_in_owner = true
@@ -912,20 +929,6 @@ size_flags_vertical = 3
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="EditImgButton" type="Button" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 0
-tooltip_text = "Edit selected Image (edits the currently selected layer with the current prompt)"
-text = "Edit Selected Image"
-icon = ExtResource("24_spfkh")
-
-[node name="SendMaskEditButton" type="Button" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 0
-text = "Mask Edit"
-
 [connection signal="popup_hide" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_popup_hide"]
 [connection signal="pressed" from="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
 [connection signal="pressed" from="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer/CopyLayerButton" to="." method="_on_copy_layer_button_pressed"]
@@ -947,9 +950,9 @@ text = "Mask Edit"
 [connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer/DeleteMaskLayerButton" to="." method="_on_delete_mask_layer_button_pressed"]
 [connection signal="item_selected" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
 [connection signal="value_changed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskHSlider" to="." method="_on_mask_h_slider_value_changed"]
-[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/ShowLayersButton" to="." method="_on_button_pressed"]
 [connection signal="toggled" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
 [connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_img_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/ShowLayersButton" to="." method="_on_button_pressed"]
 [connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/MaskEditPanelButton" to="." method="_on_mask_edit_panel_button_pressed"]
-[connection signal="pressed" from="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2/EditImgButton" to="." method="_on_edit_img_button_pressed"]
-[connection signal="pressed" from="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]
