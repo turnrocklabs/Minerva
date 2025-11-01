@@ -100,30 +100,43 @@ func add_note_vbox(notes_vbox: NoteVBox) -> void:
 func remove_tab(tab_idx: int, user_action: = true):	
 	var control: NoteVBox = get_tab_control(tab_idx)
 
-	# if at least one note deletion was rejected, don't delete the tab
-	var all_deleted: = true
+	var cd: = ConfirmationDialog.new()
+	cd.dialog_text = "Are you sure you want to remove tab: %s" % get_tab_name(tab_idx)
+	
+	cd.get_ok_button().pressed.connect(
+		func():
+			# if at least one note deletion was rejected, don't delete the tab
+			var all_deleted: = true
+			if control:
+				# doing this so the notes is_queued_for_deletion returns true
+				for note in get_notes(tab_idx):
+					if user_action:
+						all_deleted = await note.remove() and all_deleted
+					else:
+						var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+						if controller.state == NoteSyncController.SyncState.LOCAL_ONLY:
+							note.queue_free()
+						else:
+							all_deleted = false
 
-	if control:
-		# doing this so the notes is_queued_for_deletion returns true
-		for note in get_notes(tab_idx):
-			if user_action:
-				all_deleted = await note.remove() and all_deleted
-			else:
-				var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
-				if controller.state == NoteSyncController.SyncState.LOCAL_ONLY:
-					note.queue_free()
+				if all_deleted:
+					# if all notes we're deleted remove the thread from remote
+					if not remote_adapter or (user_action and await remote_adapter.delete_thread(control.uuid, false)):
+						control.queue_free()
+					else:
+						SingletonObject.ErrorDisplay("Threads Error", "Couldn't remove remote tab (Notes deleted)")
+					
 				else:
-					all_deleted = false
+					print("Not all notes deleted, not removing the tab")
+	)
 
-		if all_deleted:
-			# if all notes we're deleted remove the thread from remote
-			if not remote_adapter or (user_action and await remote_adapter.delete_thread(control.uuid, false)):
-				control.queue_free()
-			else:
-				SingletonObject.ErrorDisplay("Threads Error", "Couldn't remove remote tab (Notes deleted)")
-			
-		else:
-			print("Not all notes deleted, not removing the tab")
+	cd.get_cancel_button().pressed.connect(
+		func():
+			cd.queue_free()
+	)
+	
+	add_child(cd)
+	cd.popup_centered()
 	
 
 ## Tries to find the index of tab that contains the provided [param note].[br]
