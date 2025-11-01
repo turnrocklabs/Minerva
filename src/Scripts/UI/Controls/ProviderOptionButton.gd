@@ -85,7 +85,7 @@ func get_selected_provider() -> BaseProvider:
 func get_item_index_for_provider(provider: BaseProvider) -> int:
 	for i in range(get_item_count()):
 		var item_id := get_item_id(i)
-		var metadata = get_item_metadata(item_id)
+		var metadata = get_item_metadata(get_item_index(item_id))
 		
 		if provider is CoreProvider and metadata is Array:
 			var core_provider := provider as CoreProvider
@@ -147,10 +147,12 @@ func _setup_default_provider_set():
 func _create_service_set(service: Service):
 	var items: Array[ProviderItem] = []
 	
+	var item_id := 1000
 	for action in service.actions:
 		var item_name := _truncate_name(action.name)
-		var item := ProviderItem.new(item_name, items.size(), null, [service, action], service.name)
+		var item := ProviderItem.new(item_name, item_id, null, [service, action], service.name)
 		items.append(item)
+		item_id += 1
 	
 	_provider_sets[service] = items
 
@@ -168,7 +170,7 @@ func _create_combined_set(services: Array, key: String, include_standard: bool):
 				items.append(copy)
 	
 	# Add all service actions as CoreProviders
-	var next_id := items.size()
+	var next_id := 1000
 	for service in services:
 		for action in service.actions:
 			if _action_exists(action, items):
@@ -201,7 +203,7 @@ func _rebuild_dropdown():
 		var item_index := get_item_count() - 1
 		
 		if item.metadata != null:
-			set_item_metadata(item.id, item.metadata)
+			set_item_metadata(item_index, item.metadata)
 		
 		if item.tooltip != "":
 			set_item_tooltip(item_index, item.tooltip)
@@ -218,10 +220,10 @@ func _rebuild_dropdown():
 func _get_provider_from_id(item_id: int) -> BaseProvider:
 	if item_id == -1:
 		return null
-	
-	var metadata = get_item_metadata(item_id)
+
+	var metadata = get_item_metadata(get_item_index(item_id))
 	var provider: BaseProvider
-	
+
 	# CoreProvider: metadata is [Service, Action]
 	if metadata is Array and metadata.size() == 2:
 		provider = CoreProvider.new.callv(metadata)
@@ -249,7 +251,7 @@ func _load_saved_provider():
 	var provider_id = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
 	if provider_id == null:
 		return
-	
+
 	var index := _find_item_index_by_id(provider_id)
 	if index != -1:
 		select(index)
@@ -311,13 +313,20 @@ func _on_service_selected(service: Service):
 func _add_service_to_default(service: Service):
 	var default_items: Array = _provider_sets["default"]
 	
+	var next_id := 1000
+	# Find the highest CoreProvider ID already in default
+	for item in default_items:
+		if item.is_core_provider() and item.id >= next_id:
+			next_id = item.id + 1
+
 	for action in service.actions:
 		if _action_exists(action, default_items):
 			continue
 		
 		var item_name := _truncate_name(action.name)
-		var item := ProviderItem.new(item_name, default_items.size(), null, [service, action], service.name)
+		var item := ProviderItem.new(item_name, next_id, null, [service, action], service.name)
 		default_items.append(item)
+		next_id += 1
 
 
 ## Signal handler for dropdown item selection

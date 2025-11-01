@@ -152,17 +152,10 @@ func _on_new_chat():
 
 	var tab_name: = "Chat" if last_chat_number == -1 else "Chat %s" % (last_chat_number+1)
 
-	var provider_obj: BaseProvider
+	var provider_obj: = _provider_option_button.get_selected_provider()
 
-	# If there are no open chat tabs, use provider from the dropdown as the provider
-	if SingletonObject.ChatList.is_empty():
-		provider_obj = _provider_option_button.get_selected_provider()
-	
-	# if we're opening a new chat, by default select the first provider from the dropdown menu
-	else:
-		var first_provider: = _provider_option_button.get_item_id(0) as SingletonObject.API_MODEL_PROVIDERS
-
-		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[first_provider].new()
+	if not provider_obj:
+		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0].new()
 
 	# use the provider currently set on this object
 	var history: ChatHistory = ChatHistory.new(provider_obj)
