@@ -11,7 +11,7 @@
 [ext_resource type="Texture2D" uid="uid://cxlb82ejdnwli" path="res://assets/icons/code_syntax/code_syntax_24.png" id="6_6cyjk"]
 [ext_resource type="Texture2D" uid="uid://pfxc8cqe0d8" path="res://assets/icons/create_pencil_icons/pencil_icon_24_no_bg.png" id="6_15oj3"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="6_eqakq"]
-[ext_resource type="Script" uid="uid://w5b7pfjoj0xt" path="res://Scripts/UI/Views/icons_button.gd" id="6_jf4nm"]
+[ext_resource type="Script" uid="uid://63wcsxjjtlug" path="res://Scripts/UI/Views/icons_button.gd" id="6_jf4nm"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="6_nkegi"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="7_clgig"]
 [ext_resource type="Texture2D" uid="uid://gwm8wy3mpotw" path="res://assets/icons/autowrap/autowrap_icon_48.png" id="7_sbudh"]
@@ -155,6 +155,7 @@ size_flags_horizontal = 3
 
 [node name="CodeSyntaxButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 layout_mode = 2
+tooltip_text = "Toggle Code highlighting"
 toggle_mode = true
 button_pressed = true
 icon = ExtResource("6_6cyjk")
