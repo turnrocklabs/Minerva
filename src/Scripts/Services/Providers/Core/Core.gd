@@ -1,6 +1,7 @@
 extends Node
 
 # Signal emitted when a specific service/action is chosen from the preferences popup
+@warning_ignore("unused_signal")
 signal service_selected(service: Service)
 signal service_deselected(service: Service)
 

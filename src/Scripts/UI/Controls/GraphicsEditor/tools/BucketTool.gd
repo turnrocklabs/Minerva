@@ -24,9 +24,9 @@ func handle_input_event(event: InputEvent) -> bool:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.is_pressed():
 				
-				if editor.selected_layers.size() > 1:
-					display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
-					return false
+				#if editor.selected_layers.size() > 1:
+					#display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
+					#return false
 				
 				fill(event.position)
 

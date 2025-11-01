@@ -36,4 +36,3 @@ func center_view() -> void:
 	for child in get_children():
 		if child is LayerV2:
 			child.position += offset
-

@@ -14,13 +14,13 @@ enum ContextMenuItem {
 
 const _scene: = preload("res://Scenes/LayerCard.tscn")
 
-var _active_color: Color = Color.from_string("2d3648", Color.BLACK)
-var _color: Color = Color.from_string("2f2c2c", Color.BLACK)
+@export var  _active_color: Color = Color.from_string("2d3648", Color.BLACK)
+@export var _color: Color = Color.from_string("2f2c2c", Color.BLACK)
 
 
 var selected: = false:
 	set(value):
-		value = value if not layer.locked else false # don't allow selecting locked layers
+		value = value if layer and not layer.locked else false # don't allow selecting locked layers
 		selected = value
 		
 		var styleBox: StyleBoxFlat = get_theme_stylebox("panel").duplicate()
@@ -32,11 +32,13 @@ var selected: = false:
 			layer.outline_visible = true
 		else:
 			mouse_filter = Control.MOUSE_FILTER_PASS
-			layer.outline_visible = false
-			layer.transform_rect_visible = false
-			layer_deselected.emit()
+			if layer:
+				layer.outline_visible = false
+				layer.transform_rect_visible = false
+				layer_deselected.emit()
 		
-		layer.queue_redraw()
+		if layer:
+			layer.queue_redraw()
 		
 var editor: GraphicsEditorV2
 
@@ -80,7 +82,7 @@ func _draw() -> void:
 
 	name_line_edit.text = layer.name
 	match layer.type:
-		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING:
+		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING, LayerV2.Type.MASK:
 			texture_rect.texture = ImageTexture.create_from_image(layer.image)
 		LayerV2.Type.SPEECH_BUBBLE:
 			texture_rect.texture = await get_texture(layer.speech_bubble)
@@ -183,7 +185,7 @@ func _on_mouse_exited() -> void:
 func _on_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 
-		if event.is_released():
+		if event.is_pressed():
 			layer_clicked.emit(event.button_index)
 
 			if event.button_index == MOUSE_BUTTON_RIGHT:
@@ -210,8 +212,8 @@ func _on_context_menu_id_pressed(id: int) -> void:
 		ContextMenuItem.VISIBILITY:
 			layer.visible = not layer.visible
 		ContextMenuItem.REMOVE:
-			layer.queue_free()
-			queue_free()
+			delete_layer()
+			
 		ContextMenuItem.MERGE:
 			editor.merge_layers(editor.selected_layers.duplicate())
 
@@ -232,3 +234,10 @@ func _on_name_focus_exited() -> void:
 
 	# godot will change the name is already taken and append a number to it, so update the line edit
 	name_line_edit.text = layer.name
+
+
+func delete_layer() -> void:
+	if editor != null:
+		editor.delete_layer.emit(layer)
+	layer.queue_free()
+	queue_free()

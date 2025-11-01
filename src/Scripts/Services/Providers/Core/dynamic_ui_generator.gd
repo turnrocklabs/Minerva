@@ -1,6 +1,7 @@
 class_name DynamicUIGenerator
 extends Node
 
+@warning_ignore("unused_signal")
 signal parameter_changed(param_name, value)
 
 # if we have file fields in input data, this will be true

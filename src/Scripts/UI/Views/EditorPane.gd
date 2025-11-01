@@ -171,7 +171,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				var tab_name = "graphics " + str(Tabs.get_tab_count() )
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
-				editor_node.graphics_editor.grab_focus()
+				#editor_node.graphics_editor.grab_focus()
 	
 	return editor_node
 	
