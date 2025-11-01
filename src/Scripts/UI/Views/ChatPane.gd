@@ -1036,8 +1036,8 @@ func _on_txt_main_user_input_text_set():
 	update_token_estimation()
 
 func _on_btn_microphone_pressed():
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
-	SingletonObject.AtT._StartConverting()
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
 	SingletonObject.AtT.btnStop = %AudioStop1

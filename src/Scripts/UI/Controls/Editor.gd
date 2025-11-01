@@ -765,7 +765,7 @@ func clear_text():
 
 func _on_mic_button_pressed() -> void:
 	SingletonObject.AtT.FieldForFilling = code_edit
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = mic_button
 	mic_button.modulate = Color(Color.LIME_GREEN)
 

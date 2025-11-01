@@ -87,7 +87,7 @@ func _on_about_to_popup() -> void:
 func _on_record_system_prompt_button_pressed() -> void:
 	%SystemPromptTextEdit.text = ""
 	SingletonObject.AtT.FieldForFilling = %SystemPromptTextEdit
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = %RecordSystemPromptButton
 	%RecordSystemPromptButton.modulate = Color(Color.LIME_GREEN)
 

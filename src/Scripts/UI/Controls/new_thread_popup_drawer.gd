@@ -28,7 +28,7 @@ func set_values(tab_name: String, tab: Control = null) -> void:
 
 func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = %btnVoiceForNoteTab
 	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 
