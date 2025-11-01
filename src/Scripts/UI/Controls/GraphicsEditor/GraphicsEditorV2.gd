@@ -2,15 +2,14 @@ class_name GraphicsEditorV2
 extends PanelContainer
 
 signal active_tool_changed(tool_: BaseTool)
+@warning_ignore("unused_signal")
 signal active_layer_changed(layer: LayerV2)
 signal active_layer_is_mask_layer(is_mask_layer: bool)
 
 signal compose_progress_updated(progress: float)
 signal compose_finished(image: Image)
 signal delete_layer(layer: LayerV2)
-
-#@onready var mutex: = Mutex.new()
-#@onready var thread: = Thread.new()
+signal lock_unlock_media_gen_ui(lock: bool)
 
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
@@ -135,6 +134,8 @@ var active_tool: BaseTool:
 
 var saved: = true
 var _previous_tool_before_eraser: BaseTool = null  # Store tool to return to after eraser mode
+
+var _current_image_gen_request_id: String = ""
 
 func _ready() -> void:
 	
@@ -1013,7 +1014,6 @@ func _on_prompt_button_pressed() -> void:
 		image_gen_popup_panel.show()
 	else:
 		image_gen_popup_panel.hide()
-	
 
 
 func _on_send_prompt_button_pressed() -> void:
@@ -1025,15 +1025,14 @@ func _on_send_prompt_button_pressed() -> void:
 	
 	else:
 		toast =ToastNotification.create(ToastNotification.Type.INFO, "Sending Image Gen request...")
-		media_gen_socket.send_media_gen_request(params)
+		_current_image_gen_request_id = media_gen_socket.send_media_gen_request(params)
 	SingletonObject.main_scene.add_child(toast)
-	
-	
-	
 
 
-func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
+func _on_image_received(filename:String, request_id: String, buffer: PackedByteArray) -> void:
 	# Always hide progress window when receiving response (success or failure)
+	if request_id != _current_image_gen_request_id:
+		return
 	if progress_window.visible:
 		progress_window.hide()
 
@@ -1051,6 +1050,7 @@ func _on_image_received(filename:String, buffer: PackedByteArray) -> void:
 	var l: = LayerV2.create_image_layer(filename, image)
 
 	add_layer(l)
+	_current_image_gen_request_id = ""
 
 #endregion HTTP image gen
 
@@ -1092,7 +1092,7 @@ func _on_edit_img_button_pressed() -> void:
 	if !seed_line_edit.text.is_empty():
 		params["seed"] = seed_line_edit.text
 	
-	media_gen_socket.send_media_edit_request(params, image_buffer, image_filename)
+	_current_image_gen_request_id = media_gen_socket.send_media_edit_request(params, image_buffer, image_filename)
 
 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
@@ -1215,7 +1215,7 @@ func _on_mask_edit_button_pressed() -> void:
 	
 	var selective_editing_params: Dictionary = get_params_image_gen()
 	selective_editing_params["mask_channel"] = mask_color_channel
-	media_gen_socket.send_media_selective_edit_request(selective_editing_params, images_dir)
+	_current_image_gen_request_id = media_gen_socket.send_media_selective_edit_request(selective_editing_params, images_dir)
 
 
 func _on_new_mask_layer_button_pressed() -> void:
@@ -1265,3 +1265,5 @@ func _on_mask_h_slider_value_changed(value: float) -> void:
 
 func _on_delete_layer(layer: LayerV2) -> void:
 	layers.erase(layer)
+	selected_layers.erase(layer)
+	selected_mask_layers.erase(layer)

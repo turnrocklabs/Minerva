@@ -143,8 +143,8 @@ func _on_binary_file_saved_received(file_index: int, filename: String, path: Str
 	pass
 
 
-func _on_image_response_received(fname: String, buffer: PackedByteArray) -> void:
-	pass_image_to_editor.emit(fname, buffer)
+func _on_image_response_received(fname: String, request_id: String, buffer: PackedByteArray) -> void:
+	pass_image_to_editor.emit(fname, request_id, buffer)
 
 
 func send_media_edit_request(editing_params: Dictionary, \

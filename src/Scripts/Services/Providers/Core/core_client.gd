@@ -16,7 +16,7 @@ signal binary_file_info_received(file_index: int, filename: String, size: int)
 signal binary_file_progress(file_index: int, received: int, total_size: int, progress_pct: float)
 signal binary_file_saved(file_index: int, filename: String, path: String)
 signal binary_transfer_complete(request_id: String) # Emitted when the final text response confirms all files for a request are saved.
-signal image_received(filename: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
+signal image_received(filename: String, request_id: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
 
 enum EntityType {
 	HUMAN_AGENT,
@@ -24,13 +24,6 @@ enum EntityType {
 	SERVICE,
 	CLIENT
 }
-
-#enum FrameType {
-	#NEW_MESSAGE = 0,
-	#BINARY_HEADER = 1,
-	#BINARY_DATA = 2,
-	#STREAM_END = 3,
-#}
 
 # Binary frame types (from Python reference)
 const NEW_MESSAGE = 0
@@ -309,226 +302,6 @@ func parse_json_packet(packet_str):
 		return null
 
 
-#func _handle_binary_message(packet: PackedByteArray):
-	#print("Total packet size:", packet.size())
-	#var offset = 0
-	#
-	#while offset < packet.size():
-		#if offset + 17 >= packet.size():
-			#break
-			#
-		#var frame_type = packet[offset]
-		#print("\nChecking offset", offset)
-		#print("Frame type:", frame_type)
-		#print("Next bytes:", packet.slice(offset, min(offset + 20, packet.size())).hex_encode())
-		#
-		#match frame_type:
-			#0,1,2:
-				#var msg_id = packet.slice(offset + 1, offset + 17)
-				#var data = packet.slice(offset + 17)
-				#_handle_frame(packet.slice(offset, offset + get_frame_size(frame_type, data)))
-				#offset += get_frame_size(frame_type, data)
-			#_:
-				#offset += 1
-
-#func get_frame_size(frame_type: int, data: PackedByteArray) -> int:
-	#var u32_bytes = 4
-	#match frame_type:
-		#0: # NEW_MESSAGE
-			#var json_len = bytes_to_u32(data.slice(0, u32_bytes))
-			#var num_files = bytes_to_u32(data.slice(u32_bytes, u32_bytes * 2))
-			#return 1 + 16 + u32_bytes * 2 + json_len # type + msgid + jsonlen + numfiles + json
-		#1: # BINARY_HEADER  
-			#var path_len = bytes_to_u32(data.slice(0, u32_bytes))
-			#var file_size = bytes_to_u32(data.slice(u32_bytes, u32_bytes * 2))
-			#return 1 + 16 + u32_bytes * 2 + path_len # type + msgid + pathlen + filesize + path
-		#2: # BINARY_DATA
-			#return 1 + 16 + data.size() # type + msgid + data
-	#return 1
-#
-#func bytes_to_u32(bytes: PackedByteArray) -> int:
-	#if bytes.size() < 4:
-		#return 0
-	#return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24)  # ← LITTLE-ENDIAN
-#
-#func _handle_frame(frame: PackedByteArray):
-	#var frame_type = frame[0]
-	#var msg_id = frame.slice(1, 17).hex_encode()
-	#var data = frame.slice(17)
-	#
-	#print("frame_type: ", frame_type)
-	#print("msg_id: ", msg_id)
-	## print("data: ", data)
-#
-	#match frame_type:
-		#0: _handle_new_message(msg_id, data)
-		#1: _handle_binary_header(msg_id, data)
-		#2: _handle_binary_data(msg_id, data)
-
-#func _handle_new_message(msg_id: String, data: PackedByteArray):
-	#var json_len = decode_u32(data, 0)
-	#var num_files = decode_u32(data, 4)
-	#var json_data = parse_json_packet(data.slice(8, 8 + json_len).get_string_from_utf8())
-	#
-	#print("New message received, json:")
-	#print(json_data)
-	#
-	## create new transfer
-	#var t: = Transfer.new()
-	#t.json_data = json_data
-	#t.total_files = num_files
-#
-	#_active_transfers[msg_id] = t
-#
-#func _handle_binary_header(msg_id: String, data: PackedByteArray):
-	#var path_len = decode_u32(data, 0)
-	#var file_size = decode_u32(data, 4)
-	#var path = data.slice(8, 8 + path_len).get_string_from_utf8()
-	#
-	#print("New file received")
-	#print(path)
-#
-	#var t: Transfer = _active_transfers[msg_id]
-#
-	#var trasnfer_dir = Transfer.DIRECTORY.path_join(msg_id)
-	#t.directory = trasnfer_dir
-#
-	#DirAccess.make_dir_recursive_absolute(trasnfer_dir)
-#
-	## example: Transfer.DIRECTORY/fth4736247fjg/notes_0_MemoryImage.tmp
-	#var fp: = trasnfer_dir.path_join("%s.tmp" % path.replace("/", "_"))
-#
-	#t.fa = FileAccess.open(fp, FileAccess.WRITE_READ)
-#
-#
-	#if not t.fa:
-		#breakpoint
-		#print(error_string(FileAccess.get_open_error()))
-#
-	#t.file_path = path
-	#t.file_size = file_size
-#
-#
-#func _handle_binary_data(msg_id: String, data: PackedByteArray):
-	#if msg_id in _active_transfers:
-		## store data to active transfer file object
-#
-		#var t: Transfer = _active_transfers[msg_id]
-#
-		#t.fa.store_buffer(data)
-#
-		#print("Received binary data")
-		#print("pos: ", t.fa.get_position())
-		#print("total: ", t.file_size)
-#
-		## file received, store file object in json
-		#if t.file_size == t.fa.get_position():
-#
-			#var current = t.json_data["params"]["data"] if "data" in t.json_data["params"] else t.json_data["params"]["result"]
-			#var keys = t.file_path.split("/")
-			#for i in range(keys.size() - 1):
-				#current = current[int(keys[i]) if keys[i].is_valid_int() else keys[i]]
-			#current[keys[-1]] = t.fa
-#
-			## seek to beginning to be ready for reading afterwards
-			#t.fa.seek(0)
-			#t.received += 1
-		#print(t.total_files)
-		## the transfer is complete or the transfer is a stream with unknown number of files
-		#if t.received == t.total_files or t.total_files == -1:
-			#print("emit response received")
-			#response_received.emit(t.json_data, null)
-			#message_received.emit(t.json_data)
-
-
-#func _check_transfer_complete(transfer: Dictionary) -> bool:
-	#for path in transfer.files:
-		#if transfer.files[path].data.size() < transfer.files[path].size:
-			#return false
-	#return true
-
-
-#func decode_u32(data, offset):
-	#var value = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)  # ← LITTLE-ENDIAN
-	## Handle signed int  
-	#if value & 0x80000000:
-		#value = value - 0x100000000
-	#return value
-
-#func _handle_message(data, _binary_data = null):
-	#
-	#var json_str = JSON.stringify(data)
-	#print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
-	#print("Received message: \n%s" % json_str) # Corrected string formmatting
-	#var cmd = data.get("cmd", "")
-	#var topic = data.get("topic", "")
-	#var entity_type = data.get("entity_type", "")
-#
-	## error response example
-	## {"cmd":"error","entity_type":"core","params":{"client_id":"1740244954.312","error":"Missing required field: cmd"},"topic":"skills/discovery"}
-#
-	#if cmd == "error" and entity_type == "core":
-		#var error_code: String = data.get("params", {}).get("error_code", "") # Explicitly type
-		#var error_msg: String = data.get("params", {}).get("error", "") # Explicitly type
-		#
-		#if error_code == "AUTH_FAILED_PROFILE_CMD_ERROR" or "token" in error_msg.to_lower():
-			#print("Authentication failed: %s" % error_msg) # Corrected string formatting
-			#
-			## Only attempt auto-login once per connection
-			#if not _auth_retry_attempted:
-				#_auth_retry_attempted = true
-				#auth_failed.emit()
-				#return
-			#else:
-				#print("Auto-login already attempted, not retrying")
-				#return
-#
-	#elif cmd == "register" and entity_type == "service":
-		#service_registered.emit(data.get("params", {}))
-#
-		## var skill_info = data.get("params", {}).get("skill_info", {})
-		## var service_name = skill_info.get("name", "")
-		## var description = skill_info.get("description", "No description available.")
-		## var input_requirements = skill_info.get("input_parameters", {})
-		## var output_requirements = skill_info.get("output_parameters", {})
-		## var service_topics = data.get("params", {}).get("topics", [])
-	#if cmd == "registration_confirmed" and entity_type == "core":
-		#_auth_retry_attempted = false  # Reset on successful registration
-		#registered_with_core.emit()
-		## Send any queued messages after successful registration
-		#if _message_queue.size() > 0:
-			#_send_queued_messages()
-	#elif cmd == "response" and entity_type == "core":
-		#var request_id: String = data.get("params", {}).get("request_id", "") # Explicitly type
-		#
-		## Check if this is a discovery response
-		#var result: Dictionary = data.get("params", {}).get("result", {}) # Explicitly type
-		#var services: Array = result.get("services", []) # Explicitly type
-		#
-		#if services.size() > 0:
-			## This is a discovery response
-			#discovery_response_data = data
-			##_process_discovery_response(services)
-		#
-		## Handle final response for an image generation request that included binary transfer
-		#if request_id == _current_binary_request_id:
-			#print("  ✔️ Final SUCCESS for request_id=%s: %s" % [request_id, JSON.stringify(result, "\t", false)]) # Corrected string formatting
-			#if _binary_expected_files > 0 and _binary_files_completed == _binary_expected_files:
-				#print("  📦 All %s files for request %s successfully saved." % [_binary_files_completed, request_id]) # Corrected string formatting
-				#binary_transfer_complete.emit(request_id)
-				#_reset_binary_transfer_state() # Reset state after full completion
-			#elif _binary_expected_files > 0:
-				#print("  ⚠️ Received final response but only %s/%s files completed for request %s" % [_binary_files_completed, _binary_expected_files, request_id]) # Corrected string formatting
-				#_reset_binary_transfer_state() # Reset anyway to prevent stale state
-		#
-		## Always emit the response_received signal
-		#response_received.emit(data)
-	#elif cmd == "ack":
-		#print("Received acknowledgment: ", data.get("message", ""))
-	#
-	#message_received.emit(data)
-
-
 func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 	var json_str = JSON.stringify(data)
 	print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
@@ -554,12 +327,17 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 				print("Auto-login already attempted, not retrying")
 				return
 	
-	if cmd == "registration_confirmed" and entity_type == "core":
+	elif cmd == "registration_confirmed" and entity_type == "core":
 		_auth_retry_attempted = false  # Reset on successful registration
 		registered_with_core.emit()
 		# Send any queued messages after successful registration
 		if _message_queue.size() > 0:
 			_send_queued_messages()
+	elif cmd == "notification": 
+		var text: String = ((data.get("params", "")as Dictionary).get("data","") as Dictionary).get("message", "")
+		if !text.is_empty():
+			var toast: = ToastNotification.create(ToastNotification.Type.INFO, text)
+			SingletonObject.main_scene.add_child(toast)
 	elif cmd == "response" and entity_type == "core":
 		var request_id: String = data.get("params", {}).get("request_id", "") # Explicitly type
 		
@@ -590,9 +368,6 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 	message_received.emit(data)
 
 
-
-
-
 func register_with_core(auth_token: String, client_id_: String):
 	client_id = client_id_
 	var register_msg = {
@@ -606,6 +381,7 @@ func register_with_core(auth_token: String, client_id_: String):
 		}
 	}
 	send_text_message_to_core(register_msg)
+
 
 func request_connections() -> String:
 	var req_id: = UUIDGen.v7()
@@ -646,31 +422,6 @@ func send_text_message_to_core(message):
 	_client.send_text(json_string)
 
 
-#func _has_binary_data(params, current_path: = "") -> bool:
-	#if params is Array:
-		#for item in params:
-			#if _has_binary_data(item, current_path):
-				#return true
-	#elif params is Dictionary:
-		#for value in params.values():
-			#if value is FileAccess or value is Image:
-				#return true
-			#elif value is Dictionary or value is Array:
-				#if _has_binary_data(value, current_path):
-					#return true
-	#return false
-
-## Determines if the message needs to be sent in binary or text format and sends it to core[br]
-## Message will be sent as a binary message if [parameter data] has fields with values of the following types:[br]
-## [class.FileAcess]
-## [class.Image]
-#func send_message(service: Service, action: Action, data: Dictionary, auth_token: String = "") -> String:
-#
-	#if _has_binary_data(data):
-		#return send_binary_message(service, action, data, auth_token)
-#
-	#return send_text_message(service, action, data, auth_token)
-#
 func send_text_message(service: Service, action: Action, data: Dictionary, auth_token: String = "") -> String:
 	var request_id = UUIDGen.v7()
 	var message = {
@@ -693,109 +444,6 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 
 	return request_id
 
-#func send_binary_message(service: Service, action: Action, params: Dictionary, auth_token: String = ""):
-	## duplicate the params dictionary so it doesnt alter the provided one
-	#params = params.duplicate(true)
-	#
-	#var binary_data: = _prepare_binary_data(params)
-#
-	#var request_id = generate_unique_request_id()
-	#var message = {
-		#"cmd": "request",
-		#"topic": action.topic,
-		#"entity_type": "client",
-		#"params": {
-			#"client_id": client_id,
-			#"request_id": request_id,
-			#"target_service_id": service.client_id,
-			#"auth": auth_token,
-			#"data": params
-		#}
-	#}
-	## message["params"] = merge_dictionaries(message["params"], params)
-#
-	#print("\n\nBINARY MESSAGE")
-	#print(message)
-	#print(binary_data)
-#
-	#var json_string: = JSON.stringify(message)
-	#var json_bytes = json_string.to_utf8_buffer()
-	#var json_length = json_bytes.size()
-#
-	## Generate msg_id (16 bytes)
-	#var msg_id = PackedByteArray()
-	#msg_id.resize(16)
-	#for i in range(16):
-		#msg_id[i] = randi() % 256
-#
-	## NEW_MESSAGE frame
-	#var frame = PackedByteArray()
-	#frame.append(FrameType.NEW_MESSAGE)  # frame type
-	#print("Frame bytes: ", frame.hex_encode())
-	#frame.append_array(msg_id)  # msg_id
-	## json length and number of files
-	#encode_u32(frame, frame.size(), json_length)
-	#encode_u32(frame, frame.size(), binary_data.size())
-	#frame.append_array(json_bytes)
-#
-	#send_packet(frame)
-	#print("sending header + json")
-#
-	## Send each file
-	#const CHUNK_SIZE = 32 * 1024  # Reduced chunk size
-	#for path in binary_data:
-		#var obj = binary_data[path]
-		#
-		#var file_size: int
-		#var get_chunk_func: Callable
-		#
-		## Handle different object types
-		#if obj is FileAccess:
-			#var fa: FileAccess = obj
-			#file_size = fa.get_length()
-			#fa.seek(0)
-			#get_chunk_func = func(size): return fa.get_buffer(size)
-			#
-		#elif obj is Image:
-			#var img: Image = obj
-			#var png_buffer = img.save_png_to_buffer()
-			#var pos_wrapper = {"position": 0}  # Use dictionary to work around capture limitation
-			#file_size = png_buffer.size()
-			#get_chunk_func = func(size): 
-				#var chunk_size = min(size, file_size - pos_wrapper.position)
-				#var chunk = png_buffer.slice(pos_wrapper.position, pos_wrapper.position + chunk_size)
-				#pos_wrapper.position += chunk_size
-				#return chunk
-		#
-		## BINARY_HEADER frame
-		#var path_bytes = path.to_utf8_buffer()
-		#
-		## Send raw binary header frame
-		#frame = PackedByteArray()
-		#frame.append(FrameType.BINARY_HEADER)  # frame type byte
-		#frame.append_array(msg_id)             # msg_id 16 bytes
-		#encode_u32(frame, frame.size(), path_bytes.size())  # path length 4 bytes
-		#encode_u32(frame, frame.size(), file_size)         # file size 4 bytes
-		#frame.append_array(path_bytes)                      # path bytes
-		#
-		#send_packet(frame)
-		#print("sending file header")
-		#
-		## BINARY_DATA frames
-		#var bytes_sent = 0
-		#while bytes_sent < file_size:
-			#frame = PackedByteArray()
-			#frame.append(FrameType.BINARY_DATA)   # frame type byte
-			#frame.append_array(msg_id)            # msg_id 16 bytes
-			#frame.append_array(get_chunk_func.call(CHUNK_SIZE))  # chunk of data
-			#
-			#bytes_sent += min(CHUNK_SIZE, file_size - bytes_sent)
-			#send_packet(frame)
-		#print("sending file content")
-#
-	#print("Data sending finished")
-#
-	#return request_id
 
 # Add this helper function to handle packet sending with backpressure
 func send_packet(packet: PackedByteArray) -> void:
@@ -803,70 +451,6 @@ func send_packet(packet: PackedByteArray) -> void:
 	# 	await get_tree().create_timer(0.1).timeout
 	_client.put_packet(packet)
 
-
-#func _prepare_binary_data(params, current_path: = "") -> Dictionary:
-	#var data: = {}
-#
-	## Handle arrays
-	#if params is Array:
-		#for i in range(params.size()):
-			#var item = params[i]
-#
-			#var new_path: = "%s/%s" % [current_path, i]
-			#if new_path.begins_with("/"):
-				#new_path = new_path.erase(0)
-#
-			#data.merge(_prepare_binary_data(item, new_path))
-	#
-	## Handle dictionaries
-	#elif params is Dictionary:
-#
-		#for key in params:
-			#var value = params[key]
-			#var path: = "%s/%s" % [current_path, key]
-#
-			#if path.begins_with("/"):
-				#path = path.erase(0)
-#
-			#if value is Dictionary or value is Array:
-				#data.merge(_prepare_binary_data(value, path))
-			#
-			#elif value is FileAccess or value is Image:
-				#data[path] = value
-#
-	## Remove binary data from nested structures
-	#if current_path.is_empty():
-		#for binary_path in data.keys():
-			#var parts = binary_path.split("/")
-			#var current_dict = params
-			#
-			## Navigate through the path
-			#for i in range(parts.size() - 1):
-				#var part = parts[i]
-				#if current_dict.has(part):
-					#if current_dict[part] is Array:
-						#current_dict = current_dict[part][parts[i + 1].to_int()]
-						#i += 1  # Skip the next part since we used it for array index
-					#else:
-						#current_dict = current_dict[part]
-			#
-			## Remove the binary data key
-			#if current_dict is Dictionary:
-				#var last_key = parts[-1]
-				#current_dict.erase(last_key)
-#
-	#return data
-
-#func encode_u32(data: PackedByteArray, offset: int, value: int):
-	#if offset + 4 > data.size():
-		#data.resize(offset + 4)
-	#data[offset] = value & 0xFF          # Least significant byte first
-	#data[offset + 1] = (value >> 8) & 0xFF
-	#data[offset + 2] = (value >> 16) & 0xFF
-	#data[offset + 3] = (value >> 24) & 0xFF  # Most significant byte last
-#
-#func generate_unique_request_id() -> String:
-	#return UUIDGen.v7()
 
 func merge_dictionaries(dict1, dict2):
 	var result = dict1.duplicate()
@@ -905,6 +489,7 @@ func _decode_u64_le(bytes_array: PackedByteArray, offset: int) -> int: # Explici
 	for i in range(8):
 		val |= int(bytes_array[offset + i]) << (i * 8)
 	return val
+
 
 func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type parameter
 	print("DEBUG_BINARY: _handle_binary_frame received msg. Total size: %s bytes." % msg.size())
@@ -1088,7 +673,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				var time: = Time.get_datetime_string_from_system().replace(":", "_")
 				var fname: String = _binary_filenames[file_index].replace(ext, "") + time  + ext# Explicitly type
 				var out_path: String = "user://temp/" + fname # Using user:// for persistence in Godot (Explicitly type)
-				image_received.emit(fname, buf) # Emit the raw image buffer
+				image_received.emit(fname, _current_binary_request_id, buf) # Emit the raw image buffer
 				
 				var dir = DirAccess.open("user://temp/")
 				if dir == null: # Check for error
@@ -1105,7 +690,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					file.close()
 					_binary_files_completed += 1
 					print("   ✅ FILE_END idx=%s saved to %s (%s bytes). Total completed: %s/%s" % [file_index, out_path, buf.size(), _binary_files_completed, _binary_expected_files]) # Corrected string formatting
-					binary_file_saved.emit(file_index, fname, out_path)
+					binary_file_saved.emit(file_index, _current_binary_request_id, fname, out_path)
 				else:
 					print(FileAccess.get_open_error())
 					print("   ❌ Could not save file %s" % out_path) # Corrected string formatting
@@ -1117,7 +702,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 			print("   ❓ Unknown binary frame type: %s" % frame_type) # Corrected string formatting
 
 
-func send_media_gen_request(generation_params: Dictionary) -> void: # Accepts a dictionary of parameters
+func send_media_gen_request(generation_params: Dictionary) -> String: # Accepts a dictionary of parameters
 	var request_id: String = UUIDGen.v7() # Generate request_id once (Explicitly type)
 	var message: Dictionary = { # Explicitly type
 		"cmd": "request",
@@ -1147,9 +732,10 @@ func send_media_gen_request(generation_params: Dictionary) -> void: # Accepts a 
 	# Store the request_id locally, so _handle_message can track the binary response.
 	_current_binary_request_id = request_id
 	send_message_to_core(message)
+	return request_id
 
 
-func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByteArray, image_filename: String = "input_image.png") -> void:
+func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByteArray, image_filename: String = "input_image.png") -> String:
 	var request_id: String = UUIDGen.v7()
 	
 	# Base64 encode the image buffer
@@ -1180,9 +766,10 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 	(message["params"] as Dictionary)["data"] = merge_dictionaries((message["params"] as Dictionary)["data"] as Dictionary, editing_params)
 	_current_binary_request_id = request_id
 	send_message_to_core(message)
+	return request_id
 
 
-func send_media_selective_edit_request(editing_params: Dictionary, images_dir: Array) -> void:
+func send_media_selective_edit_request(editing_params: Dictionary, images_dir: Array) -> String:
 	var request_id: String = UUIDGen.v7()
 	
 	var message: Dictionary = {
@@ -1211,6 +798,8 @@ func send_media_selective_edit_request(editing_params: Dictionary, images_dir: A
 	
 	_current_binary_request_id = request_id
 	send_message_to_core(message)
+	
+	return request_id
 
 
 func _queue_message_for_retry(message: Dictionary) -> void: # Explicitly type parameter

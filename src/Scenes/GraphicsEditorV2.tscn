@@ -100,8 +100,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 4.0
 offset_top = 4.0
-offset_right = -4.0
-offset_bottom = -4.0
+offset_right = 204.0
+offset_bottom = 696.0
 grow_horizontal = 2
 grow_vertical = 2
 size_flags_horizontal = 10
@@ -496,7 +496,7 @@ script = ExtResource("22_nin75")
 [node name="MaskLayerCardsPopupPanel" type="PopupPanel" parent="."]
 unique_name_in_owner = true
 auto_translate_mode = 1
-size = Vector2i(377, 317)
+size = Vector2i(377, 405)
 
 [node name="MaskLayerCardsPanelContainer" type="PanelContainer" parent="MaskLayerCardsPopupPanel"]
 unique_name_in_owner = true
@@ -504,45 +504,55 @@ z_index = 2
 offset_left = 4.0
 offset_top = 4.0
 offset_right = 373.0
-offset_bottom = 313.0
+offset_bottom = 401.0
 grow_vertical = 2
 
-[node name="ScrollContainer" type="ScrollContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer"]
-custom_minimum_size = Vector2(200, 300)
+[node name="VBoxContainer" type="VBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer"]
 layout_mode = 2
-size_flags_horizontal = 10
-size_flags_vertical = 3
-mouse_filter = 0
-mouse_force_pass_scroll_events = false
-horizontal_scroll_mode = 0
+theme_override_constants/separation = 8
 
-[node name="v2" type="VBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer"]
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
+size_flags_vertical = 4
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2"]
-layout_mode = 2
-
-[node name="NewMaskLayerButton" type="Button" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2/HBoxContainer"]
+[node name="NewMaskLayerButton" type="Button" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Add a mask layer for AI image editing"
-text = "Add Mask"
 icon = ExtResource("2_dcy55")
+flat = true
 alignment = 0
 
-[node name="MaskContainer" type="HBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2"]
+[node name="CopyMaskLayerButton" type="Button" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("3_m1bgl")
+flat = true
+
+[node name="MergeMaskLayersButton" type="Button" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "M"
+flat = true
+
+[node name="DeleteMaskLayerButton" type="Button" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+icon = ExtResource("4_oylf0")
+flat = true
+
+[node name="MaskContainer" type="HBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 9
 
-[node name="Label" type="Label" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2/MaskContainer"]
+[node name="Label" type="Label" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "Mask Color: "
 
-[node name="MaskColorOptionButton" type="OptionButton" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2/MaskContainer"]
+[node name="MaskColorOptionButton" type="OptionButton" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer"]
 unique_name_in_owner = true
 texture_filter = 1
 layout_mode = 2
@@ -560,7 +570,7 @@ popup/item_2/text = "Green"
 popup/item_2/icon = SubResource("GradientTexture2D_oylf0")
 popup/item_2/id = 2
 
-[node name="MaskHSlider" type="HSlider" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2/MaskContainer"]
+[node name="MaskHSlider" type="HSlider" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(118.705, 0)
 layout_mode = 2
@@ -570,7 +580,21 @@ min_value = 5.0
 max_value = 46.0
 value = 23.0
 
-[node name="MaskLayerCardsContainer" type="VBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2"]
+[node name="ScrollContainer" type="ScrollContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer"]
+custom_minimum_size = Vector2(200, 300)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 0
+mouse_force_pass_scroll_events = false
+horizontal_scroll_mode = 0
+
+[node name="v2" type="VBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MaskLayerCardsContainer" type="VBoxContainer" parent="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/ScrollContainer/v2"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -841,9 +865,9 @@ text = "Send"
 [connection signal="gui_input" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
 [connection signal="mouse_entered" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
 [connection signal="mouse_exited" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
-[connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2/HBoxContainer/NewMaskLayerButton" to="." method="_on_new_mask_layer_button_pressed"]
-[connection signal="item_selected" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
-[connection signal="value_changed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/ScrollContainer/v2/MaskContainer/MaskHSlider" to="." method="_on_mask_h_slider_value_changed"]
+[connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer/NewMaskLayerButton" to="." method="_on_new_mask_layer_button_pressed"]
+[connection signal="item_selected" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
+[connection signal="value_changed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskHSlider" to="." method="_on_mask_h_slider_value_changed"]
 [connection signal="toggled" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
 [connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
 [connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_img_button_pressed"]
