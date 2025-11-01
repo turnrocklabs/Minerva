@@ -74,7 +74,7 @@ signal lock_unlock_media_gen_ui(lock: bool)
 @onready var mask_layer_cards_popup_panel: PopupPanel = %MaskLayerCardsPopupPanel
 @onready var image_gen_panel_container: PanelContainer = %ImageGenPanelContainer
 @onready var mask_layer_cards_panel_container: PanelContainer = %MaskLayerCardsPanelContainer
-@onready var mask_edit_button: Button = %MaskEditButton
+@onready var mask_edit_button: Button = %MaskEditPanelButton
 @onready var mask_h_slider: HSlider = %MaskHSlider
 @onready var tool_size_v_slider: VSlider = %ToolSizeVSlider
 @onready var copy_layer_button: Button = %CopyLayerButton
@@ -1052,21 +1052,21 @@ func _on_image_received(filename:String, request_id: String, buffer: PackedByteA
 	add_layer(l)
 	_current_image_gen_request_id = ""
 
-#endregion HTTP image gen
-
 
 func _on_edit_img_button_pressed() -> void:
-	if not active_layer or not active_layer.image or active_layer.image.is_empty():
-		display_message("Error", "No active layer with an image to edit. Select an image layer first.")
+	if media_gen_layers_container.get_child_count() < 1:
 		return
-		
-	if prompt_text_edit.text.is_empty():
-		display_message("Input Required", "Please enter a positive prompt for image editing.")
-		return
-
+	
+	var layer_to_send: LayerCard = null
+	for i: LayerCard in media_gen_layers_container.get_children():
+		if i.selected:
+			layer_to_send = i
+			break
 	# 1. Get the image from the active layer
-	var image_to_edit: Image = active_layer.image
-	var image_filename: String = active_layer.name + ".png" # Use layer name as filename
+	if layer_to_send == null:
+		return
+	var image_to_edit: Image = layer_to_send.layer.image
+	var image_filename: String = layer_to_send.layer.name + ".png" # Use layer name as filename
 
 	# 2. Convert Image to PackedByteArray (PNG format)
 	# The image must be converted to RGBA8 for PNG export if it's not already.
@@ -1134,23 +1134,34 @@ func get_first_image_layer() -> LayerV2:
 			return i
 	return null
 
+@onready var media_gen_layers_container: VBoxContainer = %MediaGenLayersContainer
+@onready var mask_media_gen_layers_container: VBoxContainer = %MaskMediaGenLayersContainer
 
 func _on_mask_edit_button_pressed() -> void: 
-	if not active_layer or not active_layer.image or active_layer.image.is_empty():
-		display_message("Error", "No active layer with an image to edit. Select an image layer first.")
-		return
+	#if not active_layer or not active_layer.image or active_layer.image.is_empty():
+		#display_message("Error", "No active layer with an image to edit. Select an image layer first.")
+		#return
+	#
+	#if selected_layers.size() < 2 and (!selected_layers_has_mask() or !selected_layers_has_image()):
+		#display_message("Error", "No mask or no image selected")
+		#return
 	
-	if selected_layers.size() < 2 and (!selected_layers_has_mask() or !selected_layers_has_image()):
-		display_message("Error", "No mask or no image selected")
+	if media_gen_layers_container.get_child_count() < 1 or mask_media_gen_layers_container.get_child_count() < 1:
 		return
+		
+	var image_layer_to_edit: LayerCard = null
+	for i: LayerCard in media_gen_layers_container.get_children():
+		if i.selected:
+			image_layer_to_edit = i
+			break
 	if prompt_text_edit.text.is_empty():
 		display_message("Input Required", "Please enter a positive prompt for masked image editing.")
 		return
 	
 	var images_dir: Array = []
 	
-	
-	var image_layer_to_edit: = get_first_image_layer()
+	if image_layer_to_edit == null:
+		return
 	var base_image_to_edit: Image = image_layer_to_edit.image
 	var base_image_filename: String = image_layer_to_edit.name + ".png" 
 	
@@ -1176,10 +1187,10 @@ func _on_mask_edit_button_pressed() -> void:
 	
 	var mask_dir: = {}
 	var mask_color_channel: = ""
-	for i in selected_layers:
+	for i: LayerCard in mask_media_gen_layers_container.get_children():
 		if i.type == LayerV2.Type.MASK:
-			var base_mask_image: = i.image
-			var mask_layer_name: = i.name + ".png"
+			var base_mask_image: = i.layer.image
+			var mask_layer_name: = i.layer.name + ".png"
 			mask_color_channel = i.mask_color_name
 			var base_mask_image_for_export: Image = base_mask_image.duplicate()
 			if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
@@ -1245,18 +1256,34 @@ func _on_mask_color_option_button_item_selected(index: int) -> void:
 	active_layer.lock_color = true
 
 
-func _on_mask_edit_button_toggled(toggled_on: bool) -> void:
-	if toggled_on:
-		mask_layer_cards_popup_panel.position = Vector2(
+func _on_mask_edit_panel_button_pressed() -> void:
+	if !%SelectiveEditingPopupPanel.visible:
+		%SelectiveEditingPopupPanel.position = Vector2(
 			(
 				mask_edit_button.global_position.x 
 				+ mask_edit_button.size.x
 			),
-			mask_edit_button.global_position.y - mask_layer_cards_popup_panel.size.y/2.0
+			mask_edit_button.global_position.y - (%SelectiveEditingPopupPanel.size.y * 0.8)
 		)
-		mask_layer_cards_popup_panel.show()
+		for i: LayerCard in layer_cards_container.get_children():
+			var j: LayerCard = i.duplicate()
+			j.selected = false
+			await get_tree().process_frame
+			%MediaGenLayersContainer.add_child(j)
+	
+		for i: LayerCard in mask_layer_cards_container.get_children():
+			var j: LayerCard = i.duplicate()
+			j.selected = false
+			await get_tree().process_frame
+			%MaskMediaGenLayersContainer.add_child(j)
+		%SelectiveEditingPopupPanel.show()
 	else:
-		mask_layer_cards_popup_panel.hide()
+		%SelectiveEditingPopupPanel.hide()
+		for i in %MediaGenLayersContainer.get_children():
+			i.queue_free()
+		for i in %MaskMediaGenLayersContainer.get_children():
+			i.queue_free()
+
 
 
 func _on_mask_h_slider_value_changed(value: float) -> void:
@@ -1267,3 +1294,41 @@ func _on_delete_layer(layer: LayerV2) -> void:
 	layers.erase(layer)
 	selected_layers.erase(layer)
 	selected_mask_layers.erase(layer)
+
+
+func _on_delete_mask_layer_button_pressed() -> void:
+	for i: LayerCard in mask_layer_cards_container.get_children():
+		if i.selected:
+			i.delete_layer()
+
+
+func _on_copy_mask_layer_button_pressed() -> void:
+	pass # Replace with function body.
+
+
+func _on_copy_layer_button_pressed() -> void:
+	pass # Replace with function body.
+
+
+func _on_button_pressed() -> void:
+	if !mask_layer_cards_popup_panel.visible:
+		mask_layer_cards_popup_panel.position = Vector2(
+			(
+				%ShowLayersButton.global_position.x 
+				+ mask_edit_button.size.x
+			),
+			%ShowLayersButton.global_position.y - mask_layer_cards_popup_panel.size.y/2.0
+		)
+		#for i: LayerCard in layer_cards_container.get_children():
+			#var j: LayerCard = i.duplicate()
+			#j.selected = false
+			#%MediaGenLayersContainer.add_child(j)
+	#
+		#for i: LayerCard in mask_layer_cards_container.get_children():
+			#var j: LayerCard = i.duplicate()
+			#j.selected = false
+			#%MaskMediaGenLayersContainer.add_child(j)
+		mask_layer_cards_popup_panel.show()
+	else:
+		mask_layer_cards_popup_panel.hide()
+		

@@ -91,62 +91,60 @@ script = ExtResource("1_yogh5")
 
 [node name="LayerCardsPopupPanel" type="PopupPanel" parent="."]
 unique_name_in_owner = true
-size = Vector2i(208, 700)
+size = Vector2i(240, 700)
 
-[node name="ScrollContainer" type="ScrollContainer" parent="LayerCardsPopupPanel"]
-custom_minimum_size = Vector2(200, 300)
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
+[node name="PanelContainer" type="PanelContainer" parent="LayerCardsPopupPanel"]
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 204.0
+offset_right = 236.0
 offset_bottom = 696.0
-grow_horizontal = 2
-grow_vertical = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="LayerCardsPopupPanel/PanelContainer"]
+custom_minimum_size = Vector2(200, 300)
+layout_mode = 2
 size_flags_horizontal = 10
 size_flags_vertical = 3
 mouse_filter = 0
 mouse_force_pass_scroll_events = false
 horizontal_scroll_mode = 0
 
-[node name="v2" type="VBoxContainer" parent="LayerCardsPopupPanel/ScrollContainer"]
+[node name="v2" type="VBoxContainer" parent="LayerCardsPopupPanel/PanelContainer/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/ScrollContainer/v2"]
+[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2"]
 layout_mode = 2
 
-[node name="NewLayerButton" type="Button" parent="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer"]
+[node name="NewLayerButton" type="Button" parent="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer"]
 layout_mode = 2
 icon = ExtResource("2_dcy55")
 flat = true
 icon_alignment = 1
 
-[node name="CopyLayerButton" type="Button" parent="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer"]
+[node name="CopyLayerButton" type="Button" parent="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("3_m1bgl")
 flat = true
 
-[node name="MergeLayersButton" type="Button" parent="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer"]
+[node name="MergeLayersButton" type="Button" parent="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "M"
 flat = true
 
-[node name="DeleteLayerButton" type="Button" parent="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer"]
+[node name="DeleteLayerButton" type="Button" parent="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
 icon = ExtResource("4_oylf0")
 flat = true
 
-[node name="HSeparator" type="HSeparator" parent="LayerCardsPopupPanel/ScrollContainer/v2"]
+[node name="HSeparator" type="HSeparator" parent="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2"]
 layout_mode = 2
 
-[node name="LayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/ScrollContainer/v2"]
+[node name="LayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -630,6 +628,7 @@ theme_override_constants/separation = 8
 [node name="VBoxContainer" type="VBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/separation = 6
 
 [node name="HBoxContainer" type="HBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/VBoxContainer"]
 layout_mode = 2
@@ -648,6 +647,12 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_nin75")
 text = "  ?  "
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="ShowLayersButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Mask Layers"
 
 [node name="PromptTextEdit" type="TextEdit" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
@@ -832,27 +837,100 @@ icon = ExtResource("23_hm28v")
 alignment = 0
 icon_alignment = 1
 
-[node name="EditImgButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
-unique_name_in_owner = true
-layout_mode = 2
-tooltip_text = "Edit selected Image (edits the currently selected layer with the current prompt)"
-icon = ExtResource("24_spfkh")
-icon_alignment = 1
-
-[node name="MaskEditButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+[node name="MaskEditPanelButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
 toggle_mode = true
 text = "Mask Edit Image"
 
-[node name="Button" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+[node name="SelectiveEditingPopupPanel" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+size = Vector2i(410, 510)
+
+[node name="PanelContainer" type="PanelContainer" parent="SelectiveEditingPopupPanel"]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 406.0
+offset_bottom = 506.0
+
+[node name="MarginContainer" type="MarginContainer" parent="SelectiveEditingPopupPanel/PanelContainer"]
 layout_mode = 2
-text = "Send"
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Image layers"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="MediaGenLayersContainer" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label2" type="Label" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Mask Layers"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="MaskMediaGenLayersContainer" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer2/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="EditImgButton" type="Button" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "Edit selected Image (edits the currently selected layer with the current prompt)"
+text = "Edit Selected Image"
+icon = ExtResource("24_spfkh")
+
+[node name="SendMaskEditButton" type="Button" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Mask Edit"
 
 [connection signal="popup_hide" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_popup_hide"]
-[connection signal="pressed" from="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/ScrollContainer/v2/HBoxContainer/DeleteLayerButton" to="." method="_on_delete_layer_button_pressed"]
+[connection signal="pressed" from="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
+[connection signal="pressed" from="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer/CopyLayerButton" to="." method="_on_copy_layer_button_pressed"]
+[connection signal="pressed" from="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer/DeleteLayerButton" to="." method="_on_delete_layer_button_pressed"]
 [connection signal="item_selected" from="h/v/HBoxContainer/h/ToolsContainer/ToolsOptionButton" to="." method="_on_tools_option_button_item_selected"]
 [connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
 [connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
@@ -866,10 +944,13 @@ text = "Send"
 [connection signal="mouse_entered" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
 [connection signal="mouse_exited" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
 [connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer/NewMaskLayerButton" to="." method="_on_new_mask_layer_button_pressed"]
+[connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer/CopyMaskLayerButton" to="." method="_on_copy_mask_layer_button_pressed"]
+[connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer/DeleteMaskLayerButton" to="." method="_on_delete_mask_layer_button_pressed"]
 [connection signal="item_selected" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
 [connection signal="value_changed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskHSlider" to="." method="_on_mask_h_slider_value_changed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/ShowLayersButton" to="." method="_on_button_pressed"]
 [connection signal="toggled" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
 [connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
-[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_img_button_pressed"]
-[connection signal="toggled" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/MaskEditButton" to="." method="_on_mask_edit_button_toggled"]
-[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/Button" to="." method="_on_mask_edit_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/MaskEditPanelButton" to="." method="_on_mask_edit_panel_button_pressed"]
+[connection signal="pressed" from="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2/EditImgButton" to="." method="_on_edit_img_button_pressed"]
+[connection signal="pressed" from="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer2/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]

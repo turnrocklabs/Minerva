@@ -20,7 +20,7 @@ const _scene: = preload("res://Scenes/LayerCard.tscn")
 
 var selected: = false:
 	set(value):
-		value = value if not layer.locked else false # don't allow selecting locked layers
+		value = value if layer and not layer.locked else false # don't allow selecting locked layers
 		selected = value
 		
 		var styleBox: StyleBoxFlat = get_theme_stylebox("panel").duplicate()
@@ -32,11 +32,13 @@ var selected: = false:
 			layer.outline_visible = true
 		else:
 			mouse_filter = Control.MOUSE_FILTER_PASS
-			layer.outline_visible = false
-			layer.transform_rect_visible = false
-			layer_deselected.emit()
+			if layer:
+				layer.outline_visible = false
+				layer.transform_rect_visible = false
+				layer_deselected.emit()
 		
-		layer.queue_redraw()
+		if layer:
+			layer.queue_redraw()
 		
 var editor: GraphicsEditorV2
 
@@ -183,7 +185,7 @@ func _on_mouse_exited() -> void:
 func _on_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 
-		if event.is_released():
+		if event.is_pressed():
 			layer_clicked.emit(event.button_index)
 
 			if event.button_index == MOUSE_BUTTON_RIGHT:

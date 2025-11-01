@@ -5,6 +5,7 @@ signal message_received(data: Dictionary)
 signal connection_established
 signal connection_closed
 signal connection_error(error: int)
+@warning_ignore("unused_signal")
 signal service_registered(service_data: Dictionary)
 signal response_received(data, binary_data)
 signal registered_with_core
@@ -14,7 +15,7 @@ signal auth_failed
 signal binary_new_message_received(header: Dictionary, num_files: int)
 signal binary_file_info_received(file_index: int, filename: String, size: int)
 signal binary_file_progress(file_index: int, received: int, total_size: int, progress_pct: float)
-signal binary_file_saved(file_index: int, filename: String, path: String)
+signal binary_file_saved(file_index: int, request_id: String, filename: String, path: String)
 signal binary_transfer_complete(request_id: String) # Emitted when the final text response confirms all files for a request are saved.
 signal image_received(filename: String, request_id: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
 
@@ -638,6 +639,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				file_data_dict["buffer"] = buffer_copy_for_modify
 				print("DEBUG_BINARY: FILE_DATA idx=%s. Buffer size AFTER append: %s bytes. New received: %s." % [file_index, buffer_copy_for_modify.size(), file_data_dict["received"]])
 				# Log progress periodically (every 1MB)
+				@warning_ignore("integer_division")
 				if int(current_received_bytes / (1024 * 1024)) != int((file_data_dict["received"] as int) / (1024 * 1024)): # Ensure int division
 					var pct: float = 0.0 # Explicitly type
 					if (file_data_dict["size"] as int) > 0:
