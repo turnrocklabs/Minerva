@@ -1265,15 +1265,26 @@ func _on_mask_edit_panel_button_pressed() -> void:
 			),
 			mask_edit_button.global_position.y - (%SelectiveEditingPopupPanel.size.y * 0.8)
 		)
+
+		for child in %MediaGenLayersContainer.get_children():
+			child.queue_free()
+
+		for child in %MaskMediaGenLayersContainer.get_children():
+			child.queue_free()
+
 		for i: LayerCard in layer_cards_container.get_children():
 			var j: LayerCard = i.duplicate()
+			j.layer = i.layer
 			j.selected = false
+			j.layer_clicked.connect(_on_layer_card_clicked.bind(j))
 			await get_tree().process_frame
 			%MediaGenLayersContainer.add_child(j)
 	
 		for i: LayerCard in mask_layer_cards_container.get_children():
 			var j: LayerCard = i.duplicate()
+			j.layer = i.layer
 			j.selected = false
+			j.layer_clicked.connect(_on_layer_card_clicked.bind(j))
 			await get_tree().process_frame
 			%MaskMediaGenLayersContainer.add_child(j)
 		%SelectiveEditingPopupPanel.show()
