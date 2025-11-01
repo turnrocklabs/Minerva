@@ -1,6 +1,9 @@
 class_name Chat
 extends Control
 
+@onready var _autocoder_manager: Control = %AutocoderManager
+@onready var _v_split_container: Control = %VSplitContainer
+
 @onready var history_option_button: OptionButton = %HistoryOptionButton
 @onready var provider_option_button: ProviderOptionButton = %ProviderOptionButton
 
@@ -36,6 +39,9 @@ func _ready() -> void:
 	
 	_setup_chats_service()
 
+	# TODO: testing hardcode
+	_setup_coco_service()
+
 	Core.client.connection_established.connect(_on_core_connected)
 
 	Core.service_selected.connect(_on_hcp_service_selected)
@@ -68,6 +74,7 @@ func _on_core_connected():
 func _initialize_services_by_type():
 	services_by_type[ServiceHistory.ServiceType.CHAT] = []
 	services_by_type[ServiceHistory.ServiceType.NOTES] = []
+	services_by_type[ServiceHistory.ServiceType.COCO] = []
 
 # sets up the internal chat service, and auto selects it
 func _setup_chats_service():
@@ -82,6 +89,24 @@ func _setup_chats_service():
 		history_option_button.add_item("Chats", item_id)
 		# Store the service type as metadata instead of individual service
 		history_option_button.set_item_metadata(history_option_button.get_item_index(item_id), ServiceHistory.ServiceType.CHAT)
+		
+		history_option_button.select(history_option_button.get_item_index(item_id))
+		# trigger the select callback	
+		_on_history_option_button_item_selected(history_option_button.get_item_index(item_id))
+
+## TODO: This is showing up for testing only
+func _setup_coco_service():
+	var coco_service: = Service.new({})
+	
+	# Add the internal chat service to our tracking
+	services_by_type[ServiceHistory.ServiceType.COCO].append(coco_service)
+	
+	# Only create dropdown item if it doesn't exist for this service type
+	if not _history_type_exists_in_dropdown(ServiceHistory.ServiceType.COCO):
+		var item_id: = history_option_button.item_count
+		history_option_button.add_item("Co-COder", item_id)
+		# Store the service type as metadata instead of individual service
+		history_option_button.set_item_metadata(history_option_button.get_item_index(item_id), ServiceHistory.ServiceType.COCO)
 		
 		history_option_button.select(history_option_button.get_item_index(item_id))
 		# trigger the select callback	
@@ -185,6 +210,8 @@ func _get_service_type_display_name(service_type: ServiceHistory.ServiceType) ->
 	match service_type:
 		ServiceHistory.ServiceType.CHAT:
 			return "Chats"
+		ServiceHistory.ServiceType.COCO:
+			return "CO-COder"
 		ServiceHistory.ServiceType.NOTES:
 			return "Notes"
 		_:
@@ -238,6 +265,8 @@ func _update_ui_for_service_type(service_type: ServiceHistory.ServiceType):
 			_show_chat_ui()
 		ServiceHistory.ServiceType.NOTES:
 			_show_notes_ui()
+		ServiceHistory.ServiceType.COCO:
+			_show_coco_ui()
 		_:
 			_show_default_ui()
 
@@ -247,6 +276,12 @@ func _hide_tabs() -> void:
 
 	chat_controls.visible = false
 	note_controls.visible = false
+
+func _show_coco_ui():
+	_hide_tabs()
+	_v_split_container.visible = false
+
+	_autocoder_manager.visible = true
 
 func _show_chat_ui():
 	_hide_tabs()
