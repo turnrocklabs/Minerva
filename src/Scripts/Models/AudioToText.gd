@@ -25,6 +25,10 @@ func _ready():
 	effect = AudioServer.get_bus_effect(idx, 0)
 	#btnStop == null
 func _StartConverting():
+	if SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENAI).is_empty():
+		SingletonObject.ErrorDisplay("No API Key", "Missing OpenAI API key for Whisper service")
+		return ERR_DOES_NOT_EXIST
+	
 	stop_signal = false
 	if effect.is_recording_active():
 		btn.modulate = Color.WHITE
@@ -39,7 +43,7 @@ func _StartConverting():
 			if stop_signal:
 				print("Conversion stopped")
 				file.close()
-				return
+				return ERR_SKIP
 
 			# Read the first 4 bytes as a PackedByteArray
 			var header = file.get_buffer(4) 
@@ -53,7 +57,7 @@ func _StartConverting():
 				# Check if stop signal is set
 				if stop_signal:
 					print("Conversion stopped")
-					return
+					return ERR_SKIP
 				
 				# Make the API request
 				http_request = HTTPRequest.new()
@@ -88,10 +92,14 @@ func _StartConverting():
 					btnStop.disabled = false
 			else:
 				print("Invalid file format. Header: ", header_str)
+				return ERR_INVALID_DATA
 		else:
 			print("Failed to open audio file: ", file_path)
+			return ERR_INVALID_DATA
 	else:
 		effect.set_recording_active(true)
+	
+	return OK
 
 func _StopConverting():
 	stop_signal = true
@@ -117,6 +125,10 @@ func _StopConverting():
 
 
 func _on_request_completed(_result, response_code, _headers, body):
+	btn.disabled = false
+	btn.modulate = Color.WHITE
+	btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+
 	if response_code == 200:
 		var response_json = JSON.parse_string(body.get_string_from_utf8())
 		# Check if the 'text' key exists in the response
@@ -124,12 +136,19 @@ func _on_request_completed(_result, response_code, _headers, body):
 			var transcription = response_json["text"]
 			print("Transcription:", transcription)
 			FieldForFilling.text += " " + transcription
-			btn.disabled = false
-			btn.modulate = Color.WHITE
-			btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
 			SingletonObject.transcription_notification_player.play()
 		else:
 			print("Unexpected response format:", response_json)
+			SingletonObject.ErrorDisplay("Invalid Response", "Invalid response from Whisper API")
 	else:
 		print("Error:", response_code, "Response:", body.get_string_from_utf8())
+		
+		var err_msg: = "Invalid response from Whisper API"
+
+		var error_json: Dictionary = JSON.parse_string(body.get_string_from_utf8())
+		if error_json and error_json.has("error") and error_json["error"].has("message"):
+			err_msg = error_json["error"]["message"]
+		
+		SingletonObject.ErrorDisplay("Invalid Response", err_msg)
+
 	SingletonObject.transcription_notification_player.play()

@@ -3,6 +3,7 @@ extends Node
 # Signal emitted when a specific service/action is chosen from the preferences popup
 @warning_ignore("unused_signal")
 signal service_selected(service: Service)
+signal service_deselected(service: Service)
 
 signal service_connected(service: Service)
 
@@ -25,6 +26,11 @@ var http_request: HTTPRequest = HTTPRequest.new()
 # Array to store fetched services (might be populated after connection)
 var services: Array[Service]
 
+## How long the chached services list is valid
+var _services_cache_timeout: float = 15
+## Last time the services were fetched
+var _services_last_fetch: float = -1
+
 # JWT token obtained after successful login
 var _jwt_token: String = ""
 # Client ID returned after successful login
@@ -39,6 +45,12 @@ var _connecting: = false:
 # Whether we're currently trying to make a connection
 var connecting:
 	get: return _connecting
+
+
+# Whether we're currently connecting to the auth server or connected to the core websocket.[br]
+var connected:
+	get: return connecting or client._connected
+
 
 func _ready() -> void:
 	# Instantiate and add the CoreClient node
@@ -61,17 +73,31 @@ func _ready() -> void:
 
 ## Cancels the current connection request if there is one.[br]
 ## If there is none, or the client is already connected, nothing happends.
-func cancel_request() -> void:
+func close_connection() -> void:
 	# NOTICE: this doesn't work for some reason.
 	# the request still doesnt cancel and times out after some period of time
+	print("core: cancel auth request")
+	
 	http_request.cancel_request()
+
+	Core.client.close_connection("User disconnected")
+
+	_connecting = false
+	registered = false
+	_jwt_token = ""
+	_client_id = ""
+
+
+var should_display_error: = true
 
 # --- MODIFIED Start Function ---
 # Attempts to authenticate via HTTP and then connect to the Core WebSocket.
 # Returns true if both authentication and WebSocket connection/registration succeed, false otherwise.
-func start(core_ws_url: String, auth_http_base_url: String, username: String, password: String) -> bool:
+func start(core_ws_url: String, auth_http_base_url: String, username: String, password: String, display_error: = true) -> bool:
 
 	_connecting = true
+
+	should_display_error = display_error
 
 	# --- 1. Authentication via HTTP ---
 	var auth_endpoint = auth_http_base_url #.path_join("login") # Construct the full login URL
@@ -93,6 +119,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	)
 
 	print("Attempting authentication to: ", auth_endpoint)
+	print("core: starting auth request")
 	var err = http_request.request(auth_endpoint, headers, HTTPClient.METHOD_POST, body)
 
 	
@@ -101,7 +128,8 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 		_connecting = false
 		var err_msg = "HTTP Auth Request failed immediately: %s" % error_string(err)
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Failed", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Failed", err_msg, SingletonObject.preferences_popup)
 
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: %s" % err_msg,
@@ -113,6 +141,8 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 	# Wait for the HTTP request to complete (handled by _on_auth_request_completed)
 	await http_request.request_completed
+
+	print("core: auth request awaited")
 
 	# --- 2. Check Authentication Result (Set by Signal Handler) ---
 	if _jwt_token.is_empty():
@@ -147,7 +177,8 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	if not connected_ws:
 		var err_msg = "WebSocket connection failed."
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Connection Failed", err_msg)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Connection Failed", err_msg)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"WebSocket connection failed",
@@ -171,10 +202,18 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 	# --- 4. Register with Core using the obtained JWT ---
 	client.register_with_core(_jwt_token, _client_id) # Use the JWT token for registration
-	# Note: We assume registration happens quickly. If it could fail and require feedback,
-	# we might need an await signal for registration completion/error from CoreClient.
-	# For now, assume connection_established + register_with_core implies success.
-	registered = true # Mark as registered (might need better tracking based on CoreClient signals)
+	
+	var registration_message = await (
+		Core
+		.await_message()
+		.with_topic("system")
+		.with_cmd("registration_confirmed")
+		.receive()
+	)
+	
+	if not registration_message: return false
+
+	registered = true
 
 	print("Core registration initiated with token.")
 	
@@ -183,11 +222,13 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 
 # --- NEW: Handles the response from the HTTP authentication request ---
-func _on_auth_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray):
+func _on_auth_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+	print("core: auth request callback")
 	if result != HTTPRequest.RESULT_SUCCESS:
 		var err_msg = "HTTP Auth Request Failed: %s" % _get_http_result_string(result)
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Network Error", err_msg)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Network Error", err_msg)
 		_jwt_token = "" # Ensure token is empty on failure
 		_client_id = ""
 		return
@@ -216,11 +257,12 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 		if core_error_message.is_empty():
 			core_error_message = "Server returned status %d. Unknown error, check logs." % response_code
 
-		SingletonObject.ErrorDisplay(
-			"Authentication Failed",
-			core_error_message,
-			SingletonObject.preferences_popup
-		)
+		if should_display_error:
+			SingletonObject.ErrorDisplay(
+				"Authentication Failed",
+				core_error_message,
+				SingletonObject.preferences_popup
+			)
 
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: %s" % core_error_message,
@@ -239,7 +281,8 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 	if typeof(json) != TYPE_DICTIONARY:
 		var err_msg = "Failed to parse authentication response JSON."
 		push_error(err_msg)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Failed to parse authentication response JSON",
@@ -256,7 +299,8 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 	if not json.has("data"):
 		var err_msg = "Authentication response missing data."
 		push_error(err_msg, " Received JSON: ", json)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain required data field",
@@ -276,7 +320,8 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 		if typeof(_jwt_token) != TYPE_STRING or _jwt_token.is_empty():
 			var err_msg = "Authentication response token is invalid or empty."
 			push_error(err_msg)
-			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+			if should_display_error:
+				SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 			
 			SingletonObject.preferences_popup.logs_window.add_log_line(
 				"Authentication failed: Authentication response token is invalid or empty",
@@ -290,7 +335,8 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 	else:
 		var err_msg = "Authentication response does not contain a 'token'."
 		push_error(err_msg, " Received JSON: ", json)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain a 'token'",
@@ -307,7 +353,8 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 		if typeof(_client_id) != TYPE_STRING or _client_id.is_empty():
 			var err_msg = "Authentication response doesn't contain client id (user/id)."
 			push_error(err_msg)
-			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+			if should_display_error:
+				SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 			
 			SingletonObject.preferences_popup.logs_window.add_log_line(
 				"Authentication failed: Authentication response client id (user/id) is invalid or empty",
@@ -321,7 +368,8 @@ func _on_auth_request_completed(result: int, response_code: int, _headers: Packe
 	else:
 		var err_msg = "Authentication response does not contain a client id (user/id)."
 		push_error(err_msg, " Received JSON: ", json)
-		SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
+		if should_display_error:
+			SingletonObject.ErrorDisplay("Authentication Error", err_msg, SingletonObject.preferences_popup)
 		
 		SingletonObject.preferences_popup.logs_window.add_log_line(
 			"Authentication failed: Authentication response does not contain a client id (user/id)",
@@ -367,11 +415,26 @@ func send_message(service: Service, action: Action, msg: Dictionary) -> AwaitMes
 	var request_id: String = client.send_text_message(service, action, msg)
 	return await_message().with_request_id(request_id)
 
-# Fetches the list of available services from the Core
-func fetch_services() -> Array[Service]:
+## Updates the [member _services_cache_timeout].
+func set_services_cache_timeout(timeout: float) -> void:
+	_services_cache_timeout = timeout
+
+## Invalidates the service list caches, and makes the new fetch_services call fetch again.
+func invalidate_services_cache() -> void:
+	_services_last_fetch = -1
+	services.clear()
+
+## Fetches the list of available services from the Core.[br]
+## If [param use_cache] is `true` it will use cached list of services it they
+## were fetched in the last [member _services_cache_timeout] seconds.
+func fetch_services(use_cache: = false) -> Array[Service]:
 	if not client._connected:
 		push_warning("Attempted to fetch services while not connected.")
 		return []
+	
+	if use_cache and Time.get_unix_time_from_system() - _services_last_fetch < _services_cache_timeout:
+		_services_last_fetch = Time.get_unix_time_from_system()
+		return services
 
 	var req_id: = client.request_connections() # Send the request to the core
 
@@ -402,6 +465,8 @@ func fetch_services() -> Array[Service]:
 
 	#print("\n\nParsed Services:") # Debug
 	#print(services)               # Debug
+
+	_services_last_fetch = Time.get_unix_time_from_system()
 
 	return services
 
@@ -578,14 +643,14 @@ func get_service_history_type(service: Service) -> ServiceHistory.ServiceType:
 	prints("Service client_id:", service.client_id)
 
 	if service.client_id == "etsu-notes":
-		return NotesServiceHistory.ServiceType.NOTES
+		return ServiceHistory.ServiceType.NOTES
 	
 	elif service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
-		return NotesServiceHistory.ServiceType.CHAT
+		return ServiceHistory.ServiceType.CHAT
 
 
 	elif service.client_id.containsn("chat") or service.name.containsn("chat"):
-		return NotesServiceHistory.ServiceType.CHAT
+		return ServiceHistory.ServiceType.CHAT
 
 	# fallback
-	return NotesServiceHistory.ServiceType.NONE
+	return ServiceHistory.ServiceType.NONE

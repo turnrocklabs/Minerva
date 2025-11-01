@@ -11,8 +11,8 @@ static var graphics_editor_scene = preload("res://Scenes/GraphicsEditorV2.tscn")
 
 
 signal content_changed()
-signal save_dialog(dialog_result: DIALOG_RESULT)
-enum DIALOG_RESULT { Save, Cancel, Close }
+signal save_dialog(dialog_result: DialogResult)
+enum DialogResult { SAVE, CANCEL, CLOSE }
 
 # Flags to represent the saved states
 # combining the flags shows the current state of the editor data
@@ -284,9 +284,9 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 
 		var should_save = await save_dialog
 		
-		if should_save == DIALOG_RESULT.Cancel:
+		if should_save == DialogResult.CANCEL:
 			return false
-		elif should_save == DIALOG_RESULT.Close:
+		elif should_save == DialogResult.CLOSE:
 			return true
 	
 	if not file:
@@ -392,23 +392,23 @@ func is_content_saved(file_save: = true) -> bool:
 	var state: = get_saved_state()
 
 	if file_save: # if there's no file or the file is saved
-		return not file or state & FILE_SAVED
+		return state & FILE_SAVED
 	
-	return not associated_object or state & ASSOCIATED_OBJECT_SAVED
+	return state & ASSOCIATED_OBJECT_SAVED
 
 
 
 func _on_save_dialog_canceled():
-	save_dialog.emit(DIALOG_RESULT.Cancel)
+	save_dialog.emit(DialogResult.CANCEL)
 
 
 func _on_save_dialog_confirmed():
-	save_dialog.emit(DIALOG_RESULT.Save)
+	save_dialog.emit(DialogResult.SAVE)
 
 
 func _on_close_dialog_custom_action(action: StringName):
 	if action == "close":
-		save_dialog.emit(DIALOG_RESULT.Close)
+		save_dialog.emit(DialogResult.CLOSE)
 		$CloseDialog.hide()
 
 
@@ -765,7 +765,7 @@ func clear_text():
 
 func _on_mic_button_pressed() -> void:
 	SingletonObject.AtT.FieldForFilling = code_edit
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = mic_button
 	mic_button.modulate = Color(Color.LIME_GREEN)
 

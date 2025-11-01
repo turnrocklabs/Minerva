@@ -62,7 +62,7 @@ func _on_close_requested() -> void:
 
 func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteHead
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = %btnVoiceForHeader
 	#%btnVoiceForHeader.icon = icActive
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
@@ -71,7 +71,7 @@ func _on_btn_voice_for_header_pressed():
 
 func _on_btn_voice_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteDescription
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = %btnVoice
 	#%btnVoiceForNoteTab.icon = icActive
 	%btnVoice.modulate = Color.LIME_GREEN

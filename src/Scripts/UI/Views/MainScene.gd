@@ -158,7 +158,7 @@ func _on_btn_add_attachment_pressed():
 
 func _on_btn_voice_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteDescription
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = %btnVoice
 	%btnVoice.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
@@ -166,7 +166,7 @@ func _on_btn_voice_pressed():
 	
 func _on_btn_voice_for_header_pressed():
 	SingletonObject.AtT.FieldForFilling = %NoteHead
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = %btnVoiceForHeader
 	%btnVoiceForHeader.modulate = Color.LIME_GREEN
 	%AddNotePopUp.disabled = false
@@ -174,7 +174,7 @@ func _on_btn_voice_for_header_pressed():
 
 func _on_btn_voice_for_note_tab_pressed():
 	SingletonObject.AtT.FieldForFilling = %txtNewTabName
-	SingletonObject.AtT._StartConverting()
+	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = %btnVoiceForNoteTab
 	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
 	%AudioStopButton2.visible = true
