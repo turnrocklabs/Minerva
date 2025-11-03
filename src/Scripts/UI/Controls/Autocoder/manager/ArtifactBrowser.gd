@@ -334,6 +334,7 @@ func _on_download_button_pressed() -> void:
 func _on_copy_uri_button_pressed() -> void:
 	if selected_artifact:
 		DisplayServer.clipboard_set(selected_artifact.artifact_uri)
+		SingletonObject.create_toast_notification("Artifact URI copied", ToastNotification.Type.INFO)
 
 
 func _on_select_button_pressed() -> void:

@@ -14,6 +14,3 @@ func _ready() -> void:
 	
 	tween.tween_property(loading_ring, "value", 0, anim_duration)
 	tween.parallel().tween_property(loading_ring, "radial_initial_angle", 0.0, anim_duration)
-
-func _process(delta: float) -> void:
-	pass

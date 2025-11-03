@@ -171,7 +171,7 @@ func serialize_project() -> Dictionary:
 
 func deserialize_project(data: Dictionary) -> int:
 	# Handle legacy and new formats gracefully
-	var version = data.get("version", "1.0")
+	#var version = data.get("version", "1.0")
 	
 	# Deserialize notes container (legacy notes system)
 	SingletonObject.notes_container.deserialize(data.get("ThreadList", []))
