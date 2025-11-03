@@ -1,6 +1,7 @@
 class_name GraphicsEditorV2
 extends PanelContainer
 
+signal graphics_editor_changed
 signal active_tool_changed(tool_: BaseTool)
 @warning_ignore("unused_signal")
 signal active_layer_changed(layer: LayerV2)
@@ -398,7 +399,7 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 
 
-signal graphics_editor_changed
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	
 	if event.is_action_pressed("ui_undo"):
@@ -852,7 +853,9 @@ func compose_final_image(show_dialog: = true) -> Image:
 	_current_compose_thread = Thread.new()
 	_current_compose_thread.start(_compose_image_thread_worker.bind(layer_data))
 	
-	return await compose_finished
+	var img = await compose_finished
+	saved = true
+	return img
 
 # Replace your thread worker with this simpler version:
 func _compose_image_thread_worker(layer_data: Array[Dictionary]):

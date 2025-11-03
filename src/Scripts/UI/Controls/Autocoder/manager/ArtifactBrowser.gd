@@ -344,7 +344,7 @@ func _on_select_button_pressed() -> void:
 		if artifact:
 			artifact_selected.emit(artifact)
 		else:
-			SingletonObject.ErrorDisplay("Cen't get artifact", "Error while selecting Artifact from displayed Tree")
+			SingletonObject.ErrorDisplay("Can't get artifact", "Error while selecting Artifact from displayed tree")
 
 
 func _on_edit_metadata_button_pressed() -> void:

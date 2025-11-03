@@ -399,7 +399,7 @@ func get_saved_state() -> int:
 func is_content_saved(file_save: = true) -> bool:
 	var state: = get_saved_state()
 
-	if file_save: # if there's no file or the file is saved
+	if file_save:
 		return state & FILE_SAVED
 	
 	return state & ASSOCIATED_OBJECT_SAVED
@@ -515,7 +515,9 @@ func _on_create_note_button_pressed() -> void:
 	SingletonObject.notes_container.add_note(new_note)
 	
 	associated_object = new_note
+
 	
+
 	await get_tree().process_frame
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
