@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://5g51ocdi12p0"]
+[gd_scene load_steps=4 format=3 uid="uid://5g51ocdi12p0"]
 
 [ext_resource type="Script" uid="uid://dk40goy2gi53r" path="res://Scripts/UI/Controls/Autocoder/manager/ArtifactBrowser.gd" id="1_ve8oy"]
 [ext_resource type="Texture2D" uid="uid://b4mldxp8undi7" path="res://assets/icons/MgGlass.png" id="2_ef0j0"]
+[ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="3_txu0a"]
 
 [node name="ArtifactBrowser" type="MarginContainer"]
 anchors_preset = 15
@@ -22,11 +23,14 @@ layout_mode = 2
 layout_mode = 2
 
 [node name="SearchLineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+tooltip_text = "Search artifacts"
 placeholder_text = "Search"
 
 [node name="SearchButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+visible = false
 layout_mode = 2
 icon = ExtResource("2_ef0j0")
 
@@ -38,20 +42,274 @@ size_flags_stretch_ratio = 2.0
 [node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 
-[node name="FrameworkOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer2"]
 layout_mode = 2
-item_count = 1
-popup/item_0/text = "All"
-popup/item_0/id = 0
+text = "Framework:"
+
+[node name="FrameworkOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+tooltip_text = "Filter by artifact framework"
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer2"]
+custom_minimum_size = Vector2(15, 0)
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+text = "Language"
 
 [node name="LanguageOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
+tooltip_text = "Filter by artifact language"
+selected = 0
 item_count = 1
 popup/item_0/text = "All"
 popup/item_0/id = 0
 
-[node name="VisibilityOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
+[node name="Control2" type="Control" parent="VBoxContainer/HBoxContainer2"]
+custom_minimum_size = Vector2(15, 0)
 layout_mode = 2
+
+[node name="Label3" type="Label" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+text = "Visibility:"
+
+[node name="VisibilityOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+tooltip_text = "Filter by artifact visibility"
+selected = 0
+fit_to_longest_item = false
 item_count = 1
 popup/item_0/text = "All"
 popup/item_0/id = 0
+
+[node name="Control3" type="Control" parent="VBoxContainer/HBoxContainer2"]
+custom_minimum_size = Vector2(15, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RefreshButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+tooltip_text = "Refresh the artifacts list"
+icon = ExtResource("3_txu0a")
+
+[node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ArtifactsTree" type="Tree" parent="VBoxContainer/VSplitContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+column_titles_visible = true
+hide_folding = true
+select_mode = 1
+
+[node name="ArtifactDetailsContainer" type="PanelContainer" parent="VBoxContainer/VSplitContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="TitleLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "No artifact selected"
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="DetailsGrid" type="GridContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+columns = 2
+
+[node name="FrameworkKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "Framework:"
+
+[node name="FrameworkValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "-"
+
+[node name="LanguageKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "Language:"
+
+[node name="LanguageValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "-"
+
+[node name="SizeKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "Size:"
+
+[node name="SizeValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "-"
+
+[node name="UploadedKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "Uploaded:"
+
+[node name="UploadedValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "-"
+
+[node name="OwnerKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "Owner:"
+
+[node name="OwnerValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "-"
+
+[node name="VisibilityKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "Visibility:"
+
+[node name="VisibilityValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "-"
+
+[node name="TagsKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+layout_mode = 2
+size_flags_vertical = 1
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "Tags:"
+
+[node name="TagsValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "-"
+autowrap_mode = 3
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="DescriptionKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "Description:"
+
+[node name="DescriptionValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "-"
+autowrap_mode = 3
+
+[node name="HSeparator3" type="HSeparator" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="URIKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "URI:"
+
+[node name="URIValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 10
+text = "-"
+autowrap_mode = 3
+
+[node name="HSeparator4" type="HSeparator" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ActionsContainer" type="HBoxContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="DownloadButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Download artifact to local disk"
+disabled = true
+text = "Download"
+
+[node name="CopyURIButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Copy artifact URI to clipboard"
+disabled = true
+text = "Copy URI"
+
+[node name="SelectButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Use this artifact in job"
+disabled = true
+text = "Select"
+
+[node name="EditMetadataButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Edit artifact metadata (owner only)"
+disabled = true
+text = "Edit Metadata"
+
+[node name="DeleteButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Delete artifact (owner only)"
+disabled = true
+text = "Delete"
+
+[node name="Control" type="Control" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CancelButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Close dialog"
+text = "Cancel"
+
+[connection signal="text_changed" from="VBoxContainer/HBoxContainer/SearchLineEdit" to="." method="_on_search_line_edit_text_changed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/SearchButton" to="." method="_on_search_button_pressed"]
+[connection signal="item_selected" from="VBoxContainer/HBoxContainer2/FrameworkOptionButton" to="." method="_on_framework_option_button_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/HBoxContainer2/LanguageOptionButton" to="." method="_on_language_option_button_item_selected"]
+[connection signal="item_selected" from="VBoxContainer/HBoxContainer2/VisibilityOptionButton" to="." method="_on_visibility_option_button_item_selected"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer2/RefreshButton" to="." method="_on_refresh_button_pressed"]
+[connection signal="item_selected" from="VBoxContainer/VSplitContainer/ArtifactsTree" to="." method="_on_artifact_selected"]
+[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/DownloadButton" to="." method="_on_download_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/CopyURIButton" to="." method="_on_copy_uri_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/SelectButton" to="." method="_on_select_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/EditMetadataButton" to="." method="_on_edit_metadata_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/DeleteButton" to="." method="_on_delete_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/CancelButton" to="." method="_on_cancel_button_pressed"]

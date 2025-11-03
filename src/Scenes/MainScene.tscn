@@ -501,6 +501,7 @@ icon_48 = ExtResource("25_bqwub")
 icon_68 = ExtResource("26_swy8f")
 
 [node name="AddPackageEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+visible = false
 layout_mode = 2
 text = "A"
 

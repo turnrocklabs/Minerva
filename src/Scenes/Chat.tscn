@@ -194,7 +194,6 @@ layout_mode = 2
 
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer3"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_vertical = 3
 split_offset = 280
@@ -391,6 +390,7 @@ icon = ExtResource("28_c5fqk")
 
 [node name="AutocoderManager" parent="VBoxContainer3" instance=ExtResource("29_3ui3f")]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 

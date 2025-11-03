@@ -277,14 +277,21 @@ func _hide_tabs() -> void:
 	chat_controls.visible = false
 	note_controls.visible = false
 
+	_autocoder_manager.visible = false # autocoder container
+	_v_split_container.visible = false # container with chat controls
+
 func _show_coco_ui():
 	_hide_tabs()
 	_v_split_container.visible = false
 
 	_autocoder_manager.visible = true
 
+	clone_chat_btn.visible = false
+	new_chat_button.visible = false
+
 func _show_chat_ui():
 	_hide_tabs()
+	_v_split_container.visible = true
 	tc_chats.visible = true
 	chat_controls.visible = true
 	
@@ -295,6 +302,7 @@ func _show_chat_ui():
 
 func _show_notes_ui():
 	_hide_tabs()
+	_v_split_container.visible = true
 	tc_notes.visible = true
 	note_controls.visible = true
 
