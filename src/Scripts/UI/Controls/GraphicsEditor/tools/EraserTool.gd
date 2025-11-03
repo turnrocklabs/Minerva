@@ -149,7 +149,7 @@ func _end_erase(event: InputEvent) -> void:
 # Optimized eraser stamp
 func _erase_stamp(target_image: Image, center: Vector2, diameter: int) -> void:
 	# Get cached pixel pattern for this radius
-	var radius = diameter / 2
+	var radius: int = int(diameter / 2.0)
 	if radius < 1: radius = 1
 	
 	var pixels = _get_cached_circle_pixels(radius)
@@ -236,7 +236,7 @@ func create_contrast_circle_cursor(radius: int) -> Image:
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	
-	var center = size / 2
+	var center: int = int(size / 2.0)
 	
 	# Draw black outline (larger circle)
 	draw_circle_outline(image, center, radius + 1, Color.BLACK)

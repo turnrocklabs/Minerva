@@ -304,15 +304,15 @@ func _get_rotated_corners(layer: LayerV2) -> Array[Vector2]:
 	var corners: Array[Vector2] = []
 	var pivot = layer.pivot_offset
 	var pos = layer.position
-	var size = layer.size
+	var _size = layer.size
 	var rotation_rad = layer.rotation
 	
 	# Calculate the four corners in local space
 	var local_corners = [
 		Vector2(0, 0) - pivot,           # Top-left
-		Vector2(size.x, 0) - pivot,      # Top-right
-		Vector2(size.x, size.y) - pivot, # Bottom-right
-		Vector2(0, size.y) - pivot       # Bottom-left
+		Vector2(_size.x, 0) - pivot,      # Top-right
+		Vector2(_size.x, _size.y) - pivot, # Bottom-right
+		Vector2(0, _size.y) - pivot       # Bottom-left
 	]
 	
 	# Transform to global space
@@ -370,9 +370,33 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 # Why graphics editor instead of just layers container?
 # When using layers container, pan tool acts wierd and i don't know why exactly.
 # Control with tools is set to stop the mouse events to accommodate for the below input hadnling
+var dragging: = false
+var last_mouse_position: Vector2 = Vector2.ZERO
 func _gui_input(event: InputEvent) -> void:
+	OS.get_memory_info()
+	#region Move Canvas
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			if event.is_pressed():
+				dragging = true
+				last_mouse_position = event.position
+			else:
+				dragging = false
+
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_zoom(event.position, 1.1)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_zoom(event.position, 0.9)
+	if event is InputEventMouseMotion:
+		if dragging:
+			# Pan all layers together
+			var relative = event.position - last_mouse_position
+			_pan_canvas(relative)
+			last_mouse_position = event.position
+			return
+	#endregion Move Canvas
 	
-	if image_gen_popup_panel.is_visible_in_tree():
+	if image_gen_popup_panel.is_visible_in_tree(): # This is for hiding the AI panel
 		if event is InputEventMouseButton and event.is_pressed():
 			if !image_gen_popup_panel.get_rect().has_point(get_global_mouse_position()):
 				image_gen_popup_panel.hide()
@@ -390,12 +414,33 @@ func _gui_input(event: InputEvent) -> void:
 		# 		"Multiple layers selected",
 		# 		"%s tool only allows operation on one layers. Select only one or merge selected layers." % [active_tool.name]
 		# 	)
-
+	
 		if active_tool.handle_input_event(event):
 			_compose_result_expired = true
 			saved = false
 			graphics_editor_changed.emit()
 		accept_event()
+
+
+func _pan_canvas(relative: Vector2) -> void:
+	layers_container.position += relative
+
+
+func _zoom(mouse_position: Vector2, factor: float) -> void:
+	var container = layers_container
+	
+	# Get mouse position relative to the container
+	var mouse_relative = mouse_position - container.position
+	
+	# Apply scale to the entire container
+	container.scale *= factor
+	
+	# Adjust container position to keep the mouse point stationary
+	var offset = mouse_relative * (factor - 1.0)
+	container.position -= offset
+	
+	#_check_canvas_bounds() ## This method is in the pan_tool script
+
 
 
 signal graphics_editor_changed
@@ -891,7 +936,7 @@ func _compose_final_image_worker(layer_data: Array) -> Image:
 	# Calculate total pixels for progress reporting
 	var total_pixels = width * height * layer_data.size()
 	var processed_pixels = 0
-	var progress_update_interval = max(1000, total_pixels / 100)  # Update progress every 1% or 1000 pixels
+	var progress_update_interval: int = max(1000, int(total_pixels / 100.0))  # Update progress every 1% or 1000 pixels
 	
 	# Blend all layers onto the output image
 	for layer_idx in range(layer_data.size()):
@@ -960,18 +1005,18 @@ func _exit_tree():
 		_current_compose_thread.wait_to_finish()
 	_current_compose_thread = null
 # Static helper functions that don't access node properties
-static func _get_rotated_corners_static(position: Vector2, size: Vector2, rotation: float, pivot_offset: Vector2) -> Array[Vector2]:
+static func _get_rotated_corners_static(position_: Vector2, size_: Vector2, rotation_: float, pivot_offset_: Vector2) -> Array[Vector2]:
 	var corners: Array[Vector2] = []
-	var pivot = pivot_offset
-	var pos = position
-	var rotation_rad = rotation
+	var pivot = pivot_offset_
+	var pos = position_
+	var rotation_rad = rotation_
 	
 	# Calculate the four corners in local space
 	var local_corners = [
 		Vector2(0, 0) - pivot,           # Top-left
-		Vector2(size.x, 0) - pivot,      # Top-right
-		Vector2(size.x, size.y) - pivot, # Bottom-right
-		Vector2(0, size.y) - pivot       # Bottom-left
+		Vector2(size_.x, 0) - pivot,      # Top-right
+		Vector2(size_.x, size_.y) - pivot, # Bottom-right
+		Vector2(0, size_.y) - pivot       # Bottom-left
 	]
 	
 	# Transform to global space
@@ -1177,7 +1222,7 @@ func _on_mask_edit_button_pressed() -> void:
 		}
 	images_dir.append(image_file)
 	
-	var mask_dir: = {}
+	#var mask_dir: = {}
 	var mask_color_channel: = ""
 	for i: LayerCard in mask_media_gen_layers_container.get_children():
 		if i.layer.type == LayerV2.Type.MASK and i.selected:

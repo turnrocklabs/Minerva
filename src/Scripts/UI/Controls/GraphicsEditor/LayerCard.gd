@@ -4,6 +4,7 @@ extends PanelContainer
 signal layer_clicked(button_index: int)
 signal layer_selected()
 signal layer_deselected()
+@warning_ignore("unused_signal")
 signal reorder(to: int)
 
 enum ContextMenuItem {

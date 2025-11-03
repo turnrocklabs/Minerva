@@ -36,8 +36,8 @@ func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) ->
 	var mask_image := Image.create(size, size, false, Image.FORMAT_L8) # Grayscale image
 	mask_image.fill(Color.BLACK) # Black background (value 0)
 	
-	var center_x: int = size / 2
-	var center_y: int = size / 2
+	var center_x: int = int(size / 2.0)
+	var center_y: int = int(size / 2.0)
 	
 	for y in range(size):
 		for x in range(size):
@@ -61,7 +61,7 @@ func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) ->
 	return mask_buffer
 
 
-func generate_mask_bytes(mask_layer_image: Image, mask_color: Color, channel: String) -> PackedByteArray:
+func generate_mask_bytes(mask_layer_image: Image, _mask_color: Color, channel: String) -> PackedByteArray:
 
 	var mask_image := Image.create(mask_layer_image.get_width(), mask_layer_image.get_height(), false, Image.FORMAT_RGBA8) # RGBA image for color channel support
 	mask_image.fill(Color.BLACK)

@@ -15,7 +15,7 @@ resource_local_to_scene = true
 color = Color(0.130437, 0, 0.970655, 1)
 
 [node name="PanelContainer" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 75)
+custom_minimum_size = Vector2(0, 45)
 offset_right = 450.0
 offset_bottom = 55.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_c4m65")

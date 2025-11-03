@@ -164,7 +164,7 @@ func _perform_smudge(event: InputEvent) -> void:
 	_last_pressure = _smoothed_pressure
 	editor.queue_redraw()
 
-func _end_smudge(event: InputEvent) -> void:
+func _end_smudge(_event: InputEvent) -> void:
 	# Handle single click - apply one smudge stamp
 	if _single_click:
 		_apply_smudge_stamp(
@@ -340,7 +340,7 @@ func create_contrast_circle_cursor(radius: int) -> Image:
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	
-	var center = size / 2
+	var center: int = int(size / 2.0)
 	draw_circle_outline(image, center, radius + 1, Color.BLACK)
 	draw_circle_outline(image, center, radius, Color.WHITE)
 	

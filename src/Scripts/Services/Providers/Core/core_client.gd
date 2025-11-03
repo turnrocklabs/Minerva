@@ -335,9 +335,9 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 		if _message_queue.size() > 0:
 			_send_queued_messages()
 	elif cmd == "notification": 
-		var text: String = ((data.get("params", "")as Dictionary).get("data","") as Dictionary).get("message", "")
-		if !text.is_empty():
-			var toast: = ToastNotification.create(ToastNotification.Type.INFO, text)
+		var _text: String = ((data.get("params", "")as Dictionary).get("data","") as Dictionary).get("message", "")
+		if !_text.is_empty() and not _text.to_lower().contains("ComfyUI") :
+			var toast: = ToastNotification.create(ToastNotification.Type.INFO, _text)
 			SingletonObject.main_scene.add_child(toast)
 	elif cmd == "response" and entity_type == "core":
 		var request_id: String = data.get("params", {}).get("request_id", "") # Explicitly type

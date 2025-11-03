@@ -208,9 +208,9 @@ func _add_stroke_point(event: InputEvent) -> void:
 		_last_pressure = p
 		
 		# Expand & localize before optional "touchdown" stamp
-		var radius := get_actual_brush_radius(_smoothed_pressure)
-		var bounds_point := get_bounds_point_for_expansion(pos, radius)
-		var _offset := editor.active_layer.expand_to_point(bounds_point)
+		var _radius := get_actual_brush_radius(_smoothed_pressure)
+		var _bounds_point := get_bounds_point_for_expansion(pos, _radius)
+		var _offset := editor.active_layer.expand_to_point(_bounds_point)
 		editor.active_layer.position -= _offset
 		event = editor.active_layer.localize_input(event)
 		pos = event.position
@@ -396,7 +396,7 @@ func create_contrast_circle_cursor(radius: int) -> Image:
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	
-	var center = size / 2
+	var center: int = int(size / 2.0)
 	draw_circle_outline(image, center, radius + 1, Color.BLACK)
 	draw_circle_outline(image, center, radius, Color.WHITE)
 	
