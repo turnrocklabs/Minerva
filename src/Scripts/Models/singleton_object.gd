@@ -279,6 +279,12 @@ func find_notes_vbox_parent(note: Note) -> NoteVBox:
 
 #endregion Notes
 
+#region Autocoder
+
+var autocoder_manager: AutocodeManager
+
+#endregion Autocoder
+
 #region Chats
 @warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)

@@ -73,35 +73,42 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer"]
+custom_minimum_size = Vector2(0, 90)
+layout_mode = 2
+vertical_scroll_mode = 0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer/HBoxContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
 layout_mode = 2
 text = "File name:"
 
-[node name="Label2" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="Label2" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
 layout_mode = 2
 text = "Artifact URI :"
 
-[node name="VBoxContainer2" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer/HBoxContainer"]
+[node name="VBoxContainer2" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 
-[node name="SelectedArtifactNameLabel" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
+[node name="SelectedArtifactNameLabel" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="SelectedArtifactURILabel" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
+[node name="SelectedArtifactURILabel" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="ClearInputResourcesButton" type="Button" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer"]
+[node name="ClearInputResourcesButton" type="Button" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Clear"
@@ -162,7 +169,7 @@ text = "Submit  Job"
 
 [connection signal="artifact_selected" from="ArtifactBrowserPopup/ArtifactBrowser" to="." method="_on_artifact_browser_artifact_selected"]
 [connection signal="selection_canceled" from="ArtifactBrowserPopup/ArtifactBrowser" to="." method="_on_artifact_browser_selection_canceled"]
-[connection signal="pressed" from="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/VBoxContainer/ClearInputResourcesButton" to="." method="_on_clear_input_resources_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/ClearInputResourcesButton" to="." method="_on_clear_input_resources_button_pressed"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/VBoxContainer/CreatePackageButton" to="." method="_on_create_package_button_pressed"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/VBoxContainer/SelectPackageButton" to="." method="_on_select_package_button_pressed"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/HBoxContainer/VBoxContainer2/ContinueSessionCheckBox" to="." method="_on_continue_session_check_box_toggled"]

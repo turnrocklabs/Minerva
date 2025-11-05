@@ -431,6 +431,7 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 		"entity_type": "client",
 		"params": {
 			"client_id": client_id,
+			"user_id": client_id,
 			"request_id": request_id,
 			"target_service_id": service.client_id,
 			"auth": auth_token,

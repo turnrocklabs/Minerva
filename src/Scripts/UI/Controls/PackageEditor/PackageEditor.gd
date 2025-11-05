@@ -4,6 +4,9 @@ extends VBoxContainer
 ## Emitted when user selects the package root directory
 signal directory_selected(path: String)
 
+## Emitted when a local artifact has been uploaded to artifact registry
+signal artifact_uploaded(artifact: Artifact)
+
 static var _scn: = preload("res://Scripts/UI/Controls/PackageEditor/PackageEditor.tscn")
 
 static var _file_icon: = preload("res://assets/icons/file/file.svg")
@@ -134,13 +137,32 @@ func _on_dir_tree_item_activated() -> void:
 
 
 func _on_package_button_pressed() -> void:
+	if not SingletonObject.autocoder_manager.artifact_registry_adapter:
+		SingletonObject.ErrorDisplay("Can't upload", "Please connect to core first!")
+		return
 	
-	var dir: = OS.get_temp_dir().path_join("test.tar.gz")
 
-	var err: = OS.execute("tar", ["-czf", dir, "-C", _root_obj.original_path.get_base_dir(), _root_obj.original_path.get_file()])
+	var local_artifact: = Artifact.create_from_dir(
+		_root_obj.original_path,
+		{
+			"filename": _root_obj.original_path.get_file(),
+			"description": "test description",
+		}
+	)
 
-	SingletonObject.create_toast_notification(error_string(err))
+	if not local_artifact:
+		SingletonObject.ErrorDisplay("Can't create", "Can't create artifact for upload")
+		return
+
+	var artifact: = await SingletonObject.autocoder_manager.artifact_registry_adapter.upload(local_artifact)
+
+	if not artifact:
+		SingletonObject.ErrorDisplay("Can't upload", "Can't upload artifact")
+		return
 	
-	SingletonObject.ErrorDisplay("", dir)
+	SingletonObject.create_toast_notification(
+		"Artifact %s uploaded" % artifact.filename,
+		ToastNotification.Type.SUCCESS
+	)
 
-
+	artifact_uploaded.emit(artifact)

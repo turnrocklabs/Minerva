@@ -2,7 +2,7 @@ class_name AutocoderSubmitJobManager
 extends VBoxContainer
 
 @onready var _artifact_browser_popup: PersistentWindow = %ArtifactBrowserPopup
-# @onready var _artifact_browser: ArtifactBrowser = %ArtifactBrowser
+@onready var _artifact_browser: ArtifactBrowser = %ArtifactBrowser
 
 @onready var _input_resources_container: Container = %InputResourcesContainer
 
@@ -23,6 +23,14 @@ var selected_artifact: Artifact = null:
 
 
 func _on_select_package_button_pressed() -> void:
+
+	if not SingletonObject.autocoder_manager.artifact_registry_adapter:
+		SingletonObject.ErrorDisplay("Can't fetch", "Please connect to core first!")
+		return
+	
+	var artifacts: = await SingletonObject.autocoder_manager.artifact_registry_adapter.search()
+	_artifact_browser.set_artifacts(artifacts)
+	
 	_artifact_browser_popup.size = DisplayServer.screen_get_size() * 0.9
 	_artifact_browser_popup.popup_centered()
 
@@ -43,13 +51,9 @@ func _on_clear_input_resources_button_pressed() -> void:
 func _on_create_package_button_pressed() -> void:
 	var editor: = SingletonObject.editor_pane.add(Editor.Type.PACKAGE)
 
-	editor.package_editor.directory_selected.connect(
-		func(dir: String):
-			var temp_a: = Artifact.new({
-				"filename": dir
-			})
-
-			selected_artifact = temp_a
+	editor.package_editor.artifact_uploaded.connect(
+		func(artifact: Artifact):
+			selected_artifact = artifact
 	)
 
 
@@ -62,4 +66,12 @@ func _on_continue_session_check_box_toggled(toggled_on: bool) -> void:
 
 
 func _on_submit_job_button_pressed() -> void:
-	pass # Replace with function body.
+	if not SingletonObject.autocoder_manager.autocoder_adapter:
+		SingletonObject.ErrorDisplay("Can't start", "Please connect to core first!")
+		return
+	
+	var output: = await SingletonObject.autocoder_manager.autocoder_adapter.generate(
+		"Generate a python hello world program"
+	)
+
+	prints("output is:", output.session_id, output.files)

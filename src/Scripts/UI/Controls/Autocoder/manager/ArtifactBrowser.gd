@@ -114,6 +114,14 @@ func set_artifacts(artifacts_: Array[Artifact]) -> void:
 	_populate_tree()
 
 
+func refresh():
+	if not SingletonObject.autocoder_manager.artifact_registry_adapter:
+		SingletonObject.ErrorDisplay("Can't fetch", "Please connect to core first!")
+		return
+	
+	set_artifacts(
+		await SingletonObject.autocoder_manager.artifact_registry_adapter.search()
+	)
 
 
 func _setup_tree() -> void:
@@ -265,9 +273,7 @@ func _on_search_line_edit_text_changed(_new_text: String) -> void:
 	_apply_filters()
 
 func _on_refresh_button_pressed() -> void:
-	# TODO: In real implementation, fetch from artifact service
-	# For now, just refresh the fake data
-	_load_fake_artifacts()
+	await refresh()
 	_update_filter_buttons()
 
 
@@ -351,7 +357,24 @@ func _on_edit_metadata_button_pressed() -> void:
 	pass
 
 func _on_delete_button_pressed() -> void:
-	pass
+	if _artifact_tree.get_selected():
+		
+		if not SingletonObject.autocoder_manager.artifact_registry_adapter:
+			SingletonObject.ErrorDisplay("Can't fetch", "Please connect to core first!")
+			return
+		
+		var artifact: Artifact = _artifact_tree.get_selected().get_metadata(0)
+		
+		var success: = await SingletonObject.autocoder_manager.artifact_registry_adapter.delete(artifact.artifact_uri)
+
+		if success:
+			SingletonObject.create_toast_notification(
+				"Artifact deleted successfully",
+				ToastNotification.Type.SUCCESS
+			)
+
+	await refresh()
+
 
 func _on_cancel_button_pressed() -> void:
 	selection_canceled.emit()
