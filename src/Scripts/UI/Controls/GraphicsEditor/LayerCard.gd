@@ -240,5 +240,8 @@ func _on_name_focus_exited() -> void:
 func delete_layer() -> void:
 	if editor != null:
 		editor.delete_layer.emit(layer)
-	layer.queue_free()
+	layer_selected.disconnect(editor._on_layer_card_selected)
+	layer_deselected.disconnect(editor._on_layer_card_deselected)
+	reorder.disconnect(editor._on_layer_card_reorder)
+	layer_clicked.disconnect(editor._on_layer_card_clicked)
 	queue_free()

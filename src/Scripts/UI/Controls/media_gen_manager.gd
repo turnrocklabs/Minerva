@@ -1,11 +1,12 @@
-class_name MediaGenManager extends Node
+extends Node
 # The WebSocket client instance
-var client: CoreClient = Core.client
+var client: CoreClient = null
 
 signal  pass_image_to_editor(filename: String, request_id: String, image: PackedByteArray)
 
 func _ready() -> void:
 	# Connect Core.client signals to our handlers
+	client = Core.client
 	client.binary_file_saved.connect(_on_binary_file_saved_received)
 	client.image_received.connect(_on_image_response_received)
 

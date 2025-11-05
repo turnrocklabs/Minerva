@@ -229,6 +229,7 @@ theme_override_constants/separation = 12
 
 [node name="DynamicUIContainer" type="VBoxContainer" parent="VBoxContainer3/VSplitContainer/VBoxContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 
