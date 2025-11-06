@@ -37,7 +37,7 @@ signal delete_layer(layer: LayerV2)
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var smudge_tool: SmudgeTool = %SmudgeTool
 @onready var bucket_tool: BucketTool = %BucketTool
-#@onready var pan_tool: PanTool = %PanTool
+@onready var pan_tool: PanTool = %PanTool
 @onready var eraser_tool: EraserTool = %EraserTool
 @onready var transform_tool: TransformTool = %TransformTool
 @onready var speech_bubble_tool: SpeechBubbleTool = %SpeechBubbleTool
@@ -51,8 +51,7 @@ signal delete_layer(layer: LayerV2)
 	speech_bubble_tool: _speech_bubble_options,
 }
 
-
-@onready var image_gen_popup_panel: Control = %ImageGenPopupPanel
+@onready var image_gen_wiindow: Window = %ImageGenWindow
 @onready var prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var send_prompt_button: Button = %SendPromptButton
 @onready var negative_text_edit: TextEdit = %NegativeTextEdit
@@ -382,7 +381,7 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 var dragging: = false
 var last_mouse_position: Vector2 = Vector2.ZERO
 func _gui_input(event: InputEvent) -> void:
-	OS.get_memory_info()
+	
 	#region Move Canvas
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_MIDDLE:
@@ -402,14 +401,14 @@ func _gui_input(event: InputEvent) -> void:
 			var relative = event.position - last_mouse_position
 			_pan_canvas(relative)
 			last_mouse_position = event.position
-			return
+			#return
 	#endregion Move Canvas
 	
-	if image_gen_popup_panel.is_visible_in_tree(): # This is for hiding the AI panel
-		if event is InputEventMouseButton and event.is_pressed():
-			if !image_gen_popup_panel.get_rect().has_point(get_global_mouse_position()):
-				image_gen_popup_panel.hide()
-				return
+	#if image_gen_wiindow.is_visible_in_tree(): # This is for hiding the AI panel
+		#if event is InputEventMouseButton and event.is_pressed():
+			#if !image_gen_wiindow.get_rect().has_point(get_global_mouse_position()):
+				#image_gen_wiindow.hide()
+				#return
 	
 	
 	# if we have a active tool and at least one of selected layers is visible
@@ -569,14 +568,14 @@ func _on_brush_tool_button_toggled(toggled_on: bool) -> void:
 func _on_bucket_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = bucket_tool if toggled_on else null
 
-#func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
-	#if not toggled_on:
-		#_tools_option_button.select(0)
-		#_tools_option_button.item_selected.emit(0)
-		#_tools_option_button.grab_focus()
-		#return
-	#
-	#active_tool = pan_tool if toggled_on else null
+func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
+	if not toggled_on:
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+		_tools_option_button.grab_focus()
+		return
+	
+	active_tool = pan_tool if toggled_on else null
 
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 	if toggled_on:
@@ -1066,22 +1065,22 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 
 
 func _on_prompt_button_pressed() -> void:
-	if !image_gen_popup_panel.visible:
-		image_gen_panel_container.global_position = Vector2(
+	if !image_gen_wiindow.visible:
+		image_gen_wiindow.position = Vector2(
 			(
 				prompt_button.global_position.x 
-				-image_gen_panel_container.size.x
+				-image_gen_wiindow.size.x
 				+prompt_button.size.x
 			),
 			prompt_button.global_position.y + 50
 		)
-		image_gen_popup_panel.show()
+		image_gen_wiindow.show()
 	else:
-		image_gen_popup_panel.hide()
+		image_gen_wiindow.hide()
 
 
 func _on_send_prompt_button_pressed() -> void:
-	image_gen_popup_panel.hide()
+	image_gen_wiindow.hide()
 	var params : Dictionary = get_params_image_gen()
 	var toast: ToastNotification
 	if params.is_empty():
@@ -1090,7 +1089,7 @@ func _on_send_prompt_button_pressed() -> void:
 	else:
 		toast =ToastNotification.create(ToastNotification.Type.INFO, "Sending Image Gen request...")
 		_current_image_gen_request_id = MediaGen.send_media_gen_request(params)
-		image_gen_popup_panel.hide()
+		image_gen_wiindow.hide()
 		layer_cards_popup_panel.hide()
 	SingletonObject.main_scene.add_child(toast)
 
@@ -1157,7 +1156,7 @@ func _on_edit_img_button_pressed() -> void:
 	
 	_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, image_filename)
 	
-	image_gen_popup_panel.hide()
+	image_gen_wiindow.hide()
 	layer_cards_popup_panel.hide()
 
 
@@ -1275,7 +1274,7 @@ func _on_mask_edit_button_pressed() -> void:
 	var selective_editing_params: Dictionary = get_params_image_gen()
 	selective_editing_params["mask_channel"] = mask_color_channel
 	_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(selective_editing_params, images_dir)
-	image_gen_popup_panel.hide()
+	image_gen_wiindow.hide()
 	layer_cards_popup_panel.hide()
 
 #region LayersCards Masks PopUp panel
@@ -1311,7 +1310,7 @@ func _on_mask_color_option_button_item_selected(index: int) -> void:
 		color_picker_button.color = mask_color
 		active_layer.mask_color = mask_color
 		active_layer.mask_color_name = mask_color_option_button.get_item_text(index).to_lower()
-	#active_layer.lock_color = true
+		active_layer.lock_color = true
 
 
 func _on_mask_edit_panel_button_pressed() -> void:
@@ -1399,3 +1398,7 @@ func _on_negative_prompt_mic_button_pressed() -> void:
 
 func _on_active_layer_mask_layer(is_mask: bool) -> void:
 	is_active_layer_mask = is_mask
+
+
+func _on_image_gen_window_close_requested() -> void:
+	image_gen_wiindow.hide()
