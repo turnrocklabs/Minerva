@@ -101,10 +101,13 @@ var layers: Array[LayerV2]
 ## Array of selected layers, in order in which they were selected
 var selected_layers: Array[LayerV2] = []
 var selected_mask_layers: Array[LayerV2] = []
-
+var is_active_layer_mask: = false
 var active_layer: LayerV2:
 	get: 
-		return selected_layers.get(0) if not selected_layers.is_empty() else null
+		if is_active_layer_mask:
+			return selected_mask_layers.get(0) if not selected_mask_layers.is_empty() else null
+		else:
+			return selected_layers.get(0) if not selected_layers.is_empty() else null
 	set(value):
 		active_layer = value
 		if value.type == LayerV2.Type.MASK:
@@ -143,7 +146,7 @@ func _ready() -> void:
 	_tools_option_button.item_selected.emit(0)
 	compose_progress_updated.connect(_on_compose_progress)
 	compose_finished.connect(_on_compose_complete)
-	#active_layer_is_mask_layer.connect(_on_active_layer_mask_layer)
+	active_layer_is_mask_layer.connect(_on_active_layer_mask_layer)
 	# Connect pen inverted signals
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
@@ -214,7 +217,6 @@ func add_mask_layer(layer: LayerV2, select: = true):
 	layers_container.add_child(layer, true)
 
 	layers.append(layer)
-
 	
 	return layer
 
@@ -236,7 +238,6 @@ func add_layer(layer: LayerV2, select: = true):
 	layers_container.add_child(layer, true)
 
 	layers.append(layer)
-
 	
 	return layer
 
@@ -256,19 +257,19 @@ func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
 		selected_layers.append(layer)
 	if not selected_mask_layers.has(layer) and LayerV2.Type.MASK == layer.type:
 		selected_mask_layers.append(layer)
-	#if selected_layers.size() > 0 and selected_layers.get(0).type == LayerV2.Type.MASK:
-		#active_layer_is_mask_layer.emit(true)
-	#else:
-		#active_layer_is_mask_layer.emit(false)
+	if selected_layers.size() > 0 and selected_layers.get(0).type != LayerV2.Type.MASK:
+		active_layer_is_mask_layer.emit(false)
+	elif selected_mask_layers.size() > 0 and selected_mask_layers[0].type == LayerV2.Type.MASK:
+		active_layer_is_mask_layer.emit(true)
 
 
 func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
 	selected_layers.erase(layer)
 	selected_mask_layers.erase(layer)
-	#if selected_layers.size() > 0 and selected_layers.get(0).type == LayerV2.Type.MASK:
-		#active_layer_is_mask_layer.emit(true)
-	#else:
-		#active_layer_is_mask_layer.emit(false)
+	if selected_layers.size() > 0 and selected_layers.get(0).type != LayerV2.Type.MASK:
+		active_layer_is_mask_layer.emit(false)
+	elif selected_mask_layers.size() > 0 and selected_mask_layers[0].type == LayerV2.Type.MASK:
+		active_layer_is_mask_layer.emit(true)
 
 
 func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
@@ -1300,7 +1301,7 @@ func _on_copy_mask_layer_button_pressed() -> void:
 	for i: LayerV2 in selected_mask_layers:
 		var j: LayerV2 = i.duplicate()
 		j.image = i.image.duplicate()
-		add_layer(j, false)
+		add_mask_layer(j, false)
 #endregion LayersCards Masks PopUp panel
 
 
@@ -1310,7 +1311,7 @@ func _on_mask_color_option_button_item_selected(index: int) -> void:
 		color_picker_button.color = mask_color
 		active_layer.mask_color = mask_color
 		active_layer.mask_color_name = mask_color_option_button.get_item_text(index).to_lower()
-	active_layer.lock_color = true
+	#active_layer.lock_color = true
 
 
 func _on_mask_edit_panel_button_pressed() -> void:
@@ -1394,3 +1395,7 @@ func _on_negative_prompt_mic_button_pressed() -> void:
 	SingletonObject.AtT.btn = negative_prompt_mic_button
 	negative_prompt_mic_button.modulate = Color(Color.LIME_GREEN)
 	#SingletonObject.AtT.btnStop = %AudioStop1
+
+
+func _on_active_layer_mask_layer(is_mask: bool) -> void:
+	is_active_layer_mask = is_mask
