@@ -232,8 +232,9 @@ func _on_stop_button_4_pressed() -> void:
 
 
 func _input(event):
-	if event.is_action_released("ui_terminal", true):
+	if event.is_action_pressed("ui_terminal", true):
 		terminal_container.visible = not terminal_container.visible
+		accept_event()
 	# Detect mouse button press to start drag
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:

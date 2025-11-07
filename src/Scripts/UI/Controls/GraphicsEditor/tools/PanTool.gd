@@ -47,7 +47,8 @@ func _pan_canvas(relative: Vector2) -> void:
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
 	var container = editor.layers_container
-	
+	if container.scale.x * factor < 0.1 or container.scale.x * factor > 2.5:
+		return 
 	# Get mouse position relative to the container
 	var mouse_relative = mouse_position - container.position
 	

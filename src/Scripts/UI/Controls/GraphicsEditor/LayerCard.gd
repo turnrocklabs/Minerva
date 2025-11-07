@@ -37,7 +37,7 @@ var selected: = false:
 				layer.outline_visible = false
 				layer.transform_rect_visible = false
 				layer_deselected.emit()
-		
+				name_line_edit.release_focus()
 		if layer:
 			layer.queue_redraw()
 		
@@ -185,13 +185,22 @@ func _on_mouse_exited() -> void:
 
 func _on_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
-
+	
 		if event.is_pressed():
 			layer_clicked.emit(event.button_index)
-
+	
 			if event.button_index == MOUSE_BUTTON_RIGHT:
-				context_menu.position = DisplayServer.mouse_get_position()
-				context_menu.popup()
+				#context_menu.position = DisplayServer.mouse_get_position()
+				#context_menu.popup()
+				name_line_edit.grab_focus()
+				name_line_edit.select_all()
+			elif event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
+				name_line_edit.grab_focus()
+				name_line_edit.select_all()
+			elif event.button_index == MOUSE_BUTTON_LEFT:
+				name_line_edit.release_focus()
+			
+			accept_event()
 
 
 func _on_layer_visibility_changed():

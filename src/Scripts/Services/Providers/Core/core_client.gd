@@ -15,7 +15,7 @@ signal auth_failed
 signal binary_new_message_received(header: Dictionary, num_files: int)
 signal binary_file_info_received(file_index: int, filename: String, size: int)
 signal binary_file_progress(file_index: int, received: int, total_size: int, progress_pct: float)
-signal binary_file_saved(file_index: int, request_id: String, filename: String, path: String)
+#signal binary_file_saved(file_index: int, request_id: String, filename: String, path: String)
 signal binary_transfer_complete(request_id: String) # Emitted when the final text response confirms all files for a request are saved.
 signal image_received(filename: String, request_id: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
 
@@ -692,7 +692,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					file.close()
 					_binary_files_completed += 1
 					print("   ✅ FILE_END idx=%s saved to %s (%s bytes). Total completed: %s/%s" % [file_index, out_path, buf.size(), _binary_files_completed, _binary_expected_files]) # Corrected string formatting
-					binary_file_saved.emit(file_index, _current_binary_request_id, fname, out_path)
+					#binary_file_saved.emit(file_index, _current_binary_request_id, fname, out_path)
 				else:
 					print(FileAccess.get_open_error())
 					print("   ❌ Could not save file %s" % out_path) # Corrected string formatting

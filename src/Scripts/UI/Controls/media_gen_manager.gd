@@ -7,7 +7,7 @@ signal  pass_image_to_editor(filename: String, request_id: String, image: Packed
 func _ready() -> void:
 	# Connect Core.client signals to our handlers
 	client = Core.client
-	client.binary_file_saved.connect(_on_binary_file_saved_received)
+	#client.binary_file_saved.connect(_on_binary_file_saved_received)
 	client.image_received.connect(_on_image_response_received)
 
 
@@ -18,8 +18,8 @@ func send_media_gen_request(params: Dictionary) -> String:
 	return client.send_media_gen_request(params)
 
 
-func _on_binary_file_saved_received(file_index: int, request_id: String, filename: String, _path: String) -> void:
-	pass_image_to_editor.emit(file_index, request_id, filename)
+#func _on_binary_file_saved_received(file_index: int, request_id: String, filename: String, _path: String) -> void:
+	#pass_image_to_editor.emit(filename, request_id, filename)
 
 
 func _on_image_response_received(fname: String, request_id: String, buffer: PackedByteArray) -> void:

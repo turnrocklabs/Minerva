@@ -78,6 +78,7 @@ signal delete_layer(layer: LayerV2)
 @onready var delete_layer_button: Button = %DeleteLayerButton
 @onready var positive_prompt_mic_button: Button = %PositivePromptMicButton
 @onready var negative_prompt_mic_button: Button = %NegativePromptMicButton
+@onready var mask_container: HBoxContainer = %MaskContainer
 
 #endregion
 
@@ -102,21 +103,13 @@ var selected_layers: Array[LayerV2] = []
 var selected_mask_layers: Array[LayerV2] = []
 var is_active_layer_mask: = false
 var active_layer: LayerV2:
-	get: 
+	get:
+		if selected_layers.is_empty() and selected_mask_layers.is_empty():
+			return layers[0] if not layers.is_empty() else null 
 		if is_active_layer_mask:
 			return selected_mask_layers.get(0) if not selected_mask_layers.is_empty() else null
 		else:
 			return selected_layers.get(0) if not selected_layers.is_empty() else null
-	set(value):
-		active_layer = value
-		if value.type == LayerV2.Type.MASK:
-			active_layer_is_mask_layer.emit(true)
-		else:
-			active_layer_is_mask_layer.emit(false)
-
-#var active_mask_layer: LayerV2:
-	#get: 
-		#return selected_mask_layers.get(0) if not selected_mask_layers.is_empty() else null
 	#set(value):
 		#active_layer = value
 		#if value.type == LayerV2.Type.MASK:
@@ -124,6 +117,8 @@ var active_layer: LayerV2:
 		#else:
 			#active_layer_is_mask_layer.emit(false)
 
+
+var last_selected_color: Color = Color.BLACK
 var active_tool: BaseTool:
 	set(value):
 		active_tool = value
@@ -137,7 +132,7 @@ var saved: = true
 var _previous_tool_before_eraser: BaseTool = null  # Store tool to return to after eraser mode
 
 var _current_image_gen_request_id: String = ""
-#var media_gen_socket: MediaGen = null
+
 func _ready() -> void:
 	
 	active_tool_changed.connect(_on_active_tool_changed)
@@ -162,7 +157,6 @@ func _ready() -> void:
 		temp_res += 128
 	
 	delete_layer.connect(_on_delete_layer)
-
 
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
@@ -286,6 +280,7 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 				c.selected = false
 			layer_card.selected = true
 
+
 func _on_layer_card_reorder(to: int, layer_card: LayerCard):
 	reorder_layer(layer_card.layer, to)
 
@@ -360,20 +355,27 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 		return
 
 	var layer_card: LayerCard = layer.get_meta("layer_card")
-
-	if index - layer_card.get_index() == 1:
-		# same final order if we drop it on next index
-		return
-
-	if layer_card.get_index() < index:
-		index -= 1
-
-	if index == layer_cards_container.get_child_count():
-		index -= 1
-
-	layers_container.move_child(layer, -(index+1))
-	layer_cards_container.move_child(layer_card, index)
 	
+	if layer.type == LayerV2.Type.MASK:
+		if index - layer_card.get_index() == 1:
+			# same final order if we drop it on next index
+			return
+		if layer_card.get_index() < index:
+			index -= 1
+		if index == mask_layer_cards_container.get_child_count():
+			index -= 1
+		layers_container.move_child(layer, -(index+1))
+		mask_layer_cards_container.move_child(layer_card, index)
+	else:
+		if index - layer_card.get_index() == 1:
+			# same final order if we drop it on next index
+			return
+		if layer_card.get_index() < index:
+			index -= 1
+		if index == layer_cards_container.get_child_count():
+			index -= 1
+		layers_container.move_child(layer, -(index+1))
+		layer_cards_container.move_child(layer_card, index)
 
 # Why graphics editor instead of just layers container?
 # When using layers container, pan tool acts wierd and i don't know why exactly.
@@ -401,28 +403,11 @@ func _gui_input(event: InputEvent) -> void:
 			var relative = event.position - last_mouse_position
 			_pan_canvas(relative)
 			last_mouse_position = event.position
-			#return
+			return
 	#endregion Move Canvas
 	
-	#if image_gen_wiindow.is_visible_in_tree(): # This is for hiding the AI panel
-		#if event is InputEventMouseButton and event.is_pressed():
-			#if !image_gen_wiindow.get_rect().has_point(get_global_mouse_position()):
-				#image_gen_wiindow.hide()
-				#return
-	
-	
 	# if we have a active tool and at least one of selected layers is visible
-	if active_tool and selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
-
-		# if active_tool.multi_select or selected_layers.size() < 2:
-		
-		# elif selected_layers.size() > 1:
-		# 	# multiple layers selected for tool that only allows one
-		# 	display_message(
-		# 		"Multiple layers selected",
-		# 		"%s tool only allows operation on one layers. Select only one or merge selected layers." % [active_tool.name]
-		# 	)
-	
+	if active_tool and (selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) ):
 		if active_tool.handle_input_event(event):
 			_compose_result_expired = true
 			saved = false
@@ -437,6 +422,9 @@ func _pan_canvas(relative: Vector2) -> void:
 func _zoom(mouse_position: Vector2, factor: float) -> void:
 	var container = layers_container
 	
+	if container.scale.x * factor < 0.1 or container.scale.x * factor > 2.5:
+		return 
+	
 	# Get mouse position relative to the container
 	var mouse_relative = mouse_position - container.position
 	
@@ -446,9 +434,6 @@ func _zoom(mouse_position: Vector2, factor: float) -> void:
 	# Adjust container position to keep the mouse point stationary
 	var offset = mouse_relative * (factor - 1.0)
 	container.position -= offset
-	
-	#_check_canvas_bounds() ## This method is in the pan_tool script
-
 
 
 signal graphics_editor_changed
@@ -463,8 +448,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _draw() -> void:
 	for layer in selected_layers: layer.queue_redraw()
-	
+	for layer in selected_mask_layers: layer.queue_redraw()
 	for c: LayerCard in layer_cards_container.get_children():
+		c.queue_redraw()
+	for c: LayerCard in mask_layer_cards_container.get_children():
 		c.queue_redraw()
 
 ## Delegates drag handling functions to given layer.[br]
@@ -784,10 +771,6 @@ func _blend_colors(dst: Color, src: Color) -> Color:
 
 func _on_layer_cards_button_toggled(toggled_on: bool) -> void:
 	if toggled_on:
-		# layer_cards_popup_panel.position = Vector2(
-		# 	DisplayServer.screen_get_size().x - layer_cards_popup_panel.size.x,
-		# 	DisplayServer.mouse_get_position().y
-		# )
 		layer_cards_popup_panel.position = Vector2(
 			(
 				layer_cards_toggle_button.global_position.x 
@@ -805,20 +788,14 @@ func _on_layer_cards_popup_panel_popup_hide() -> void:
 	layer_cards_toggle_button.release_focus()
 	layer_cards_toggle_button.set_pressed_no_signal(false)
 
-
-
 #region Undo
-
-
 ## Stores the executed command in the commands stack.
 ## The command is treated as completed and ready for undo.
 func execute_command(cmd: GraphicsEditorUndo.Command) -> void:
-	
 	# if we did execute a undo for some command and now there's a new one
 	# delete all the commands after the current index and store the new one
 	if _command_idx != _commands.size()-1:
 		_commands.resize(_command_idx+1)
-
 	# since this check occurs every time,
 	# there must be no more than one command over the limit
 	# account for element that will be added
@@ -827,7 +804,6 @@ func execute_command(cmd: GraphicsEditorUndo.Command) -> void:
 
 	_commands.append(cmd)
 	_command_idx = _commands.size()-1
-
 
 
 func undo_command() -> void:
@@ -850,7 +826,6 @@ func redo_command() -> void:
 	cmd.redo()
 
 	_command_idx = clampi(_command_idx+1, 0, _commands.size()-1)
-
 #endregion
 
 
@@ -1167,12 +1142,13 @@ func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 func get_params_image_gen() -> Dictionary:
 	if prompt_text_edit.text.is_empty():
 		return {}
-	
+		
+	var image_res: int = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
 	return {
 		"positive_prompt" = prompt_text_edit.text,
 		"negative_prompt" = negative_text_edit.text,
-		"width" = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
-		"height" = image_height_line_edit.text.to_int() if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"width" = image_res,
+		"height" = image_res,
 		"steps" = steps_spin_box.value,
 		"cfg" = cfg_spin_box.value,
 		"denoise" = denoise_spin_box.value
@@ -1350,7 +1326,8 @@ func _on_mask_edit_panel_button_pressed() -> void:
 
 
 func _on_delete_layer(layer: LayerV2) -> void:
-	layer.tree_exited.disconnect(_on_layer_tree_exiting)
+	if layer.tree_exited.is_connected(_on_layer_tree_exiting):
+		layer.tree_exited.disconnect(_on_layer_tree_exiting)
 	layers.erase(layer)
 	selected_layers.erase(layer)
 	selected_mask_layers.erase(layer)
@@ -1385,7 +1362,7 @@ func _on_positive_prompt_mic_button_pressed() -> void:
 	SingletonObject.AtT.FieldForFilling = prompt_text_edit
 	SingletonObject.AtT.btn = positive_prompt_mic_button
 	positive_prompt_mic_button.modulate = Color(Color.LIME_GREEN)
-	#SingletonObject.AtT.btnStop = %AudioStop1
+	SingletonObject.AtT.btnStop = positive_prompt_mic_button
 
 
 func _on_negative_prompt_mic_button_pressed() -> void:
@@ -1393,12 +1370,29 @@ func _on_negative_prompt_mic_button_pressed() -> void:
 	SingletonObject.AtT.FieldForFilling = negative_text_edit
 	SingletonObject.AtT.btn = negative_prompt_mic_button
 	negative_prompt_mic_button.modulate = Color(Color.LIME_GREEN)
-	#SingletonObject.AtT.btnStop = %AudioStop1
+	SingletonObject.AtT.btnStop = negative_prompt_mic_button
 
 
 func _on_active_layer_mask_layer(is_mask: bool) -> void:
 	is_active_layer_mask = is_mask
+	color_picker_button.visible = not is_mask
+	mask_container.visible = is_mask
+	if is_mask:
+		_tools_option_button.select(0)
+		_tools_option_button.set_item_disabled(2, true)
+		_tools_option_button.set_item_disabled(3, true)
+		_tools_option_button.set_item_disabled(4, true)
+		color_picker_button.color = active_layer.mask_color
+	else:
+		_tools_option_button.set_item_disabled(2, false)
+		_tools_option_button.set_item_disabled(3, false)
+		_tools_option_button.set_item_disabled(4, false)
+		color_picker_button.color = last_selected_color
 
 
 func _on_image_gen_window_close_requested() -> void:
 	image_gen_wiindow.hide()
+
+
+func _on_color_picker_button_color_changed(color: Color) -> void:
+	last_selected_color = color
