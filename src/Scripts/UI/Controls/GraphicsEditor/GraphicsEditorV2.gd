@@ -1169,9 +1169,11 @@ func _on_edit_img_button_pressed() -> void:
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
 	elif  ai_request_type == AI_REQUEST.MASK_EDIT:
-		if selected_layers.size() < 1 or selected_mask_layers.size() < 1:
+		if selected_layers.size() < 1:
 			return
-			
+		if !selected_layers[0].has_meta("linked_mask_layer") and selected_mask_layers.size() < 1:
+			display_message("Mask Required", "Select a mask layer for masked editing.")
+			return
 		var image_layer_to_edit: LayerV2 = null
 		for i: LayerV2 in selected_layers:
 			if i.selected:
@@ -1210,29 +1212,53 @@ func _on_edit_img_button_pressed() -> void:
 		
 		#var mask_dir: = {}
 		var mask_color_channel: = ""
-		for i: LayerV2 in selected_mask_layers:
-			if i.type == LayerV2.Type.MASK and i.selected:
-				var base_mask_image: = i.image
-				var mask_layer_name: = i.name + ".png"
-				mask_color_channel = i.layer.mask_color_name
-				var base_mask_image_for_export: Image = base_mask_image.duplicate()
-				if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
-					base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
-				
-				var base_mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(base_mask_image_for_export, i.layer.mask_color, mask_color_channel)
-				#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
-				if base_mask_buffer.is_empty():
-					display_message("Error", "Error generating the mask image")
-					return
-				var base64_mask_image_data: String = (Marshalls.raw_to_base64(base_mask_buffer))
-				
-				var mask_file: = {
-				"filename": mask_layer_name,
-				"role": "mask",
-				"data": base64_mask_image_data,
-				"content_type": "image/png"
-				}
-				images_dir.append(mask_file)
+		if image_layer_to_edit.has_meta("linked_mask_layer"):
+			var i: LayerV2 = image_layer_to_edit.get_meta("linked_mask_layer")
+			var base_mask_image: = i.image
+			var mask_layer_name: = i.name + ".png"
+			mask_color_channel = i.layer.mask_color_name
+			var base_mask_image_for_export: Image = base_mask_image.duplicate()
+			if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
+				base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
+			
+			var base_mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(base_mask_image_for_export, i.layer.mask_color, mask_color_channel)
+			#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
+			if base_mask_buffer.is_empty():
+				display_message("Error", "Error generating the mask image")
+				return
+			var base64_mask_image_data: String = (Marshalls.raw_to_base64(base_mask_buffer))
+			
+			var mask_file: = {
+			"filename": mask_layer_name,
+			"role": "mask",
+			"data": base64_mask_image_data,
+			"content_type": "image/png"
+			}
+			images_dir.append(mask_file)
+		else:
+			for i: LayerV2 in selected_mask_layers:
+				if i.type == LayerV2.Type.MASK and i.selected:
+					var base_mask_image: = i.image
+					var mask_layer_name: = i.name + ".png"
+					mask_color_channel = i.layer.mask_color_name
+					var base_mask_image_for_export: Image = base_mask_image.duplicate()
+					if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
+						base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
+					
+					var base_mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(base_mask_image_for_export, i.layer.mask_color, mask_color_channel)
+					#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
+					if base_mask_buffer.is_empty():
+						display_message("Error", "Error generating the mask image")
+						return
+					var base64_mask_image_data: String = (Marshalls.raw_to_base64(base_mask_buffer))
+					
+					var mask_file: = {
+					"filename": mask_layer_name,
+					"role": "mask",
+					"data": base64_mask_image_data,
+					"content_type": "image/png"
+					}
+					images_dir.append(mask_file)
 		
 		var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
 		SingletonObject.main_scene.add_child(toast)

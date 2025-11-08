@@ -52,10 +52,10 @@ var layer: LayerV2:
 
 		queue_redraw()
 
-
 @onready var name_line_edit: LineEdit = %Name
 @onready var texture_rect: TextureRect = %TextureRect
 @onready var visibility_check_button: CheckButton = %VisibilityCheckButton
+@onready var layer_card: Button = %LayerCard
 
 @onready var drop_above_separator: Control = %DropAboveSeparator
 @onready var drop_below_separator: Control = %DropBelowSeparator
@@ -141,6 +141,7 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 
 	return self
 
+
 func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
 	if not data is LayerCard:
 		return false
@@ -168,11 +169,19 @@ func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
 
 func _drop_data(at_position: Vector2, data: Variant) -> void:
 	if not data is LayerCard: return
-
+	data = data as LayerCard
+	
+	if layer.type == LayerV2.Type.IMAGE or layer.type == LayerV2.Type.DRAWING:
+		if data.layer.type == LayerV2.Type.MASK:
+			self.set_meta("linked_mask_layercard", data)
+			layer.set_meta("linked_mask_layer", data.layer)
+			layer_card.tooltip_text = "Linked Mask: " + data.layer.name
+			return
 	if at_position.y < size.y / 2:
 		data.reorder.emit(get_index())
 	else:
 		data.reorder.emit(get_index()+1)
+
 
 func _on_visibility_check_button_toggled(toggled_on: bool) -> void:
 	layer.visible = toggled_on

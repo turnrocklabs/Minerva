@@ -24,8 +24,10 @@ _active_color = Color(0.335164, 0.390082, 0.499572, 1)
 _color = Color(0.184314, 0.172549, 0.172549, 1)
 
 [node name="LayerCard" type="Button" parent="."]
+unique_name_in_owner = true
 layout_mode = 2
-mouse_filter = 2
+tooltip_text = "Linked Mask: null"
+mouse_filter = 1
 theme_override_styles/focus = SubResource("StyleBoxEmpty_hqbae")
 button_mask = 3
 flat = true
