@@ -14,7 +14,7 @@ signal delete_layer(layer: LayerV2)
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
-@onready var layer_cards_popup_panel: PopupPanel = %LayerCardsPopupPanel
+@onready var layer_cards_popup_panel: Window = %LayerCardsPopupPanel
 @onready var layer_cards_toggle_button: Button = %LayerCardsButton
 
 @onready var message_window: PersistentWindow = %MessageWindow
@@ -51,7 +51,7 @@ signal delete_layer(layer: LayerV2)
 	speech_bubble_tool: _speech_bubble_options,
 }
 
-@onready var image_gen_wiindow: Window = %ImageGenWindow
+@onready var image_gen_window: Window = %ImageGenWindow
 @onready var prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var send_prompt_button: Button = %SendPromptButton
 @onready var negative_text_edit: TextEdit = %NegativeTextEdit
@@ -110,13 +110,6 @@ var active_layer: LayerV2:
 			return selected_mask_layers.get(0) if not selected_mask_layers.is_empty() else null
 		else:
 			return selected_layers.get(0) if not selected_layers.is_empty() else null
-	#set(value):
-		#active_layer = value
-		#if value.type == LayerV2.Type.MASK:
-			#active_layer_is_mask_layer.emit(true)
-		#else:
-			#active_layer_is_mask_layer.emit(false)
-
 
 var last_selected_color: Color = Color.BLACK
 var active_tool: BaseTool:
@@ -146,7 +139,6 @@ func _ready() -> void:
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
 	
 	# Connect media generation signal to receive generated images
-	#media_gen_socket = MediaGen
 	MediaGen.pass_image_to_editor.connect(_on_image_received)
 	
 	var temp_res: = MIN_IMAGE_RES
@@ -193,7 +185,7 @@ func create_new_mask_layer(layer_name: String, dimensions: Vector2i, color: Colo
 	return layer
 
 
-func add_mask_layer(layer: LayerV2, select: = true):
+func add_mask_layer(layer: LayerV2, select: = true) -> LayerV2:
 	layer.tree_exiting.connect(_on_mask_layer_tree_exiting.bind(layer))
 
 	var layer_card: = LayerCard.create(self, layer)
@@ -214,7 +206,7 @@ func add_mask_layer(layer: LayerV2, select: = true):
 	return layer
 
 
-func add_layer(layer: LayerV2, select: = true):
+func add_layer(layer: LayerV2, select: = true) -> LayerV2:
 	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
 
 	var layer_card: = LayerCard.create(self, layer)
@@ -545,8 +537,6 @@ func _on_delete_layer_button_pressed() -> void:
 		if i.selected:
 			i.delete_layer()
 
-
-
 #endregion LayersCards PopUp panel
 
 func _on_brush_tool_button_toggled(toggled_on: bool) -> void:
@@ -564,12 +554,14 @@ func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
 	
 	active_tool = pan_tool if toggled_on else null
 
+
 func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 	if toggled_on:
 		eraser_tool.set_activated_by_pen(false)  # Mark that eraser was activated manually
 		active_tool = eraser_tool
 	else:
 		active_tool = null
+
 
 func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
 	if not toggled_on:
@@ -579,6 +571,7 @@ func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
 		return
 	
 	active_tool = transform_tool if toggled_on else null
+
 
 func _on_speech_bubble_tool_button_toggled(toggled_on:bool) -> void:
 	active_tool = speech_bubble_tool if toggled_on else null
@@ -719,58 +712,65 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 				if _processed > 5000:
 					await get_tree().process_frame # let the UI update
 					_processed = 0
-
-	var merged_layer = LayerV2.create_image_layer("Layer", merged_image)
-
 	
-	# Add the merged layer to the editor
-	add_layer(merged_layer)
-
-	# We need to set the position here, after the add_layer
-	# because that function resets this property, not sure where exactly
-	merged_layer.position = bounds.position
-
-	# Remove original layers and their cards
-	for layer in to_merge:
-		# Find and remove the layer card
-		for card in layer_cards_container.get_children():
-			if card is LayerCard and card.layer == layer:
-				card.queue_free()
-				break
-		
-		# Remove from layers array
-		layers.erase(layer)
-		
-		# Remove from scene
-		layer.queue_free()
-	
-	# Select the merged layer
-	if merged_layer.has_meta("layer_card"):
-		var merged_card = merged_layer.get_meta("layer_card")
-		merged_card.selected = true
-	
-	return merged_layer
+	if to_merge[0].type == LayerV2.Type.MASK:
+		var merged_layer: = LayerV2.create_image_layer("Merged Mask Layer", merged_image)
+		merged_layer.type = LayerV2.Type.MASK
+		add_mask_layer(merged_layer)
+		merged_layer.position = bounds.position
+		# Remove original layers and their cards
+		for layer in to_merge:
+			# Find and remove the layer card
+			for card in mask_layer_cards_container.get_children():
+				if card is LayerCard and card.layer == layer:
+					card.queue_free()
+					#break
+			# Remove from layers array
+			layers.erase(layer)
+			selected_mask_layers.erase(layer)
+			# Remove from scene
+			layer.queue_free()
+		return merged_layer
+	else:
+		var merged_layer = LayerV2.create_image_layer("Merged Layer", merged_image)
+		# Add the merged layer to the editor
+		add_layer(merged_layer)
+		# We need to set the position here, after the add_layer
+		# because that function resets this property, not sure where exactly
+		merged_layer.position = bounds.position
+		# Remove original layers and their cards
+		for layer in to_merge:
+			# Find and remove the layer card
+			for card in layer_cards_container.get_children():
+				if card is LayerCard and card.layer == layer:
+					card.queue_free()
+					#break
+			# Remove from layers array
+			layers.erase(layer)
+			selected_layers.erase(layer)
+			# Remove from scene
+			layer.queue_free()
+		return merged_layer
 
 # Helper function for color blending (alpha compositing)
 func _blend_colors(dst: Color, src: Color) -> Color:
-	if src.a == 0:
+	if src.a == 0.0:
 		return dst
-	if dst.a == 0:
+	if dst.a == 0.0:
 		return src
 	
-	var alpha = src.a + dst.a * (1.0 - src.a)
-	if alpha == 0:
+	var alpha: float = src.a + dst.a * (1.0 - src.a)
+	if alpha == 0.0:
 		return Color.TRANSPARENT
 	
-	var r = (src.r * src.a + dst.r * dst.a * (1.0 - src.a)) / alpha
-	var g = (src.g * src.a + dst.g * dst.a * (1.0 - src.a)) / alpha
-	var b = (src.b * src.a + dst.b * dst.a * (1.0 - src.a)) / alpha
+	var r: float = (src.r * src.a + dst.r * dst.a * (1.0 - src.a)) / alpha
+	var g: float = (src.g * src.a + dst.g * dst.a * (1.0 - src.a)) / alpha
+	var b: float = (src.b * src.a + dst.b * dst.a * (1.0 - src.a)) / alpha
 	
 	return Color(r, g, b, alpha)
 
-
-func _on_layer_cards_button_toggled(toggled_on: bool) -> void:
-	if toggled_on:
+func _on_layer_cards_button_pressed() -> void:
+	if !layer_cards_popup_panel.visible:
 		layer_cards_popup_panel.position = Vector2(
 			(
 				layer_cards_toggle_button.global_position.x 
@@ -779,9 +779,14 @@ func _on_layer_cards_button_toggled(toggled_on: bool) -> void:
 			),
 			layer_cards_toggle_button.global_position.y + layer_cards_toggle_button.size.y + 30
 		)
-		layer_cards_popup_panel.popup()
+		layer_cards_popup_panel.show()
+		layer_cards_popup_panel.borderless = true
+		%TopOfLayersContainer.hide()
+		%SendActionButton.disabled = true
+		%SendActionButton.hide()
 	else:
 		layer_cards_popup_panel.hide()
+
 
 
 func _on_layer_cards_popup_panel_popup_hide() -> void:
@@ -1040,22 +1045,22 @@ static func _global_to_layer_space_static(global_pos: Vector2, layer_pos: Vector
 
 
 func _on_prompt_button_pressed() -> void:
-	if !image_gen_wiindow.visible:
-		image_gen_wiindow.position = Vector2(
+	if !image_gen_window.visible:
+		image_gen_window.position = Vector2(
 			(
 				prompt_button.global_position.x 
-				-image_gen_wiindow.size.x
+				-image_gen_window.size.x
 				+prompt_button.size.x
 			),
 			prompt_button.global_position.y + 50
 		)
-		image_gen_wiindow.show()
+		image_gen_window.show()
 	else:
-		image_gen_wiindow.hide()
+		image_gen_window.hide()
 
 
 func _on_send_prompt_button_pressed() -> void:
-	image_gen_wiindow.hide()
+	image_gen_window.hide()
 	var params : Dictionary = get_params_image_gen()
 	var toast: ToastNotification
 	if params.is_empty():
@@ -1064,7 +1069,7 @@ func _on_send_prompt_button_pressed() -> void:
 	else:
 		toast =ToastNotification.create(ToastNotification.Type.INFO, "Sending Image Gen request...")
 		_current_image_gen_request_id = MediaGen.send_media_gen_request(params)
-		image_gen_wiindow.hide()
+		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
 	SingletonObject.main_scene.add_child(toast)
 
@@ -1093,47 +1098,150 @@ func _on_image_received(filename:String, request_id: String, buffer: PackedByteA
 	_current_image_gen_request_id = ""
 
 
+enum AI_REQUEST {
+	IMAGE_GEN,
+	EDIT_IMAGE,
+	MASK_EDIT
+}
+var ai_request_type: AI_REQUEST = AI_REQUEST.EDIT_IMAGE
+func _on_edit_button_pressed() -> void:
+	if !layer_cards_popup_panel.visible:
+		layer_cards_popup_panel.position = Vector2(
+			(
+				%ImageGenWindow.position.x 
+				-layer_cards_popup_panel.size.x/2.0
+				+ %ImageGenWindow.size.x/2.0
+			),
+			%ImageGenWindow.position.y + %ImageGenWindow.size.y + 30
+		)
+		layer_cards_popup_panel.show()
+		layer_cards_popup_panel.borderless = false
+		%AIActionLabel.text = "Pick an Layer to Send to Edit"
+		%TopOfLayersContainer.show()
+		%SendActionButton.disabled = false
+		%SendActionButton.show()
+		ai_request_type = AI_REQUEST.EDIT_IMAGE
+	else:
+		layer_cards_popup_panel.hide()
+		layer_cards_popup_panel.borderless = true
+		%TopOfLayersContainer.hide()
+		%SendActionButton.disabled = true
+		%SendActionButton.hide()
+
+
 func _on_edit_img_button_pressed() -> void:
-	if selected_layers.size() < 1:
-		return
-	
-	var layer_to_send: LayerV2 = selected_layers[0]
-	
-	# 1. Get the image from the active layer
-	if layer_to_send == null:
-		return
-	var image_to_edit: Image = layer_to_send.layer.image
-	var image_filename: String = layer_to_send.layer.name + ".png" # Use layer name as filename
-
-	# 2. Convert Image to PackedByteArray (PNG format)
-	# The image must be converted to RGBA8 for PNG export if it's not already.
-	# Duplicate to avoid modifying the original layer image directly during conversion.
-	var image_for_export: Image = image_to_edit.duplicate()
-	if image_for_export.get_format() != Image.FORMAT_RGBA8:
-		image_for_export.convert(Image.FORMAT_RGBA8)
-	
-	var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
-	
-	if image_buffer.is_empty():
-		display_message("Error", "Failed to convert active layer image to PNG buffer.")
-		return
-	
-	var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
-	SingletonObject.main_scene.add_child(toast)
-	
-	var params: Dictionary = get_params_image_gen()
-	
-	if params.is_empty():
-		return
-	
-	if !seed_line_edit.text.is_empty():
-		params["seed"] = seed_line_edit.text
-	
-	_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, image_filename)
-	
-	image_gen_wiindow.hide()
-	layer_cards_popup_panel.hide()
-
+	if ai_request_type == AI_REQUEST.EDIT_IMAGE:
+		if selected_layers.size() < 1:
+			return
+		
+		var layer_to_send: LayerV2 = selected_layers[0]
+		# Get the image from the active layer
+		if layer_to_send == null:
+			return
+		var image_to_edit: Image = layer_to_send.layer.image
+		var image_filename: String = layer_to_send.layer.name + ".png" # Use layer name as filename
+		# Convert Image to PackedByteArray (PNG format)
+		# The image must be converted to RGBA8 for PNG export if it's not already.
+		# Duplicate to avoid modifying the original layer image directly during conversion.
+		var image_for_export: Image = image_to_edit.duplicate()
+		if image_for_export.get_format() != Image.FORMAT_RGBA8:
+			image_for_export.convert(Image.FORMAT_RGBA8)
+		
+		var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
+		
+		if image_buffer.is_empty():
+			display_message("Error", "Failed to convert active layer image to PNG buffer.")
+			return
+		
+		var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
+		SingletonObject.main_scene.add_child(toast)
+		
+		var params: Dictionary = get_params_image_gen()
+		
+		if params.is_empty():
+			return
+		
+		if !seed_line_edit.text.is_empty():
+			params["seed"] = seed_line_edit.text
+		
+		_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, image_filename)
+		
+		image_gen_window.hide()
+		layer_cards_popup_panel.hide()
+	elif  ai_request_type == AI_REQUEST.MASK_EDIT:
+		if selected_layers.size() < 1 or selected_mask_layers.size() < 1:
+			return
+			
+		var image_layer_to_edit: LayerV2 = null
+		for i: LayerV2 in selected_layers:
+			if i.selected:
+				image_layer_to_edit = i
+				break
+		if prompt_text_edit.text.is_empty():
+			display_message("Input Required", "Please enter a positive prompt for masked image editing.")
+			return
+		
+		var images_dir: Array = []
+		
+		if image_layer_to_edit == null:
+			return
+		var base_image_to_edit: Image = image_layer_to_edit.image
+		var base_image_filename: String = image_layer_to_edit.name + ".png" 
+		
+		
+		var base_image_for_export: Image = base_image_to_edit.duplicate()
+		if base_image_for_export.get_format() != Image.FORMAT_RGBA8:
+			base_image_for_export.convert(Image.FORMAT_RGBA8)
+		
+		var base_image_buffer: PackedByteArray = base_image_for_export.save_png_to_buffer()
+		
+		if base_image_buffer.is_empty():
+			display_message("Error", "Failed to convert active layer image to PNG buffer for mask editing.")
+			return
+		var base64_base_image_data: String = Marshalls.raw_to_base64(base_image_buffer)
+		
+		var image_file: = {
+				"filename": base_image_filename,
+				"role": "image",
+				"data": base64_base_image_data,
+				"content_type": "image/png"
+			}
+		images_dir.append(image_file)
+		
+		#var mask_dir: = {}
+		var mask_color_channel: = ""
+		for i: LayerV2 in selected_mask_layers:
+			if i.type == LayerV2.Type.MASK and i.selected:
+				var base_mask_image: = i.image
+				var mask_layer_name: = i.name + ".png"
+				mask_color_channel = i.layer.mask_color_name
+				var base_mask_image_for_export: Image = base_mask_image.duplicate()
+				if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
+					base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
+				
+				var base_mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(base_mask_image_for_export, i.layer.mask_color, mask_color_channel)
+				#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
+				if base_mask_buffer.is_empty():
+					display_message("Error", "Error generating the mask image")
+					return
+				var base64_mask_image_data: String = (Marshalls.raw_to_base64(base_mask_buffer))
+				
+				var mask_file: = {
+				"filename": mask_layer_name,
+				"role": "mask",
+				"data": base64_mask_image_data,
+				"content_type": "image/png"
+				}
+				images_dir.append(mask_file)
+		
+		var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
+		SingletonObject.main_scene.add_child(toast)
+		
+		var selective_editing_params: Dictionary = get_params_image_gen()
+		selective_editing_params["mask_channel"] = mask_color_channel
+		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(selective_editing_params, images_dir)
+		image_gen_window.hide()
+		layer_cards_popup_panel.hide()
 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 	advanced_settings_container.visible = toggled_on
@@ -1175,83 +1283,30 @@ func get_first_image_layer() -> LayerV2:
 			return i
 	return null
 
-@onready var media_gen_layers_container: VBoxContainer = %MediaGenLayersContainer
-@onready var mask_media_gen_layers_container: VBoxContainer = %MaskMediaGenLayersContainer
 
 func _on_mask_edit_button_pressed() -> void: 
-	if media_gen_layers_container.get_child_count() < 1 or mask_media_gen_layers_container.get_child_count() < 1:
-		return
-		
-	var image_layer_to_edit: LayerCard = null
-	for i: LayerCard in media_gen_layers_container.get_children():
-		if i.selected:
-			image_layer_to_edit = i
-			break
-	if prompt_text_edit.text.is_empty():
-		display_message("Input Required", "Please enter a positive prompt for masked image editing.")
-		return
-	
-	var images_dir: Array = []
-	
-	if image_layer_to_edit == null:
-		return
-	var base_image_to_edit: Image = image_layer_to_edit.layer.image
-	var base_image_filename: String = image_layer_to_edit.layer.name + ".png" 
-	
-	
-	var base_image_for_export: Image = base_image_to_edit.duplicate()
-	if base_image_for_export.get_format() != Image.FORMAT_RGBA8:
-		base_image_for_export.convert(Image.FORMAT_RGBA8)
-	
-	var base_image_buffer: PackedByteArray = base_image_for_export.save_png_to_buffer()
-	
-	if base_image_buffer.is_empty():
-		display_message("Error", "Failed to convert active layer image to PNG buffer for mask editing.")
-		return
-	var base64_base_image_data: String = Marshalls.raw_to_base64(base_image_buffer)
-	
-	var image_file: = {
-			"filename": base_image_filename,
-			"role": "image",
-			"data": base64_base_image_data,
-			"content_type": "image/png"
-		}
-	images_dir.append(image_file)
-	
-	#var mask_dir: = {}
-	var mask_color_channel: = ""
-	for i: LayerCard in mask_media_gen_layers_container.get_children():
-		if i.layer.type == LayerV2.Type.MASK and i.selected:
-			var base_mask_image: = i.layer.image
-			var mask_layer_name: = i.layer.name + ".png"
-			mask_color_channel = i.layer.mask_color_name
-			var base_mask_image_for_export: Image = base_mask_image.duplicate()
-			if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
-				base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
-			
-			var base_mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(base_mask_image_for_export, i.layer.mask_color, mask_color_channel)
-			#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
-			if base_mask_buffer.is_empty():
-				display_message("Error", "Error generating the mask image")
-				return
-			var base64_mask_image_data: String = (Marshalls.raw_to_base64(base_mask_buffer))
-			
-			var mask_file: = {
-			"filename": mask_layer_name,
-			"role": "mask",
-			"data": base64_mask_image_data,
-			"content_type": "image/png"
-			}
-			images_dir.append(mask_file)
-	
-	var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
-	SingletonObject.main_scene.add_child(toast)
-	
-	var selective_editing_params: Dictionary = get_params_image_gen()
-	selective_editing_params["mask_channel"] = mask_color_channel
-	_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(selective_editing_params, images_dir)
-	image_gen_wiindow.hide()
-	layer_cards_popup_panel.hide()
+	if !layer_cards_popup_panel.visible:
+		layer_cards_popup_panel.position = Vector2(
+			(
+				%ImageGenWindow.position.x 
+				-layer_cards_popup_panel.size.x/2.0
+				+ %ImageGenWindow.size.x/2.0
+			),
+			%ImageGenWindow.position.y + %ImageGenWindow.size.y + 30
+		)
+		layer_cards_popup_panel.show()
+		layer_cards_popup_panel.borderless = false
+		%AIActionLabel.text = "Pick an Image Layer and a Mask Layer to Send to Edit"
+		%TopOfLayersContainer.show()
+		%SendActionButton.disabled = false
+		%SendActionButton.show()
+		ai_request_type = AI_REQUEST.MASK_EDIT
+	else:
+		layer_cards_popup_panel.hide()
+		layer_cards_popup_panel.borderless = true
+		%TopOfLayersContainer.hide()
+		%SendActionButton.disabled = true
+		%SendActionButton.hide()
 
 #region LayersCards Masks PopUp panel
 func _on_new_mask_layer_button_pressed() -> void:
@@ -1277,8 +1332,12 @@ func _on_copy_mask_layer_button_pressed() -> void:
 		var j: LayerV2 = i.duplicate()
 		j.image = i.image.duplicate()
 		add_mask_layer(j, false)
-#endregion LayersCards Masks PopUp panel
 
+
+func _on_merge_mask_layers_button_pressed() -> void:
+	merge_layers(selected_mask_layers.duplicate())
+
+#endregion LayersCards Masks PopUp panel
 
 func _on_mask_color_option_button_item_selected(index: int) -> void:
 	if active_layer and active_layer.type == active_layer.Type.MASK :
@@ -1334,29 +1393,6 @@ func _on_delete_layer(layer: LayerV2) -> void:
 	layer.queue_free()
 
 
-#func _on_button_pressed() -> void:
-	#if !mask_layer_cards_popup_panel.visible:
-		#mask_layer_cards_popup_panel.position = Vector2(
-			#(
-				#%ShowLayersButton.global_position.x 
-				#+ mask_edit_button.size.x
-			#),
-			#%ShowLayersButton.global_position.y - mask_layer_cards_popup_panel.size.y/2.0
-		#)
-		#for i: LayerCard in layer_cards_container.get_children():
-			#var j: LayerCard = i.duplicate()
-			#j.selected = false
-			#%MediaGenLayersContainer.add_child(j)
-	#
-		#for i: LayerCard in mask_layer_cards_container.get_children():
-			#var j: LayerCard = i.duplicate()
-			#j.selected = false
-			#%MaskMediaGenLayersContainer.add_child(j)
-		#mask_layer_cards_popup_panel.show()
-	#else:
-		#mask_layer_cards_popup_panel.hide()
-
-
 func _on_positive_prompt_mic_button_pressed() -> void:
 	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.FieldForFilling = prompt_text_edit
@@ -1391,8 +1427,17 @@ func _on_active_layer_mask_layer(is_mask: bool) -> void:
 
 
 func _on_image_gen_window_close_requested() -> void:
-	image_gen_wiindow.hide()
+	image_gen_window.hide()
 
 
 func _on_color_picker_button_color_changed(color: Color) -> void:
 	last_selected_color = color
+
+
+func _on_layer_cards_popup_panel_close_requested() -> void:
+	layer_cards_popup_panel.hide()
+
+
+func _on_back_button_pressed() -> void:
+	image_gen_window.show()
+	layer_cards_popup_panel.hide()
