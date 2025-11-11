@@ -104,7 +104,7 @@ func _setup_coco_service():
 	# Only create dropdown item if it doesn't exist for this service type
 	if not _history_type_exists_in_dropdown(ServiceHistory.ServiceType.COCO):
 		var item_id: = history_option_button.item_count
-		history_option_button.add_item("Co-COder", item_id)
+		history_option_button.add_item("Autocoder", item_id)
 		# Store the service type as metadata instead of individual service
 		history_option_button.set_item_metadata(history_option_button.get_item_index(item_id), ServiceHistory.ServiceType.COCO)
 		
@@ -211,7 +211,7 @@ func _get_service_type_display_name(service_type: ServiceHistory.ServiceType) ->
 		ServiceHistory.ServiceType.CHAT:
 			return "Chats"
 		ServiceHistory.ServiceType.COCO:
-			return "CO-COder"
+			return "Autocoder"
 		ServiceHistory.ServiceType.NOTES:
 			return "Notes"
 		_:

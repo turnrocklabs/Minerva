@@ -71,7 +71,23 @@ func _on_submit_job_button_pressed() -> void:
 		return
 	
 	var output: = await SingletonObject.autocoder_manager.autocoder_adapter.generate(
-		"Generate a python hello world program"
+		"Generate a python hello world program",
+		"", # no session
+		selected_artifact.artifact_uri if selected_artifact else ""
 	)
 
-	prints("output is:", output.session_id, output.files)
+	SingletonObject.ErrorDisplay(output.status, output.message)
+
+	SingletonObject.autocoder_manager.monitor_session(output.user_id, output.session_id)
+
+	var success: = await Core.subscribe("autocoder-orchestrator/iteration/%s/%s" % [output.user_id, output.session_id])
+
+	if not success:
+		SingletonObject.ErrorDisplay("Can't subscribe", "Can't subscribe to session notifications")
+
+	# _autocoder_notification_awaiter = Core.await_message()
+
+	# _autocoder_notification_awaiter.with_cmd("publication").receive_all().connect(func(msg: Dictionary): prints("NOTIFICATION RECEIVED:", msg))
+
+
+	prints("output is:", output.session_id)

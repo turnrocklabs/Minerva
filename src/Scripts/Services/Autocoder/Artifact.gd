@@ -81,44 +81,89 @@ func is_public() -> bool:
 	return visibility == "public"
 
 
-## Creates an [class Artifact] object ready for upload to registry.[br]
+## Creates an [Artifact] object ready for upload to registry.[br]
 ## [param tar_file] must be an absolute path of file that ends with `.tar.gz`
 static func create_from_file(tar_file: String, data: Dictionary) -> Artifact:
 	if not tar_file.is_absolute_path() or not tar_file.get_file().ends_with(".tar.gz"):
+		push_error("Invalid tar file path: %s" % tar_file)
 		return null
 
-	var artifact: = Artifact.new(data)
+	var artifact := Artifact.new(data)
+	var bytes := FileAccess.get_file_as_bytes(tar_file)
 
-	var bytes: = FileAccess.get_file_as_bytes(tar_file)
-
-	if bytes.is_empty(): # TODO: check last error
+	if bytes.is_empty():
+		push_error("Failed to read tar file: %s (Error: %s)" % [tar_file, error_string(FileAccess.get_open_error())])
 		return null
 
 	artifact._base64 = Marshalls.raw_to_base64(bytes)
+	artifact.size = bytes.size()
+	
+	# Auto-set filename if not provided
+	if artifact.filename.is_empty():
+		artifact.filename = tar_file.get_file()
 
 	return artifact
 
 
+## Creates tar.gz from directory contents (NOT including the directory itself).[br]
+## Example: dir="/home/user/src" creates tar.gz with contents of src/, not src/ folder itself.
 static func create_from_dir(dir: String, data: Dictionary) -> Artifact:
-	
-	var temp_file: = OS.get_temp_dir().path_join("%s.tar.gz" % dir.get_file())
-
-	var err := OS.execute("tar", ["-czf", temp_file, "-C", dir, "."])
-
-	if err != OK:
+	if not DirAccess.dir_exists_absolute(dir):
+		push_error("Directory does not exist: %s" % dir)
 		return null
+	
+	# Generate temp filename based on directory name or random
+	var dir_name := dir.get_file() if not dir.get_file().is_empty() else "artifact"
+	var temp_file := OS.get_cache_dir().path_join("%s_%d.tar.gz" % [dir_name, Time.get_ticks_msec()])
+	
+	var args: PackedStringArray
+	var command: String
+	
+	# Platform-specific tar command
+	if OS.get_name() == "Windows":
+		# Windows: use tar.exe (available in Windows 10+)
+		command = "tar"
+		args = ["-czf", temp_file, "-C", dir, "."]
+	elif OS.get_name() == "Linux" or OS.get_name() == "MacOS":
+		# Linux/Mac: standard tar
+		command = "tar"
+		args = ["-czf", temp_file, "-C", dir, "."]
+	else:
+		SingletonObject.ErrorDisplay("Can't package", "Can't package tar.gz on currently this system: %s" % OS.get_name())
+		return null
+	
+	# Execute tar command
+	var output: Array = []
+	var exit_code := OS.execute(command, args, output, true)
+	
+	if exit_code != OK:
+		push_error("Failed to create tar.gz: exit code %d, output: %s" % [exit_code, "\n".join(output)])
+		return null
+	
+	# Create artifact from the generated tar file
+	var artifact := create_from_file(temp_file, data)
+	
+	# Clean up temp file
+	DirAccess.remove_absolute(temp_file)
+	
+	return artifact
 
-	return create_from_file(temp_file, data)
 
+## Returns dictionary ready for artifact/upload request
 func get_data_for_upload() -> Dictionary:
-
-	# TODO: add rest of the fields
-	return {
+	var upload_data := {
 		"filename": filename,
 		"content": _base64,
 		"description": description,
-		"framework": framework,
-		"language": language,
 		"visibility": visibility,
-		"tags": tags,
 	}
+	
+	# Only include non-empty optional fields
+	if not framework.is_empty():
+		upload_data["framework"] = framework
+	if not language.is_empty():
+		upload_data["language"] = language
+	if not tags.is_empty():
+		upload_data["tags"] = tags
+	
+	return upload_data

@@ -4,11 +4,27 @@ extends BaseServiceAdapter
 
 class GenerationOutput extends RefCounted:
 	var session_id: String
-	var files: Dictionary
+	var message: String
+	var notification_topics: Array[String]
+	var status: String
+	var user_id: String
+	var iteration: float
 
-	func _init(sid: String, files_: Dictionary) -> void:
+	func _init(
+		sid: String,
+		msg: String,
+		notif_topics: Array[String],
+		output_status: String,
+		output_user_id: String,
+		ouput_iteration: float
+	) -> void:
 		session_id = sid
-		files = files_
+		message = msg
+		notification_topics = notif_topics
+		status = output_status
+		user_id = output_user_id
+		iteration = ouput_iteration
+
 
 
 # {
@@ -57,9 +73,23 @@ func generate(prompt: String, session_id: String = "", input_archive_uri: String
 		return null
 
 	var sid = safe_extract(msg, ["params", "result", "session_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
-	var files = safe_extract(msg, ["params", "result", "files"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_DICTIONARY], {})
+	var iteration = safe_extract(msg, ["params", "result", "iteration"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_FLOAT], 0.0)
+	var message = safe_extract(msg, ["params", "result", "message"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+	
+	var notification_topics: Array[String]
+	notification_topics.assign(safe_extract(msg, ["params", "result", "notification_topics"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_ARRAY], []))
 
-	return GenerationOutput.new(sid, files)
+	var status = safe_extract(msg, ["params", "result", "status"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+	var user_id = safe_extract(msg, ["params", "result", "user_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+
+	return GenerationOutput.new(
+		sid,
+		message,
+		notification_topics,
+		status,
+		user_id,
+		iteration,
+	)
 
 
 # subscribe_msg = {

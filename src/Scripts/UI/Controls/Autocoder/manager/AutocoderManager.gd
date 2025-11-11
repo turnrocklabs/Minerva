@@ -5,6 +5,11 @@ extends VBoxContainer
 var artifact_registry_adapter: ArtifactRegistryAdapter
 var autocoder_adapter: AutocoderAdapter
 
+var _monitoring_sessions: PackedStringArray
+
+# keep an array of notification message handlers so they dont go out of scope and get garbage collected
+var _notification_message_handlers: Array[Core.AwaitMessage]
+
 func _init() -> void:
 	Core.ready.connect(
 		func():
@@ -58,3 +63,32 @@ func _on_core_message_received(data):
 		var params = data.get("params", {})
 		if params.get("name", "") == "service_disconnected":
 			info("Service %s disconnected" % params.get("service_id", "Unknown"))
+
+
+
+func monitor_session(user_id: String, session_id: String,):
+
+	var success: = await Core.subscribe("autocoder-orchestrator/iteration/%s/%s" % [user_id, session_id])
+
+	if not success:
+		SingletonObject.ErrorDisplay("Can't subscribe", "Can't subscribe to session notifications")
+		# return?
+
+	var message_awaiter = Core.await_message()
+
+	_notification_message_handlers.append(message_awaiter)
+
+	# using text editor for now
+	var logs_editor: = SingletonObject.editor_pane.add(Editor.Type.TEXT, null, "Logs", message_awaiter)
+	
+	message_awaiter.with_cmd("publication").receive_all().connect(
+		func(msg: Dictionary):
+			# prints("NOTIFICATION RECEIVED:", msg)
+			logs_editor.code_edit.text += "\n NOTIFICATION RECEIVED"
+			logs_editor.code_edit.text += JSON.stringify(msg, "\t")
+	)
+
+	_monitoring_sessions.append(session_id)
+
+
+
