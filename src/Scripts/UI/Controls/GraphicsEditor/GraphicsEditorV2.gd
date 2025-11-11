@@ -127,7 +127,10 @@ var _previous_tool_before_eraser: BaseTool = null  # Store tool to return to aft
 var _current_image_gen_request_id: String = ""
 
 func _ready() -> void:
-	
+	layer_cards_popup_panel.hide()
+	image_gen_window.hide()
+	progress_window.hide()
+	message_window.hide()
 	active_tool_changed.connect(_on_active_tool_changed)
 	_tools_option_button.select(0)
 	_tools_option_button.item_selected.emit(0)
@@ -149,6 +152,8 @@ func _ready() -> void:
 		temp_res += 128
 	
 	delete_layer.connect(_on_delete_layer)
+	
+	
 
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
@@ -829,10 +834,9 @@ func _on_layer_cards_button_pressed() -> void:
 				-layer_cards_popup_panel.size.x/2.0
 				+layer_cards_toggle_button.size.x/2.0
 			),
-			layer_cards_toggle_button.global_position.y + layer_cards_toggle_button.size.y + 30
+			layer_cards_toggle_button.global_position.y + (layer_cards_toggle_button.size.y * 3.0)
 		)
 		layer_cards_popup_panel.show()
-		layer_cards_popup_panel.borderless = true
 		%TopOfLayersContainer.hide()
 		%SendActionButton.disabled = true
 		%SendActionButton.hide()
