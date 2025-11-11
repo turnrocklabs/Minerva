@@ -1,9 +1,10 @@
-[gd_scene load_steps=8 format=3 uid="uid://bgqhpokm027si"]
+[gd_scene load_steps=11 format=3 uid="uid://bgqhpokm027si"]
 
 [ext_resource type="Script" uid="uid://dk5fww5r5sryf" path="res://Scripts/UI/Controls/GraphicsEditor/LayerCard.gd" id="1_8joxi"]
 [ext_resource type="Texture2D" uid="uid://tfpyd2bc0aeb" path="res://addons/markdownlabel/assets/screenshot.png" id="2_cfx4g"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="2_tha0k"]
 [ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="3_bp0f0"]
+[ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="4_utn5m"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_c4m65"]
 bg_color = Color(0.186202, 0.173051, 0.172226, 1)
@@ -13,6 +14,16 @@ bg_color = Color(0.186202, 0.173051, 0.172226, 1)
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_3bco1"]
 resource_local_to_scene = true
 color = Color(0.130437, 0, 0.970655, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_o1dtc"]
+resource_local_to_scene = true
+shader = ExtResource("4_utn5m")
+shader_parameter/square_size = 0.05
+shader_parameter/color1 = Color(0.862745, 0.862745, 0.862745, 1)
+shader_parameter/color2 = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_utn5m"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
 
 [node name="PanelContainer" type="PanelContainer"]
 custom_minimum_size = Vector2(0, 45)
@@ -68,7 +79,12 @@ button_pressed = true
 flat = true
 icon_alignment = 1
 
-[node name="TextureRect" type="TextureRect" parent="LayerCard/v/h"]
+[node name="PanelContainer" type="PanelContainer" parent="LayerCard/v/h"]
+material = SubResource("ShaderMaterial_o1dtc")
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_utn5m")
+
+[node name="TextureRect" type="TextureRect" parent="LayerCard/v/h/PanelContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
@@ -76,6 +92,13 @@ size_flags_vertical = 3
 texture = ExtResource("2_cfx4g")
 expand_mode = 1
 stretch_mode = 5
+
+[node name="DropBelowSeparator" type="HSeparator" parent="LayerCard/v/h"]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+mouse_filter = 1
+theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
 
 [node name="Name" type="LineEdit" parent="LayerCard/v/h"]
 unique_name_in_owner = true
@@ -89,13 +112,6 @@ context_menu_enabled = false
 flat = true
 select_all_on_focus = true
 caret_blink = true
-
-[node name="DropBelowSeparator" type="HSeparator" parent="LayerCard/v"]
-unique_name_in_owner = true
-modulate = Color(1, 1, 1, 0)
-layout_mode = 2
-mouse_filter = 1
-theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
 
 [node name="ContextMenu" type="PopupMenu" parent="."]
 unique_name_in_owner = true

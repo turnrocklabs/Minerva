@@ -613,6 +613,54 @@ func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
 
 
+func _create_new_image_from_layers(bounds: Rect2, sorted_layers: Array[LayerV2]) -> Image:
+	var merged_image := Image.create(int(bounds.size.x), int(bounds.size.y), false, Image.FORMAT_RGBA8)
+	merged_image.fill(Color(0, 0, 0, 0))  # Transparent background
+	# Blend each layer onto the merged image
+	for layer in sorted_layers:
+		if not layer.visible or not layer.image or layer.image.is_empty():
+			continue
+			
+		var layer_image = layer.image
+		var layer_pos = layer.position
+		var rotation_rad = layer.rotation
+		var pivot = layer.pivot_offset
+		
+		# For each pixel in the merged image
+		for y in range(int(bounds.size.y)):
+			for x in range(int(bounds.size.x)):
+				# Convert merged image coordinates to global coordinates
+				# var global_pos = Vector2(x, y) + bounds.position
+				var global_pos = bounds.position + Vector2(x, y)
+				
+				# Convert global position to layer's local space
+				var local_pos: = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
+				
+				# Check if the point is within the layer's image bounds
+				var img_x = int(local_pos.x)
+				var img_y = int(local_pos.y)
+				
+				if img_x >= 0 and img_x < layer_image.get_width() and img_y >= 0 and img_y < layer_image.get_height():
+					var src_color = layer_image.get_pixel(img_x, img_y)
+					
+					# Skip fully transparent pixels
+					if src_color.a <= 0.01:
+						continue
+					
+					# Blend with existing pixel
+					var dst_color = merged_image.get_pixel(x, y)
+					var blended: Color
+					
+					# Use the drawing tool's blend function if available, otherwise use our own
+					if drawing_tool and drawing_tool.has_method("_blend_colors"):
+						blended = drawing_tool._blend_colors(dst_color, src_color)
+					else:
+						blended = _blend_colors(dst_color, src_color)
+					
+					merged_image.set_pixel(x, y, blended)
+	
+	return merged_image
+
 func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 	if to_merge.is_empty():
 		push_error("Cannot merge empty array of layers")
@@ -657,7 +705,7 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 	merged_image.fill(Color(0, 0, 0, 0))  # Transparent background
 	
 	# Sort layers by their z-index (drawing order) - top layers first (higher index = on top)
-	var sorted_layers = to_merge.duplicate()
+	var sorted_layers: = to_merge.duplicate()
 	sorted_layers.sort_custom(func(a: LayerV2, b: LayerV2): 
 		return layers_container.get_children().find(a) < layers_container.get_children().find(b)
 	)
@@ -712,6 +760,10 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 				if _processed > 5000:
 					await get_tree().process_frame # let the UI update
 					_processed = 0
+	
+	#var thread: Thread = Thread.new()
+	#thread.start(_create_new_image_from_layers.bind(bounds, sorted_layers))
+	#merged_image = await thread.wait_to_finish()
 	
 	if to_merge[0].type == LayerV2.Type.MASK:
 		var merged_layer: = LayerV2.create_image_layer("Merged Mask Layer", merged_image)
@@ -1138,8 +1190,8 @@ func _on_edit_img_button_pressed() -> void:
 		# Get the image from the active layer
 		if layer_to_send == null:
 			return
-		var image_to_edit: Image = layer_to_send.layer.image
-		var image_filename: String = layer_to_send.layer.name + ".png" # Use layer name as filename
+		var image_to_edit: Image = layer_to_send.image
+		var image_filename: String = layer_to_send.name + ".png" # Use layer name as filename
 		# Convert Image to PackedByteArray (PNG format)
 		# The image must be converted to RGBA8 for PNG export if it's not already.
 		# Duplicate to avoid modifying the original layer image directly during conversion.
@@ -1174,19 +1226,20 @@ func _on_edit_img_button_pressed() -> void:
 		if !selected_layers[0].has_meta("linked_mask_layer") and selected_mask_layers.size() < 1:
 			display_message("Mask Required", "Select a mask layer for masked editing.")
 			return
-		var image_layer_to_edit: LayerV2 = null
-		for i: LayerV2 in selected_layers:
-			if i.selected:
-				image_layer_to_edit = i
-				break
+		var image_layer_to_edit: LayerV2 = selected_layers[0]
+		
+		if image_layer_to_edit == null:
+			return
+		#for i: LayerV2 in selected_layers:
+			#if i.selected:
+				#image_layer_to_edit = i
+				#break
 		if prompt_text_edit.text.is_empty():
 			display_message("Input Required", "Please enter a positive prompt for masked image editing.")
 			return
 		
 		var images_dir: Array = []
 		
-		if image_layer_to_edit == null:
-			return
 		var base_image_to_edit: Image = image_layer_to_edit.image
 		var base_image_filename: String = image_layer_to_edit.name + ".png" 
 		
@@ -1237,15 +1290,15 @@ func _on_edit_img_button_pressed() -> void:
 			images_dir.append(mask_file)
 		else:
 			for i: LayerV2 in selected_mask_layers:
-				if i.type == LayerV2.Type.MASK and i.selected:
+				if i.type == LayerV2.Type.MASK:
 					var base_mask_image: = i.image
 					var mask_layer_name: = i.name + ".png"
-					mask_color_channel = i.layer.mask_color_name
+					mask_color_channel = i.mask_color_name
 					var base_mask_image_for_export: Image = base_mask_image.duplicate()
 					if base_mask_image_for_export.get_format() != Image.FORMAT_RGBA8:
 						base_mask_image_for_export.convert(Image.FORMAT_RGBA8)
 					
-					var base_mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(base_mask_image_for_export, i.layer.mask_color, mask_color_channel)
+					var base_mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(base_mask_image_for_export, i.mask_color, mask_color_channel)
 					#var base_mask_buffer: PackedByteArray = base_mask_image_for_export.save_png_to_buffer()
 					if base_mask_buffer.is_empty():
 						display_message("Error", "Error generating the mask image")
@@ -1467,3 +1520,7 @@ func _on_layer_cards_popup_panel_close_requested() -> void:
 func _on_back_button_pressed() -> void:
 	image_gen_window.show()
 	layer_cards_popup_panel.hide()
+
+
+func _on_send_action_button_pressed() -> void:
+	_on_edit_img_button_pressed()
