@@ -722,7 +722,7 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 				
 				processed_pixels += 1
 		
-				if processed_pixels % 4000 == 0:
+				if processed_pixels % 2000 == 0:
 					await get_tree().process_frame # let the UI update
 					#processed_pixels = 0
 				# Update progress periodically
@@ -876,7 +876,7 @@ var _compose_result_expired: = false
 var _current_compose_thread: Thread = null
 
 func _on_compose_progress(progress: float):
-	progress_window_bar.value = progress * 100
+	progress_window_bar.set_value_no_signal(progress * 100)
 
 func _on_compose_complete(_image: Image):
 	progress_window.hide()
