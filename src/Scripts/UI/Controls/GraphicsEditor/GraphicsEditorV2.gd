@@ -618,54 +618,6 @@ func _on_layers_container_mouse_exited() -> void:
 	Input.set_custom_mouse_cursor(null)
 
 
-func _create_new_image_from_layers(bounds: Rect2, sorted_layers: Array[LayerV2]) -> Image:
-	var merged_image := Image.create(int(bounds.size.x), int(bounds.size.y), false, Image.FORMAT_RGBA8)
-	merged_image.fill(Color(0, 0, 0, 0))  # Transparent background
-	# Blend each layer onto the merged image
-	for layer in sorted_layers:
-		if not layer.visible or not layer.image or layer.image.is_empty():
-			continue
-			
-		var layer_image = layer.image
-		var layer_pos = layer.position
-		var rotation_rad = layer.rotation
-		var pivot = layer.pivot_offset
-		
-		# For each pixel in the merged image
-		for y in range(int(bounds.size.y)):
-			for x in range(int(bounds.size.x)):
-				# Convert merged image coordinates to global coordinates
-				# var global_pos = Vector2(x, y) + bounds.position
-				var global_pos = bounds.position + Vector2(x, y)
-				
-				# Convert global position to layer's local space
-				var local_pos: = _global_to_layer_space(global_pos, layer_pos, rotation_rad, pivot)
-				
-				# Check if the point is within the layer's image bounds
-				var img_x = int(local_pos.x)
-				var img_y = int(local_pos.y)
-				
-				if img_x >= 0 and img_x < layer_image.get_width() and img_y >= 0 and img_y < layer_image.get_height():
-					var src_color = layer_image.get_pixel(img_x, img_y)
-					
-					# Skip fully transparent pixels
-					if src_color.a <= 0.01:
-						continue
-					
-					# Blend with existing pixel
-					var dst_color = merged_image.get_pixel(x, y)
-					var blended: Color
-					
-					# Use the drawing tool's blend function if available, otherwise use our own
-					if drawing_tool and drawing_tool.has_method("_blend_colors"):
-						blended = drawing_tool._blend_colors(dst_color, src_color)
-					else:
-						blended = _blend_colors(dst_color, src_color)
-					
-					merged_image.set_pixel(x, y, blended)
-	
-	return merged_image
-
 func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 	if to_merge.is_empty():
 		push_error("Cannot merge empty array of layers")
@@ -714,8 +666,16 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 	sorted_layers.sort_custom(func(a: LayerV2, b: LayerV2): 
 		return layers_container.get_children().find(a) < layers_container.get_children().find(b)
 	)
-
-	var _processed: = 0 
+	
+	progress_window.show()
+	progress_window_label.text = "Merging Layers"
+	# Calculate total pixels for progress reporting
+	var width: = int(bounds.size.x)
+	var height: = int(bounds.size.y)
+	var total_pixels: int = width * height * to_merge.size()
+	var processed_pixels: int = 0
+	var progress_update_interval: int = 100#max(1000, int(total_pixels / 100.0))
+	
 	
 	# Blend each layer onto the merged image
 	for layer in sorted_layers:
@@ -760,15 +720,22 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 					
 					merged_image.set_pixel(x, y, blended)
 				
-				_processed += 1
-
-				if _processed > 5000:
+				processed_pixels += 1
+		
+				if processed_pixels % 4000 == 0:
 					await get_tree().process_frame # let the UI update
-					_processed = 0
+					#processed_pixels = 0
+				# Update progress periodically
+				if processed_pixels % progress_update_interval == 0:
+					var progress = float(processed_pixels) / float(total_pixels)
+					call_deferred("_emit_progress", progress)
+					#await get_tree().process_frame # let the UI update
 	
-	#var thread: Thread = Thread.new()
-	#thread.start(_create_new_image_from_layers.bind(bounds, sorted_layers))
-	#merged_image = await thread.wait_to_finish()
+	progress_window.hide()
+	
+	var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.SUCCESS, "Merging Layers Completed")
+	
+	SingletonObject.main_scene.add_child(toast)
 	
 	if to_merge[0].type == LayerV2.Type.MASK:
 		var merged_layer: = LayerV2.create_image_layer("Merged Mask Layer", merged_image)
@@ -787,6 +754,7 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 			selected_mask_layers.erase(layer)
 			# Remove from scene
 			layer.queue_free()
+		
 		return merged_layer
 	else:
 		var merged_layer = LayerV2.create_image_layer("Merged Layer", merged_image)
@@ -807,6 +775,7 @@ func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
 			selected_layers.erase(layer)
 			# Remove from scene
 			layer.queue_free()
+			
 		return merged_layer
 
 # Helper function for color blending (alpha compositing)
