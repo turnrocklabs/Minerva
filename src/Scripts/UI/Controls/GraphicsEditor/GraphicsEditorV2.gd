@@ -1,6 +1,9 @@
 class_name GraphicsEditorV2
 extends PanelContainer
 
+static var ZOOM_INCREMENT: = 1.05
+static  var ZOOM_DECREMENT: = 0.95
+
 signal active_tool_changed(tool_: BaseTool)
 @warning_ignore("unused_signal")
 signal active_layer_changed(layer: LayerV2)
@@ -16,6 +19,7 @@ signal delete_layer(layer: LayerV2)
 @onready var tool_options_container: Control = %ToolOptionsContainer
 @onready var layer_cards_popup_panel: Window = %LayerCardsPopupPanel
 @onready var layer_cards_toggle_button: Button = %LayerCardsButton
+@onready var layer_cards_panel_container: PanelContainer = %LayerCardsPanelContainer
 
 @onready var message_window: PersistentWindow = %MessageWindow
 @onready var message_title: Label = %MessageTitle
@@ -24,6 +28,7 @@ signal delete_layer(layer: LayerV2)
 @onready var progress_window: PersistentWindow = %ProgressWindow
 @onready var progress_window_bar: ProgressBar = %ProgressBar
 @onready var progress_window_label: Label = %ProgressLabel
+@onready var input_area_camera: Camera2D = %InputAreaCamera
 
 @onready var _tools_option_button: OptionButton = %ToolsOptionButton
 
@@ -80,12 +85,16 @@ signal delete_layer(layer: LayerV2)
 @onready var negative_prompt_mic_button: Button = %NegativePromptMicButton
 @onready var mask_container: HBoxContainer = %MaskContainer
 
+@onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
+@onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
+@onready var dock_panel_container: MarginContainer = %DockPanelContainer
+
 #endregion
 
 const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
 const MAX_IMAGE_GEN_RES: int = 2500
 const MIN_IMAGE_RES: int = 512
-var canvas_size: = Vector2i(1000, 1000)
+var canvas_size: = Vector2i(1024, 1024)
 
 var _custom_cursor: Resource
 var _custom_cursor_shape: int
@@ -153,7 +162,8 @@ func _ready() -> void:
 	
 	delete_layer.connect(_on_delete_layer)
 	
-	
+	get_viewport().set_embedding_subwindows(false)
+	response_layout_toggle()
 
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
@@ -391,9 +401,9 @@ func _gui_input(event: InputEvent) -> void:
 				dragging = false
 
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom(event.position, 1.1)
+			_zoom(event.position, ZOOM_INCREMENT)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom(event.position, 0.9)
+			_zoom(event.position, ZOOM_DECREMENT)
 	if event is InputEventMouseMotion:
 		if dragging:
 			# Pan all layers together
@@ -417,20 +427,17 @@ func _pan_canvas(relative: Vector2) -> void:
 
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
-	var container = layers_container
-	
-	if container.scale.x * factor < 0.1 or container.scale.x * factor > 2.5:
+	if input_area_camera.zoom.x * factor < 0.1 or input_area_camera.zoom.x * factor > 2.5:
 		return 
 	
 	# Get mouse position relative to the container
-	var mouse_relative = mouse_position - container.position
-	
-	# Apply scale to the entire container
-	container.scale *= factor
-	
+	var mouse_relative = mouse_position - input_area_camera.position
+	#container.scale *= factor
+	input_area_camera.zoom *= factor 
 	# Adjust container position to keep the mouse point stationary
 	var offset = mouse_relative * (factor - 1.0)
-	container.position -= offset
+	input_area_camera.position -= offset
+
 
 
 signal graphics_editor_changed
@@ -1346,13 +1353,15 @@ func _on_mask_edit_button_pressed() -> void:
 			),
 			%ImageGenWindow.position.y + %ImageGenWindow.size.y + 30
 		)
-		layer_cards_popup_panel.show()
 		layer_cards_popup_panel.borderless = false
 		%AIActionLabel.text = "Pick an Image Layer and a Mask Layer to Send to Edit"
-		%TopOfLayersContainer.show()
 		%SendActionButton.disabled = false
-		%SendActionButton.show()
 		ai_request_type = AI_REQUEST.MASK_EDIT
+		
+		%TopOfLayersContainer.show()
+		%SendActionButton.show()
+		image_gen_window.hide()
+		layer_cards_popup_panel.show()
 	else:
 		layer_cards_popup_panel.hide()
 		layer_cards_popup_panel.borderless = true
@@ -1480,6 +1489,9 @@ func _on_active_layer_mask_layer(is_mask: bool) -> void:
 
 func _on_image_gen_window_close_requested() -> void:
 	image_gen_window.hide()
+	if size.x <= 900 and image_gen_window.get_child_count() > 0:
+		image_gen_window.remove_child(image_gen_panel_container)
+		full_size_ai_container.add_child(image_gen_panel_container)
 
 
 func _on_color_picker_button_color_changed(color: Color) -> void:
@@ -1488,6 +1500,10 @@ func _on_color_picker_button_color_changed(color: Color) -> void:
 
 func _on_layer_cards_popup_panel_close_requested() -> void:
 	layer_cards_popup_panel.hide()
+	if size.x <= 850:
+		if layer_cards_popup_panel.get_child_count() > 0:
+			layer_cards_popup_panel.remove_child(layer_cards_panel_container)
+			full_size_layers_container.add_child(layer_cards_panel_container)
 
 
 func _on_back_button_pressed() -> void:
@@ -1497,3 +1513,31 @@ func _on_back_button_pressed() -> void:
 
 func _on_send_action_button_pressed() -> void:
 	_on_edit_img_button_pressed()
+
+
+func _on_resized() -> void:
+	if is_node_ready():
+		response_layout_toggle()
+
+
+func response_layout_toggle() -> void:
+	if size.x <= 850:
+		if full_size_ai_container.get_child_count() > 0:
+			full_size_ai_container.remove_child(image_gen_panel_container)
+			image_gen_window.add_child(image_gen_panel_container)
+			prompt_button.show()
+		if full_size_layers_container.get_child_count() > 0:
+			full_size_layers_container.remove_child(layer_cards_panel_container)
+			layer_cards_popup_panel.add_child(layer_cards_panel_container)
+			layer_cards_toggle_button.show()
+		dock_panel_container.hide()
+	else:
+		if image_gen_window.get_child_count() > 0:
+			image_gen_window.remove_child(image_gen_panel_container)
+			full_size_ai_container.add_child(image_gen_panel_container)
+			prompt_button.hide()
+		if layer_cards_popup_panel.get_child_count() > 0:
+			layer_cards_popup_panel.remove_child(layer_cards_panel_container)
+			full_size_layers_container.add_child(layer_cards_panel_container)
+			layer_cards_toggle_button.hide()
+		dock_panel_container.show()

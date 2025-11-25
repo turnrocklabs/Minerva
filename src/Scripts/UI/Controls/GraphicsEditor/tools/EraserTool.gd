@@ -133,7 +133,7 @@ func _continue_erase(event: InputEvent) -> void:
 	_last_drawing_position = event.position
 	editor.queue_redraw()
 
-func _end_erase(event: InputEvent) -> void:
+func _end_erase(_event: InputEvent) -> void:
 	# Handle single click - already erased in _start_erase
 	# No additional action needed for single click
 	

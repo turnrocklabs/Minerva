@@ -26,9 +26,9 @@ shader_parameter/color2 = Color(1, 1, 1, 1)
 bg_color = Color(0.6, 0.6, 0.6, 0)
 
 [node name="PanelContainer" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 45)
+custom_minimum_size = Vector2(0, 36)
 offset_right = 450.0
-offset_bottom = 55.0
+offset_bottom = 48.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_c4m65")
 script = ExtResource("1_8joxi")
 _active_color = Color(0.335164, 0.390082, 0.499572, 1)
@@ -61,7 +61,7 @@ theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
 
 [node name="h" type="HBoxContainer" parent="LayerCard/v"]
 layout_mode = 2
-size_flags_vertical = 6
+size_flags_vertical = 3
 theme_override_constants/separation = 8
 
 [node name="Control" type="Control" parent="LayerCard/v/h"]
@@ -88,17 +88,11 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_utn5m")
 unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
+size_flags_horizontal = 4
 size_flags_vertical = 3
 texture = ExtResource("2_cfx4g")
 expand_mode = 1
 stretch_mode = 5
-
-[node name="DropBelowSeparator" type="HSeparator" parent="LayerCard/v/h"]
-unique_name_in_owner = true
-modulate = Color(1, 1, 1, 0)
-layout_mode = 2
-mouse_filter = 1
-theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
 
 [node name="Name" type="LineEdit" parent="LayerCard/v/h"]
 unique_name_in_owner = true
@@ -112,6 +106,13 @@ context_menu_enabled = false
 flat = true
 select_all_on_focus = true
 caret_blink = true
+
+[node name="DropBelowSeparator" type="HSeparator" parent="LayerCard/v"]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+mouse_filter = 1
+theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
 
 [node name="ContextMenu" type="PopupMenu" parent="."]
 unique_name_in_owner = true

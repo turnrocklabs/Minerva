@@ -55,6 +55,8 @@ func _ready() -> void:
 			%CreateNewNote.popup_centered()
 			%CreateNewNote.notes_container_override = SingletonObject.drawer_notes_container
 	)
+	
+	get_window().files_dropped.connect(_on_files_dropped)
 
 
 var MAX: = 20
@@ -231,7 +233,7 @@ func _on_stop_button_4_pressed() -> void:
 	SingletonObject.AtT._StopConverting()
 
 
-func _input(event):
+func _input(event) -> void:
 	if event.is_action_pressed("ui_terminal", true):
 		terminal_container.visible = not terminal_container.visible
 		accept_event()
@@ -283,7 +285,7 @@ func _on_btn_drawer_pressed() -> void:
 
 
 #reading file and create note in Drawer thread
-func _open_drawer_notes():
+func _open_drawer_notes() -> void:
 	print("Drawer opened")
 	SingletonObject.emit_signal("openDrawerNotes")
 
@@ -298,3 +300,25 @@ func _update_project_label(new_text: String = "", saved_state: bool = true) -> v
 	elif !new_text.is_empty() and !saved_state:
 		base_text = new_text + "*"
 	project_name_label.text = base_text
+
+
+func _on_files_dropped(files: PackedStringArray) -> void:
+	var editor_pane = SingletonObject.editor_pane
+	if editor_pane:
+		if !editor_pane.get_global_rect().has_point(get_global_mouse_position()):
+			return
+	if editor_pane.Tabs.get_tab_count() < 1:
+		for file in files:
+			if SingletonObject.supported_image_formats.has(file.get_extension()): 
+				editor_pane.add(Editor.Type.GRAPHICS, file, file.get_file())
+			elif SingletonObject.supported_text_formats.has(file.get_extension()): 
+				editor_pane.add(Editor.Type.TEXT, file, file.get_file())
+		return
+	else:
+		var editor: = editor_pane.Tabs.get_current_tab_control() as Editor
+		if editor.type == Editor.Type.GRAPHICS:
+			for file in files:
+				var image: = Image.load_from_file(file)
+				editor.graphics_editor.create_new_image_layer(file.get_file(), image)
+	
+	pass
