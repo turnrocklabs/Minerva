@@ -863,18 +863,18 @@ grow_horizontal = 0
 grow_vertical = 0
 icon = ExtResource("26_30sgg")
 
-[node name="HBoxContainer4" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="HFlowContainer" type="HFlowContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ImageWidthLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4/HBoxContainer"]
+[node name="ImageWidthLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
 layout_mode = 2
 text = "Image Size(px):"
 
-[node name="ImageWidthLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4/HBoxContainer"]
+[node name="ImageWidthLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -884,21 +884,21 @@ virtual_keyboard_type = 2
 clear_button_enabled = true
 caret_blink = true
 
-[node name="ImageWidthOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4/HBoxContainer"]
+[node name="ImageWidthOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 6
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4"]
+[node name="HBoxContainer5" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ImageHeightLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4/HBoxContainer2"]
+[node name="ImageHeightLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
 layout_mode = 2
 text = "Height: "
 
-[node name="ImageHeightLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4/HBoxContainer2"]
+[node name="ImageHeightLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -908,20 +908,20 @@ virtual_keyboard_type = 2
 clear_button_enabled = true
 caret_blink = true
 
-[node name="ImageHeightOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4/HBoxContainer2"]
+[node name="ImageHeightOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
 size_flags_horizontal = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4/HBoxContainer3"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3"]
 layout_mode = 2
 size_flags_horizontal = 6
 text = "Steps: "
 
-[node name="StepsSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer4/HBoxContainer3"]
+[node name="StepsSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
@@ -932,19 +932,16 @@ rounded = true
 alignment = 1
 custom_arrow_step = 1.0
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
-layout_mode = 2
-
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer"]
+[node name="HBoxContainer4" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer3"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4"]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "Denoise:"
 
-[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer3"]
+[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
@@ -953,17 +950,17 @@ step = 0.01
 value = 1.0
 alignment = 1
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
 size_flags_horizontal = 2
 theme_override_constants/separation = 21
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer6"]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "Cfg: "
 
-[node name="CFGSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer2"]
+[node name="CFGSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer6"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 2
