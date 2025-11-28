@@ -463,9 +463,9 @@ script = ExtResource("8_fjkto")
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="SplitContainer" type="SplitContainer" parent="h/HSplitContainer/DockPanelContainer"]
+[node name="SplitContainer" type="VSplitContainer" parent="h/HSplitContainer/DockPanelContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-vertical = true
 
 [node name="FullSizeLayersContainer" type="MarginContainer" parent="h/HSplitContainer/DockPanelContainer/SplitContainer"]
 unique_name_in_owner = true
@@ -535,7 +535,7 @@ layout_mode = 2
 
 [node name="LayerCardsPopupPanel" type="Window" parent="."]
 unique_name_in_owner = true
-position = Vector2i(215, 181)
+position = Vector2i(215, 36)
 size = Vector2i(420, 270)
 visible = false
 always_on_top = true
@@ -547,7 +547,6 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="MarginContainer" type="MarginContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer"]
@@ -725,7 +724,7 @@ title = "AI Image Generation"
 position = Vector2i(60, 36)
 size = Vector2i(400, 420)
 visible = false
-popup_window = true
+always_on_top = true
 
 [node name="ImageGenPanelContainer" type="PanelContainer" parent="ImageGenWindow"]
 unique_name_in_owner = true
@@ -744,28 +743,32 @@ theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 5
 theme_override_constants/margin_bottom = 10
 
-[node name="ScrollContainer" type="ScrollContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer"]
 layout_mode = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Prompt:"
 
-[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Prompts are where you describe what you want your image to be
 "
@@ -776,7 +779,7 @@ text = "  ?  "
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="PromptTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/VBoxContainer"]
+[node name="PromptTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
@@ -784,7 +787,7 @@ size_flags_vertical = 3
 placeholder_text = "type prompt to generate image here ..."
 wrap_mode = 1
 
-[node name="PositivePromptMicButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit"]
+[node name="PositivePromptMicButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 3
@@ -801,32 +804,32 @@ grow_vertical = 0
 tooltip_text = "Click to record positive prompt"
 icon = ExtResource("26_30sgg")
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 text = "Advanced settings:"
 
-[node name="AdvancedSettingsCheckButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
+[node name="AdvancedSettingsCheckButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer2"]
 layout_mode = 2
 text = "Negative prompt:"
 
-[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer2"]
+[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer2"]
 layout_mode = 2
 tooltip_text = "Negative prompts are for
 keywords that describe something 
@@ -838,7 +841,7 @@ text = "  ?  "
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="NegativeTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="NegativeTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 46)
 layout_mode = 2
@@ -847,7 +850,7 @@ text = "blurry, dark, ugly, low quality"
 wrap_mode = 1
 caret_blink = true
 
-[node name="NegativePromptMicButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit"]
+[node name="NegativePromptMicButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 3
@@ -863,18 +866,18 @@ grow_horizontal = 0
 grow_vertical = 0
 icon = ExtResource("26_30sgg")
 
-[node name="HFlowContainer" type="HFlowContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="HFlowContainer" type="HFlowContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ImageWidthLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
+[node name="ImageWidthLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
 layout_mode = 2
 text = "Image Size(px):"
 
-[node name="ImageWidthLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
+[node name="ImageWidthLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -884,21 +887,21 @@ virtual_keyboard_type = 2
 clear_button_enabled = true
 caret_blink = true
 
-[node name="ImageWidthOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
+[node name="ImageWidthOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 6
 
-[node name="HBoxContainer5" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="HBoxContainer5" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ImageHeightLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
+[node name="ImageHeightLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
 layout_mode = 2
 text = "Height: "
 
-[node name="ImageHeightLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
+[node name="ImageHeightLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -908,20 +911,20 @@ virtual_keyboard_type = 2
 clear_button_enabled = true
 caret_blink = true
 
-[node name="ImageHeightOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
+[node name="ImageHeightOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
 size_flags_horizontal = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3"]
 layout_mode = 2
 size_flags_horizontal = 6
 text = "Steps: "
 
-[node name="StepsSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3"]
+[node name="StepsSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
@@ -932,16 +935,16 @@ rounded = true
 alignment = 1
 custom_arrow_step = 1.0
 
-[node name="HBoxContainer4" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="HBoxContainer4" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4"]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "Denoise:"
 
-[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4"]
+[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
@@ -950,17 +953,17 @@ step = 0.01
 value = 1.0
 alignment = 1
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
 size_flags_horizontal = 2
 theme_override_constants/separation = 21
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer6"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer6"]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "Cfg: "
 
-[node name="CFGSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer6"]
+[node name="CFGSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer6"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 2
@@ -970,23 +973,23 @@ value = 1.0
 alignment = 1
 custom_arrow_step = 1.0
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer3"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer3"]
 layout_mode = 2
 text = "Seed:"
 
-[node name="SeedLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer3"]
+[node name="SeedLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="SendPromptButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3"]
+[node name="SendPromptButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Generate Image (generates image image in a new layer using the provided prompt)"
@@ -994,35 +997,19 @@ icon = ExtResource("23_hm28v")
 alignment = 0
 icon_alignment = 1
 
-[node name="EditImgButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3"]
+[node name="EditImgButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Edit selected Image (edits the currently selected layer with the current prompt)"
 icon = ExtResource("24_spfkh")
 
-[node name="SendMaskEditButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3"]
+[node name="SendMaskEditButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 text = "Mask"
 icon = ExtResource("28_oylf0")
-
-[node name="ShowLayersButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-size_flags_horizontal = 10
-text = "Add Mask..."
-
-[node name="MaskEditPanelButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-size_flags_horizontal = 10
-toggle_mode = true
-text = "Select Layers...
-"
 
 [connection signal="resized" from="." to="." method="_on_resized"]
 [connection signal="item_selected" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/ToolsOptionButton" to="." method="_on_tools_option_button_item_selected"]
@@ -1051,11 +1038,9 @@ text = "Select Layers...
 [connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer/DeleteMaskLayerButton" to="." method="_on_delete_mask_layer_button_pressed"]
 [connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/SendActionButton" to="." method="_on_send_action_button_pressed"]
 [connection signal="close_requested" from="ImageGenWindow" to="." method="_on_image_gen_window_close_requested"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit/PositivePromptMicButton" to="." method="_on_positive_prompt_mic_button_pressed"]
-[connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit/NegativePromptMicButton" to="." method="_on_negative_prompt_mic_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3/ShowLayersButton" to="." method="_on_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/ScrollContainer/VBoxContainer/HBoxContainer3/MaskEditPanelButton" to="." method="_on_mask_edit_panel_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit/PositivePromptMicButton" to="." method="_on_positive_prompt_mic_button_pressed"]
+[connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit/NegativePromptMicButton" to="." method="_on_negative_prompt_mic_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]

@@ -86,6 +86,8 @@ signal delete_layer(layer: LayerV2)
 @onready var mask_container: HBoxContainer = %MaskContainer
 @onready var top_of_layers_container: HBoxContainer = %TopOfLayersContainer
 @onready var send_action_button: Button = %SendActionButton
+@onready var edit_img_button: Button = %EditImgButton
+@onready var send_mask_edit_button: Button = %SendMaskEditButton
 
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
@@ -263,6 +265,8 @@ func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
 		active_layer_is_mask_layer.emit(false)
 	elif selected_mask_layers.size() > 0 and selected_mask_layers[0].type == LayerV2.Type.MASK:
 		active_layer_is_mask_layer.emit(true)
+	
+	check_ai_buttons_toggle()
 
 
 func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
@@ -272,6 +276,8 @@ func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
 		active_layer_is_mask_layer.emit(false)
 	elif selected_mask_layers.size() > 0 and selected_mask_layers[0].type == LayerV2.Type.MASK:
 		active_layer_is_mask_layer.emit(true)
+	
+	check_ai_buttons_toggle()
 
 
 func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
@@ -1145,25 +1151,26 @@ func _on_edit_button_pressed() -> void:
 		if !layer_cards_popup_panel.visible:
 			layer_cards_popup_panel.position = Vector2(
 				(
-					%ImageGenWindow.position.x 
+					image_gen_window.position.x 
 					-layer_cards_popup_panel.size.x/2.0
-					+ %ImageGenWindow.size.x/2.0
+					+ image_gen_window.size.x/2.0
 				),
-				%ImageGenWindow.position.y + %ImageGenWindow.size.y + 30
+				image_gen_window.position.y + image_gen_window.size.y + 30
 			)
-			layer_cards_popup_panel.show()
-			layer_cards_popup_panel.borderless = false
-			%AIActionLabel.text = "Pick an Layer to Send to Edit"
-			%TopOfLayersContainer.show()
-			%SendActionButton.disabled = false
-			%SendActionButton.show()
+			if layer_cards_popup_panel.get_child_count() > 0:
+				layer_cards_popup_panel.show()
+				layer_cards_popup_panel.borderless = false
+				%AIActionLabel.text = "Pick an Layer to Send to Edit"
+				%TopOfLayersContainer.show()
+				send_action_button.disabled = false
+				send_action_button.show()
 			ai_request_type = AI_REQUEST.EDIT_IMAGE
 		else:
 			layer_cards_popup_panel.hide()
 			layer_cards_popup_panel.borderless = true
 			%TopOfLayersContainer.hide()
-			%SendActionButton.disabled = true
-			%SendActionButton.hide()
+			send_action_button.disabled = true
+			send_action_button.hide()
 	else:
 		ai_request_type = AI_REQUEST.EDIT_IMAGE
 		send_action_button.pressed.emit()
@@ -1421,42 +1428,6 @@ func _on_mask_color_option_button_item_selected(index: int) -> void:
 		active_layer.lock_color = true
 
 
-func _on_mask_edit_panel_button_pressed() -> void:
-	if !%SelectiveEditingPopupPanel.visible:
-		%SelectiveEditingPopupPanel.position = Vector2(
-			(
-				mask_edit_button.global_position.x 
-				+ mask_edit_button.size.x
-			),
-			mask_edit_button.global_position.y - (%SelectiveEditingPopupPanel.size.y * 0.8)
-		)
-
-		for child in %MediaGenLayersContainer.get_children():
-			child.queue_free()
-
-		for child in %MaskMediaGenLayersContainer.get_children():
-			child.queue_free()
-
-		for i: LayerCard in layer_cards_container.get_children():
-			var j: LayerCard = i.duplicate()
-			j.layer = i.layer
-			j.selected = false
-			j.layer_clicked.connect(_on_layer_card_clicked.bind(j))
-			await get_tree().process_frame
-			%MediaGenLayersContainer.add_child(j)
-	
-		for i: LayerCard in mask_layer_cards_container.get_children():
-			var j: LayerCard = i.duplicate()
-			j.layer = i.layer
-			j.selected = false
-			j.layer_clicked.connect(_on_layer_card_clicked.bind(j))
-			await get_tree().process_frame
-			%MaskMediaGenLayersContainer.add_child(j)
-		%SelectiveEditingPopupPanel.show()
-	else:
-		%SelectiveEditingPopupPanel.hide()
-
-
 func _on_delete_layer(layer: LayerV2) -> void:
 	if layer.tree_exited.is_connected(_on_layer_tree_exiting):
 		layer.tree_exited.disconnect(_on_layer_tree_exiting)
@@ -1501,9 +1472,7 @@ func _on_active_layer_mask_layer(is_mask: bool) -> void:
 
 func _on_image_gen_window_close_requested() -> void:
 	image_gen_window.hide()
-	if size.x <= 900 and image_gen_window.get_child_count() > 0:
-		image_gen_window.remove_child(image_gen_panel_container)
-		full_size_ai_container.add_child(image_gen_panel_container)
+	response_layout_toggle()
 
 
 func _on_color_picker_button_color_changed(color: Color) -> void:
@@ -1512,10 +1481,7 @@ func _on_color_picker_button_color_changed(color: Color) -> void:
 
 func _on_layer_cards_popup_panel_close_requested() -> void:
 	layer_cards_popup_panel.hide()
-	if size.x <= 850:
-		if layer_cards_popup_panel.get_child_count() > 0:
-			layer_cards_popup_panel.remove_child(layer_cards_panel_container)
-			full_size_layers_container.add_child(layer_cards_panel_container)
+	response_layout_toggle()
 
 
 func _on_back_button_pressed() -> void:
@@ -1543,20 +1509,40 @@ func response_layout_toggle() -> void:
 			prompt_button.show()
 		if full_size_layers_container.get_child_count() > 0:
 			full_size_layers_container.remove_child(layer_cards_panel_container)
-			layer_cards_popup_panel.size = layer_cards_container.size
+			layer_cards_popup_panel.size = layer_cards_panel_container.size
 			layer_cards_popup_panel.add_child(layer_cards_panel_container)
 			layer_cards_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
 			layer_cards_toggle_button.show()
 		dock_panel_container.hide()
 	else:
 		floating_windows_active = false
-		if image_gen_window.get_child_count() > 0:
+		if image_gen_window.get_child_count() > 0 and !image_gen_window.visible:
 			image_gen_window.remove_child(image_gen_panel_container)
 			full_size_ai_container.add_child(image_gen_panel_container)
 			prompt_button.hide()
-		if layer_cards_popup_panel.get_child_count() > 0:
+		if layer_cards_popup_panel.get_child_count() > 0 and !layer_cards_popup_panel.visible:
 			layer_cards_popup_panel.remove_child(layer_cards_panel_container)
 			full_size_layers_container.add_child(layer_cards_panel_container)
 			send_action_button.hide()
 			layer_cards_toggle_button.hide()
 		dock_panel_container.show()
+		%SplitContainer.split_offset = 250
+
+
+static var _edit_img_base_tooltip: = "Edit selected Image (edits the currently selected layer with the current prompt)"
+static var _mask_edit_base_tooltip: = "Send mask edit request (needs a mask layer and a regular layer to be selected)"
+func check_ai_buttons_toggle() -> void:
+	if selected_layers.size() > 0:
+		edit_img_button.disabled = false
+		edit_img_button.tooltip_text = "%s (%s) " % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
+		if selected_mask_layers.size() > 0:
+			send_mask_edit_button.tooltip_text = "%s (%s, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name, selected_mask_layers[0].name]
+			send_mask_edit_button.disabled = false
+		else:
+			send_mask_edit_button.tooltip_text = "%s (%s, no mask selected)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
+			send_mask_edit_button.disabled = true
+	else:
+		edit_img_button.disabled = true
+		edit_img_button.tooltip_text = "No Layer Selected"
+		if selected_mask_layers.size() > 0:
+			send_mask_edit_button.tooltip_text = "%s (no layer selected, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_mask_layers[0].name]
