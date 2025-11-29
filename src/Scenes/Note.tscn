@@ -94,6 +94,7 @@ custom_minimum_size = Vector2(0, 150)
 offset_right = 330.0
 offset_bottom = 150.0
 scale = Vector2(1, 1.00261)
+theme_override_constants/separation = 0
 script = ExtResource("1_bjbgn")
 
 [node name="PanelContainer" type="PanelContainer" parent="."]
@@ -233,10 +234,17 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="ResizeControl" type="Control" parent="PanelContainer/VBoxContainer"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 5)
+[node name="Control" type="Control" parent="."]
 layout_mode = 2
+
+[node name="ResizeControl" type="Control" parent="Control"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+anchors_preset = 0
+offset_top = -5.37746
+offset_right = 384.0
+offset_bottom = 4.62254
 size_flags_vertical = 8
 mouse_default_cursor_shape = 9
 
@@ -248,4 +256,4 @@ mouse_default_cursor_shape = 9
 [connection signal="pressed" from="PanelContainer/VBoxContainer/TopControls/ReloadFileContentButton" to="." method="_on_reload_file_content_button_pressed"]
 [connection signal="pressed" from="PanelContainer/VBoxContainer/TopControls/EditButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="PanelContainer/VBoxContainer/TopControls/RemoveButton" to="." method="_on_remove_button_pressed"]
-[connection signal="gui_input" from="PanelContainer/VBoxContainer/ResizeControl" to="." method="_on_resize_control_gui_input"]
+[connection signal="gui_input" from="Control/ResizeControl" to="." method="_on_resize_control_gui_input"]

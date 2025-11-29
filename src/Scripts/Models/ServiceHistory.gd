@@ -6,6 +6,7 @@ enum ServiceType {
 	NONE,
 	CHAT,
 	NOTES,
+	COCO,
 }
 
 var service_type: ServiceType

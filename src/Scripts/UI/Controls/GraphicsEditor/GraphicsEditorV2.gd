@@ -941,7 +941,9 @@ func compose_final_image(show_dialog: = true) -> Image:
 	_current_compose_thread = Thread.new()
 	_current_compose_thread.start(_compose_image_thread_worker.bind(layer_data))
 	
-	return await compose_finished
+	var img = await compose_finished
+	saved = true
+	return img
 
 # Replace your thread worker with this simpler version:
 func _compose_image_thread_worker(layer_data: Array[Dictionary]):

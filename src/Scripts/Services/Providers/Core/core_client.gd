@@ -423,6 +423,23 @@ func send_text_message_to_core(message):
 	_client.send_text(json_string)
 
 
+func subscribe(topic: String) -> String:
+	var request_id = UUIDGen.v7()
+	var message = {
+		"cmd": "subscribe",
+		"topic": "subscription",
+		"params": {
+			"client_id": client_id,
+			"request_id": request_id,
+			"topic": topic
+		}
+	}
+
+	var json_string = JSON.stringify(message)
+	_client.send_text(json_string)
+
+	return request_id
+
 func send_text_message(service: Service, action: Action, data: Dictionary, auth_token: String = "") -> String:
 	var request_id = UUIDGen.v7()
 	var message = {
@@ -431,6 +448,7 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 		"entity_type": "client",
 		"params": {
 			"client_id": client_id,
+			"user_id": client_id,
 			"request_id": request_id,
 			"target_service_id": service.client_id,
 			"auth": auth_token,

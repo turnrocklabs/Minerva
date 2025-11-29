@@ -62,7 +62,7 @@ func _shortcut_input(event: InputEvent):
 func _on_close_tab(tab: int, container: TabContainer):
 	var control = container.get_tab_control(tab)
 	if control is Editor:
-		if not control.is_content_saved():
+		if not (control.is_content_saved() or control.is_content_saved(false)): # if its not saved in file nor a note
 			var should_close = await control.prompt_close()
 			if should_close:
 				container.remove_child(control)

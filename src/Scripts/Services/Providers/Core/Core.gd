@@ -416,6 +416,31 @@ func send_message(service: Service, action: Action, msg: Dictionary) -> AwaitMes
 	var request_id: String = client.send_text_message(service, action, msg)
 	return await_message().with_request_id(request_id)
 
+func subscribe(topic: String) -> bool:
+
+	var request_id: = client.subscribe(topic)
+
+	if not request_id:
+		return false
+
+	var msg = await (
+		await_message()
+		.with_request_id(request_id)
+		.with_cmd("response")
+		.receive()
+	)
+
+	if not msg:
+		return false
+	
+	var status = msg.get("params", {}).get("result", {}).get("status", "")
+
+	if status != "subscribed":
+		return false
+
+	return true
+
+
 ## Updates the [member _services_cache_timeout].
 func set_services_cache_timeout(timeout: float) -> void:
 	_services_cache_timeout = timeout

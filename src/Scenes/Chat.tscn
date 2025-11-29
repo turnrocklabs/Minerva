@@ -1,4 +1,4 @@
-[gd_scene load_steps=37 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=38 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" uid="uid://bl3o8akse3agn" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
@@ -30,6 +30,7 @@
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="27_rtmbh"]
 [ext_resource type="Texture2D" uid="uid://dd64jugx3u72c" path="res://assets/icons/send_icons/send_icon_24_no_bg.png" id="28_c5fqk"]
 [ext_resource type="Texture2D" uid="uid://54susds7lngy" path="res://assets/icons/check_mark16.webp" id="28_t8wf8"]
+[ext_resource type="PackedScene" uid="uid://dmi6sts02m7by" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderManager.tscn" id="29_3ui3f"]
 [ext_resource type="Texture2D" uid="uid://mdhtonlhq6kh" path="res://assets/icons/cancel16.webp" id="29_7cvmh"]
 
 [sub_resource type="InputEventAction" id="InputEventAction_f28tr"]
@@ -387,6 +388,12 @@ layout_mode = 2
 [node name="NoteActionSendButton" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/NoteControls"]
 layout_mode = 2
 icon = ExtResource("28_c5fqk")
+
+[node name="AutocoderManager" parent="VBoxContainer3" instance=ExtResource("29_3ui3f")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
 
 [node name="UnsplitedChatMessages" type="ColorRect" parent="."]
 visible = false
