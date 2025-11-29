@@ -3,6 +3,8 @@ class_name DrawerNotesManager
 
 var data_path: String = "user://drawer_data.json"
 
+## Whether we have already loaded the drawer data on open
+var _loaded: = false
 
 func _notification(what: int) -> void:
 	match what:
@@ -33,6 +35,9 @@ func write_data_to_file(data: Dictionary) -> void:
 
 ## Main load function
 func load_drawer_data() -> void:
+	if _loaded: return
+	
+	_loaded = true
 	if not FileAccess.file_exists(data_path):
 		print("No drawer data file found - starting fresh")
 		return

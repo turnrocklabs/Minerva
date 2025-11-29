@@ -5,7 +5,10 @@ signal tab_renamed(tab_idx: int)
 
 @onready var _new_thread_popup: PersistentWindow = %NewThreadPopup
 
-var supports_remote: = true
+var supports_remote: = true:
+	set(value):
+		supports_remote = value
+		_update_adapter_info() # update to show/hide remote control buttons
 
 ## Callable to be called when add note button is pressed. Not set by default
 var create_note_callback: Callable
@@ -95,49 +98,57 @@ func add_note_vbox(notes_vbox: NoteVBox) -> void:
 ## Removes the tab specified with [param tab_idx].
 ## If [param user_action] is `true` that means that the user
 ## deliberatly wanted to try and delete the tab which will
-## call each notes [method Note.remove] method.[br]
+## call each notes [method Note.remove] method and show a confirmation dialog.[br]
 ## Else the tab and it's notes will be deleted only if they are local notes.[br]
-func remove_tab(tab_idx: int, user_action: = true):	
+func remove_tab(tab_idx: int, user_action: = true):
+	if user_action:
+		var cd: = ConfirmationDialog.new()
+		cd.dialog_text = "Are you sure you want to remove tab: %s" % get_tab_name(tab_idx)
+	
+		cd.get_ok_button().pressed.connect(
+			func():
+				_handle_remove_tab(tab_idx, user_action)
+				cd.queue_free()	
+		)
+
+		cd.get_cancel_button().pressed.connect(
+			func():
+				cd.queue_free()
+		)
+		
+		add_child(cd)
+		cd.popup_centered()
+	
+	else:
+		_handle_remove_tab(tab_idx, user_action)
+
+
+func _handle_remove_tab(tab_idx: int, user_action) -> void:
 	var control: NoteVBox = get_tab_control(tab_idx)
 
-	var cd: = ConfirmationDialog.new()
-	cd.dialog_text = "Are you sure you want to remove tab: %s" % get_tab_name(tab_idx)
-	
-	cd.get_ok_button().pressed.connect(
-		func():
-			# if at least one note deletion was rejected, don't delete the tab
-			var all_deleted: = true
-			if control:
-				# doing this so the notes is_queued_for_deletion returns true
-				for note in get_notes(tab_idx):
-					if user_action:
-						all_deleted = await note.remove() and all_deleted
-					else:
-						var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
-						if controller.state == NoteSyncController.SyncState.LOCAL_ONLY:
-							note.queue_free()
-						else:
-							all_deleted = false
-
-				if all_deleted:
-					# if all notes we're deleted remove the thread from remote
-					if not remote_adapter or (user_action and await remote_adapter.delete_thread(control.uuid, false)):
-						control.queue_free()
-					else:
-						SingletonObject.ErrorDisplay("Threads Error", "Couldn't remove remote tab (Notes deleted)")
-					
+	# if at least one note deletion was rejected, don't delete the tab
+	var all_deleted: = true
+	if control:
+		# doing this so the notes is_queued_for_deletion returns true
+		for note in get_notes(tab_idx):
+			if user_action:
+				all_deleted = await note.remove() and all_deleted
+			else:
+				var controller: = SingletonObject.notes_sync_manger.get_sync_controller(note)
+				if controller.state == NoteSyncController.SyncState.LOCAL_ONLY:
+					note.queue_free()
 				else:
-					print("Not all notes deleted, not removing the tab")
-	)
+					all_deleted = false
 
-	cd.get_cancel_button().pressed.connect(
-		func():
-			cd.queue_free()
-	)
-	
-	add_child(cd)
-	cd.popup_centered()
-	
+		if all_deleted:
+			# if all notes we're deleted remove the thread from remote
+			if not remote_adapter or (user_action and await remote_adapter.delete_thread(control.uuid, false)):
+				control.queue_free()
+			else:
+				SingletonObject.ErrorDisplay("Threads Error", "Couldn't remove remote tab (Notes deleted)")
+			
+		else:
+			print("Not all notes deleted, not removing the tab")
 
 ## Tries to find the index of tab that contains the provided [param note].[br]
 ## Returns `-1` on failure.
@@ -178,11 +189,15 @@ func add_note(note: Note, tab_idx: int = -1, force: = true, index: int = -1) -> 
 
 ## Synchronizes the new note
 func _sync_new_note(note: Note):
-	
+	if not SingletonObject.notes_sync_manger.active_service:
+		SingletonObject.ErrorDisplay(
+			"Failed",
+			"No service for remote notes active.\nCheck if you are connected to the Core and if remote note service is available."
+		)
+		return
+
 	var success: = await SingletonObject.notes_sync_manger.sync_notes([note], false)
 	
-	# we'll just display the warning for notes we passed, even tho sync_notes updates other notes also,
-	# that update is just the order field
 	if not success:
 		SingletonObject.ErrorDisplay("Failed", "Couldn't upload the following:\n %s" % note)
 
