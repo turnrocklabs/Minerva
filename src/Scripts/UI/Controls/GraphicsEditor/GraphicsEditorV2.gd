@@ -76,7 +76,6 @@ signal delete_layer(layer: LayerV2)
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
 @onready var mask_layer_cards_container: VBoxContainer = %MaskLayerCardsContainer
 @onready var image_gen_panel_container: PanelContainer = %ImageGenPanelContainer
-@onready var mask_edit_button: Button = %MaskEditPanelButton
 @onready var tool_size_v_slider: VSlider = %ToolSizeVSlider
 @onready var copy_layer_button: Button = %CopyLayerButton
 @onready var merge_layers_button: Button = %MergeLayersButton
@@ -88,6 +87,7 @@ signal delete_layer(layer: LayerV2)
 @onready var send_action_button: Button = %SendActionButton
 @onready var edit_img_button: Button = %EditImgButton
 @onready var send_mask_edit_button: Button = %SendMaskEditButton
+@onready var ai_action_label: Label = %AIActionLabel
 
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
@@ -1160,7 +1160,7 @@ func _on_edit_button_pressed() -> void:
 			if layer_cards_popup_panel.get_child_count() > 0:
 				layer_cards_popup_panel.show()
 				layer_cards_popup_panel.borderless = false
-				%AIActionLabel.text = "Pick an Layer to Send to Edit"
+				ai_action_label.text = "Pick an Layer to Send to Edit"
 				%TopOfLayersContainer.show()
 				send_action_button.disabled = false
 				send_action_button.show()
@@ -1370,7 +1370,7 @@ func _on_mask_edit_button_pressed() -> void:
 				%ImageGenWindow.position.y + %ImageGenWindow.size.y + 30
 			)
 			layer_cards_popup_panel.borderless = false
-			%AIActionLabel.text = "Pick an Image Layer and a Mask Layer to Send to Edit"
+			ai_action_label.text = "Pick an Image Layer and a Mask Layer to Send to Edit"
 			%SendActionButton.disabled = false
 			ai_request_type = AI_REQUEST.MASK_EDIT
 			
@@ -1532,17 +1532,21 @@ func response_layout_toggle() -> void:
 static var _edit_img_base_tooltip: = "Edit selected Image (edits the currently selected layer with the current prompt)"
 static var _mask_edit_base_tooltip: = "Send mask edit request (needs a mask layer and a regular layer to be selected)"
 func check_ai_buttons_toggle() -> void:
-	if selected_layers.size() > 0:
-		edit_img_button.disabled = false
-		edit_img_button.tooltip_text = "%s (%s) " % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
-		if selected_mask_layers.size() > 0:
-			send_mask_edit_button.tooltip_text = "%s (%s, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name, selected_mask_layers[0].name]
-			send_mask_edit_button.disabled = false
+	if !floating_windows_active:
+		if selected_layers.size() > 0:
+			edit_img_button.disabled = false
+			edit_img_button.tooltip_text = "%s (%s) " % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
+			if selected_mask_layers.size() > 0:
+				send_mask_edit_button.tooltip_text = "%s (%s, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name, selected_mask_layers[0].name]
+				send_mask_edit_button.disabled = false
+			else:
+				send_mask_edit_button.tooltip_text = "%s (%s, no mask selected)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
+				send_mask_edit_button.disabled = true
 		else:
-			send_mask_edit_button.tooltip_text = "%s (%s, no mask selected)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
-			send_mask_edit_button.disabled = true
+			edit_img_button.disabled = true
+			edit_img_button.tooltip_text = "No Layer Selected"
+			if selected_mask_layers.size() > 0:
+				send_mask_edit_button.tooltip_text = "%s (no layer selected, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_mask_layers[0].name]
 	else:
-		edit_img_button.disabled = true
-		edit_img_button.tooltip_text = "No Layer Selected"
-		if selected_mask_layers.size() > 0:
-			send_mask_edit_button.tooltip_text = "%s (no layer selected, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_mask_layers[0].name]
+		edit_img_button.disabled = false
+		send_mask_edit_button.disabled = false
