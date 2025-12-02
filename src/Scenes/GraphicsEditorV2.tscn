@@ -1,4 +1,4 @@
-[gd_scene load_steps=44 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=46 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -24,6 +24,7 @@
 [ext_resource type="Texture2D" uid="uid://cqj3j0kugb6ni" path="res://assets/icons/graphics_editor/center.svg" id="17_tml0f"]
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers_icons/layers-24.png" id="18_tml0f"]
 [ext_resource type="Texture2D" uid="uid://dkq31owppnmm7" path="res://assets/icons/robot_AI.png" id="19_tml0f"]
+[ext_resource type="StyleBox" uid="uid://cxx8rvjgpg7pj" path="res://Scenes/GraphicsEditorV2.tres" id="20_t8fyw"]
 [ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icons/backspace_icon.png" id="22_j5h4u"]
 [ext_resource type="Texture2D" uid="uid://cro2wpn0cmdal" path="res://assets/icons/generate_image/generate_image_icon_new.png" id="23_hm28v"]
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="24_spfkh"]
@@ -67,19 +68,26 @@ shader_parameter/square_size = 0.3
 shader_parameter/color1 = Color(0.862745, 0.862745, 0.862745, 1)
 shader_parameter/color2 = Color(1, 1, 1, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3hqvt"]
-bg_color = Color(0.6, 0.6, 0.6, 0)
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_t8fyw"]
+draw_center = false
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.196078, 0.196078, 0.196078, 1)
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_j5h4u"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vtsnj"]
 shader = ExtResource("9_u8jc2")
-shader_parameter/square_size = 0.5
+shader_parameter/square_size = 0.07
 shader_parameter/color1 = Color(0.862745, 0.862745, 0.862745, 1)
 shader_parameter/color2 = Color(1, 1, 1, 1)
 
-[sub_resource type="GradientTexture2D" id="GradientTexture2D_t8fyw"]
-width = 4614
-height = 1934
-repeat = 1
+[sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_t8fyw"]
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_t8fyw"]
+viewport_path = NodePath("h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport")
 
 [sub_resource type="LabelSettings" id="LabelSettings_v238w"]
 font_size = 36
@@ -408,38 +416,32 @@ icon = ExtResource("19_tml0f")
 [node name="HSeparator" type="HSeparator" parent="h/HSplitContainer/v"]
 layout_mode = 2
 
-[node name="SubViewportContainer" type="SubViewportContainer" parent="h/HSplitContainer/v"]
+[node name="MarginContainer" type="PanelContainer" parent="h/HSplitContainer/v"]
+material = SubResource("ShaderMaterial_u8jc2")
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 1
+theme_override_styles/panel = ExtResource("20_t8fyw")
+
+[node name="DrawingAreaSubViewportContainer" type="SubViewportContainer" parent="h/HSplitContainer/v/MarginContainer"]
 clip_contents = true
 layout_mode = 2
 size_flags_vertical = 3
 stretch = true
 
-[node name="MarginContainer" type="PanelContainer" parent="h/HSplitContainer/v/SubViewportContainer"]
-visible = false
-material = SubResource("ShaderMaterial_u8jc2")
-layout_mode = 2
-size_flags_vertical = 3
-mouse_filter = 1
-theme_override_styles/panel = SubResource("StyleBoxFlat_3hqvt")
-
-[node name="SubViewport" type="SubViewport" parent="h/HSplitContainer/v/SubViewportContainer"]
+[node name="DrawingAreaSubViewport" type="SubViewport" parent="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer"]
 transparent_bg = true
 handle_input_locally = false
-size = Vector2i(1876, 979)
+size = Vector2i(1888, 979)
 render_target_update_mode = 4
 
-[node name="Node2D" type="Node2D" parent="h/HSplitContainer/v/SubViewportContainer/SubViewport"]
-
-[node name="Checkers" type="Sprite2D" parent="h/HSplitContainer/v/SubViewportContainer/SubViewport/Node2D"]
-material = SubResource("ShaderMaterial_j5h4u")
-texture = SubResource("GradientTexture2D_t8fyw")
-centered = false
-
-[node name="InputAreaCamera" type="Camera2D" parent="h/HSplitContainer/v/SubViewportContainer/SubViewport"]
+[node name="InputAreaCamera" type="Camera2D" parent="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
 unique_name_in_owner = true
+visible = false
+position = Vector2(142.14, 0)
 zoom = Vector2(0.5, 0.5)
 
-[node name="Control" type="Control" parent="h/HSplitContainer/v/SubViewportContainer/SubViewport"]
+[node name="Control" type="Control" parent="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -448,7 +450,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="LayersContainer" type="Control" parent="h/HSplitContainer/v/SubViewportContainer/SubViewport/Control"]
+[node name="LayersContainer" type="Control" parent="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -459,19 +461,50 @@ grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("8_fjkto")
 
+[node name="RenderViewport" type="Control" parent="h/HSplitContainer/v/MarginContainer"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(150, 84)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+
+[node name="MarginContainer" type="PanelContainer" parent="h/HSplitContainer/v/MarginContainer/RenderViewport"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 8.27988
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_t8fyw")
+
+[node name="TextureRect2" type="TextureRect" parent="h/HSplitContainer/v/MarginContainer/RenderViewport/MarginContainer"]
+material = SubResource("ShaderMaterial_vtsnj")
+layout_mode = 2
+texture = SubResource("PlaceholderTexture2D_t8fyw")
+expand_mode = 1
+
+[node name="TextureRect" type="TextureRect" parent="h/HSplitContainer/v/MarginContainer/RenderViewport/MarginContainer"]
+layout_mode = 2
+texture = SubResource("ViewportTexture_t8fyw")
+expand_mode = 3
+stretch_mode = 4
+
 [node name="DockPanelContainer" type="MarginContainer" parent="h/HSplitContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
-[node name="SplitContainer" type="VSplitContainer" parent="h/HSplitContainer/DockPanelContainer"]
+[node name="DockSplitContainer" type="VSplitContainer" parent="h/HSplitContainer/DockPanelContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="FullSizeLayersContainer" type="MarginContainer" parent="h/HSplitContainer/DockPanelContainer/SplitContainer"]
+[node name="FullSizeLayersContainer" type="MarginContainer" parent="h/HSplitContainer/DockPanelContainer/DockSplitContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="FullSizeAIContainer" type="MarginContainer" parent="h/HSplitContainer/DockPanelContainer/SplitContainer"]
+[node name="FullSizeAIContainer" type="MarginContainer" parent="h/HSplitContainer/DockPanelContainer/DockSplitContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
@@ -539,6 +572,7 @@ position = Vector2i(215, 36)
 size = Vector2i(420, 270)
 visible = false
 always_on_top = true
+min_size = Vector2i(345, 0)
 
 [node name="LayerCardsPanelContainer" type="PanelContainer" parent="LayerCardsPopupPanel"]
 unique_name_in_owner = true
@@ -1023,9 +1057,9 @@ icon = ExtResource("28_oylf0")
 [connection signal="text_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
 [connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/VBoxContainer/LayerCardsButton" to="." method="_on_layer_cards_button_pressed"]
 [connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/VBoxContainer/PromptButton" to="." method="_on_prompt_button_pressed"]
-[connection signal="gui_input" from="h/HSplitContainer/v/SubViewportContainer/SubViewport/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
-[connection signal="mouse_entered" from="h/HSplitContainer/v/SubViewportContainer/SubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
-[connection signal="mouse_exited" from="h/HSplitContainer/v/SubViewportContainer/SubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
+[connection signal="gui_input" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
+[connection signal="mouse_entered" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
+[connection signal="mouse_exited" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
 [connection signal="close_requested" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_close_requested"]
 [connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/TopOfLayersContainer/BackButton" to="." method="_on_back_button_pressed"]
 [connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer/NewLayerButton" to="." method="_on_new_layer_button_pressed"]

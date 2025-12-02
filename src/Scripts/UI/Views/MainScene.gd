@@ -259,6 +259,7 @@ func _input(event) -> void:
 @onready var bottom_drawer_control: DrawerNotesManager = %BottomDrawerControl
 @onready var notes_drawer_split: VSplitContainer = %NotesDrawerSplit
 var split_drawer_tween: Tween
+@export var _drawer_anim_duration: = 0.5
 func _on_btn_drawer_pressed() -> void:
 	
 	if split_drawer_tween and split_drawer_tween.is_running():
@@ -268,13 +269,13 @@ func _on_btn_drawer_pressed() -> void:
 		notes_drawer_split.split_offset = 600
 		split_drawer_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
 		bottom_drawer_control.visible = true
-		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 0, 0.7)
+		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 0, _drawer_anim_duration)
 		_open_drawer_notes()
 		bottom_drawer_control.visible = true
 	else:
 		
 		split_drawer_tween = create_tween().set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_LINEAR)
-		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 600, 0.6)
+		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 600, _drawer_anim_duration)
 		
 		await get_tree().create_timer(0.48).timeout
 		bottom_drawer_control.visible = false
@@ -320,5 +321,3 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 			for file in files:
 				var image: = Image.load_from_file(file)
 				editor.graphics_editor.create_new_image_layer(file.get_file(), image)
-	
-	pass

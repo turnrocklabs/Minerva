@@ -92,6 +92,8 @@ signal delete_layer(layer: LayerV2)
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
 @onready var dock_panel_container: MarginContainer = %DockPanelContainer
+@onready var render_viewport: Control = %RenderViewport
+@onready var dock_split_container: VSplitContainer = %DockSplitContainer
 
 #endregion
 
@@ -167,6 +169,9 @@ func _ready() -> void:
 	delete_layer.connect(_on_delete_layer)
 	
 	get_viewport().set_embedding_subwindows(false)
+	
+	render_viewport.visible = false
+	
 	response_layout_toggle()
 
 
@@ -1365,27 +1370,27 @@ func _on_mask_edit_button_pressed() -> void:
 		if !layer_cards_popup_panel.visible:
 			layer_cards_popup_panel.position = Vector2(
 				(
-					%ImageGenWindow.position.x 
+					image_gen_window.position.x 
 					-layer_cards_popup_panel.size.x/2.0
-					+ %ImageGenWindow.size.x/2.0
+					+ image_gen_window.size.x/2.0
 				),
-				%ImageGenWindow.position.y + %ImageGenWindow.size.y + 30
+				image_gen_window.position.y + image_gen_window.size.y + 30
 			)
 			layer_cards_popup_panel.borderless = false
 			ai_action_label.text = "Pick an Image Layer and a Mask Layer to Send to Edit"
-			%SendActionButton.disabled = false
+			send_action_button.disabled = false
 			ai_request_type = AI_REQUEST.MASK_EDIT
 			
 			%TopOfLayersContainer.show()
-			%SendActionButton.show()
+			send_action_button.show()
 			image_gen_window.hide()
 			layer_cards_popup_panel.show()
 		else:
 			layer_cards_popup_panel.hide()
 			layer_cards_popup_panel.borderless = true
 			%TopOfLayersContainer.hide()
-			%SendActionButton.disabled = true
-			%SendActionButton.hide()
+			send_action_button.disabled = true
+			send_action_button.hide()
 	else:
 		ai_request_type = AI_REQUEST.MASK_EDIT
 		send_action_button.pressed.emit()
@@ -1498,6 +1503,12 @@ func _on_send_action_button_pressed() -> void:
 func _on_resized() -> void:
 	if is_node_ready():
 		response_layout_toggle()
+		if render_viewport.visible:
+			render_viewport.custom_minimum_size.x = layers_container.size.x / 6.5
+			render_viewport.custom_minimum_size.y = layers_container.size.y / 6.5
+			var margin_con: PanelContainer = render_viewport.get_child(0)
+			margin_con.position = Vector2.ZERO
+			margin_con.anchors_preset = Control.PRESET_FULL_RECT
 
 var floating_windows_active: = false
 func response_layout_toggle() -> void:
@@ -1528,7 +1539,7 @@ func response_layout_toggle() -> void:
 			send_action_button.hide()
 			layer_cards_toggle_button.hide()
 		dock_panel_container.show()
-		%SplitContainer.split_offset = 250
+		dock_split_container.split_offset = 250
 
 
 static var _edit_img_base_tooltip: = "Edit selected Image (edits the currently selected layer with the current prompt)"
