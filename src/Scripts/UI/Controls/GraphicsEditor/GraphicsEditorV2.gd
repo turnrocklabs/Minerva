@@ -46,6 +46,7 @@ signal delete_layer(layer: LayerV2)
 @onready var eraser_tool: EraserTool = %EraserTool
 @onready var transform_tool: TransformTool = %TransformTool
 @onready var speech_bubble_tool: SpeechBubbleTool = %SpeechBubbleTool
+@onready var render_view_tool: RenderViewTool = %RenderViewTool
 
 
 @onready var tool_options_mapping: = {
@@ -94,6 +95,8 @@ signal delete_layer(layer: LayerV2)
 @onready var dock_panel_container: MarginContainer = %DockPanelContainer
 @onready var render_viewport: Control = %RenderViewport
 @onready var dock_split_container: VSplitContainer = %DockSplitContainer
+@onready var render_viewport_button: Button = %RenderViewportButton
+@onready var render_view_control: RenderViewRect = %RenderViewControl
 
 #endregion
 
@@ -155,7 +158,7 @@ func _ready() -> void:
 	# Connect pen inverted signals
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
-	
+	render_view_tool.draw_render_rect.connect(_on_draw_rect)
 	# Connect media generation signal to receive generated images
 	MediaGen.pass_image_to_editor.connect(_on_image_received)
 	
@@ -436,7 +439,7 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _pan_canvas(relative: Vector2) -> void:
-	layers_container.position += relative
+	layers_container.position += relative * 1.5
 
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
@@ -464,6 +467,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
+	
+	
+	
 	for layer in selected_layers: layer.queue_redraw()
 	for layer in selected_mask_layers: layer.queue_redraw()
 	for c: LayerCard in layer_cards_container.get_children():
@@ -1503,7 +1509,7 @@ func _on_send_action_button_pressed() -> void:
 func _on_resized() -> void:
 	if is_node_ready():
 		response_layout_toggle()
-		if render_viewport.visible:
+		if render_viewport and render_viewport.visible:
 			render_viewport.custom_minimum_size.x = layers_container.size.x / 6.5
 			render_viewport.custom_minimum_size.y = layers_container.size.y / 6.5
 			var margin_con: PanelContainer = render_viewport.get_child(0)
@@ -1563,3 +1569,30 @@ func check_ai_buttons_toggle() -> void:
 	else:
 		edit_img_button.disabled = false
 		send_mask_edit_button.disabled = false
+
+
+func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
+	if not toggled_on:
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+		_tools_option_button.grab_focus()
+		draw_render_view = false
+		_on_draw_rect(_rect_start_global_pos, _rect_end_global_pos)
+		return
+	
+	active_tool = render_view_tool if toggled_on else null
+	render_viewport_button.release_focus()
+	draw_render_view = true
+	_on_draw_rect(_rect_start_global_pos, _rect_end_global_pos)
+	render_view_control.queue_redraw()
+
+var draw_render_view: = false
+var _rect_start_global_pos: = Vector2.ZERO
+var _rect_end_global_pos: = Vector2.ZERO
+func _on_draw_rect(rect_pos: Vector2, rect_size: Vector2) -> void:
+	render_view_control.draw_render_view = draw_render_view
+	render_view_control.rect_start = rect_pos
+	render_view_control.rect_end = rect_size
+	render_view_control.queue_redraw()
+	_rect_start_global_pos = rect_pos
+	_rect_end_global_pos = rect_size
