@@ -311,7 +311,8 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 		
 		if Input.is_key_pressed(KEY_CTRL):
 			layer_card.selected = not layer_card.selected
-		
+		elif layer_card.selected:
+			layer_card.selected = false
 		else:
 			for c: LayerCard in layer_cards_container.get_children():
 				c.selected = false
@@ -1134,6 +1135,10 @@ func _on_send_prompt_button_pressed() -> void:
 	image_gen_window.hide()
 	var params : Dictionary = get_params_image_gen()
 	var toast: ToastNotification
+	send_prompt_button.modulate = Color.LIME_GREEN
+	send_prompt_button.disabled = true
+	edit_img_button.disabled = true
+	send_mask_edit_button.disabled = true
 	if params.is_empty():
 		toast =ToastNotification.create(ToastNotification.Type.WARNING, "Please enter a valid prompt for image generation")
 	
@@ -1149,6 +1154,12 @@ func _on_image_received(filename:String, request_id: String, buffer: PackedByteA
 	# Always hide progress window when receiving response (success or failure)
 	if request_id != _current_image_gen_request_id:
 		return
+	send_prompt_button.modulate = Color.WHITE
+	send_prompt_button.disabled = false
+	edit_img_button.modulate = Color.WHITE
+	edit_img_button.disabled = false
+	send_mask_edit_button.modulate = Color.WHITE
+	send_mask_edit_button.disabled = false
 	if progress_window.visible:
 		progress_window.hide()
 
@@ -1176,6 +1187,10 @@ enum AI_REQUEST {
 }
 var ai_request_type: AI_REQUEST = AI_REQUEST.EDIT_IMAGE
 func _on_edit_button_pressed() -> void:
+	edit_img_button.modulate = Color.LIME_GREEN
+	send_prompt_button.disabled = true
+	edit_img_button.disabled = true
+	send_mask_edit_button.disabled = true
 	if floating_windows_active:
 		if !layer_cards_popup_panel.visible:
 			layer_cards_popup_panel.position = Vector2(
@@ -1389,6 +1404,10 @@ func get_first_image_layer() -> LayerV2:
 
 
 func _on_mask_edit_button_pressed() -> void: 
+	send_mask_edit_button.modulate = Color.LIME_GREEN
+	send_prompt_button.disabled = true
+	edit_img_button.disabled = true
+	send_mask_edit_button.disabled = true
 	if floating_windows_active:
 		if !layer_cards_popup_panel.visible:
 			layer_cards_popup_panel.position = Vector2(
