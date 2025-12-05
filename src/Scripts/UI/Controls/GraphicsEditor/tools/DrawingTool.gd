@@ -47,6 +47,11 @@ var _max_cached_radius = 100
 
 var current_stroke_command: GraphicsEditorUndo.DrawStrokeCommand
 
+# Stroke buffer for preventing alpha accumulation within a single stroke
+var _stroke_buffer: Image = null
+var _stroke_brush_color: Color  # Store brush color at stroke start
+var _layer_backup: Image = null  # Backup of layer for visual feedback during stroke
+
 func _ready() -> void:
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
@@ -188,6 +193,13 @@ func _start_stroke(event: InputEvent) -> void:
 
 	current_stroke_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
 
+	# Initialize stroke buffer for preventing alpha accumulation
+	var layer_size = editor.active_layer.image.get_size()
+	_stroke_buffer = Image.create(layer_size.x, layer_size.y, false, Image.FORMAT_RGBA8)
+	_stroke_buffer.fill(Color.TRANSPARENT)
+	_stroke_brush_color = brush_color
+	_layer_backup = editor.active_layer.image.duplicate()
+
 
 func _add_stroke_point(event: InputEvent) -> void:
 	var pos: Vector2 = event.position
@@ -222,6 +234,7 @@ func _add_stroke_point(event: InputEvent) -> void:
 			brush_color,
 			brush_size * (p if _use_pressure else 1.0)
 		)
+		_update_visual_preview()
 		editor.queue_redraw()
 		
 		_last_drawing_position = pos
@@ -252,6 +265,7 @@ func _add_stroke_point(event: InputEvent) -> void:
 	
 	_last_drawing_position = pos
 	_last_pressure = _smoothed_pressure
+	_update_visual_preview()
 	editor.queue_redraw()
 
 func _end_stroke(event: InputEvent) -> void:
@@ -267,14 +281,21 @@ func _end_stroke(event: InputEvent) -> void:
 			brush_color,
 			brush_size * p
 		)
-		editor.queue_redraw()
-	
+
+	# Final composite: restore backup and composite stroke buffer
+	if _stroke_buffer and _layer_backup:
+		editor.active_layer.image.blit_rect(_layer_backup, Rect2i(Vector2i.ZERO, _layer_backup.get_size()), Vector2i.ZERO)
+		_composite_stroke_buffer_to(editor.active_layer.image, _layer_backup)
+	_stroke_buffer = null
+	_layer_backup = null
+	editor.queue_redraw()
+
 	# Finalize and execute the drawing command
 	if current_stroke_command:
 		current_stroke_command.finalize_stroke()  # Captures "after" state
 		editor.execute_command(current_stroke_command)
 		current_stroke_command = null
-	
+
 	drawing = false
 	_single_click = false
 	_waiting_for_motion = false
@@ -322,30 +343,45 @@ func _draw_brush_stamp(target_image: Image, center: Vector2, color: Color, diame
 	var visual_zoom = editor.layers_container.scale.x
 	var actual_diameter = diameter / visual_zoom
 	var radius = max(1, int(ceil(actual_diameter * 0.5)))
-	
+
 	var pixels = _get_cached_circle_pixels(radius)
 	var center_x = int(center.x)
 	var center_y = int(center.y)
-	var img_width = target_image.get_width()
-	var img_height = target_image.get_height()
-	
+
+	# Use stroke buffer if available, otherwise draw directly
+	var draw_target: Image = _stroke_buffer if _stroke_buffer else target_image
+	var use_max_alpha: bool = _stroke_buffer != null
+
+	var img_width = draw_target.get_width()
+	var img_height = draw_target.get_height()
+
 	for offset in pixels:
 		var x = center_x + offset.x
 		var y = center_y + offset.y
-		
+
 		if x >= 0 and x < img_width and y >= 0 and y < img_height:
 			var alpha_factor = offset.z
-			
-			if alpha_factor >= 0.99:
-				target_image.set_pixel(x, y, color)
+			var stamp_alpha = color.a * alpha_factor
+
+			if stamp_alpha <= 0.01:
+				continue
+
+			if use_max_alpha:
+				# Stroke buffer mode: use MAX alpha to prevent accumulation
+				var existing = draw_target.get_pixel(x, y)
+				if stamp_alpha > existing.a:
+					# Store coverage alpha in the buffer (use white as placeholder)
+					draw_target.set_pixel(x, y, Color(1.0, 1.0, 1.0, stamp_alpha))
 			else:
-				var new_color = color
-				new_color.a *= alpha_factor
-				
-				if new_color.a > 0.01:
-					var existing_color = target_image.get_pixel(x, y)
+				# Direct mode (fallback): original blending behavior
+				if alpha_factor >= 0.99:
+					draw_target.set_pixel(x, y, color)
+				else:
+					var new_color = color
+					new_color.a = stamp_alpha
+					var existing_color = draw_target.get_pixel(x, y)
 					var blended_color = _blend_colors(existing_color, new_color)
-					target_image.set_pixel(x, y, blended_color)
+					draw_target.set_pixel(x, y, blended_color)
 
 func _get_cached_circle_pixels(radius: int) -> Array:
 	radius = min(radius, _max_cached_radius)
@@ -370,6 +406,33 @@ func _get_cached_circle_pixels(radius: int) -> Array:
 	
 	_circle_cache[radius] = pixels
 	return pixels
+
+func _composite_stroke_buffer_to(target_image: Image, source_backup: Image) -> void:
+	if not _stroke_buffer:
+		return
+
+	var width = _stroke_buffer.get_width()
+	var height = _stroke_buffer.get_height()
+
+	for y in range(height):
+		for x in range(width):
+			var buffer_pixel = _stroke_buffer.get_pixel(x, y)
+			if buffer_pixel.a > 0.01:
+				# Apply brush color with the stored alpha
+				var stroke_color = _stroke_brush_color
+				stroke_color.a *= buffer_pixel.a
+
+				var existing_color = source_backup.get_pixel(x, y)
+				var blended_color = _blend_colors(existing_color, stroke_color)
+				target_image.set_pixel(x, y, blended_color)
+
+
+func _update_visual_preview() -> void:
+	# Restore layer from backup and composite current stroke buffer for display
+	if _stroke_buffer and _layer_backup:
+		editor.active_layer.image.blit_rect(_layer_backup, Rect2i(Vector2i.ZERO, _layer_backup.get_size()), Vector2i.ZERO)
+		_composite_stroke_buffer_to(editor.active_layer.image, _layer_backup)
+
 
 func _blend_colors(bottom: Color, top: Color) -> Color:
 	if top.a >= 0.99:

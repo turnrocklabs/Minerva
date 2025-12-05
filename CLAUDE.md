@@ -79,3 +79,43 @@ Uses `SingletonObject.ErrorDisplay()` for unified error presentation to users
 - Experimental features can be toggled and are hidden behind the experimental flag
 - The terminal extension requires platform-specific compilation using SCons
 - Provider credentials are managed through the AISettings window
+
+## Nudge MCP Tool
+
+A session-scoped hint cache for storing and retrieving micro-facts (commands, paths, small configs) by component/key.
+
+### Usage Rules
+
+**Read before you act:**
+- Before build/test/run/deploy, try: `get_hint(component, key, context)`
+- On errors, try: `query({component, tags, context})`
+
+**Write what you learn:**
+- When a user corrects you or you discover a working incantation/path, do `set_hint(…)`
+- After a hint helped and succeeded, `bump(component, key)`
+
+**Keep it small:**
+- Store quick, actionable facts (one liners, small JSON). Prefer TTL "session"
+
+### Common Keys
+`build`, `test`, `start`, `run`, `deploy`, `path`/`directory`, `env.*`, `tooling` (e.g., `tooling.lint`), `messages`
+
+### Quick Reference
+```
+set_hint(component, key, value, meta?) → {hint}
+get_hint(component, key, context?) → {hint, match_explain}
+query({component?, keys?, tags?, regex?, context?, limit?}) → [{hint, score}]
+bump(component, key, delta=1) → {hint}
+list_components() → [{name, hint_count}]
+```
+
+### Do / Don't
+**Do:**
+- Keep values short and exact
+- Add tags and a brief reason
+- Use TTL "session" unless you need a timed duration
+
+**Don't:**
+- Store secrets (tokens, passwords)
+- Auto-execute anything returned by Nudge
+- Overwrite good hints with guesses

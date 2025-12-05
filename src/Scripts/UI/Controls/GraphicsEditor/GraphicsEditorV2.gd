@@ -71,7 +71,9 @@ signal delete_layer(layer: LayerV2)
 @onready var steps_spin_box: SpinBox = %StepsSpinBox
 @onready var cfg_spin_box: SpinBox = %CFGSpinBox
 @onready var denoise_spin_box: SpinBox = %DenoiseSpinBox
+@onready var denoise_container: HBoxContainer = %DenoiseContainer
 @onready var seed_line_edit: LineEdit = %SeedLineEdit
+@onready var workflow_option_button: OptionButton = %WorkflowOptionButton
 
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
@@ -104,7 +106,20 @@ signal delete_layer(layer: LayerV2)
 const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
 const MAX_IMAGE_GEN_RES: int = 2500
 const MIN_IMAGE_RES: int = 512
-var canvas_size: = Vector2i(1024, 1024)
+
+# Workflow selection for image generation
+enum Workflow { Z_TURBO, QWEN }
+const WORKFLOW_TOPICS: Dictionary = {
+	Workflow.Z_TURBO: "media_gen/z_turbo_image_generate",
+	Workflow.QWEN: "media_gen/image_generation"
+}
+const WORKFLOW_DEFAULT_STEPS: Dictionary = {
+	Workflow.Z_TURBO: 9,
+	Workflow.QWEN: 8
+}
+var current_workflow: Workflow = Workflow.Z_TURBO
+
+var canvas_size: = Vector2i(1000, 1000)
 
 var _custom_cursor: Resource
 var _custom_cursor_shape: int

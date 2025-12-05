@@ -722,11 +722,11 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 			print("   ❓ Unknown binary frame type: %s" % frame_type) # Corrected string formatting
 
 
-func send_media_gen_request(generation_params: Dictionary) -> String: # Accepts a dictionary of parameters
+func send_media_gen_request(generation_params: Dictionary, topic: String = "media_gen/image_generation") -> String: # Accepts a dictionary of parameters and optional topic
 	var request_id: String = UUIDGen.v7() # Generate request_id once (Explicitly type)
 	var message: Dictionary = { # Explicitly type
 		"cmd": "request",
-		"topic": "media_gen/image_generation",  # Updated topic
+		"topic": topic,  # Use provided topic parameter
 		"entity_type": "client",
 		"params": {
 			"client_id": client_id,

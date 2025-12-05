@@ -900,7 +900,25 @@ text = "Advanced settings:"
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
+[node name="WorkflowContainer" type="HBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/WorkflowContainer"]
+layout_mode = 2
+text = "Workflow:"
+
+[node name="WorkflowOptionButton" type="OptionButton" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/WorkflowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "Z-Turbo"
+popup/item_0/id = 0
+popup/item_1/text = "Qwen"
+popup/item_1/id = 1
+
+[node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -1015,7 +1033,7 @@ layout_mode = 2
 size_flags_horizontal = 0
 min_value = 1.0
 max_value = 40.0
-value = 8.0
+value = 9.0
 rounded = true
 alignment = 1
 custom_arrow_step = 1.0
@@ -1038,17 +1056,18 @@ step = 0.01
 value = 1.0
 alignment = 1
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="DenoiseContainer" type="HBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 2
 theme_override_constants/separation = 21
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer6"]
+[node name="Label" type="Label" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/DenoiseContainer"]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "Cfg: "
 
-[node name="CFGSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer6"]
+[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/DenoiseContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 2
@@ -1096,39 +1115,114 @@ size_flags_horizontal = 8
 text = "Mask"
 icon = ExtResource("28_oylf0")
 
-[connection signal="resized" from="." to="." method="_on_resized"]
-[connection signal="item_selected" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/ToolsOptionButton" to="." method="_on_tools_option_button_item_selected"]
-[connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
-[connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
-[connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
-[connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/RenderViewportButton" to="." method="_on_render_viewport_button_toggled"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/GetTextureButton" to="." method="_on_get_texture_button_pressed"]
-[connection signal="item_selected" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
-[connection signal="color_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer/ColorPickerButton" to="." method="_on_color_picker_button_color_changed"]
-[connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
-[connection signal="text_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/VBoxContainer/LayerCardsButton" to="." method="_on_layer_cards_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/VBoxContainer/PromptButton" to="." method="_on_prompt_button_pressed"]
-[connection signal="draw" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control" to="." method="_on_control_draw"]
-[connection signal="gui_input" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
-[connection signal="mouse_entered" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
-[connection signal="mouse_exited" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
-[connection signal="close_requested" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_close_requested"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/TopOfLayersContainer/BackButton" to="." method="_on_back_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer/CopyLayerButton" to="." method="_on_copy_layer_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer/MergeLayersButton" to="." method="_on_merge_layers_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer/DeleteLayerButton" to="." method="_on_delete_layer_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer/NewMaskLayerButton" to="." method="_on_new_mask_layer_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer/CopyMaskLayerButton" to="." method="_on_copy_mask_layer_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer/MergeMaskLayersButton" to="." method="_on_merge_mask_layers_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer/DeleteMaskLayerButton" to="." method="_on_delete_mask_layer_button_pressed"]
-[connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/SendActionButton" to="." method="_on_send_action_button_pressed"]
-[connection signal="close_requested" from="ImageGenWindow" to="." method="_on_image_gen_window_close_requested"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit/PositivePromptMicButton" to="." method="_on_positive_prompt_mic_button_pressed"]
-[connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit/NegativePromptMicButton" to="." method="_on_negative_prompt_mic_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]
+[node name="ShowLayersButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Add Mask..."
+
+[node name="MaskEditPanelButton" type="Button" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+toggle_mode = true
+text = "Select Layers...
+"
+
+[node name="SelectiveEditingPopupPanel" type="PopupPanel" parent="."]
+unique_name_in_owner = true
+size = Vector2i(410, 510)
+
+[node name="PanelContainer" type="PanelContainer" parent="SelectiveEditingPopupPanel"]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 406.0
+offset_bottom = 506.0
+
+[node name="MarginContainer" type="MarginContainer" parent="SelectiveEditingPopupPanel/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Image layers"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="MediaGenLayersContainer" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label2" type="Label" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Mask Layers"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="MaskMediaGenLayersContainer" type="VBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer2/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="SelectiveEditingPopupPanel/PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[connection signal="popup_hide" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_popup_hide"]
+[connection signal="pressed" from="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer/NewLayerButton" to="." method="_on_new_layer_button_pressed"]
+[connection signal="pressed" from="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer/CopyLayerButton" to="." method="_on_copy_layer_button_pressed"]
+[connection signal="pressed" from="LayerCardsPopupPanel/PanelContainer/ScrollContainer/v2/HBoxContainer/DeleteLayerButton" to="." method="_on_delete_layer_button_pressed"]
+[connection signal="item_selected" from="h/v/HBoxContainer/h/ToolsContainer/ToolsOptionButton" to="." method="_on_tools_option_button_item_selected"]
+[connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
+[connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
+[connection signal="toggled" from="h/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
+[connection signal="pressed" from="h/v/HBoxContainer/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
+[connection signal="toggled" from="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
+[connection signal="text_changed" from="h/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
+[connection signal="toggled" from="h/v/HBoxContainer/VBoxContainer/LayerCardsButton" to="." method="_on_layer_cards_button_toggled"]
+[connection signal="pressed" from="h/v/HBoxContainer/VBoxContainer/PromptButton" to="." method="_on_prompt_button_pressed"]
+[connection signal="gui_input" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
+[connection signal="mouse_entered" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
+[connection signal="mouse_exited" from="h/v/MarginContainer/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
+[connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer/NewMaskLayerButton" to="." method="_on_new_mask_layer_button_pressed"]
+[connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer/CopyMaskLayerButton" to="." method="_on_copy_mask_layer_button_pressed"]
+[connection signal="pressed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/HBoxContainer/DeleteMaskLayerButton" to="." method="_on_delete_mask_layer_button_pressed"]
+[connection signal="item_selected" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
+[connection signal="value_changed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskHSlider" to="." method="_on_mask_h_slider_value_changed"]
+[connection signal="toggled" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
+[connection signal="item_selected" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/WorkflowContainer/WorkflowOptionButton" to="." method="_on_workflow_option_button_item_selected"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_img_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/ShowLayersButton" to="." method="_on_button_pressed"]
+[connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/MaskEditPanelButton" to="." method="_on_mask_edit_panel_button_pressed"]
