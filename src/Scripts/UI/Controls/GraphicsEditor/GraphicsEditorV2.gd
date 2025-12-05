@@ -1362,7 +1362,8 @@ func get_params_image_gen() -> Dictionary:
 		"height" = image_res,
 		"steps" = steps_spin_box.value,
 		"cfg" = cfg_spin_box.value,
-		"denoise" = denoise_spin_box.value
+		"denoise" = denoise_spin_box.value,
+		"topic" = WORKFLOW_TOPICS[current_workflow]
 	}
 
 
@@ -1618,3 +1619,17 @@ func _on_get_texture_button_pressed() -> void:
 	var texture: ViewportTexture = render_view_control.get_render_viewport_texture()
 	var image: = texture.get_image()
 	create_new_image_layer("render_viewport layer",image)
+
+
+func _on_workflow_option_button_item_selected(index: int) -> void:
+	match index:
+		0:  # Z-Turbo
+			current_workflow = Workflow.Z_TURBO
+			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.Z_TURBO]
+		1:  # Qwen
+			current_workflow = Workflow.QWEN
+			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
+
+
+func _on_send_mask_edit_button_pressed() -> void:
+	pass # Replace with function body.
