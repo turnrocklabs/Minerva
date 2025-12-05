@@ -1629,7 +1629,3 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 		1:  # Qwen
 			current_workflow = Workflow.QWEN
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
-
-
-func _on_send_mask_edit_button_pressed() -> void:
-	pass # Replace with function body.
