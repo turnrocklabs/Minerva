@@ -667,6 +667,24 @@ text = "Advanced settings:"
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="WorkflowContainer" type="HBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/WorkflowContainer"]
+layout_mode = 2
+text = "Workflow:"
+
+[node name="WorkflowOptionButton" type="OptionButton" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/WorkflowContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "Z-Turbo"
+popup/item_0/id = 0
+popup/item_1/text = "Qwen"
+popup/item_1/id = 1
+
 [node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 visible = false
@@ -766,7 +784,7 @@ layout_mode = 2
 size_flags_horizontal = 4
 min_value = 1.0
 max_value = 40.0
-value = 8.0
+value = 9.0
 rounded = true
 alignment = 1
 custom_arrow_step = 1.0
@@ -790,16 +808,17 @@ value = 1.0
 alignment = 1
 custom_arrow_step = 1.0
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer"]
+[node name="DenoiseContainer" type="HBoxContainer" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Label" type="Label" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer3"]
+[node name="Label" type="Label" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/DenoiseContainer"]
 layout_mode = 2
 size_flags_horizontal = 6
 text = "Denoise:"
 
-[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/HBoxContainer3"]
+[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer/DenoiseContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 4
@@ -951,6 +970,7 @@ theme_override_constants/separation = 10
 [connection signal="item_selected" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
 [connection signal="value_changed" from="MaskLayerCardsPopupPanel/MaskLayerCardsPanelContainer/VBoxContainer/MaskContainer/MaskHSlider" to="." method="_on_mask_h_slider_value_changed"]
 [connection signal="toggled" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
+[connection signal="item_selected" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/WorkflowContainer/WorkflowOptionButton" to="." method="_on_workflow_option_button_item_selected"]
 [connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
 [connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_img_button_pressed"]
 [connection signal="pressed" from="ImageGenPopupPanel/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]

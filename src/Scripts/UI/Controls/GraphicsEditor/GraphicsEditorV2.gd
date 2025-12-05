@@ -66,7 +66,9 @@ signal lock_unlock_media_gen_ui(lock: bool)
 @onready var steps_spin_box: SpinBox = %StepsSpinBox
 @onready var cfg_spin_box: SpinBox = %CFGSpinBox
 @onready var denoise_spin_box: SpinBox = %DenoiseSpinBox
+@onready var denoise_container: HBoxContainer = %DenoiseContainer
 @onready var seed_line_edit: LineEdit = %SeedLineEdit
+@onready var workflow_option_button: OptionButton = %WorkflowOptionButton
 
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
@@ -86,6 +88,19 @@ signal lock_unlock_media_gen_ui(lock: bool)
 const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
 const MAX_IMAGE_GEN_RES: int = 2500
 const MIN_IMAGE_RES: int = 512
+
+# Workflow selection for image generation
+enum Workflow { Z_TURBO, QWEN }
+const WORKFLOW_TOPICS: Dictionary = {
+	Workflow.Z_TURBO: "media_gen/z_turbo_image_generate",
+	Workflow.QWEN: "media_gen/image_generation"
+}
+const WORKFLOW_DEFAULT_STEPS: Dictionary = {
+	Workflow.Z_TURBO: 9,
+	Workflow.QWEN: 8
+}
+var current_workflow: Workflow = Workflow.Z_TURBO
+
 var canvas_size: = Vector2i(1000, 1000)
 
 var _custom_cursor: Resource
@@ -1099,19 +1114,32 @@ func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 	advanced_settings_container.visible = toggled_on
 
 
+func _on_workflow_option_button_item_selected(index: int) -> void:
+	match index:
+		0:  # Z-Turbo
+			current_workflow = Workflow.Z_TURBO
+			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.Z_TURBO]
+		1:  # Qwen
+			current_workflow = Workflow.QWEN
+			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
+
+
 func get_params_image_gen() -> Dictionary:
 	if prompt_text_edit.text.is_empty():
 		return {}
-	
-	return {
-		"positive_prompt" = prompt_text_edit.text,
-		"negative_prompt" = negative_text_edit.text,
-		"width" = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
-		"height" = image_height_line_edit.text.to_int() if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
-		"steps" = steps_spin_box.value,
-		"cfg" = cfg_spin_box.value,
-		"denoise" = denoise_spin_box.value
+
+	var params: Dictionary = {
+		"positive_prompt": prompt_text_edit.text,
+		"negative_prompt": negative_text_edit.text,
+		"width": image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"height": image_height_line_edit.text.to_int() if !image_height_line_edit.text.is_empty() and image_height_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES,
+		"steps": steps_spin_box.value,
+		"cfg": cfg_spin_box.value,
+		"denoise": denoise_spin_box.value,
+		"topic": WORKFLOW_TOPICS[current_workflow]
 	}
+
+	return params
 
 
 func selected_layers_has_mask() -> bool:
