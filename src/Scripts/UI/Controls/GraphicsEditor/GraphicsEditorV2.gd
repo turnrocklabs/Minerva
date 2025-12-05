@@ -93,7 +93,8 @@ signal delete_layer(layer: LayerV2)
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
 @onready var dock_panel_container: MarginContainer = %DockPanelContainer
-@onready var render_viewport: Control = %RenderViewport
+@onready var mini_map_control: Control = %MiniMapControl
+
 @onready var dock_split_container: VSplitContainer = %DockSplitContainer
 @onready var render_viewport_button: Button = %RenderViewportButton
 @onready var render_view_control: RenderViewRect = %RenderViewControl
@@ -173,7 +174,7 @@ func _ready() -> void:
 	
 	get_viewport().set_embedding_subwindows(false)
 	
-	render_viewport.visible = false
+	mini_map_control.visible = false
 	
 	response_layout_toggle()
 
@@ -1509,10 +1510,10 @@ func _on_send_action_button_pressed() -> void:
 func _on_resized() -> void:
 	if is_node_ready():
 		response_layout_toggle()
-		if render_viewport and render_viewport.visible:
-			render_viewport.custom_minimum_size.x = layers_container.size.x / 6.5
-			render_viewport.custom_minimum_size.y = layers_container.size.y / 6.5
-			var margin_con: PanelContainer = render_viewport.get_child(0)
+		if mini_map_control and mini_map_control.visible:
+			mini_map_control.custom_minimum_size.x = layers_container.size.x / 6.5
+			mini_map_control.custom_minimum_size.y = layers_container.size.y / 6.5
+			var margin_con: PanelContainer = mini_map_control.get_child(0)
 			margin_con.position = Vector2.ZERO
 			margin_con.anchors_preset = Control.PRESET_FULL_RECT
 
@@ -1577,22 +1578,28 @@ func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
 		_tools_option_button.item_selected.emit(0)
 		_tools_option_button.grab_focus()
 		draw_render_view = false
-		_on_draw_rect(_rect_start_global_pos, _rect_end_global_pos)
+		_on_draw_rect(_render_view_rect)
 		return
 	
 	active_tool = render_view_tool if toggled_on else null
 	render_viewport_button.release_focus()
 	draw_render_view = true
-	_on_draw_rect(_rect_start_global_pos, _rect_end_global_pos)
+	_on_draw_rect(_render_view_rect)
 	render_view_control.queue_redraw()
 
 var draw_render_view: = false
-var _rect_start_global_pos: = Vector2.ZERO
-var _rect_end_global_pos: = Vector2.ZERO
-func _on_draw_rect(rect_pos: Vector2, rect_size: Vector2) -> void:
+var _render_view_rect: = Rect2(Vector2.ZERO, Vector2.ZERO)
+func _on_draw_rect(rect: Rect2) -> void:
 	render_view_control.draw_render_view = draw_render_view
-	render_view_control.rect_start = rect_pos
-	render_view_control.rect_end = rect_size
+	#render_view_control.rect_start = rect.position
+	#render_view_control.rect_end = rect.end
+	render_view_control._rect = rect
 	render_view_control.queue_redraw()
-	_rect_start_global_pos = rect_pos
-	_rect_end_global_pos = rect_size
+	#_rect_start_global_pos = rect_pos
+	#_rect_end_global_pos = rect_size
+
+
+func _on_get_texture_button_pressed() -> void:
+	var texture: ViewportTexture = render_view_control.get_render_viewport_texture()
+	var image: = texture.get_image()
+	create_new_image_layer("render_viewport layer",image)
