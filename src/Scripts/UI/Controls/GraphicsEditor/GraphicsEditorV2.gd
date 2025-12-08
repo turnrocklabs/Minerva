@@ -314,10 +314,12 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 		elif layer_card.selected:
 			layer_card.selected = false
 		else:
-			for c: LayerCard in layer_cards_container.get_children():
-				c.selected = false
-			for c: LayerCard in mask_layer_cards_container.get_children():
-				c.selected = false
+			if layer_card.layer.type != LayerV2.Type.MASK:
+				for c: LayerCard in layer_cards_container.get_children():
+					c.selected = false
+			else:
+				for c: LayerCard in mask_layer_cards_container.get_children():
+					c.selected = false
 			layer_card.selected = true
 
 
