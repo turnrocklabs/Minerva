@@ -17,7 +17,7 @@
 [ext_resource type="Script" uid="uid://bh0obx7hk7otd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/RenderViewTool.gd" id="9_vtsnj"]
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="10_vnb8d"]
 [ext_resource type="Texture2D" uid="uid://dxlwuia2g3di4" path="res://assets/icons/graphics_editor/eraser.svg" id="11_m2a1o"]
-[ext_resource type="Script" uid="uid://h8aur8r7ygi4" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
 [ext_resource type="Texture2D" uid="uid://clwxau6kq0fot" path="res://assets/icons/graphics_editor/bucket.svg" id="12_u1itb"]
 [ext_resource type="Texture2D" uid="uid://bbgo8abr3t77d" path="res://assets/icons/graphics_editor/smudge.svg" id="13_nl4xv"]
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="15_ow12a"]
@@ -621,10 +621,10 @@ layout_mode = 2
 [node name="LayerCardsPopupPanel" type="Window" parent="."]
 unique_name_in_owner = true
 position = Vector2i(215, 36)
-size = Vector2i(420, 270)
+size = Vector2i(465, 300)
 visible = false
 always_on_top = true
-min_size = Vector2i(345, 0)
+min_size = Vector2i(445, 300)
 
 [node name="LayerCardsPanelContainer" type="PanelContainer" parent="LayerCardsPopupPanel"]
 unique_name_in_owner = true

@@ -302,12 +302,8 @@ func parse_json_packet(packet_str):
 		print("Error parsing JSON: ", json.get_error_message())
 		return null
 
-
+var _max_chunk_length: = 400
 func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
-	var json_str = JSON.stringify(data)
-	print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
-	print("Received message: \n%s" % json_str) # Corrected string formatting
-	
 	var cmd: String = data.get("cmd", "") # Explicitly type
 	var entity_type: String = data.get("entity_type", "") # Explicitly type
 	
@@ -336,7 +332,7 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 			_send_queued_messages()
 	elif cmd == "notification": 
 		var _text: String = ((data.get("params", "")as Dictionary).get("data","") as Dictionary).get("message", "")
-		if !_text.is_empty() and not _text.to_lower().contains("ComfyUI") :
+		if !_text.is_empty() and not _text.to_lower().contains("ComfyUI".to_lower()) :
 			var toast: = ToastNotification.create(ToastNotification.Type.INFO, _text)
 			SingletonObject.main_scene.add_child(toast)
 	elif cmd == "response" and entity_type == "core":
@@ -367,6 +363,19 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 	
 	# Always emit the general message_received signal
 	message_received.emit(data)
+	
+	var json_str = JSON.stringify(data)
+	print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
+	var chunk_idx: = 0
+	for i in range(0, json_str.length(), _max_chunk_length):
+		var chunk: =  json_str.substr(i, _max_chunk_length)
+		print("Chunk number: %d" % chunk_idx)
+		print("Received message: \n%s" % chunk)
+		
+		chunk_idx += 1
+		await get_tree().process_frame
+		await get_tree().process_frame
+		await get_tree().process_frame
 
 
 func register_with_core(auth_token: String, client_id_: String):

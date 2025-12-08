@@ -1605,6 +1605,7 @@ func check_ai_buttons_toggle() -> void:
 	else:
 		edit_img_button.disabled = false
 		send_mask_edit_button.disabled = false
+		edit_img_button.tooltip_text = _edit_img_base_tooltip
 
 
 func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
