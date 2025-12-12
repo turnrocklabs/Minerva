@@ -100,6 +100,7 @@ signal delete_layer(layer: LayerV2)
 @onready var dock_split_container: VSplitContainer = %DockSplitContainer
 @onready var render_viewport_button: Button = %RenderViewportButton
 @onready var render_view_control: RenderViewRect = %RenderViewControl
+@onready var connection_label: Label = %ConnectionLabel
 
 #endregion
 
@@ -191,6 +192,45 @@ func _ready() -> void:
 	
 	mini_map_control.visible = false
 	
+	
+	
+	if Core.connected:
+		connection_label.hide()
+		toggle_enable_ai_fields()
+	else:
+		connection_label.show()
+		toggle_enable_ai_fields(false)
+	
+	Core.client.connection_established.connect(
+		func () -> void:
+			connection_label.hide()
+			toggle_enable_ai_fields()
+	)
+	
+	Core.client.connection_error.connect(
+		func(_error: int) -> void:
+			connection_label.text = "Not Connected to backend.\nConnect to backend to access AI Features."
+			connection_label.show()
+			toggle_enable_ai_fields(false)
+	)
+	
+	Core.client.connection_closed.connect(
+		func(_error: int) -> void:
+			connection_label.text = "Not Connected to backend.\nConnect to backend to access AI Features."
+			connection_label.show()
+			toggle_enable_ai_fields(false)
+	)
+	
+	Core.http_connection_changed.connect(
+		func(_active: bool):
+			if not Core.connected:
+				connection_label.text = "Not Connected to backend.\nConnect to backend to access AI Features."
+				connection_label.show()
+				toggle_enable_ai_fields(false)
+			else:
+				connection_label.hide()
+				toggle_enable_ai_fields()
+	)
 	response_layout_toggle()
 
 
@@ -1605,8 +1645,12 @@ func check_ai_buttons_toggle() -> void:
 			if selected_mask_layers.size() > 0:
 				send_mask_edit_button.tooltip_text = "%s (no layer selected, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_mask_layers[0].name]
 	else:
-		edit_img_button.disabled = false
-		send_mask_edit_button.disabled = false
+		if Core.connected:
+			edit_img_button.disabled = false
+			send_mask_edit_button.disabled = false
+		else:
+			edit_img_button.disabled = true
+			send_mask_edit_button.disabled = true
 		edit_img_button.tooltip_text = _edit_img_base_tooltip
 
 
@@ -1651,3 +1695,17 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 		1:  # Qwen
 			current_workflow = Workflow.QWEN
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
+
+
+func toggle_enable_ai_fields(enable: bool = true) -> void:
+	send_action_button.disabled = not enable
+	send_prompt_button.disabled = not enable
+	edit_img_button.disabled = not enable
+	send_mask_edit_button.disabled = not enable 
+	prompt_button.disabled = not enable
+	negative_prompt_mic_button.disabled = not enable
+	positive_prompt_mic_button.disabled = not enable
+	prompt_text_edit.editable = enable
+	negative_text_edit.editable = enable
+	advanced_settings_check_button.disabled = not enable
+	workflow_option_button.disabled = not enable

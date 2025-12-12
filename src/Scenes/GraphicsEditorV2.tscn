@@ -1,4 +1,4 @@
-[gd_scene load_steps=48 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=50 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -17,14 +17,16 @@
 [ext_resource type="Script" uid="uid://bh0obx7hk7otd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/RenderViewTool.gd" id="9_vtsnj"]
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="10_vnb8d"]
 [ext_resource type="Texture2D" uid="uid://dxlwuia2g3di4" path="res://assets/icons/graphics_editor/eraser.svg" id="11_m2a1o"]
-[ext_resource type="Script" uid="uid://h8aur8r7ygi4" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
 [ext_resource type="Texture2D" uid="uid://clwxau6kq0fot" path="res://assets/icons/graphics_editor/bucket.svg" id="12_u1itb"]
 [ext_resource type="Texture2D" uid="uid://bbgo8abr3t77d" path="res://assets/icons/graphics_editor/smudge.svg" id="13_nl4xv"]
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="15_ow12a"]
 [ext_resource type="Texture2D" uid="uid://c4rbfgr3eg45t" path="res://assets/icons/graphics_editor/transform.svg" id="16_nin75"]
 [ext_resource type="Texture2D" uid="uid://cqj3j0kugb6ni" path="res://assets/icons/graphics_editor/center.svg" id="17_tml0f"]
+[ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_icons/zoom_less.svg" id="18_bdl26"]
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers_icons/layers-24.png" id="18_tml0f"]
 [ext_resource type="Texture2D" uid="uid://dkq31owppnmm7" path="res://assets/icons/robot_AI.png" id="19_tml0f"]
+[ext_resource type="Texture2D" uid="uid://bliwqrb268u66" path="res://assets/icons/zoom_icons/zoom_more.svg" id="19_wq4ht"]
 [ext_resource type="StyleBox" uid="uid://cxx8rvjgpg7pj" path="res://Scenes/GraphicsEditorV2.tres" id="20_t8fyw"]
 [ext_resource type="Texture2D" uid="uid://hmm1aq7bi3xy" path="res://assets/icons/backspace_icons/backspace_icon.png" id="22_j5h4u"]
 [ext_resource type="Script" uid="uid://chko587tmoa88" path="res://Scripts/UI/Controls/render_view_control.gd" id="23_40suu"]
@@ -226,6 +228,7 @@ tooltip_text = "Pan tool for moving the around"
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
 icon = ExtResource("15_ow12a")
+flat = true
 
 [node name="TransformToolButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
@@ -234,6 +237,7 @@ tooltip_text = "Transform tool for moving the layer"
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
 icon = ExtResource("16_nin75")
+flat = true
 
 [node name="SpeechBubbleToolButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 visible = false
@@ -260,6 +264,18 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Take Viewport shot"
 text = "TS"
+
+[node name="Button2" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+visible = false
+layout_mode = 2
+text = "Zoom Out"
+icon = ExtResource("18_bdl26")
+
+[node name="Button" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+visible = false
+layout_mode = 2
+text = "Zoom In"
+icon = ExtResource("19_wq4ht")
 
 [node name="Control" type="Control" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
@@ -544,6 +560,36 @@ layout_mode = 2
 texture = SubResource("ViewportTexture_t8fyw")
 expand_mode = 3
 stretch_mode = 4
+
+[node name="HBoxContainer" type="HBoxContainer" parent="h/HSplitContainer/v/MarginContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+theme_override_constants/separation = 12
+
+[node name="Control" type="Control" parent="h/HSplitContainer/v/MarginContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="CenterViewButton" type="Button" parent="h/HSplitContainer/v/MarginContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Center View"
+focus_mode = 0
+icon = ExtResource("17_tml0f")
+flat = true
+
+[node name="ZoomOutButton" type="Button" parent="h/HSplitContainer/v/MarginContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Zoom Out"
+focus_mode = 0
+icon = ExtResource("18_bdl26")
+flat = true
+
+[node name="ZoomInButton" type="Button" parent="h/HSplitContainer/v/MarginContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Zoom In"
+focus_mode = 0
+icon = ExtResource("19_wq4ht")
+flat = true
 
 [node name="DockPanelContainer" type="MarginContainer" parent="h/HSplitContainer"]
 unique_name_in_owner = true
@@ -833,6 +879,14 @@ theme_override_constants/margin_bottom = 10
 
 [node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer"]
 layout_mode = 2
+
+[node name="ConnectionLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.811765, 0.27451, 0.2, 1)
+theme_override_font_sizes/font_size = 20
+text = "Not Connected to backend. 
+Connect to backend to access AI Features."
 
 [node name="ScrollContainer" type="ScrollContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
