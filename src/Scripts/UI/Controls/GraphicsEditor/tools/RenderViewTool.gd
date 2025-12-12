@@ -18,9 +18,9 @@ var is_drawing_rect: = false
 # Position tracking
 var _rect_start_global_pos: Vector2 = Vector2.ZERO
 var _rect_end_global_pos: Vector2 = Vector2.ZERO
-var _initial_click_position: Vector2 = Vector2.ZERO
-var _rotation_center: Vector2 = Vector2.ZERO
-var _rotation_angle: float = 0.0
+#var _initial_click_position: Vector2 = Vector2.ZERO
+#var _rotation_center: Vector2 = Vector2.ZERO
+#var _rotation_angle: float = 0.0
 var _points_positions: Array[Vector2] = []
 
 # Resize position tracking

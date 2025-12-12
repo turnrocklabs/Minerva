@@ -1,7 +1,7 @@
 [gd_scene load_steps=11 format=3 uid="uid://bgqhpokm027si"]
 
 [ext_resource type="Script" uid="uid://dk5fww5r5sryf" path="res://Scripts/UI/Controls/GraphicsEditor/LayerCard.gd" id="1_8joxi"]
-[ext_resource type="Texture2D" uid="uid://tfpyd2bc0aeb" path="res://addons/markdownlabel/assets/screenshot.png" id="2_cfx4g"]
+[ext_resource type="Texture2D" uid="uid://vdjevdsprwgm" path="res://addons/markdownlabel/assets/screenshot.png" id="2_cfx4g"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="2_tha0k"]
 [ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="3_bp0f0"]
 [ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="4_utn5m"]
@@ -26,7 +26,7 @@ shader_parameter/color2 = Color(1, 1, 1, 1)
 bg_color = Color(0.6, 0.6, 0.6, 0)
 
 [node name="PanelContainer" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 36)
+custom_minimum_size = Vector2(205, 36)
 offset_right = 450.0
 offset_bottom = 48.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_c4m65")
@@ -62,7 +62,7 @@ theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
 [node name="h" type="HBoxContainer" parent="LayerCard/v"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_constants/separation = 8
+theme_override_constants/separation = 4
 
 [node name="Control" type="Control" parent="LayerCard/v/h"]
 layout_mode = 2
@@ -85,8 +85,8 @@ layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 tooltip_text = "Save layer as PNG"
-flat = true
 text = "💾"
+flat = true
 
 [node name="PanelContainer" type="PanelContainer" parent="LayerCard/v/h"]
 material = SubResource("ShaderMaterial_o1dtc")
