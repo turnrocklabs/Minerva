@@ -503,15 +503,24 @@ func _pan_canvas(relative: Vector2) -> void:
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
 	if input_area_camera.zoom.x * factor < 0.1 or input_area_camera.zoom.x * factor > 2.5:
-		return 
-	
-	# Get mouse position relative to the container
-	var mouse_relative = mouse_position - input_area_camera.position
-	#container.scale *= factor
-	input_area_camera.zoom *= factor 
-	# Adjust container position to keep the mouse point stationary
-	var offset = mouse_relative * (factor - 1.0)
-	input_area_camera.position -= offset
+		return
+
+	# Get viewport size (the SubViewport that contains the camera)
+	var viewport_size = input_area_camera.get_viewport().size
+
+	# Mouse position relative to viewport center (camera looks at center by default)
+	var mouse_offset = mouse_position - Vector2(viewport_size) / 2.0
+
+	# World position under mouse = camera_pos + mouse_offset / zoom
+	var world_pos_before = input_area_camera.position + mouse_offset / input_area_camera.zoom
+
+	# Apply zoom
+	input_area_camera.zoom *= factor
+
+	# Adjust camera so world_pos_before stays under mouse
+	# world_pos_before = new_camera_pos + mouse_offset / new_zoom
+	# new_camera_pos = world_pos_before - mouse_offset / new_zoom
+	input_area_camera.position = world_pos_before - mouse_offset / input_area_camera.zoom
 
 
 
