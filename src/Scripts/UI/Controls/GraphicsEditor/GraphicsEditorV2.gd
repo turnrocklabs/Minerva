@@ -47,6 +47,8 @@ signal delete_layer(layer: LayerV2)
 @onready var transform_tool: TransformTool = %TransformTool
 @onready var speech_bubble_tool: SpeechBubbleTool = %SpeechBubbleTool
 @onready var render_view_tool: RenderViewTool = %RenderViewTool
+@onready var eyedropper_tool: EyedropperTool = %EyedropperTool
+@onready var magic_wand_tool: MagicWandTool = %MagicWandTool
 
 
 @onready var tool_options_mapping: = {
@@ -55,6 +57,7 @@ signal delete_layer(layer: LayerV2)
 	bucket_tool: _bucket_options_container,
 	eraser_tool: _eraser_options_container,
 	speech_bubble_tool: _speech_bubble_options,
+	eyedropper_tool: _brush_options_container,
 }
 
 @onready var image_gen_window: Window = %ImageGenWindow
@@ -684,6 +687,14 @@ func _on_layers_container_mouse_entered() -> void:
 func _on_center_view_button_pressed() -> void:
 	layers_container.center_view()
 
+func _on_zoom_in_button_pressed() -> void:
+	var viewport_size = input_area_camera.get_viewport().size
+	_zoom(Vector2(viewport_size) / 2.0, ZOOM_INCREMENT)
+
+func _on_zoom_out_button_pressed() -> void:
+	var viewport_size = input_area_camera.get_viewport().size
+	_zoom(Vector2(viewport_size) / 2.0, ZOOM_DECREMENT)
+
 func _on_add_image_button_pressed() -> void:
 	var fd: = FileDialog.new()
 	
@@ -962,6 +973,8 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		2: _on_bucket_tool_button_toggled(true)
 		3: _on_smudge_tool_button_toggled(true)
 		4: active_tool = null; _on_add_image_button_pressed()
+		5: active_tool = eyedropper_tool
+		6: active_tool = magic_wand_tool
 		_: pass
 	
 
