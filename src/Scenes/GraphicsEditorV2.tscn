@@ -38,11 +38,11 @@
 [ext_resource type="Texture2D" uid="uid://dd64jugx3u72c" path="res://assets/icons/send_icons/send_icon_24_no_bg.png" id="25_30sgg"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="26_30sgg"]
 [ext_resource type="Texture2D" uid="uid://coj8ug8ba8d1k" path="res://assets/icons/Mask-24-24.png" id="28_oylf0"]
-[ext_resource type="Texture2D" path="res://assets/icons/selection_active.svg" id="29_selact"]
-[ext_resource type="Texture2D" path="res://assets/icons/select_all.svg" id="30_selall"]
-[ext_resource type="Texture2D" path="res://assets/icons/deselect.svg" id="31_desel"]
-[ext_resource type="Texture2D" path="res://assets/icons/invert_selection.svg" id="32_invert"]
-[ext_resource type="Texture2D" path="res://assets/icons/delete_selection.svg" id="33_delsel"]
+[ext_resource type="Texture2D" uid="uid://bufam2j57wnr6" path="res://assets/icons/selection_active.svg" id="29_selact"]
+[ext_resource type="Texture2D" uid="uid://4ybv7ln1qk0k" path="res://assets/icons/select_all.svg" id="30_selall"]
+[ext_resource type="Texture2D" uid="uid://cuvsk5phe323f" path="res://assets/icons/deselect.svg" id="31_desel"]
+[ext_resource type="Texture2D" uid="uid://bojjjvd53jve1" path="res://assets/icons/invert_selection.svg" id="32_invert"]
+[ext_resource type="Texture2D" uid="uid://dtub6faqlc6uu" path="res://assets/icons/delete_selection.svg" id="33_delsel"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
 offsets = PackedFloat32Array(0.609626, 1)
@@ -252,7 +252,6 @@ layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Selection active - click for options"
 icon = ExtResource("29_selact")
-flat = true
 
 [node name="PaneToolButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
@@ -1261,6 +1260,7 @@ text = "Select Layers...
 
 [connection signal="resized" from="." to="." method="_on_resized"]
 [connection signal="item_selected" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/ToolsOptionButton" to="." method="_on_tools_option_button_item_selected"]
+[connection signal="about_to_popup" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/SelectionIndicatorButton" to="." method="_on_selection_indicator_about_to_popup"]
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/PaneToolButton" to="." method="_on_pane_tool_button_toggled"]
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
@@ -1271,6 +1271,11 @@ text = "Select Layers...
 [connection signal="color_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer/ColorPickerButton" to="." method="_on_color_picker_button_color_changed"]
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
 [connection signal="text_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/SelectAllButton" to="." method="_on_select_all_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/DeselectButton" to="." method="_on_deselect_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/InvertButton" to="." method="_on_invert_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/DeleteSelectionButton" to="." method="_on_delete_selection_button_pressed"]
+[connection signal="color_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/FillColorPickerButton" to="." method="_on_fill_selection_color_changed"]
 [connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/VBoxContainer/LayerCardsButton" to="." method="_on_layer_cards_button_pressed"]
 [connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/VBoxContainer/PromptButton" to="." method="_on_prompt_button_pressed"]
 [connection signal="draw" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control" to="." method="_on_control_draw"]
@@ -1299,12 +1304,3 @@ text = "Select Layers...
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/ZoomOutButton" to="." method="_on_zoom_out_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/ZoomInButton" to="." method="_on_zoom_in_button_pressed"]
-[connection signal="about_to_popup" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/SelectionIndicatorButton" to="." method="_on_selection_indicator_about_to_popup"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/SelectAllButton" to="." method="_on_select_all_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/DeselectButton" to="." method="_on_deselect_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/InvertButton" to="." method="_on_invert_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/DeleteSelectionButton" to="." method="_on_delete_selection_button_pressed"]
-[connection signal="color_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/FillColorPickerButton" to="." method="_on_fill_selection_color_changed"]
