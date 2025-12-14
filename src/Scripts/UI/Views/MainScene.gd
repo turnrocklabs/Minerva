@@ -55,6 +55,8 @@ func _ready() -> void:
 			%CreateNewNote.popup_centered()
 			%CreateNewNote.notes_container_override = SingletonObject.drawer_notes_container
 	)
+	
+	get_window().files_dropped.connect(_on_files_dropped)
 
 
 var MAX: = 20
@@ -231,9 +233,10 @@ func _on_stop_button_4_pressed() -> void:
 	SingletonObject.AtT._StopConverting()
 
 
-func _input(event):
-	if event.is_action_released("ui_terminal", true):
+func _input(event) -> void:
+	if event.is_action_pressed("ui_terminal", true):
 		terminal_container.visible = not terminal_container.visible
+		accept_event()
 	# Detect mouse button press to start drag
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
@@ -256,6 +259,7 @@ func _input(event):
 @onready var bottom_drawer_control: DrawerNotesManager = %BottomDrawerControl
 @onready var notes_drawer_split: VSplitContainer = %NotesDrawerSplit
 var split_drawer_tween: Tween
+@export var _drawer_anim_duration: = 0.5
 func _on_btn_drawer_pressed() -> void:
 	
 	if split_drawer_tween and split_drawer_tween.is_running():
@@ -265,13 +269,13 @@ func _on_btn_drawer_pressed() -> void:
 		notes_drawer_split.split_offset = 600
 		split_drawer_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
 		bottom_drawer_control.visible = true
-		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 0, 0.7)
+		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 0, _drawer_anim_duration)
 		_open_drawer_notes()
 		bottom_drawer_control.visible = true
 	else:
 		
 		split_drawer_tween = create_tween().set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_LINEAR)
-		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 600, 0.6)
+		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 600, _drawer_anim_duration)
 		
 		await get_tree().create_timer(0.48).timeout
 		bottom_drawer_control.visible = false
@@ -282,7 +286,7 @@ func _on_btn_drawer_pressed() -> void:
 
 
 #reading file and create note in Drawer thread
-func _open_drawer_notes():
+func _open_drawer_notes() -> void:
 	print("Drawer opened")
 	SingletonObject.emit_signal("openDrawerNotes")
 
@@ -297,3 +301,23 @@ func _update_project_label(new_text: String = "", saved_state: bool = true) -> v
 	elif !new_text.is_empty() and !saved_state:
 		base_text = new_text + "*"
 	project_name_label.text = base_text
+
+
+func _on_files_dropped(files: PackedStringArray) -> void:
+	var editor_pane = SingletonObject.editor_pane
+	if editor_pane:
+		if !editor_pane.get_global_rect().has_point(get_global_mouse_position()):
+			return
+	if editor_pane.Tabs.get_tab_count() < 1:
+		for file in files:
+			if SingletonObject.supported_image_formats.has(file.get_extension()): 
+				editor_pane.add(Editor.Type.GRAPHICS, file, file.get_file())
+			elif SingletonObject.supported_text_formats.has(file.get_extension()): 
+				editor_pane.add(Editor.Type.TEXT, file, file.get_file())
+		return
+	else:
+		var editor: = editor_pane.Tabs.get_current_tab_control() as Editor
+		if editor.type == Editor.Type.GRAPHICS:
+			for file in files:
+				var image: = Image.load_from_file(file)
+				editor.graphics_editor.create_new_image_layer(file.get_file(), image)

@@ -7,8 +7,8 @@ signal _tab_metadata_ready()
 @export var _controls_container: Control
 
 
-# func _ready():
-# 	_on_new_tab_button_pressed() # starting with one tab open already
+#func _ready():
+	#_on_new_tab_button_pressed() # starting with one tab open already
 
 
 func _on_visibility_changed() -> void:

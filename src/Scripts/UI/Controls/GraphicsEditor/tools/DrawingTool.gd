@@ -47,6 +47,16 @@ var _max_cached_radius = 100
 
 var current_stroke_command: GraphicsEditorUndo.DrawStrokeCommand
 
+# Stroke buffer for preventing alpha accumulation within a single stroke
+var _stroke_buffer: Image = null
+var _stroke_brush_color: Color  # Store brush color at stroke start
+var _layer_backup: Image = null  # Backup of layer for visual feedback during stroke
+
+# Performance optimization: dirty rectangle tracking
+var _stroke_dirty_rect: Rect2i = Rect2i()
+var _last_preview_msec: int = 0
+const PREVIEW_INTERVAL_MS: int = 16  # ~60fps throttle
+
 func _ready() -> void:
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
@@ -124,8 +134,9 @@ func get_bounds_point_for_expansion(center: Vector2, radius: int) -> Vector2:
 	return bounds_point
 
 func get_actual_brush_radius(pressure: float) -> int:
-	var visual_zoom = editor.layers_container.scale.x
-	var actual_diameter = (brush_size * pressure) / visual_zoom
+	var camera_zoom = editor.input_area_camera.zoom.x
+	# Divide by camera zoom to keep brush visually constant in screen pixels
+	var actual_diameter = (brush_size * pressure) / camera_zoom
 	var radius = int(ceil(actual_diameter * 0.5))
 	return max(radius, 1)
 
@@ -188,6 +199,15 @@ func _start_stroke(event: InputEvent) -> void:
 
 	current_stroke_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
 
+	# Initialize stroke buffer for preventing alpha accumulation
+	var layer_size = editor.active_layer.image.get_size()
+	_stroke_buffer = Image.create(layer_size.x, layer_size.y, false, Image.FORMAT_RGBA8)
+	_stroke_buffer.fill(Color.TRANSPARENT)
+	_stroke_brush_color = brush_color
+	_layer_backup = editor.active_layer.image.duplicate()
+	_stroke_dirty_rect = Rect2i()  # Reset dirty rect for new stroke
+	_last_preview_msec = 0  # Reset throttle timer
+
 
 func _add_stroke_point(event: InputEvent) -> void:
 	var pos: Vector2 = event.position
@@ -208,9 +228,9 @@ func _add_stroke_point(event: InputEvent) -> void:
 		_last_pressure = p
 		
 		# Expand & localize before optional "touchdown" stamp
-		var radius := get_actual_brush_radius(_smoothed_pressure)
-		var bounds_point := get_bounds_point_for_expansion(pos, radius)
-		var _offset := editor.active_layer.expand_to_point(bounds_point)
+		var _radius := get_actual_brush_radius(_smoothed_pressure)
+		var _bounds_point := get_bounds_point_for_expansion(pos, _radius)
+		var _offset := editor.active_layer.expand_to_point(_bounds_point)
 		editor.active_layer.position -= _offset
 		event = editor.active_layer.localize_input(event)
 		pos = event.position
@@ -222,6 +242,9 @@ func _add_stroke_point(event: InputEvent) -> void:
 			brush_color,
 			brush_size * (p if _use_pressure else 1.0)
 		)
+		# Always update on first point of stroke
+		_update_visual_preview()
+		_last_preview_msec = Time.get_ticks_msec()
 		editor.queue_redraw()
 		
 		_last_drawing_position = pos
@@ -252,7 +275,10 @@ func _add_stroke_point(event: InputEvent) -> void:
 	
 	_last_drawing_position = pos
 	_last_pressure = _smoothed_pressure
-	editor.queue_redraw()
+	# Throttle preview updates for performance
+	if _should_update_preview():
+		_update_visual_preview()
+		editor.queue_redraw()
 
 func _end_stroke(event: InputEvent) -> void:
 	# Handle single click - draw one dot
@@ -267,14 +293,22 @@ func _end_stroke(event: InputEvent) -> void:
 			brush_color,
 			brush_size * p
 		)
-		editor.queue_redraw()
-	
+
+	# Final composite: restore backup and composite stroke buffer
+	if _stroke_buffer and _layer_backup:
+		editor.active_layer.image.blit_rect(_layer_backup, Rect2i(Vector2i.ZERO, _layer_backup.get_size()), Vector2i.ZERO)
+		_composite_stroke_buffer_to(editor.active_layer.image, _layer_backup)
+	_stroke_buffer = null
+	_layer_backup = null
+	_stroke_dirty_rect = Rect2i()  # Reset dirty rect
+	editor.queue_redraw()
+
 	# Finalize and execute the drawing command
 	if current_stroke_command:
 		current_stroke_command.finalize_stroke()  # Captures "after" state
 		editor.execute_command(current_stroke_command)
 		current_stroke_command = null
-	
+
 	drawing = false
 	_single_click = false
 	_waiting_for_motion = false
@@ -319,33 +353,57 @@ func _draw_continuous_line(start_pos: Vector2, end_pos: Vector2, start_pressure:
 		)
 
 func _draw_brush_stamp(target_image: Image, center: Vector2, color: Color, diameter: float) -> void:
-	var visual_zoom = editor.layers_container.scale.x
-	var actual_diameter = diameter / visual_zoom
+	var camera_zoom = editor.input_area_camera.zoom.x
+	# Divide by camera zoom to keep brush visually constant in screen pixels
+	var actual_diameter = diameter / camera_zoom
 	var radius = max(1, int(ceil(actual_diameter * 0.5)))
-	
+
 	var pixels = _get_cached_circle_pixels(radius)
 	var center_x = int(center.x)
 	var center_y = int(center.y)
-	var img_width = target_image.get_width()
-	var img_height = target_image.get_height()
-	
+
+	# Use stroke buffer if available, otherwise draw directly
+	var draw_target: Image = _stroke_buffer if _stroke_buffer else target_image
+	var use_max_alpha: bool = _stroke_buffer != null
+
+	# Track dirty region for optimized compositing
+	if use_max_alpha:
+		_expand_dirty_rect(Vector2i(center_x, center_y), radius)
+
+	var img_width = draw_target.get_width()
+	var img_height = draw_target.get_height()
+
 	for offset in pixels:
 		var x = center_x + offset.x
 		var y = center_y + offset.y
-		
+
 		if x >= 0 and x < img_width and y >= 0 and y < img_height:
+			# Skip pixels outside of selection
+			if not editor.is_pixel_selected(x, y):
+				continue
+
 			var alpha_factor = offset.z
-			
-			if alpha_factor >= 0.99:
-				target_image.set_pixel(x, y, color)
+			var stamp_alpha = color.a * alpha_factor
+
+			if stamp_alpha <= 0.01:
+				continue
+
+			if use_max_alpha:
+				# Stroke buffer mode: use MAX alpha to prevent accumulation
+				var existing = draw_target.get_pixel(x, y)
+				if stamp_alpha > existing.a:
+					# Store coverage alpha in the buffer (use white as placeholder)
+					draw_target.set_pixel(x, y, Color(1.0, 1.0, 1.0, stamp_alpha))
 			else:
-				var new_color = color
-				new_color.a *= alpha_factor
-				
-				if new_color.a > 0.01:
-					var existing_color = target_image.get_pixel(x, y)
+				# Direct mode (fallback): original blending behavior
+				if alpha_factor >= 0.99:
+					draw_target.set_pixel(x, y, color)
+				else:
+					var new_color = color
+					new_color.a = stamp_alpha
+					var existing_color = draw_target.get_pixel(x, y)
 					var blended_color = _blend_colors(existing_color, new_color)
-					target_image.set_pixel(x, y, blended_color)
+					draw_target.set_pixel(x, y, blended_color)
 
 func _get_cached_circle_pixels(radius: int) -> Array:
 	radius = min(radius, _max_cached_radius)
@@ -371,7 +429,67 @@ func _get_cached_circle_pixels(radius: int) -> Array:
 	_circle_cache[radius] = pixels
 	return pixels
 
+func _composite_stroke_buffer_to(target_image: Image, source_backup: Image) -> void:
+	# Use dirty rect for optimized compositing
+	_composite_stroke_buffer_region(target_image, source_backup, _stroke_dirty_rect)
+
+
+func _composite_stroke_buffer_region(target_image: Image, source_backup: Image, region: Rect2i) -> void:
+	if not _stroke_buffer:
+		return
+	if region.size == Vector2i.ZERO:
+		return
+
+	# Clamp region to buffer bounds
+	var buffer_size = _stroke_buffer.get_size()
+	region = region.intersection(Rect2i(Vector2i.ZERO, buffer_size))
+
+	for y in range(region.position.y, region.end.y):
+		for x in range(region.position.x, region.end.x):
+			var buffer_pixel = _stroke_buffer.get_pixel(x, y)
+			if buffer_pixel.a > 0.01:
+				# Apply brush color with the stored alpha
+				var stroke_color = _stroke_brush_color
+				stroke_color.a *= buffer_pixel.a
+
+				var existing_color = source_backup.get_pixel(x, y)
+				var blended_color = _blend_colors(existing_color, stroke_color)
+				target_image.set_pixel(x, y, blended_color)
+
+
+func _update_visual_preview() -> void:
+	# Restore layer from backup and composite current stroke buffer for display
+	# Uses dirty rect for optimized region-only operations
+	if _stroke_buffer and _layer_backup and _stroke_dirty_rect.size != Vector2i.ZERO:
+		# Only blit and composite the dirty region
+		editor.active_layer.image.blit_rect(_layer_backup, _stroke_dirty_rect, _stroke_dirty_rect.position)
+		_composite_stroke_buffer_region(editor.active_layer.image, _layer_backup, _stroke_dirty_rect)
+
+
+func _expand_dirty_rect(center: Vector2i, radius: int) -> void:
+	var stamp_rect = Rect2i(center - Vector2i(radius, radius), Vector2i(radius * 2 + 1, radius * 2 + 1))
+	# Clamp to image bounds
+	var img_size = _stroke_buffer.get_size() if _stroke_buffer else Vector2i.ZERO
+	stamp_rect = stamp_rect.intersection(Rect2i(Vector2i.ZERO, img_size))
+	if stamp_rect.size == Vector2i.ZERO:
+		return
+	if _stroke_dirty_rect.size == Vector2i.ZERO:
+		_stroke_dirty_rect = stamp_rect
+	else:
+		_stroke_dirty_rect = _stroke_dirty_rect.merge(stamp_rect)
+
+
+func _should_update_preview() -> bool:
+	var now = Time.get_ticks_msec()
+	if now - _last_preview_msec >= PREVIEW_INTERVAL_MS:
+		_last_preview_msec = now
+		return true
+	return false
+
+
 func _blend_colors(bottom: Color, top: Color) -> Color:
+	if editor.is_active_layer_mask and top.r == bottom.r and top.g == bottom.g and top.b == bottom.b:
+		return bottom
 	if top.a >= 0.99:
 		return top
 	if top.a <= 0.01:
@@ -396,7 +514,7 @@ func create_contrast_circle_cursor(radius: int) -> Image:
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	
-	var center = size / 2
+	var center: int = int(size / 2.0)
 	draw_circle_outline(image, center, radius + 1, Color.BLACK)
 	draw_circle_outline(image, center, radius, Color.WHITE)
 	

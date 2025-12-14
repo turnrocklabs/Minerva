@@ -206,7 +206,7 @@ func set_image_preview(path: String) -> void:
 func _on_image_files_dropped(files):
 	if %DropImageControl.visible:
 		var path: String = files[0]# get the first file to be dropped
-		var file_format = get_file_format(path)# get the file format
+		var file_format = path.get_extension()# get the file format
 		
 		# check if file format is supported
 		if file_format in SingletonObject.supported_image_formats:
@@ -237,10 +237,6 @@ func _on_drop_image_control_gui_input(event: InputEvent) -> void:
 				paste_image_from_clipboard()
 
 
-func get_file_format(path: String) -> String:
-	return path.split(".")[path.split(".").size() -1]
-
-
 # check if display server can paste image from clipboard and does so
 func paste_image_from_clipboard():
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
@@ -262,7 +258,7 @@ func paste_image_from_clipboard():
 
 func get_image_file_from_clipboard():
 	var path = DisplayServer.clipboard_get().split("\n")[0]
-	var file_format = get_file_format(path)
+	var file_format = path.get_extension()
 	print("path file: " + path)
 	if file_format in SingletonObject.supported_image_formats:
 		set_image_preview(path)

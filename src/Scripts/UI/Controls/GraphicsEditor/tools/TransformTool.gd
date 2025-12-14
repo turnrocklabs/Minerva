@@ -92,8 +92,9 @@ func handle_input_event(event: InputEvent) -> bool:
 
 	elif event is InputEventMouseMotion and not _is_transforming and editor.active_layer:
 		# Update cursor when hovering over handles
-		var local_pos = editor.active_layer.get_global_transform().affine_inverse() * event.position
-		var hover_point = editor.active_layer.get_rect_by_mouse_position(local_pos)
+		pass
+		#var local_pos = editor.active_layer.get_global_transform().affine_inverse() * event.position
+		#var hover_point = editor.active_layer.get_rect_by_mouse_position(local_pos)
 
 	return false
 

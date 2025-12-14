@@ -291,10 +291,10 @@ func _contains_internal_chat_service(services: Array) -> bool:
 
 
 ## Truncates long action names for display
-func _truncate_name(name: String) -> String:
-	if name.length() > 17:
-		return "%s..." % name.left(20)
-	return name
+func _truncate_name(name_: String) -> String:
+	if name_.length() > 17:
+		return "%s..." % name_.left(20)
+	return name_
 
 
 ## Handles dynamic service selection (adds CoreProviders)

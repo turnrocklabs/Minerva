@@ -3,6 +3,7 @@ extends Node
 # Signal emitted when a specific service/action is chosen from the preferences popup
 @warning_ignore("unused_signal")
 signal service_selected(service: Service)
+@warning_ignore("unused_signal")
 signal service_deselected(service: Service)
 
 signal service_connected(service: Service)
@@ -222,7 +223,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 
 # --- NEW: Handles the response from the HTTP authentication request ---
-func _on_auth_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+func _on_auth_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray):
 	print("core: auth request callback")
 	if result != HTTPRequest.RESULT_SUCCESS:
 		var err_msg = "HTTP Auth Request Failed: %s" % _get_http_result_string(result)

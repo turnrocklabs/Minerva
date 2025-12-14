@@ -212,7 +212,7 @@ func _parse_diff(diff: String) -> Array:
 # HUNK LOCATION (fuzzy even for low-context)
 # ══════════════════════════════════════════════════════════════════
 func _find_hunk_location(doc: Array, h: Dictionary) -> Dictionary:
-	var exp := int(h["old_start"])
+	var _exp := int(h["old_start"])
 	var patt:Array = []
 	var pts :Array = []
 	for e in h["body"]:
@@ -226,10 +226,10 @@ func _find_hunk_location(doc: Array, h: Dictionary) -> Dictionary:
 	var rad := INITIAL_SEARCH_RADIUS
 
 	while rad <= MAX_SEARCH_RADIUS:
-		var start_idx:int = max(0, exp - rad)
-		var end_idx:int = min(doc.size() - patt.size(), exp + rad)
+		var start_idx:int = max(0, _exp - rad)
+		var end_idx:int = min(doc.size() - patt.size(), _exp + rad)
 		for pos in range(start_idx, end_idx + 1):
-			var sc := _calculate_match_score(doc, pos, patt, pts, exp)
+			var sc := _calculate_match_score(doc, pos, patt, pts, _exp)
 			if sc > best_c:
 				best_c = sc
 				best_p = pos
@@ -241,7 +241,7 @@ func _find_hunk_location(doc: Array, h: Dictionary) -> Dictionary:
 		rad = min(rad * 2, MAX_SEARCH_RADIUS)
 
 	if best_p == -1:
-		best_p = exp     # fallback
+		best_p = _exp     # fallback
 		best_c = 0.0
 		candidates = 1
 
@@ -251,7 +251,7 @@ func _find_hunk_location(doc: Array, h: Dictionary) -> Dictionary:
 		"unique"    : candidates == 1
 	}
 
-func _calculate_match_score(doc:Array, pos:int, patt:Array, pts:Array, exp:int) -> float:
+func _calculate_match_score(doc:Array, pos:int, patt:Array, pts:Array, _exp:int) -> float:
 	if pos < 0 or pos + patt.size() > doc.size():
 		return 0.0
 	var exact := 0.0
@@ -266,7 +266,7 @@ func _calculate_match_score(doc:Array, pos:int, patt:Array, pts:Array, exp:int) 
 			fuzzy += 0.7
 	var base   := exact / patt.size()
 	var weight := fuzzy / (patt.size() * 1.0)
-	var dist   = abs(pos - exp)
+	var dist   = abs(pos - _exp)
 	var pen    := (1.0 if dist == 0 else clampf(1.0 - float(dist) / (MAX_SEARCH_RADIUS * 2), 0.5, 1.0))
 	return (base * 0.5 + weight * 0.5) * pen
 

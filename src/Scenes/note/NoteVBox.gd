@@ -15,6 +15,7 @@ static var _remove_icon: = preload("res://assets/icons/remove.svg")
 
 @onready var _remote_option_container: Container = %RemoteOptionsContainer
 @onready var _remote_check_box: CheckBox = %RemoteCheckBox
+@onready var _remote_upload_label: Label = %RemoteUploadLabel
 @onready var _remote_service_label: Label = %RemoteServiceLabel
 
 @onready var _bulk_upload_button: Button = %BulkUploadButton
@@ -25,7 +26,16 @@ const _bulk_button_tooltip: = "Upload local notes (%s)"
 
 @onready var _remove_all_button: Button = %RemoveAllButton
 
-var supports_remote: = true
+var supports_remote: = true:
+	set(value):
+		supports_remote = value
+
+		if is_node_ready():
+			_remote_check_box.visible = supports_remote
+			_remote_upload_label.visible = supports_remote
+			_remote_service_label.visible = supports_remote
+			_remote_option_container.visible = supports_remote
+			_bulk_upload_button.visible = supports_remote
 
 var uuid: = ""
 
@@ -48,10 +58,11 @@ func _ready() -> void:
 	_vbox.child_entered_tree.connect(_on_vbox_child_entered_tree)
 	_vbox.child_exiting_tree.connect(_on_vbox_child_exiting_tree)
 
-	if not supports_remote:
-		_remote_check_box.visible = false
-		_remote_service_label.visible = false
-		_remote_option_container.visible = false
+	_remote_check_box.visible = supports_remote
+	_remote_upload_label.visible = supports_remote
+	_remote_service_label.visible = supports_remote
+	_remote_option_container.visible = supports_remote
+	_bulk_upload_button.visible = supports_remote
 	
 	auto_upload = _auto_upload_backing
 	
@@ -135,10 +146,16 @@ func _get_local_notes(exclude_queued_notes: = true) -> Array:
 func _on_bulk_upload_button_pressed() -> void:
 	var notes: = _get_local_notes()
 
+	if not SingletonObject.notes_sync_manger.active_service:
+		SingletonObject.ErrorDisplay(
+			"Failed",
+			"No service for remote notes active.\nCheck if you are connected to the Core and if remote note service is available."
+		)
+		return
+
+
 	var success: = await SingletonObject.notes_sync_manger.sync_notes(notes, false)
 
-	# we'll just display the warning for notes we passed, even tho sync_notes updates other notes also,
-	# that update is just the order field
 	if not success:
 		SingletonObject.ErrorDisplay("Failed", "Couldn't upload the following notes:\n %s" % "\n".join(notes))
 

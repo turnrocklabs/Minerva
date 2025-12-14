@@ -133,7 +133,7 @@ func _continue_erase(event: InputEvent) -> void:
 	_last_drawing_position = event.position
 	editor.queue_redraw()
 
-func _end_erase(event: InputEvent) -> void:
+func _end_erase(_event: InputEvent) -> void:
 	# Handle single click - already erased in _start_erase
 	# No additional action needed for single click
 	
@@ -149,7 +149,7 @@ func _end_erase(event: InputEvent) -> void:
 # Optimized eraser stamp
 func _erase_stamp(target_image: Image, center: Vector2, diameter: int) -> void:
 	# Get cached pixel pattern for this radius
-	var radius = diameter / 2
+	var radius: int = int(diameter / 2.0)
 	if radius < 1: radius = 1
 	
 	var pixels = _get_cached_circle_pixels(radius)
@@ -165,8 +165,11 @@ func _erase_stamp(target_image: Image, center: Vector2, diameter: int) -> void:
 	for offset in pixels:
 		var x = center_x + offset.x
 		var y = center_y + offset.y
-		
+
 		if x >= 0 and x < img_width and y >= 0 and y < img_height:
+			# Skip pixels outside of selection
+			if not editor.is_pixel_selected(x, y):
+				continue
 			target_image.set_pixel(x, y, Color.TRANSPARENT)
 
 # Get or create cached circle pixel pattern
@@ -236,7 +239,7 @@ func create_contrast_circle_cursor(radius: int) -> Image:
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	
-	var center = size / 2
+	var center: int = int(size / 2.0)
 	
 	# Draw black outline (larger circle)
 	draw_circle_outline(image, center, radius + 1, Color.BLACK)

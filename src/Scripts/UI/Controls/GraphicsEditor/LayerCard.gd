@@ -4,12 +4,14 @@ extends PanelContainer
 signal layer_clicked(button_index: int)
 signal layer_selected()
 signal layer_deselected()
+@warning_ignore("unused_signal")
 signal reorder(to: int)
 
 enum ContextMenuItem {
 	VISIBILITY = 0,
 	REMOVE = 1,
 	MERGE = 2,
+	SAVE_PNG = 3,
 }
 
 const _scene: = preload("res://Scenes/LayerCard.tscn")
@@ -36,7 +38,7 @@ var selected: = false:
 				layer.outline_visible = false
 				layer.transform_rect_visible = false
 				layer_deselected.emit()
-		
+				name_line_edit.release_focus()
 		if layer:
 			layer.queue_redraw()
 		
@@ -51,14 +53,15 @@ var layer: LayerV2:
 
 		queue_redraw()
 
-
 @onready var name_line_edit: LineEdit = %Name
 @onready var texture_rect: TextureRect = %TextureRect
 @onready var visibility_check_button: CheckButton = %VisibilityCheckButton
+@onready var layer_card: Button = %LayerCard
 
 @onready var drop_above_separator: Control = %DropAboveSeparator
 @onready var drop_below_separator: Control = %DropBelowSeparator
 @onready var context_menu: PopupMenu = %ContextMenu
+@onready var save_button: Button = %SaveButton
 
 static func create(editor_: GraphicsEditorV2, layer_: LayerV2) -> LayerCard:
 	var lc: LayerCard = _scene.instantiate()
@@ -140,6 +143,7 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 
 	return self
 
+
 func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
 	if not data is LayerCard:
 		return false
@@ -167,11 +171,19 @@ func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
 
 func _drop_data(at_position: Vector2, data: Variant) -> void:
 	if not data is LayerCard: return
-
+	data = data as LayerCard
+	
+	if layer.type == LayerV2.Type.IMAGE or layer.type == LayerV2.Type.DRAWING:
+		if data.layer.type == LayerV2.Type.MASK:
+			self.set_meta("linked_mask_layercard", data)
+			layer.set_meta("linked_mask_layer", data.layer)
+			layer_card.tooltip_text = "Linked Mask: " + data.layer.name
+			return
 	if at_position.y < size.y / 2:
 		data.reorder.emit(get_index())
 	else:
 		data.reorder.emit(get_index()+1)
+
 
 func _on_visibility_check_button_toggled(toggled_on: bool) -> void:
 	layer.visible = toggled_on
@@ -184,13 +196,22 @@ func _on_mouse_exited() -> void:
 
 func _on_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
-
+	
 		if event.is_pressed():
 			layer_clicked.emit(event.button_index)
-
+	
 			if event.button_index == MOUSE_BUTTON_RIGHT:
-				context_menu.position = DisplayServer.mouse_get_position()
-				context_menu.popup()
+				#context_menu.position = DisplayServer.mouse_get_position()
+				#context_menu.popup()
+				name_line_edit.grab_focus()
+				name_line_edit.select_all()
+			elif event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
+				name_line_edit.grab_focus()
+				name_line_edit.select_all()
+			elif event.button_index == MOUSE_BUTTON_LEFT:
+				name_line_edit.release_focus()
+			
+			accept_event()
 
 
 func _on_layer_visibility_changed():
@@ -205,6 +226,7 @@ func _setup_context_menu():
 	context_menu.add_item("Hide", ContextMenuItem.VISIBILITY)
 	context_menu.add_item("Remove", ContextMenuItem.REMOVE)
 	context_menu.add_item("Merge", ContextMenuItem.MERGE)
+	context_menu.add_item("Save as PNG", ContextMenuItem.SAVE_PNG)
 
 
 func _on_context_menu_id_pressed(id: int) -> void:
@@ -213,9 +235,10 @@ func _on_context_menu_id_pressed(id: int) -> void:
 			layer.visible = not layer.visible
 		ContextMenuItem.REMOVE:
 			delete_layer()
-			
 		ContextMenuItem.MERGE:
 			editor.merge_layers(editor.selected_layers.duplicate())
+		ContextMenuItem.SAVE_PNG:
+			_on_save_button_pressed()
 
 
 func _on_context_menu_about_to_popup() -> void:
@@ -239,5 +262,54 @@ func _on_name_focus_exited() -> void:
 func delete_layer() -> void:
 	if editor != null:
 		editor.delete_layer.emit(layer)
-	layer.queue_free()
+	layer_selected.disconnect(editor._on_layer_card_selected)
+	layer_deselected.disconnect(editor._on_layer_card_deselected)
+	reorder.disconnect(editor._on_layer_card_reorder)
+	layer_clicked.disconnect(editor._on_layer_card_clicked)
 	queue_free()
+
+
+func _on_save_button_pressed() -> void:
+	if not layer:
+		return
+
+	var image_to_save: Image
+
+	match layer.type:
+		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING, LayerV2.Type.MASK:
+			if not layer.image:
+				return
+			image_to_save = layer.image.duplicate()
+		LayerV2.Type.SPEECH_BUBBLE:
+			var texture = await get_texture(layer.speech_bubble)
+			image_to_save = texture.get_image()
+
+	if image_to_save == null:
+		return
+
+	var fd := FileDialog.new()
+	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*.png", "PNG Image")
+	fd.current_file = layer.name + ".png"
+
+	editor.add_child(fd)
+	fd.popup_centered(Vector2i(800, 600))
+
+	var path = await fd.file_selected
+	fd.queue_free()
+
+	if path.is_empty():
+		return
+
+	# Ensure .png extension
+	if not path.ends_with(".png"):
+		path += ".png"
+
+	# Convert to RGBA8 if needed
+	if image_to_save.get_format() != Image.FORMAT_RGBA8:
+		image_to_save.convert(Image.FORMAT_RGBA8)
+
+	var error = image_to_save.save_png(path)
+	if error != OK:
+		push_error("Failed to save layer: " + str(error))

@@ -171,10 +171,10 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				var tab_name = "graphics " + str(Tabs.get_tab_count() )
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
-				#editor_node.graphics_editor.grab_focus()
 	
 	return editor_node
-	
+
+
 func get_open_editors() -> Array[Editor]:
 	var editors: Array[Editor] = []
 	for child in self.Tabs.get_children():
@@ -190,6 +190,7 @@ func is_named_being_used(proposed_name: String) -> bool:
 			print("tab name baing used already")
 			return true
 	return false
+
 
 func editor_name_to_use(proposed_name: String) -> String:
 	var collisions = 0
@@ -231,6 +232,7 @@ func toggle_horizontal_split() -> void:
 	_copy_children_to(LeftControl, RightControl)
 
 	RightControl.visible = not RightControl.visible
+
 
 func toggle_vertical_split() -> void:
 	RightControl.visible = false

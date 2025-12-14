@@ -164,7 +164,7 @@ func _perform_smudge(event: InputEvent) -> void:
 	_last_pressure = _smoothed_pressure
 	editor.queue_redraw()
 
-func _end_smudge(event: InputEvent) -> void:
+func _end_smudge(_event: InputEvent) -> void:
 	# Handle single click - apply one smudge stamp
 	if _single_click:
 		_apply_smudge_stamp(
@@ -221,8 +221,13 @@ func _apply_smudge_stamp(target_image: Image, center: Vector2, diameter: float) 
 		var offset = pixels[i]
 		var x = center_x + int(offset.x)
 		var y = center_y + int(offset.y)
-		
+
 		if x >= 0 and x < img_width and y >= 0 and y < img_height:
+			# Skip pixels outside of selection
+			if not editor.is_pixel_selected(x, y):
+				buffer_index += 4
+				continue
+
 			# Get brush color from buffer
 			if buffer_index + 3 < _brush_buffer.size():
 				var brush_r = float(_brush_buffer[buffer_index]) / 255.0
@@ -230,19 +235,19 @@ func _apply_smudge_stamp(target_image: Image, center: Vector2, diameter: float) 
 				var brush_b = float(_brush_buffer[buffer_index + 2]) / 255.0
 				var brush_a = float(_brush_buffer[buffer_index + 3]) / 255.0
 				var brush_color = Color(brush_r, brush_g, brush_b, brush_a)
-				
+
 				if brush_color.a > 0.01:  # Only apply if brush has content
 					var existing_color = target_image.get_pixel(x, y)
 					var alpha_factor = offset.z  # Brush shape falloff
-					
+
 					# Calculate blend factor
 					var blend_factor = smudge_strength * alpha_factor
 					blend_factor = clamp(blend_factor, 0.0, 1.0)
-					
+
 					# Blend the colors
 					var final_color = _blend_colors(existing_color, brush_color, blend_factor)
 					target_image.set_pixel(x, y, final_color)
-		
+
 		buffer_index += 4
 	
 	# Update brush data for next stamp (pickup from current position)
@@ -340,7 +345,7 @@ func create_contrast_circle_cursor(radius: int) -> Image:
 	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 	
-	var center = size / 2
+	var center: int = int(size / 2.0)
 	draw_circle_outline(image, center, radius + 1, Color.BLACK)
 	draw_circle_outline(image, center, radius, Color.WHITE)
 	
