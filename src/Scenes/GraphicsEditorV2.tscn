@@ -1,4 +1,4 @@
-[gd_scene load_steps=54 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=53 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -13,12 +13,11 @@
 [ext_resource type="Script" uid="uid://dcrsoqmlvvpn6" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SmudgeTool.gd" id="8_3hqvt"]
 [ext_resource type="Script" uid="uid://dhme7wn27lxaa" path="res://Scripts/UI/Controls/GraphicsEditor/LayersContainer.gd" id="8_fjkto"]
 [ext_resource type="Script" uid="uid://i5o2j3imd6hw" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PanTool.gd" id="8_oylf0"]
+[ext_resource type="Script" uid="uid://dm13dqe0exigf" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EyedropperTool.gd" id="9_eyedr"]
+[ext_resource type="Script" uid="uid://bxtqrbmhr3w5n" path="res://Scripts/UI/Controls/GraphicsEditor/tools/MagicWandTool.gd" id="9_mwand"]
 [ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="9_u8jc2"]
 [ext_resource type="Script" uid="uid://bh0obx7hk7otd" path="res://Scripts/UI/Controls/GraphicsEditor/tools/RenderViewTool.gd" id="9_vtsnj"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EyedropperTool.gd" id="9_eyedr"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/MagicWandTool.gd" id="9_mwand"]
-[ext_resource type="Texture2D" uid="uid://p3y11cimjw0f" path="res://assets/icons/color_picker_pipette.svg" id="10_pipet"]
-[ext_resource type="Texture2D" uid="uid://bwxjkrg3jtd87" path="res://assets/icons/Mask-24-24.png" id="10_mwand"]
+[ext_resource type="Texture2D" uid="uid://b05e37s8h1cni" path="res://assets/icons/color_picker_pipette.svg" id="10_pipet"]
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="10_vnb8d"]
 [ext_resource type="Texture2D" uid="uid://dxlwuia2g3di4" path="res://assets/icons/graphics_editor/eraser.svg" id="11_m2a1o"]
 [ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
@@ -238,7 +237,7 @@ popup/item_5/text = "Eyedropper"
 popup/item_5/icon = ExtResource("10_pipet")
 popup/item_5/id = 5
 popup/item_6/text = "Magic Wand"
-popup/item_6/icon = ExtResource("10_mwand")
+popup/item_6/icon = ExtResource("28_oylf0")
 popup/item_6/id = 6
 
 [node name="PaneToolButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
@@ -1241,6 +1240,3 @@ text = "Select Layers...
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/ZoomOutButton" to="." method="_on_zoom_out_button_pressed"]
-[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/ZoomInButton" to="." method="_on_zoom_in_button_pressed"]

@@ -484,30 +484,26 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _pan_canvas(relative: Vector2) -> void:
-	layers_container.position += relative * 1.5
+	input_area_camera.offset -= relative * 1.25 * (1 / input_area_camera.zoom.x) 
 
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
 	if input_area_camera.zoom.x * factor < 0.1 or input_area_camera.zoom.x * factor > 2.5:
 		return
-
 	# Get viewport size (the SubViewport that contains the camera)
 	var viewport_size = input_area_camera.get_viewport().size
-
+	
 	# Mouse position relative to viewport center (camera looks at center by default)
 	var mouse_offset = mouse_position - Vector2(viewport_size) / 2.0
-
+	
 	# World position under mouse = camera_pos + mouse_offset / zoom
 	var world_pos_before = input_area_camera.position + mouse_offset / input_area_camera.zoom
-
+	
 	# Apply zoom
 	input_area_camera.zoom *= factor
-
+	
 	# Adjust camera so world_pos_before stays under mouse
-	# world_pos_before = new_camera_pos + mouse_offset / new_zoom
-	# new_camera_pos = world_pos_before - mouse_offset / new_zoom
 	input_area_camera.position = world_pos_before - mouse_offset / input_area_camera.zoom
-
 
 
 signal graphics_editor_changed
@@ -667,16 +663,13 @@ func _on_smudge_tool_button_toggled(toggled_on: bool) -> void:
 func _on_layers_container_mouse_entered() -> void:
 	Input.set_custom_mouse_cursor(_custom_cursor, _custom_cursor_shape, _custom_cursor_hotspot)
 
-func _on_center_view_button_pressed() -> void:
-	layers_container.center_view()
-
-func _on_zoom_in_button_pressed() -> void:
-	var viewport_size = input_area_camera.get_viewport().size
-	_zoom(Vector2(viewport_size) / 2.0, ZOOM_INCREMENT)
-
-func _on_zoom_out_button_pressed() -> void:
-	var viewport_size = input_area_camera.get_viewport().size
-	_zoom(Vector2(viewport_size) / 2.0, ZOOM_DECREMENT)
+#func _on_zoom_in_button_pressed() -> void:
+	#var viewport_size = input_area_camera.get_viewport().size
+	#_zoom(Vector2(viewport_size) / 2.0, ZOOM_INCREMENT)
+#
+#func _on_zoom_out_button_pressed() -> void:
+	#var viewport_size = input_area_camera.get_viewport().size
+	#_zoom(Vector2(viewport_size) / 2.0, ZOOM_DECREMENT)
 
 func _on_add_image_button_pressed() -> void:
 	var fd: = FileDialog.new()
@@ -901,7 +894,6 @@ func _on_layer_cards_button_pressed() -> void:
 			send_action_button.hide()
 	else:
 		layer_cards_popup_panel.hide()
-
 
 
 func _on_layer_cards_popup_panel_popup_hide() -> void:
@@ -1726,8 +1718,19 @@ func enable_ai_features() -> void:
 	toggle_enable_ai_fields()
 
 
+func _on_center_view_button_pressed() -> void:
+	if active_layer == null:
+		return
+	var pos: = active_layer.get_rect().get_center()
+	
+	pos = input_area_camera.get_canvas_transform().basis_xform(pos)
+	input_area_camera.offset = pos
+	input_area_camera.queue_redraw()
+	#layers_container.center_view()
+
+
 func _on_zoom_out_button_pressed() -> void:
-	_zoom(layers_container.position + (layers_container.size /2.0) , ZOOM_DECREMENT - 0.1)
+	_zoom(layers_container.position + (layers_container.size /2.0) , ZOOM_DECREMENT - 0.15)
 
 func _on_zoom_in_button_pressed() -> void:
-	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.1)
+	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.15)
