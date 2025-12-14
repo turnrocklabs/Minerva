@@ -1,6 +1,10 @@
 class_name MagicWandTool
 extends BaseTool
 
+enum SelectionMode { REPLACE, ADD, SUBTRACT, INTERSECT }
+
+var selection_mode: SelectionMode = SelectionMode.REPLACE
+
 func _ready() -> void:
 	super()
 	editor.active_tool_changed.connect(_on_tool_changed)
@@ -17,12 +21,22 @@ func handle_input_event(event: InputEvent) -> bool:
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.is_pressed():
+			# Determine selection mode from modifier keys
+			if Input.is_key_pressed(KEY_SHIFT) and Input.is_key_pressed(KEY_ALT):
+				selection_mode = SelectionMode.INTERSECT
+			elif Input.is_key_pressed(KEY_SHIFT):
+				selection_mode = SelectionMode.ADD
+			elif Input.is_key_pressed(KEY_ALT):
+				selection_mode = SelectionMode.SUBTRACT
+			else:
+				selection_mode = SelectionMode.REPLACE
+
 			event = editor.active_layer.localize_input(event)
-			_delete_contiguous_area(event.position)
+			_select_contiguous_area(event.position)
 			return true
 	return false
 
-func _delete_contiguous_area(position: Vector2) -> void:
+func _select_contiguous_area(position: Vector2) -> void:
 	var point := Vector2i(position.round())
 	var image := editor.active_layer.image
 	var size := image.get_size()
@@ -32,20 +46,24 @@ func _delete_contiguous_area(position: Vector2) -> void:
 
 	var target_color := image.get_pixelv(point)
 
-	# Don't delete if already transparent
-	if target_color.a < 0.01:
-		return
+	# Create temporary mask for this selection operation
+	var new_selection = Image.create(size.x, size.y, false, Image.FORMAT_L8)
+	new_selection.fill(Color.BLACK)
 
-	# Create undo command - captures "before" state
-	var command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
+	# Track visited pixels to avoid infinite loops
+	var visited = Image.create(size.x, size.y, false, Image.FORMAT_L8)
+	visited.fill(Color.BLACK)
 
-	# Scanline flood fill (adapted from BucketTool)
+	# Scanline flood fill to mark selected pixels
 	var stack := [point]
-
 	while stack.size() > 0:
 		var p = stack.pop_back()
 		var x = p.x
 		var y = p.y
+
+		# Skip if already visited
+		if visited.get_pixel(x, y).r > 0.5:
+			continue
 
 		# Find leftmost pixel of this color on this row
 		while x >= 0 and _colors_match(image.get_pixel(x, y), target_color):
@@ -55,31 +73,62 @@ func _delete_contiguous_area(position: Vector2) -> void:
 		var span_above := false
 		var span_below := false
 
-		# Process the scanline
 		while x < size.x and _colors_match(image.get_pixel(x, y), target_color):
-			image.set_pixel(x, y, Color.TRANSPARENT)
+			new_selection.set_pixel(x, y, Color.WHITE)
+			visited.set_pixel(x, y, Color.WHITE)
 
-			# Check pixel above
-			if not span_above and y > 0 and _colors_match(image.get_pixel(x, y - 1), target_color):
-				stack.push_back(Vector2i(x, y - 1))
-				span_above = true
-			elif span_above and y > 0 and not _colors_match(image.get_pixel(x, y - 1), target_color):
-				span_above = false
+			if not span_above and y > 0:
+				if _colors_match(image.get_pixel(x, y - 1), target_color) and visited.get_pixel(x, y - 1).r < 0.5:
+					stack.push_back(Vector2i(x, y - 1))
+					span_above = true
+			elif span_above and y > 0:
+				if not _colors_match(image.get_pixel(x, y - 1), target_color):
+					span_above = false
 
-			# Check pixel below
-			if not span_below and y < size.y - 1 and _colors_match(image.get_pixel(x, y + 1), target_color):
-				stack.push_back(Vector2i(x, y + 1))
-				span_below = true
-			elif span_below and y < size.y - 1 and not _colors_match(image.get_pixel(x, y + 1), target_color):
-				span_below = false
+			if not span_below and y < size.y - 1:
+				if _colors_match(image.get_pixel(x, y + 1), target_color) and visited.get_pixel(x, y + 1).r < 0.5:
+					stack.push_back(Vector2i(x, y + 1))
+					span_below = true
+			elif span_below and y < size.y - 1:
+				if not _colors_match(image.get_pixel(x, y + 1), target_color):
+					span_below = false
 
 			x += 1
 
-	# Finalize and execute command
-	command.finalize_stroke()
-	editor.execute_command(command)
-	editor.active_layer.queue_redraw()
+	# Apply selection mode
+	_apply_selection(new_selection)
+
+func _apply_selection(new_mask: Image) -> void:
+	var size = new_mask.get_size()
+
+	# Ensure editor has a selection mask
+	if not editor.selection_mask or editor.selection_mask.get_size() != size:
+		editor.create_selection_mask(size)
+
+	match selection_mode:
+		SelectionMode.REPLACE:
+			editor.selection_mask = new_mask.duplicate()
+		SelectionMode.ADD:
+			for y in size.y:
+				for x in size.x:
+					if new_mask.get_pixel(x, y).r > 0.5:
+						editor.selection_mask.set_pixel(x, y, Color.WHITE)
+		SelectionMode.SUBTRACT:
+			for y in size.y:
+				for x in size.x:
+					if new_mask.get_pixel(x, y).r > 0.5:
+						editor.selection_mask.set_pixel(x, y, Color.BLACK)
+		SelectionMode.INTERSECT:
+			for y in size.y:
+				for x in size.x:
+					if new_mask.get_pixel(x, y).r < 0.5:
+						editor.selection_mask.set_pixel(x, y, Color.BLACK)
+
+	# Update the selection cache after modifying the mask
+	editor._update_selection_cache()
+	editor.selection_changed.emit()
+	editor.layers_container.queue_redraw()
 
 func _colors_match(c1: Color, c2: Color) -> bool:
-	# Exact match for now (could add tolerance later)
+	# Exact match for now (could add tolerance slider later)
 	return c1 == c2

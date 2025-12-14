@@ -378,6 +378,10 @@ func _draw_brush_stamp(target_image: Image, center: Vector2, color: Color, diame
 		var y = center_y + offset.y
 
 		if x >= 0 and x < img_width and y >= 0 and y < img_height:
+			# Skip pixels outside of selection
+			if not editor.is_pixel_selected(x, y):
+				continue
+
 			var alpha_factor = offset.z
 			var stamp_alpha = color.a * alpha_factor
 

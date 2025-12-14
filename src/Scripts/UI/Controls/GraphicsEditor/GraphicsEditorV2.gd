@@ -12,6 +12,7 @@ signal active_layer_is_mask_layer(is_mask_layer: bool)
 signal compose_progress_updated(progress: float)
 signal compose_finished(image: Image)
 signal delete_layer(layer: LayerV2)
+signal selection_changed()
 #signal lock_unlock_media_gen_ui(lock: bool)
 
 @onready var layers_container: LayersContainer = %LayersContainer
@@ -38,6 +39,8 @@ signal delete_layer(layer: LayerV2)
 @onready var _bucket_options_container: Control = %BucketOptions
 @onready var _eraser_options_container: Control = %EraserOptions
 @onready var _speech_bubble_options: Control = %SpeechBubbleOptions
+@onready var _selection_options_container: Control = %SelectionOptions
+@onready var selection_indicator_button: MenuButton = %SelectionIndicatorButton
 
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var smudge_tool: SmudgeTool = %SmudgeTool
@@ -58,6 +61,7 @@ signal delete_layer(layer: LayerV2)
 	eraser_tool: _eraser_options_container,
 	speech_bubble_tool: _speech_bubble_options,
 	eyedropper_tool: _brush_options_container,
+	magic_wand_tool: _selection_options_container,
 }
 
 @onready var image_gen_window: Window = %ImageGenWindow
@@ -150,6 +154,17 @@ var active_layer: LayerV2:
 			return selected_layers.get(0) if not selected_layers.is_empty() else null
 
 var last_selected_color: Color = Color.BLACK
+
+# Selection system
+var selection_mask: Image = null
+var selection_visible: bool = true
+var _marching_ants_offset: float = 0.0
+var _marching_ants_timer: float = 0.0
+const MARCHING_ANTS_SPEED: float = 10.0  # pixels per second
+var _selection_is_empty: bool = true  # Cached flag to avoid O(W×H) scan on every pixel check
+var _cached_selection_edges: Array[Vector2i] = []  # Cached edge pixels for marching ants
+var _edges_cache_valid: bool = false  # Whether edge cache is up to date
+
 var active_tool: BaseTool:
 	set(value):
 		active_tool = value
@@ -179,6 +194,9 @@ func _ready() -> void:
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
 	render_view_tool.draw_render_rect.connect(_on_draw_rect)
+	# Connect selection changed signal to update UI
+	selection_changed.connect(_on_selection_changed)
+	_setup_selection_popup_menu()
 	# Connect media generation signal to receive generated images
 	MediaGen.pass_image_to_editor.connect(_on_image_received)
 	
@@ -218,6 +236,16 @@ func _ready() -> void:
 	)
 	
 	response_layout_toggle()
+
+
+func _process(delta: float) -> void:
+	# Animate marching ants for selection
+	if selection_visible and has_selection():
+		_marching_ants_timer += delta
+		if _marching_ants_timer >= 0.1:  # Update every 100ms
+			_marching_ants_offset = fmod(_marching_ants_offset + 1.0, 8.0)
+			_marching_ants_timer = 0.0
+			layers_container.queue_redraw()
 
 
 func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
@@ -508,12 +536,43 @@ func _zoom(mouse_position: Vector2, factor: float) -> void:
 
 signal graphics_editor_changed
 func _unhandled_key_input(event: InputEvent) -> void:
-	
+
 	if event.is_action_pressed("ui_undo"):
 		undo_command()
 
 	elif event.is_action_pressed("ui_redo"):
 		redo_command()
+
+	# Selection keyboard shortcuts
+	elif event is InputEventKey and event.pressed:
+		_handle_selection_shortcuts(event)
+
+
+func _handle_selection_shortcuts(event: InputEventKey) -> void:
+	# Delete selection contents
+	if event.keycode == KEY_DELETE and has_selection():
+		delete_selection()
+		get_viewport().set_input_as_handled()
+
+	# Select All (Ctrl+A)
+	elif event.keycode == KEY_A and event.ctrl_pressed and not event.shift_pressed:
+		select_all()
+		get_viewport().set_input_as_handled()
+
+	# Deselect (Ctrl+D)
+	elif event.keycode == KEY_D and event.ctrl_pressed and not event.shift_pressed:
+		clear_selection()
+		get_viewport().set_input_as_handled()
+
+	# Invert Selection (Ctrl+Shift+I)
+	elif event.keycode == KEY_I and event.ctrl_pressed and event.shift_pressed:
+		invert_selection()
+		get_viewport().set_input_as_handled()
+
+	# Fill with foreground color (Alt+Backspace)
+	elif event.keycode == KEY_BACKSPACE and event.alt_pressed and has_selection():
+		fill_selection(last_selected_color)
+		get_viewport().set_input_as_handled()
 
 
 func _draw() -> void:
@@ -590,6 +649,147 @@ func _on_pen_normal_detected() -> void:
 		elif _previous_tool_before_eraser == smudge_tool:
 			_tools_option_button.select(3)  # Smudge
 		_previous_tool_before_eraser = null
+
+#region Selection System
+
+## Returns true if there is an active, non-empty selection
+func has_selection() -> bool:
+	return selection_mask != null and not _selection_is_empty
+
+## Update the cached _selection_is_empty flag - call this when selection changes
+func _update_selection_cache() -> void:
+	_edges_cache_valid = false  # Invalidate edges cache too
+	if not selection_mask:
+		_selection_is_empty = true
+		_cached_selection_edges.clear()
+		return
+	# Scan to determine if selection is empty
+	for y in selection_mask.get_height():
+		for x in selection_mask.get_width():
+			if selection_mask.get_pixel(x, y).r > 0.5:
+				_selection_is_empty = false
+				return
+	_selection_is_empty = true
+	_cached_selection_edges.clear()
+
+## Get cached selection edges for marching ants rendering
+func get_selection_edges() -> Array[Vector2i]:
+	if _edges_cache_valid:
+		return _cached_selection_edges
+
+	_cached_selection_edges.clear()
+	if not selection_mask:
+		_edges_cache_valid = true
+		return _cached_selection_edges
+
+	var w = selection_mask.get_width()
+	var h = selection_mask.get_height()
+
+	for y in h:
+		for x in w:
+			if selection_mask.get_pixel(x, y).r > 0.5:
+				# Check if this is an edge pixel (has unselected neighbor)
+				var is_edge = false
+				if x == 0 or x == w-1 or y == 0 or y == h-1:
+					is_edge = true
+				elif selection_mask.get_pixel(x-1, y).r < 0.5 or \
+					 selection_mask.get_pixel(x+1, y).r < 0.5 or \
+					 selection_mask.get_pixel(x, y-1).r < 0.5 or \
+					 selection_mask.get_pixel(x, y+1).r < 0.5:
+					is_edge = true
+				if is_edge:
+					_cached_selection_edges.append(Vector2i(x, y))
+
+	_edges_cache_valid = true
+	return _cached_selection_edges
+
+## Create a new selection mask of the given size, filled with black (no selection)
+func create_selection_mask(size_: Vector2i) -> void:
+	selection_mask = Image.create(size_.x, size_.y, false, Image.FORMAT_L8)
+	selection_mask.fill(Color.BLACK)
+	_selection_is_empty = true
+	_edges_cache_valid = false
+	_cached_selection_edges.clear()
+
+## Clear the current selection (deselect all)
+func clear_selection() -> void:
+	if selection_mask:
+		selection_mask.fill(Color.BLACK)
+	_selection_is_empty = true
+	_edges_cache_valid = false
+	_cached_selection_edges.clear()
+	selection_changed.emit()
+	queue_redraw()
+
+## Select the entire canvas
+func select_all() -> void:
+	if active_layer and active_layer.image:
+		create_selection_mask(active_layer.image.get_size())
+		selection_mask.fill(Color.WHITE)
+		_selection_is_empty = false
+		_edges_cache_valid = false  # Edges need recalculation
+		selection_changed.emit()
+		queue_redraw()
+
+## Invert the current selection
+func invert_selection() -> void:
+	if not selection_mask:
+		return
+	for y in selection_mask.get_height():
+		for x in selection_mask.get_width():
+			var current = selection_mask.get_pixel(x, y).r
+			selection_mask.set_pixel(x, y, Color(1.0 - current, 1.0 - current, 1.0 - current))
+	_update_selection_cache()  # Recalculate whether selection is empty
+	selection_changed.emit()
+	queue_redraw()
+
+## Delete the contents within the selection (make transparent)
+func delete_selection() -> void:
+	if not has_selection() or not active_layer:
+		return
+	var command = GraphicsEditorUndo.DrawStrokeCommand.new(active_layer)
+	var image = active_layer.image
+	for y in selection_mask.get_height():
+		for x in selection_mask.get_width():
+			if selection_mask.get_pixel(x, y).r > 0.5:
+				if x < image.get_width() and y < image.get_height():
+					image.set_pixel(x, y, Color.TRANSPARENT)
+	command.finalize_stroke()
+	execute_command(command)
+	active_layer.queue_redraw()
+	_compose_result_expired = true
+	saved = false
+	graphics_editor_changed.emit()
+
+## Fill the selection with the given color
+func fill_selection(color: Color) -> void:
+	if not has_selection() or not active_layer:
+		return
+	var command = GraphicsEditorUndo.DrawStrokeCommand.new(active_layer)
+	var image = active_layer.image
+	for y in selection_mask.get_height():
+		for x in selection_mask.get_width():
+			if selection_mask.get_pixel(x, y).r > 0.5:
+				if x < image.get_width() and y < image.get_height():
+					image.set_pixel(x, y, color)
+	command.finalize_stroke()
+	execute_command(command)
+	active_layer.queue_redraw()
+	_compose_result_expired = true
+	saved = false
+	graphics_editor_changed.emit()
+
+## Check if a pixel position is within the selection (for drawing tools)
+func is_pixel_selected(x: int, y: int) -> bool:
+	if not has_selection():
+		return true  # No selection means all pixels are "selected"
+	if not selection_mask:
+		return true
+	if x < 0 or x >= selection_mask.get_width() or y < 0 or y >= selection_mask.get_height():
+		return false
+	return selection_mask.get_pixel(x, y).r > 0.5
+
+#endregion Selection System
 
 #region LayersCards PopUp panel
 func _on_new_layer_button_pressed() -> void:
@@ -1692,7 +1892,7 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 	send_action_button.disabled = not enable
 	send_prompt_button.disabled = not enable
 	edit_img_button.disabled = not enable
-	send_mask_edit_button.disabled = not enable 
+	send_mask_edit_button.disabled = not enable
 	prompt_button.disabled = not enable
 	negative_prompt_mic_button.disabled = not enable
 	positive_prompt_mic_button.disabled = not enable
@@ -1716,7 +1916,7 @@ func _on_center_view_button_pressed() -> void:
 	if active_layer == null:
 		return
 	var pos: = active_layer.get_rect().get_center()
-	
+
 	pos = input_area_camera.get_canvas_transform().basis_xform(pos)
 	input_area_camera.offset = pos
 	input_area_camera.queue_redraw()
@@ -1728,3 +1928,74 @@ func _on_zoom_out_button_pressed() -> void:
 																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																										
 func _on_zoom_in_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.15)
+
+
+#region Selection UI
+
+## Popup menu item IDs for selection operations
+enum SelectionMenuId {
+	SELECT_ALL = 0,
+	DESELECT = 1,
+	INVERT = 2,
+	SEPARATOR = 3,
+	DELETE_CONTENTS = 4,
+	FILL_WITH_COLOR = 5,
+}
+
+## Setup the popup menu for the selection indicator button
+func _setup_selection_popup_menu() -> void:
+	var popup := selection_indicator_button.get_popup()
+	popup.clear()
+	popup.add_item("Select All          Ctrl+A", SelectionMenuId.SELECT_ALL)
+	popup.add_item("Deselect            Ctrl+D", SelectionMenuId.DESELECT)
+	popup.add_item("Invert Selection    Ctrl+Shift+I", SelectionMenuId.INVERT)
+	popup.add_separator()
+	popup.add_item("Delete Contents     Del", SelectionMenuId.DELETE_CONTENTS)
+	popup.add_item("Fill with Color     Alt+Backspace", SelectionMenuId.FILL_WITH_COLOR)
+	popup.id_pressed.connect(_on_selection_popup_id_pressed)
+
+## Called when selection changes to update the indicator button visibility
+func _on_selection_changed() -> void:
+	selection_indicator_button.visible = has_selection()
+
+## Called when the selection indicator button's popup is about to show
+func _on_selection_indicator_about_to_popup() -> void:
+	# Refresh popup menu state if needed
+	pass
+
+## Handle selection popup menu item selection
+func _on_selection_popup_id_pressed(id: int) -> void:
+	match id:
+		SelectionMenuId.SELECT_ALL:
+			select_all()
+		SelectionMenuId.DESELECT:
+			clear_selection()
+		SelectionMenuId.INVERT:
+			invert_selection()
+		SelectionMenuId.DELETE_CONTENTS:
+			delete_selection()
+		SelectionMenuId.FILL_WITH_COLOR:
+			# Use the color from the brush color picker
+			fill_selection(color_picker_button.color)
+
+## Button handler for Select All in SelectionOptions
+func _on_select_all_button_pressed() -> void:
+	select_all()
+
+## Button handler for Deselect in SelectionOptions
+func _on_deselect_button_pressed() -> void:
+	clear_selection()
+
+## Button handler for Invert in SelectionOptions
+func _on_invert_button_pressed() -> void:
+	invert_selection()
+
+## Button handler for Delete Selection Contents in SelectionOptions
+func _on_delete_selection_button_pressed() -> void:
+	delete_selection()
+
+## Color picker handler for Fill Selection in SelectionOptions
+func _on_fill_selection_color_changed(color: Color) -> void:
+	fill_selection(color)
+
+#endregion

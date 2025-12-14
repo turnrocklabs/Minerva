@@ -165,8 +165,11 @@ func _erase_stamp(target_image: Image, center: Vector2, diameter: int) -> void:
 	for offset in pixels:
 		var x = center_x + offset.x
 		var y = center_y + offset.y
-		
+
 		if x >= 0 and x < img_width and y >= 0 and y < img_height:
+			# Skip pixels outside of selection
+			if not editor.is_pixel_selected(x, y):
+				continue
 			target_image.set_pixel(x, y, Color.TRANSPARENT)
 
 # Get or create cached circle pixel pattern

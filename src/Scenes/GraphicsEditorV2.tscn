@@ -1,4 +1,4 @@
-[gd_scene load_steps=53 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=58 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -38,6 +38,11 @@
 [ext_resource type="Texture2D" uid="uid://dd64jugx3u72c" path="res://assets/icons/send_icons/send_icon_24_no_bg.png" id="25_30sgg"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="26_30sgg"]
 [ext_resource type="Texture2D" uid="uid://coj8ug8ba8d1k" path="res://assets/icons/Mask-24-24.png" id="28_oylf0"]
+[ext_resource type="Texture2D" path="res://assets/icons/selection_active.svg" id="29_selact"]
+[ext_resource type="Texture2D" path="res://assets/icons/select_all.svg" id="30_selall"]
+[ext_resource type="Texture2D" path="res://assets/icons/deselect.svg" id="31_desel"]
+[ext_resource type="Texture2D" path="res://assets/icons/invert_selection.svg" id="32_invert"]
+[ext_resource type="Texture2D" path="res://assets/icons/delete_selection.svg" id="33_delsel"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
 offsets = PackedFloat32Array(0.609626, 1)
@@ -240,6 +245,15 @@ popup/item_6/text = "Magic Wand"
 popup/item_6/icon = ExtResource("28_oylf0")
 popup/item_6/id = 6
 
+[node name="SelectionIndicatorButton" type="MenuButton" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Selection active - click for options"
+icon = ExtResource("29_selact")
+flat = true
+
 [node name="PaneToolButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
 size_flags_vertical = 4
@@ -439,6 +453,49 @@ expand_to_text_length = true
 [node name="ApplyButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions"]
 layout_mode = 2
 text = "Apply"
+
+[node name="SelectionOptions" type="HBoxContainer" parent="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SelectAllButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Select All (Ctrl+A)"
+icon = ExtResource("30_selall")
+flat = true
+
+[node name="DeselectButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Deselect (Ctrl+D)"
+icon = ExtResource("31_desel")
+flat = true
+
+[node name="InvertButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Invert Selection (Ctrl+Shift+I)"
+icon = ExtResource("32_invert")
+flat = true
+
+[node name="SelectionSeparator" type="VSeparator" parent="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+layout_mode = 2
+
+[node name="DeleteSelectionButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Delete Contents (Del)"
+icon = ExtResource("33_delsel")
+flat = true
+
+[node name="FillColorPickerButton" type="ColorPickerButton" parent="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+tooltip_text = "Fill Selection with Color (Alt+Backspace)"
 
 [node name="VSeparator" type="VSeparator" parent="h/HSplitContainer/v/HBoxContainer"]
 layout_mode = 2
@@ -1242,3 +1299,12 @@ text = "Select Layers...
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/EditImgButton" to="." method="_on_edit_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendMaskEditButton" to="." method="_on_mask_edit_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/ZoomOutButton" to="." method="_on_zoom_out_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/HBoxContainer/ZoomInButton" to="." method="_on_zoom_in_button_pressed"]
+[connection signal="about_to_popup" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/SelectionIndicatorButton" to="." method="_on_selection_indicator_about_to_popup"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/SelectAllButton" to="." method="_on_select_all_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/DeselectButton" to="." method="_on_deselect_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/InvertButton" to="." method="_on_invert_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/DeleteSelectionButton" to="." method="_on_delete_selection_button_pressed"]
+[connection signal="color_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/FillColorPickerButton" to="." method="_on_fill_selection_color_changed"]
