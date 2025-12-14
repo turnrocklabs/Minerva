@@ -1,12 +1,13 @@
-class_name MediaGenManager extends Node
+extends Node
 # The WebSocket client instance
-var client: CoreClient = Core.client
+var client: CoreClient = null
 
 signal  pass_image_to_editor(filename: String, request_id: String, image: PackedByteArray)
 
 func _ready() -> void:
 	# Connect Core.client signals to our handlers
-	client.binary_file_saved.connect(_on_binary_file_saved_received)
+	client = Core.client
+	#client.binary_file_saved.connect(_on_binary_file_saved_received)
 	client.image_received.connect(_on_image_response_received)
 
 
@@ -21,8 +22,8 @@ func send_media_gen_request(params: Dictionary) -> String:
 	return client.send_media_gen_request(params, topic)
 
 
-func _on_binary_file_saved_received(file_index: int, request_id: String, filename: String, _path: String) -> void:
-	pass_image_to_editor.emit(file_index, request_id, filename)
+#func _on_binary_file_saved_received(file_index: int, request_id: String, filename: String, _path: String) -> void:
+	#pass_image_to_editor.emit(filename, request_id, filename)
 
 
 func _on_image_response_received(fname: String, request_id: String, buffer: PackedByteArray) -> void:
@@ -40,8 +41,8 @@ func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) ->
 	var mask_image := Image.create(size, size, false, Image.FORMAT_L8) # Grayscale image
 	mask_image.fill(Color.BLACK) # Black background (value 0)
 	
-	var center_x: int = size / 2
-	var center_y: int = size / 2
+	var center_x: int = int(size / 2.0)
+	var center_y: int = int(size / 2.0)
 	
 	for y in range(size):
 		for x in range(size):
@@ -65,20 +66,20 @@ func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) ->
 	return mask_buffer
 
 
-func generate_mask_bytes(mask_layer_image: Image, mask_color: Color, channel: String) -> PackedByteArray:
+func generate_mask_bytes(mask_layer_image: Image, _mask_color: Color, channel: String) -> PackedByteArray:
 
 	var mask_image := Image.create(mask_layer_image.get_width(), mask_layer_image.get_height(), false, Image.FORMAT_RGBA8) # RGBA image for color channel support
 	mask_image.fill(Color.BLACK)
 	var final_mask_color: Color = Color.WHITE
-	match channel:
-		"red":
-			final_mask_color = Color.RED
-		"blue":
-			final_mask_color = Color.BLUE
-		"green":
-			final_mask_color = Color.GREEN
-		_:
-			final_mask_color = Color.WHITE
+	#match channel:
+		#"red":
+			#final_mask_color = Color.RED
+		#"blue":
+			#final_mask_color = Color.BLUE
+		#"green":
+			#final_mask_color = Color.GREEN
+		#_:
+			#final_mask_color = Color.WHITE
 	for y in range(mask_layer_image.get_height()):
 		for x in range(mask_layer_image.get_width()):
 			if mask_layer_image.get_pixel(x, y).a != 0:

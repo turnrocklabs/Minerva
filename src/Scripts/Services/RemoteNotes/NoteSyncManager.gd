@@ -150,7 +150,7 @@ func _sync_notes_from_remote(adapter: NoteServiceAdapter):
 	
 	for remote_note in remote_notes:
 		var remote_thread_id = remote_note.get_meta("remote_thread_id", "")
-		var remote_order = remote_note.get_meta("remote_order", 0)
+		#var remote_order = remote_note.get_meta("remote_order", 0)
 		var remote_metadata = remote_note.get_meta("remote_metadata", {})
 		
 		# Check if note exists locally

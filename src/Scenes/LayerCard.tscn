@@ -1,9 +1,10 @@
-[gd_scene load_steps=8 format=3 uid="uid://bgqhpokm027si"]
+[gd_scene load_steps=11 format=3 uid="uid://bgqhpokm027si"]
 
 [ext_resource type="Script" uid="uid://dk5fww5r5sryf" path="res://Scripts/UI/Controls/GraphicsEditor/LayerCard.gd" id="1_8joxi"]
 [ext_resource type="Texture2D" uid="uid://vdjevdsprwgm" path="res://addons/markdownlabel/assets/screenshot.png" id="2_cfx4g"]
 [ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="2_tha0k"]
 [ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="3_bp0f0"]
+[ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="4_utn5m"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_c4m65"]
 bg_color = Color(0.186202, 0.173051, 0.172226, 1)
@@ -14,18 +15,30 @@ bg_color = Color(0.186202, 0.173051, 0.172226, 1)
 resource_local_to_scene = true
 color = Color(0.130437, 0, 0.970655, 1)
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_o1dtc"]
+resource_local_to_scene = true
+shader = ExtResource("4_utn5m")
+shader_parameter/square_size = 0.05
+shader_parameter/color1 = Color(0.862745, 0.862745, 0.862745, 1)
+shader_parameter/color2 = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_utn5m"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
 [node name="PanelContainer" type="PanelContainer"]
-custom_minimum_size = Vector2(0, 75)
+custom_minimum_size = Vector2(205, 36)
 offset_right = 450.0
-offset_bottom = 55.0
+offset_bottom = 48.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_c4m65")
 script = ExtResource("1_8joxi")
 _active_color = Color(0.335164, 0.390082, 0.499572, 1)
 _color = Color(0.184314, 0.172549, 0.172549, 1)
 
 [node name="LayerCard" type="Button" parent="."]
+unique_name_in_owner = true
 layout_mode = 2
-mouse_filter = 2
+tooltip_text = "Linked Mask: null"
+mouse_filter = 1
 theme_override_styles/focus = SubResource("StyleBoxEmpty_hqbae")
 button_mask = 3
 flat = true
@@ -48,8 +61,8 @@ theme_override_styles/separator = SubResource("StyleBoxLine_3bco1")
 
 [node name="h" type="HBoxContainer" parent="LayerCard/v"]
 layout_mode = 2
-size_flags_vertical = 6
-theme_override_constants/separation = 8
+size_flags_vertical = 3
+theme_override_constants/separation = 4
 
 [node name="Control" type="Control" parent="LayerCard/v/h"]
 layout_mode = 2
@@ -66,10 +79,25 @@ button_pressed = true
 flat = true
 icon_alignment = 1
 
-[node name="TextureRect" type="TextureRect" parent="LayerCard/v/h"]
+[node name="SaveButton" type="Button" parent="LayerCard/v/h"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+tooltip_text = "Save layer as PNG"
+text = "💾"
+flat = true
+
+[node name="PanelContainer" type="PanelContainer" parent="LayerCard/v/h"]
+material = SubResource("ShaderMaterial_o1dtc")
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_utn5m")
+
+[node name="TextureRect" type="TextureRect" parent="LayerCard/v/h/PanelContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
+size_flags_horizontal = 4
 size_flags_vertical = 3
 texture = ExtResource("2_cfx4g")
 expand_mode = 1
@@ -80,8 +108,10 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
+mouse_filter = 2
 text = "Layer"
 max_length = 30
+context_menu_enabled = false
 flat = true
 select_all_on_focus = true
 caret_blink = true
@@ -104,6 +134,7 @@ theme_override_font_sizes/font_size = 14
 [connection signal="gui_input" from="." to="." method="_on_gui_input"]
 [connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
 [connection signal="toggled" from="LayerCard/v/h/VisibilityCheckButton" to="." method="_on_visibility_check_button_toggled"]
+[connection signal="pressed" from="LayerCard/v/h/SaveButton" to="." method="_on_save_button_pressed"]
 [connection signal="focus_exited" from="LayerCard/v/h/Name" to="." method="_on_name_focus_exited"]
 [connection signal="text_submitted" from="LayerCard/v/h/Name" to="." method="_on_name_text_submitted"]
 [connection signal="about_to_popup" from="ContextMenu" to="." method="_on_context_menu_about_to_popup"]

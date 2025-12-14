@@ -1,0 +1,176 @@
+[gd_scene load_steps=8 format=3 uid="uid://dhvyes0wg8qlw"]
+
+[ext_resource type="Script" uid="uid://dyi3dgpcrkx28" path="res://Scripts/UI/Controls/Autocoder/manager/SubmitJob.gd" id="1_85ws8"]
+[ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="2_0n6lh"]
+[ext_resource type="PackedScene" uid="uid://5g51ocdi12p0" path="res://Scripts/UI/Controls/Autocoder/manager/ArtifactBrowser.tscn" id="3_dt4tt"]
+[ext_resource type="Texture2D" uid="uid://d255rlap2uelj" path="res://assets/icons/line_edit_clear.svg" id="4_k0ru8"]
+[ext_resource type="Texture2D" uid="uid://b4mldxp8undi7" path="res://assets/icons/MgGlass.png" id="5_k0ru8"]
+[ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="6_e2mdv"]
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_k0ru8"]
+
+[node name="SubmitJob" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_85ws8")
+
+[node name="ArtifactBrowserPopup" parent="." instance=ExtResource("2_0n6lh")]
+unique_name_in_owner = true
+title = "Artifact Browser"
+position = Vector2i(0, 0)
+size = Vector2i(1200, 700)
+visible = false
+
+[node name="ArtifactBrowser" parent="ArtifactBrowserPopup" instance=ExtResource("3_dt4tt")]
+unique_name_in_owner = true
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Previous Jobs"
+
+[node name="PanelContainer" type="PanelContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/PanelContainer"]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "What do you want to create?"
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 1.3
+
+[node name="TextEdit" type="TextEdit" parent="MarginContainer/VBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+placeholder_text = "Your prompt"
+wrap_mode = 1
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer"]
+layout_mode = 2
+text = "Input Resources:"
+
+[node name="InputResourcesContainer" type="PanelContainer" parent="MarginContainer/VBoxContainer/VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer"]
+custom_minimum_size = Vector2(0, 90)
+layout_mode = 2
+vertical_scroll_mode = 0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+text = "File name:"
+
+[node name="Label2" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+text = "Artifact URI :"
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+
+[node name="SelectedArtifactNameLabel" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SelectedArtifactURILabel" type="Label" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/HBoxContainer/VBoxContainer2"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ClearInputResourcesButton" type="Button" parent="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Clear"
+icon = ExtResource("4_k0ru8")
+flat = true
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CreatePackageButton" type="Button" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+text = "Package Local Files"
+icon = ExtResource("6_e2mdv")
+
+[node name="SelectPackageButton" type="Button" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+text = "Browse Artifacts"
+icon = ExtResource("5_k0ru8")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 8.0
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="NewSessionCheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+button_pressed = true
+button_group = SubResource("ButtonGroup_k0ru8")
+text = "New Sesion"
+flat = true
+
+[node name="ContinueSessionCheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+button_group = SubResource("ButtonGroup_k0ru8")
+text = "Continue Session"
+flat = true
+
+[node name="VBoxContainer3" type="VBoxContainer" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SessionOptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/HBoxContainer/VBoxContainer3"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+
+[node name="SubmitJobButton" type="Button" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Submit  Job"
+
+[connection signal="artifact_selected" from="ArtifactBrowserPopup/ArtifactBrowser" to="." method="_on_artifact_browser_artifact_selected"]
+[connection signal="selection_canceled" from="ArtifactBrowserPopup/ArtifactBrowser" to="." method="_on_artifact_browser_selection_canceled"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/VBoxContainer/InputResourcesContainer/ScrollContainer/VBoxContainer/ClearInputResourcesButton" to="." method="_on_clear_input_resources_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/VBoxContainer/CreatePackageButton" to="." method="_on_create_package_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/VBoxContainer/SelectPackageButton" to="." method="_on_select_package_button_pressed"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/VBoxContainer/HBoxContainer/HBoxContainer/VBoxContainer2/ContinueSessionCheckBox" to="." method="_on_continue_session_check_box_toggled"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/SubmitJobButton" to="." method="_on_submit_job_button_pressed"]

@@ -26,7 +26,6 @@ corner_radius_bottom_left = 10
 bg_color = Color(0.0918132, 0.10875, 0.135159, 1)
 border_width_left = 10
 border_color = Color(0, 0.596078, 0.152941, 1)
-border_blend = true
 corner_radius_top_left = 10
 corner_radius_bottom_left = 10
 
@@ -46,6 +45,6 @@ ToastInfo/styles/panel = SubResource("StyleBoxFlat_suutf")
 ToastNotification/base_type = &"PanelContainer"
 ToastNotification/styles/panel = SubResource("StyleBoxFlat_ffl4h")
 ToastSuccess/base_type = &"ToastNotification"
-ToastSuccess/styles/PanelContainer = SubResource("StyleBoxFlat_2hdmb")
+ToastSuccess/styles/panel = SubResource("StyleBoxFlat_2hdmb")
 ToastWarning/base_type = &"ToastNotification"
 ToastWarning/styles/panel = SubResource("StyleBoxFlat_wcv8o")

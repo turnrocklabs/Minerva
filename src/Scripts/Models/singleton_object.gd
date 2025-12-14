@@ -34,6 +34,8 @@ signal toggle_experimental(enabled)
 
 var syntax_manager: SyntaxManager
 
+# used by the old editor.
+# TODO: clean up at some point properly
 var is_graph:bool = false
 var is_masking:bool
 var is_picture:bool = false
@@ -276,6 +278,12 @@ func find_notes_vbox_parent(note: Note) -> NoteVBox:
 	return null
 
 #endregion Notes
+
+#region Autocoder
+
+var autocoder_manager: AutocodeManager
+
+#endregion Autocoder
 
 #region Chats
 @warning_ignore("unused_signal")
@@ -642,13 +650,6 @@ func hide_loading_screen():
 
 #endregion Loading screen stuff
 
-#region Preloaded static scenes
-static var video_player_scene: = preload("res://Scenes/video_player.tscn")
-static var audio_contols_scene: = preload("res://Scenes/audio_note_controls.tscn")
-static var image_controls_scene: = preload("res://Scenes/image_note_controls.tscn")
-static var notes_scene: = preload("res://Scenes/Note.tscn")
-
-#endregion Preloaded static scenes
 
 #region ChatNotification Player
 func play_chat_notification() -> void:

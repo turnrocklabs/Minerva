@@ -239,7 +239,7 @@ func set_services(services: Array[Service], clear_warning_: = true):
 			
 			# Find the corresponding item in item_list
 			# We search by tooltip (service_id) or by metadata
-			var item_found = false
+			#var item_found = false
 			for i in range(item_list.item_count):
 				var existing_meta = item_list.get_item_metadata(i)
 				var tooltip = item_list.get_item_tooltip(i)
@@ -256,7 +256,7 @@ func set_services(services: Array[Service], clear_warning_: = true):
 					item_list.set_item_text(i, service.name)
 					item_list.set_item_disabled(i, false)
 					item_list.set_item_tooltip(i, service_id)  # Ensure tooltip is set
-					item_found = true
+					#item_found = true
 					break
 			
 			# Restore previous selection state

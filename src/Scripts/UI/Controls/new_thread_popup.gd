@@ -65,5 +65,5 @@ func _on_window_input(event: InputEvent) -> void:
 		_on_close_requested()
 
 
-func _on_btn_new_tab_pressed(drawer: = false) -> void:
+func _on_btn_new_tab_pressed(_drawer: = false) -> void:
 	set_values("", null)

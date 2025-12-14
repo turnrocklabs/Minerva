@@ -15,7 +15,7 @@ signal auth_failed
 signal binary_new_message_received(header: Dictionary, num_files: int)
 signal binary_file_info_received(file_index: int, filename: String, size: int)
 signal binary_file_progress(file_index: int, received: int, total_size: int, progress_pct: float)
-signal binary_file_saved(file_index: int, request_id: String, filename: String, path: String)
+#signal binary_file_saved(file_index: int, request_id: String, filename: String, path: String)
 signal binary_transfer_complete(request_id: String) # Emitted when the final text response confirms all files for a request are saved.
 signal image_received(filename: String, request_id: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
 
@@ -302,15 +302,11 @@ func parse_json_packet(packet_str):
 		print("Error parsing JSON: ", json.get_error_message())
 		return null
 
-
+var _max_chunk_length: = 400
 func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
-	var json_str = JSON.stringify(data)
-	print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
-	print("Received message: \n%s" % json_str) # Corrected string formatting
-	
 	var cmd: String = data.get("cmd", "") # Explicitly type
 	var entity_type: String = data.get("entity_type", "") # Explicitly type
-	
+	var request_id: String = ""
 	# Handle authentication errors
 	if cmd == "error" and entity_type == "core":
 		var error_code: String = data.get("params", {}).get("error_code", "") # Explicitly type
@@ -335,12 +331,12 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 		if _message_queue.size() > 0:
 			_send_queued_messages()
 	elif cmd == "notification": 
-		var text: String = ((data.get("params", "")as Dictionary).get("data","") as Dictionary).get("message", "")
-		if !text.is_empty():
-			var toast: = ToastNotification.create(ToastNotification.Type.INFO, text)
+		var _text: String = ((data.get("params", "")as Dictionary).get("data","") as Dictionary).get("message", "")
+		if !_text.is_empty() and not _text.to_lower().contains("ComfyUI".to_lower()) :
+			var toast: = ToastNotification.create(ToastNotification.Type.INFO, _text)
 			SingletonObject.main_scene.add_child(toast)
 	elif cmd == "response" and entity_type == "core":
-		var request_id: String = data.get("params", {}).get("request_id", "") # Explicitly type
+		request_id = data.get("params", {}).get("request_id", "") # Explicitly type
 		
 		# Check if this is a discovery response
 		var result: Dictionary = data.get("params", {}).get("result", {}) # Explicitly type
@@ -367,6 +363,21 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 	
 	# Always emit the general message_received signal
 	message_received.emit(data)
+	
+	if request_id != _current_binary_request_id:
+		var json_str = JSON.stringify(data)
+		print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
+		var chunk_idx: = 0
+		
+		for i in range(0, json_str.length(), _max_chunk_length):
+			var chunk: =  json_str.substr(i, _max_chunk_length)
+			print("Chunk number: %d" % chunk_idx)
+			print("Received message: \n%s" % chunk)
+			
+			chunk_idx += 1
+			await get_tree().process_frame
+			await get_tree().process_frame
+			await get_tree().process_frame
 
 
 func register_with_core(auth_token: String, client_id_: String):
@@ -423,6 +434,23 @@ func send_text_message_to_core(message):
 	_client.send_text(json_string)
 
 
+func subscribe(topic: String) -> String:
+	var request_id = UUIDGen.v7()
+	var message = {
+		"cmd": "subscribe",
+		"topic": "subscription",
+		"params": {
+			"client_id": client_id,
+			"request_id": request_id,
+			"topic": topic
+		}
+	}
+
+	var json_string = JSON.stringify(message)
+	_client.send_text(json_string)
+
+	return request_id
+
 func send_text_message(service: Service, action: Action, data: Dictionary, auth_token: String = "") -> String:
 	var request_id = UUIDGen.v7()
 	var message = {
@@ -431,6 +459,7 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 		"entity_type": "client",
 		"params": {
 			"client_id": client_id,
+			"user_id": client_id,
 			"request_id": request_id,
 			"target_service_id": service.client_id,
 			"auth": auth_token,
@@ -493,14 +522,12 @@ func _decode_u64_le(bytes_array: PackedByteArray, offset: int) -> int: # Explici
 
 
 func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type parameter
-	print("DEBUG_BINARY: _handle_binary_frame received msg. Total size: %s bytes." % msg.size())
 	if msg.size() < 17:
 		print("❌ Binary frame too short: %s bytes" % msg.size())
 		return
 	
 	var frame_type: int = msg[0] # Explicitly type
 	var payload: PackedByteArray = msg.slice(17) # Explicitly type
-	print("DEBUG_BINARY: Payload size after slicing: %s bytes." % payload.size())
 	
 	var frame_names: Dictionary = { # Explicitly type
 		NEW_MESSAGE: "NEW_MESSAGE",
@@ -601,10 +628,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 		FILE_DATA:
 			var current_chunk: PackedByteArray = payload.duplicate() # Duplicate the payload here
 			
-			# Debugging print
-			print("DEBUG_BINARY: FILE_DATA received. Payload (chunk) size: %s bytes." % current_chunk.size())
 			if current_chunk.is_empty():
-				print("DEBUG_BINARY: Received an empty FILE_DATA chunk, skipping append.")
 				return # Skip if the chunk itself is empty
 			
 			var file_index: int = -1 # Explicitly type
@@ -631,13 +655,11 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				var buffer_copy_for_modify: PackedByteArray = (file_data_dict["buffer"] as PackedByteArray) # Get a copy of buffer from the dictionary
 				var current_received_bytes: int = file_data_dict["received"] as int
 				
-				print("DEBUG_BINARY: FILE_DATA idx=%s. Buffer size BEFORE append: %s bytes. Current received: %s. Appending %s bytes." % [file_index, buffer_copy_for_modify.size(), current_received_bytes, current_chunk.size()])
 				# Use append_array to add the chunk to the buffer copy
 				buffer_copy_for_modify.append_array(current_chunk) 
 				
 				file_data_dict["received"] += current_chunk.size()
 				file_data_dict["buffer"] = buffer_copy_for_modify
-				print("DEBUG_BINARY: FILE_DATA idx=%s. Buffer size AFTER append: %s bytes. New received: %s." % [file_index, buffer_copy_for_modify.size(), file_data_dict["received"]])
 				# Log progress periodically (every 1MB)
 				@warning_ignore("integer_division")
 				if int(current_received_bytes / (1024 * 1024)) != int((file_data_dict["received"] as int) / (1024 * 1024)): # Ensure int division
@@ -663,7 +685,6 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 			
 			if _binary_files.has(file_index) and _binary_filenames.has(file_index):
 				var buf: PackedByteArray = (_binary_files[file_index] as Dictionary)["buffer"] # Explicitly type, get direct ref
-				print("DEBUG_BINARY: FILE_END received. Final buffer size for file_index %s: %s bytes." % [file_index, buf.size()])
 				
 				# Check if the buffer is correctly filled to the expected size
 				var expected_file_size: int = (_binary_files[file_index] as Dictionary)["size"] as int
@@ -688,11 +709,12 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				
 				var file = FileAccess.open(out_path, FileAccess.WRITE)
 				if file:
+					print("file paht: %s"  % file.get_path_absolute())
 					file.store_buffer(buf)
 					file.close()
 					_binary_files_completed += 1
 					print("   ✅ FILE_END idx=%s saved to %s (%s bytes). Total completed: %s/%s" % [file_index, out_path, buf.size(), _binary_files_completed, _binary_expected_files]) # Corrected string formatting
-					binary_file_saved.emit(file_index, _current_binary_request_id, fname, out_path)
+					#binary_file_saved.emit(file_index, _current_binary_request_id, fname, out_path)
 				else:
 					print(FileAccess.get_open_error())
 					print("   ❌ Could not save file %s" % out_path) # Corrected string formatting

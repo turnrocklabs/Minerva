@@ -41,54 +41,58 @@ func fill(position: Vector2) -> void:
 	var point := Vector2i(position.round())
 	var image := editor.active_layer.image
 	var size := image.get_size()
-	
+
 	if point.x < 0 or point.x >= size.x or point.y < 0 or point.y >= size.y:
 		return
-		
+
+	# If there's a selection, check if click is within selection
+	if editor.has_selection() and not editor.is_pixel_selected(point.x, point.y):
+		return
+
 	var target_color := image.get_pixelv(point)
 	if target_color == fill_color:
 		return
-	
+
 	# Create fill command - captures "before" state
 	var fill_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
-	
+
 	var stack := [point]
-	
+
 	while stack.size() > 0:
 		var p = stack.pop_back()
 		var x = p.x
 		var y = p.y
-		
-		# Find leftmost pixel of this color on this row
-		while x >= 0 and image.get_pixel(x, y) == target_color:
+
+		# Find leftmost pixel of this color on this row (respecting selection)
+		while x >= 0 and image.get_pixel(x, y) == target_color and editor.is_pixel_selected(x, y):
 			x -= 1
 		x += 1
-		
+
 		var span_above := false
 		var span_below := false
-		
-		# Fill the scanline
-		while x < size.x and image.get_pixel(x, y) == target_color:
+
+		# Fill the scanline (respecting selection)
+		while x < size.x and image.get_pixel(x, y) == target_color and editor.is_pixel_selected(x, y):
 			image.set_pixel(x, y, fill_color)
-			
-			# Check pixel above
-			if not span_above and y > 0 and image.get_pixel(x, y - 1) == target_color:
+
+			# Check pixel above (respecting selection)
+			if not span_above and y > 0 and image.get_pixel(x, y - 1) == target_color and editor.is_pixel_selected(x, y - 1):
 				stack.push_back(Vector2i(x, y - 1))
 				span_above = true
-			elif span_above and y > 0 and image.get_pixel(x, y - 1) != target_color:
+			elif span_above and y > 0 and (image.get_pixel(x, y - 1) != target_color or not editor.is_pixel_selected(x, y - 1)):
 				span_above = false
-				
-			# Check pixel below  
-			if not span_below and y < size.y - 1 and image.get_pixel(x, y + 1) == target_color:
+
+			# Check pixel below (respecting selection)
+			if not span_below and y < size.y - 1 and image.get_pixel(x, y + 1) == target_color and editor.is_pixel_selected(x, y + 1):
 				stack.push_back(Vector2i(x, y + 1))
 				span_below = true
-			elif span_below and y < size.y - 1 and image.get_pixel(x, y + 1) != target_color:
+			elif span_below and y < size.y - 1 and (image.get_pixel(x, y + 1) != target_color or not editor.is_pixel_selected(x, y + 1)):
 				span_below = false
-				
+
 			x += 1
-	
+
 	# Finalize and execute the fill command
 	fill_command.finalize_stroke()  # Captures "after" state
 	editor.execute_command(fill_command)
-	
+
 	editor.queue_redraw()

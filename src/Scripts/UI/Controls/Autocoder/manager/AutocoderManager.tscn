@@ -1,0 +1,27 @@
+[gd_scene load_steps=4 format=3 uid="uid://dmi6sts02m7by"]
+
+[ext_resource type="Script" uid="uid://bt3dwo5xpuwsh" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderManager.gd" id="1_a2bat"]
+[ext_resource type="PackedScene" uid="uid://dhvyes0wg8qlw" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderSubmitJobManager.tscn" id="2_kd6yi"]
+[ext_resource type="PackedScene" uid="uid://e4srp1nnpl8g" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderSessionView.tscn" id="3_o2x8u"]
+
+[node name="AutocoderManager" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_a2bat")
+
+[node name="TabContainer" type="TabContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+
+[node name="Jobs" parent="TabContainer" instance=ExtResource("2_kd6yi")]
+layout_mode = 2
+metadata/_tab_index = 0
+
+[node name="My Sessions" parent="TabContainer" instance=ExtResource("3_o2x8u")]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 1

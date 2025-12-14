@@ -1,0 +1,62 @@
+[gd_scene load_steps=2 format=3 uid="uid://wga01lev1wn1"]
+
+[ext_resource type="Script" uid="uid://bmjq4eptmat48" path="res://Scripts/UI/Controls/PackageEditor/PackageEditor.gd" id="1_ytx2b"]
+
+[node name="PackageEditor" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_ytx2b")
+
+[node name="EntryFileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Open a Directory"
+ok_button_text = "Select Current Folder"
+file_mode = 2
+access = 2
+show_hidden_files = true
+
+[node name="EntryMarginContainer" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CenterContainer" type="CenterContainer" parent="EntryMarginContainer"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="EntryMarginContainer/CenterContainer"]
+layout_mode = 2
+
+[node name="SelectEntryDirButton" type="Button" parent="EntryMarginContainer/CenterContainer/VBoxContainer"]
+layout_mode = 2
+text = "Select the source directory to begin"
+
+[node name="PackageMarginContainer" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PackageMarginContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="PackageMarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="PackageButton" type="Button" parent="PackageMarginContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Uploads this file to the Artifact registry"
+text = "Upload"
+
+[node name="DirTree" type="Tree" parent="PackageMarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[connection signal="dir_selected" from="EntryFileDialog" to="." method="_on_entry_file_dialog_dir_selected"]
+[connection signal="pressed" from="EntryMarginContainer/CenterContainer/VBoxContainer/SelectEntryDirButton" to="." method="_on_select_entry_dir_button_pressed"]
+[connection signal="pressed" from="PackageMarginContainer/VBoxContainer/HBoxContainer/PackageButton" to="." method="_on_package_button_pressed"]
+[connection signal="button_clicked" from="PackageMarginContainer/VBoxContainer/DirTree" to="." method="_on_dir_tree_button_clicked"]
+[connection signal="item_activated" from="PackageMarginContainer/VBoxContainer/DirTree" to="." method="_on_dir_tree_item_activated"]
