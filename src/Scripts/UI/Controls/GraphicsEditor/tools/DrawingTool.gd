@@ -134,8 +134,9 @@ func get_bounds_point_for_expansion(center: Vector2, radius: int) -> Vector2:
 	return bounds_point
 
 func get_actual_brush_radius(pressure: float) -> int:
-	var visual_zoom = editor.layers_container.scale.x
-	var actual_diameter = (brush_size * pressure) / visual_zoom
+	var camera_zoom = editor.input_area_camera.zoom.x
+	# Divide by camera zoom to keep brush visually constant in screen pixels
+	var actual_diameter = (brush_size * pressure) / camera_zoom
 	var radius = int(ceil(actual_diameter * 0.5))
 	return max(radius, 1)
 
@@ -352,8 +353,9 @@ func _draw_continuous_line(start_pos: Vector2, end_pos: Vector2, start_pressure:
 		)
 
 func _draw_brush_stamp(target_image: Image, center: Vector2, color: Color, diameter: float) -> void:
-	var visual_zoom = editor.layers_container.scale.x
-	var actual_diameter = diameter / visual_zoom
+	var camera_zoom = editor.input_area_camera.zoom.x
+	# Divide by camera zoom to keep brush visually constant in screen pixels
+	var actual_diameter = diameter / camera_zoom
 	var radius = max(1, int(ceil(actual_diameter * 0.5)))
 
 	var pixels = _get_cached_circle_pixels(radius)
