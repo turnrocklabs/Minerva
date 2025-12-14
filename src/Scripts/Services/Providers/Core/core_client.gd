@@ -711,7 +711,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					if err != OK:
 						print("Failed to create directory 'user://temp/'. Error: %s" % err) # Corrected string formatting
 						return # Abort if directory can't be created
-				
+				print(dir)
 				
 				var file = FileAccess.open(out_path, FileAccess.WRITE)
 				if file:

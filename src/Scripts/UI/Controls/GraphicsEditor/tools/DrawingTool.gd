@@ -484,6 +484,8 @@ func _should_update_preview() -> bool:
 
 
 func _blend_colors(bottom: Color, top: Color) -> Color:
+	if editor.is_active_layer_mask and top.r == bottom.r and top.g == bottom.g and top.b == bottom.b:
+		return bottom
 	if top.a >= 0.99:
 		return top
 	if top.a <= 0.01:

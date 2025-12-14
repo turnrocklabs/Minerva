@@ -20,7 +20,7 @@
 [ext_resource type="Texture2D" uid="uid://b05e37s8h1cni" path="res://assets/icons/color_picker_pipette.svg" id="10_pipet"]
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="10_vnb8d"]
 [ext_resource type="Texture2D" uid="uid://dxlwuia2g3di4" path="res://assets/icons/graphics_editor/eraser.svg" id="11_m2a1o"]
-[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+[ext_resource type="Script" uid="uid://h8aur8r7ygi4" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
 [ext_resource type="Texture2D" uid="uid://clwxau6kq0fot" path="res://assets/icons/graphics_editor/bucket.svg" id="12_u1itb"]
 [ext_resource type="Texture2D" uid="uid://bbgo8abr3t77d" path="res://assets/icons/graphics_editor/smudge.svg" id="13_nl4xv"]
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="15_ow12a"]
@@ -577,7 +577,7 @@ stretch_mode = 4
 layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 0
-theme_override_constants/separation = 12
+theme_override_constants/separation = 8
 
 [node name="Control" type="Control" parent="h/HSplitContainer/v/MarginContainer/HBoxContainer"]
 layout_mode = 2
@@ -868,7 +868,7 @@ icon_alignment = 2
 unique_name_in_owner = true
 title = "AI Image Generation"
 position = Vector2i(60, 36)
-size = Vector2i(450, 570)
+size = Vector2i(400, 570)
 visible = false
 always_on_top = true
 
@@ -898,7 +898,9 @@ layout_mode = 2
 theme_override_colors/font_color = Color(0.811765, 0.27451, 0.2, 1)
 theme_override_font_sizes/font_size = 20
 text = "Not Connected to backend. 
-Connect to backend to access AI Features."
+Connect to backend to 
+access AI Features."
+vertical_alignment = 1
 
 [node name="ScrollContainer" type="ScrollContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2

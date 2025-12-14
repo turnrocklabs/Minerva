@@ -663,13 +663,6 @@ func _on_smudge_tool_button_toggled(toggled_on: bool) -> void:
 func _on_layers_container_mouse_entered() -> void:
 	Input.set_custom_mouse_cursor(_custom_cursor, _custom_cursor_shape, _custom_cursor_hotspot)
 
-#func _on_zoom_in_button_pressed() -> void:
-	#var viewport_size = input_area_camera.get_viewport().size
-	#_zoom(Vector2(viewport_size) / 2.0, ZOOM_INCREMENT)
-#
-#func _on_zoom_out_button_pressed() -> void:
-	#var viewport_size = input_area_camera.get_viewport().size
-	#_zoom(Vector2(viewport_size) / 2.0, ZOOM_DECREMENT)
 
 func _on_add_image_button_pressed() -> void:
 	var fd: = FileDialog.new()
@@ -1593,7 +1586,8 @@ func _on_resized() -> void:
 
 var floating_windows_active: = false
 func response_layout_toggle() -> void:
-	if size.x <= 850:
+	print(size.x)
+	if size.x <= 860:
 		floating_windows_active = true
 		if full_size_ai_container.get_child_count() > 0:
 			full_size_ai_container.remove_child(image_gen_panel_container)
@@ -1709,7 +1703,7 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 
 
 func disable_ai_features(_error: int) -> void:
-			connection_label.text = "Not Connected to backend.\nConnect to backend to access AI Features."
+			connection_label.text = "Not Connected to backend.\nConnect to backend to \naccess AI Features."
 			connection_label.show()
 			toggle_enable_ai_fields(false)
 
@@ -1726,11 +1720,11 @@ func _on_center_view_button_pressed() -> void:
 	pos = input_area_camera.get_canvas_transform().basis_xform(pos)
 	input_area_camera.offset = pos
 	input_area_camera.queue_redraw()
-	#layers_container.center_view()
 
 
 func _on_zoom_out_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0) , ZOOM_DECREMENT - 0.15)
 
+																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																										
 func _on_zoom_in_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.15)
