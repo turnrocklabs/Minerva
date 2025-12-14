@@ -2,7 +2,7 @@ class_name GraphicsEditorV2
 extends PanelContainer
 
 static var ZOOM_INCREMENT: = 1.05
-static  var ZOOM_DECREMENT: = 0.95
+static var ZOOM_DECREMENT: = 0.95
 
 signal active_tool_changed(tool_: BaseTool)
 @warning_ignore("unused_signal")
@@ -192,45 +192,28 @@ func _ready() -> void:
 	
 	mini_map_control.visible = false
 	
-	
-	
 	if Core.connected:
-		connection_label.hide()
-		toggle_enable_ai_fields()
+		enable_ai_features()
 	else:
-		connection_label.show()
-		toggle_enable_ai_fields(false)
+		disable_ai_features(1)
 	
 	Core.client.connection_established.connect(
 		func () -> void:
-			connection_label.hide()
-			toggle_enable_ai_fields()
+			enable_ai_features()
 	)
 	
-	Core.client.connection_error.connect(
-		func(_error: int) -> void:
-			connection_label.text = "Not Connected to backend.\nConnect to backend to access AI Features."
-			connection_label.show()
-			toggle_enable_ai_fields(false)
-	)
+	Core.client.connection_error.connect(disable_ai_features)
 	
-	Core.client.connection_closed.connect(
-		func(_error: int) -> void:
-			connection_label.text = "Not Connected to backend.\nConnect to backend to access AI Features."
-			connection_label.show()
-			toggle_enable_ai_fields(false)
-	)
+	Core.client.connection_closed.connect(disable_ai_features)
 	
 	Core.http_connection_changed.connect(
 		func(_active: bool):
 			if not Core.connected:
-				connection_label.text = "Not Connected to backend.\nConnect to backend to access AI Features."
-				connection_label.show()
-				toggle_enable_ai_fields(false)
+				disable_ai_features(1)
 			else:
-				connection_label.hide()
-				toggle_enable_ai_fields()
+				enable_ai_features()
 	)
+	
 	response_layout_toggle()
 
 
@@ -1709,3 +1692,20 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 	negative_text_edit.editable = enable
 	advanced_settings_check_button.disabled = not enable
 	workflow_option_button.disabled = not enable
+
+
+func disable_ai_features(_error: int) -> void:
+			connection_label.text = "Not Connected to backend.\nConnect to backend to access AI Features."
+			connection_label.show()
+			toggle_enable_ai_fields(false)
+
+func enable_ai_features() -> void:
+	connection_label.hide()
+	toggle_enable_ai_fields()
+
+
+func _on_zoom_out_button_pressed() -> void:
+	_zoom(layers_container.position + (layers_container.size /2.0) , ZOOM_DECREMENT - 0.1)
+
+func _on_zoom_in_button_pressed() -> void:
+	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.1)
