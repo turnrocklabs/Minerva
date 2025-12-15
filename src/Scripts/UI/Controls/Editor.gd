@@ -757,14 +757,16 @@ func add_new_line() -> void:
 
 
 func undo_action():
-	if Type.TEXT != type:
-		return
-	
-	code_edit.undo()
-	code_edit.grab_focus()
-	text_is_smaller.visible = false
-	text_is_incoplete.visible = false
-	text_is_smaller_and_incoplete.visible = false
+	match type:
+		Type.TEXT:
+			code_edit.undo()
+			code_edit.grab_focus()
+			text_is_smaller.visible = false
+			text_is_incoplete.visible = false
+			text_is_smaller_and_incoplete.visible = false
+		Type.GRAPHICS:
+			if graphics_editor:
+				graphics_editor.undo_command()
 
 func clear_text():
 	if Type.TEXT != type:
