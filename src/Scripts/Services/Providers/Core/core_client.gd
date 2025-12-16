@@ -367,14 +367,11 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 	if request_id != _current_binary_request_id:
 		var json_str = JSON.stringify(data)
 		print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
-		var chunk_idx: = 0
 		
 		for i in range(0, json_str.length(), _max_chunk_length):
 			var chunk: =  json_str.substr(i, _max_chunk_length)
-			print("Chunk number: %d" % chunk_idx)
-			print("Received message: \n%s" % chunk)
-			
-			chunk_idx += 1
+			printraw(chunk)
+			# we have to wati for 3 frames in order to avoid output overflow
 			await get_tree().process_frame
 			await get_tree().process_frame
 			await get_tree().process_frame

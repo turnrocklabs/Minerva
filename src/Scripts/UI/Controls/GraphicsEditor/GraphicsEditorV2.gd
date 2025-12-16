@@ -1584,7 +1584,7 @@ func _on_edit_img_button_pressed() -> void:
 					}
 					images_dir.append(mask_file)
 		
-		var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
+		var toast: = ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
 		SingletonObject.main_scene.add_child(toast)
 		
 		var selective_editing_params: Dictionary = get_params_image_gen()
