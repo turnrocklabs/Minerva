@@ -40,10 +40,14 @@ func handle_input_event(event: InputEvent) -> bool:
 	return false
 
 func _pan_canvas(relative: Vector2) -> void:
+	if editor == null:
+		return
 	editor._pan_canvas(relative)
 
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
+	if editor == null:
+		return
 	editor._zoom(mouse_position, factor)
 
 

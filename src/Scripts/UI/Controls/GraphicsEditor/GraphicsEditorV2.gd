@@ -239,6 +239,9 @@ func _ready() -> void:
 				enable_ai_features()
 	)
 	
+	input_area_camera.position = layers_container.get_global_rect().get_center()
+	input_area_camera.offset = Vector2.ZERO
+	
 	response_layout_toggle()
 
 
@@ -1919,13 +1922,7 @@ func enable_ai_features() -> void:
 
 
 func _on_center_view_button_pressed() -> void:
-	if active_layer == null:
-		return
-	var pos: = active_layer.get_rect().get_center()
-
-	pos = input_area_camera.get_canvas_transform().basis_xform(pos)
-	input_area_camera.offset = pos
-	input_area_camera.queue_redraw()
+	center_view()
 
 
 func _on_zoom_out_button_pressed() -> void:
@@ -1935,6 +1932,15 @@ func _on_zoom_out_button_pressed() -> void:
 func _on_zoom_in_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.15)
 
+
+func center_view(layer: LayerV2 = null) -> void:
+	if layer == null and active_layer != null:
+		layer = active_layer
+	else:
+		layer = layers_container.get_child(0)
+	if input_area_camera != null and layer != null:
+		input_area_camera.position = layer.get_global_rect().get_center()
+		input_area_camera.offset = Vector2.ZERO
 
 #region Selection UI
 

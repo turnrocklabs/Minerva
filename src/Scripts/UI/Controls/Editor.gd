@@ -35,6 +35,8 @@ var package_editor: PackageEditor
 
 @onready var autowrap_button: Button = %AutowrapButton
 @onready var mic_button: Button = %MicButton
+@onready var code_syntax_button: IconsButton = $VBoxContainer/ButtonsHBoxContainer/CodeSyntaxButton
+@onready var find_button: IconsButton = %FindButton
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -222,10 +224,24 @@ func _ready():
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
+		code_syntax_button.hide()
+		find_button.hide()
+		%btnApplyDiff.hide()
+		%reloadButton.hide()
+		
+		mic_button.queue_free()
+		autowrap_button.queue_free()
+		code_syntax_button.queue_free()
+		find_button.queue_free()
+		find_string_container.queue_free()
+		jump_to_line_panel.queue_free()
+		%btnApplyDiff.queue_free()
+		%reloadButton.queue_free()
 	
-	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
-	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
-	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
+	if type == Type.TEXT:
+		text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
+		text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
+		text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
 
 
 func _exit_tree() -> void:
