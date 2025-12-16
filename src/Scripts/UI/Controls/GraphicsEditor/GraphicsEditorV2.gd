@@ -1,9 +1,6 @@
 class_name GraphicsEditorV2
 extends PanelContainer
 
-static var ZOOM_INCREMENT: = 1.05
-static var ZOOM_DECREMENT: = 0.95
-
 signal active_tool_changed(tool_: BaseTool)
 @warning_ignore("unused_signal")
 signal active_layer_changed(layer: LayerV2)
@@ -14,6 +11,13 @@ signal compose_finished(image: Image)
 signal delete_layer(layer: LayerV2)
 signal selection_changed()
 #signal lock_unlock_media_gen_ui(lock: bool)
+
+@export_category("Editor Tool numbers")
+@export_range(0.01, 0.9) var MIN_ZOOM: = 0.07
+@export_range(1.1, 4.0) var MAX_ZOOM: = 2.5
+@export var ZOOM_INCREMENT: = 1.05
+@export var ZOOM_DECREMENT: = 0.95
+@export_range(1.1, 2.5) var PAN_FACTOR: = 1.25
 
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
@@ -512,11 +516,13 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _pan_canvas(relative: Vector2) -> void:
-	input_area_camera.offset -= relative * 1.25 * (1 / input_area_camera.zoom.x) 
+	if input_area_camera.zoom.x == 0.0:
+		return
+	input_area_camera.offset -= relative * PAN_FACTOR * (1 / input_area_camera.zoom.x) 
 
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
-	if input_area_camera.zoom.x * factor < 0.1 or input_area_camera.zoom.x * factor > 2.5:
+	if input_area_camera.zoom.x * factor < MIN_ZOOM or input_area_camera.zoom.x * factor > MAX_ZOOM:
 		return
 	# Get viewport size (the SubViewport that contains the camera)
 	var viewport_size = input_area_camera.get_viewport().size

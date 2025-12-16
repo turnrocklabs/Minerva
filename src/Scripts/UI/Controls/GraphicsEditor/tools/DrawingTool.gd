@@ -98,24 +98,20 @@ func handle_input_event(event: InputEvent) -> bool:
 
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			#if editor.selected_layers.size() > 1:
-				#display_tool_error(ToolError.MULTIPLE_LAYERS_SELECTED)
-				#return false
-			
 			if event.is_pressed():
 				_start_stroke(event)
-			else:
+			elif event.is_released():
 				_end_stroke(event)
-
+			
 			return true
-
+	
 	elif event is InputEventMouseMotion and drawing:
 		_single_click = false
 		_add_stroke_point(event)
 		return true
 	
-
 	return false
+
 
 func get_bounds_point_for_expansion(center: Vector2, radius: int) -> Vector2:
 	var layer_size = editor.active_layer.image.get_size()
@@ -175,19 +171,19 @@ func _start_stroke(event: InputEvent) -> void:
 	_use_pressure = true
 	
 	# Handle layer expansion first (if needed)
-	var max_radius = get_actual_brush_radius(1.0)
-	var bounds_point = get_bounds_point_for_expansion(event.position, max_radius)
-	var offset = editor.active_layer.expand_to_point(bounds_point)
-	
-	if offset != Vector2.ZERO:
-		# Create resize command for layer expansion
-		var resize_command = GraphicsEditorUndo.ResizeCommand.new(
-			editor.active_layer, 
-			editor.active_layer.position - offset
-		)
-		resize_command.set_new_image(editor.active_layer.image)  # After expansion
-		editor.execute_command(resize_command)
-		editor.active_layer.position -= offset
+	#var max_radius = get_actual_brush_radius(1.0)
+	#var bounds_point = get_bounds_point_for_expansion(event.position, max_radius)
+	#var offset = editor.active_layer.expand_to_point(bounds_point)
+	#
+	#if offset != Vector2.ZERO:
+		## Create resize command for layer expansion
+		#var resize_command = GraphicsEditorUndo.ResizeCommand.new(
+			#editor.active_layer, 
+			#editor.active_layer.position - offset
+		#)
+		#resize_command.set_new_image(editor.active_layer.image)  # After expansion
+		#editor.execute_command(resize_command)
+		#editor.active_layer.position -= offset
 	
 	# Update event after potential layer changes
 	event = editor.active_layer.localize_input(event)
@@ -228,12 +224,12 @@ func _add_stroke_point(event: InputEvent) -> void:
 		_last_pressure = p
 		
 		# Expand & localize before optional "touchdown" stamp
-		var _radius := get_actual_brush_radius(_smoothed_pressure)
-		var _bounds_point := get_bounds_point_for_expansion(pos, _radius)
-		var _offset := editor.active_layer.expand_to_point(_bounds_point)
-		editor.active_layer.position -= _offset
-		event = editor.active_layer.localize_input(event)
-		pos = event.position
+		#var _radius := get_actual_brush_radius(_smoothed_pressure)
+		#var _bounds_point := get_bounds_point_for_expansion(pos, _radius)
+		#var _offset := editor.active_layer.expand_to_point(_bounds_point)
+		#editor.active_layer.position -= _offset
+		#event = editor.active_layer.localize_input(event)
+		#pos = event.position
 		
 		# Optional: stamp once at touchdown using the true first pressure
 		_draw_brush_stamp(
@@ -258,12 +254,12 @@ func _add_stroke_point(event: InputEvent) -> void:
 		_smoothed_pressure = 1.0
 	
 	# Expand layer if needed
-	var radius = get_actual_brush_radius(_smoothed_pressure)
-	var bounds_point = get_bounds_point_for_expansion(pos, radius)
-	var offset = editor.active_layer.expand_to_point(bounds_point)
-	editor.active_layer.position -= offset
-	event = editor.active_layer.localize_input(event)
-	pos = event.position
+	#var radius = get_actual_brush_radius(_smoothed_pressure)
+	#var bounds_point = get_bounds_point_for_expansion(pos, radius)
+	#var offset = editor.active_layer.expand_to_point(bounds_point)
+	#editor.active_layer.position -= offset
+	#event = editor.active_layer.localize_input(event)
+	#pos = event.position
 	
 	# Draw continuous line between last and current position
 	_draw_continuous_line(

@@ -26,9 +26,9 @@ func handle_input_event(event: InputEvent) -> bool:
 				dragging = false
 
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom(event.position, 1.1)
+			_zoom(event.position, editor.ZOOM_INCREMENT)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom(event.position, 0.9)
+			_zoom(event.position, editor.ZOOM_DECREMENT)
 
 	if event is InputEventMouseMotion:
 		if dragging:
@@ -40,26 +40,12 @@ func handle_input_event(event: InputEvent) -> bool:
 	return false
 
 func _pan_canvas(relative: Vector2) -> void:
-	editor.layers_container.position += relative
-	# for layer in editor.layers:
-	# 	layer.position += relative
-	
+	editor._pan_canvas(relative)
+
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
-	var container = editor.layers_container
-	if container.scale.x * factor < 0.1 or container.scale.x * factor > 2.5:
-		return 
-	# Get mouse position relative to the container
-	var mouse_relative = mouse_position - container.position
-	
-	# Apply scale to the entire container
-	container.scale *= factor
-	
-	# Adjust container position to keep the mouse point stationary
-	var offset = mouse_relative * (factor - 1.0)
-	container.position -= offset
-	
-	_check_canvas_bounds()
+	editor._zoom(mouse_position, factor)
+
 
 func _check_canvas_bounds() -> void:
 	# Check if we need to expand the canvas

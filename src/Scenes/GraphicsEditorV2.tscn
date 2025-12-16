@@ -128,6 +128,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_yogh5")
+PAN_FACTOR = 1.1
 
 [node name="Tools" type="Node" parent="."]
 
@@ -639,6 +640,7 @@ theme_override_constants/separation = 8
 layout_mode = 2
 
 [node name="CenterViewButton" type="Button" parent="h/HSplitContainer/v/MarginContainer/HBoxContainer"]
+visible = false
 layout_mode = 2
 tooltip_text = "Center View"
 focus_mode = 0
