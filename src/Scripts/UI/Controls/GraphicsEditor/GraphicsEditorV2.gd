@@ -10,14 +10,13 @@ signal compose_progress_updated(progress: float)
 signal compose_finished(image: Image)
 signal delete_layer(layer: LayerV2)
 signal selection_changed()
-#signal lock_unlock_media_gen_ui(lock: bool)
 
-@export_category("Editor Tool numbers")
+@export_category("Editor Canvas parameters")
 @export_range(0.01, 0.9) var MIN_ZOOM: = 0.07
 @export_range(1.1, 4.0) var MAX_ZOOM: = 2.5
 @export var ZOOM_INCREMENT: = 1.05
 @export var ZOOM_DECREMENT: = 0.95
-@export_range(1.1, 2.5) var PAN_FACTOR: = 1.25
+@export_range(1.03, 2.0) var PAN_FACTOR: = 1.25
 
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var layer_cards_container: Control = %LayerCardsContainer
@@ -203,6 +202,7 @@ func _ready() -> void:
 	_setup_selection_popup_menu()
 	# Connect media generation signal to receive generated images
 	MediaGen.pass_image_to_editor.connect(_on_image_received)
+	MediaGen.lock_media_gen_ui.connect(_on_lock_media_gen_ui)
 	
 	var temp_res: = MIN_IMAGE_RES
 	while temp_res + 64 <= MAX_IMAGE_GEN_RES:
@@ -222,10 +222,7 @@ func _ready() -> void:
 	else:
 		disable_ai_features(1)
 	
-	Core.client.connection_established.connect(
-		func () -> void:
-			enable_ai_features()
-	)
+	Core.client.connection_established.connect(enable_ai_features)
 	
 	Core.client.connection_error.connect(disable_ai_features)
 	
@@ -242,6 +239,7 @@ func _ready() -> void:
 	input_area_camera.position = layers_container.get_global_rect().get_center()
 	input_area_camera.offset = Vector2.ZERO
 	
+	workflow_option_button.select(0)
 	response_layout_toggle()
 
 
@@ -1313,9 +1311,25 @@ func _on_compose_finished(image: Image):
 
 # Add this to handle cleanup when the node is being destroyed:
 func _exit_tree():
+	if MediaGen.pass_image_to_editor.is_connected(_on_image_received):
+		MediaGen.pass_image_to_editor.disconnect(_on_image_received)
+	
+	if MediaGen.lock_media_gen_ui.is_connected(_on_lock_media_gen_ui):
+		MediaGen.lock_media_gen_ui.disconnect(_on_lock_media_gen_ui)
+	
+	if Core.client.connection_established.is_connected(enable_ai_features):
+		Core.client.connection_established.disconnect(enable_ai_features)
+	
+	if Core.client.connection_error.is_connected(disable_ai_features):
+		Core.client.connection_error.disconnect(disable_ai_features)
+	
+	if Core.client.connection_closed.is_connected(disable_ai_features):
+		Core.client.connection_closed.disconnect(disable_ai_features)
+	
 	if _current_compose_thread != null and _current_compose_thread.is_alive():
 		_current_compose_thread.wait_to_finish()
 	_current_compose_thread = null
+ 
 # Static helper functions that don't access node properties
 static func _get_rotated_corners_static(position_: Vector2, size_: Vector2, rotation_: float, pivot_offset_: Vector2) -> Array[Vector2]:
 	var corners: Array[Vector2] = []
@@ -1887,33 +1901,49 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 		0:  # Z-Turbo
 			current_workflow = Workflow.Z_TURBO
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.Z_TURBO]
+			edit_img_button.disabled = true
+			send_mask_edit_button.disabled = true
 		1:  # Qwen
 			current_workflow = Workflow.QWEN
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
+			edit_img_button.disabled = false
+			send_mask_edit_button.disabled = false
 
 
 func toggle_enable_ai_fields(enable: bool = true) -> void:
 	send_action_button.disabled = not enable
 	send_prompt_button.disabled = not enable
-	edit_img_button.disabled = not enable
-	send_mask_edit_button.disabled = not enable
 	prompt_button.disabled = not enable
 	negative_prompt_mic_button.disabled = not enable
 	positive_prompt_mic_button.disabled = not enable
 	prompt_text_edit.editable = enable
 	negative_text_edit.editable = enable
 	advanced_settings_check_button.disabled = not enable
+	if workflow_option_button.selected == 0:
+		edit_img_button.disabled = true
+		send_mask_edit_button.disabled = true
+	else:
+		edit_img_button.disabled = not enable
+		send_mask_edit_button.disabled = not enable
 	workflow_option_button.disabled = not enable
 
-
-func disable_ai_features(_error: int) -> void:
-			connection_label.text = "Not Connected to backend.\nConnect to backend to \naccess AI Features."
-			connection_label.show()
-			toggle_enable_ai_fields(false)
+func disable_ai_features(error: int) -> void:
+	if error != 0:
+		connection_label.text = "Not Connected to backend.\nConnect to backend to \naccess AI Features."
+		connection_label.show()
+	toggle_enable_ai_fields(false)
 
 func enable_ai_features() -> void:
-	connection_label.hide()
+	if connection_label.visible:
+		connection_label.hide()
 	toggle_enable_ai_fields()
+
+
+func _on_lock_media_gen_ui(lock: bool = true) -> void:
+	if lock:
+		disable_ai_features(0)
+	else:
+		enable_ai_features()
 
 
 func _on_center_view_button_pressed() -> void:
