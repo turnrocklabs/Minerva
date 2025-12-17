@@ -115,7 +115,7 @@ signal selection_changed()
 
 #endregion
 
-const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
+const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total number of pixels must be divisible by 64
 const MAX_IMAGE_GEN_RES: int = 2500
 const MIN_IMAGE_RES: int = 512
 
@@ -131,7 +131,7 @@ const WORKFLOW_DEFAULT_STEPS: Dictionary = {
 }
 var current_workflow: Workflow = Workflow.Z_TURBO
 
-var canvas_size: = Vector2i(1000, 1000)
+var canvas_size: = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)
 
 var _custom_cursor: Resource
 var _custom_cursor_shape: int
@@ -255,7 +255,7 @@ func _process(delta: float) -> void:
 			layers_container.queue_redraw()
 
 
-func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
+func setup(canvas_size_: Vector2i = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)) -> void:
 	# Create layers in order (first created appears at bottom in visual stack)
 	create_new_layer("Background", canvas_size_, Color.WHITE, false)
 	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
@@ -263,6 +263,7 @@ func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
 
 func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true, locked: = false) -> LayerV2:
+	deselect_layers()
 	var layer: = LayerV2.create_drawing_layer(layer_name, dimensions, color)
 	
 	layer.locked = locked
@@ -272,6 +273,7 @@ func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = C
 	return layer
 
 func create_new_image_layer(layer_name: String, image: Image, select: = true) -> LayerV2:
+	deselect_layers()
 	var layer: = LayerV2.create_image_layer(layer_name, image)
 	
 	add_layer(layer, select)
@@ -280,6 +282,7 @@ func create_new_image_layer(layer_name: String, image: Image, select: = true) ->
 
 
 func create_new_mask_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true, locked: = false) -> LayerV2:
+	deselect_layers()
 	var layer: = LayerV2.create_mask_layer(layer_name, dimensions, color)
 	
 	layer.locked = locked
@@ -802,12 +805,6 @@ func is_pixel_selected(x: int, y: int) -> bool:
 
 #region LayersCards PopUp panel
 func _on_new_layer_button_pressed() -> void:
-	# clear layers and create a new one
-	for c: LayerCard in layer_cards_container.get_children():
-		c.selected = false
-	for c: LayerCard in mask_layer_cards_container.get_children():
-		c.selected = false
-	
 	create_new_layer("Layer", canvas_size)
 
 
@@ -1680,14 +1677,12 @@ func _on_mask_edit_button_pressed() -> void:
 
 #region LayersCards Masks PopUp panel
 func _on_new_mask_layer_button_pressed() -> void:
-	# clear layers and create a new one
-	for c: LayerCard in layer_cards_container.get_children():
-		c.selected = false
-	
-	for c: LayerCard in mask_layer_cards_container.get_children():
-		c.selected = false
-	
-	create_new_mask_layer("Mask Layer", canvas_size)
+	var new_layer_size: = Vector2.ZERO
+	if active_layer != null:
+		new_layer_size = active_layer.base_image.get_size()
+	else:
+		new_layer_size = canvas_size
+	create_new_mask_layer("Mask Layer", new_layer_size)
 	_on_mask_color_option_button_item_selected(mask_color_option_button.selected)
 
 
@@ -1941,6 +1936,14 @@ func center_view(layer: LayerV2 = null) -> void:
 	if input_area_camera != null and layer != null:
 		input_area_camera.position = layer.get_global_rect().get_center()
 		input_area_camera.offset = Vector2.ZERO
+
+
+func deselect_layers() -> void:
+	for c: LayerCard in layer_cards_container.get_children():
+		c.selected = false
+	for c: LayerCard in mask_layer_cards_container.get_children():
+		c.selected = false
+
 
 #region Selection UI
 
