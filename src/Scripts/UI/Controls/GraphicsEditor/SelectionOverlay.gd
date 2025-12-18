@@ -1,23 +1,35 @@
-class_name LayersContainer
+class_name SelectionOverlay
 extends Control
+
+## Overlay control for drawing selection-related graphics on top of layers.
+## This control should be a sibling of LayersContainer, added after it in the scene tree,
+## so it draws on top of all layer content.
 
 ## Reference to the parent GraphicsEditorV2 for accessing selection state
 var editor: GraphicsEditorV2
 
 func _ready() -> void:
-	# Find the GraphicsEditorV2 parent
-	var parent = get_parent()
-	while parent:
-		if parent is GraphicsEditorV2:
-			editor = parent
-			break
-		parent = parent.get_parent()
+	# Get the GraphicsEditorV2 via owner (root node of the scene)
+	editor = owner as GraphicsEditorV2
+
+	# Disable mouse input so it doesn't block layer interactions
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 func _draw() -> void:
-	# Selection-related drawing (marching ants, selection previews) is now handled
-	# by SelectionOverlay, which is a sibling Control that draws on top of layers.
-	pass
+	# Draw marching ants for active selection
+	if editor and editor.selection_visible and editor.has_selection():
+		_draw_marching_ants()
+
+	# Draw rectangle selection preview if rectangle select tool is active and dragging
+	if editor and editor.rectangle_select_tool:
+		if editor.rectangle_select_tool.is_selecting():
+			_draw_rectangle_selection_preview()
+
+	# Draw lasso selection preview if lasso select tool is active and dragging
+	if editor and editor.lasso_select_tool:
+		if editor.lasso_select_tool.is_selecting():
+			_draw_lasso_selection_preview()
 
 
 func _draw_lasso_selection_preview() -> void:
@@ -35,15 +47,17 @@ func _draw_lasso_selection_preview() -> void:
 	for point in points:
 		screen_points.append(point + layer_pos)
 
-	# Draw solid polyline for clear visibility
+	# Draw polyline with black outline and white foreground for visibility
 	if screen_points.size() >= 2:
-		draw_polyline(screen_points, Color.WHITE, 2.0, true)
+		draw_polyline(screen_points, Color.BLACK, 3.0, true)
+		draw_polyline(screen_points, Color.WHITE, 1.0, true)
 
-	# Draw closing line back to start with lower opacity
+	# Draw closing line back to start
 	if points.size() >= 3:
 		var from = points[-1] + layer_pos
 		var to = points[0] + layer_pos
-		draw_line(from, to, Color(1, 1, 1, 0.5), 1.0, true)
+		draw_line(from, to, Color.BLACK, 3.0, true)
+		draw_line(from, to, Color.WHITE, 1.0, true)
 
 
 func _draw_rectangle_selection_preview() -> void:
@@ -67,11 +81,9 @@ func _draw_rectangle_selection_preview() -> void:
 	var bottom_right = screen_rect.end
 	var bottom_left = screen_rect.position + Vector2(0, screen_rect.size.y)
 
-	# Draw the four sides clockwise from top-left
-	_draw_dashed_line(top_left, top_right, dash_length, gap_length, color)        # Top edge
-	_draw_dashed_line(top_right, bottom_right, dash_length, gap_length, color)    # Right edge
-	_draw_dashed_line(bottom_right, bottom_left, dash_length, gap_length, color)  # Bottom edge
-	_draw_dashed_line(bottom_left, top_left, dash_length, gap_length, color)      # Left edge
+	# Draw rectangle outline - black background with white foreground for visibility on any color
+	draw_rect(screen_rect, Color.BLACK, false, 3.0)
+	draw_rect(screen_rect, Color.WHITE, false, 1.0)
 
 
 func _draw_dashed_line(from: Vector2, to: Vector2, dash: float, gap: float, color: Color) -> void:
@@ -90,7 +102,7 @@ func _draw_dashed_line(from: Vector2, to: Vector2, dash: float, gap: float, colo
 		if drawing:
 			var start_point = from + direction * pos
 			var end_point = from + direction * end_pos
-			draw_line(start_point, end_point, color, 1.0)
+			draw_line(start_point, end_point, color, 2.0)
 
 		pos = end_pos
 		drawing = not drawing
@@ -110,46 +122,10 @@ func _draw_marching_ants() -> void:
 	# Get the active layer's position for coordinate transformation
 	var layer_pos = editor.active_layer.position
 
+	# Draw marching ants with contrasting colors for visibility on any background
 	for edge_pixel in edges:
-		# Transform to layer screen coordinates
 		var screen_pos = Vector2(edge_pixel) + layer_pos
-		# Draw alternating black/white pixels for visibility
-		var phase = (int(edge_pixel.x + edge_pixel.y) + offset) % (dash_length * 2)
-		var color = Color.WHITE if phase < dash_length else Color.BLACK
-		draw_rect(Rect2(screen_pos, Vector2(1, 1)), color)
-
-
-func center_view() -> void:
-	# First calculate the bounding rectangle
-	var rect := Rect2()
-	var first_child := true
-	
-	# Iterate to find the bounds of all children
-	for child in get_children():
-		if child is LayerV2:
-			if first_child:
-				rect = Rect2(child.position, Vector2.ZERO)
-				first_child = false
-			else:
-				rect = rect.expand(child.position)
-			
-			# Include the child's size if available
-			if child.has_method("get_size") or child.has_property("size"):
-				rect = rect.expand(child.position + child.size)
-	
-	# If no valid children were found, exit early
-	if first_child:
-		return
-		
-	# Calculate center of the bounding rectangle
-	var bounds_center = rect.position + rect.size / 2
-	
-	# Calculate the offset needed to center the elements
-	# This assumes you want to center relative to the viewport or container
-	var view_center = get_viewport_rect().size / 2
-	var offset = view_center - bounds_center
-	
-	# Move all children by the offset to center them
-	for child in get_children():
-		if child is LayerV2:
-			child.position += offset
+		var phase = (edge_pixel.x + edge_pixel.y + offset) % (dash_length * 2)
+		# Use white and dark gray (not pure black) for better visibility
+		var color = Color.WHITE if phase < dash_length else Color(0.2, 0.2, 0.2)
+		draw_rect(Rect2(screen_pos, Vector2(2, 2)), color)

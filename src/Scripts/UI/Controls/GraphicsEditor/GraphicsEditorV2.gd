@@ -19,6 +19,7 @@ signal selection_changed()
 @export_range(1.03, 2.0) var PAN_FACTOR: = 1.25
 
 @onready var layers_container: LayersContainer = %LayersContainer
+@onready var selection_overlay: Control = %SelectionOverlay  # SelectionOverlay type causes circular dependency
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
 @onready var layer_cards_popup_panel: Window = %LayerCardsPopupPanel
@@ -44,6 +45,7 @@ signal selection_changed()
 @onready var _speech_bubble_options: Control = %SpeechBubbleOptions
 @onready var _selection_options_container: Control = %SelectionOptions
 @onready var selection_indicator_button: MenuButton = %SelectionIndicatorButton
+@onready var selection_mode_label: Label = %SelectionModeLabel
 
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var smudge_tool: SmudgeTool = %SmudgeTool
@@ -55,6 +57,8 @@ signal selection_changed()
 @onready var render_view_tool: RenderViewTool = %RenderViewTool
 @onready var eyedropper_tool: EyedropperTool = %EyedropperTool
 @onready var magic_wand_tool: MagicWandTool = %MagicWandTool
+@onready var rectangle_select_tool: RectangleSelectTool = %RectangleSelectTool
+@onready var lasso_select_tool: LassoSelectTool = %LassoSelectTool
 
 
 @onready var tool_options_mapping: = {
@@ -65,6 +69,8 @@ signal selection_changed()
 	speech_bubble_tool: _speech_bubble_options,
 	eyedropper_tool: _brush_options_container,
 	magic_wand_tool: _selection_options_container,
+	rectangle_select_tool: _selection_options_container,
+	lasso_select_tool: _selection_options_container,
 }
 
 @onready var image_gen_window: Window = %ImageGenWindow
@@ -134,7 +140,7 @@ var current_workflow: Workflow = Workflow.Z_TURBO
 var canvas_size: = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)
 
 var _custom_cursor: Resource
-var _custom_cursor_shape: int
+var _custom_cursor_shape: int = 0  # Control.CursorShape as int
 var _custom_cursor_hotspot: Vector2
 
 
@@ -168,6 +174,7 @@ const MARCHING_ANTS_SPEED: float = 10.0  # pixels per second
 var _selection_is_empty: bool = true  # Cached flag to avoid O(W×H) scan on every pixel check
 var _cached_selection_edges: Array[Vector2i] = []  # Cached edge pixels for marching ants
 var _edges_cache_valid: bool = false  # Whether edge cache is up to date
+var _selection_bbox: Rect2i = Rect2i()  # Bounding box of selection for optimized iteration
 
 var active_tool: BaseTool:
 	set(value):
@@ -241,7 +248,11 @@ func _ready() -> void:
 	input_area_camera.offset = Vector2.ZERO
 	
 	workflow_option_button.select(0)
+
 	response_layout_toggle()
+
+	# Position drawing area at top-left of viewport on startup
+	call_deferred("_position_view_top_left")
 
 
 func _process(delta: float) -> void:
@@ -251,10 +262,31 @@ func _process(delta: float) -> void:
 		if _marching_ants_timer >= 0.1:  # Update every 100ms
 			_marching_ants_offset = fmod(_marching_ants_offset + 1.0, 8.0)
 			_marching_ants_timer = 0.0
-			layers_container.queue_redraw()
+			selection_overlay.queue_redraw()
+
+	# Update selection mode label based on modifier keys
+	_update_selection_mode_label()
 
 
-func setup(canvas_size_: Vector2i = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)) -> void:
+func _update_selection_mode_label() -> void:
+	if not selection_mode_label or not _selection_options_container.visible:
+		return
+
+	var mode_text: String
+	if Input.is_key_pressed(KEY_SHIFT) and Input.is_key_pressed(KEY_ALT):
+		mode_text = "Mode: Intersect"
+	elif Input.is_key_pressed(KEY_SHIFT):
+		mode_text = "Mode: Add"
+	elif Input.is_key_pressed(KEY_ALT):
+		mode_text = "Mode: Subtract"
+	else:
+		mode_text = "Mode: Replace"
+
+	if selection_mode_label.text != mode_text:
+		selection_mode_label.text = mode_text
+
+
+func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 	# Create layers in order (first created appears at bottom in visual stack)
 	create_new_layer("Background", canvas_size_, Color.WHITE, false)
 	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
@@ -451,8 +483,18 @@ func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 
 	_custom_cursor_shape = shape
 	_custom_cursor_hotspot = hotspot
 
-	if layers_container.get_rect().has_point(layers_container.get_local_mouse_position()):
-		Input.set_custom_mouse_cursor(image, shape, hotspot)
+	if image:
+		# Apply custom cursor image - this replaces the CURSOR_ARROW slot
+		Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
+		# Set the control's cursor to use the custom image
+		layers_container.mouse_default_cursor_shape = Control.CURSOR_ARROW
+	else:
+		# Clear any custom cursor image
+		Input.set_custom_mouse_cursor(null)
+		# Set the control's default cursor shape directly
+		# This is the correct way to change cursor over Control nodes
+		# Cast int to CursorShape enum
+		layers_container.mouse_default_cursor_shape = shape as Control.CursorShape
 
 func reorder_layer(layer: LayerV2, index: int) -> void:
 	if not layer.has_meta("layer_card") or not layer.get_meta("layer_card") is LayerCard:
@@ -667,21 +709,40 @@ func _on_pen_normal_detected() -> void:
 func has_selection() -> bool:
 	return selection_mask != null and not _selection_is_empty
 
-## Update the cached _selection_is_empty flag - call this when selection changes
+## Update the cached _selection_is_empty flag and bounding box - call this when selection changes
 func _update_selection_cache() -> void:
 	_edges_cache_valid = false  # Invalidate edges cache too
 	if not selection_mask:
 		_selection_is_empty = true
+		_selection_bbox = Rect2i()
 		_cached_selection_edges.clear()
 		return
-	# Scan to determine if selection is empty
-	for y in selection_mask.get_height():
-		for x in selection_mask.get_width():
+
+	# Scan to determine if selection is empty and calculate bounding box
+	var w = selection_mask.get_width()
+	var h = selection_mask.get_height()
+	var min_x = w
+	var min_y = h
+	var max_x = -1
+	var max_y = -1
+	var found_any = false
+
+	for y in h:
+		for x in w:
 			if selection_mask.get_pixel(x, y).r > 0.5:
-				_selection_is_empty = false
-				return
-	_selection_is_empty = true
-	_cached_selection_edges.clear()
+				found_any = true
+				min_x = mini(min_x, x)
+				min_y = mini(min_y, y)
+				max_x = maxi(max_x, x)
+				max_y = maxi(max_y, y)
+
+	if found_any:
+		_selection_is_empty = false
+		_selection_bbox = Rect2i(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+	else:
+		_selection_is_empty = true
+		_selection_bbox = Rect2i()
+		_cached_selection_edges.clear()
 
 ## Get cached selection edges for marching ants rendering
 func get_selection_edges() -> Array[Vector2i]:
@@ -689,15 +750,21 @@ func get_selection_edges() -> Array[Vector2i]:
 		return _cached_selection_edges
 
 	_cached_selection_edges.clear()
-	if not selection_mask:
+	if not selection_mask or _selection_is_empty:
 		_edges_cache_valid = true
 		return _cached_selection_edges
 
 	var w = selection_mask.get_width()
 	var h = selection_mask.get_height()
 
-	for y in h:
-		for x in w:
+	# Only iterate over bounding box instead of entire image for performance
+	var x_start = _selection_bbox.position.x
+	var y_start = _selection_bbox.position.y
+	var x_end = x_start + _selection_bbox.size.x
+	var y_end = y_start + _selection_bbox.size.y
+
+	for y in range(y_start, y_end):
+		for x in range(x_start, x_end):
 			if selection_mask.get_pixel(x, y).r > 0.5:
 				# Check if this is an edge pixel (has unselected neighbor)
 				var is_edge = false
@@ -719,6 +786,7 @@ func create_selection_mask(size_: Vector2i) -> void:
 	selection_mask = Image.create(size_.x, size_.y, false, Image.FORMAT_L8)
 	selection_mask.fill(Color.BLACK)
 	_selection_is_empty = true
+	_selection_bbox = Rect2i()
 	_edges_cache_valid = false
 	_cached_selection_edges.clear()
 
@@ -727,10 +795,11 @@ func clear_selection() -> void:
 	if selection_mask:
 		selection_mask.fill(Color.BLACK)
 	_selection_is_empty = true
+	_selection_bbox = Rect2i()
 	_edges_cache_valid = false
 	_cached_selection_edges.clear()
 	selection_changed.emit()
-	queue_redraw()
+	selection_overlay.queue_redraw()
 
 ## Select the entire canvas
 func select_all() -> void:
@@ -866,7 +935,10 @@ func _on_smudge_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = smudge_tool if toggled_on else null
 
 func _on_layers_container_mouse_entered() -> void:
-	Input.set_custom_mouse_cursor(_custom_cursor, _custom_cursor_shape, _custom_cursor_hotspot)
+	# Re-apply custom cursor image when entering the layers container
+	# The mouse_default_cursor_shape property handles the cursor shape automatically
+	if _custom_cursor:
+		Input.set_custom_mouse_cursor(_custom_cursor, Input.CURSOR_ARROW, _custom_cursor_hotspot)
 
 
 func _on_add_image_button_pressed() -> void:
@@ -1148,6 +1220,8 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		4: active_tool = null; _on_add_image_button_pressed()
 		5: active_tool = eyedropper_tool
 		6: active_tool = magic_wand_tool
+		7: active_tool = rectangle_select_tool
+		8: active_tool = lasso_select_tool
 		_: pass
 	
 
@@ -1948,8 +2022,33 @@ func _on_lock_media_gen_ui(lock: bool = true) -> void:
 		enable_ai_features()
 
 
+func _on_lock_media_gen_ui(lock: bool = true) -> void:
+	if lock:
+		disable_ai_features(0)
+	else:
+		enable_ai_features()
+
+
 func _on_center_view_button_pressed() -> void:
-	center_view()
+	if active_layer == null:
+		return
+	var pos: = active_layer.get_rect().get_center()
+
+	pos = input_area_camera.get_canvas_transform().basis_xform(pos)
+	input_area_camera.offset = pos
+	input_area_camera.queue_redraw()
+
+
+## Position the drawing area at the top-left of the viewport
+func _position_view_top_left() -> void:
+	var viewport_size = input_area_camera.get_viewport().size
+	# Camera2D centers on its position, so offset to put content at top-left
+	# Account for zoom: at zoom 0.5, we see 2x the area, so offset needs adjustment
+	var zoom_factor = input_area_camera.zoom.x
+	# Offset camera so origin (0,0) appears at top-left with some padding
+	var padding = Vector2(20, 20)
+	input_area_camera.offset = Vector2.ZERO
+	input_area_camera.position = (Vector2(viewport_size) / 2.0) / zoom_factor - padding
 
 
 func _on_zoom_out_button_pressed() -> void:
