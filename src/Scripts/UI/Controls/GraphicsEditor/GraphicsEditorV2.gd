@@ -77,10 +77,7 @@ signal selection_changed()
 @onready var prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var send_prompt_button: Button = %SendPromptButton
 @onready var negative_text_edit: TextEdit = %NegativeTextEdit
-@onready var image_width_line_edit: LineEdit = %ImageWidthLineEdit
-@onready var image_height_line_edit: LineEdit = %ImageHeightLineEdit
 @onready var image_width_option_button: OptionButton = %ImageWidthOptionButton
-@onready var image_height_option_button: OptionButton = %ImageHeightOptionButton
 @onready var advanced_settings_check_button: CheckButton = %AdvancedSettingsCheckButton
 @onready var advanced_settings_container: VBoxContainer = %AdvancedSettingsContainer
 @onready var prompt_button: Button = %PromptButton
@@ -122,8 +119,8 @@ signal selection_changed()
 #endregion
 
 const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total number of pixels must be divisible by 64
-const MAX_IMAGE_GEN_RES: int = 2500
-const MIN_IMAGE_RES: int = 512
+const MAX_IMAGE_GEN_RES: int = 2048
+const MIN_IMAGE_RES: int = 64
 
 # Workflow selection for image generation
 enum Workflow { Z_TURBO, QWEN }
@@ -216,8 +213,7 @@ func _ready() -> void:
 	while temp_res + 64 <= MAX_IMAGE_GEN_RES:
 		var res: = str(temp_res)
 		image_width_option_button.add_item(res)
-		image_height_option_button.add_item(res)
-		temp_res += 128
+		temp_res += 64
 	
 	delete_layer.connect(_on_delete_layer)
 	
@@ -1695,8 +1691,9 @@ func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 func get_params_image_gen() -> Dictionary:
 	if prompt_text_edit.text.is_empty():
 		return {}
-		
-	var image_res: int = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
+	
+	var idx: = image_width_option_button.selected
+	var image_res: int = image_width_option_button.get_item_text(idx).to_int()
 	return {
 		"positive_prompt" = prompt_text_edit.text,
 		"negative_prompt" = negative_text_edit.text,
@@ -2013,13 +2010,6 @@ func enable_ai_features() -> void:
 	if connection_label.visible:
 		connection_label.hide()
 	toggle_enable_ai_fields()
-
-
-func _on_lock_media_gen_ui(lock: bool = true) -> void:
-	if lock:
-		disable_ai_features(0)
-	else:
-		enable_ai_features()
 
 
 func _on_lock_media_gen_ui(lock: bool = true) -> void:

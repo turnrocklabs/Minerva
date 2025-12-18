@@ -734,14 +734,6 @@ func send_media_gen_request(generation_params: Dictionary, topic: String = "medi
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
-				#"workflow": "image_generation",  # Updated workflow
-				## These are now being merged below
-				#"positive_prompt": generation_params.get("prompt"),
-				#"negative_prompt": generation_params.get("negative_prompt"),
-				#"width": 1024, # The total numgber of pixels must be divisible by 64
-				#"height": 1024,
-				#"steps": 8,
-				#"cfg": 1.0,
 			},
 			"auth": Core._jwt_token
 		}

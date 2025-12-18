@@ -1,4 +1,4 @@
-[gd_scene load_steps=59 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=64 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -46,9 +46,9 @@
 [ext_resource type="Texture2D" uid="uid://bojjjvd53jve1" path="res://assets/icons/invert_selection.svg" id="33_invert"]
 [ext_resource type="Texture2D" uid="uid://dtub6faqlc6uu" path="res://assets/icons/delete_selection.svg" id="34_delsel"]
 [ext_resource type="Texture2D" uid="uid://2g2gdsnqp3g0" path="res://assets/icons/rectangle_select.svg" id="35_rectsel"]
-[ext_resource type="Script" uid="uid://ptjen9cdinfag" path="res://Scripts/UI/Controls/GraphicsEditor/tools/LassoSelectTool.gd" id="36_lasso"]
+[ext_resource type="Script" uid="uid://dvwb1nc8tv8e" path="res://Scripts/UI/Controls/GraphicsEditor/tools/LassoSelectTool.gd" id="36_lasso"]
 [ext_resource type="Texture2D" uid="uid://cs57wo2b1qycy" path="res://assets/icons/lasso_select.svg" id="37_lassoicon"]
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/SelectionOverlay.gd" id="38_selover"]
+[ext_resource type="Script" uid="uid://dk1ha137jdcrs" path="res://Scripts/UI/Controls/GraphicsEditor/SelectionOverlay.gd" id="38_selover"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
 offsets = PackedFloat32Array(0.609626, 1)
@@ -1098,7 +1098,6 @@ layout_mode = 2
 
 [node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6
@@ -1162,39 +1161,6 @@ text = "Image Size(px):"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 6
-
-[node name="ImageWidthLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-text = "1024"
-max_length = 5
-virtual_keyboard_type = 2
-clear_button_enabled = true
-caret_blink = true
-
-[node name="HBoxContainer5" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
-visible = false
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="ImageGenWindow_ImageGenPanelContainer_MarginContainer_VBoxContainer_ScrollContainer_VBoxContainer_AdvancedSettingsContainer_HFlowContainer_HBoxContainer5#ImageHeightLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
-layout_mode = 2
-text = "Height: "
-
-[node name="ImageHeightLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-text = "1024"
-max_length = 5
-virtual_keyboard_type = 2
-clear_button_enabled = true
-caret_blink = true
-
-[node name="ImageHeightOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer5"]
-unique_name_in_owner = true
-layout_mode = 2
 
 [node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
 layout_mode = 2
