@@ -37,6 +37,7 @@ var package_editor: PackageEditor
 @onready var mic_button: Button = %MicButton
 @onready var code_syntax_button: IconsButton = $VBoxContainer/ButtonsHBoxContainer/CodeSyntaxButton
 @onready var find_button: IconsButton = %FindButton
+@onready var reload_button: IconsButton = %reloadButton
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -98,7 +99,8 @@ var file: String:
 		if code_edit != null:
 			if code_syntax_enabled:
 				code_edit.syntax_highlighter = update_code_hightlighter(file)
-		%reloadButton.disabled = false
+		if reload_button != null:
+			reload_button.disabled = false
 
 #var file_path: String
 var type: Type
@@ -227,7 +229,7 @@ func _ready():
 		code_syntax_button.hide()
 		find_button.hide()
 		%btnApplyDiff.hide()
-		%reloadButton.hide()
+		reload_button.hide()
 		
 		mic_button.queue_free()
 		autowrap_button.queue_free()
@@ -236,7 +238,7 @@ func _ready():
 		find_string_container.queue_free()
 		jump_to_line_panel.queue_free()
 		%btnApplyDiff.queue_free()
-		%reloadButton.queue_free()
+		reload_button.queue_free()
 	
 	if type == Type.TEXT:
 		text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))

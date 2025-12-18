@@ -111,6 +111,7 @@ signal selection_changed()
 @onready var render_viewport_button: Button = %RenderViewportButton
 @onready var render_view_control: RenderViewRect = %RenderViewControl
 @onready var connection_label: Label = %ConnectionLabel
+@onready var drawing_area_sub_viewport: SubViewport = %DrawingAreaSubViewport
 
 #endregion
 
@@ -1183,7 +1184,7 @@ func compose_final_image(show_dialog: = true) -> Image:
 	
 	if show_dialog:
 		# Show progress window
-		progress_window.popup()
+		progress_window.popup_centered()
 		progress_window_label.text = "Composing image..."
 		progress_window_bar.value = 0
 	
@@ -1474,7 +1475,7 @@ func _on_edit_button_pressed() -> void:
 
 func _on_edit_img_button_pressed() -> void:
 	if ai_request_type == AI_REQUEST.EDIT_IMAGE:
-		if selected_layers.size() < 1:
+		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
 			return
 		
 		var layer_to_send: LayerV2 = selected_layers[0]
@@ -1512,7 +1513,7 @@ func _on_edit_img_button_pressed() -> void:
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
 	elif  ai_request_type == AI_REQUEST.MASK_EDIT:
-		if selected_layers.size() < 1:
+		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
 			return
 		if !selected_layers[0].has_meta("linked_mask_layer") and selected_mask_layers.size() < 1:
 			display_message("Mask Required", "Select a mask layer for masked editing.")
@@ -1891,8 +1892,9 @@ func _on_draw_rect(rect: Rect2) -> void:
 
 
 func _on_get_texture_button_pressed() -> void:
-	var texture: ViewportTexture = render_view_control.get_render_viewport_texture()
-	var image: = texture.get_image()
+	var image: Image = %DrawingAreaSubViewport.get_texture().get_image()
+	var new_rect: = Rect2(Vector2(200,200), Vector2(200,200))
+	image = image.get_region(new_rect)
 	create_new_image_layer("render_viewport layer",image)
 
 

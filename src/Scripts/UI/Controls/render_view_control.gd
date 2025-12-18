@@ -77,5 +77,5 @@ func _draw():
 		subviewport_container.size = rect.size
 
 
-func get_render_viewport_texture() -> ViewportTexture:
-	return render_viewport.get_texture()
+func get_rectangle() -> Rect2i:
+	return _rect
