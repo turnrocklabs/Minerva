@@ -1,9 +1,9 @@
 class_name RenderViewTool
 extends BaseTool
 
-signal draw_render_rect(rect: Rect2) # This signal is no longer needed. The tool directly updates render_view_control._rect
+#signal draw_render_rect(rect: Rect2)
 
-@export var control: Control = null # This control is %DrawingAreaSubViewport/Control, i.e., the LayersContainer wrapper
+@export var control: Control = null #LayersContainer
 
 # Enum for different resize handles
 enum ResizeHandle {
@@ -18,19 +18,17 @@ var _is_moving_rect: bool = false
 var _is_resizing_rect: bool = false
 var _resize_handle: ResizeHandle = ResizeHandle.NONE
 
-# Positions tracked at the start of a drag
 var _initial_mouse_pos_canvas: Vector2 = Vector2.ZERO
 var _initial_rect_pos_canvas: Vector2 = Vector2.ZERO
 var _initial_rect_size_canvas: Vector2 = Vector2.ZERO
 
-const HANDLE_SIZE: float = 8.0 # Size of the clickable resize handles
+const HANDLE_SIZE: float = 8.0
 
 func _tool_selected() -> void:
 	_reset_state()
-	# When this tool is selected, ensure the RenderViewControl is visible and drawing
 	editor.render_view_control.draw_render_view = true
 	editor.render_view_control.queue_redraw()
-	editor.set_custom_cursor(null, Input.CURSOR_CROSS) # Default cursor for drawing/general interaction
+	editor.set_custom_cursor(null, Input.CURSOR_CROSS) 
 
 
 func _reset_state() -> void:
@@ -41,13 +39,9 @@ func _reset_state() -> void:
 	_initial_mouse_pos_canvas = Vector2.ZERO
 	_initial_rect_pos_canvas = Vector2.ZERO
 	_initial_rect_size_canvas = Vector2.ZERO
-	# Note: _rect itself is NOT reset here to preserve the user's last rectangle.
-	# If you want to clear it, add: editor.render_view_control._rect = Rect2()
 
 
 func handle_input_event(event: InputEvent) -> bool:
-	# Input events are already relative to GraphicsEditorV2
-	# We need them relative to the 'canvas' area, which is `layers_container`
 	var canvas_local_mouse_pos = editor.layers_container.get_local_mouse_position()
 	
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -55,24 +49,23 @@ func handle_input_event(event: InputEvent) -> bool:
 			_initial_mouse_pos_canvas = canvas_local_mouse_pos
 			_initial_rect_pos_canvas = editor.render_view_control._rect.position
 			_initial_rect_size_canvas = editor.render_view_control._rect.size
-
+			
 			_resize_handle = _get_resize_handle_at_pos(canvas_local_mouse_pos)
-
+			
 			if _resize_handle != ResizeHandle.NONE:
 				_is_resizing_rect = true
 				editor.set_custom_cursor(null, _get_cursor_for_handle(_resize_handle))
 			elif editor.render_view_control._rect.size != Vector2.ZERO and editor.render_view_control._rect.has_point(canvas_local_mouse_pos):
 				_is_moving_rect = true
-				editor.set_custom_cursor(null, Input.CURSOR_FDIAGSIZE) # Or CURSOR_MOVE
+				editor.set_custom_cursor(null, Input.CURSOR_FDIAGSIZE) 
 			else:
 				_is_drawing_new_rect = true
-				# Start a new rectangle from the click point with 1x1 size
 				editor.render_view_control._rect = Rect2(canvas_local_mouse_pos, Vector2(1,1))
-				editor.set_custom_cursor(null, Input.CURSOR_FDIAGSIZE) # Cross or resize cursor
-
-			editor.render_view_control.queue_redraw() # Redraw to show potential initial rect/handles
+				editor.set_custom_cursor(null, Input.CURSOR_FDIAGSIZE)
+			
+			editor.render_view_control.queue_redraw()
 			return true # Event handled
-
+		
 		else: # Mouse button released
 			_is_drawing_new_rect = false
 			_is_moving_rect = false
@@ -80,11 +73,10 @@ func handle_input_event(event: InputEvent) -> bool:
 			_resize_handle = ResizeHandle.NONE
 			editor.set_custom_cursor(null, Input.CURSOR_CROSS) # Reset to default for tool
 			
-			# Ensure the rectangle has positive dimensions after drag
 			editor.render_view_control._rect = editor.render_view_control._rect.abs()
 			editor.render_view_control.queue_redraw()
-			return true # Event handled
-
+			return true
+	
 	elif event is InputEventMouseMotion:
 		if _is_drawing_new_rect:
 			var start_pos = _initial_mouse_pos_canvas
@@ -106,7 +98,7 @@ func handle_input_event(event: InputEvent) -> bool:
 		elif _is_resizing_rect:
 			var new_rect = Rect2(_initial_rect_pos_canvas, _initial_rect_size_canvas)
 			var mouse_delta = canvas_local_mouse_pos - _initial_mouse_pos_canvas
-
+			
 			match _resize_handle:
 				ResizeHandle.TOP_LEFT:
 					new_rect.position.x += mouse_delta.x
@@ -135,26 +127,24 @@ func handle_input_event(event: InputEvent) -> bool:
 				ResizeHandle.BOTTOM:
 					new_rect.size.y += mouse_delta.y
 			
-			# Update the rect in RenderViewControl. It will handle abs() if needed during draw.
 			editor.render_view_control._rect = new_rect
 			editor.render_view_control.queue_redraw()
 			return true
 		else: # Mouse motion without active drag, update cursor for hover feedback
 			_update_mouse_cursor(canvas_local_mouse_pos)
-			return false # Not handled, allow other controls to receive it if they want
+			return false
+	
+	return false
 
-	return false # Event not handled by this tool
 
-
-# Helper for cursor management based on hover position
 func _update_mouse_cursor(pos: Vector2) -> void:
 	var handle = _get_resize_handle_at_pos(pos)
 	if handle != ResizeHandle.NONE:
 		editor.set_custom_cursor(null, _get_cursor_for_handle(handle))
 	elif editor.render_view_control._rect.size != Vector2.ZERO and editor.render_view_control._rect.has_point(pos):
-		editor.set_custom_cursor(null, Input.CURSOR_FDIAGSIZE) # Move cursor
+		editor.set_custom_cursor(null, Input.CURSOR_FDIAGSIZE)
 	else:
-		editor.set_custom_cursor(null, Input.CURSOR_CROSS) # Default draw cursor
+		editor.set_custom_cursor(null, Input.CURSOR_CROSS)
 
 
 # Returns the appropriate cursor for a given resize handle
@@ -171,14 +161,12 @@ func _get_cursor_for_handle(handle: ResizeHandle) -> Input.CursorShape:
 func _get_resize_handle_at_pos(pos: Vector2) -> ResizeHandle:
 	var rect = editor.render_view_control._rect
 	if rect.size.x <= 0 or rect.size.y <= 0: return ResizeHandle.NONE
-
-	# Calculate corner points in canvas coordinates
+	
 	var tl = rect.position
 	var tr = Vector2(rect.end.x, rect.position.y)
 	var bl = Vector2(rect.position.x, rect.end.y)
 	var br = rect.end
 	
-	# Check corners first (higher priority)
 	if Rect2(tl - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.TOP_LEFT
 	if Rect2(tr - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.TOP_RIGHT
 	if Rect2(bl - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.BOTTOM_LEFT

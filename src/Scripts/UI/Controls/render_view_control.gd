@@ -1,14 +1,11 @@
-# (File: Scripts/UI/Controls/render_view_control.gd)
 class_name RenderViewRect
 extends Control
-
-# signal rect_updated(rect: Rect2) # This signal is no longer necessary as _rect is public
 
 @export var subviewport_container: SubViewportContainer
 @export var render_viewport: SubViewport
 
 var draw_render_view: = false
-var _rect: Rect2 = Rect2(100, 100, 200, 200) # Default initial rectangle, exposed for RenderViewTool to update
+var _rect: Rect2 = Rect2(100, 100, 200, 200)
 
 # Drawing constants
 const HANDLE_SIZE: float = 8.0 # Size of the handle squares

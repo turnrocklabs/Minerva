@@ -201,7 +201,6 @@ func _ready() -> void:
 	# Connect pen inverted signals
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
-	render_view_tool.draw_render_rect.connect(_on_draw_rect)
 	# Connect selection changed signal to update UI
 	selection_changed.connect(_on_selection_changed)
 	_setup_selection_popup_menu()
@@ -282,7 +281,7 @@ func _update_selection_mode_label() -> void:
 		selection_mode_label.text = mode_text
 
 
-func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
+func setup(canvas_size_: Vector2i = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)) -> void:
 	# Create layers in order (first created appears at bottom in visual stack)
 	create_new_layer("Background", canvas_size_, Color.WHITE, false)
 	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
@@ -1471,6 +1470,8 @@ func _on_send_prompt_button_pressed() -> void:
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
 	SingletonObject.main_scene.add_child(toast)
+	save_prompt_to_history(params["positive_prompt"], params["negative_prompt"])
+	prompt_text_edit.text = ""
 
 
 func _on_image_received(filename:String, request_id: String, buffer: PackedByteArray) -> void:
@@ -1592,10 +1593,6 @@ func _on_edit_img_button_pressed() -> void:
 		
 		if image_layer_to_edit == null:
 			return
-		#for i: LayerV2 in selected_layers:
-			#if i.selected:
-				#image_layer_to_edit = i
-				#break
 		if prompt_text_edit.text.is_empty():
 			display_message("Input Required", "Please enter a positive prompt for masked image editing.")
 			return
@@ -1625,7 +1622,6 @@ func _on_edit_img_button_pressed() -> void:
 			}
 		images_dir.append(image_file)
 		
-		#var mask_dir: = {}
 		var mask_color_channel: = ""
 		if image_layer_to_edit.has_meta("linked_mask_layer"):
 			var i: LayerV2 = image_layer_to_edit.get_meta("linked_mask_layer")
@@ -1683,6 +1679,7 @@ func _on_edit_img_button_pressed() -> void:
 		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(selective_editing_params, images_dir)
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
+	prompt_text_edit.text = ""
 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 	advanced_settings_container.visible = toggled_on
@@ -1935,38 +1932,12 @@ func check_ai_buttons_toggle() -> void:
 		edit_img_button.tooltip_text = _edit_img_base_tooltip
 
 
-#func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
-	#if not toggled_on:
-		#_tools_option_button.select(0)
-		#_tools_option_button.item_selected.emit(0)
-		#_tools_option_button.grab_focus()
-		#draw_render_view = false
-		#_on_draw_rect(_render_view_rect)
-		#return
-	#
-	#active_tool = render_view_tool if toggled_on else null
-	#render_viewport_button.release_focus()
-	#draw_render_view = true
-	#_on_draw_rect(_render_view_rect)
-	#render_view_control.queue_redraw()
-
 var draw_render_view: = false
 var _render_view_rect: = Rect2(Vector2.ZERO, Vector2.ZERO)
 func _on_draw_rect(rect: Rect2) -> void:
 	render_view_control.draw_render_view = draw_render_view
-	#render_view_control.rect_start = rect.position
-	#render_view_control.rect_end = rect.end
 	render_view_control._rect = rect
 	render_view_control.queue_redraw()
-	#_rect_start_global_pos = rect_pos
-	#_rect_end_global_pos = rect_size
-
-
-#func _on_get_texture_button_pressed() -> void:
-	#var image: Image = %DrawingAreaSubViewport.get_texture().get_image()
-	#var new_rect: = Rect2(Vector2(200,200), Vector2(200,200))
-	#image = image.get_region(new_rect)
-	#create_new_image_layer("render_viewport layer",image)
 
 
 func _on_workflow_option_button_item_selected(index: int) -> void:
@@ -2260,11 +2231,112 @@ func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
 		_tools_option_button.select(0)
 		_tools_option_button.item_selected.emit(0)
 		_tools_option_button.grab_focus()
-		render_view_control.draw_render_view = false # Hide the rect
+		render_view_control.draw_render_view = false
 		render_view_control.queue_redraw()
 		return
 	
-	active_tool = render_view_tool # Set active tool
+	active_tool = render_view_tool 
 	render_viewport_button.release_focus()
-	render_view_control.draw_render_view = true # Show the rect
+	render_view_control.draw_render_view = true
 	render_view_control.queue_redraw()
+
+
+func _on_prompt_history_button_pressed() -> void:
+	var hist_window: = Window.new()
+	var root_vbox_container: = VBoxContainer.new()
+	var panel: = PanelContainer.new()
+	var scroll_container: = ScrollContainer.new()
+	var label: = Label.new()
+	
+	add_child(hist_window)
+	
+	hist_window.size = Vector2i(400, 300)
+	hist_window.title = "Prompt History"
+	
+	hist_window.add_child(root_vbox_container)
+	root_vbox_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root_vbox_container.set_offsets_preset(Control.PRESET_FULL_RECT)
+	root_vbox_container.add_theme_constant_override("separation", 0)
+	
+	var content_margin: = MarginContainer.new()
+	root_vbox_container.add_child(content_margin)
+	content_margin.set_h_size_flags(Control.SIZE_EXPAND_FILL)
+	content_margin.set_v_size_flags(Control.SIZE_EXPAND_FILL)
+	
+	content_margin.add_child(panel)
+	panel.set_h_size_flags(Control.SIZE_EXPAND_FILL)
+	panel.set_v_size_flags(Control.SIZE_EXPAND_FILL)
+	
+	panel.add_child(scroll_container)
+	scroll_container.set_h_size_flags(Control.SIZE_EXPAND_FILL)
+	scroll_container.set_v_size_flags(Control.SIZE_EXPAND_FILL)
+	
+	scroll_container.add_theme_constant_override("h_scroll_separation", 0)
+	scroll_container.add_theme_constant_override("v_scroll_separation", 0)
+	
+	scroll_container.add_child(label)
+	label.set_h_size_flags(Control.SIZE_EXPAND_FILL)
+	label.set_v_size_flags(Control.SIZE_SHRINK_BEGIN)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	label.text = get_gen_ai_history()
+
+	label.add_theme_color_override("font_color", Color.WHITE)
+
+	hist_window.close_requested.connect(func() -> void:
+		hist_window.queue_free()
+	)
+	
+	hist_window.popup_centered()
+
+
+func get_gen_ai_history() -> String:
+	var file_path = SingletonObject.GEN_AI_HIST_FILE_PATH
+	var file = FileAccess.open(file_path, FileAccess.READ)
+
+	if file:
+		var content = file.get_as_text()
+		file.close()
+		if content.is_empty():
+			return "No History Found"
+		return content
+	else:
+		return "No History Found"
+
+
+func _csv_escape(text: String) -> String:
+	# According to RFC 4180 (CSV standard):
+	# 1. If a field contains a double-quote, comma, or newline, it must be enclosed in double quotes.
+	# 2. Within a double-quoted field, each double-quote character must be represented by two double-quote characters.
+	
+	var needs_quoting = text.contains(",") or text.contains("\"") or text.contains("\n")
+	var escaped_text = text.replace("\"", "\"\"") # Escape internal double quotes
+	
+	if needs_quoting:
+		return "\"" + escaped_text + "\"" # Enclose in double quotes if needed
+	else:
+		return escaped_text # No quoting needed
+
+
+func save_prompt_to_history(positive_prompt: String, negative_prompt: String) -> void:
+	var file_path = SingletonObject.GEN_AI_HIST_FILE_PATH
+	
+	var current_time = Time.get_datetime_string_from_system(true, true)
+	# Escape each field for CSV format
+	var escaped_time = _csv_escape(current_time)
+	var escaped_positive_prompt = _csv_escape(positive_prompt.strip_edges())
+	var escaped_negative_prompt = _csv_escape(negative_prompt.strip_edges())
+	
+	var history_entry = "%s,%s,%s\n" % [escaped_time, escaped_positive_prompt, escaped_negative_prompt]
+	
+	var file = FileAccess.open(file_path, FileAccess.WRITE_READ)
+	if file:
+		# If the file is newly created or empty, add a header row first.
+		if file.get_length() == 0:
+			file.store_string(_csv_escape("Timestamp") + "," + _csv_escape("Positive Prompt") + "," + _csv_escape("Negative Prompt") + "\n")
+		
+		file.seek_end()
+		file.store_string(history_entry)
+		file.close()
+		print("Prompt saved to history (CSV): %s" % history_entry.strip_edges())
+	else:
+		push_error("Failed to open prompt history file for writing: %s" % file_path)

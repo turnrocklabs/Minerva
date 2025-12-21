@@ -1,4 +1,4 @@
-[gd_scene load_steps=64 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=65 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -49,6 +49,7 @@
 [ext_resource type="Script" uid="uid://dvwb1nc8tv8e" path="res://Scripts/UI/Controls/GraphicsEditor/tools/LassoSelectTool.gd" id="36_lasso"]
 [ext_resource type="Texture2D" uid="uid://cs57wo2b1qycy" path="res://assets/icons/lasso_select.svg" id="37_lassoicon"]
 [ext_resource type="Script" uid="uid://dk1ha137jdcrs" path="res://Scripts/UI/Controls/GraphicsEditor/SelectionOverlay.gd" id="38_selover"]
+[ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="47_hu8v1"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
 offsets = PackedFloat32Array(0.609626, 1)
@@ -1065,6 +1066,22 @@ grow_vertical = 0
 tooltip_text = "Click to record positive prompt"
 icon = ExtResource("26_30sgg")
 
+[node name="PromptHistoryButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -90.0
+offset_top = -45.0
+offset_right = -52.0
+offset_bottom = -9.0
+grow_horizontal = 0
+grow_vertical = 0
+icon = ExtResource("47_hu8v1")
+
 [node name="WorkflowContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
@@ -1318,6 +1335,7 @@ text = "Select Layers...
 [connection signal="pressed" from="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/SendActionButton" to="." method="_on_send_action_button_pressed"]
 [connection signal="close_requested" from="ImageGenWindow" to="." method="_on_image_gen_window_close_requested"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit/PositivePromptMicButton" to="." method="_on_positive_prompt_mic_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit/PromptHistoryButton" to="." method="_on_prompt_history_button_pressed"]
 [connection signal="item_selected" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/WorkflowContainer/WorkflowOptionButton" to="." method="_on_workflow_option_button_item_selected"]
 [connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit/NegativePromptMicButton" to="." method="_on_negative_prompt_mic_button_pressed"]
