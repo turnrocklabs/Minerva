@@ -1,81 +1,70 @@
+# (File: Scripts/UI/Controls/render_view_control.gd)
 class_name RenderViewRect
 extends Control
 
+# signal rect_updated(rect: Rect2) # This signal is no longer necessary as _rect is public
 
-@export var _circle_radius: = 10
-@export var _circle_width: = 5
-@export var _rect_filled_color : = Color(255, 255, 255, 0.3)
-@export var _rect_line_color: = Color.ORANGE
-@export var _rect: Rect2
 @export var subviewport_container: SubViewportContainer
 @export var render_viewport: SubViewport
-#@export var rect_start: Vector2:
-	#set(value):
-		#if value <= rect_start:
-			#rect_start = value + Vector2.ONE
-		#else:
-			#rect_start = value
-#@export var rect_end: Vector2:
-	#set(value):
-		#if value <= rect_end:
-			#rect_end = value + Vector2.ONE
-		#else:
-			#rect_end = value
+
+var draw_render_view: = false
+var _rect: Rect2 = Rect2(100, 100, 200, 200) # Default initial rectangle, exposed for RenderViewTool to update
+
+# Drawing constants
+const HANDLE_SIZE: float = 8.0 # Size of the handle squares
+const HANDLE_COLOR: Color = Color.BLUE
+const RECT_COLOR: Color = Color.WHITE
+const RECT_LINE_WIDTH: float = 2.0
+const RECT_DASH_LENGTH: float = 8.0 # For dashed line
+
+
+func _draw() -> void:
+	if not draw_render_view:
+		return
+	
+	# Ensure rect has positive dimensions for drawing
+	var visual_rect = _rect.abs()
+	
+	if visual_rect.size.x <= 0 or visual_rect.size.y <= 0:
+		return
+	
+	# Draw the main rectangle outline using a dashed line pattern
+	var p1 = visual_rect.position
+	var p2 = Vector2(visual_rect.end.x, visual_rect.position.y)
+	var p3 = visual_rect.end
+	var p4 = Vector2(visual_rect.position.x, visual_rect.end.y)
+	
+	_draw_dashed_line(p1, p2, RECT_COLOR, RECT_LINE_WIDTH, RECT_DASH_LENGTH)
+	_draw_dashed_line(p2, p3, RECT_COLOR, RECT_LINE_WIDTH, RECT_DASH_LENGTH)
+	_draw_dashed_line(p3, p4, RECT_COLOR, RECT_LINE_WIDTH, RECT_DASH_LENGTH)
+	_draw_dashed_line(p4, p1, RECT_COLOR, RECT_LINE_WIDTH, RECT_DASH_LENGTH)
+
+	# Draw resize handles at corners and midpoints
+	var tl = visual_rect.position
+	var tr = Vector2(visual_rect.end.x, visual_rect.position.y)
+	var bl = Vector2(visual_rect.position.x, visual_rect.end.y)
+	var br = visual_rect.end
+	var tc = Vector2(visual_rect.position.x + visual_rect.size.x / 2, visual_rect.position.y)
+	var bc = Vector2(visual_rect.position.x + visual_rect.size.x / 2, visual_rect.end.y)
+	var ml = Vector2(visual_rect.position.x, visual_rect.position.y + visual_rect.size.y / 2)
+	var mr = Vector2(visual_rect.end.x, visual_rect.position.y + visual_rect.size.y / 2)
+
+	var handles = [tl, tr, bl, br, tc, bc, ml, mr]
+	for handle_pos in handles:
+		draw_rect(Rect2(handle_pos - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)), HANDLE_COLOR, true)
+
+func _draw_dashed_line(p_from: Vector2, p_to: Vector2, p_color: Color, p_width: float = 1.0, p_dash_length: float = 5.0) -> void:
+	var length = p_from.distance_to(p_to)
+	var direction = (p_to - p_from).normalized()
+	var current_pos = p_from
+	var draw_segment = true
+
+	while current_pos.distance_to(p_from) < length:
+		var next_pos_segment = current_pos + direction * p_dash_length
+		next_pos_segment = p_from + direction * min(current_pos.distance_to(p_from) + p_dash_length, length)
+
+		if draw_segment:
+			draw_line(current_pos, next_pos_segment, p_color, p_width)
 		
-@export var draw_render_view: = false
-
-
-enum TransformPoint {
-	TOP_LEFT,
-	TOP,
-	TOP_RIGHT,
-	RIGHT,
-	BOTTOM_RIGHT,
-	BOTTOM,
-	BOTTOM_LEFT,
-	LEFT,
-	MOVE,
-	ROTATE,
-	NONE,
-}
-
-func _get_transform_rect_positions() -> Dictionary:
-	var positions = {
-		TransformPoint.TOP_LEFT: Vector2.ZERO,
-		TransformPoint.TOP: Vector2(size.x/2, 0),
-		TransformPoint.TOP_RIGHT: Vector2(size.x, 0),
-		TransformPoint.RIGHT: Vector2(size.x, size.y/2),
-		TransformPoint.BOTTOM_RIGHT: Vector2(size.x, size.y),
-		TransformPoint.BOTTOM: Vector2(size.x/2, size.y),
-		TransformPoint.BOTTOM_LEFT: Vector2(0, size.y),
-		TransformPoint.LEFT: Vector2(0, size.y/2),
-		# Add rotation handle position
-		TransformPoint.ROTATE: Vector2(size.x/2, -30)
-	}
-	return positions
-
-var dots_offset: Vector2 = Vector2(_circle_radius * 0.5, _circle_radius * 0.5)
-
-func _draw():
-	if draw_render_view:
-		var rect = _rect
-		draw_rect(rect, _rect_filled_color, 2)
-		draw_rect(rect, _rect_line_color, false, 4)
-		
-		draw_circle(rect.position + dots_offset, _circle_radius, Color.CORAL)
-		draw_circle(rect.position + dots_offset, _circle_radius, Color.WHITE_SMOKE, false, _circle_width)
-		
-		draw_circle(Vector2(rect.position.x, rect.end.y) + dots_offset, _circle_radius, Color.CORAL)
-		draw_circle(Vector2(rect.position.x, rect.end.y) + dots_offset, _circle_radius, Color.WHITE_SMOKE, false, _circle_width)
-		
-		draw_circle(Vector2(rect.end.x, rect.position.y) + dots_offset, _circle_radius, Color.CORAL)
-		draw_circle(Vector2(rect.end.x, rect.position.y) + dots_offset, _circle_radius, Color.WHITE_SMOKE, false, _circle_width)
-		
-		draw_circle(rect.end + dots_offset, _circle_radius, Color.CORAL)
-		draw_circle(rect.end + dots_offset, _circle_radius, Color.WHITE_SMOKE, false, _circle_width)
-		subviewport_container.position = rect.position
-		subviewport_container.size = rect.size
-
-
-func get_rectangle() -> Rect2i:
-	return _rect
+		current_pos = next_pos_segment
+		draw_segment = not draw_segment

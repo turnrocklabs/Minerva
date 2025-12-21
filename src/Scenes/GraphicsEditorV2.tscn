@@ -21,7 +21,7 @@
 [ext_resource type="Texture2D" uid="uid://b05e37s8h1cni" path="res://assets/icons/color_picker_pipette.svg" id="10_pipet"]
 [ext_resource type="Texture2D" uid="uid://di5jees70wybf" path="res://assets/icons/brush/brush-24._white.png" id="10_vnb8d"]
 [ext_resource type="Texture2D" uid="uid://dxlwuia2g3di4" path="res://assets/icons/graphics_editor/eraser.svg" id="11_m2a1o"]
-[ext_resource type="Script" uid="uid://h8aur8r7ygi4" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
+[ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="11_v238w"]
 [ext_resource type="Texture2D" uid="uid://clwxau6kq0fot" path="res://assets/icons/graphics_editor/bucket.svg" id="12_u1itb"]
 [ext_resource type="Texture2D" uid="uid://bbgo8abr3t77d" path="res://assets/icons/graphics_editor/smudge.svg" id="13_nl4xv"]
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="15_ow12a"]
@@ -134,7 +134,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_yogh5")
-PAN_FACTOR = 1.1
+PAN_FACTOR = 1.08
 
 [node name="Tools" type="Node" parent="."]
 
@@ -594,7 +594,6 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("23_40suu")
-_rect_filled_color = Color(0.392157, 0.392157, 0.392157, 0.54902)
 subviewport_container = NodePath("RenderViewSubviewportContainer")
 render_viewport = NodePath("RenderViewSubviewportContainer/RenderViewport")
 
@@ -999,6 +998,7 @@ layout_mode = 2
 
 [node name="ConnectionLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0.811765, 0.27451, 0.2, 1)
 theme_override_font_sizes/font_size = 20
@@ -1098,6 +1098,7 @@ layout_mode = 2
 
 [node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6

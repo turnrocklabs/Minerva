@@ -1935,20 +1935,20 @@ func check_ai_buttons_toggle() -> void:
 		edit_img_button.tooltip_text = _edit_img_base_tooltip
 
 
-func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
-	if not toggled_on:
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
-		_tools_option_button.grab_focus()
-		draw_render_view = false
-		_on_draw_rect(_render_view_rect)
-		return
-	
-	active_tool = render_view_tool if toggled_on else null
-	render_viewport_button.release_focus()
-	draw_render_view = true
-	_on_draw_rect(_render_view_rect)
-	render_view_control.queue_redraw()
+#func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
+	#if not toggled_on:
+		#_tools_option_button.select(0)
+		#_tools_option_button.item_selected.emit(0)
+		#_tools_option_button.grab_focus()
+		#draw_render_view = false
+		#_on_draw_rect(_render_view_rect)
+		#return
+	#
+	#active_tool = render_view_tool if toggled_on else null
+	#render_viewport_button.release_focus()
+	#draw_render_view = true
+	#_on_draw_rect(_render_view_rect)
+	#render_view_control.queue_redraw()
 
 var draw_render_view: = false
 var _render_view_rect: = Rect2(Vector2.ZERO, Vector2.ZERO)
@@ -1962,11 +1962,11 @@ func _on_draw_rect(rect: Rect2) -> void:
 	#_rect_end_global_pos = rect_size
 
 
-func _on_get_texture_button_pressed() -> void:
-	var image: Image = %DrawingAreaSubViewport.get_texture().get_image()
-	var new_rect: = Rect2(Vector2(200,200), Vector2(200,200))
-	image = image.get_region(new_rect)
-	create_new_image_layer("render_viewport layer",image)
+#func _on_get_texture_button_pressed() -> void:
+	#var image: Image = %DrawingAreaSubViewport.get_texture().get_image()
+	#var new_rect: = Rect2(Vector2(200,200), Vector2(200,200))
+	#image = image.get_region(new_rect)
+	#create_new_image_layer("render_viewport layer",image)
 
 
 func _on_workflow_option_button_item_selected(index: int) -> void:
@@ -2020,13 +2020,7 @@ func _on_lock_media_gen_ui(lock: bool = true) -> void:
 
 
 func _on_center_view_button_pressed() -> void:
-	if active_layer == null:
-		return
-	var pos: = active_layer.get_rect().get_center()
-
-	pos = input_area_camera.get_canvas_transform().basis_xform(pos)
-	input_area_camera.offset = pos
-	input_area_camera.queue_redraw()
+	center_view()
 
 
 ## Position the drawing area at the top-left of the viewport
@@ -2135,3 +2129,142 @@ func _on_fill_selection_color_changed(color: Color) -> void:
 	fill_selection(color)
 
 #endregion
+
+func _on_get_texture_button_pressed() -> void:
+	# Ensure the render view rectangle exists and has a valid size
+	if not render_view_control._rect.size.x > 0 or not render_view_control._rect.size.y > 0:
+		display_message("Error", "Render view rectangle is empty or invalid.")
+		return
+
+	# Capture the image from the defined region
+	var image: Image = await compose_region_image(render_view_control._rect)
+	if not image.is_empty():
+		create_new_image_layer("Rendered Viewport Layer", image)
+		# Optionally clear the render view rect and deactivate the tool after capture
+		render_view_control._rect = Rect2() # Reset the rectangle
+		render_view_control.queue_redraw()
+		render_viewport_button.set_pressed_no_signal(false) # Untoggle the button
+		active_tool = null # Or go back to default tool (brush)
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+
+
+func compose_region_image(region: Rect2, show_dialog: = true) -> Image:
+	if region.size.x <= 0 or region.size.y <= 0:
+		push_error("Cannot compose image for an empty or invalid region: %s" % region)
+		return Image.new()
+
+	if _current_compose_thread != null and _current_compose_thread.is_alive():
+		print("Compose already running, ignoring request for region")
+		return Image.new()
+
+	if _current_compose_thread != null:
+		if _current_compose_thread.is_alive():
+			_current_compose_thread.wait_to_finish()
+		_current_compose_thread = null
+
+	if show_dialog:
+		progress_window.popup_centered()
+		progress_window_label.text = "Composing region image..."
+		progress_window_bar.value = 0
+
+	var layer_data: Array[Dictionary] = []
+	var layer_nodes = layers_container.get_children().filter(func(n): return n is LayerV2)
+
+	for layer in layer_nodes:
+		if layer is LayerV2 and layer.visible and layer.image and not layer.image.is_empty():
+			layer_data.append({
+				"image": layer.image,
+				"position": layer.position,
+				"rotation": layer.rotation,
+				"pivot_offset": layer.pivot_offset,
+				"size": layer.size
+			})
+
+	_current_compose_thread = Thread.new()
+	_current_compose_thread.start(_compose_image_region_thread_worker.bind(layer_data, region))
+
+	var img = await compose_finished # This signal currently emits _compose_result_image
+	saved = true
+	return img
+
+func _compose_image_region_thread_worker(layer_data: Array[Dictionary], region: Rect2):
+	print("Starting compose region worker thread for region: %s" % region)
+	var result_image = _compose_final_image_worker_for_region(layer_data, region)
+	call_deferred("_on_compose_finished", result_image) # Use existing signal
+
+# New worker function for region composition
+func _compose_final_image_worker_for_region(layer_data: Array[Dictionary], region: Rect2) -> Image:
+	if layer_data.is_empty() or region.size.x <= 0 or region.size.y <= 0:
+		return Image.new()
+
+	var width = int(region.size.x)
+	var height = int(region.size.y)
+	var output_image := Image.create(width, height, false, Image.FORMAT_RGBA8)
+	output_image.fill(Color(0, 0, 0, 0)) # Transparent background
+
+	# Estimate total pixels for progress reporting more accurately
+	# Only layers that potentially intersect the region will contribute significantly
+	var estimated_pixels_per_layer = width * height # Max possible contribution
+	var total_pixels = estimated_pixels_per_layer * layer_data.size()
+	var processed_pixels = 0
+	# Update progress every 1% or 1000 pixels, whichever is larger
+	var progress_update_interval: int = max(1000, int(total_pixels / 100.0))
+	if progress_update_interval == 0: progress_update_interval = 1 # Avoid division by zero
+
+	# Blend all layers onto the output image
+	for layer_idx in range(layer_data.size()):
+		var data = layer_data[layer_idx]
+		var layer_image = data.image
+		
+		if not layer_image or layer_image.is_empty():
+			processed_pixels += width * height # Assume full region skipped for progress
+			continue
+		
+		var rotation_rad = data.rotation
+		var pivot = data.pivot_offset
+		var layer_pos = data.position
+		
+		# Process each pixel in the output image space
+		for out_y in range(height):
+			for out_x in range(width):
+				# Get global position corresponding to output_image pixel
+				var global_pos = Vector2(out_x, out_y) + region.position
+				
+				# Convert to layer local space (accounting for rotation)
+				var local_pos = _global_to_layer_space_static(global_pos, layer_pos, rotation_rad, pivot)
+				
+				# Check if the point is within the layer's image
+				var img_x = int(local_pos.x)
+				var img_y = int(local_pos.y)
+				
+				if img_x >= 0 and img_x < layer_image.get_width() and img_y >= 0 and img_y < layer_image.get_height():
+					var src_color = layer_image.get_pixel(img_x, img_y)
+					
+					if src_color.a > 0.01: # Skip fully transparent pixels
+						var dst_color = output_image.get_pixel(out_x, out_y)
+						var blended = _blend_colors(dst_color, src_color)
+						output_image.set_pixel(out_x, out_y, blended)
+				
+				processed_pixels += 1
+				
+				if processed_pixels % progress_update_interval == 0:
+					var progress = float(processed_pixels) / float(total_pixels)
+					call_deferred("_emit_progress", progress)
+	
+	return output_image
+
+
+func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
+	if not toggled_on:
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+		_tools_option_button.grab_focus()
+		render_view_control.draw_render_view = false # Hide the rect
+		render_view_control.queue_redraw()
+		return
+	
+	active_tool = render_view_tool # Set active tool
+	render_viewport_button.release_focus()
+	render_view_control.draw_render_view = true # Show the rect
+	render_view_control.queue_redraw()
