@@ -209,10 +209,17 @@ func _ready() -> void:
 	MediaGen.lock_media_gen_ui.connect(_on_lock_media_gen_ui)
 	
 	var temp_res: = MIN_IMAGE_RES
+	var id_to_select: = 0
+	var counter: = 0
 	while temp_res + 64 <= MAX_IMAGE_GEN_RES:
 		var res: = str(temp_res)
 		image_width_option_button.add_item(res)
+		if temp_res == DEFAULT_IMAGE_GEN_RES:
+			id_to_select = counter
 		temp_res += 64
+		counter += 1
+	
+	image_width_option_button.select(id_to_select)
 	
 	delete_layer.connect(_on_delete_layer)
 	
@@ -1475,7 +1482,6 @@ func _on_send_prompt_button_pressed() -> void:
 
 
 func _on_image_received(filename:String, request_id: String, buffer: PackedByteArray) -> void:
-	# Always hide progress window when receiving response (success or failure)
 	if request_id != _current_image_gen_request_id:
 		return
 	send_prompt_button.modulate = Color.WHITE
@@ -2304,31 +2310,27 @@ func get_gen_ai_history() -> String:
 
 
 func _csv_escape(text: String) -> String:
-	# According to RFC 4180 (CSV standard):
-	# 1. If a field contains a double-quote, comma, or newline, it must be enclosed in double quotes.
-	# 2. Within a double-quoted field, each double-quote character must be represented by two double-quote characters.
-	
 	var needs_quoting = text.contains(",") or text.contains("\"") or text.contains("\n")
-	var escaped_text = text.replace("\"", "\"\"") # Escape internal double quotes
+	var escaped_text = text.replace("\"", "\"\"")
 	
 	if needs_quoting:
-		return "\"" + escaped_text + "\"" # Enclose in double quotes if needed
+		return "\"" + escaped_text + "\""
 	else:
-		return escaped_text # No quoting needed
+		return escaped_text
 
 
 func save_prompt_to_history(positive_prompt: String, negative_prompt: String) -> void:
 	var file_path = SingletonObject.GEN_AI_HIST_FILE_PATH
 	
-	var current_time = Time.get_datetime_string_from_system(true, true)
-	# Escape each field for CSV format
-	var escaped_time = _csv_escape(current_time)
-	var escaped_positive_prompt = _csv_escape(positive_prompt.strip_edges())
-	var escaped_negative_prompt = _csv_escape(negative_prompt.strip_edges())
+	var current_time: = Time.get_datetime_string_from_system(true, true)
 	
-	var history_entry = "%s,%s,%s\n" % [escaped_time, escaped_positive_prompt, escaped_negative_prompt]
+	var escaped_time: = _csv_escape(current_time)
+	var escaped_positive_prompt: = _csv_escape(positive_prompt.strip_edges())
+	var escaped_negative_prompt: = _csv_escape(negative_prompt.strip_edges())
 	
-	var file = FileAccess.open(file_path, FileAccess.WRITE_READ)
+	var history_entry: = "%s,%s,%s\n" % [escaped_time, escaped_positive_prompt, escaped_negative_prompt]
+	
+	var file: = FileAccess.open(file_path, FileAccess.WRITE_READ)
 	if file:
 		# If the file is newly created or empty, add a header row first.
 		if file.get_length() == 0:

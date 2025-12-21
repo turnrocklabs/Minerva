@@ -237,7 +237,7 @@ func _backup_original_state() -> void:
 
 # Placeholder for the move operation - implement your own logic
 func _handle_move(event: InputEventMouseMotion) -> void:
-	editor.active_layer.position += event.screen_relative
+	editor.active_layer.position += event.screen_relative  * editor.PAN_FACTOR * (1 / editor.input_area_camera.zoom.x)
 
 # Placeholder for the resize operation - implement your own logic
 func _handle_resize(event: InputEventMouseMotion) -> void:
