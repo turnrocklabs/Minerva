@@ -104,6 +104,9 @@ signal selection_changed()
 @onready var edit_img_button: Button = %EditImgButton
 @onready var send_mask_edit_button: Button = %SendMaskEditButton
 @onready var ai_action_label: Label = %AIActionLabel
+@onready var spritesheet_settings_container: VBoxContainer = %SpritesheetSettingsContainer
+@onready var animation_option_button: OptionButton = %AnimationOptionButton
+@onready var animation_frames_option_button: OptionButton = %AnimationFramesOptionButton
 
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
@@ -2170,7 +2173,7 @@ func _compose_image_region_thread_worker(layer_data: Array[Dictionary], region: 
 	var result_image = _compose_final_image_worker_for_region(layer_data, region)
 	call_deferred("_on_compose_finished", result_image) # Use existing signal
 
-# New worker function for region composition
+
 func _compose_final_image_worker_for_region(layer_data: Array[Dictionary], region: Rect2) -> Image:
 	if layer_data.is_empty() or region.size.x <= 0 or region.size.y <= 0:
 		return Image.new()
@@ -2246,7 +2249,7 @@ func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
 	render_view_control.draw_render_view = true
 	render_view_control.queue_redraw()
 
-
+#region Gen AI Prompt History
 func _on_prompt_history_button_pressed() -> void:
 	var hist_window: = Window.new()
 	var root_vbox_container: = VBoxContainer.new()
@@ -2292,7 +2295,7 @@ func _on_prompt_history_button_pressed() -> void:
 		hist_window.queue_free()
 	)
 	
-	hist_window.popup_centered()
+	hist_window.popup()
 
 
 func get_gen_ai_history() -> String:
@@ -2330,9 +2333,8 @@ func save_prompt_to_history(positive_prompt: String, negative_prompt: String) ->
 	
 	var history_entry: = "%s,%s,%s\n" % [escaped_time, escaped_positive_prompt, escaped_negative_prompt]
 	
-	var file: = FileAccess.open(file_path, FileAccess.WRITE_READ)
+	var file: = FileAccess.open(file_path, FileAccess.READ_WRITE)
 	if file:
-		# If the file is newly created or empty, add a header row first.
 		if file.get_length() == 0:
 			file.store_string(_csv_escape("Timestamp") + "," + _csv_escape("Positive Prompt") + "," + _csv_escape("Negative Prompt") + "\n")
 		
@@ -2342,3 +2344,22 @@ func save_prompt_to_history(positive_prompt: String, negative_prompt: String) ->
 		print("Prompt saved to history (CSV): %s" % history_entry.strip_edges())
 	else:
 		push_error("Failed to open prompt history file for writing: %s" % file_path)
+
+#endregion Gen AI Prompt History
+
+var sprite_anim_selected: = ""
+var spritesheet_frames: = ""
+var spritesheet_anim_is_active: = false
+func _on_sprite_sheet_check_button_toggled(toggled_on: bool) -> void:
+	spritesheet_settings_container.visible = toggled_on
+	spritesheet_anim_is_active = toggled_on
+
+
+func _on_animation_option_button_item_selected(index: int) -> void:
+	sprite_anim_selected =  animation_option_button.get_item_text(index)
+	spritesheet_anim_is_active = spritesheet_settings_container.visible
+
+
+func _on_animation_frames_option_button_item_selected(index: int) -> void:
+	spritesheet_frames = animation_frames_option_button.get_item_text(index)
+	spritesheet_anim_is_active = spritesheet_settings_container.visible

@@ -1,0 +1,21 @@
+[gd_resource type="JSON" format=3 uid="uid://bd2a55ttt7op5"]
+
+[resource]
+data = {
+"_explanation": "These are prompt snippets to append to your main character/style description for AI spritesheet generation. Combine an animation snippet with a framerate snippet, and don't forget general spritesheet layout instructions and negative prompts.",
+"animations": {
+"attack": "a detailed 3-frame attack animation, showing wind-up, impact, and recovery poses.",
+"idle": "a detailed 2-frame subtle idle animation, showing breathing motion (stand tall, slight crouch).",
+"jumping": "a detailed 3-frame jump sequence, showing crouch, airborne, and landing poses.",
+"running": "a detailed 4-frame run cycle, showing stride, mid-air, recoil, and contact poses.",
+"walking": "a detailed 4-frame walk cycle, showing contact, down, passing, and up poses."
+},
+"framerates": {
+"2": "2 distinct animation frames.",
+"4": "4 distinct animation frames.",
+"8": "8 distinct animation frames, smoothly transitioning.",
+"single_pose": "a single, static pose."
+},
+"general_layout_instructions": "all sprites neatly separated, no overlapping, arranged in a grid, transparent background for each sprite, clean lines, game asset.",
+"general_negative_prompts_to_consider": "overlapping, merged, indistinct, inconsistent character, blurry, low quality, bad anatomy, deformed, distorted, extra limbs, missing limbs, ugly, text, watermark, cluttered background, busy background, complex background, shadows."
+}
