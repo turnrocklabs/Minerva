@@ -50,6 +50,8 @@ var is_crayon
 var is_marker
 #endregion global variables
 
+var GEN_AI_HIST_FILE_PATH: = "user://gen_ai_history.csv"
+
 #region Config File
 var _config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()

@@ -489,7 +489,7 @@ icon_24 = ExtResource("28_qncfk")
 icon_48 = ExtResource("29_3uhrd")
 icon_68 = ExtResource("30_jj3p5")
 
-[node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="AddGraphicsEditor" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["Experimental"]]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0

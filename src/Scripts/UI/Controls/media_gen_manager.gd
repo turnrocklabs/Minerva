@@ -3,6 +3,7 @@ extends Node
 var client: CoreClient = null
 
 signal  pass_image_to_editor(filename: String, request_id: String, image: PackedByteArray)
+signal lock_media_gen_ui(lock: bool)
 
 func _ready() -> void:
 	# Connect Core.client signals to our handlers
@@ -14,25 +15,22 @@ func _ready() -> void:
 func send_media_gen_request(params: Dictionary) -> String:
 	if !params.has("positive_prompt") and !params.has("negative_prompt"):
 		return ""
-
 	# Extract topic from params, default to original if not provided
 	var topic: String = params.get("topic", "media_gen/image_generation")
 	params.erase("topic")  # Remove from params so it's not sent in data payload
-
+	lock_media_gen_ui.emit(true)
 	return client.send_media_gen_request(params, topic)
 
 
-#func _on_binary_file_saved_received(file_index: int, request_id: String, filename: String, _path: String) -> void:
-	#pass_image_to_editor.emit(filename, request_id, filename)
-
-
 func _on_image_response_received(fname: String, request_id: String, buffer: PackedByteArray) -> void:
+	lock_media_gen_ui.emit(false)
 	pass_image_to_editor.emit(fname, request_id, buffer)
 
 
 func send_media_edit_request(editing_params: Dictionary, \
 							image_buffer: PackedByteArray, \
 							image_filename: String = "input_image.png") -> String:
+	lock_media_gen_ui.emit(true)
 	return client.send_media_edit_request(editing_params, image_buffer, image_filename)
 
 
@@ -108,4 +106,5 @@ func generate_mask_bytes(mask_layer_image: Image, _mask_color: Color, channel: S
 	return mask_buffer
 
 func send_media_selective_edit_request(params: Dictionary, images_dir: Array) -> String:
+	lock_media_gen_ui.emit(true)
 	return client.send_media_selective_edit_request(params, images_dir)

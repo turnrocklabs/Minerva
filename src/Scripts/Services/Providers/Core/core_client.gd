@@ -44,7 +44,7 @@ const MEDIA_GEN_DIVISIBLE_BY: = 64 # The total numgber of pixels must be divisib
 var _client: WebSocketPeer = WebSocketPeer.new() # Explicitly type _client
 var _entity_type: EntityType = EntityType.SOFTWARE_AGENT # Explicitly type _entity_type
 var client_id: String = ""
-var minerva_secret: String = "cats"
+#var minerva_secret: String = "cats"
 var _connected = false
 var _heartbeat_timer: Timer
 var register_timer: Timer
@@ -88,8 +88,6 @@ func _ready():
 	ProjectSettings.set_setting("network/limits/websocket/max_out_buffer_kb", 16384)
 	
 	client_id = UUIDGen.v7()
-	#_client.inbound_buffer_size = 32 * 1024 * 1024
-	#_client.outbound_buffer_size = 32 * 1024 * 1024
 	print("Client ID is %s" % client_id)
 	_heartbeat_timer = Timer.new()
 	_heartbeat_timer.set_one_shot(false)
@@ -97,10 +95,8 @@ func _ready():
 	_heartbeat_timer.timeout.connect(send_heartbeat)
 	add_child(_heartbeat_timer)
 	set_process(false)
-	#minerva_secret = OS.get_environment("MINERVA_SECRET")
-	if minerva_secret.is_empty():
-		print("Error: MINERVA_SECRET environment variable is not set")
-
+	#if minerva_secret.is_empty():
+		#print("Error: MINERVA_SECRET environment variable is not set")
 
 
 func _exit_tree() -> void:
@@ -367,14 +363,11 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 	if request_id != _current_binary_request_id:
 		var json_str = JSON.stringify(data)
 		print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
-		var chunk_idx: = 0
 		
 		for i in range(0, json_str.length(), _max_chunk_length):
 			var chunk: =  json_str.substr(i, _max_chunk_length)
-			print("Chunk number: %d" % chunk_idx)
-			print("Received message: \n%s" % chunk)
-			
-			chunk_idx += 1
+			printraw(chunk)
+			# we have to wati for 3 frames in order to avoid output overflow
 			await get_tree().process_frame
 			await get_tree().process_frame
 			await get_tree().process_frame
@@ -466,12 +459,10 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 			"data": data
 		}
 	}
-
+	
 	var json_string = JSON.stringify(message)
-	# print("Sending message:")
-	# print(json_string)
 	_client.send_text(json_string)
-
+	
 	return request_id
 
 
@@ -737,14 +728,6 @@ func send_media_gen_request(generation_params: Dictionary, topic: String = "medi
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
-				#"workflow": "image_generation",  # Updated workflow
-				## These are now being merged below
-				#"positive_prompt": generation_params.get("prompt"),
-				#"negative_prompt": generation_params.get("negative_prompt"),
-				#"width": 1024, # The total numgber of pixels must be divisible by 64
-				#"height": 1024,
-				#"steps": 8,
-				#"cfg": 1.0,
 			},
 			"auth": Core._jwt_token
 		}

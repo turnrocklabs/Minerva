@@ -35,6 +35,9 @@ var package_editor: PackageEditor
 
 @onready var autowrap_button: Button = %AutowrapButton
 @onready var mic_button: Button = %MicButton
+@onready var code_syntax_button: IconsButton = $VBoxContainer/ButtonsHBoxContainer/CodeSyntaxButton
+@onready var find_button: IconsButton = %FindButton
+@onready var reload_button: IconsButton = %reloadButton
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -96,7 +99,8 @@ var file: String:
 		if code_edit != null:
 			if code_syntax_enabled:
 				code_edit.syntax_highlighter = update_code_hightlighter(file)
-		%reloadButton.disabled = false
+		if reload_button != null:
+			reload_button.disabled = false
 
 #var file_path: String
 var type: Type
@@ -222,10 +226,24 @@ func _ready():
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
+		code_syntax_button.hide()
+		find_button.hide()
+		%btnApplyDiff.hide()
+		reload_button.hide()
+		
+		mic_button.queue_free()
+		autowrap_button.queue_free()
+		code_syntax_button.queue_free()
+		find_button.queue_free()
+		find_string_container.queue_free()
+		jump_to_line_panel.queue_free()
+		%btnApplyDiff.queue_free()
+		reload_button.queue_free()
 	
-	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
-	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
-	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
+	if type == Type.TEXT:
+		text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
+		text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
+		text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
 
 
 func _exit_tree() -> void:
