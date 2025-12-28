@@ -147,6 +147,7 @@ var canvas_size: = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)
 var _custom_cursor: Resource
 var _custom_cursor_shape: int = 0  # Control.CursorShape as int
 var _custom_cursor_hotspot: Vector2
+var _mouse_in_layers_container: bool = false
 
 
 const COMMANDS_SIZE: = 15
@@ -563,8 +564,9 @@ func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 
 	_custom_cursor_hotspot = hotspot
 
 	if image:
-		# Apply custom cursor image - this replaces the CURSOR_ARROW slot
-		Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
+		# Only apply cursor globally if mouse is inside the drawing area
+		if _mouse_in_layers_container:
+			Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
 		# Set the control's cursor to use the custom image
 		layers_container.mouse_default_cursor_shape = Control.CURSOR_ARROW
 	else:
@@ -1018,6 +1020,7 @@ func _on_smudge_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = smudge_tool if toggled_on else null
 
 func _on_layers_container_mouse_entered() -> void:
+	_mouse_in_layers_container = true
 	# Re-apply custom cursor image when entering the layers container
 	# The mouse_default_cursor_shape property handles the cursor shape automatically
 	if _custom_cursor:
@@ -1049,6 +1052,7 @@ func _on_file_selected(fp: String) -> void:
 	_tools_option_button.item_selected.emit(0)
 
 func _on_layers_container_mouse_exited() -> void:
+	_mouse_in_layers_container = false
 	Input.set_custom_mouse_cursor(null)
 
 
