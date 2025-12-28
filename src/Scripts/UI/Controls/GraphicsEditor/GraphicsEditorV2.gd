@@ -8,6 +8,7 @@ signal active_tool_changed(tool_: BaseTool)
 @warning_ignore("unused_signal")
 signal active_layer_changed(layer: LayerV2)
 signal active_layer_is_mask_layer(is_mask_layer: bool)
+signal active_layer_is_control_layer(is_control_layer: bool)
 
 signal compose_progress_updated(progress: float)
 signal compose_finished(image: Image)
@@ -17,6 +18,8 @@ signal selection_changed()
 
 @onready var layers_container: LayersContainer = %LayersContainer
 @onready var selection_overlay: Control = %SelectionOverlay  # SelectionOverlay type causes circular dependency
+@onready var pose_editor_window: Window = %PoseEditorWindow
+@onready var pose_editor_panel: Control = %PoseEditorPanel  # PoseEditorPanel type - avoid circular ref
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
 @onready var layer_cards_popup_panel: Window = %LayerCardsPopupPanel
@@ -56,6 +59,7 @@ signal selection_changed()
 @onready var magic_wand_tool: MagicWandTool = %MagicWandTool
 @onready var rectangle_select_tool: RectangleSelectTool = %RectangleSelectTool
 @onready var lasso_select_tool: LassoSelectTool = %LassoSelectTool
+@onready var pose_editor_tool = %PoseEditorTool  # PoseEditorTool type - avoid circular ref
 
 
 @onready var tool_options_mapping: = {
@@ -91,6 +95,7 @@ signal selection_changed()
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
 @onready var mask_layer_cards_container: VBoxContainer = %MaskLayerCardsContainer
+@onready var control_layer_cards_container: VBoxContainer = %ControlLayerCardsContainer
 @onready var image_gen_panel_container: PanelContainer = %ImageGenPanelContainer
 @onready var tool_size_v_slider: VSlider = %ToolSizeVSlider
 @onready var copy_layer_button: Button = %CopyLayerButton
@@ -149,11 +154,15 @@ var layers: Array[LayerV2]
 ## Array of selected layers, in order in which they were selected
 var selected_layers: Array[LayerV2] = []
 var selected_mask_layers: Array[LayerV2] = []
+var selected_control_layers: Array[LayerV2] = []
 var is_active_layer_mask: = false
+var is_active_layer_control: = false
 var active_layer: LayerV2:
 	get:
-		if selected_layers.is_empty() and selected_mask_layers.is_empty():
-			return layers[0] if not layers.is_empty() else null 
+		if selected_layers.is_empty() and selected_mask_layers.is_empty() and selected_control_layers.is_empty():
+			return layers[0] if not layers.is_empty() else null
+		if is_active_layer_control:
+			return selected_control_layers.get(0) if not selected_control_layers.is_empty() else null
 		if is_active_layer_mask:
 			return selected_mask_layers.get(0) if not selected_mask_layers.is_empty() else null
 		else:
@@ -197,6 +206,7 @@ func _ready() -> void:
 	compose_progress_updated.connect(_on_compose_progress)
 	compose_finished.connect(_on_compose_complete)
 	active_layer_is_mask_layer.connect(_on_active_layer_mask_layer)
+	active_layer_is_control_layer.connect(_on_active_layer_control_layer)
 	# Connect pen inverted signals
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
@@ -330,7 +340,36 @@ func add_mask_layer(layer: LayerV2, select: = true) -> LayerV2:
 	layers_container.add_child(layer, true)
 
 	layers.append(layer)
-	
+
+	return layer
+
+
+func create_new_control_layer(layer_name: String, dimensions: Vector2i, control_type: LayerV2.ControlType = LayerV2.ControlType.POSE, select: = true) -> LayerV2:
+	var layer: = LayerV2.create_control_layer(layer_name, dimensions, control_type)
+
+	add_control_layer(layer, select)
+
+	return layer
+
+
+func add_control_layer(layer: LayerV2, select: = true) -> LayerV2:
+	layer.tree_exiting.connect(_on_control_layer_tree_exiting.bind(layer))
+
+	var layer_card: = LayerCard.create(self, layer)
+
+	layer_card.layer_selected.connect(_on_layer_card_selected.bind(layer, layer_card))
+	layer_card.layer_deselected.connect(_on_layer_card_deselected.bind(layer, layer_card))
+	layer_card.reorder.connect(_on_layer_card_reorder.bind(layer_card))
+	layer_card.layer_clicked.connect(_on_layer_card_clicked.bind(layer_card))
+
+	control_layer_cards_container.add_child(layer_card)
+	control_layer_cards_container.move_child(layer_card, 0)
+	layer_card.selected = select
+
+	layers_container.add_child(layer, true)
+
+	layers.append(layer)
+
 	return layer
 
 
@@ -365,27 +404,57 @@ func _on_mask_layer_tree_exiting(layer: LayerV2) -> void:
 	layers.erase(layer)
 
 
+func _on_control_layer_tree_exiting(layer: LayerV2) -> void:
+	selected_control_layers.erase(layer)
+	layers.erase(layer)
+
+
 func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
 	if not selected_layers.has(layer) and (LayerV2.Type.DRAWING == layer.type or LayerV2.Type.IMAGE == layer.type):
 		selected_layers.append(layer)
 	if not selected_mask_layers.has(layer) and LayerV2.Type.MASK == layer.type:
 		selected_mask_layers.append(layer)
-	if selected_layers.size() > 0 and selected_layers.get(0).type != LayerV2.Type.MASK:
+	if not selected_control_layers.has(layer) and LayerV2.Type.CONTROL == layer.type:
+		selected_control_layers.append(layer)
+
+	# Determine which layer type is now active
+	is_active_layer_control = false
+	is_active_layer_mask = false
+	if selected_control_layers.size() > 0 and selected_control_layers[0].type == LayerV2.Type.CONTROL:
+		is_active_layer_control = true
+		active_layer_is_control_layer.emit(true)
 		active_layer_is_mask_layer.emit(false)
 	elif selected_mask_layers.size() > 0 and selected_mask_layers[0].type == LayerV2.Type.MASK:
+		is_active_layer_mask = true
 		active_layer_is_mask_layer.emit(true)
-	
+		active_layer_is_control_layer.emit(false)
+	elif selected_layers.size() > 0:
+		active_layer_is_mask_layer.emit(false)
+		active_layer_is_control_layer.emit(false)
+
 	check_ai_buttons_toggle()
 
 
 func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
 	selected_layers.erase(layer)
 	selected_mask_layers.erase(layer)
-	if selected_layers.size() > 0 and selected_layers.get(0).type != LayerV2.Type.MASK:
+	selected_control_layers.erase(layer)
+
+	# Determine which layer type is now active
+	is_active_layer_control = false
+	is_active_layer_mask = false
+	if selected_control_layers.size() > 0 and selected_control_layers[0].type == LayerV2.Type.CONTROL:
+		is_active_layer_control = true
+		active_layer_is_control_layer.emit(true)
 		active_layer_is_mask_layer.emit(false)
 	elif selected_mask_layers.size() > 0 and selected_mask_layers[0].type == LayerV2.Type.MASK:
+		is_active_layer_mask = true
 		active_layer_is_mask_layer.emit(true)
-	
+		active_layer_is_control_layer.emit(false)
+	elif selected_layers.size() > 0:
+		active_layer_is_mask_layer.emit(false)
+		active_layer_is_control_layer.emit(false)
+
 	check_ai_buttons_toggle()
 
 
@@ -393,18 +462,23 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 	if button_index == MOUSE_BUTTON_LEFT:
 
 		if layer_card.layer.locked: return # ignore locked layers
-		
+
 		if Input.is_key_pressed(KEY_CTRL):
 			layer_card.selected = not layer_card.selected
 		elif layer_card.selected:
 			layer_card.selected = false
 		else:
-			if layer_card.layer.type != LayerV2.Type.MASK:
-				for c: LayerCard in layer_cards_container.get_children():
-					c.selected = false
-			else:
-				for c: LayerCard in mask_layer_cards_container.get_children():
-					c.selected = false
+			# Deselect other layers in the same category
+			match layer_card.layer.type:
+				LayerV2.Type.MASK:
+					for c: LayerCard in mask_layer_cards_container.get_children():
+						c.selected = false
+				LayerV2.Type.CONTROL:
+					for c: LayerCard in control_layer_cards_container.get_children():
+						c.selected = false
+				_:  # IMAGE, DRAWING, SPEECH_BUBBLE
+					for c: LayerCard in layer_cards_container.get_children():
+						c.selected = false
 			layer_card.selected = true
 
 
@@ -519,6 +593,10 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 # Control with tools is set to stop the mouse events to accommodate for the below input hadnling
 var dragging: = false
 var last_mouse_position: Vector2 = Vector2.ZERO
+
+func _on_layers_container_gui_input(event: InputEvent) -> void:
+	_gui_input(event)
+
 func _gui_input(event: InputEvent) -> void:
 	
 	#region Move Canvas
@@ -544,7 +622,7 @@ func _gui_input(event: InputEvent) -> void:
 	#endregion Move Canvas
 	
 	# if we have a active tool and at least one of selected layers is visible
-	if active_tool and (selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) ):
+	if active_tool and (selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_control_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) ):
 		if active_tool.handle_input_event(event):
 			_compose_result_expired = true
 			saved = false
@@ -617,14 +695,14 @@ func _handle_selection_shortcuts(event: InputEventKey) -> void:
 
 
 func _draw() -> void:
-	
-	
-	
 	for layer in selected_layers: layer.queue_redraw()
 	for layer in selected_mask_layers: layer.queue_redraw()
+	for layer in selected_control_layers: layer.queue_redraw()
 	for c: LayerCard in layer_cards_container.get_children():
 		c.queue_redraw()
 	for c: LayerCard in mask_layer_cards_container.get_children():
+		c.queue_redraw()
+	for c: LayerCard in control_layer_cards_container.get_children():
 		c.queue_redraw()
 
 ## Delegates drag handling functions to given layer.[br]
@@ -1216,6 +1294,7 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		6: active_tool = magic_wand_tool
 		7: active_tool = rectangle_select_tool
 		8: active_tool = lasso_select_tool
+		9: active_tool = pose_editor_tool
 		_: pass
 	
 
@@ -1771,6 +1850,43 @@ func _on_copy_mask_layer_button_pressed() -> void:
 func _on_merge_mask_layers_button_pressed() -> void:
 	merge_layers(selected_mask_layers.duplicate())
 
+
+func _on_new_control_layer_button_pressed() -> void:
+	# Deselect other layers
+	for c: LayerCard in layer_cards_container.get_children():
+		c.selected = false
+	for c: LayerCard in mask_layer_cards_container.get_children():
+		c.selected = false
+	for c: LayerCard in control_layer_cards_container.get_children():
+		c.selected = false
+
+	create_new_control_layer("Pose Layer", canvas_size, LayerV2.ControlType.POSE)
+
+
+func _on_delete_control_layer_button_pressed() -> void:
+	for i: LayerCard in control_layer_cards_container.get_children():
+		if i.selected:
+			i.delete_layer()
+
+
+func _on_open_pose_editor_button_pressed() -> void:
+	# Open the 3D pose editor window
+	if pose_editor_window:
+		pose_editor_window.show()
+		pose_editor_window.grab_focus()
+
+
+func _on_pose_editor_window_close_requested() -> void:
+	if pose_editor_window:
+		pose_editor_window.hide()
+
+
+func _on_pose_editor_panel_pose_rendered(image: Image) -> void:
+	# Update the active CONTROL layer with the rendered 2D pose image
+	if active_layer and active_layer.type == LayerV2.Type.CONTROL:
+		active_layer.image = image
+		active_layer.queue_redraw()
+
 #endregion LayersCards Masks PopUp panel
 
 func _on_mask_color_option_button_item_selected(index: int) -> void:
@@ -1822,6 +1938,32 @@ func _on_active_layer_mask_layer(is_mask: bool) -> void:
 		_tools_option_button.set_item_disabled(3, false)
 		_tools_option_button.set_item_disabled(4, false)
 		color_picker_button.color = last_selected_color
+
+
+func _on_active_layer_control_layer(is_control: bool) -> void:
+	is_active_layer_control = is_control
+
+	if is_control:
+		# Check if it's a POSE control layer and auto-select pose tool
+		if active_layer and active_layer.control_type == LayerV2.ControlType.POSE:
+			_tools_option_button.select(9)  # Pose Editor
+			_tools_option_button.item_selected.emit(9)
+		# Disable drawing tools that don't apply to control layers
+		_tools_option_button.set_item_disabled(0, true)  # Brush
+		_tools_option_button.set_item_disabled(1, true)  # Eraser
+		_tools_option_button.set_item_disabled(2, true)  # Bucket
+		_tools_option_button.set_item_disabled(3, true)  # Smudge
+		_tools_option_button.set_item_disabled(4, true)  # Add Image
+	else:
+		# Re-enable tools when switching away from control layer
+		_tools_option_button.set_item_disabled(0, false)
+		_tools_option_button.set_item_disabled(1, false)
+		_tools_option_button.set_item_disabled(2, false)
+		_tools_option_button.set_item_disabled(3, false)
+		_tools_option_button.set_item_disabled(4, false)
+		# Switch back to brush tool
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
 
 
 func _on_image_gen_window_close_requested() -> void:

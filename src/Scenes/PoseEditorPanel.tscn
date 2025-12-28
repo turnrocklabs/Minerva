@@ -1,0 +1,333 @@
+[gd_scene load_steps=5 format=3 uid="uid://bxwrp4qt6c8km"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/PoseEditorPanel.gd" id="1_panel"]
+[ext_resource type="PackedScene" uid="uid://c6wk3xyf5npwq" path="res://Scenes/PoseSkeleton3D.tscn" id="2_skeleton"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.15, 0.15, 0.18, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.6, 0.6, 0.65, 1)
+
+[sub_resource type="World3D" id="World3D_1"]
+environment = SubResource("Environment_1")
+
+[node name="PoseEditorPanel" type="PanelContainer"]
+custom_minimum_size = Vector2(600, 500)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_panel")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="VBoxContainer/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Pose Editor"
+theme_override_font_sizes/font_size = 16
+
+[node name="CloseButton" type="Button" parent="VBoxContainer/Header"]
+layout_mode = 2
+text = "X"
+flat = true
+
+[node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 200
+
+[node name="SliderPanel" type="ScrollContainer" parent="VBoxContainer/HSplitContainer"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SliderVBox" type="VBoxContainer" parent="VBoxContainer/HSplitContainer/SliderPanel"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PresetLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Preset"
+
+[node name="PresetDropdown" type="OptionButton" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+selected = 0
+
+[node name="Sep1" type="HSeparator" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+
+[node name="TorsoLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "TORSO"
+theme_override_font_sizes/font_size = 12
+
+[node name="TorsoLeanLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Lean"
+
+[node name="TorsoLeanSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="TorsoTwistLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Twist"
+
+[node name="TorsoTwistSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="Sep2" type="HSeparator" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+
+[node name="LeftArmLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "LEFT ARM"
+theme_override_font_sizes/font_size = 12
+
+[node name="LeftArmElevLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Up/Down"
+
+[node name="LeftArmElevSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="LeftArmSwingLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Fwd/Back"
+
+[node name="LeftArmSwingSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="LeftElbowLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Elbow"
+
+[node name="LeftElbowSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+
+[node name="Sep3" type="HSeparator" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+
+[node name="RightArmLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "RIGHT ARM"
+theme_override_font_sizes/font_size = 12
+
+[node name="RightArmElevLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Up/Down"
+
+[node name="RightArmElevSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="RightArmSwingLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Fwd/Back"
+
+[node name="RightArmSwingSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="RightElbowLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Elbow"
+
+[node name="RightElbowSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+
+[node name="Sep4" type="HSeparator" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+
+[node name="LeftLegLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "LEFT LEG"
+theme_override_font_sizes/font_size = 12
+
+[node name="LeftLegSwingLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Fwd/Back"
+
+[node name="LeftLegSwingSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="LeftKneeLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Knee"
+
+[node name="LeftKneeSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+
+[node name="LeftAnkleLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Foot"
+
+[node name="LeftAnkleSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="Sep5" type="HSeparator" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+
+[node name="RightLegLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "RIGHT LEG"
+theme_override_font_sizes/font_size = 12
+
+[node name="RightLegSwingLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Fwd/Back"
+
+[node name="RightLegSwingSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="RightKneeLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Knee"
+
+[node name="RightKneeSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+
+[node name="RightAnkleLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+layout_mode = 2
+text = "Foot"
+
+[node name="RightAnkleSlider" type="HSlider" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="VBoxContainer/HSplitContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 2.0
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="VBoxContainer/HSplitContainer/SubViewportContainer"]
+unique_name_in_owner = true
+handle_input_locally = false
+size = Vector2i(400, 400)
+render_target_update_mode = 3
+world_3d = SubResource("World3D_1")
+
+[node name="Camera3D" type="Camera3D" parent="VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport"]
+unique_name_in_owner = true
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 4)
+current = true
+fov = 50.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport"]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 2, 3, 2)
+light_energy = 1.2
+shadow_enabled = true
+
+[node name="AmbientLight" type="DirectionalLight3D" parent="VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, -2, 1, -2)
+light_color = Color(0.8, 0.85, 1, 1)
+light_energy = 0.5
+
+[node name="PoseSkeleton3D" parent="VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport" instance=ExtResource("2_skeleton")]
+unique_name_in_owner = true
+
+[node name="Toolbar" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="ResetButton" type="Button" parent="VBoxContainer/Toolbar"]
+layout_mode = 2
+text = "Reset"
+tooltip_text = "Reset to T-pose"
+
+[node name="MirrorButton" type="Button" parent="VBoxContainer/Toolbar"]
+layout_mode = 2
+text = "Mirror"
+tooltip_text = "Mirror pose left-to-right"
+
+[node name="Spacer" type="Control" parent="VBoxContainer/Toolbar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RenderButton" type="Button" parent="VBoxContainer/Toolbar"]
+layout_mode = 2
+text = "Render to Layer"
+tooltip_text = "Render pose to 2D OpenPose image"
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Adjust sliders or select a preset"
+horizontal_alignment = 1
+
+[connection signal="pressed" from="VBoxContainer/Header/CloseButton" to="." method="_on_close_button_pressed"]
+[connection signal="item_selected" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/PresetDropdown" to="." method="_on_preset_selected"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/TorsoLeanSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/TorsoTwistSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/LeftArmElevSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/LeftArmSwingSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/LeftElbowSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/RightArmElevSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/RightArmSwingSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/RightElbowSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/LeftLegSwingSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/LeftKneeSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/LeftAnkleSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/RightLegSwingSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/RightKneeSlider" to="." method="_on_slider_changed"]
+[connection signal="value_changed" from="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox/RightAnkleSlider" to="." method="_on_slider_changed"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/ResetButton" to="." method="_on_reset_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/MirrorButton" to="." method="_on_mirror_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/Toolbar/RenderButton" to="." method="_on_render_button_pressed"]
