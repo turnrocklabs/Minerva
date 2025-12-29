@@ -24,8 +24,12 @@ var config = null
 
 
 func _ready() -> void:
+	print("[MCP] MCPManager._ready() called")
 	config = MCPConfigScript.new()
 	config.load_config()
+	# Register Co-Browser tools (they use a custom API, not standard MCP)
+	_register_cobrowser_tools()
+	print("[MCP] After _ready(), tool_registry has %d tools" % tool_registry.size())
 
 
 func _exit_tree() -> void:
@@ -113,6 +117,11 @@ func disconnect_all() -> void:
 ## Execute a tool by name
 func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 	print("[MCP] execute_tool called: %s" % tool_name)
+
+	# Check if this is a Co-Browser tool (special handling)
+	if tool_name.begins_with("cobrowser_"):
+		return await _execute_cobrowser_tool(tool_name, arguments)
+
 	if not tool_registry.has(tool_name):
 		print("[MCP] Tool not found! Available tools: %s" % str(tool_registry.keys()))
 		return {"error": "Tool not found: %s" % tool_name, "success": false}
@@ -134,6 +143,180 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 	return result
 
 
+## Execute Co-Browser tool via CoBrowserMCPClient
+func _execute_cobrowser_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
+	var client = SingletonObject.get_cobrowser_client()
+
+	print("[MCP] Executing Co-Browser tool: %s" % tool_name)
+
+	var result: Dictionary = {}
+
+	match tool_name:
+		"cobrowser_navigate":
+			result = await client.navigate(arguments.get("url", ""))
+
+		"cobrowser_click":
+			result = await client.click(
+				arguments.get("selector", ""),
+				arguments.get("xpath", ""),
+				arguments.get("x", -1),
+				arguments.get("y", -1),
+				arguments.get("index", 0)
+			)
+
+		"cobrowser_type":
+			result = await client.type_text(
+				arguments.get("selector", ""),
+				arguments.get("text", ""),
+				arguments.get("clear", false)
+			)
+
+		"cobrowser_read":
+			result = await client.read(arguments.get("selector", ""))
+
+		"cobrowser_query_all":
+			result = await client.query_all(
+				arguments.get("selector", ""),
+				arguments.get("limit", 20)
+			)
+
+		"cobrowser_scroll":
+			result = await client.scroll(
+				arguments.get("direction", "down"),
+				arguments.get("amount", 0),
+				arguments.get("selector", "")
+			)
+
+		"cobrowser_get_state":
+			result = await client.get_state()
+
+		"cobrowser_screenshot":
+			result = await client.screenshot()
+
+		"cobrowser_get_page_info":
+			result = await client.get_page_info()
+
+		_:
+			result = {"error": "Unknown Co-Browser tool: %s" % tool_name, "success": false}
+
+	# Normalize result
+	if not result.has("success"):
+		result["success"] = not result.has("error")
+
+	tool_executed.emit("cobrowser", tool_name, result)
+	return result
+
+
+## Register Co-Browser tools manually (since Co-Browser uses custom REST API, not MCP)
+func _register_cobrowser_tools() -> void:
+	var cobrowser_tools := [
+		{
+			"name": "cobrowser_navigate",
+			"description": "Navigate the browser to a URL. Use this to open websites.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"url": {"type": "string", "description": "The URL to navigate to"}
+				},
+				"required": ["url"]
+			}
+		},
+		{
+			"name": "cobrowser_click",
+			"description": "Click on an element in the browser. Specify either a CSS selector, XPath, or coordinates.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"selector": {"type": "string", "description": "CSS selector of element to click"},
+					"xpath": {"type": "string", "description": "XPath of element to click"},
+					"x": {"type": "integer", "description": "X coordinate to click"},
+					"y": {"type": "integer", "description": "Y coordinate to click"},
+					"index": {"type": "integer", "description": "Index if multiple elements match (0-based)"}
+				}
+			}
+		},
+		{
+			"name": "cobrowser_type",
+			"description": "Type text into a form field or input element.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"selector": {"type": "string", "description": "CSS selector of input element"},
+					"text": {"type": "string", "description": "Text to type"},
+					"clear": {"type": "boolean", "description": "Whether to clear existing text first"}
+				},
+				"required": ["selector", "text"]
+			}
+		},
+		{
+			"name": "cobrowser_read",
+			"description": "Read text content from an element on the page.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"selector": {"type": "string", "description": "CSS selector of element to read"}
+				},
+				"required": ["selector"]
+			}
+		},
+		{
+			"name": "cobrowser_query_all",
+			"description": "Query multiple elements matching a selector. Returns a list of elements with their properties.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"selector": {"type": "string", "description": "CSS selector to query"},
+					"limit": {"type": "integer", "description": "Maximum number of results (default 20)"}
+				},
+				"required": ["selector"]
+			}
+		},
+		{
+			"name": "cobrowser_scroll",
+			"description": "Scroll the page or an element.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"direction": {"type": "string", "enum": ["up", "down", "left", "right"], "description": "Scroll direction"},
+					"amount": {"type": "integer", "description": "Scroll amount in pixels (optional)"},
+					"selector": {"type": "string", "description": "CSS selector of scrollable element (optional, defaults to page)"}
+				},
+				"required": ["direction"]
+			}
+		},
+		{
+			"name": "cobrowser_get_state",
+			"description": "Get the current page state including URL, title, DOM structure, and metadata.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "cobrowser_get_page_info",
+			"description": "Get basic page info: title, URL, and ready state.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "cobrowser_screenshot",
+			"description": "Take a screenshot of the current page.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		}
+	]
+
+	for tool_data in cobrowser_tools:
+		var tool = MCPToolDefinitionScript.from_dict(tool_data, "cobrowser")
+		tool_registry[tool.name] = tool
+
+	print("[MCP] Registered %d Co-Browser tools" % cobrowser_tools.size())
+
+
 ## Get all available tools from all connected servers
 func get_available_tools() -> Array:
 	var tools: Array = []
@@ -153,6 +336,7 @@ func get_tools_for_openai() -> Array[Dictionary]:
 
 ## Get tools formatted for Claude/Anthropic
 func get_tools_for_anthropic() -> Array[Dictionary]:
+	print("[MCP] get_tools_for_anthropic() called, tool_registry has %d tools" % tool_registry.size())
 	var tools: Array[Dictionary] = []
 	for tool_name in tool_registry:
 		var tool = tool_registry[tool_name]

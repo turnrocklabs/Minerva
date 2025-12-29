@@ -16,6 +16,12 @@ var _active_chat_request: = false
 
 var _initializing_pane := false
 
+## Whether agent mode is enabled (allows LLM to use MCP tools)
+var agent_mode_enabled: bool = false
+
+## Maximum number of tool call rounds to prevent infinite loops
+const MAX_TOOL_CALL_ROUNDS: int = 10
+
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
@@ -224,9 +230,31 @@ func _on_btn_inspect_pressed():
 
 	ensure_chat_open()
 
-	var stringified_history:String = JSON.stringify(history_list, "\t")
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+
+	# Build full request body like the provider would
+	var request_body: Dictionary = {
+		"model": history.provider.api_model_id if "api_model_id" in history.provider else "unknown",
+		"messages": history_list,
+		"max_tokens": history.provider.max_tokens if "max_tokens" in history.provider else 4096,
+	}
+
+	# Add system prompt if available
+	if "system_prompt" in history.provider and history.provider.system_prompt:
+		request_body["system"] = history.provider.system_prompt
+
+	# Add tools if agent mode is enabled
+	print("[Inspector] agent_mode_enabled=%s, has_set_tools=%s" % [agent_mode_enabled, history.provider.has_method("set_tools")])
+	if agent_mode_enabled and history.provider.has_method("set_tools"):
+		var mcp = SingletonObject.get_mcp_manager()
+		var mcp_tools = mcp.get_tools_for_anthropic()
+		print("[Inspector] Got %d tools from MCP" % mcp_tools.size())
+		if not mcp_tools.is_empty():
+			request_body["tools"] = mcp_tools
+
+	var stringified_history:String = JSON.stringify(request_body, "\t")
 	%cdePrompt.text = stringified_history
-	
+
 	## show the inspector popup
 	var target_size = %tcChats.size
 	%InspectorPopup.exclusive = true
@@ -428,12 +456,12 @@ func execute_regular_chat(text: String) -> void:
 			return
 
 	if text.is_empty(): return
-	
+
 	ensure_chat_open()
-	
+
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
-	
+
 	var user_history_item = create_user_history_item(text)
 	user_history_item.provider = history.provider
 	# if we're using the human provider, handle it here
@@ -444,21 +472,31 @@ func execute_regular_chat(text: String) -> void:
 
 		for i in SingletonObject.drawer_notes_container.get_tab_count():
 			SingletonObject.drawer_notes_container.disable_notes(i)
-		
+
 		SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
 		SingletonObject.detached_note_proxies.clear()
 
 		return # if user is using Human provider we finish here
-	
+
 	# Check is the last message is a user message and not do anything if true
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
-	
+
+	# Setup agent mode tools if enabled
+	if agent_mode_enabled and history.provider.has_method("set_tools"):
+		var mcp = SingletonObject.get_mcp_manager()
+		var mcp_tools = mcp.get_tools_for_anthropic()
+		print("[Agent] Setting up tools: %d tools available" % mcp_tools.size())
+		for t in mcp_tools:
+			print("[Agent]   - %s" % t.get("name", "?"))
+		history.provider.set_tools(mcp_tools)
+		print("[Agent] Provider tools_enabled: %s" % history.provider.tools_enabled)
+
 	# make a chat request
 	var history_list: = await create_prompt(user_history_item)
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
-	
+
 	# rerender the message since we changed the history item
 	var user_msg_node: = history.VBox.add_history_item(user_history_item)
 	user_msg_node.first_time_message = true
@@ -470,15 +508,146 @@ func execute_regular_chat(text: String) -> void:
 										ChatHistoryItem.ChatRole.MODEL,
 										"")
 	dummy_item.provider = history.provider
-	
+
 	var model_msg_node = create_model_message_node(history, dummy_item)
 	var bot_response = await generate_content_from_provider(history, history_list)
-	
+
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
-	update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+
+	# Handle tool calls if agent mode is enabled and response has tool calls
+	if agent_mode_enabled and bot_response and bot_response.has_tool_calls():
+		# Store tool calls in the chat history item
+		chi.IsToolCall = true
+		chi.ToolCalls = bot_response.tool_calls
+
+		# Update UI with the assistant's response (may include text + tool calls)
+		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+
+		# Handle tool execution and continue conversation
+		await handle_tool_calls(history, bot_response.tool_calls)
+	else:
+		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+
 	audio_stop_1.disabled = true
 	_active_chat_request = false
+
+
+## Handle tool calls from an LLM response in agentic mode.
+## Executes tools, adds results to history, and continues the conversation.
+func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) -> void:
+	if round >= MAX_TOOL_CALL_ROUNDS:
+		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % MAX_TOOL_CALL_ROUNDS)
+		history.VBox.add_program_message("[Agent] Maximum tool call rounds reached. Stopping.")
+		return
+
+	var mcp_manager = SingletonObject.get_mcp_manager()
+
+	print("[Agent] Round %d: Processing %d tool calls" % [round, tool_calls.size()])
+
+	# Execute each tool call and collect results
+	for tool_call in tool_calls:
+		var tool_id: String = tool_call.get("id", "")
+		var tool_name: String = tool_call.get("name", "")
+		var tool_args: Dictionary = tool_call.get("arguments", {})
+
+		print("[Agent] Executing tool: %s (id=%s)" % [tool_name, tool_id])
+
+		# Show tool execution in UI
+		history.VBox.add_program_message("[Agent] Calling: %s" % tool_name)
+
+		# Execute the tool
+		var result = await mcp_manager.execute_tool(tool_name, tool_args)
+
+		print("[Agent] Tool result: %s" % str(result).left(200))
+
+		# Create tool result history item
+		var tool_result_item = ChatHistoryItem.new()
+		tool_result_item.Role = ChatHistoryItem.ChatRole.TOOL
+		tool_result_item.ToolCallId = tool_id
+		tool_result_item.ToolName = tool_name
+		tool_result_item.Message = JSON.stringify(result)
+		tool_result_item.provider = history.provider
+
+		# Add to history (this is critical - must happen before continuation)
+		history.HistoryItemList.append(tool_result_item)
+
+		# Show brief result status
+		if result.get("error"):
+			history.VBox.add_program_message("[Agent] Error: %s" % str(result.get("error")).left(80))
+		else:
+			history.VBox.add_program_message("[Agent] Done: %s" % tool_name)
+
+	# Ensure tools are still enabled for continuation request
+	if history.provider.has_method("set_tools"):
+		var mcp_tools = mcp_manager.get_tools_for_anthropic()
+		history.provider.set_tools(mcp_tools)
+
+	# Build continuation prompt with tool results
+	var continuation_list = history.to_prompt()
+
+	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
+
+	# Show loading state for continuation
+	var dummy_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
+										ChatHistoryItem.ChatRole.MODEL,
+										"")
+	dummy_item.provider = history.provider
+	var continuation_node = create_model_message_node(history, dummy_item)
+
+	# Get LLM's response to tool results
+	var continuation_response = await generate_content_from_provider(history, continuation_list)
+
+	if not continuation_response:
+		print("[Agent] ERROR: No continuation response received")
+		continuation_node.queue_free()
+		history.VBox.add_program_message("[Agent] Error: No response from LLM")
+		return
+
+	# Check for errors in response
+	if continuation_response.error:
+		print("[Agent] ERROR in response: %s" % continuation_response.error)
+		continuation_node.queue_free()
+		history.VBox.add_program_message("[Agent] Error: %s" % continuation_response.error)
+		return
+
+	# Process the continuation response
+	var continuation_chi = process_bot_response(continuation_response, history.provider)
+
+	print("[Agent] Continuation has tool_calls: %s" % continuation_response.has_tool_calls())
+
+	# Check if there are more tool calls
+	if continuation_response.has_tool_calls():
+		continuation_chi.IsToolCall = true
+		continuation_chi.ToolCalls = continuation_response.tool_calls
+
+		# Update UI
+		continuation_node.history_item = continuation_chi
+		history.HistoryItemList.append(continuation_chi)
+		continuation_node.loading = false
+		continuation_node.first_time_message = true
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(continuation_node)
+
+		# Recursively handle more tool calls
+		await handle_tool_calls(history, continuation_response.tool_calls, round + 1)
+	else:
+		# No more tool calls, finalize the response
+		print("[Agent] Final response (no more tool calls)")
+		continuation_node.history_item = continuation_chi
+		history.HistoryItemList.append(continuation_chi)
+		continuation_node.loading = false
+		continuation_node.first_time_message = true
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(continuation_node)
+
+		# Disable notes after completion
+		for i in SingletonObject.notes_container.get_tab_count():
+			SingletonObject.notes_container.disable_notes(i)
+		for i in SingletonObject.drawer_notes_container.get_tab_count():
+			SingletonObject.drawer_notes_container.disable_notes(i)
+
+		history.VBox.add_program_message("[Agent] Task complete.")
 
 
 func execute_sequential_chat(text_input: String) -> void:
@@ -1017,6 +1186,20 @@ func _on_btn_chat_settings_pressed():
 
 func _on_btn_clear_pressed():
 	%txtMainUserInput.text = ""
+
+
+## Handle Agent Mode toggle
+func _on_agent_mode_toggled(toggled_on: bool) -> void:
+	agent_mode_enabled = toggled_on
+	if toggled_on:
+		# Initialize MCP manager if not already done
+		var mcp = SingletonObject.get_mcp_manager()
+		var tools = mcp.get_available_tools()
+		print("[Agent Mode] Enabled with %d tools available" % tools.size())
+		if tools.is_empty():
+			push_warning("Agent Mode enabled but no MCP tools are available. Connect to MCP servers first.")
+	else:
+		print("[Agent Mode] Disabled")
 
 
 ## When user types in the chat box, estimate tokens count based on selected provider

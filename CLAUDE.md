@@ -155,3 +155,88 @@ list_components() → [{name, hint_count}]
 - Store secrets (tokens, passwords)
 - Auto-execute anything returned by Nudge
 - Overwrite good hints with guesses
+
+## Co-Browser MCP Tool
+
+Browser automation through Firefox extension. Source: `~/github/HumanWeb`
+
+### Architecture
+
+```
+Claude Code ──STDIO──> MCP Server ──HTTP──> Co-Browser Service ──WebSocket──> Firefox Extension
+                       (mcp_server.py)      (port 8677)                        (humanweb)
+```
+
+### Starting the Service
+
+```bash
+cd ~/github/HumanWeb
+python -m uvicorn src.Library.cobrowser_service:app --host 0.0.0.0 --port 8677
+```
+
+The Firefox extension must be installed and active. Use `Ctrl+Shift+Y` in Firefox to toggle connection.
+
+### HTTP API (Port 8677)
+
+**IMPORTANT**: Co-Browser uses a CUSTOM HTTP format, NOT JSON-RPC.
+
+#### Check Active Sessions
+```bash
+curl http://localhost:8677/v1/cobrowser/sessions/active
+# Returns: {"sessions": [{"session_id": "...", "created_at": "..."}]}
+```
+
+#### Send Command
+```bash
+curl -X POST http://localhost:8677/v1/cobrowser/command/{session_id}/sync \
+  -H "Content-Type: application/json" \
+  -d '{"type": "command.navigate", "payload": {"url": "https://example.com"}, "timeout": 30.0}'
+```
+
+### Command Types
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `command.navigate` | `{url}` | Navigate to URL |
+| `command.click` | `{selector?, xpath?, x?, y?}` | Click element |
+| `command.type` | `{selector, text, clear?}` | Type into input |
+| `command.read` | `{selector}` | Read element text |
+| `command.scroll` | `{direction, amount?, selector?}` | Scroll page |
+| `command.query_all` | `{selector, limit?}` | Query multiple elements |
+| `command.getState` | `{}` | Get page metadata, DOM, security info |
+| `command.screenshot` | `{}` | Capture screenshot |
+| `command.request_human` | `{reason, message}` | Request user intervention |
+
+### MCP Tools (via STDIO)
+
+When using through MCP (not direct HTTP), these tools are available:
+
+- `cobrowser_navigate` - Navigate to URL
+- `cobrowser_click` - Click element by selector/xpath/coordinates
+- `cobrowser_type` - Type text into input field
+- `cobrowser_read` - Read text from element
+- `cobrowser_scroll` - Scroll in direction
+- `cobrowser_query_all` - Get multiple elements
+- `cobrowser_get_page_info` - Get current page info
+- `cobrowser_screenshot` - Take screenshot
+- `cobrowser_request_human` - Request human assistance
+- `native_*` variants - Direct DOM manipulation bypassing visual automation
+
+### Testing Connection
+
+```bash
+# 1. Check service is running
+curl http://localhost:8677/v1/cobrowser/sessions/active
+
+# 2. If you get sessions, test a command
+SESSION_ID="<from-above>"
+curl -X POST "http://localhost:8677/v1/cobrowser/command/$SESSION_ID/sync" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "command.getState", "payload": {}, "timeout": 5.0}'
+```
+
+### Troubleshooting
+
+- **No sessions**: Firefox extension not connected. Press `Ctrl+Shift+Y` in Firefox
+- **Connection refused**: Service not running. Start with `python src/humanweb/service.py`
+- **Timeout**: Page not loaded or selector not found

@@ -299,9 +299,13 @@ var autocoder_manager: AutocodeManager
 #region MCP
 
 const MCPManagerScript := preload("res://Scripts/Services/MCP/MCPManager.gd")
+const CoBrowserMCPClientScript := preload("res://Scripts/Services/MCP/Servers/CoBrowserMCPClient.gd")
 
 ## Manager for MCP (Model Context Protocol) server connections
 var mcp_manager: Node = null
+
+## Co-Browser client for browser automation
+var cobrowser_client: RefCounted = null
 
 ## Initialize MCP manager (call from main scene _ready)
 func initialize_mcp() -> void:
@@ -310,6 +314,25 @@ func initialize_mcp() -> void:
 	mcp_manager = MCPManagerScript.new()
 	add_child(mcp_manager)
 	await mcp_manager.initialize()
+
+## Initialize Co-Browser client (call when needed)
+func get_cobrowser_client() -> RefCounted:
+	if not cobrowser_client:
+		cobrowser_client = CoBrowserMCPClientScript.new()
+	return cobrowser_client
+
+## Check if Co-Browser is available
+func is_cobrowser_available() -> bool:
+	var client = get_cobrowser_client()
+	return await client.has_active_session()
+
+
+## Get the MCP manager instance (lazy initialization)
+func get_mcp_manager() -> Node:
+	if not mcp_manager:
+		mcp_manager = MCPManagerScript.new()
+		add_child(mcp_manager)
+	return mcp_manager
 
 #endregion MCP
 

@@ -2,7 +2,7 @@ class_name ChatHistoryItem
 extends RefCounted
 
 enum PartType {TEXT, CODE, JPEG}
-enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
+enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM, TOOL}
 
 static var SERIALIZER_FIELDS = [
 	"Role",
@@ -25,7 +25,11 @@ static var SERIALIZER_FIELDS = [
 	"CodeLabelsState",
 	"isMerged",
 	"SliderContainerId", # if 2 or more items share the same ID they get put in the same SliderContainer
-	"MultiSliderContainerId"# if 2 or more items share the same ID they get put in the same SliderContainer
+	"MultiSliderContainerId", # if 2 or more items share the same ID they get put in the same SliderContainer
+	"ToolCallId",
+	"ToolName",
+	"ToolCalls",
+	"IsToolCall"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -109,6 +113,22 @@ var SliderContainerId: String = "":
 
 var MultiSliderContainerId: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); MultiSliderContainerId = value
+
+## Tool call ID (for TOOL role responses - correlates with the tool_call that triggered this)
+var ToolCallId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); ToolCallId = value
+
+## Tool name (for TOOL role - which tool was called)
+var ToolName: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); ToolName = value
+
+## Tool arguments (for ASSISTANT role with tool calls)
+var ToolCalls: Array[Dictionary] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); ToolCalls = value
+
+## Whether this is a tool call message
+var IsToolCall: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); IsToolCall = value
 
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
