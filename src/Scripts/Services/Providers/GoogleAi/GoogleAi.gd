@@ -4,6 +4,12 @@ extends BaseProvider
 
 var system_prompt: String
 
+## Available tools for agentic mode (set by ChatPane when agent mode is enabled)
+var available_tools: Array[Dictionary] = []
+
+## Whether tool use is enabled for this provider
+var tools_enabled: bool = false
+
 func _init():
 	provider_name = "Google"
 	BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -12,6 +18,25 @@ func _init():
 	model_name = "gemini-2.5-flash"
 	short_name = "GV"
 	token_cost = 1.05 / 1_000_000
+
+
+## Set available tools for agentic mode
+func set_tools(tools: Array[Dictionary]) -> void:
+	available_tools = tools
+	tools_enabled = not tools.is_empty()
+
+
+## Format tools for Gemini API
+## Gemini uses: tools: [{function_declarations: [{name, description, parameters}]}]
+func format_tools_for_request() -> Array:
+	var function_declarations: Array = []
+	for tool in available_tools:
+		function_declarations.append({
+			"name": tool.get("name", ""),
+			"description": tool.get("description", ""),
+			"parameters": tool.get("input_schema", {"type": "object", "properties": {}})
+		})
+	return [{"function_declarations": function_declarations}]
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response := BotResponse.new()
@@ -43,6 +68,12 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	var request_body = {
 		"contents": prompt
 	}
+
+	# Add tools if enabled
+	print("[Gemini] generate_content: tools_enabled=%s, available_tools.size=%d" % [tools_enabled, available_tools.size()])
+	if tools_enabled and not available_tools.is_empty():
+		request_body["tools"] = format_tools_for_request()
+		print("[Gemini] Added %d tools to request" % available_tools.size())
 
 	request_body.merge(additional_params)
 	
@@ -135,19 +166,65 @@ func wrap_memory(item: Note) -> Variant:
 	return ""
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
+	# Handle SYSTEM role first (sets system_prompt and returns null)
+	if chat_item.Role == ChatHistoryItem.ChatRole.SYSTEM:
+		system_prompt = chat_item.Message
+		return null
+
+	# Handle TOOL role (must be before match statement for proper return)
+	if chat_item.Role == ChatHistoryItem.ChatRole.TOOL:
+		# Tool results are sent as user role with functionResponse
+		# Gemini expects: {role: "user", parts: [{functionResponse: {name, response}}]}
+		var response_content: Variant
+		var parsed = JSON.parse_string(chat_item.Message)
+		if parsed != null:
+			response_content = parsed
+		else:
+			response_content = {"content": chat_item.Message}
+
+		return {
+			"role": "user",
+			"parts": [{
+				"functionResponse": {
+					"name": chat_item.ToolName,
+					"response": response_content
+				}
+			}]
+		}
+
 	var role: String
 
 	match chat_item.Role:
 		ChatHistoryItem.ChatRole.USER:
 			role = "user"
-		ChatHistoryItem.ChatRole.SYSTEM:
-			system_prompt = chat_item.Message
-			return null
 		ChatHistoryItem.ChatRole.ASSISTANT:
 			role = "model"
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "model"
-	
+		_:
+			push_warning("[Gemini] Unknown chat role: %s, defaulting to user" % chat_item.Role)
+			role = "user"
+
+	# Handle model messages with function calls (MODEL role is used for bot responses)
+	var is_model_role = chat_item.Role == ChatHistoryItem.ChatRole.ASSISTANT or chat_item.Role == ChatHistoryItem.ChatRole.MODEL
+	if is_model_role and chat_item.IsToolCall and not chat_item.ToolCalls.is_empty():
+		var parts: Array = []
+		# Add text part first if any
+		if not chat_item.Message.is_empty():
+			parts.append({"text": chat_item.Message})
+		# Add functionCall parts
+		for tool_call in chat_item.ToolCalls:
+			parts.append({
+				"functionCall": {
+					"name": tool_call.get("name", ""),
+					"args": tool_call.get("arguments", {})
+				}
+			})
+		return {
+			"role": "model",
+			"parts": parts
+		}
+
 	# Collect text notes and media notes separately
 	var text_notes: = PackedStringArray()
 	var media_notes: Array[Dictionary] = []
@@ -212,31 +289,56 @@ func estimate_tokens_from_prompt(input: Array[Variant]):
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
 
+# Function call response example:
+# {
+#   "candidates": [{
+#     "content": {
+#       "role": "model",
+#       "parts": [{"functionCall": {"name": "get_weather", "args": {"location": "NYC"}}}]
+#     },
+#     "finishReason": "STOP"
+#   }],
+#   "usageMetadata": {...}
+# }
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
-	
+
 	response.provider = self
 
 	var candidate = (data["candidates"] as Array).pop_front()
 
 	if not candidate:
 		response.error = "No candidates"
-		return
+		return response
 
 	if not "finishReason" in candidate:
 		response.complete = false
-	
-	var content = candidate["content"]
-	
+
+	var content = candidate.get("content", {})
+
+	# Parse parts - can be text and/or functionCall
 	if content.has("parts"):
 		for part in content["parts"]:
 			if "text" in part:
 				response.text += "\n%s" % part["text"]
+			elif "functionCall" in part:
+				# Parse function call
+				var func_call: Dictionary = part["functionCall"]
+				# Gemini doesn't provide an ID for function calls, so we generate one
+				var call_id: String = "gemini_call_%s_%d" % [func_call.get("name", "unknown"), Time.get_ticks_msec()]
+				response.add_tool_call(
+					call_id,
+					func_call.get("name", ""),
+					func_call.get("args", {})
+				)
+
+	response.text = response.text.strip_edges()
 
 	response.prompt_tokens = data["usageMetadata"]["promptTokenCount"]
-	response.completion_tokens = data["usageMetadata"]["candidatesTokenCount"]
-	#if data["usageMetadata"].has("candidatesTokenCount"):
-		#response.completion_tokens = data["usageMetadata"]["candidatesTokenCount"]
-	#else:
-		#response.completion_tokens = 60000
+	response.completion_tokens = data["usageMetadata"].get("candidatesTokenCount", 0)
+
+	# Note: functionCall does NOT set complete=false
+	# The agentic chat loop handles tool call continuation separately
+	# complete=false is only for truncation
+
 	return response

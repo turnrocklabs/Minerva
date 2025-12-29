@@ -10,6 +10,13 @@ func _init():
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
+	# Handle TOOL role first (tool results)
+	if chat_item.Role == ChatHistoryItem.ChatRole.TOOL:
+		return {
+			"role": "tool",
+			"tool_call_id": chat_item.ToolCallId,
+			"content": chat_item.Message
+		}
 
 	var role: String
 
@@ -22,6 +29,42 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 			role = "system"
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "assistant"
+		_:
+			push_warning("[OpenAI 4o] Unknown chat role: %s, defaulting to user" % chat_item.Role)
+			role = "user"
+
+	# Handle assistant messages with tool calls (MODEL role is used for bot responses)
+	var is_assistant_role = chat_item.Role == ChatHistoryItem.ChatRole.ASSISTANT or chat_item.Role == ChatHistoryItem.ChatRole.MODEL
+	if is_assistant_role and chat_item.IsToolCall and not chat_item.ToolCalls.is_empty():
+		var tool_calls_formatted: Array = []
+		for tool_call in chat_item.ToolCalls:
+			# OpenAI expects arguments as a JSON string
+			var args = tool_call.get("arguments", {})
+			var args_string: String
+			if args is String:
+				args_string = args
+			else:
+				args_string = JSON.stringify(args)
+
+			tool_calls_formatted.append({
+				"id": tool_call.get("id", ""),
+				"type": "function",
+				"function": {
+					"name": tool_call.get("name", ""),
+					"arguments": args_string
+				}
+			})
+
+		var result: Dictionary = {
+			"role": "assistant",
+			"tool_calls": tool_calls_formatted
+		}
+		# Add content if there's any text
+		if not chat_item.Message.is_empty():
+			result["content"] = chat_item.Message
+		else:
+			result["content"] = null
+		return result
 
 	# Collect text notes and media notes separately
 	var text_notes: = PackedStringArray()

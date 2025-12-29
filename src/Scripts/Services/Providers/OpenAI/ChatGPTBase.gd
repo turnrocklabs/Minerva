@@ -8,12 +8,40 @@ var topP: float = 1
 var FrequencyPenalty: float = 0
 var presencePenalty: float = 0
 
+## Available tools for agentic mode (set by ChatPane when agent mode is enabled)
+var available_tools: Array[Dictionary] = []
+
+## Whether tool use is enabled for this provider
+var tools_enabled: bool = false
+
 # Change the `model_name` and `short_name` in _ready function
 
 func _init():
 	provider_name = "OpenAI"
 	BASE_URL = "https://api.openai.com"
 	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
+
+
+## Set available tools for agentic mode
+func set_tools(tools: Array[Dictionary]) -> void:
+	available_tools = tools
+	tools_enabled = not tools.is_empty()
+
+
+## Format tools for OpenAI API
+## OpenAI uses: {type: "function", function: {name, description, parameters}}
+func format_tools_for_request() -> Array:
+	var formatted: Array = []
+	for tool in available_tools:
+		formatted.append({
+			"type": "function",
+			"function": {
+				"name": tool.get("name", ""),
+				"description": tool.get("description", ""),
+				"parameters": tool.get("input_schema", {"type": "object", "properties": {}})
+			}
+		})
+	return formatted
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response:= BotResponse.new()
@@ -57,6 +85,26 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		"messages": prompt,
 	}
 
+	# Add tools if enabled
+	print("[OpenAI] generate_content: tools_enabled=%s, available_tools.size=%d" % [tools_enabled, available_tools.size()])
+	if tools_enabled and not available_tools.is_empty():
+		request_body["tools"] = format_tools_for_request()
+		print("[OpenAI] Added %d tools to request" % request_body["tools"].size())
+
+	# Debug: print all messages being sent
+	print("[OpenAI] Messages being sent:")
+	for i in range(prompt.size()):
+		var msg = prompt[i]
+		if msg is Dictionary:
+			print("[OpenAI]   [%d] role=%s, has_tool_calls=%s, has_tool_call_id=%s" % [
+				i,
+				msg.get("role", "MISSING"),
+				msg.has("tool_calls"),
+				msg.has("tool_call_id")
+			])
+		else:
+			print("[OpenAI]   [%d] NOT A DICT: %s" % [i, typeof(msg)])
+
 	request_body.merge(additional_params)
 	
 	var body_stringified: String = JSON.stringify(request_body)
@@ -79,6 +127,20 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
+	print("[OpenAI Format] Role=%s, IsToolCall=%s, ToolCalls.size=%d, ToolCallId=%s" % [
+		chat_item.Role, chat_item.IsToolCall, chat_item.ToolCalls.size(), chat_item.ToolCallId
+	])
+
+	# Handle TOOL role first (must be before match statement for proper return)
+	if chat_item.Role == ChatHistoryItem.ChatRole.TOOL:
+		var result = {
+			"role": "tool",
+			"tool_call_id": chat_item.ToolCallId,
+			"content": chat_item.Message
+		}
+		print("[OpenAI Format] Returning TOOL: %s" % JSON.stringify(result).left(200))
+		return result
+
 	var role: String
 
 	match chat_item.Role:
@@ -90,10 +152,47 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 			role = "system"
 		ChatHistoryItem.ChatRole.MODEL:
 			role = "assistant"
-	
+		_:
+			push_warning("[OpenAI] Unknown chat role: %s, defaulting to user" % chat_item.Role)
+			role = "user"
+
+	# Handle assistant messages with tool calls (MODEL role is used for bot responses)
+	var is_assistant_role = chat_item.Role == ChatHistoryItem.ChatRole.ASSISTANT or chat_item.Role == ChatHistoryItem.ChatRole.MODEL
+	if is_assistant_role and chat_item.IsToolCall and not chat_item.ToolCalls.is_empty():
+		var tool_calls_formatted: Array = []
+		for tool_call in chat_item.ToolCalls:
+			# OpenAI expects arguments as a JSON string
+			var args = tool_call.get("arguments", {})
+			var args_string: String
+			if args is String:
+				args_string = args
+			else:
+				args_string = JSON.stringify(args)
+
+			tool_calls_formatted.append({
+				"id": tool_call.get("id", ""),
+				"type": "function",
+				"function": {
+					"name": tool_call.get("name", ""),
+					"arguments": args_string
+				}
+			})
+
+		var result: Dictionary = {
+			"role": "assistant",
+			"tool_calls": tool_calls_formatted
+		}
+		# Add content if there's any text
+		if not chat_item.Message.is_empty():
+			result["content"] = chat_item.Message
+		else:
+			result["content"] = null
+		print("[OpenAI Format] Returning ASSISTANT with tool_calls: %s" % JSON.stringify(result).left(300))
+		return result
+
 	# Collect text notes
 	var text_notes: = PackedStringArray()
-	
+
 	for note: Variant in chat_item.InjectedNotes:
 		if note is String:
 			text_notes.append(note)
@@ -112,15 +211,17 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	# if there are images, construct the image captions into one string for prompt
 	if not image_captions_array.is_empty():
 		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
-	
+
 	# Combine everything
 	var text := "%s\n%s\n%s" % [image_captions, notes_section, chat_item.Message]
 	text = text.strip_edges()
 
-	return {
+	var final_result = {
 		"role": role,
 		"content": text
 	}
+	print("[OpenAI Format] Returning regular message: role=%s, content_len=%d" % [role, text.length()])
+	return final_result
 
 
 func wrap_memory(item: Note) -> Variant:
@@ -159,25 +260,67 @@ func wrap_memory(item: Note) -> Variant:
 #   },
 #   "system_fingerprint": "fp_3b956da36b"
 # }
+# Tool call response example:
+# {
+#   "choices": [{
+#     "message": {
+#       "role": "assistant",
+#       "content": null,
+#       "tool_calls": [
+#         {"id": "call_xyz", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\":\"NYC\"}"}}
+#       ]
+#     },
+#     "finish_reason": "tool_calls"
+#   }]
+# }
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
-	
+
 	# set the used provider so update model name
 	response.provider = self
 
 	# the id will be useful if we need to complete the response with second request
 	response.id = data["id"]
 
+	var message: Dictionary = data["choices"][0]["message"]
 	var finish_reason = data["choices"][0]["finish_reason"]
 
 	if finish_reason == "length":
 		response.complete = false
-	
+
 	response.prompt_tokens = data["usage"]["prompt_tokens"]
 	response.completion_tokens = data["usage"]["completion_tokens"]
 
-	response.text = data["choices"][0]["message"]["content"]
-	
+	# Get text content (may be null for tool-only responses)
+	var content = message.get("content")
+	if content != null and content is String:
+		response.text = content
+	else:
+		response.text = ""
+
+	# Parse tool calls if present
+	var tool_calls = message.get("tool_calls", [])
+	if tool_calls is Array:
+		for tool_call in tool_calls:
+			if tool_call.get("type") == "function":
+				var func_data: Dictionary = tool_call.get("function", {})
+				var args_string: String = func_data.get("arguments", "{}")
+				var args: Dictionary = {}
+				# Parse JSON string arguments
+				var parsed = JSON.parse_string(args_string)
+				if parsed is Dictionary:
+					args = parsed
+
+				response.add_tool_call(
+					tool_call.get("id", ""),
+					func_data.get("name", ""),
+					args
+				)
+
+	# Note: tool_calls finish_reason does NOT set complete=false
+	# The agentic chat loop handles tool call continuation separately
+	# complete=false is only for length truncation
+
 	return response
 
 
