@@ -1,8 +1,9 @@
-class_name ChatGPTBase
+class_name OpenAIProvider
 extends BaseProvider
+## Consolidated OpenAI chat provider with tool support and reasoning levels.
+## All GPT models share this implementation with different configs.
 
-
-# this params are only used in chatGPT
+# Provider-specific params
 var temperature: float = 1
 var topP: float = 1
 var FrequencyPenalty: float = 0
@@ -14,12 +15,19 @@ var available_tools: Array[Dictionary] = []
 ## Whether tool use is enabled for this provider
 var tools_enabled: bool = false
 
-# Change the `model_name` and `short_name` in _ready function
+## Reasoning effort level: minimal, low, medium, high, xhigh
+var reasoning_effort: String = "medium"
+
 
 func _init():
 	provider_name = "OpenAI"
 	BASE_URL = "https://api.openai.com"
 	PROVIDER = SingletonObject.API_PROVIDER.OPENAI
+
+	# Default model - subclasses override these
+	model_name = "gpt-5.2"
+	short_name = "G5"
+	token_cost = 1.75 / 1_000_000
 
 
 ## Set available tools for agentic mode
@@ -43,8 +51,9 @@ func format_tools_for_request() -> Array:
 		})
 	return formatted
 
+
 func _parse_request_results(response: RequestResults) -> BotResponse:
-	var bot_response:= BotResponse.new()
+	var bot_response := BotResponse.new()
 
 	if not response.success:
 		bot_response.error = response.message
@@ -52,15 +61,11 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 	var data: Variant
 	if response.http_request_result == HTTPRequest.RESULT_SUCCESS:
-		# since the request was completed, construct the data
 		data = JSON.parse_string(response.body.get_string_from_utf8())
 
-		# if the request was successful, parse it to bot response
-		if (response.response_code >= 200 and response.response_code <= 299):
+		if response.response_code >= 200 and response.response_code <= 299:
 			bot_response = to_bot_response(data)
-		# otherwise extract the error
 		else:
-			
 			if "error" in data or "message" in data:
 				if "error" in data:
 					bot_response.error = data["error"]["message"]
@@ -68,22 +73,24 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 					bot_response.error = data["message"]
 			else:
 				bot_response.error = "Unexpected error occurred while generating the response"
-
 	else:
 		push_error("Invalid result. Response: %s", response.response_code)
 		bot_response.error = "Unexpected error occurred with HTTP Client. Code %s" % response.http_request_result
-		return
+		return bot_response
 
 	return bot_response
 
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api
-func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
-
+func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
 	var request_body = {
 		"model": model_name,
 		"messages": prompt,
 	}
+
+	# Add reasoning effort for models that support it
+	if not reasoning_effort.is_empty():
+		additional_params.merge({"reasoning_effort": reasoning_effort}, true)
 
 	# Add tools if enabled
 	print("[OpenAI] generate_content: tools_enabled=%s, available_tools.size=%d" % [tools_enabled, available_tools.size()])
@@ -91,24 +98,10 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		request_body["tools"] = format_tools_for_request()
 		print("[OpenAI] Added %d tools to request" % request_body["tools"].size())
 
-	# Debug: print all messages being sent
-	print("[OpenAI] Messages being sent:")
-	for i in range(prompt.size()):
-		var msg = prompt[i]
-		if msg is Dictionary:
-			print("[OpenAI]   [%d] role=%s, has_tool_calls=%s, has_tool_call_id=%s" % [
-				i,
-				msg.get("role", "MISSING"),
-				msg.has("tool_calls"),
-				msg.has("tool_call_id")
-			])
-		else:
-			print("[OpenAI]   [%d] NOT A DICT: %s" % [i, typeof(msg)])
-
 	request_body.merge(additional_params)
-	
+
 	var body_stringified: String = JSON.stringify(request_body)
-	
+
 	var response: RequestResults = await make_request(
 		"%s/v1/chat/completions" % BASE_URL,
 		HTTPClient.METHOD_POST,
@@ -120,26 +113,20 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	)
 
 	var item = _parse_request_results(response)
-	
+
 	SingletonObject.chat_completed.emit(item)
 
 	return item
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
-	print("[OpenAI Format] Role=%s, IsToolCall=%s, ToolCalls.size=%d, ToolCallId=%s" % [
-		chat_item.Role, chat_item.IsToolCall, chat_item.ToolCalls.size(), chat_item.ToolCallId
-	])
-
-	# Handle TOOL role first (must be before match statement for proper return)
+	# Handle TOOL role first (tool results)
 	if chat_item.Role == ChatHistoryItem.ChatRole.TOOL:
-		var result = {
+		return {
 			"role": "tool",
 			"tool_call_id": chat_item.ToolCallId,
 			"content": chat_item.Message
 		}
-		print("[OpenAI Format] Returning TOOL: %s" % JSON.stringify(result).left(200))
-		return result
 
 	var role: String
 
@@ -187,15 +174,17 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 			result["content"] = chat_item.Message
 		else:
 			result["content"] = null
-		print("[OpenAI Format] Returning ASSISTANT with tool_calls: %s" % JSON.stringify(result).left(300))
 		return result
 
-	# Collect text notes
+	# Collect text notes and media notes separately
 	var text_notes: = PackedStringArray()
+	var media_notes: Array = []
 
 	for note: Variant in chat_item.InjectedNotes:
 		if note is String:
 			text_notes.append(note)
+		elif note is Image:
+			media_notes.append(note)
 
 	# Wrap all text notes together once
 	var notes_section := ""
@@ -204,82 +193,64 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		notes_section += "\n\n".join(text_notes)
 		notes_section += "\n### End Reference Information ###\n\n"
 
-	# Get all image captions in array of strings
-	var image_captions_array = chat_item.Images.map(func(img: Image): return img.get_meta("caption", "No caption."))
-	var image_captions: String
+	# Combine notes section with user message
+	var full_text := "%s%s" % [notes_section, chat_item.Message]
+	full_text = full_text.strip_edges()
 
-	# if there are images, construct the image captions into one string for prompt
-	if not image_captions_array.is_empty():
-		image_captions = "Image Caption: %s" % "\n".join(image_captions_array)
+	# Content can be a string, but also an array of dictionaries, to handle different media types
+	var content: = [
+		{
+			"type": "text",
+			"text": full_text
+		},
+	]
 
-	# Combine everything
-	var text := "%s\n%s\n%s" % [image_captions, notes_section, chat_item.Message]
-	text = text.strip_edges()
+	# Add image notes
+	for img in media_notes:
+		content.append({
+			"type": "image_url",
+			"image_url": {
+				"url": "data:image/png;base64,%s" % Marshalls.raw_to_base64(img.save_png_to_buffer())
+			}
+		})
 
-	var final_result = {
+	return {
 		"role": role,
-		"content": text
+		"content": content
 	}
-	print("[OpenAI Format] Returning regular message: role=%s, content_len=%d" % [role, text.length()])
-	return final_result
 
 
+# Reimplemented to handle image notes properly
 func wrap_memory(item: Note) -> Variant:
-	if item.type == Note.Type.TEXT:
-		var controls_container = item.get_controls_container() as NoteTextControls
-		return controls_container.content
-	elif item.type == Note.Type.IMAGE:
-		var controls_container = item.get_controls_container() as NoteImageControls
-		return controls_container.caption
+	if item.type == Note.Type.IMAGE:
+		return (item.get_controls_container() as NoteImageControls).image
+
+	elif item.type == Note.Type.TEXT:
+		return (item.get_controls_container() as NoteTextControls).content
+
 	else:
 		push_warning("Tried to wrap memory but the given note type is not implemented")
 		print_stack()
 
 	return ""
 
-# {
-#   "id": "chatcmpl-9LJ12Ijrr2MAwBtHQdO3xHMut1pAn",
-#   "object": "chat.completion",
-#   "created": 1714865012,
-#   "model": "gpt-3.5-turbo-0125",
-#   "choices": [
-#     {
-#       "index": 0,
-#       "message": {
-#         "role": "assistant",
-#         "content": "Hello! How can I assist you today?"
-#       },
-#       "logprobs": null,
-#       "finish_reason": "stop"
-#     }
-#   ],
-#   "usage": {
-#     "prompt_tokens": 8,
-#     "completion_tokens": 9,
-#     "total_tokens": 17
-#   },
-#   "system_fingerprint": "fp_3b956da36b"
-# }
-# Tool call response example:
+
+# Response format:
 # {
 #   "choices": [{
 #     "message": {
 #       "role": "assistant",
-#       "content": null,
-#       "tool_calls": [
-#         {"id": "call_xyz", "type": "function", "function": {"name": "get_weather", "arguments": "{\"location\":\"NYC\"}"}}
-#       ]
+#       "content": "Hello!",
+#       "tool_calls": [...]  # optional
 #     },
-#     "finish_reason": "tool_calls"
-#   }]
+#     "finish_reason": "stop" | "tool_calls" | "length"
+#   }],
+#   "usage": {...}
 # }
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
 
-	# set the used provider so update model name
 	response.provider = self
-
-	# the id will be useful if we need to complete the response with second request
 	response.id = data["id"]
 
 	var message: Dictionary = data["choices"][0]["message"]
@@ -306,7 +277,6 @@ func to_bot_response(data: Variant) -> BotResponse:
 				var func_data: Dictionary = tool_call.get("function", {})
 				var args_string: String = func_data.get("arguments", "{}")
 				var args: Dictionary = {}
-				# Parse JSON string arguments
 				var parsed = JSON.parse_string(args_string)
 				if parsed is Dictionary:
 					args = parsed
@@ -317,38 +287,84 @@ func to_bot_response(data: Variant) -> BotResponse:
 					args
 				)
 
-	# Note: tool_calls finish_reason does NOT set complete=false
-	# The agentic chat loop handles tool call continuation separately
-	# complete=false is only for length truncation
-
 	return response
 
 
-func estimate_tokens(input) -> int:
-	return roundi(input.get_slice_count(" ") * token_cost)
+func estimate_tokens(input: String) -> int:
+	return roundi(input.get_slice_count(" ") * 1.335)
 
 
 func estimate_tokens_from_prompt(input: Array[Variant]):
-	var all_messages: Array[String] = []
+	var text_tokens: float = 0.0
 
-	# get all user messages
 	for msg: Dictionary in input:
 		var content = msg.get("content")
 
 		if content is String:
-			all_messages.append(msg["content"])
-		
+			text_tokens += estimate_tokens(content)
 		elif content is Array:
 			for part: Dictionary in content:
 				if part.get("type") == "text":
-					all_messages.append(part.get("text"))
-	
+					text_tokens += estimate_tokens(part.get("text"))
 
-	return estimate_tokens("".join(all_messages))
+	return text_tokens + estimate_image_tokens_from_prompt(input)
+
+
+func estimate_image_tokens_from_prompt(input: Array[Variant]) -> float:
+	var image_tokens := 0.0
+	for msg: Dictionary in input:
+		var content = msg.get("content")
+		if content is Array:
+			for part in content:
+				if part.get("type") == "image_url":
+					var b64: String = part["image_url"]["url"]
+					# Extract base64 data after the prefix
+					if b64.begins_with("data:"):
+						b64 = b64.split(",")[1] if "," in b64 else b64
+					var img = Image.new()
+					img.load_png_from_buffer(Marshalls.base64_to_raw(b64))
+					image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
+	return image_tokens
 
 
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	var chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
 	chi.Message = "finish"
-
 	return chi
+
+
+# ============================================================================
+# Model Variants - GPT-5.2 with different reasoning levels
+# ============================================================================
+
+## Nano: Fast, cost-effective for simple queries
+class Nano extends OpenAIProvider:
+	func _init():
+		super()
+		model_name = "gpt-5-nano"
+		display_name = "GPT-5 Nano"
+		short_name = "G5N"
+		reasoning_effort = ""  # No reasoning for nano model
+		token_cost = 0.10 / 1_000_000
+
+
+## Standard: Medium reasoning (default for daily tasks)
+class Standard extends OpenAIProvider:
+	func _init():
+		super()
+		model_name = "gpt-5.2"
+		display_name = "GPT-5.2"
+		short_name = "G5"
+		reasoning_effort = "medium"
+		token_cost = 1.75 / 1_000_000
+
+
+## Deep: High reasoning for complex tasks requiring more thought
+class Deep extends OpenAIProvider:
+	func _init():
+		super()
+		model_name = "gpt-5.2"
+		display_name = "GPT-5.2 Deep"
+		short_name = "G5D"
+		reasoning_effort = "xhigh"
+		token_cost = 1.75 / 1_000_000

@@ -1,6 +1,8 @@
 class_name ChatPane
 extends TabContainer
 
+const OpenAIImageProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
+
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -76,7 +78,7 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 	var bot_response
 	
 	# Append the optional parameters for OpenAI models, send request and wait for the response
-	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and (not history.provider is DallE and not history.provider is GPTImage1):
+	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is OpenAIImageProvider:
 		var optional_params = {
 			"temperature": history.Temperature,
 			"top_p": history.TopP,

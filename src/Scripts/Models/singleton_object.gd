@@ -539,36 +539,82 @@ func create_toast_notification(content: String, type: = ToastNotification.Type.I
 #region API Consumer
 enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK }
 
+# Preload provider scripts to ensure class_names are available
+const OpenAIProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd")
+const OpenAIImageProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
+const GoogleProvider = preload("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd")
+const AnthropicProvider = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
+
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
 	HUMAN,
-	FREE_MODEL,
-	LOW_COST,
-	BEST_GENERALIST,
-	BEST_CODER,
-	BEST_PLANNER,
-	BEST_REVIEWER,
-	BEST_REASONER,
+	# OpenAI Chat
+	GPT_NANO,
+	GPT_STANDARD,
+	GPT_DEEP,
+	# OpenAI Images
 	DALLE,
 	GPT_IMAGE_1,
+	GPT_IMAGE_15,
+	# Google
+	GEMINI_FLASH,
+	GEMINI_PRO,
+	# Anthropic
+	CLAUDE_HAIKU,
+	CLAUDE_SONNET,
+	CLAUDE_OPUS,
+	# TurnRock
 	TURNROCK,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
 var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
-	# API_MODEL_PROVIDERS.FREE_MODEL: LocalProvider.Gemma3,  # Orphaned - local provider disabled
-	API_MODEL_PROVIDERS.LOW_COST: GoogleAi,
-	API_MODEL_PROVIDERS.BEST_GENERALIST: ChatGPTo3.GPT5,
-	API_MODEL_PROVIDERS.BEST_CODER: ClaudeSonnet.Sonnet4,
-	API_MODEL_PROVIDERS.BEST_PLANNER: ClaudeSonnet.Opus4_1,
-	API_MODEL_PROVIDERS.BEST_REVIEWER: GoogleAi_PRO,
-	API_MODEL_PROVIDERS.BEST_REASONER: ChatGPTo3.GPT5High,
-	API_MODEL_PROVIDERS.DALLE: DallE,
-	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1,
+	# OpenAI Chat - GPT-5.2 with different reasoning levels
+	API_MODEL_PROVIDERS.GPT_NANO: OpenAIProvider.Nano,
+	API_MODEL_PROVIDERS.GPT_STANDARD: OpenAIProvider.Standard,
+	API_MODEL_PROVIDERS.GPT_DEEP: OpenAIProvider.Deep,
+	# OpenAI Images
+	API_MODEL_PROVIDERS.DALLE: OpenAIImageProvider.DallE3,
+	API_MODEL_PROVIDERS.GPT_IMAGE_1: OpenAIImageProvider.GPTImage1,
+	API_MODEL_PROVIDERS.GPT_IMAGE_15: OpenAIImageProvider.GPTImage15,
+	# Google - Gemini 3
+	API_MODEL_PROVIDERS.GEMINI_FLASH: GoogleProvider.Flash,
+	API_MODEL_PROVIDERS.GEMINI_PRO: GoogleProvider.Pro,
+	# Anthropic - Claude 4.5
+	API_MODEL_PROVIDERS.CLAUDE_HAIKU: AnthropicProvider.Haiku,
+	API_MODEL_PROVIDERS.CLAUDE_SONNET: AnthropicProvider.Sonnet,
+	API_MODEL_PROVIDERS.CLAUDE_OPUS: AnthropicProvider.Opus,
+	# TurnRock
 	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
 }
+
+## Model name aliases for backward compatibility with saved projects
+const MODEL_ALIASES: Dictionary = {
+	# Old OpenAI names -> New
+	"gpt-5-thinking": "gpt-5.2",
+	"gpt-5": "gpt-5.2",
+	"o4-mini-medium": "gpt-5.2",
+	"o4-mini-high": "gpt-5.2",
+	"gpt-4o": "gpt-5.2",
+	"gpt-3.5-turbo": "gpt-5.2",
+	"o3": "gpt-5.2",
+	# Old Google names -> New
+	"gemini-2.5-flash": "gemini-3-flash-preview",
+	"gemini-3-flash": "gemini-3-flash-preview",
+	# Old Anthropic names -> New
+	"claude-45-sonnet": "claude-sonnet-4.5",
+	"claude-sonnet-45": "claude-sonnet-4.5",
+	"claude-sonnet-4-5-20250929": "claude-sonnet-4.5",
+	"claude-opus-4-1": "claude-opus-4.5",
+	# Old image model names
+	"dall-e-2": "dall-e-3",
+}
+
+## Resolve old model names to new ones for backward compatibility
+func resolve_model_alias(saved_name: String) -> String:
+	return MODEL_ALIASES.get(saved_name, saved_name)
 
 # ## This function will return the `API_MODEL_PROVIDERS` enum value
 # ## for the provider currently in use by passed tab or the active one

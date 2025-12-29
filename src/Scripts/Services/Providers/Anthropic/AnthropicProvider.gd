@@ -1,5 +1,7 @@
-class_name ClaudeSonnet
+class_name AnthropicProvider
 extends BaseProvider
+## Consolidated Anthropic/Claude provider with tool support.
+## Supports multimodal content (text, images).
 
 var system_prompt: String
 var api_model_id: String
@@ -11,16 +13,18 @@ var available_tools: Array[Dictionary] = []
 ## Whether tool use is enabled for this provider
 var tools_enabled: bool = false
 
+
 func _init():
 	provider_name = "Anthropic"
 	BASE_URL = "https://api.anthropic.com/v1"
 	PROVIDER = SingletonObject.API_PROVIDER.ANTHROPIC
-	self.api_model_id = "claude-sonnet-4-5-20250929"
-	self.max_tokens = 64000
 
-	model_name = "claude-45-sonnet"
+	# Default model - subclasses override these
+	api_model_id = "claude-sonnet-4-5-20250929"
+	max_tokens = 64000
+	model_name = "claude-sonnet-4.5"
 	short_name = "CS"
-	token_cost = 0.000015 # https://claude101.com/claude-3-5-sonnet/
+	token_cost = 3.00 / 1_000_000
 
 
 ## Set available tools for agentic mode
@@ -42,7 +46,7 @@ func format_tools_for_request() -> Array:
 
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
-	var bot_response:= BotResponse.new()
+	var bot_response := BotResponse.new()
 
 	if not response.success:
 		bot_response.error = response.message
@@ -50,34 +54,29 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 	var data: Variant
 	if response.http_request_result == HTTPRequest.RESULT_SUCCESS:
-		# since the request was completed, construct the data
 		data = JSON.parse_string(response.body.get_string_from_utf8())
 
-		# if the request was successful, parse it to bot response
-		if (response.response_code >= 200 and response.response_code <= 299):
+		if response.response_code >= 200 and response.response_code <= 299:
 			bot_response = to_bot_response(data)
-		# otherwise extract the error
 		else:
-			
 			if "error" in data:
 				bot_response.error = data["error"]["message"]
 			else:
 				bot_response.error = "Unexpected error occurred while generating the response"
-
 	else:
 		push_error("Invalid result. Response: %s", response.response_code)
 		bot_response.error = "Unexpected error occurred with HTTP Client. Code %s" % response.http_request_result
-		return
+		return bot_response
 
 	return bot_response
 
 
 # https://docs.anthropic.com/en/api/messages
-func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
+func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}):
 	var request_body = {
-		"model": self.api_model_id,
+		"model": api_model_id,
 		"messages": prompt,
-		"max_tokens": self.max_tokens,
+		"max_tokens": max_tokens,
 		"system": system_prompt
 	}
 
@@ -88,9 +87,9 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 		print("[Claude] Added %d tools to request" % request_body["tools"].size())
 
 	request_body.merge(additional_params)
-	
+
 	var body_stringified: String = JSON.stringify(request_body)
-	
+
 	var response: RequestResults = await make_request(
 		"%s/messages" % BASE_URL,
 		HTTPClient.METHOD_POST,
@@ -103,17 +102,16 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	)
 
 	var item = _parse_request_results(response)
-	
+
 	SingletonObject.chat_completed.emit(item)
 
 	return item
 
 
 func wrap_memory(item: Note) -> Variant:
-
 	if item.type == Note.Type.IMAGE:
 		return (item.get_controls_container() as NoteImageControls).image
-	
+
 	elif item.type == Note.Type.TEXT:
 		return (item.get_controls_container() as NoteTextControls).content
 
@@ -125,7 +123,6 @@ func wrap_memory(item: Note) -> Variant:
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
-
 	var role: String
 
 	match chat_item.Role:
@@ -192,8 +189,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	var full_text := "%s%s" % [notes_section, chat_item.Message]
 	full_text = full_text.strip_edges()
 
-	# content can be a string, but also an array of dictionaries, to handle different media types
-	# message and each note will be it's own dictionary
+	# Content can be a string, but also an array of dictionaries, to handle different media types
 	var content: = [
 		{
 			"type": "text",
@@ -218,26 +214,24 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	}
 
 
-
-
 func estimate_tokens(input) -> int:
 	return roundi(input.get_slice_count(" ") * 1.335)
 
 
 func estimate_tokens_from_prompt(input: Array[Variant]):
 	var all_messages: Array[String] = []
-	# get all user messages
+	# Get all user messages
 	for msg: Dictionary in input:
 		var content = msg.get("content")
 
 		if content is String:
 			all_messages.append(msg["content"])
-		
+
 		elif content is Array:
 			for part: Dictionary in content:
 				if part.get("type") == "text":
 					all_messages.append(part.get("text"))
-	
+
 	return estimate_tokens("".join(all_messages))
 
 
@@ -245,39 +239,22 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
 
 
+# Response format:
 # {
 #   "content": [
-#     {
-#       "text": "Hi! My name is Claude.",
-#       "type": "text"
-#     }
+#     {"type": "text", "text": "..."},
+#     {"type": "tool_use", "id": "...", "name": "...", "input": {...}}
 #   ],
-#   "id": "msg_013Zva2CMHLNnXjNJJKqJ2EF",
-#   "model": "claude-3-5-sonnet-20240620",
+#   "id": "msg_xxx",
+#   "model": "claude-...",
 #   "role": "assistant",
-#   "stop_reason": "end_turn",
-#   "stop_sequence": null,
-#   "type": "message",
-#   "usage": {
-#     "input_tokens": 10,
-#     "output_tokens": 25
-#   }
-# }
-# Tool use response example:
-# {
-#   "content": [
-#     {"type": "text", "text": "I'll help you with that."},
-#     {"type": "tool_use", "id": "toolu_01A", "name": "get_weather", "input": {"location": "NYC"}}
-#   ],
-#   "stop_reason": "tool_use"
+#   "stop_reason": "end_turn" | "tool_use" | "max_tokens",
+#   "usage": {"input_tokens": 10, "output_tokens": 25}
 # }
 func to_bot_response(data: Variant) -> BotResponse:
 	var response = BotResponse.new()
 
-	# set the used provider so update model name
 	response.provider = self
-
-	# the id will be useful if we need to complete the response with second request
 	response.id = data["id"]
 
 	var finish_reason = data["stop_reason"]
@@ -309,28 +286,44 @@ func to_bot_response(data: Variant) -> BotResponse:
 	# Combine all text parts
 	response.text = "\n".join(text_parts)
 
-	# Note: tool_use stop_reason does NOT set complete=false
-	# The agentic chat loop handles tool call continuation separately
-	# complete=false is only for max_tokens truncation
-
 	return response
 
-class Opus4_1 extends ClaudeSonnet:
+
+# ============================================================================
+# Model Variants
+# ============================================================================
+
+## Claude Haiku 4.5: Fast, cost-effective for simple tasks
+class Haiku extends AnthropicProvider:
 	func _init():
 		super()
-		self.api_model_id = "claude-opus-4-1"
-		self.max_tokens = 32000
+		api_model_id = "claude-haiku-4-5"
+		model_name = "claude-haiku-4.5"
+		display_name = "Claude Haiku 4.5"
+		short_name = "CH"
+		max_tokens = 8192
+		token_cost = 1.00 / 1_000_000
 
-		model_name = "claude-opus-4-1"
+
+## Claude Sonnet 4.5: Best balance of speed and capability
+class Sonnet extends AnthropicProvider:
+	func _init():
+		super()
+		api_model_id = "claude-sonnet-4-5"
+		model_name = "claude-sonnet-4.5"
+		display_name = "Claude Sonnet 4.5"
+		short_name = "CS"
+		max_tokens = 64000
+		token_cost = 3.00 / 1_000_000
+
+
+## Claude Opus 4.5: Most capable for complex reasoning
+class Opus extends AnthropicProvider:
+	func _init():
+		super()
+		api_model_id = "claude-opus-4-5"
+		model_name = "claude-opus-4.5"
+		display_name = "Claude Opus 4.5"
 		short_name = "CO"
-		token_cost = 1.1 / 1_000_000 * 100
-
-class Sonnet4 extends ClaudeSonnet:
-	func _init():
-		super()
-		self.api_model_id = "claude-sonnet-4-5"
-		self.max_tokens = 64000
-
-		model_name = "claude-sonnet-45"
-		short_name = "S45"
-		token_cost = 1.1 / 1_000_000 * 100
+		max_tokens = 32000
+		token_cost = 15.00 / 1_000_000

@@ -1,5 +1,5 @@
 class_name LocalProvider
-extends ChatGPTBase
+extends OpenAIProvider
 
 var max_tokens: int
 
