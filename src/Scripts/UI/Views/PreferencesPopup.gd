@@ -96,6 +96,11 @@ func _ready():
 		_on_experimental_check_button_toggled(enable_exp)
 		%ExperimentalCheckButton.button_pressed = enable_exp
 
+	# Load verbose logging setting
+	if SingletonObject.config_has_saved_section("Logging"):
+		var enable_verbose: bool = SingletonObject.config_file.get_value("Logging", "verbose", false)
+		%VerboseLoggingCheckButton.button_pressed = enable_verbose
+
 	populate_output_devices_button()
 
 	# core tab stuff - these signals relate to the WebSocket connection status
@@ -286,6 +291,10 @@ func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
 	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
 	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
 	SingletonObject.toggle_experimental.emit(toggled_on)
+
+
+func _on_verbose_logging_check_button_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_verbose_logging(toggled_on)
 
 
 func populate_output_devices_button() -> void:

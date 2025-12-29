@@ -6,6 +6,7 @@
 
 #ifdef PLATFORM_LINUX
     #include "unix/terminal.h"
+    #include "unix/subprocess.h"
 #endif
 
 #include <gdextension_interface.h>
@@ -22,6 +23,10 @@ void initialize_terminal_module(ModuleInitializationLevel p_level) {
 
     #if defined(PLATFORM_WINDOWS) || defined(PLATFORM_LINUX)
         ClassDB::register_class<Terminal>();
+    #endif
+
+    #ifdef PLATFORM_LINUX
+        ClassDB::register_class<SubProcess>();
     #endif
 }
 

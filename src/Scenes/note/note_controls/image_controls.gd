@@ -53,12 +53,19 @@ func setup(owner_note: Note, note_image: Image, image_caption: String = ""):
 
 
 func _ready() -> void:
+	# Only create texture if we have a backing image (set before ready)
+	if _image_backing:
+		_texture_rect.texture = ImageTexture.create_from_image(_image_backing)
+		if _image_backing.has_meta("caption"): # extract caption if available
+			caption = _image_backing.get_meta("caption")
+		_image_backing = null
 
-	_texture_rect.texture = ImageTexture.create_from_image(_image_backing)
-	if _image_backing.has_meta("caption"): # extract caption if available
-		caption = _image_backing.get_meta("caption")
-	
 	_caption_line_edit.text = _caption_backing
-
-	_image_backing = null
 	_caption_backing = ""
+
+
+func _exit_tree() -> void:
+	# Explicitly release the texture to prevent leaks during shutdown
+	if _texture_rect and _texture_rect.texture:
+		print("[NoteImageControls] Releasing texture on exit")
+		_texture_rect.texture = null

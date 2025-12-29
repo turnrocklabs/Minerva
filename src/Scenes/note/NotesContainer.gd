@@ -71,6 +71,27 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 
 	return notes_vbox
 
+
+## Find a tab by name, or create it if it doesn't exist.
+## Returns the NoteVBox for that tab.
+func find_or_create_tab(tab_name: String) -> NoteVBox:
+	# Search existing tabs
+	for i in get_tab_count():
+		if get_tab_title(i) == tab_name:
+			return get_tab_control(i) as NoteVBox
+
+	# Not found, create new tab
+	return create_tab(tab_name)
+
+
+## Get a tab by name if it exists, otherwise return null
+func find_tab_by_name(tab_name: String) -> NoteVBox:
+	for i in get_tab_count():
+		if get_tab_title(i) == tab_name:
+			return get_tab_control(i) as NoteVBox
+	return null
+
+
 func add_note_vbox(notes_vbox: NoteVBox) -> void:
 	var new_tab_index: = get_tab_count()
 

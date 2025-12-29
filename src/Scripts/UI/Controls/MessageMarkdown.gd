@@ -266,11 +266,6 @@ func _setup_model_message():
 	for ch in %ImagesGridContainer.get_children(): ch.free()
 
 	for image in history_item.Images:
-		var texture_rect = TextureRect.new()
-		texture_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		texture_rect.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
-		texture_rect.texture = ImageTexture.create_from_image(image)
-
 		var img_node = ChatImage.create(image)
 
 		# tell the vBoxChat if image is activated

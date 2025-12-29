@@ -2,6 +2,8 @@
 ### Title: menuMain
 extends MenuBar
 
+const NudgeMCPClientScript := preload("res://Scripts/Services/MCP/Servers/NudgeMCPClient.gd")
+
 @onready var view = $View as PopupMenu
 @onready var project: PopupMenu = $Project
 @onready var edit: PopupMenu = %File
@@ -12,6 +14,9 @@ var ButtonCloseForPopUp
 
 # Add a new submenu for 'File'
 @onready var file_submenu: PopupMenu = PopupMenu.new()
+
+# MCP menu
+var mcp_menu: PopupMenu
 
 func _on_file_index_pressed(index):
 	match index:
@@ -142,6 +147,450 @@ func _ready():
 	terminal_input_event.action = "ui_terminal"
 	terminal_shortcut.events.append(terminal_input_event)
 	%View.set_item_shortcut(3, terminal_shortcut, true)
+
+	# Create MCP menu (before Help)
+	_setup_mcp_menu()
+
+
+func _setup_mcp_menu() -> void:
+	mcp_menu = PopupMenu.new()
+	mcp_menu.name = "MCP"
+	mcp_menu.title = "MCP"
+
+	# Nudge section - Pull operations
+	mcp_menu.add_item("Pull All from Nudge", 0)
+	mcp_menu.add_separator()
+
+	# Push operations
+	mcp_menu.add_item("Push Current Tab to Nudge", 1)
+	mcp_menu.add_item("Push All Tabs to Nudge", 3)
+	mcp_menu.add_separator()
+
+	# Delete operations
+	mcp_menu.add_item("Delete Current Tab from Nudge", 4)
+	mcp_menu.add_separator()
+
+	# Status
+	mcp_menu.add_item("Nudge Status", 2)
+
+	mcp_menu.id_pressed.connect(_on_mcp_menu_id_pressed)
+
+	# Insert before Help menu
+	var help_idx := -1
+	for i in get_child_count():
+		if get_child(i).name == "Help":
+			help_idx = i
+			break
+
+	if help_idx >= 0:
+		add_child(mcp_menu)
+		move_child(mcp_menu, help_idx)
+	else:
+		add_child(mcp_menu)
+
+
+func _on_mcp_menu_id_pressed(id: int) -> void:
+	match id:
+		0:  # Pull All from Nudge
+			_nudge_pull_all()
+		1:  # Push Current Tab to Nudge
+			_nudge_push_current_tab()
+		2:  # Nudge Status
+			_show_nudge_status()
+		3:  # Push All Tabs to Nudge
+			_nudge_push_all_tabs()
+		4:  # Delete Current Tab from Nudge
+			_nudge_delete_current_tab()
+
+
+func _nudge_pull_all() -> void:
+	var nudge_client := NudgeMCPClientScript.new()
+
+	var result: Dictionary = await nudge_client.pull_all_hints()
+	if result.get("error"):
+		SingletonObject.create_toast_notification(
+			"Failed to pull from Nudge: %s" % result.get("error"),
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	var hints: Array = result.get("hints", [])
+	if hints.is_empty():
+		SingletonObject.create_toast_notification("No hints found in Nudge", ToastNotification.Type.WARNING)
+		return
+
+	# Group hints by component
+	var hints_by_component: Dictionary = {}
+	for hint_data in hints:
+		var component: String = hint_data.get("component", "default")
+		if component.is_empty():
+			component = "default"
+		if not hints_by_component.has(component):
+			hints_by_component[component] = []
+		hints_by_component[component].append(hint_data)
+
+	var created_count := 0
+	var updated_count := 0
+	var tabs_created := 0
+
+	var notes_container: NotesContainer = SingletonObject.notes_container
+
+	for component in hints_by_component:
+		var component_hints: Array = hints_by_component[component]
+		var target_vbox: NoteVBox = notes_container.find_or_create_tab(component)
+		if target_vbox.get_notes().is_empty():
+			tabs_created += 1
+
+		for hint_data in component_hints:
+			var key: String = hint_data.get("key", "")
+			var hint_obj: Dictionary = hint_data.get("hint", {})
+			var meta: Dictionary = hint_obj.get("meta", {})
+			var value = hint_obj.get("value", "")
+
+			# Detect note type from meta or from value.content_type
+			var note_type: String = meta.get("note_type", "")
+			if note_type.is_empty() and value is Dictionary:
+				var content_type: String = value.get("content_type", "")
+				if content_type.begins_with("image/"):
+					note_type = "image"
+				elif content_type.begins_with("audio/"):
+					note_type = "audio"
+				else:
+					note_type = "text"
+			elif note_type.is_empty():
+				note_type = "text"
+
+			var note_title: String = key
+			var existing_note := target_vbox._find_note_by_title(note_title)
+
+			# Handle different note types
+			match note_type:
+				"image":
+					if existing_note:
+						# Update existing image note
+						var updated := await _update_image_note_from_blob(existing_note, value, nudge_client)
+						if updated:
+							existing_note.set_meta("nudge_hint", hint_data)
+							updated_count += 1
+					else:
+						# Create new image note
+						var note := await _create_image_note_from_blob(note_title, value, nudge_client)
+						if note:
+							note.set_meta("nudge_hint", hint_data)
+							target_vbox.add_note(note)
+							created_count += 1
+
+				"audio":
+					if existing_note:
+						# Can't easily update audio notes, skip
+						existing_note.set_meta("nudge_hint", hint_data)
+						updated_count += 1
+					else:
+						# Create new audio note
+						var note := await _create_audio_note_from_blob(note_title, value, nudge_client)
+						if note:
+							note.set_meta("nudge_hint", hint_data)
+							target_vbox.add_note(note)
+							created_count += 1
+
+				_:  # text or unknown
+					var content: String
+					if value is String:
+						content = value
+					elif value is Dictionary or value is Array:
+						content = JSON.stringify(value, "  ")
+					else:
+						content = str(value)
+
+					if existing_note:
+						if existing_note.type == Note.Type.TEXT:
+							var text_controls = existing_note.get_controls_container()
+							if text_controls and "content" in text_controls:
+								text_controls.content = content
+						existing_note.set_meta("nudge_hint", hint_data)
+						updated_count += 1
+					else:
+						var note := Note.create_text_note(note_title, content)
+						note.set_meta("nudge_hint", hint_data)
+						target_vbox.add_note(note)
+						created_count += 1
+
+	var msg := "Pulled %d new, %d updated" % [created_count, updated_count]
+	if tabs_created > 0:
+		msg += " (%d new tabs)" % tabs_created
+	SingletonObject.create_toast_notification(msg, ToastNotification.Type.SUCCESS)
+
+
+func _nudge_push_current_tab() -> void:
+	var notes_container: NotesContainer = SingletonObject.notes_container
+	if notes_container.get_tab_count() == 0:
+		SingletonObject.create_toast_notification("No tabs to push", ToastNotification.Type.WARNING)
+		return
+
+	var current_vbox: NoteVBox = notes_container.get_current_tab_control() as NoteVBox
+	if not current_vbox:
+		SingletonObject.create_toast_notification("No active tab", ToastNotification.Type.WARNING)
+		return
+
+	var notes := current_vbox.get_notes()
+	if notes.is_empty():
+		SingletonObject.create_toast_notification("No notes to push", ToastNotification.Type.WARNING)
+		return
+
+	var nudge_client := NudgeMCPClientScript.new()
+	var component := current_vbox.name
+	var success_count := 0
+	var error_count := 0
+
+	for note in notes:
+		var result: Dictionary = await nudge_client.push_note_simple(note, component)
+		if result.get("error"):
+			error_count += 1
+			push_warning("Failed to push note '%s': %s" % [note.title, result.get("error")])
+		else:
+			success_count += 1
+
+	if error_count > 0:
+		SingletonObject.create_toast_notification(
+			"Pushed %d notes to '%s' (%d failed)" % [success_count, component, error_count],
+			ToastNotification.Type.WARNING
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"Pushed %d notes to '%s'" % [success_count, component],
+			ToastNotification.Type.SUCCESS
+		)
+
+
+func _show_nudge_status() -> void:
+	var connected := false
+	if SingletonObject.mcp_manager:
+		connected = SingletonObject.mcp_manager.is_server_connected("nudge")
+
+	if connected:
+		SingletonObject.create_toast_notification("Nudge: Connected", ToastNotification.Type.SUCCESS)
+	else:
+		SingletonObject.create_toast_notification("Nudge: Not connected", ToastNotification.Type.ERROR)
+
+
+## Create an image note from a blob reference
+func _create_image_note_from_blob(note_title: String, value, nudge_client) -> Note:
+	if not value is Dictionary:
+		push_warning("Image note value is not a dictionary")
+		return null
+
+	var blob_id: String = value.get("blob_id", "")
+	if blob_id.is_empty():
+		push_warning("No blob_id in image note value")
+		return null
+
+	# Download the blob
+	var blob_result: Dictionary = await nudge_client.blob_download(blob_id)
+	if blob_result.get("error"):
+		push_warning("Failed to download blob: %s" % blob_result.get("error"))
+		return null
+
+	var base64_data: String = blob_result.get("data", "")
+	if base64_data.is_empty():
+		push_warning("Blob data is empty")
+		return null
+
+	# Decode base64 to image
+	var png_data: PackedByteArray = Marshalls.base64_to_raw(base64_data)
+	var image := Image.new()
+	var err := image.load_png_from_buffer(png_data)
+	if err != OK:
+		# Try loading as other formats
+		err = image.load_jpg_from_buffer(png_data)
+		if err != OK:
+			err = image.load_webp_from_buffer(png_data)
+			if err != OK:
+				push_warning("Failed to load image from blob data")
+				return null
+
+	var caption: String = value.get("caption", "")
+	return Note.create_image_note(note_title, image, caption)
+
+
+## Update an existing image note from a blob reference
+func _update_image_note_from_blob(note: Note, value, nudge_client) -> bool:
+	if note.type != Note.Type.IMAGE:
+		return false
+
+	if not value is Dictionary:
+		return false
+
+	var blob_id: String = value.get("blob_id", "")
+	if blob_id.is_empty():
+		return false
+
+	# Download the blob
+	var blob_result: Dictionary = await nudge_client.blob_download(blob_id)
+	if blob_result.get("error"):
+		return false
+
+	var base64_data: String = blob_result.get("data", "")
+	if base64_data.is_empty():
+		return false
+
+	# Decode base64 to image
+	var png_data: PackedByteArray = Marshalls.base64_to_raw(base64_data)
+	var image := Image.new()
+	var err := image.load_png_from_buffer(png_data)
+	if err != OK:
+		err = image.load_jpg_from_buffer(png_data)
+		if err != OK:
+			err = image.load_webp_from_buffer(png_data)
+			if err != OK:
+				return false
+
+	# Update the image in the controls
+	var controls = note.get_controls_container()
+	if controls and "image" in controls:
+		controls.image = image
+		if "caption" in controls:
+			controls.caption = value.get("caption", "")
+		return true
+
+	return false
+
+
+## Create an audio note from a blob reference
+func _create_audio_note_from_blob(note_title: String, value, nudge_client) -> Note:
+	if not value is Dictionary:
+		push_warning("Audio note value is not a dictionary")
+		return null
+
+	var blob_id: String = value.get("blob_id", "")
+	if blob_id.is_empty():
+		push_warning("No blob_id in audio note value")
+		return null
+
+	var content_type: String = value.get("content_type", "audio/wav")
+
+	# Download the blob
+	var blob_result: Dictionary = await nudge_client.blob_download(blob_id)
+	if blob_result.get("error"):
+		push_warning("Failed to download audio blob: %s" % blob_result.get("error"))
+		return null
+
+	var base64_data: String = blob_result.get("data", "")
+	if base64_data.is_empty():
+		push_warning("Audio blob data is empty")
+		return null
+
+	# Decode base64 to audio
+	var audio_data: PackedByteArray = Marshalls.base64_to_raw(base64_data)
+	var audio_stream: AudioStream
+
+	match content_type:
+		"audio/mpeg", "audio/mp3":
+			audio_stream = AudioStreamMP3.new()
+			audio_stream.data = audio_data
+		"audio/ogg":
+			audio_stream = AudioStreamOggVorbis.new()
+			audio_stream.load_from_buffer(audio_data)
+		"audio/wav", _:
+			audio_stream = AudioStreamWAV.new()
+			audio_stream.data = audio_data
+
+	return Note.create_audio_note(note_title, audio_stream)
+
+
+func _nudge_push_all_tabs() -> void:
+	var notes_container: NotesContainer = SingletonObject.notes_container
+	if notes_container.get_tab_count() == 0:
+		SingletonObject.create_toast_notification("No tabs to push", ToastNotification.Type.WARNING)
+		return
+
+	var nudge_client := NudgeMCPClientScript.new()
+	var total_success := 0
+	var total_errors := 0
+	var tabs_pushed := 0
+
+	for tab_idx in notes_container.get_tab_count():
+		var vbox: NoteVBox = notes_container.get_tab_control(tab_idx) as NoteVBox
+		if not vbox:
+			continue
+
+		var notes := vbox.get_notes()
+		if notes.is_empty():
+			continue
+
+		var component := vbox.name
+		tabs_pushed += 1
+
+		for note in notes:
+			var result: Dictionary = await nudge_client.push_note_simple(note, component)
+			if result.get("error"):
+				total_errors += 1
+				push_warning("Failed to push note '%s': %s" % [note.title, result.get("error")])
+			else:
+				total_success += 1
+
+	if tabs_pushed == 0:
+		SingletonObject.create_toast_notification("No notes to push", ToastNotification.Type.WARNING)
+		return
+
+	if total_errors > 0:
+		SingletonObject.create_toast_notification(
+			"Pushed %d notes from %d tabs (%d failed)" % [total_success, tabs_pushed, total_errors],
+			ToastNotification.Type.WARNING
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"Pushed %d notes from %d tabs" % [total_success, tabs_pushed],
+			ToastNotification.Type.SUCCESS
+		)
+
+
+func _nudge_delete_current_tab() -> void:
+	var notes_container: NotesContainer = SingletonObject.notes_container
+	if notes_container.get_tab_count() == 0:
+		SingletonObject.create_toast_notification("No tabs", ToastNotification.Type.WARNING)
+		return
+
+	var current_vbox: NoteVBox = notes_container.get_current_tab_control() as NoteVBox
+	if not current_vbox:
+		SingletonObject.create_toast_notification("No active tab", ToastNotification.Type.WARNING)
+		return
+
+	var notes := current_vbox.get_notes()
+	if notes.is_empty():
+		SingletonObject.create_toast_notification("No notes in tab to delete from Nudge", ToastNotification.Type.WARNING)
+		return
+
+	var nudge_client := NudgeMCPClientScript.new()
+	var component := current_vbox.name
+	var success_count := 0
+	var error_count := 0
+
+	for note in notes:
+		# Only delete if the note has a title (key in nudge)
+		if note.title.is_empty():
+			continue
+
+		var result: Dictionary = await nudge_client.delete_hint(component, note.title)
+		if result.get("error"):
+			error_count += 1
+			push_warning("Failed to delete '%s' from Nudge: %s" % [note.title, result.get("error")])
+		else:
+			success_count += 1
+			# Clear the nudge metadata since it's no longer in nudge
+			if note.has_meta("nudge_hint"):
+				note.remove_meta("nudge_hint")
+
+	if error_count > 0:
+		SingletonObject.create_toast_notification(
+			"Deleted %d hints from '%s' (%d failed)" % [success_count, component, error_count],
+			ToastNotification.Type.WARNING
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"Deleted %d hints from '%s'" % [success_count, component],
+			ToastNotification.Type.SUCCESS
+		)
+
 
 func _on_project_index_pressed(index):
 	match index:

@@ -3,6 +3,7 @@ class_name ImageNoteControls extends VBoxContainer
 @export var note_image: TextureRect
 @export var image_caption_line_edit: LineEdit
 
+var _image_texture: ImageTexture
 
 var memory_item: MemoryItem:
 	set(value):
@@ -33,12 +34,23 @@ func set_note_image(image: Image) -> void:
 	if image == null: return
 	downscaled_image = Image.new()
 	downscaled_image.copy_from(image)
-	
+
 	downscaled_image = downscale_image(downscaled_image)
-	print(downscaled_image.get_size())
-	var image_texture = ImageTexture.new()
-	image_texture.set_image(downscaled_image)
-	note_image.texture = image_texture
+	if SingletonObject.verbose_logging:
+		print(downscaled_image.get_size())
+	# Reuse existing texture if possible
+	if _image_texture:
+		_image_texture.set_image(downscaled_image)
+	else:
+		_image_texture = ImageTexture.new()
+		_image_texture.set_image(downscaled_image)
+	note_image.texture = _image_texture
+
+
+func _exit_tree() -> void:
+	# Release texture to prevent RID leaks
+	if note_image and note_image.texture:
+		note_image.texture = null
 
 
 func _on_image_caption_line_edit_text_submitted(new_text: String) -> void:

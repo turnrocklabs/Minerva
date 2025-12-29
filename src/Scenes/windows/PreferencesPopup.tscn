@@ -271,6 +271,20 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 
+[node name="VerboseLoggingHBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
+layout_mode = 2
+
+[node name="VerboseLoggingLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VerboseLoggingHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Verbose Logging:"
+tooltip_text = "When enabled, prints detailed debug information to the console (discovery data, service info, etc.)"
+
+[node name="VerboseLoggingCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VerboseLoggingHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+
 [node name="Control" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -514,6 +528,7 @@ visible = false
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer/HBoxContainer5/PasswordCheckbox" to="." method="_on_password_checkbox_toggled"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer/HcpLogsButton" to="." method="_on_hcp_logs_button_pressed"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VerboseLoggingHBoxContainer/VerboseLoggingCheckButton" to="." method="_on_verbose_logging_check_button_toggled"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]

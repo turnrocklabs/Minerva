@@ -9,6 +9,7 @@ extends PersistentWindow
 @onready var audio_file_dialog: FileDialog = %AudioNoteFileImport
 @onready var audio_controls: NoteAudioControls = %AudioControls
 
+var _image_texture: ImageTexture
 
 ## Setting this property changes where the note will be stored.[br]
 ## By default it's added to the `SingletonObject.notes_container`.[br]
@@ -55,6 +56,12 @@ func _on_close_requested() -> void:
 	audio_controls.audio = null
 	audio_controls.remove_meta("file")
 	%ImageDropPanel.visible = true
+
+
+func _exit_tree() -> void:
+	# Release texture to prevent RID leaks
+	if %ImagePreview and %ImagePreview.texture:
+		%ImagePreview.texture = null
 
 #endregion Window signal handler functions
 
@@ -196,9 +203,13 @@ func set_image_preview(path: String) -> void:
 		image_size.y = image_size.y / image_ratio
 		image_size.x = image_size.x / image_ratio
 		image.resize(image_size.x, image_size.y, Image.INTERPOLATE_LANCZOS)
-	var image_texture = ImageTexture.new()
-	image_texture.set_image(image)
-	%ImagePreview.texture = image_texture
+	# Reuse existing texture if possible
+	if _image_texture:
+		_image_texture.set_image(image)
+	else:
+		_image_texture = ImageTexture.new()
+		_image_texture.set_image(image)
+	%ImagePreview.texture = _image_texture
 	%ImageDropPanel.visible = false
 	%ImagePreview.visible = true
 
@@ -271,9 +282,13 @@ func get_image_file_from_clipboard():
 func get_image_from_clipboard():
 	var image = DisplayServer.clipboard_get_image()
 	image_original_res = image
-	var image_texture = ImageTexture.new()
-	image_texture.set_image(image)
-	%ImagePreview.texture = image_texture
+	# Reuse existing texture if possible
+	if _image_texture:
+		_image_texture.set_image(image)
+	else:
+		_image_texture = ImageTexture.new()
+		_image_texture.set_image(image)
+	%ImagePreview.texture = _image_texture
 	%ImageDropPanel.visible = false
 	%ImagePreview.visible = true
 	should_add_note_be_disabled()

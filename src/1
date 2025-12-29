@@ -1,0 +1,62 @@
+WARNING: res://Scenes/Editor.tscn:14 - ext_resource, invalid UID: uid://cq5yob4ah4ow7 - using text path instead: res://Scripts/UI/Views/icons_button.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/LayerV2.tscn:4 - ext_resource, invalid UID: uid://bj0b5cmrbfma - using text path instead: res://addons/markdownlabel/assets/screenshot.png
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/LayerCard.tscn:4 - ext_resource, invalid UID: uid://tfpyd2bc0aeb - using text path instead: res://addons/markdownlabel/assets/screenshot.png
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/CodeMarkdownLabel.tscn:4 - ext_resource, invalid UID: uid://c2pb8b5wi5fb3 - using text path instead: res://addons/markdownlabel/assets/fonts/Fira_Code/FiraCode-VariableFont_wght.ttf
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/CodeMarkdownLabel.tscn:9 - ext_resource, invalid UID: uid://d0ywt0yexj1tn - using text path instead: res://addons/markdownlabel/header_formats/h1_format.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/CodeMarkdownLabel.tscn:11 - ext_resource, invalid UID: uid://by37piffqnui - using text path instead: res://addons/markdownlabel/header_formats/h2_format.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/CodeMarkdownLabel.tscn:12 - ext_resource, invalid UID: uid://b5uyeik3rxtpi - using text path instead: res://addons/markdownlabel/header_formats/h3_format.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/CodeMarkdownLabel.tscn:14 - ext_resource, invalid UID: uid://dnqhrd64u4uhl - using text path instead: res://addons/markdownlabel/header_formats/h4_format.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/CodeMarkdownLabel.tscn:15 - ext_resource, invalid UID: uid://cq5yob4ah4ow7 - using text path instead: res://Scripts/UI/Views/icons_button.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/CodeMarkdownLabel.tscn:16 - ext_resource, invalid UID: uid://cw34fr8ulv22w - using text path instead: res://addons/markdownlabel/header_formats/h5_format.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/CodeMarkdownLabel.tscn:18 - ext_resource, invalid UID: uid://dywy41ysnugtw - using text path instead: res://addons/markdownlabel/header_formats/h6_format.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/windows/PreferencesPopup.tscn:5 - ext_resource, invalid UID: uid://63wcsxjjtlug - using text path instead: res://Scripts/UI/Views/icons_button.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/windows/new_thread_popup.tscn:5 - ext_resource, invalid UID: uid://w5b7pfjoj0xt - using text path instead: res://Scripts/UI/Views/icons_button.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://assets/themes/terminal.tres:3 - ext_resource, invalid UID: uid://bo00a1tqfeg0k - using text path instead: res://addons/markdownlabel/assets/fonts/Fira_Code/static/FiraCode-Regular.ttf
+     at: load (scene/resources/resource_format_text.cpp:447)
+WARNING: res://Scenes/windows/create_new_note.tscn:5 - ext_resource, invalid UID: uid://cq5yob4ah4ow7 - using text path instead: res://Scripts/UI/Views/icons_button.gd
+     at: load (scene/resources/resource_format_text.cpp:447)
+ERROR: Node not found: "%PoseEditorTool" (relative to "/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane/VBoxContainer/HBoxContainer/LeftControl/TabContainer/Editor/VBoxContainer/GraphicsEditorV2").
+   at: get_node (scene/main/node.cpp:1877)
+ERROR: 1 RID allocations of type 'P11GodotBody3D' were leaked at exit.
+ERROR: 1 RID allocations of type 'P11GodotArea3D' were leaked at exit.
+ERROR: 1 RID allocations of type 'P12GodotSpace3D' were leaked at exit.
+ERROR: PulseAudio: pa_stream_disconnect error: Bad state
+   at: finish_input_device (drivers/pulseaudio/audio_driver_pulseaudio.cpp:758)
+ERROR: 1 RID allocations of type 'N26RendererEnvironmentStorage11EnvironmentE' were leaked at exit.
+ERROR: 1 shaders of type CanvasShaderRD were never freed
+   at: ~ShaderRD (servers/rendering/renderer_rd/shader_rd.cpp:898)
+ERROR: 1 RID allocations of type 'N10RendererRD12LightStorage11ShadowAtlasE' were leaked at exit.
+ERROR: 1 RID allocations of type 'N10RendererRD12LightStorage15ReflectionAtlasE' were leaked at exit.
+ERROR: 2 RID allocations of type 'N10RendererRD15MaterialStorage8MaterialE' were leaked at exit.
+ERROR: 1 RID allocations of type 'N10RendererRD15MaterialStorage6ShaderE' were leaked at exit.
+ERROR: 90 RID allocations of type 'N10RendererRD14TextureStorage7TextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'N10RendererRD14TextureStorage13CanvasTextureE' were leaked at exit.
+
+================================================================
+handle_crash: Program crashed with signal 11
+Engine version: Godot Engine v4.4.1.stable.official (49a5bc7b616bd04689a2c89e89bda41f50241464)
+Dumping the backtrace. Please include this when reporting the bug to the project developer.
+[1] /lib/x86_64-linux-gnu/libc.so.6(+0x45330) [0x75e520e45330] (??:0)
+[2] godot() [0x4193097] (??:0)
+[3] godot() [0x3ffe777] (??:0)
+[4] godot() [0x3f40449] (??:0)
+[5] godot() [0x3e89195] (??:0)
+[6] godot() [0x41fdf4] (??:0)
+[7] /lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca) [0x75e520e2a1ca] (??:0)
+[8] /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b) [0x75e520e2a28b] (??:0)
+[9] godot() [0x44297a] (??:0)
+-- END OF BACKTRACE --
+================================================================

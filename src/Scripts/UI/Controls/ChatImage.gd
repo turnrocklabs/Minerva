@@ -12,16 +12,23 @@ const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
 var linked_note: Note
 var dict_index: String = ""
 
+var _image_texture: ImageTexture
+
 @export var image: Image:
 	set(value):
 		image = value
-		
+
 		# Example dimensions to fit the image within, modify these based on your editor window
 		var max_width = 1000  # Example max width
 		var max_height = 800  # Example max height
 		_resize_image_to_fit(max_width, max_height)
-		
-		%TextureRect.texture = ImageTexture.create_from_image(image)
+
+		# Reuse existing texture if possible
+		if _image_texture:
+			_image_texture.set_image(image)
+		else:
+			_image_texture = ImageTexture.create_from_image(image)
+		%TextureRect.texture = _image_texture
 
 		# Show the caption of the image as a tooltip
 		var tt = image.get_meta("caption", "")
@@ -40,8 +47,13 @@ var dict_index: String = ""
 			)
 
 func _ready() -> void:
-	
 	%EditButton.visible = SingletonObject.experimental_enabled
+
+
+func _exit_tree() -> void:
+	# Release texture to prevent RID leaks
+	if %TextureRect and %TextureRect.texture:
+		%TextureRect.texture = null
 
 
 
@@ -56,8 +68,12 @@ func _resize_image_to_fit(max_width: int, max_height: int):
 	if scale_factor < 1.0:
 		var new_size = original_size * scale_factor
 		image.resize(new_size.x, new_size.y)
-		# Update the texture
-		%TextureRect.texture = ImageTexture.create_from_image(image)
+		# Update the texture (reuse existing)
+		if _image_texture:
+			_image_texture.set_image(image)
+		else:
+			_image_texture = ImageTexture.create_from_image(image)
+		%TextureRect.texture = _image_texture
 
 
 static func create(image_: Image, image_index: int = 0, memory_item_UUID: String = "") -> ChatImage:

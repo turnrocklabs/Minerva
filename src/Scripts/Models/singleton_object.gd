@@ -32,6 +32,15 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var experimental_enabled: bool = false
 signal toggle_experimental(enabled)
 
+## When enabled, prints verbose/debug logging (discovery data, service info, etc.)
+var verbose_logging: bool = false
+signal toggle_verbose_logging(enabled)
+
+## Helper for verbose logging - only prints if verbose_logging is enabled
+func verbose_log(message: String) -> void:
+	if verbose_logging:
+		print(message)
+
 var syntax_manager: SyntaxManager
 
 # used by the old editor.
@@ -287,6 +296,23 @@ var autocoder_manager: AutocodeManager
 
 #endregion Autocoder
 
+#region MCP
+
+const MCPManagerScript := preload("res://Scripts/Services/MCP/MCPManager.gd")
+
+## Manager for MCP (Model Context Protocol) server connections
+var mcp_manager: Node = null
+
+## Initialize MCP manager (call from main scene _ready)
+func initialize_mcp() -> void:
+	if mcp_manager:
+		return
+	mcp_manager = MCPManagerScript.new()
+	add_child(mcp_manager)
+	await mcp_manager.initialize()
+
+#endregion MCP
+
 #region Chats
 @warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)
@@ -391,10 +417,39 @@ func _ready():
 	set_output_device(get_output_device())
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
-	
+
+	# Load verbose logging setting
+	set_verbose_logging(config_file.get_value("Logging", "verbose", false))
+
 	syntax_manager = SyntaxManager.new()
 	add_child(syntax_manager)
-	
+
+	# Initialize MCP manager (connects to Nudge, etc.)
+	# Defer to avoid add_child errors during scene tree setup
+	initialize_mcp.call_deferred()
+
+
+func _exit_tree() -> void:
+	# Ensure proper cleanup order during shutdown
+	print("[SingletonObject] Cleaning up...")
+
+	# Explicitly free all notes to release their textures before Godot cleanup
+	if notes_container:
+		print("[SingletonObject] Clearing notes container...")
+		for tab_idx in range(notes_container.get_tab_count()):
+			var vbox = notes_container.get_tab_control(tab_idx)
+			if vbox and vbox.has_method("get_notes"):
+				for note in vbox.get_notes():
+					if is_instance_valid(note):
+						note.queue_free()
+
+	# Clear registered objects (notes, etc.)
+	clear_registered_objects()
+
+	# Force RenderingServer to release pending resources
+	RenderingServer.force_sync()
+
+	print("[SingletonObject] Cleanup complete")
 
 
 var chat_notification_player: AudioStreamPlayer
@@ -439,7 +494,15 @@ func ErrorDisplay(error_title:String, error_message: String, on_close_focus: Nod
 		errorPopup.close_requested.connect(func(): on_close_focus.grab_focus())
 
 func create_toast_notification(content: String, type: = ToastNotification.Type.INFO):
-	
+	# Also log to console for debugging
+	match type:
+		ToastNotification.Type.ERROR:
+			push_error("[Toast] %s" % content)
+		ToastNotification.Type.WARNING:
+			push_warning("[Toast] %s" % content)
+		_:
+			print("[Toast] %s" % content)
+
 	var toast: = ToastNotification.create(type, content)
 
 	main_scene.add_child(toast)
@@ -726,7 +789,13 @@ func toggle_experimental_actions(enable: bool) -> void:
 		i = i as Control
 		i.visible = enable
 	experimental_enabled = enable
-	save_to_config_file("Experimental", "enabled", enable)
+
+
+## Set verbose logging state and save to config
+func set_verbose_logging(enable: bool) -> void:
+	verbose_logging = enable
+	save_to_config_file("Logging", "verbose", enable)
+	toggle_verbose_logging.emit(enable)
 
 #region Output Device
 
