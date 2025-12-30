@@ -118,10 +118,99 @@ func refresh():
 	if not SingletonObject.autocoder_manager.artifact_registry_adapter:
 		SingletonObject.ErrorDisplay("Can't fetch", "Please connect to core first!")
 		return
-	
-	set_artifacts(
-		await SingletonObject.autocoder_manager.artifact_registry_adapter.search()
-	)
+
+	# Use current filter settings for server-side search
+	var search_query := _search_line_edit.text if _search_line_edit.text != "" else ""
+	var selected_framework := ""
+	var selected_visibility := "public"  # Default to public
+
+	if _framework_option_button.selected > 0:
+		selected_framework = _framework_option_button.get_item_text(_framework_option_button.selected)
+
+	if _visibility_option_button.selected > 0:
+		selected_visibility = _visibility_option_button.get_item_text(_visibility_option_button.selected).to_lower()
+
+	SingletonObject.create_toast_notification("Fetching artifacts...", ToastNotification.Type.INFO)
+
+	var fetched_artifacts: Array[Artifact] = []
+
+	# Use list-mine for private artifacts, search for public/all
+	if selected_visibility == "private":
+		fetched_artifacts = await SingletonObject.autocoder_manager.artifact_registry_adapter.list_mine()
+
+		# Apply client-side filtering for query and framework on private artifacts
+		if search_query != "" or selected_framework != "":
+			var filtered: Array[Artifact] = []
+			for artifact in fetched_artifacts:
+				var matches := true
+
+				if search_query != "":
+					var search_lower := search_query.to_lower()
+					matches = (
+						artifact.filename.to_lower().contains(search_lower) or
+						artifact.description.to_lower().contains(search_lower) or
+						artifact.get_tags_string().to_lower().contains(search_lower)
+					)
+
+				if matches and selected_framework != "":
+					matches = artifact.framework == selected_framework
+
+				if matches:
+					filtered.append(artifact)
+
+			fetched_artifacts = filtered
+	else:
+		fetched_artifacts = await SingletonObject.autocoder_manager.artifact_registry_adapter.search(
+			search_query,
+			selected_framework,
+			selected_visibility
+		)
+
+	set_artifacts(fetched_artifacts)
+
+	if fetched_artifacts.is_empty():
+		SingletonObject.create_toast_notification("No artifacts found", ToastNotification.Type.INFO)
+	else:
+		SingletonObject.create_toast_notification(
+			"Found %d artifact%s" % [fetched_artifacts.size(), "s" if fetched_artifacts.size() != 1 else ""],
+			ToastNotification.Type.SUCCESS
+		)
+
+
+## Select an artifact by URI after refresh
+func select_artifact_by_uri(artifact_uri: String) -> bool:
+	# Find the artifact in the tree
+	var root := _artifact_tree.get_root()
+	if not root:
+		return false
+
+	var item := root.get_first_child()
+
+	while item:
+		var artifact: Artifact = item.get_metadata(0)
+		if artifact and artifact.artifact_uri == artifact_uri:
+			# Found it! Select and scroll to it
+			_artifact_tree.set_selected(item, 0)
+			_artifact_tree.scroll_to_item(item)
+			selected_artifact = artifact
+			_update_details_panel(artifact)
+			return true
+
+		item = item.get_next()
+
+	return false
+
+
+## Refresh and select a specific artifact by URI
+func refresh_and_select(artifact_uri: String) -> void:
+	await refresh()
+
+	# Try to select the artifact
+	if not select_artifact_by_uri(artifact_uri):
+		SingletonObject.create_toast_notification(
+			"Artifact loaded but not visible in current filters",
+			ToastNotification.Type.WARNING
+		)
 
 
 func _setup_tree() -> void:
@@ -267,26 +356,30 @@ func _update_details_panel(artifact: Artifact) -> void:
 
 
 func _on_search_button_pressed() -> void:
-	_apply_filters()
+	# Use server-side search instead of client-side filtering
+	await refresh()
 
 func _on_search_line_edit_text_changed(_new_text: String) -> void:
+	# Client-side filtering for immediate feedback
 	_apply_filters()
 
 func _on_refresh_button_pressed() -> void:
 	await refresh()
-	_update_filter_buttons()
 
 
 func _on_visibility_option_button_item_selected(_index: int) -> void:
-	_apply_filters()
+	# Trigger server-side search when visibility changes
+	await refresh()
 
 
 func _on_language_option_button_item_selected(_index: int) -> void:
+	# Language filtering is client-side only (not supported by server API)
 	_apply_filters()
 
 
 func _on_framework_option_button_item_selected(_index: int) -> void:
-	_apply_filters()
+	# Trigger server-side search when framework changes
+	await refresh()
 
 
 func _apply_filters() -> void:
@@ -335,7 +428,15 @@ func _apply_filters() -> void:
 
 
 func _on_download_button_pressed() -> void:
-	pass
+	if _artifact_tree.get_selected():	
+		if not SingletonObject.autocoder_manager.artifact_registry_adapter:
+			SingletonObject.ErrorDisplay("Can't download", "Please connect to core first!")
+			return
+	
+		var artifact: Artifact = _artifact_tree.get_selected().get_metadata(0)
+
+		SingletonObject.autocoder_manager.artifact_registry_adapter.download(artifact.artifact_uri)
+
 
 func _on_copy_uri_button_pressed() -> void:
 	if selected_artifact:
@@ -354,7 +455,149 @@ func _on_select_button_pressed() -> void:
 
 
 func _on_edit_metadata_button_pressed() -> void:
-	pass
+	if not selected_artifact:
+		return
+
+	if not SingletonObject.autocoder_manager.artifact_registry_adapter:
+		SingletonObject.ErrorDisplay("Can't edit metadata", "Please connect to core first!")
+		return
+
+	# Create a simple dialog for editing metadata
+	var dialog := _create_metadata_dialog(selected_artifact)
+	dialog.popup_centered()
+
+	# Wait for confirmation
+	var confirmed: bool = await dialog.confirmed
+
+	if not confirmed:
+		dialog.queue_free()
+		return
+
+	# Extract values from dialog
+	var description_edit: LineEdit = dialog.get_node("%DescriptionEdit")
+	var tags_edit: LineEdit = dialog.get_node("%TagsEdit")
+	var framework_edit: LineEdit = dialog.get_node("%FrameworkEdit")
+	var language_edit: LineEdit = dialog.get_node("%LanguageEdit")
+	var visibility_option: OptionButton = dialog.get_node("%VisibilityOption")
+
+	var new_description := description_edit.text
+	var new_tags_text := tags_edit.text
+	var new_framework := framework_edit.text
+	var new_language := language_edit.text
+	var new_visibility := "public" if visibility_option.selected == 0 else "private"
+
+	# Parse tags (comma-separated)
+	var new_tags: Array = []
+	if not new_tags_text.is_empty():
+		for tag in new_tags_text.split(","):
+			var trimmed := tag.strip_edges()
+			if not trimmed.is_empty():
+				new_tags.append(trimmed)
+
+	dialog.queue_free()
+
+	# Send update request
+	var success := await SingletonObject.autocoder_manager.artifact_registry_adapter.add_metadata(
+		selected_artifact.artifact_uri,
+		selected_artifact.filename,
+		new_description,
+		new_tags,
+		new_framework,
+		new_language,
+		new_visibility
+	)
+
+	if success:
+		SingletonObject.create_toast_notification(
+			"Metadata updated successfully",
+			ToastNotification.Type.SUCCESS
+		)
+		await refresh()
+	else:
+		SingletonObject.ErrorDisplay("Update Failed", "Failed to update artifact metadata")
+
+
+func _create_metadata_dialog(artifact: Artifact) -> AcceptDialog:
+	var dialog := AcceptDialog.new()
+	dialog.title = "Edit Artifact Metadata"
+	dialog.dialog_text = ""
+	dialog.min_size = Vector2i(500, 400)
+
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	dialog.add_child(vbox)
+
+	# Filename (read-only)
+	var filename_label := Label.new()
+	filename_label.text = "Filename: %s" % artifact.filename
+	vbox.add_child(filename_label)
+
+	vbox.add_child(HSeparator.new())
+
+	# Description
+	var desc_label := Label.new()
+	desc_label.text = "Description:"
+	vbox.add_child(desc_label)
+
+	var description_edit := LineEdit.new()
+	description_edit.unique_name_in_owner = true
+	description_edit.name = "DescriptionEdit"
+	description_edit.text = artifact.description
+	description_edit.placeholder_text = "Brief description of the artifact"
+	vbox.add_child(description_edit)
+
+	# Tags
+	var tags_label := Label.new()
+	tags_label.text = "Tags (comma-separated):"
+	vbox.add_child(tags_label)
+
+	var tags_edit := LineEdit.new()
+	tags_edit.unique_name_in_owner = true
+	tags_edit.name = "TagsEdit"
+	tags_edit.text = artifact.get_tags_string()
+	tags_edit.placeholder_text = "template, starter, game"
+	vbox.add_child(tags_edit)
+
+	# Framework
+	var framework_label := Label.new()
+	framework_label.text = "Framework:"
+	vbox.add_child(framework_label)
+
+	var framework_edit := LineEdit.new()
+	framework_edit.unique_name_in_owner = true
+	framework_edit.name = "FrameworkEdit"
+	framework_edit.text = artifact.framework
+	framework_edit.placeholder_text = "godot, unity, react, etc."
+	vbox.add_child(framework_edit)
+
+	# Language
+	var language_label := Label.new()
+	language_label.text = "Language:"
+	vbox.add_child(language_label)
+
+	var language_edit := LineEdit.new()
+	language_edit.unique_name_in_owner = true
+	language_edit.name = "LanguageEdit"
+	language_edit.text = artifact.language
+	language_edit.placeholder_text = "gdscript, csharp, javascript, etc."
+	vbox.add_child(language_edit)
+
+	# Visibility
+	var visibility_label := Label.new()
+	visibility_label.text = "Visibility:"
+	vbox.add_child(visibility_label)
+
+	var visibility_option := OptionButton.new()
+	visibility_option.unique_name_in_owner = true
+	visibility_option.name = "VisibilityOption"
+	visibility_option.add_item("Public")
+	visibility_option.add_item("Private")
+	visibility_option.selected = 0 if artifact.visibility == "public" else 1
+	vbox.add_child(visibility_option)
+
+	SingletonObject.add_child(dialog)
+
+	return dialog
 
 func _on_delete_button_pressed() -> void:
 	if _artifact_tree.get_selected():

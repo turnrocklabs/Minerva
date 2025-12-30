@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3 uid="uid://dmi6sts02m7by"]
+[gd_scene load_steps=5 format=3 uid="uid://dmi6sts02m7by"]
 
 [ext_resource type="Script" uid="uid://bt3dwo5xpuwsh" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderManager.gd" id="1_a2bat"]
 [ext_resource type="PackedScene" uid="uid://dhvyes0wg8qlw" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderSubmitJobManager.tscn" id="2_kd6yi"]
 [ext_resource type="PackedScene" uid="uid://e4srp1nnpl8g" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderSessionView.tscn" id="3_o2x8u"]
+[ext_resource type="PackedScene" uid="uid://di7eawe2krtme" path="res://Scripts/UI/Controls/Autocoder/manager/ReviewAgentManager.tscn" id="4_tf35b"]
 
 [node name="AutocoderManager" type="VBoxContainer"]
 anchors_preset = 15
@@ -25,3 +26,8 @@ metadata/_tab_index = 0
 visible = false
 layout_mode = 2
 metadata/_tab_index = 1
+
+[node name="Agents" parent="TabContainer" instance=ExtResource("4_tf35b")]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 2

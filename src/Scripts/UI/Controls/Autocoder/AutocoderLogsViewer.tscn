@@ -1,0 +1,192 @@
+[gd_scene load_steps=2 format=3 uid="uid://dtt1t2ufkclx4"]
+
+[ext_resource type="Script" uid="uid://d1vgcnau0fntq" path="res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.gd" id="1_8xlu0"]
+
+[node name="AutocoderLogsViewer" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_8xlu0")
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="SessionLabel" type="Label" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Session: -"
+
+[node name="StatusLabel" type="Label" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Idle"
+
+[node name="SpinnerLabel" type="Label" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Running..."
+visible = false
+
+[node name="Spacer" type="Control" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AdvancedToggle" type="CheckBox" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Advanced"
+
+[node name="SummaryPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+
+[node name="SummaryMargin" type="MarginContainer" parent="SummaryPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="SummaryBox" type="VBoxContainer" parent="SummaryPanel/SummaryMargin"]
+layout_mode = 2
+
+[node name="ReviewStateLabel" type="Label" parent="SummaryPanel/SummaryMargin/SummaryBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+
+[node name="ReviewSummaryLabel" type="Label" parent="SummaryPanel/SummaryMargin/SummaryBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = ""
+
+[node name="ReviewPanel" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+
+[node name="RequestReviewButton" type="Button" parent="ReviewPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Request Review"
+
+[node name="ApproveButton" type="Button" parent="ReviewPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Approve"
+
+[node name="ArtifactsPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+
+[node name="ArtifactsMargin" type="MarginContainer" parent="ArtifactsPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="ArtifactsBox" type="VBoxContainer" parent="ArtifactsPanel/ArtifactsMargin"]
+layout_mode = 2
+
+[node name="PatchRow" type="HBoxContainer" parent="ArtifactsPanel/ArtifactsMargin/ArtifactsBox"]
+layout_mode = 2
+
+[node name="PatchLabel" type="Label" parent="ArtifactsPanel/ArtifactsMargin/ArtifactsBox/PatchRow"]
+layout_mode = 2
+text = "Patch:"
+
+[node name="PatchValueLabel" type="Label" parent="ArtifactsPanel/ArtifactsMargin/ArtifactsBox/PatchRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "-"
+autowrap_mode = 3
+
+[node name="PatchCopyButton" type="Button" parent="ArtifactsPanel/ArtifactsMargin/ArtifactsBox/PatchRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Copy"
+
+[node name="ArchiveRow" type="HBoxContainer" parent="ArtifactsPanel/ArtifactsMargin/ArtifactsBox"]
+layout_mode = 2
+
+[node name="ArchiveLabel" type="Label" parent="ArtifactsPanel/ArtifactsMargin/ArtifactsBox/ArchiveRow"]
+layout_mode = 2
+text = "Archive:"
+
+[node name="ArchiveValueLabel" type="Label" parent="ArtifactsPanel/ArtifactsMargin/ArtifactsBox/ArchiveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "-"
+autowrap_mode = 3
+
+[node name="ArchiveCopyButton" type="Button" parent="ArtifactsPanel/ArtifactsMargin/ArtifactsBox/ArchiveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Copy"
+
+[node name="Separator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+follow_focus = true
+
+[node name="ContentBox" type="VBoxContainer" parent="ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="TimelineHeader" type="Label" parent="ScrollContainer/ContentBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Timeline"
+
+[node name="TimelineList" type="VBoxContainer" parent="ScrollContainer/ContentBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="IssuesHeader" type="Label" parent="ScrollContainer/ContentBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Issues"
+
+[node name="IssuesList" type="VBoxContainer" parent="ScrollContainer/ContentBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="AdvancedSection" type="VBoxContainer" parent="ScrollContainer/ContentBox"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+theme_override_constants/separation = 6
+
+[node name="RawHeader" type="Label" parent="ScrollContainer/ContentBox/AdvancedSection"]
+layout_mode = 2
+text = "Raw JSON"
+
+[node name="RawList" type="VBoxContainer" parent="ScrollContainer/ContentBox/AdvancedSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="LlmHeader" type="Label" parent="ScrollContainer/ContentBox/AdvancedSection"]
+layout_mode = 2
+text = "LLM Traffic"
+
+[node name="LlmList" type="VBoxContainer" parent="ScrollContainer/ContentBox/AdvancedSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6

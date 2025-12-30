@@ -31,6 +31,7 @@ var video_player: VideoPlayer:
 var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditorV2
 var package_editor: PackageEditor
+var logs_viewer: AutocoderLogsViewer
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -58,6 +59,7 @@ enum Type {
 	GRAPHICS,
 	VIDEO,
 	PACKAGE,
+	LOGS,
 }
 
 
@@ -172,6 +174,12 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			
 			editor.package_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(editor.package_editor)
+		Editor.Type.LOGS:
+			var logs_widget: = AutocoderLogsViewer.create()
+			logs_widget.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(logs_widget)
+			editor.logs_viewer = logs_widget
+			logs_widget.entry_added.connect(editor._on_editor_changed)
 			
 	return editor
 
@@ -219,6 +227,12 @@ func _ready():
 		mic_button.show()
 		autowrap_button.show()
 		toggle_autowrap()
+	elif self.type == Type.LOGS:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		$VBoxContainer/ButtonsHBoxContainer.hide()
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
@@ -390,6 +404,9 @@ func get_saved_state() -> int:
 				
 				else:
 					state |= ASSOCIATED_OBJECT_SAVED
+		Type.LOGS:
+			if logs_viewer and logs_viewer.is_saved():
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 	return state
 
@@ -468,6 +485,18 @@ func save_file_to_disc(path: String) -> void:
 		Type.VIDEO:
 			# Handle video file saving if needed
 			push_warning("Video saving not implemented")
+		Type.LOGS:
+			if logs_viewer == null:
+				return
+			var serialized_text := logs_viewer.export_text()
+			var save_file = FileAccess.open(path, FileAccess.WRITE)
+			if save_file == null:
+				var error_log := error_string(FileAccess.get_open_error())
+				push_warning(error_log)
+				SingletonObject.ErrorDisplay("Couldn't save file", error_log)
+				return
+			save_file.store_string(serialized_text)
+			logs_viewer.mark_saved_snapshot()
 	
 	# Update editor state
 	_file_saved = true
@@ -730,7 +759,7 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 #endregion code editor action commands
 
 func _on_editor_changed(text: String = ""):
-	if text != "":
+	if code_edit and text != "":
 		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
 		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
 		# SingletonObject.UpdateUnsavedTabIcon.emit()

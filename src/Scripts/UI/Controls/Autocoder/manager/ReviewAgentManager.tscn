@@ -1,0 +1,159 @@
+[gd_scene load_steps=2 format=3 uid="uid://di7eawe2krtme"]
+
+[ext_resource type="Script" uid="uid://c4p1ka68eh0nk" path="res://Scripts/UI/Controls/Autocoder/manager/ReviewAgentManager.gd" id="1_nqrwv"]
+
+[node name="ReviewAgentManager" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_nqrwv")
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Review Agents"
+
+[node name="RefreshButton" type="Button" parent="Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Refresh"
+
+[node name="HSeparator" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="FormPanel" type="PanelContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MarginContainer" type="MarginContainer" parent="FormPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="FormContainer" type="VBoxContainer" parent="FormPanel/MarginContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FormTitleLabel" type="Label" parent="FormPanel/MarginContainer/FormContainer"]
+layout_mode = 2
+text = "Create / Edit Review Agent"
+
+[node name="NameRow" type="HBoxContainer" parent="FormPanel/MarginContainer/FormContainer"]
+layout_mode = 2
+
+[node name="NameLabel" type="Label" parent="FormPanel/MarginContainer/FormContainer/NameRow"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+text = "Name"
+
+[node name="NameLineEdit" type="LineEdit" parent="FormPanel/MarginContainer/FormContainer/NameRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Agent name"
+
+[node name="ModelRow" type="HBoxContainer" parent="FormPanel/MarginContainer/FormContainer"]
+layout_mode = 2
+
+[node name="ModelLabel" type="Label" parent="FormPanel/MarginContainer/FormContainer/ModelRow"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+text = "Model"
+
+[node name="ModelLineEdit" type="LineEdit" parent="FormPanel/MarginContainer/FormContainer/ModelRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "anthropic/claude-sonnet-4"
+
+[node name="ToolsRow" type="HBoxContainer" parent="FormPanel/MarginContainer/FormContainer"]
+layout_mode = 2
+
+[node name="ToolsLabel" type="Label" parent="FormPanel/MarginContainer/FormContainer/ToolsRow"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+text = "Tools Enabled"
+
+[node name="ToolsEnabledCheckBox" type="CheckBox" parent="FormPanel/MarginContainer/FormContainer/ToolsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Enable Tools"
+
+[node name="PromptLabel" type="Label" parent="FormPanel/MarginContainer/FormContainer"]
+layout_mode = 2
+text = "Prompt"
+
+[node name="PromptTextEdit" type="TextEdit" parent="FormPanel/MarginContainer/FormContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+wrap_mode = 1
+
+[node name="SetupCommandsLabel" type="Label" parent="FormPanel/MarginContainer/FormContainer"]
+layout_mode = 2
+text = "Setup Commands (one per line)"
+
+[node name="SetupCommandsTextEdit" type="TextEdit" parent="FormPanel/MarginContainer/FormContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+wrap_mode = 1
+
+[node name="FormButtons" type="HBoxContainer" parent="FormPanel/MarginContainer/FormContainer"]
+layout_mode = 2
+
+[node name="SaveButton" type="Button" parent="FormPanel/MarginContainer/FormContainer/FormButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Create Agent"
+
+[node name="CancelEditButton" type="Button" parent="FormPanel/MarginContainer/FormContainer/FormButtons"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Cancel"
+
+[node name="ClearButton" type="Button" parent="FormPanel/MarginContainer/FormContainer/FormButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Clear"
+
+[node name="HSeparator2" type="HSeparator" parent="."]
+layout_mode = 2
+
+[node name="AgentsLabel" type="Label" parent="."]
+layout_mode = 2
+text = "Agents"
+
+[node name="AgentsScroll" type="ScrollContainer" parent="."]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="AgentsList" type="VBoxContainer" parent="AgentsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="LoadingLabel" type="Label" parent="AgentsScroll/AgentsList"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Loading agents..."
+horizontal_alignment = 1
+
+[node name="EmptyLabel" type="Label" parent="AgentsScroll/AgentsList"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "No review agents yet. Create one above."
+horizontal_alignment = 1
+autowrap_mode = 3
