@@ -17,6 +17,7 @@ var ButtonCloseForPopUp
 
 # MCP menu
 var mcp_menu: PopupMenu
+var servers_submenu: PopupMenu
 
 func _on_file_index_pressed(index):
 	match index:
@@ -151,11 +152,22 @@ func _ready():
 	# Create MCP menu (before Help)
 	_setup_mcp_menu()
 
+	# Connect to MCP signals for live status updates
+	_connect_mcp_signals()
+
 
 func _setup_mcp_menu() -> void:
 	mcp_menu = PopupMenu.new()
 	mcp_menu.name = "MCP"
 	mcp_menu.title = "MCP"
+
+	# Create servers submenu for connection status/reconnect
+	servers_submenu = PopupMenu.new()
+	servers_submenu.name = "MCPServers"
+	servers_submenu.id_pressed.connect(_on_mcp_servers_submenu_pressed)
+	mcp_menu.add_child(servers_submenu)
+	mcp_menu.add_submenu_item("Servers", servers_submenu.name)
+	mcp_menu.add_separator()
 
 	# Nudge section - Pull operations
 	mcp_menu.add_item("Pull All from Nudge", 0)
@@ -168,12 +180,11 @@ func _setup_mcp_menu() -> void:
 
 	# Delete operations
 	mcp_menu.add_item("Delete Current Tab from Nudge", 4)
-	mcp_menu.add_separator()
-
-	# Status
-	mcp_menu.add_item("Nudge Status", 2)
 
 	mcp_menu.id_pressed.connect(_on_mcp_menu_id_pressed)
+
+	# Refresh servers submenu when menu is about to show
+	mcp_menu.about_to_popup.connect(_on_mcp_menu_about_to_popup)
 
 	# Insert before Help menu
 	var help_idx := -1
@@ -195,8 +206,6 @@ func _on_mcp_menu_id_pressed(id: int) -> void:
 			_nudge_pull_all()
 		1:  # Push Current Tab to Nudge
 			_nudge_push_current_tab()
-		2:  # Nudge Status
-			_show_nudge_status()
 		3:  # Push All Tabs to Nudge
 			_nudge_push_all_tabs()
 		4:  # Delete Current Tab from Nudge
@@ -371,6 +380,141 @@ func _show_nudge_status() -> void:
 		SingletonObject.create_toast_notification("Nudge: Connected", ToastNotification.Type.SUCCESS)
 	else:
 		SingletonObject.create_toast_notification("Nudge: Not connected", ToastNotification.Type.ERROR)
+
+
+## Refresh the servers submenu with current connection status
+func _refresh_servers_submenu() -> void:
+	if not servers_submenu:
+		return
+
+	servers_submenu.clear()
+
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		servers_submenu.add_item("MCP not initialized", -1)
+		servers_submenu.set_item_disabled(0, true)
+		return
+
+	var config = mcp.config
+	if not config:
+		servers_submenu.add_item("No config", -1)
+		servers_submenu.set_item_disabled(0, true)
+		return
+
+	var server_names = config.get_server_names()
+	var idx := 0
+	for server_name in server_names:
+		var connected = mcp.is_server_connected(server_name)
+		var status = "✓" if connected else "✗"
+		servers_submenu.add_item("%s %s" % [server_name, status], idx)
+		idx += 1
+
+	servers_submenu.add_separator()
+	servers_submenu.add_item("Refresh All", 100)
+
+
+## Handle server submenu item pressed
+func _on_mcp_servers_submenu_pressed(id: int) -> void:
+	if id == 100:  # Refresh All
+		_reconnect_all_mcp_servers()
+		return
+
+	var mcp = SingletonObject.mcp_manager
+	if not mcp or not mcp.config:
+		return
+
+	var server_names = mcp.config.get_server_names()
+	if id >= 0 and id < server_names.size():
+		var server_name = server_names[id]
+		_reconnect_mcp_server(server_name)
+
+
+## Reconnect a single MCP server
+func _reconnect_mcp_server(server_name: String) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
+		return
+
+	if mcp.is_server_connected(server_name):
+		SingletonObject.create_toast_notification(
+			"%s: Already connected" % server_name,
+			ToastNotification.Type.SUCCESS
+		)
+		return
+
+	SingletonObject.create_toast_notification(
+		"%s: Connecting..." % server_name,
+		ToastNotification.Type.WARNING
+	)
+
+	var err = await mcp.connect_server(server_name)
+	if err == OK:
+		SingletonObject.create_toast_notification(
+			"%s: Connected" % server_name,
+			ToastNotification.Type.SUCCESS
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"%s: Connection failed" % server_name,
+			ToastNotification.Type.ERROR
+		)
+	_refresh_servers_submenu()
+
+
+## Reconnect all MCP servers
+func _reconnect_all_mcp_servers() -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp or not mcp.config:
+		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
+		return
+
+	var server_names = mcp.config.get_server_names()
+	var connected := 0
+	var failed: Array[String] = []
+
+	for server_name in server_names:
+		if mcp.is_server_connected(server_name):
+			connected += 1
+			continue
+		var success = await mcp.connect_server(server_name)
+		if success:
+			connected += 1
+		else:
+			failed.append(server_name)
+
+	if failed.is_empty():
+		SingletonObject.create_toast_notification(
+			"MCP: Connected %d/%d" % [connected, server_names.size()],
+			ToastNotification.Type.SUCCESS
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"MCP: %d/%d (%s failed)" % [connected, server_names.size(), ", ".join(failed)],
+			ToastNotification.Type.ERROR
+		)
+	_refresh_servers_submenu()
+
+
+## Connect to MCP manager signals for live status updates
+func _connect_mcp_signals() -> void:
+	if SingletonObject.mcp_manager:
+		var mcp = SingletonObject.mcp_manager
+		if not mcp.server_connected.is_connected(_on_mcp_status_changed):
+			mcp.server_connected.connect(_on_mcp_status_changed)
+		if not mcp.server_disconnected.is_connected(_on_mcp_status_changed):
+			mcp.server_disconnected.connect(_on_mcp_status_changed)
+
+
+## Handle MCP server status change
+func _on_mcp_status_changed(_server_name: String) -> void:
+	_refresh_servers_submenu()
+
+
+## Handle MCP menu about to show - refresh servers submenu
+func _on_mcp_menu_about_to_popup() -> void:
+	_refresh_servers_submenu()
+	_connect_mcp_signals()  # Try connecting signals if not already connected
 
 
 ## Create an image note from a blob reference

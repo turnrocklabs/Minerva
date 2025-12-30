@@ -14,6 +14,7 @@ class ServerConfig:
 	var args: PackedStringArray = []  # For STDIO: command arguments
 	var enabled: bool = true
 	var auto_connect: bool = true
+	var skip_mcp_init: bool = false  # For REST APIs that don't use MCP protocol
 
 	func _init(n: String = "", t: String = "http", u: String = "") -> void:
 		name = n
@@ -33,7 +34,8 @@ class ServerConfig:
 			"type": type,
 			"url": url,
 			"enabled": enabled,
-			"auto_connect": auto_connect
+			"auto_connect": auto_connect,
+			"skip_mcp_init": skip_mcp_init
 		}
 		if type == "stdio":
 			d["command"] = command
@@ -52,6 +54,7 @@ class ServerConfig:
 				config.args.append(str(arg))
 		config.enabled = data.get("enabled", true)
 		config.auto_connect = data.get("auto_connect", true)
+		config.skip_mcp_init = data.get("skip_mcp_init", false)
 		return config
 
 
@@ -130,9 +133,10 @@ func _add_default_servers() -> void:
 	nudge.auto_connect = true
 	servers.append(nudge)
 
-	# Co-Browser MCP server (browser automation) - uses HTTP
+	# Co-Browser service (browser automation) - uses HTTP REST API on port 8677
 	var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
 	cobrowser.auto_connect = false  # User must explicitly enable
+	cobrowser.skip_mcp_init = true  # REST API, not MCP JSON-RPC
 	servers.append(cobrowser)
 
 
@@ -181,6 +185,14 @@ func get_auto_connect_servers() -> Array[ServerConfig]:
 		if server.enabled and server.auto_connect:
 			auto_connect.append(server)
 	return auto_connect
+
+
+## Get all server names
+func get_server_names() -> Array[String]:
+	var names: Array[String] = []
+	for server in servers:
+		names.append(server.name)
+	return names
 
 
 ## Save configuration to file
@@ -239,6 +251,7 @@ func load_config() -> Error:
 	if not get_server("cobrowser"):
 		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
 		cobrowser.auto_connect = false
+		cobrowser.skip_mcp_init = true
 		servers.append(cobrowser)
 
 	return OK

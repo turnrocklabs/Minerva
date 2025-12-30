@@ -71,6 +71,9 @@ func connect_server(server_name: String) -> Error:
 	if transport == MCPServerConnectionScript.TransportType.STDIO:
 		connection.configure_stdio(server_config.command, server_config.args)
 
+	# Skip MCP init for REST APIs that don't support it (e.g., cobrowser)
+	connection.skip_mcp_init = server_config.skip_mcp_init
+
 	# Connect signals
 	connection.connected.connect(_on_server_connected.bind(server_name))
 	connection.disconnected.connect(_on_server_disconnected.bind(server_name))

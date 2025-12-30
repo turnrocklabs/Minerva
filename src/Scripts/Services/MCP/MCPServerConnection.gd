@@ -30,6 +30,9 @@ var stdio_args: PackedStringArray = []
 ## Whether the server is currently connected
 var is_connected: bool = false
 
+## Skip MCP protocol initialization (for REST APIs that don't support it)
+var skip_mcp_init: bool = false
+
 ## Available tools from this server
 var tools: Array = []
 
@@ -117,6 +120,12 @@ func list_tools() -> Array:
 ## Refresh the list of available tools from the server
 func refresh_tools() -> Error:
 	print("[MCP] Refreshing tools from %s (connected=%s)..." % [server_name, is_connected])
+
+	# Skip tool discovery for REST APIs that don't support MCP protocol
+	if skip_mcp_init:
+		print("[MCP] Skipping tool discovery (REST API mode)")
+		return OK
+
 	var result = await call_tool("tools/list", {})
 	print("[MCP] tools/list returned: %s" % str(result).left(200))
 
@@ -164,27 +173,42 @@ func _verify_http_connection() -> Error:
 		push_error("Cannot make HTTP request: no scene tree available")
 		return ERR_CANT_CONNECT
 
-	# Try health endpoint first (Nudge-specific)
-	var health_url := "%s/health" % base_url
-	print("[MCP HTTP] Health check: %s" % health_url)
-	var err := http.request(health_url, [], HTTPClient.METHOD_GET)
-	if err != OK:
-		http.queue_free()
-		is_connected = false
-		return err
+	# Try health endpoint first, fall back to root if not found
+	var health_endpoints := ["%s/health" % base_url, base_url]
+	var health_ok := false
 
-	var response: Array = await http.request_completed
+	for health_url in health_endpoints:
+		print("[MCP HTTP] Health check: %s" % health_url)
+		var err := http.request(health_url, [], HTTPClient.METHOD_GET)
+		if err != OK:
+			continue
+
+		var response: Array = await http.request_completed
+		var result_code: int = response[0]
+		var response_code: int = response[1]
+
+		if result_code == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300:
+			print("[MCP HTTP] Health check OK at %s" % health_url)
+			health_ok = true
+			break
+		else:
+			print("[MCP HTTP] Health check failed at %s: result=%d, status=%d" % [health_url, result_code, response_code])
+
 	http.queue_free()
 
-	var result_code: int = response[0]
-	var response_code: int = response[1]
-
-	if result_code != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300:
-		print("[MCP HTTP] Health check failed: result=%d, status=%d" % [result_code, response_code])
+	if not health_ok:
+		print("[MCP HTTP] All health checks failed")
 		is_connected = false
 		return ERR_CANT_CONNECT
 
-	print("[MCP HTTP] Health check OK, performing MCP initialize...")
+	# Skip MCP protocol init for REST APIs that don't support it
+	if skip_mcp_init:
+		print("[MCP HTTP] Skipping MCP init (REST API mode)")
+		is_connected = true
+		connected.emit()
+		return OK
+
+	print("[MCP HTTP] Performing MCP initialize...")
 
 	# Now perform MCP initialize to get session ID
 	var init_result := await _http_initialize()
