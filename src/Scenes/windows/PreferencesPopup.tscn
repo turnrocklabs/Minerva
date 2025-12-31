@@ -472,6 +472,26 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"visibilityCheckButton"
 
+[node name="HBoxContainer4" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer4"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "OpenRouter"
+
+[node name="leOpenRouter" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer4"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+secret = true
+
+[node name="OpenRouterCheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer4" groups=["visibilityButton"]]
+layout_mode = 2
+theme_type_variation = &"visibilityCheckButton"
+
 [node name="Services" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
@@ -536,6 +556,7 @@ visible = false
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer/GoogleVertexCheckBox" to="." method="_on_google_vertex_check_box_toggled"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2/AnthropicCheckBox" to="." method="_on_anthropic_check_box_toggled"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer4/OpenRouterCheckBox" to="." method="_on_open_router_check_box_toggled"]
 [connection signal="service_deselected" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_service_deselected"]
 [connection signal="service_selected" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_service_selected"]
 [connection signal="visibility_changed" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_visibility_changed"]

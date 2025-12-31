@@ -26,6 +26,12 @@ func _init():
 	short_name = "CS"
 	token_cost = 3.00 / 1_000_000
 
+	# Claude supports temperature (0-1) and top_p, but not both together
+	supports_temperature = true
+	supports_top_p = true
+	temperature_max = 1.0
+	temperature_warning = "Use temperature OR top_p, not both"
+
 
 ## Set available tools for agentic mode
 func set_tools(tools: Array[Dictionary]) -> void:

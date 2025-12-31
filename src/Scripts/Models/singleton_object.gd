@@ -36,6 +36,23 @@ signal toggle_experimental(enabled)
 var verbose_logging: bool = false
 signal toggle_verbose_logging(enabled)
 
+## Emitted when user requests to stop active AI/tool operations
+## history_id: The HistoryId of the chat to stop, or empty string to stop all
+signal stop_all_requests(history_id: String)
+
+## History IDs that have been cancelled - check and remove when acting on cancellation
+var cancelled_history_ids: Array[String] = []
+
+## Check if a history_id has been cancelled without clearing it (for repeated checks in loops)
+func is_cancelled(history_id: String) -> bool:
+	return history_id in cancelled_history_ids
+
+## Clear the cancelled state for a history_id (call when cancellation is fully handled)
+func clear_cancelled(history_id: String) -> void:
+	var idx := cancelled_history_ids.find(history_id)
+	if idx >= 0:
+		cancelled_history_ids.remove_at(idx)
+
 ## Helper for verbose logging - only prints if verbose_logging is enabled
 func verbose_log(message: String) -> void:
 	if verbose_logging:
@@ -537,13 +554,14 @@ func create_toast_notification(content: String, type: = ToastNotification.Type.I
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK, OPENROUTER }
 
 # Preload provider scripts to ensure class_names are available
 const OpenAIProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd")
 const OpenAIImageProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
 const GoogleProvider = preload("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd")
 const AnthropicProvider = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
+const OpenRouterProvider = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
@@ -566,6 +584,10 @@ enum API_MODEL_PROVIDERS {
 	CLAUDE_OPUS,
 	# TurnRock
 	TURNROCK,
+	# OpenRouter
+	OPENROUTER_GLM47,
+	OPENROUTER_MINIMAX_M21,
+	OPENROUTER_KIMI_K2,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -588,6 +610,10 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.CLAUDE_OPUS: AnthropicProvider.Opus,
 	# TurnRock
 	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
+	# OpenRouter
+	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProvider.GLM47,
+	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProvider.MinimaxM21,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: OpenRouterProvider.KimiK2,
 }
 
 ## Model name aliases for backward compatibility with saved projects

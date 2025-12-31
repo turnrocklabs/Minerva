@@ -29,6 +29,13 @@ func _init():
 	short_name = "G5"
 	token_cost = 1.75 / 1_000_000
 
+	# GPT-5 reasoning models don't support temperature/top_p
+	is_reasoning_model = true
+	supports_temperature = false
+	supports_top_p = false
+	supports_frequency_penalty = false
+	supports_presence_penalty = false
+
 
 ## Set available tools for agentic mode
 func set_tools(tools: Array[Dictionary]) -> void:
@@ -346,6 +353,13 @@ class Nano extends OpenAIProvider:
 		short_name = "G5N"
 		reasoning_effort = ""  # No reasoning for nano model
 		token_cost = 0.10 / 1_000_000
+
+		# Nano is not a reasoning model, supports all params
+		is_reasoning_model = false
+		supports_temperature = true
+		supports_top_p = true
+		supports_frequency_penalty = true
+		supports_presence_penalty = true
 
 
 ## Standard: Medium reasoning (default for daily tasks)

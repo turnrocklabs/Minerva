@@ -27,9 +27,25 @@ var short_name = "NA"
 ## Cost of one token in $
 var token_cost: float = 0
 
+## Model capability flags - override in subclasses as needed
+var supports_temperature: bool = true
+var supports_top_p: bool = true
+var supports_system_prompt: bool = true
+var supports_frequency_penalty: bool = false
+var supports_presence_penalty: bool = false
+var is_reasoning_model: bool = false
+
+## Temperature constraints
+var temperature_min: float = 0.0
+var temperature_max: float = 2.0
+var temperature_warning: String = ""  # e.g., "Keep at 1.0 for best results"
+
 var active_request: HTTPRequest
 # var active_bot: BotResponse
 var active_requests: Array[HTTPRequest]
+
+## The HistoryId of the ChatHistory that owns this provider (set by ServiceHistory._init)
+var owner_history_id: String = ""
 
 #region METHODS TO REIMPLEMENT
 
@@ -73,6 +89,14 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 func _ready():
 	active_request = HTTPRequest.new()
 	add_child(active_request)
+	# Connect to global stop signal
+	SingletonObject.stop_all_requests.connect(_on_stop_all_requests)
+
+
+## Handle stop signal - only cancel if history_id matches or is empty (stop all)
+func _on_stop_all_requests(history_id: String) -> void:
+	if history_id.is_empty() or history_id == owner_history_id:
+		cancel_active_resquests()
 
 
 ## This class represents results of the HTTP request

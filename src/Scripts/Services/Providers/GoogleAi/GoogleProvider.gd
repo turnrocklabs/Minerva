@@ -22,6 +22,11 @@ func _init():
 	short_name = "G3F"
 	token_cost = 0.15 / 1_000_000
 
+	# Gemini 3 supports temperature/top_p but works best at default
+	supports_temperature = true
+	supports_top_p = true
+	temperature_warning = "Gemini 3 works best with temperature=1.0"
+
 
 ## Set available tools for agentic mode
 func set_tools(tools: Array[Dictionary]) -> void:

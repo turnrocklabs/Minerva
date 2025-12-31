@@ -74,6 +74,10 @@ func connect_server(server_name: String) -> Error:
 	# Skip MCP init for REST APIs that don't support it (e.g., cobrowser)
 	connection.skip_mcp_init = server_config.skip_mcp_init
 
+	# Set working directory if configured (for codetools)
+	if not server_config.working_directory.is_empty():
+		connection.working_directory = server_config.working_directory
+
 	# Connect signals
 	connection.connected.connect(_on_server_connected.bind(server_name))
 	connection.disconnected.connect(_on_server_disconnected.bind(server_name))

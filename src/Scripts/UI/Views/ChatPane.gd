@@ -12,7 +12,7 @@ var container: TabContainer  # Store the TabContainer
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
 @onready var _chat_button: Button = %btnChat
-var _active_chat_request: = false
+var _active_chat_requests: int = 0  # Ref count of active chat requests across all tabs
 
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
 
@@ -21,18 +21,251 @@ var _initializing_pane := false
 ## Whether agent mode is enabled (allows LLM to use MCP tools)
 var agent_mode_enabled: bool = false
 
-## Maximum number of tool call rounds to prevent infinite loops
-const MAX_TOOL_CALL_ROUNDS: int = 10
+## Default max tool call rounds (fallback if per-chat setting is 0)
+const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
+
+## Agent mode context management constants
+const AGENT_MAX_TOOL_RESULT_LENGTH: int = 8000  # Truncate tool results longer than this
+const AGENT_CONTEXT_WARNING_THRESHOLD: int = 80000  # Warn when estimated tokens exceed this
+const AGENT_CONTEXT_HARD_LIMIT: int = 100000  # Stop agent loop when exceeding this
+const AGENT_SUMMARIZE_THRESHOLD: int = 60000  # Trigger summarization above this token count
+const AGENT_KEEP_RECENT_MESSAGES: int = 6  # Keep this many recent messages when summarizing
+
+## Default system prompt for agent mode - provides guidance on efficient tool usage
+const DEFAULT_AGENT_SYSTEM_PROMPT: String = """You are an AI assistant with access to tools. Follow these guidelines for efficient tool usage:
+
+## General Principles
+- Plan your approach before acting. Think about what information you need and the most efficient way to get it.
+- Prefer targeted queries over broad data fetches. Getting specific data is better than getting everything.
+- If a tool result is truncated, adapt your approach to use more targeted queries.
+- Complete the task in as few tool calls as possible while being thorough.
+
+## Co-Browser Tool Guidelines (when browsing web pages)
+- Start with `cobrowser_get_page_info` for quick page metadata.
+- Use `cobrowser_query_all` with specific CSS selectors to understand page structure before reading content.
+- AVOID `cobrowser_get_state` - it returns the entire DOM and is very expensive.
+- AVOID `cobrowser_screenshot` unless specifically needed - it can be slow.
+- Use `cobrowser_scroll` to find content below the fold or in infinite scroll containers.
+- Look for patterns like `.infinite-scroll`, `[class*='feed']`, `[class*='post']` for dynamic content.
+- When reading, use specific selectors rather than broad ones to get targeted content.
+
+## File/Code Tool Guidelines (when working with files)
+- Use `glob` to find files by pattern before reading them.
+- Use `grep` to search for specific content rather than reading entire files.
+- Read only the sections of files you need, not entire large files.
+- When editing, make targeted changes rather than rewriting entire files.
+
+## Error Handling
+- If a tool times out or fails, try a different approach rather than retrying the same thing.
+- If results are truncated, use more specific queries to get the data you need.
+"""
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
 var latest_msg: Control
 var latest_usr_msg: MessageMarkdown
+
+## Check if a path is within the allowed directories for a chat.
+## Returns true if allowed (or no restrictions), false if blocked.
+func is_path_allowed(path: String, allowed_dirs: Array[String]) -> bool:
+	if allowed_dirs.is_empty():
+		return true  # No restrictions
+	for dir in allowed_dirs:
+		if path.begins_with(dir):
+			return true
+	return false
+
+## Truncate a tool result string if it exceeds the maximum length (agent mode only).
+## Returns the truncated string with a marker indicating truncation.
+## If max_length is 0 or negative, uses the default AGENT_MAX_TOOL_RESULT_LENGTH.
+func truncate_tool_result(result_str: String, max_length: int = 0) -> String:
+	var limit = max_length if max_length > 0 else AGENT_MAX_TOOL_RESULT_LENGTH
+	if result_str.length() <= limit:
+		return result_str
+	var truncated = result_str.substr(0, limit)
+	# Try to truncate at a natural boundary (newline or space)
+	var last_newline = truncated.rfind("\n")
+	var last_space = truncated.rfind(" ")
+	var cut_point = max(last_newline, last_space)
+	if cut_point > limit * 0.8:  # Only use natural boundary if it's not too far back
+		truncated = truncated.substr(0, cut_point)
+	# Add truncation notice with guidance
+	var notice = """
+
+...[TRUNCATED - Result was %d chars, showing first %d]
+
+HINT: This result was too large and was truncated. To get the information you need:
+- Use more specific CSS selectors with cobrowser_query_all or cobrowser_read
+- For web pages, target specific elements rather than the whole page
+- Avoid cobrowser_get_state (returns entire DOM) - use targeted queries instead
+- Consider if you already have enough information to proceed""" % [result_str.length(), truncated.length()]
+	return truncated + notice
+
+
+## Estimate the current context size for a chat history in agent mode.
+## Returns estimated token count.
+func estimate_agent_context_size(history: ChatHistory) -> int:
+	var total_tokens := 0
+	for item in history.HistoryItemList:
+		# Rough estimation: ~4 chars per token for English text
+		total_tokens += ceili(item.Message.length() / 4.0)
+		# Add extra for tool call metadata
+		if item.IsToolCall:
+			total_tokens += 50 * item.ToolCalls.size()
+	return total_tokens
+
+
+## Check if agent context is approaching limits. Returns status dict.
+## {ok: bool, warning: bool, message: String, estimated_tokens: int, summarize_threshold: int}
+## Uses per-chat settings if set, otherwise falls back to defaults.
+func check_agent_context_limits(history: ChatHistory) -> Dictionary:
+	var estimated = estimate_agent_context_size(history)
+
+	# Use per-chat settings if set (> 0), otherwise fall back to defaults
+	var hard_limit = history.AgentContextHardLimit if history.AgentContextHardLimit > 0 else AGENT_CONTEXT_HARD_LIMIT
+	var warning_threshold = history.AgentContextWarningThreshold if history.AgentContextWarningThreshold > 0 else AGENT_CONTEXT_WARNING_THRESHOLD
+	var summarize_threshold = history.AgentSummarizeThreshold if history.AgentSummarizeThreshold > 0 else AGENT_SUMMARIZE_THRESHOLD
+
+	if estimated >= hard_limit:
+		return {
+			"ok": false,
+			"warning": true,
+			"message": "Context limit exceeded (%d tokens). Stopping agent." % estimated,
+			"estimated_tokens": estimated,
+			"summarize_threshold": summarize_threshold
+		}
+	elif estimated >= warning_threshold:
+		return {
+			"ok": true,
+			"warning": true,
+			"message": "Context getting large (%d tokens). Consider summarizing." % estimated,
+			"estimated_tokens": estimated,
+			"summarize_threshold": summarize_threshold
+		}
+	return {
+		"ok": true,
+		"warning": false,
+		"message": "",
+		"estimated_tokens": estimated,
+		"summarize_threshold": summarize_threshold
+	}
+
+
+## Summarize older messages in the chat history to reduce context size.
+## Keeps recent messages intact and replaces older ones with a summary.
+func summarize_agent_history(history: ChatHistory) -> void:
+	var item_count = history.HistoryItemList.size()
+	if item_count <= AGENT_KEEP_RECENT_MESSAGES + 1:  # +1 for potential system prompt
+		return  # Not enough messages to summarize
+
+	# Find where to split: keep system prompt (if any) + last N messages
+	var has_system_prompt = not history.HistoryItemList.is_empty() and \
+		history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM
+
+	var keep_from_end = AGENT_KEEP_RECENT_MESSAGES
+	var summarize_start = 1 if has_system_prompt else 0
+	var summarize_end = item_count - keep_from_end
+
+	if summarize_end <= summarize_start:
+		return  # Nothing to summarize
+
+	# Build summary of old messages
+	var summary_parts: PackedStringArray = []
+	var tool_calls_count := 0
+	var user_messages_count := 0
+	var assistant_messages_count := 0
+
+	for i in range(summarize_start, summarize_end):
+		var item = history.HistoryItemList[i]
+		match item.Role:
+			ChatHistoryItem.ChatRole.USER:
+				user_messages_count += 1
+				# Include brief excerpt of user messages
+				var excerpt = item.Message.substr(0, 200)
+				if item.Message.length() > 200:
+					excerpt += "..."
+				summary_parts.append("User: %s" % excerpt)
+			ChatHistoryItem.ChatRole.MODEL, ChatHistoryItem.ChatRole.ASSISTANT:
+				assistant_messages_count += 1
+				if item.IsToolCall:
+					tool_calls_count += item.ToolCalls.size()
+					for tc in item.ToolCalls:
+						summary_parts.append("Called tool: %s" % tc.get("name", "unknown"))
+			ChatHistoryItem.ChatRole.TOOL:
+				# Just note that tool results were received
+				summary_parts.append("Tool result received: %s" % item.ToolName)
+
+	# Create summary message
+	var summary_text = """### Conversation Summary ###
+This summarizes %d earlier messages in this conversation.
+- User messages: %d
+- Assistant responses: %d
+- Tool calls made: %d
+
+Key points from earlier conversation:
+%s
+### End Summary ###""" % [
+		summarize_end - summarize_start,
+		user_messages_count,
+		assistant_messages_count,
+		tool_calls_count,
+		"\n".join(summary_parts)
+	]
+
+	# Create summary item as a user message (so it's included in context)
+	var summary_item = ChatHistoryItem.new()
+	summary_item.Role = ChatHistoryItem.ChatRole.USER
+	summary_item.Message = summary_text
+	summary_item.provider = history.provider
+
+	# Rebuild history: [system_prompt?] + [summary] + [recent messages]
+	var new_history: Array[ChatHistoryItem] = []
+	if has_system_prompt:
+		new_history.append(history.HistoryItemList[0])
+	new_history.append(summary_item)
+	for i in range(summarize_end, item_count):
+		new_history.append(history.HistoryItemList[i])
+
+	# Replace history
+	history.HistoryItemList = new_history
+
+	print("[Agent] Summarized %d messages into 1. New history size: %d" % [
+		summarize_end - summarize_start, new_history.size()
+	])
+
+
+## Check tool arguments for paths and validate against allowed directories.
+## Returns error dict if blocked, null if allowed.
+func check_tool_path_permissions(tool_name: String, tool_args: Dictionary, allowed_dirs: Array[String]) -> Variant:
+	if allowed_dirs.is_empty():
+		return null  # No restrictions
+
+	# Tools that operate on paths
+	var path_tools = ["read", "write", "edit", "glob", "grep", "bash"]
+	if tool_name not in path_tools:
+		return null  # Tool doesn't use paths
+
+	# Check "path" argument
+	if tool_args.has("path"):
+		var path_arg = str(tool_args.get("path", ""))
+		if not is_path_allowed(path_arg, allowed_dirs):
+			return {"error": "Path not allowed: %s" % path_arg, "blocked_by": "AllowedDirectories"}
+
+	# For bash, check if command might access restricted paths
+	# (This is a basic check - bash commands are harder to restrict)
+	if tool_name == "bash" and tool_args.has("command"):
+		var cmd = str(tool_args.get("command", ""))
+		# Skip path checking for bash - it's too complex to parse reliably
+		# The user should disable bash entirely if they want strict path control
+		pass
+
+	return null  # Allowed
+
 # Extract common functionality for handling user history item creation
 func create_user_history_item(text: String) -> ChatHistoryItem:
-	return ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
-							   ChatHistoryItem.ChatRole.USER, 
+	return ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
+							   ChatHistoryItem.ChatRole.USER,
 							   text)
 
 # Handle human provider message creation
@@ -189,35 +422,116 @@ func ensure_chat_open() -> void:
 ## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
 ## Check `History.to_prompt` for explanation on `predicate`.
 func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
-	
+
 	# if we don't have any chats history_list will be empty
 	var history_list: Array[Variant] = []
 	var provider: BaseProvider = provider_fallback
+	var history: ChatHistory = null
 
 	if not SingletonObject.ChatList.is_empty():
-		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+		history = SingletonObject.ChatList[current_tab]
 		if not provider:
 			provider = history.provider
-		history_list = history.to_prompt(predicate)
-	
+
+		# Handle agentic system prompt: use it instead of regular system prompt when agent mode is on
+		var effective_system_prompt: String = ""
+		if agent_mode_enabled:
+			# In agent mode: use custom agentic prompt, or fall back to default agent prompt
+			if not history.AgenticSystemPrompt.is_empty():
+				effective_system_prompt = history.AgenticSystemPrompt
+			else:
+				effective_system_prompt = DEFAULT_AGENT_SYSTEM_PROMPT
+			# Append any existing regular system prompt to give additional context
+			if history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
+				if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
+					effective_system_prompt += "\n\n## Additional Instructions\n" + history.HistoryItemList[0].Message
+		elif history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
+			# Not in agent mode: use regular system prompt if it's a system prompt
+			if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
+				effective_system_prompt = history.HistoryItemList[0].Message
+
+		# Set system_prompt property on provider (used by Anthropic, Google)
+		if "system_prompt" in provider and provider.supports_system_prompt:
+			provider.system_prompt = effective_system_prompt
+
+		# Build history list, handling system prompt based on provider support
+		history_list = _build_history_list_with_system_prompt(history, provider, effective_system_prompt, predicate)
+
 	if not provider:
 		return []
-	
+
 	# any notes container `to_prompt` will go over both standard and drawer notes
 	var working_memory: Array = await SingletonObject.notes_container.to_prompt(provider, refresh_detached)
-	
+
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
-	
+
 	# append the working memory
 	if append_item:
 		append_item.InjectedNotes = working_memory
 		# also append the new item since it's not in the history yet
 		var item = provider.Format(append_item)
 		if item: history_list.append(item)
-	
+
 	return history_list
+
+
+## Build history list with proper handling of system prompt based on provider capabilities.
+## If provider doesn't support system prompts, prepends system prompt to first user message.
+func _build_history_list_with_system_prompt(history: ChatHistory, provider: BaseProvider, system_prompt: String, predicate: Callable) -> Array[Variant]:
+	var history_list: Array[Variant] = []
+	var system_prompt_prepended := false
+
+	for chat: ChatHistoryItem in history.HistoryItemList:
+		# Apply predicate if provided
+		if predicate.is_valid():
+			var results = predicate.call(chat)
+			var should_add: bool = results[0]
+			var should_continue: bool = results[1]
+
+			if not should_add:
+				if not should_continue:
+					break
+				continue
+
+			if not should_continue:
+				# Add this item and then stop
+				var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended)
+				if item:
+					if chat.Role == ChatHistoryItem.ChatRole.USER and not system_prompt_prepended:
+						system_prompt_prepended = true
+					history_list.append(item)
+				break
+
+		var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended)
+		if item:
+			if chat.Role == ChatHistoryItem.ChatRole.USER and not system_prompt_prepended and not provider.supports_system_prompt:
+				system_prompt_prepended = true
+			history_list.append(item)
+
+	return history_list
+
+
+## Format a chat item, handling system prompt injection for providers that don't support system prompts.
+func _format_with_system_prompt_handling(chat: ChatHistoryItem, provider: BaseProvider, system_prompt: String, already_prepended: bool) -> Variant:
+	# Skip system prompt messages when using agentic system prompt OR when provider doesn't support system prompts
+	# (for agentic mode, we already set the provider.system_prompt property)
+	if chat.Role == ChatHistoryItem.ChatRole.SYSTEM:
+		if agent_mode_enabled or not provider.supports_system_prompt:
+			return null  # Don't include system message in history, we handle it separately
+
+	# If provider doesn't support system prompts and this is the first user message, prepend system prompt
+	if not provider.supports_system_prompt and chat.Role == ChatHistoryItem.ChatRole.USER and not already_prepended and not system_prompt.is_empty():
+		# Create a modified chat item with prepended system prompt
+		var modified_chat := ChatHistoryItem.new()
+		modified_chat.Role = chat.Role
+		modified_chat.Message = "### System Instructions ###\n%s\n### End System Instructions ###\n\n%s" % [system_prompt, chat.Message]
+		modified_chat.InjectedNotes = chat.InjectedNotes
+		modified_chat.Images = chat.Images
+		return provider.Format(modified_chat)
+
+	return provider.Format(chat)
 
 
 func _on_btn_inspect_pressed():
@@ -356,7 +670,7 @@ func _on_send_message_button_item_selected(index: int) -> void:
 	var filteredInput: String = %txtMainUserInput.text#.replace("_",r"\_")
 	%txtMainUserInput.text = ""
 	audio_stop_1.disabled = false
-	_active_chat_request = true
+	_active_chat_requests += 1
 	match index:
 		0:
 			execute_regular_chat(filteredInput)
@@ -487,10 +801,14 @@ func execute_regular_chat(text: String) -> void:
 	if agent_mode_enabled and history.provider.has_method("set_tools"):
 		var mcp = SingletonObject.get_mcp_manager()
 		var mcp_tools = mcp.get_tools_for_anthropic()
-		print("[Agent] Setting up tools: %d tools available" % mcp_tools.size())
-		for t in mcp_tools:
+		# Filter out disabled tools for this chat
+		var filtered_tools = mcp_tools.filter(func(tool):
+			return tool.get("name", "") not in history.DisabledTools
+		)
+		print("[Agent] Setting up tools: %d available, %d after filtering" % [mcp_tools.size(), filtered_tools.size()])
+		for t in filtered_tools:
 			print("[Agent]   - %s" % t.get("name", "?"))
-		history.provider.set_tools(mcp_tools)
+		history.provider.set_tools(filtered_tools)
 		print("[Agent] Provider tools_enabled: %s" % history.provider.tools_enabled)
 
 	# make a chat request
@@ -531,16 +849,68 @@ func execute_regular_chat(text: String) -> void:
 	else:
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 
-	audio_stop_1.disabled = true
-	_active_chat_request = false
+	_active_chat_requests -= 1
+	if _active_chat_requests <= 0:
+		_active_chat_requests = 0  # Ensure non-negative
+		audio_stop_1.disabled = true
+
+
+## Add tool_result blocks for tools that were not executed (due to cancellation, limits, etc.)
+## This ensures the conversation can continue without API errors about missing tool_results.
+func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reason: String) -> void:
+	for tool_call in tool_calls:
+		var tool_id: String = tool_call.get("id", "")
+		var tool_name: String = tool_call.get("name", "")
+
+		var tool_result_item = ChatHistoryItem.new()
+		tool_result_item.Role = ChatHistoryItem.ChatRole.TOOL
+		tool_result_item.ToolCallId = tool_id
+		tool_result_item.ToolName = tool_name
+		tool_result_item.Message = JSON.stringify({
+			"error": "Tool not executed: %s" % reason,
+			"tool": tool_name
+		})
+		tool_result_item.provider = history.provider
+
+		history.HistoryItemList.append(tool_result_item)
+		print("[Agent] Added unexecuted tool_result for: %s (reason: %s)" % [tool_name, reason])
+
+
+## Clean up UI state after agent mode finishes (success or error).
+## Re-enables notes and decrements active request counter.
+func _finish_agent_mode() -> void:
+	# Re-enable notes (which re-enables UI controls)
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
+
+	# Decrement active requests and update stop button
+	_active_chat_requests -= 1
+	if _active_chat_requests <= 0:
+		_active_chat_requests = 0
+		audio_stop_1.disabled = true
 
 
 ## Handle tool calls from an LLM response in agentic mode.
 ## Executes tools, adds results to history, and continues the conversation.
 func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) -> void:
-	if round >= MAX_TOOL_CALL_ROUNDS:
-		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % MAX_TOOL_CALL_ROUNDS)
+	var max_rounds = history.MaxToolCallRounds if history.MaxToolCallRounds > 0 else DEFAULT_MAX_TOOL_CALL_ROUNDS
+	if round >= max_rounds:
+		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % max_rounds)
 		history.VBox.add_program_message("[Agent] Maximum tool call rounds reached. Stopping.")
+		# Add tool_result blocks for unexecuted tools so conversation can continue
+		_add_unexecuted_tool_results(history, tool_calls, "Max tool call rounds (%d) reached" % max_rounds)
+		_finish_agent_mode()
+		return
+
+	# Check for cancellation at start
+	if SingletonObject.is_cancelled(history.HistoryId):
+		SingletonObject.clear_cancelled(history.HistoryId)
+		history.VBox.add_program_message("[Agent] Cancelled by user.")
+		# Add tool_result blocks for unexecuted tools so conversation can continue
+		_add_unexecuted_tool_results(history, tool_calls, "Cancelled by user")
+		_finish_agent_mode()
 		return
 
 	var mcp_manager = SingletonObject.get_mcp_manager()
@@ -548,27 +918,54 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 	print("[Agent] Round %d: Processing %d tool calls" % [round, tool_calls.size()])
 
 	# Execute each tool call and collect results
-	for tool_call in tool_calls:
+	for i in range(tool_calls.size()):
+		var tool_call = tool_calls[i]
+
+		# Check for cancellation before each tool
+		if SingletonObject.is_cancelled(history.HistoryId):
+			SingletonObject.clear_cancelled(history.HistoryId)
+			history.VBox.add_program_message("[Agent] Cancelled by user.")
+			# Add tool_results for remaining unexecuted tools (current + rest)
+			var remaining_tools = tool_calls.slice(i)
+			_add_unexecuted_tool_results(history, remaining_tools, "Cancelled by user")
+			_finish_agent_mode()
+			return
+
 		var tool_id: String = tool_call.get("id", "")
 		var tool_name: String = tool_call.get("name", "")
 		var tool_args: Dictionary = tool_call.get("arguments", {})
 
 		print("[Agent] Executing tool: %s (id=%s)" % [tool_name, tool_id])
 
-		# Show tool execution in UI
-		history.VBox.add_program_message("[Agent] Calling: %s" % tool_name)
+		# Check path permissions before executing
+		var path_error = check_tool_path_permissions(tool_name, tool_args, history.AllowedDirectories)
+		var result: Dictionary
+		if path_error != null:
+			print("[Agent] Tool blocked by AllowedDirectories: %s" % tool_name)
+			history.VBox.add_program_message("[Agent] Blocked: %s (path not allowed)" % tool_name)
+			result = path_error
+		else:
+			# Show tool execution in UI
+			history.VBox.add_program_message("[Agent] Calling: %s" % tool_name)
 
-		# Execute the tool
-		var result = await mcp_manager.execute_tool(tool_name, tool_args)
+			# Execute the tool
+			result = await mcp_manager.execute_tool(tool_name, tool_args)
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
+
+		# Stringify and truncate the result to prevent context explosion
+		var result_str = JSON.stringify(result)
+		var original_len = result_str.length()
+		result_str = truncate_tool_result(result_str, history.AgentMaxToolResultLength)
+		if result_str.length() < original_len:
+			print("[Agent] Truncated tool result from %d to %d chars" % [original_len, result_str.length()])
 
 		# Create tool result history item
 		var tool_result_item = ChatHistoryItem.new()
 		tool_result_item.Role = ChatHistoryItem.ChatRole.TOOL
 		tool_result_item.ToolCallId = tool_id
 		tool_result_item.ToolName = tool_name
-		tool_result_item.Message = JSON.stringify(result)
+		tool_result_item.Message = result_str
 		tool_result_item.provider = history.provider
 
 		# Add to history (this is critical - must happen before continuation)
@@ -580,13 +977,42 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 		else:
 			history.VBox.add_program_message("[Agent] Done: %s" % tool_name)
 
-	# Ensure tools are still enabled for continuation request
+	# Check context limits before continuing
+	var context_status = check_agent_context_limits(history)
+	if not context_status.ok:
+		# Hard limit exceeded - stop the agent loop
+		history.VBox.add_program_message("[Agent] %s" % context_status.message)
+		push_warning("Agent mode: %s" % context_status.message)
+		_finish_agent_mode()
+		return
+	elif context_status.warning:
+		# Warning threshold - try to summarize
+		history.VBox.add_program_message("[Agent] %s" % context_status.message)
+		if context_status.estimated_tokens >= context_status.summarize_threshold:
+			history.VBox.add_program_message("[Agent] Summarizing conversation history...")
+			summarize_agent_history(history)
+			var new_size = estimate_agent_context_size(history)
+			history.VBox.add_program_message("[Agent] Context reduced to ~%d tokens" % new_size)
+
+	# Ensure tools are still enabled for continuation request (with filtering)
 	if history.provider.has_method("set_tools"):
 		var mcp_tools = mcp_manager.get_tools_for_anthropic()
-		history.provider.set_tools(mcp_tools)
+		var filtered_tools = mcp_tools.filter(func(tool):
+			return tool.get("name", "") not in history.DisabledTools
+		)
+		history.provider.set_tools(filtered_tools)
+
+	# Check for cancellation before continuation
+	if SingletonObject.is_cancelled(history.HistoryId):
+		SingletonObject.clear_cancelled(history.HistoryId)
+		history.VBox.add_program_message("[Agent] Cancelled by user.")
+		_finish_agent_mode()
+		return
 
 	# Build continuation prompt with tool results
-	var continuation_list = history.to_prompt()
+	# Use create_prompt() to properly handle system messages (filters them from messages array
+	# and sets provider.system_prompt for Anthropic/Google)
+	var continuation_list = await create_prompt()
 
 	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
 
@@ -604,6 +1030,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 		print("[Agent] ERROR: No continuation response received")
 		continuation_node.queue_free()
 		history.VBox.add_program_message("[Agent] Error: No response from LLM")
+		_finish_agent_mode()
 		return
 
 	# Check for errors in response
@@ -611,6 +1038,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 		print("[Agent] ERROR in response: %s" % continuation_response.error)
 		continuation_node.queue_free()
 		history.VBox.add_program_message("[Agent] Error: %s" % continuation_response.error)
+		_finish_agent_mode()
 		return
 
 	# Process the continuation response
@@ -631,6 +1059,15 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 		await get_tree().process_frame
 		history.VBox.ensure_node_is_visible(continuation_node)
 
+		# Check for cancellation before recursion
+		if SingletonObject.is_cancelled(history.HistoryId):
+			SingletonObject.clear_cancelled(history.HistoryId)
+			history.VBox.add_program_message("[Agent] Cancelled by user.")
+			# Add tool_results for unexecuted tools so conversation can continue
+			_add_unexecuted_tool_results(history, continuation_response.tool_calls, "Cancelled by user")
+			_finish_agent_mode()
+			return
+
 		# Recursively handle more tool calls
 		await handle_tool_calls(history, continuation_response.tool_calls, round + 1)
 	else:
@@ -643,13 +1080,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 		await get_tree().process_frame
 		history.VBox.ensure_node_is_visible(continuation_node)
 
-		# Disable notes after completion
-		for i in SingletonObject.notes_container.get_tab_count():
-			SingletonObject.notes_container.disable_notes(i)
-		for i in SingletonObject.drawer_notes_container.get_tab_count():
-			SingletonObject.drawer_notes_container.disable_notes(i)
-
 		history.VBox.add_program_message("[Agent] Task complete.")
+		_finish_agent_mode()
 
 
 func execute_sequential_chat(text_input: String) -> void:
@@ -661,8 +1093,8 @@ func execute_sequential_chat(text_input: String) -> void:
 	_inputs = get_separated_messages(text_input)
 	
 	for i in _inputs:
-		if _cancelled_chat_requests:
-			_cancelled_chat_requests = false
+		if SingletonObject.is_cancelled(history.HistoryId):
+			SingletonObject.clear_cancelled(history.HistoryId)
 			return
 		var user_history_item = create_user_history_item(i)
 		
@@ -705,9 +1137,11 @@ func execute_sequential_chat(text_input: String) -> void:
 		
 		var chi = process_bot_response(bot_response, history.provider)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
-	audio_stop_1.disabled = true
-	_active_chat_request = false
-	
+	_active_chat_requests -= 1
+	if _active_chat_requests <= 0:
+		_active_chat_requests = 0
+		audio_stop_1.disabled = true
+
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)
 
@@ -769,11 +1203,13 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 		_user_parallel_chat_UUID = ""
 		_parallel_chat_UUID = ""
 		_multi_slider_container_UUID = ""
-		audio_stop_1.disabled = true
-		_active_chat_request = false
-	
-	if _cancelled_chat_requests:
-		_cancelled_chat_requests = false
+		_active_chat_requests -= 1
+		if _active_chat_requests <= 0:
+			_active_chat_requests = 0
+			audio_stop_1.disabled = true
+
+	if SingletonObject.is_cancelled(history.HistoryId):
+		SingletonObject.clear_cancelled(history.HistoryId)
 		return
 	var usr_msg_node: = history.VBox.add_history_item(user_msg, false)
 	var mdl_msg_node: = history.VBox.add_history_item(bot_response, false)
@@ -1040,9 +1476,12 @@ func render_history(chat_history: ChatHistory):
 func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
-	
+
 	# SingletonObject.initialize_chats(self)
 	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
+
+	# Hide AgentModeToggle - moved to MCP menu
+	%AgentModeToggle.hide()
 	
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
@@ -1183,6 +1622,8 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 
 
 func _on_btn_chat_settings_pressed():
+	%AISettings.sync_provider_to_current_chat()
+	%AISettings.load_current_chat_settings()
 	%AISettings.popup_centered()
 
 
@@ -1327,19 +1768,28 @@ func get_first_chat_item() -> ChatHistoryItem:
 
 #endregion Add New HistoryItem
 
-var _cancelled_chat_requests: = false
 func _on_audio_stop_1_pressed() -> void:
-	if _active_chat_request:
+	if _active_chat_requests > 0:
 		var history: ChatHistory = SingletonObject.ChatList[current_tab]
-		history.provider.cancel_active_resquests()
-		history.VBox.remove_child(latest_msg)
-		audio_stop_1.disabled = true
-		_active_chat_request = false
-		_cancelled_chat_requests = true
-		for i in history.VBox.get_children():
-			if i is MessageMarkdown:
-				if i.loading:
-					i.loading = false
+
+		# Track this history as cancelled so agentic loops can check
+		SingletonObject.cancelled_history_ids.append(history.HistoryId)
+
+		# Emit signal with current tab's identity - only matching providers will cancel
+		SingletonObject.stop_all_requests.emit(history.HistoryId)
+
+		# Clean up loading messages only in current tab
+		for child in history.VBox.get_children():
+			if child is MessageMarkdown and child.loading:
+				child.loading = false  # Re-enables controls via _toggle_controls(true)
+				history.VBox.remove_child(child)
+				child.queue_free()
+
+		# Decrement ref count for the stopped request
+		_active_chat_requests -= 1
+		if _active_chat_requests <= 0:
+			_active_chat_requests = 0
+			audio_stop_1.disabled = true
 	else:
 		SingletonObject.AtT._StopConverting()
 

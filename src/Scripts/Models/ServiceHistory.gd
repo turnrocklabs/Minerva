@@ -35,19 +35,58 @@ var FrequencyPenalty: float = 0:
 var PresencePenalty: float = 0:
 	set(value): SingletonObject.call_deferred("save_state", false); PresencePenalty = value
 
+## Agentic settings - per-chat configuration for agent mode
+var MaxToolCallRounds: int = 10:
+	set(value): SingletonObject.call_deferred("save_state", false); MaxToolCallRounds = value
+
+var AutoContinueToolCalls: bool = true:
+	set(value): SingletonObject.call_deferred("save_state", false); AutoContinueToolCalls = value
+
+var DisabledTools: Array[String] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); DisabledTools = value
+
+var AllowedDirectories: Array[String] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); AllowedDirectories = value
+
+## Agentic system prompt - used instead of regular system prompt when agent mode is enabled
+var AgenticSystemPrompt: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); AgenticSystemPrompt = value
+
+## Agent context management settings (0 = use defaults from ChatPane)
+var AgentMaxToolResultLength: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentMaxToolResultLength = value
+
+var AgentContextWarningThreshold: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentContextWarningThreshold = value
+
+var AgentContextHardLimit: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentContextHardLimit = value
+
+var AgentSummarizeThreshold: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentSummarizeThreshold = value
+
 var VBox: VBoxChat
 var provider: BaseProvider
 
 static var SERIALIZER_FIELDS = [
-	"HistoryId", 
-	"HistoryName", 
-	"HistoryItemList", 
+	"HistoryId",
+	"HistoryName",
+	"HistoryItemList",
 	"Provider",
 	"ServiceType",
-	"Temperature", 
+	"Temperature",
 	"TopP",
 	"FrequencyPenalty",
-	"PresencePenalty"
+	"PresencePenalty",
+	"MaxToolCallRounds",
+	"AutoContinueToolCalls",
+	"DisabledTools",
+	"AllowedDirectories",
+	"AgenticSystemPrompt",
+	"AgentMaxToolResultLength",
+	"AgentContextWarningThreshold",
+	"AgentContextHardLimit",
+	"AgentSummarizeThreshold",
 ]
 
 ## Initialize with a new HistoryId
@@ -62,6 +101,9 @@ func _init(_provider, optional_historyId = null):
 	else:
 		self.HistoryId = optional_historyId
 	HistoryItemList = []
+	# Set owner_history_id so provider knows which chat it belongs to
+	if _provider and _provider.has_method("get"):  # Check it's a valid object
+		_provider.owner_history_id = self.HistoryId
 
 ## Creates prompt from this history using the set provider.
 ## The `predicate` parameter is a `Callable` that returns an `Array` of 2 booleans.
@@ -106,7 +148,16 @@ func Serialize() -> Dictionary:
 		"Temperature": Temperature,
 		"TopP": TopP,
 		"FrequencyPenalty": FrequencyPenalty,
-		"PresencePenalty": PresencePenalty
+		"PresencePenalty": PresencePenalty,
+		"MaxToolCallRounds": MaxToolCallRounds,
+		"AutoContinueToolCalls": AutoContinueToolCalls,
+		"DisabledTools": DisabledTools,
+		"AllowedDirectories": AllowedDirectories,
+		"AgenticSystemPrompt": AgenticSystemPrompt,
+		"AgentMaxToolResultLength": AgentMaxToolResultLength,
+		"AgentContextWarningThreshold": AgentContextWarningThreshold,
+		"AgentContextHardLimit": AgentContextHardLimit,
+		"AgentSummarizeThreshold": AgentSummarizeThreshold,
 	}
 	return save_dict
 
@@ -151,5 +202,27 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.FrequencyPenalty = data.get("FrequencyPenalty")
 	if data.get("PresencePenalty"):
 		history.PresencePenalty = data.get("PresencePenalty")
-	
+
+	# Agentic settings (with defaults for backwards compatibility)
+	if data.has("MaxToolCallRounds"):
+		history.MaxToolCallRounds = int(data.get("MaxToolCallRounds", 10))
+	if data.has("AutoContinueToolCalls"):
+		history.AutoContinueToolCalls = data.get("AutoContinueToolCalls", true)
+	if data.has("DisabledTools"):
+		var disabled = data.get("DisabledTools", [])
+		history.DisabledTools.assign(disabled)
+	if data.has("AllowedDirectories"):
+		var allowed = data.get("AllowedDirectories", [])
+		history.AllowedDirectories.assign(allowed)
+	if data.has("AgenticSystemPrompt"):
+		history.AgenticSystemPrompt = data.get("AgenticSystemPrompt", "")
+	if data.has("AgentMaxToolResultLength"):
+		history.AgentMaxToolResultLength = int(data.get("AgentMaxToolResultLength", 0))
+	if data.has("AgentContextWarningThreshold"):
+		history.AgentContextWarningThreshold = int(data.get("AgentContextWarningThreshold", 0))
+	if data.has("AgentContextHardLimit"):
+		history.AgentContextHardLimit = int(data.get("AgentContextHardLimit", 0))
+	if data.has("AgentSummarizeThreshold"):
+		history.AgentSummarizeThreshold = int(data.get("AgentSummarizeThreshold", 0))
+
 	return history

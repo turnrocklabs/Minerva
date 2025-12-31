@@ -17,11 +17,32 @@ var _port: int = DEFAULT_PORT
 var _session_id: String = ""
 var _http_client: HTTPClient
 
+## Active HTTP requests that can be cancelled
+var _active_http_requests: Array[HTTPRequest] = []
+
 
 func _init(host: String = DEFAULT_HOST, port: int = DEFAULT_PORT) -> void:
 	_host = host
 	_port = port
 	_http_client = HTTPClient.new()
+	# Connect to global stop signal - Co-Browser is shared, so cancel on any stop
+	if SingletonObject:
+		SingletonObject.stop_all_requests.connect(_on_stop_all_requests)
+
+
+## Handle stop signal - Co-Browser cancels on any stop request
+func _on_stop_all_requests(_history_id: String) -> void:
+	cancel_active_requests()
+
+
+## Cancel all active HTTP requests (called when user presses stop)
+func cancel_active_requests() -> void:
+	for request in _active_http_requests:
+		if is_instance_valid(request):
+			if request.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+				request.cancel_request()
+			request.queue_free()
+	_active_http_requests.clear()
 
 
 ## Get active sessions from the service
@@ -216,15 +237,18 @@ func _http_get(endpoint: String) -> Dictionary:
 	# We need to add it to the scene tree temporarily
 	if Engine.get_main_loop() and Engine.get_main_loop().root:
 		Engine.get_main_loop().root.add_child(http_request)
+		_active_http_requests.append(http_request)
 	else:
 		return {"error": "Cannot create HTTP request - no scene tree"}
 
 	var error := http_request.request(url, [], HTTPClient.METHOD_GET)
 	if error != OK:
+		_active_http_requests.erase(http_request)
 		http_request.queue_free()
 		return {"error": "HTTP request failed: %s" % error_string(error)}
 
 	var result = await http_request.request_completed
+	_active_http_requests.erase(http_request)
 	http_request.queue_free()
 
 	var response_code: int = result[1]
@@ -253,15 +277,18 @@ func _http_post(endpoint: String, body: Dictionary) -> Dictionary:
 	# We need to add it to the scene tree temporarily
 	if Engine.get_main_loop() and Engine.get_main_loop().root:
 		Engine.get_main_loop().root.add_child(http_request)
+		_active_http_requests.append(http_request)
 	else:
 		return {"error": "Cannot create HTTP request - no scene tree"}
 
 	var error := http_request.request(url, headers, HTTPClient.METHOD_POST, json_body)
 	if error != OK:
+		_active_http_requests.erase(http_request)
 		http_request.queue_free()
 		return {"error": "HTTP request failed: %s" % error_string(error)}
 
 	var result = await http_request.request_completed
+	_active_http_requests.erase(http_request)
 	http_request.queue_free()
 
 	var response_code: int = result[1]

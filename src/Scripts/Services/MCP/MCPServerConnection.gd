@@ -33,6 +33,9 @@ var is_connected: bool = false
 ## Skip MCP protocol initialization (for REST APIs that don't support it)
 var skip_mcp_init: bool = false
 
+## Working directory for file operations (sent to server on initialize/set)
+var working_directory: String = ""
+
 ## Available tools from this server
 var tools: Array = []
 
@@ -48,6 +51,9 @@ var _subprocess: SubProcess = null
 ## Pending requests awaiting responses (for async operations)
 var _pending_requests: Dictionary = {}  # request_id -> {callback, tool_name}
 
+## Active HTTP requests that can be cancelled
+var _active_http_requests: Array[HTTPRequest] = []
+
 ## MCP protocol version
 const MCP_PROTOCOL_VERSION := "2025-06-18"
 
@@ -62,6 +68,14 @@ func _init(name: String = "", url: String = "", type: TransportType = TransportT
 	server_name = name
 	base_url = url
 	transport = type
+	# Connect to global stop signal - MCP connections are shared, so cancel on any stop
+	if SingletonObject:
+		SingletonObject.stop_all_requests.connect(_on_stop_all_requests)
+
+
+## Handle stop signal - MCP connections cancel on any stop request
+func _on_stop_all_requests(_history_id: String) -> void:
+	cancel_active_requests()
 
 
 ## Configure STDIO transport with command and arguments
@@ -108,6 +122,16 @@ func disconnect_from_server() -> void:
 
 	print("[MCP %s] Disconnected" % server_name)
 	disconnected.emit()
+
+
+## Cancel all active HTTP requests (called when user presses stop)
+func cancel_active_requests() -> void:
+	for request in _active_http_requests:
+		if is_instance_valid(request):
+			if request.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+				request.cancel_request()
+			request.queue_free()
+	_active_http_requests.clear()
 
 
 ## List available tools from the server
@@ -157,6 +181,27 @@ func call_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return await _call_tool_websocket(tool_name, arguments)
 		TransportType.STDIO:
 			return await _call_tool_stdio(tool_name, arguments)
+
+	return {"error": "Invalid transport type"}
+
+
+## Set the working directory for file operations on the server
+## This can be called at any time to change the context for subsequent tool calls
+func set_working_directory(directory: String) -> Dictionary:
+	working_directory = directory
+
+	if not is_connected:
+		# Just store it, will be sent on next connect
+		return {"success": true, "workingDirectory": directory}
+
+	# Send to server immediately if connected
+	match transport:
+		TransportType.HTTP:
+			return await _call_tool_http("set_working_directory", {"directory": directory})
+		TransportType.WEBSOCKET:
+			return await _call_tool_websocket("set_working_directory", {"directory": directory})
+		TransportType.STDIO:
+			return await _call_tool_stdio("set_working_directory", {"directory": directory})
 
 	return {"error": "Invalid transport type"}
 
@@ -229,16 +274,21 @@ func _http_initialize() -> Dictionary:
 	Engine.get_main_loop().root.add_child(http)
 
 	var request_id := _next_request_id()
+	var init_params := {
+		"protocolVersion": MCP_PROTOCOL_VERSION,
+		"clientInfo": {
+			"name": "Minerva",
+			"version": "1.0.0"
+		}
+	}
+	# Include working directory if set
+	if not working_directory.is_empty():
+		init_params["workingDirectory"] = working_directory
+
 	var body := JSON.stringify({
 		"jsonrpc": "2.0",
 		"method": "initialize",
-		"params": {
-			"protocolVersion": MCP_PROTOCOL_VERSION,
-			"clientInfo": {
-				"name": "Minerva",
-				"version": "1.0.0"
-			}
-		},
+		"params": init_params,
 		"id": request_id
 	})
 
@@ -306,6 +356,7 @@ func _call_tool_http(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# Need to add to scene tree for HTTPRequest to work
 	if Engine.get_main_loop():
 		Engine.get_main_loop().root.add_child(http)
+		_active_http_requests.append(http)
 	else:
 		push_error("Cannot make HTTP request: no scene tree available")
 		return {"error": "No scene tree available"}
@@ -321,10 +372,22 @@ func _call_tool_http(tool_name: String, arguments: Dictionary) -> Dictionary:
 		headers.append("Mcp-Session-Id: %s" % _session_id)
 
 	var request_id := _next_request_id()
+
+	# For special MCP methods (initialize, tools/list, set_working_directory), use directly
+	# For tool calls, wrap in tools/call format per MCP spec
+	var method: String
+	var params: Dictionary
+	if tool_name in ["initialize", "tools/list", "notifications/initialized", "set_working_directory"]:
+		method = tool_name
+		params = arguments
+	else:
+		method = "tools/call"
+		params = {"name": tool_name, "arguments": arguments}
+
 	var body := JSON.stringify({
 		"jsonrpc": "2.0",
-		"method": tool_name,
-		"params": arguments,
+		"method": method,
+		"params": params,
 		"id": request_id
 	})
 
@@ -332,11 +395,13 @@ func _call_tool_http(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 	var err := http.request(url, headers, HTTPClient.METHOD_POST, body)
 	if err != OK:
+		_active_http_requests.erase(http)
 		http.queue_free()
 		return {"error": "HTTP request failed: %s" % error_string(err)}
 
 	# Wait for response
 	var response: Array = await http.request_completed
+	_active_http_requests.erase(http)
 	http.queue_free()
 
 	var result_code: int = response[0]
