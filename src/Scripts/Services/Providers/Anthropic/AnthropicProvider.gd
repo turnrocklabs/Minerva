@@ -196,12 +196,14 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	full_text = full_text.strip_edges()
 
 	# Content can be a string, but also an array of dictionaries, to handle different media types
-	var content: = [
-		{
+	var content: Array = []
+
+	# Only add text block if there's actual text (Anthropic rejects empty text blocks)
+	if not full_text.is_empty():
+		content.append({
 			"type": "text",
 			"text": full_text
-		},
-	]
+		})
 
 	# Add image notes
 	for img in media_notes:
@@ -212,6 +214,13 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 				"media_type": "image/png",
 				"data": Marshalls.raw_to_base64(img.save_png_to_buffer()),
 			}
+		})
+
+	# Anthropic requires non-empty content - if we have nothing, add placeholder
+	if content.is_empty():
+		content.append({
+			"type": "text",
+			"text": "(empty message)"
 		})
 
 	return {

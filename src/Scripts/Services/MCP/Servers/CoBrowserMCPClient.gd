@@ -52,10 +52,35 @@ func get_active_sessions() -> Dictionary:
 		return response
 
 	var sessions: Array = response.get("sessions", [])
-	if sessions.size() > 0 and _session_id.is_empty():
-		_session_id = sessions[0]
+	if sessions.size() > 0:
+		# Always update session_id if current one is empty or no longer valid
+		if _session_id.is_empty() or not (_session_id in sessions):
+			_session_id = sessions[0]
+			print("[CoBrowser] Session updated: %s" % _session_id)
 
 	return response
+
+
+## Reset the session (clears cached session_id, forcing re-fetch on next command)
+func reset_session() -> void:
+	print("[CoBrowser] Session reset (was: %s)" % _session_id)
+	_session_id = ""
+	cancel_active_requests()
+
+
+## Reconnect to the service (reset session and verify connection)
+func reconnect() -> Dictionary:
+	reset_session()
+	var result = await get_active_sessions()
+	if result.get("error"):
+		return {"success": false, "error": result.get("error")}
+
+	var sessions: Array = result.get("sessions", [])
+	if sessions.size() == 0:
+		return {"success": false, "error": "No active browser sessions. Is Firefox extension connected?"}
+
+	print("[CoBrowser] Reconnected to session: %s" % _session_id)
+	return {"success": true, "session_id": _session_id}
 
 
 ## Check if connected to a session

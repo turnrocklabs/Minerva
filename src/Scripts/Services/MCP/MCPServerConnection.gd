@@ -210,52 +210,49 @@ func set_working_directory(directory: String) -> Dictionary:
 func _verify_http_connection() -> Error:
 	print("[MCP HTTP] Connecting to %s..." % base_url)
 
-	var http := HTTPRequest.new()
-
-	if Engine.get_main_loop():
-		Engine.get_main_loop().root.add_child(http)
-	else:
-		push_error("Cannot make HTTP request: no scene tree available")
-		return ERR_CANT_CONNECT
-
-	# Try health endpoint first, fall back to root if not found
-	var health_endpoints := ["%s/health" % base_url, base_url]
-	var health_ok := false
-
-	for health_url in health_endpoints:
-		print("[MCP HTTP] Health check: %s" % health_url)
-		var err := http.request(health_url, [], HTTPClient.METHOD_GET)
-		if err != OK:
-			continue
-
-		var response: Array = await http.request_completed
-		var result_code: int = response[0]
-		var response_code: int = response[1]
-
-		if result_code == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300:
-			print("[MCP HTTP] Health check OK at %s" % health_url)
-			health_ok = true
-			break
-		else:
-			print("[MCP HTTP] Health check failed at %s: result=%d, status=%d" % [health_url, result_code, response_code])
-
-	http.queue_free()
-
-	if not health_ok:
-		print("[MCP HTTP] All health checks failed")
-		is_connected = false
-		return ERR_CANT_CONNECT
-
 	# Skip MCP protocol init for REST APIs that don't support it
 	if skip_mcp_init:
-		print("[MCP HTTP] Skipping MCP init (REST API mode)")
+		# For REST APIs, do a simple health check
+		var http := HTTPRequest.new()
+		if Engine.get_main_loop():
+			Engine.get_main_loop().root.add_child(http)
+		else:
+			push_error("Cannot make HTTP request: no scene tree available")
+			return ERR_CANT_CONNECT
+
+		var health_endpoints := ["%s/health" % base_url, base_url]
+		var health_ok := false
+
+		for health_url in health_endpoints:
+			print("[MCP HTTP] Health check: %s" % health_url)
+			var err := http.request(health_url, [], HTTPClient.METHOD_GET)
+			if err != OK:
+				continue
+
+			var response: Array = await http.request_completed
+			var result_code: int = response[0]
+			var response_code: int = response[1]
+
+			if result_code == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300:
+				print("[MCP HTTP] Health check OK at %s" % health_url)
+				health_ok = true
+				break
+
+		http.queue_free()
+
+		if not health_ok:
+			print("[MCP HTTP] Health check failed")
+			is_connected = false
+			return ERR_CANT_CONNECT
+
+		print("[MCP HTTP] Connected (REST API mode)")
 		is_connected = true
 		connected.emit()
 		return OK
 
-	print("[MCP HTTP] Performing MCP initialize...")
+	# For MCP servers, the initialize handshake IS the connection verification
+	print("[MCP HTTP] Performing MCP initialize handshake...")
 
-	# Now perform MCP initialize to get session ID
 	var init_result := await _http_initialize()
 	if init_result.get("error"):
 		push_error("MCP HTTP initialization failed: %s" % init_result.get("error"))
@@ -266,6 +263,13 @@ func _verify_http_connection() -> Error:
 	is_connected = true
 	connected.emit()
 	return OK
+
+
+## Get the MCP endpoint URL (appends /mcp if not already present)
+func _get_mcp_endpoint() -> String:
+	if base_url.ends_with("/mcp"):
+		return base_url
+	return base_url.rstrip("/") + "/mcp"
 
 
 ## HTTP transport: Perform MCP initialize handshake
@@ -297,8 +301,9 @@ func _http_initialize() -> Dictionary:
 		"MCP-Protocol-Version: %s" % MCP_PROTOCOL_VERSION
 	]
 
-	print("[MCP HTTP] Sending initialize request...")
-	var err := http.request(base_url, headers, HTTPClient.METHOD_POST, body)
+	var mcp_url := _get_mcp_endpoint()
+	print("[MCP HTTP] Sending initialize request to %s..." % mcp_url)
+	var err := http.request(mcp_url, headers, HTTPClient.METHOD_POST, body)
 	if err != OK:
 		http.queue_free()
 		return {"error": "HTTP request failed: %s" % error_string(err)}
@@ -361,8 +366,8 @@ func _call_tool_http(tool_name: String, arguments: Dictionary) -> Dictionary:
 		push_error("Cannot make HTTP request: no scene tree available")
 		return {"error": "No scene tree available"}
 
-	# JSON-RPC request to root endpoint
-	var url := base_url
+	# JSON-RPC request to MCP endpoint
+	var url := _get_mcp_endpoint()
 	var headers := [
 		"Content-Type: application/json",
 		"MCP-Protocol-Version: %s" % MCP_PROTOCOL_VERSION

@@ -29,7 +29,8 @@ static var SERIALIZER_FIELDS = [
 	"ToolCallId",
 	"ToolName",
 	"ToolCalls",
-	"IsToolCall"
+	"IsToolCall",
+	"ToolExecutions"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -130,6 +131,12 @@ var ToolCalls: Array[Dictionary] = []:
 var IsToolCall: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); IsToolCall = value
 
+## Tool execution data for displaying in UI
+## Structure: [{call_id: String, tool_name: String, arguments: Dictionary, result: String, status: String}]
+## status can be: "calling", "done", "error"
+var ToolExecutions: Array[Dictionary] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); ToolExecutions = value
+
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
 
@@ -227,8 +234,8 @@ func Serialize() -> Dictionary:
 		"CodeLabelsState": CodeLabelsState,
 		"isMerged": isMerged,
 		"SliderContainerId": SliderContainerId,
-		"MultiSliderContainerId": MultiSliderContainerId
-		
+		"MultiSliderContainerId": MultiSliderContainerId,
+		"ToolExecutions": ToolExecutions
 	}
 	return save_dict
 
@@ -293,9 +300,16 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 				# base64 string is invalid if it's less than 4 characters
 				if not b64_notes.length() < 4:
 					value = Marshalls.base64_to_variant(b64_notes)
-				
+
 				if not value:
 					value = []
+
+			"ToolExecutions":
+				# Convert to typed array for backwards compatibility
+				var executions: Array[Dictionary] = []
+				if value is Array:
+					executions.assign(value)
+				value = executions
 
 		chi.set(prop, value)
 

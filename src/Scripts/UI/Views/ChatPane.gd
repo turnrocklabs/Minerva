@@ -342,8 +342,8 @@ func process_bot_response(bot_response, _history_provider: BaseProvider) -> Chat
 	return chi
 
 # Update UI after receiving bot response
-func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control, 
-							 model_msg_node: Control, chi: ChatHistoryItem, 
+func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control,
+							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory) -> void:
 	if bot_response != null:
 		# Update user message node
@@ -356,22 +356,49 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 
 		## Inform the user history item that the response has arrived
 		user_history_item.response_arrived.emit(chi)
-		
+
 		await get_tree().process_frame
 		history.VBox.ensure_node_is_visible(model_msg_node)
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
 	else:
 		model_msg_node.queue_free()
-	
+
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
-	
+
 	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
 	SingletonObject.detached_note_proxies.clear()
+
+
+## Same as update_ui_after_response but WITHOUT emitting response_arrived signal.
+## Used for agent mode tool chains where we only want the signal at the end.
+func update_ui_after_response_no_signal(user_history_item: ChatHistoryItem, user_msg_node: Control,
+							 model_msg_node: Control, chi: ChatHistoryItem,
+							 bot_response, history: ChatHistory) -> void:
+	if bot_response != null:
+		# Update user message node
+		user_history_item.TokenCost = bot_response.prompt_tokens
+		user_msg_node.render()
+
+		# Change the history item and the message node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
+
+		# NOTE: We intentionally do NOT emit response_arrived here
+		# It will be emitted when the tool chain completes
+
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(model_msg_node)
+		model_msg_node.loading = false
+		model_msg_node.first_time_message = true
+	else:
+		model_msg_node.queue_free()
+
+	# Don't disable notes during tool chain - they stay disabled until chain completes
 
 
 ## add new chat 
@@ -662,10 +689,15 @@ func _on_chat_pressed():
 
 
 func _on_send_message_button_item_selected(index: int) -> void:
-	
+
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 	%SendMessageButton.selected = -1
+
+	# Clear any leftover cancelled flag from previous requests
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	SingletonObject.clear_cancelled(history.HistoryId)
+
 	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
 	var filteredInput: String = %txtMainUserInput.text#.replace("_",r"\_")
 	%txtMainUserInput.text = ""
@@ -841,11 +873,13 @@ func execute_regular_chat(text: String) -> void:
 		chi.IsToolCall = true
 		chi.ToolCalls = bot_response.tool_calls
 
-		# Update UI with the assistant's response (may include text + tool calls)
-		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+		# Update UI with the assistant's response (but DON'T emit response_arrived yet)
+		# We'll emit it when the tool chain completes
+		update_ui_after_response_no_signal(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 
 		# Handle tool execution and continue conversation
-		await handle_tool_calls(history, bot_response.tool_calls)
+		# Pass the initial model CHI as accumulator and user_history_item for final signal
+		await handle_tool_calls(history, bot_response.tool_calls, 0, chi, user_history_item)
 	else:
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 
@@ -855,22 +889,47 @@ func execute_regular_chat(text: String) -> void:
 		audio_stop_1.disabled = true
 
 
+## Get the last MODEL/ASSISTANT history item (the one that made the tool calls)
+func _get_last_model_history_item(history: ChatHistory) -> ChatHistoryItem:
+	for i in range(history.HistoryItemList.size() - 1, -1, -1):
+		var item = history.HistoryItemList[i]
+		if item.Role == ChatHistoryItem.ChatRole.MODEL or item.Role == ChatHistoryItem.ChatRole.ASSISTANT:
+			return item
+	return null
+
+
 ## Add tool_result blocks for tools that were not executed (due to cancellation, limits, etc.)
 ## This ensures the conversation can continue without API errors about missing tool_results.
 func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reason: String) -> void:
+	var model_chi = _get_last_model_history_item(history)
+	var error_result = JSON.stringify({"error": "Tool not executed: %s" % reason})
+
 	for tool_call in tool_calls:
 		var tool_id: String = tool_call.get("id", "")
 		var tool_name: String = tool_call.get("name", "")
+		var tool_args: Dictionary = tool_call.get("arguments", {})
 
+		# Add to ToolExecutions for UI display
+		if model_chi:
+			var execution_entry = {
+				"call_id": tool_id,
+				"tool_name": tool_name,
+				"arguments": tool_args,
+				"status": "error",
+				"result": error_result
+			}
+			model_chi.ToolExecutions.append(execution_entry)
+			if model_chi.rendered_node:
+				model_chi.rendered_node.update_tool_execution(tool_id, error_result, true)
+
+		# Create hidden tool result history item for API continuity
 		var tool_result_item = ChatHistoryItem.new()
 		tool_result_item.Role = ChatHistoryItem.ChatRole.TOOL
 		tool_result_item.ToolCallId = tool_id
 		tool_result_item.ToolName = tool_name
-		tool_result_item.Message = JSON.stringify({
-			"error": "Tool not executed: %s" % reason,
-			"tool": tool_name
-		})
+		tool_result_item.Message = error_result
 		tool_result_item.provider = history.provider
+		tool_result_item.Visible = false  # Hidden - shown in parent message
 
 		history.HistoryItemList.append(tool_result_item)
 		print("[Agent] Added unexecuted tool_result for: %s (reason: %s)" % [tool_name, reason])
@@ -894,28 +953,45 @@ func _finish_agent_mode() -> void:
 
 ## Handle tool calls from an LLM response in agentic mode.
 ## Executes tools, adds results to history, and continues the conversation.
-func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) -> void:
+## All responses are accumulated into a single message box (accumulator_chi).
+## @param history: The chat history
+## @param tool_calls: Array of tool calls to execute
+## @param round: Current round number (for recursion)
+## @param accumulator_chi: The first MODEL ChatHistoryItem that accumulates all display content
+## @param user_history_item: The user's message, for emitting response_arrived at the end
+func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0,
+					   accumulator_chi: ChatHistoryItem = null,
+					   user_history_item: ChatHistoryItem = null) -> void:
 	var max_rounds = history.MaxToolCallRounds if history.MaxToolCallRounds > 0 else DEFAULT_MAX_TOOL_CALL_ROUNDS
+
+	# Helper to finish with signal emission
+	var finish_with_signal = func():
+		_finish_agent_mode()
+		# Emit response_arrived to trigger completion sound
+		if user_history_item and accumulator_chi:
+			user_history_item.response_arrived.emit(accumulator_chi)
+
 	if round >= max_rounds:
 		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % max_rounds)
-		history.VBox.add_program_message("[Agent] Maximum tool call rounds reached. Stopping.")
 		# Add tool_result blocks for unexecuted tools so conversation can continue
 		_add_unexecuted_tool_results(history, tool_calls, "Max tool call rounds (%d) reached" % max_rounds)
-		_finish_agent_mode()
+		finish_with_signal.call()
 		return
 
 	# Check for cancellation at start
 	if SingletonObject.is_cancelled(history.HistoryId):
 		SingletonObject.clear_cancelled(history.HistoryId)
-		history.VBox.add_program_message("[Agent] Cancelled by user.")
 		# Add tool_result blocks for unexecuted tools so conversation can continue
 		_add_unexecuted_tool_results(history, tool_calls, "Cancelled by user")
-		_finish_agent_mode()
+		finish_with_signal.call()
 		return
 
 	var mcp_manager = SingletonObject.get_mcp_manager()
 
 	print("[Agent] Round %d: Processing %d tool calls" % [round, tool_calls.size()])
+
+	# Use accumulator if provided, otherwise get the last MODEL item
+	var model_chi: ChatHistoryItem = accumulator_chi if accumulator_chi else _get_last_model_history_item(history)
 
 	# Execute each tool call and collect results
 	for i in range(tool_calls.size()):
@@ -924,11 +1000,10 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 		# Check for cancellation before each tool
 		if SingletonObject.is_cancelled(history.HistoryId):
 			SingletonObject.clear_cancelled(history.HistoryId)
-			history.VBox.add_program_message("[Agent] Cancelled by user.")
 			# Add tool_results for remaining unexecuted tools (current + rest)
 			var remaining_tools = tool_calls.slice(i)
 			_add_unexecuted_tool_results(history, remaining_tools, "Cancelled by user")
-			_finish_agent_mode()
+			finish_with_signal.call()
 			return
 
 		var tool_id: String = tool_call.get("id", "")
@@ -937,17 +1012,27 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 
 		print("[Agent] Executing tool: %s (id=%s)" % [tool_name, tool_id])
 
+		# Add execution entry to model_chi BEFORE executing (status: "calling")
+		var execution_entry = {
+			"call_id": tool_id,
+			"tool_name": tool_name,
+			"arguments": tool_args,
+			"status": "calling",
+			"result": ""
+		}
+		model_chi.ToolExecutions.append(execution_entry)
+
+		# Update the rendered node to show this tool call
+		if model_chi.rendered_node:
+			model_chi.rendered_node.update_tool_execution(tool_id, "", false)
+
 		# Check path permissions before executing
 		var path_error = check_tool_path_permissions(tool_name, tool_args, history.AllowedDirectories)
 		var result: Dictionary
 		if path_error != null:
 			print("[Agent] Tool blocked by AllowedDirectories: %s" % tool_name)
-			history.VBox.add_program_message("[Agent] Blocked: %s (path not allowed)" % tool_name)
 			result = path_error
 		else:
-			# Show tool execution in UI
-			history.VBox.add_program_message("[Agent] Calling: %s" % tool_name)
-
 			# Execute the tool
 			result = await mcp_manager.execute_tool(tool_name, tool_args)
 
@@ -960,39 +1045,48 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 		if result_str.length() < original_len:
 			print("[Agent] Truncated tool result from %d to %d chars" % [original_len, result_str.length()])
 
-		# Create tool result history item
+		# Update execution entry with result
+		var is_error = result.get("error") != null
+		execution_entry["result"] = result_str
+		execution_entry["status"] = "error" if is_error else "done"
+
+		# Update the rendered node with the result
+		if model_chi.rendered_node:
+			model_chi.rendered_node.update_tool_execution(tool_id, result_str, is_error)
+
+		# Create tool result history item (hidden - for API continuity only)
 		var tool_result_item = ChatHistoryItem.new()
 		tool_result_item.Role = ChatHistoryItem.ChatRole.TOOL
 		tool_result_item.ToolCallId = tool_id
 		tool_result_item.ToolName = tool_name
 		tool_result_item.Message = result_str
 		tool_result_item.provider = history.provider
+		tool_result_item.Visible = false  # Don't render separately - shown in parent message
 
 		# Add to history (this is critical - must happen before continuation)
 		history.HistoryItemList.append(tool_result_item)
 
-		# Show brief result status
-		if result.get("error"):
-			history.VBox.add_program_message("[Agent] Error: %s" % str(result.get("error")).left(80))
-		else:
-			history.VBox.add_program_message("[Agent] Done: %s" % tool_name)
+	# Add tool block marker to message for proper interleaving during render
+	# Format: {{TOOL_BLOCK:count}} where count is the number of tool executions for this round
+	var tool_count = tool_calls.size()
+	if not model_chi.Message.is_empty():
+		model_chi.Message += "\n\n{{TOOL_BLOCK:%d}}" % tool_count
+	else:
+		model_chi.Message = "{{TOOL_BLOCK:%d}}" % tool_count
 
 	# Check context limits before continuing
 	var context_status = check_agent_context_limits(history)
 	if not context_status.ok:
 		# Hard limit exceeded - stop the agent loop
-		history.VBox.add_program_message("[Agent] %s" % context_status.message)
 		push_warning("Agent mode: %s" % context_status.message)
-		_finish_agent_mode()
+		finish_with_signal.call()
 		return
 	elif context_status.warning:
 		# Warning threshold - try to summarize
-		history.VBox.add_program_message("[Agent] %s" % context_status.message)
 		if context_status.estimated_tokens >= context_status.summarize_threshold:
-			history.VBox.add_program_message("[Agent] Summarizing conversation history...")
 			summarize_agent_history(history)
 			var new_size = estimate_agent_context_size(history)
-			history.VBox.add_program_message("[Agent] Context reduced to ~%d tokens" % new_size)
+			print("[Agent] Context reduced to ~%d tokens" % new_size)
 
 	# Ensure tools are still enabled for continuation request (with filtering)
 	if history.provider.has_method("set_tools"):
@@ -1005,8 +1099,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 	# Check for cancellation before continuation
 	if SingletonObject.is_cancelled(history.HistoryId):
 		SingletonObject.clear_cancelled(history.HistoryId)
-		history.VBox.add_program_message("[Agent] Cancelled by user.")
-		_finish_agent_mode()
+		finish_with_signal.call()
 		return
 
 	# Build continuation prompt with tool results
@@ -1016,29 +1109,29 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 
 	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
 
-	# Show loading state for continuation
-	var dummy_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
-										ChatHistoryItem.ChatRole.MODEL,
-										"")
-	dummy_item.provider = history.provider
-	var continuation_node = create_model_message_node(history, dummy_item)
+	# Show loading state at bottom of message (append mode - doesn't hide content)
+	if model_chi.rendered_node:
+		model_chi.rendered_node.loading_append = true
 
 	# Get LLM's response to tool results
 	var continuation_response = await generate_content_from_provider(history, continuation_list)
 
 	if not continuation_response:
 		print("[Agent] ERROR: No continuation response received")
-		continuation_node.queue_free()
-		history.VBox.add_program_message("[Agent] Error: No response from LLM")
-		_finish_agent_mode()
+		if model_chi.rendered_node:
+			model_chi.rendered_node.loading_append = false
+		finish_with_signal.call()
 		return
 
 	# Check for errors in response
 	if continuation_response.error:
 		print("[Agent] ERROR in response: %s" % continuation_response.error)
-		continuation_node.queue_free()
-		history.VBox.add_program_message("[Agent] Error: %s" % continuation_response.error)
-		_finish_agent_mode()
+		# Append error message to accumulator
+		model_chi.Message += "\n\n[Agent Error: %s]" % continuation_response.error
+		if model_chi.rendered_node:
+			model_chi.rendered_node.loading_append = false
+			model_chi.rendered_node.render()
+		finish_with_signal.call()
 		return
 
 	# Process the continuation response
@@ -1046,42 +1139,63 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0) 
 
 	print("[Agent] Continuation has tool_calls: %s" % continuation_response.has_tool_calls())
 
+	# Append continuation text to accumulator (if any)
+	if not continuation_chi.Message.is_empty():
+		if model_chi.Message.is_empty():
+			model_chi.Message = continuation_chi.Message
+		else:
+			model_chi.Message += "\n\n" + continuation_chi.Message
+
 	# Check if there are more tool calls
 	if continuation_response.has_tool_calls():
 		continuation_chi.IsToolCall = true
 		continuation_chi.ToolCalls = continuation_response.tool_calls
+		continuation_chi.Visible = false  # Don't render separately - shown in accumulator
 
-		# Update UI
-		continuation_node.history_item = continuation_chi
+		# Add to history for API continuity (but hidden from UI)
 		history.HistoryItemList.append(continuation_chi)
-		continuation_node.loading = false
-		continuation_node.first_time_message = true
-		await get_tree().process_frame
-		history.VBox.ensure_node_is_visible(continuation_node)
+
+		# NOTE: Do NOT update model_chi.ToolCalls - that would corrupt the API history!
+		# The ToolCalls stay with their respective ChatHistoryItems for proper API serialization.
+		# We only use ToolExecutions for UI display (which is already being updated correctly).
+
+		# Update the accumulator's rendered node
+		if model_chi.rendered_node:
+			model_chi.rendered_node.loading_append = false
+			model_chi.rendered_node.render()
+			await get_tree().process_frame
+			history.VBox.ensure_node_is_visible(model_chi.rendered_node)
 
 		# Check for cancellation before recursion
 		if SingletonObject.is_cancelled(history.HistoryId):
 			SingletonObject.clear_cancelled(history.HistoryId)
-			history.VBox.add_program_message("[Agent] Cancelled by user.")
 			# Add tool_results for unexecuted tools so conversation can continue
 			_add_unexecuted_tool_results(history, continuation_response.tool_calls, "Cancelled by user")
-			_finish_agent_mode()
+			finish_with_signal.call()
 			return
 
-		# Recursively handle more tool calls
-		await handle_tool_calls(history, continuation_response.tool_calls, round + 1)
+		# Recursively handle more tool calls (keep same accumulator)
+		await handle_tool_calls(history, continuation_response.tool_calls, round + 1,
+							   model_chi, user_history_item)
 	else:
 		# No more tool calls, finalize the response
 		print("[Agent] Final response (no more tool calls)")
-		continuation_node.history_item = continuation_chi
-		history.HistoryItemList.append(continuation_chi)
-		continuation_node.loading = false
-		continuation_node.first_time_message = true
-		await get_tree().process_frame
-		history.VBox.ensure_node_is_visible(continuation_node)
+		continuation_chi.Visible = false  # Don't render separately
 
-		history.VBox.add_program_message("[Agent] Task complete.")
-		_finish_agent_mode()
+		# Add to history for API continuity (but hidden from UI)
+		history.HistoryItemList.append(continuation_chi)
+
+		# Final update to accumulator
+		# NOTE: Do NOT clear IsToolCall - the accumulator must retain its tool_calls
+		# for API serialization so subsequent requests see the proper message sequence
+		if model_chi.rendered_node:
+			model_chi.rendered_node.loading_append = false
+			model_chi.rendered_node.first_time_message = true
+			model_chi.rendered_node.render()
+			await get_tree().process_frame
+			history.VBox.ensure_node_is_visible(model_chi.rendered_node)
+
+		finish_with_signal.call()
 
 
 func execute_sequential_chat(text_input: String) -> void:
@@ -1482,16 +1596,24 @@ func _ready():
 
 	# Hide AgentModeToggle - moved to MCP menu
 	%AgentModeToggle.hide()
-	
+
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
-	
+
 	SingletonObject.note_toggled.connect(_on_note_toggled)
 	SingletonObject.note_changed.connect(_on_note_changed)
 
 	SingletonObject.Chats = self
+
+
+## Handle global input - ESC key triggers stop
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		if _active_chat_requests > 0:
+			_on_audio_stop_1_pressed()
+			get_viewport().set_input_as_handled()
 
 
 # if a note is enabled/disabled recalculate the token cost
@@ -1780,10 +1902,18 @@ func _on_audio_stop_1_pressed() -> void:
 
 		# Clean up loading messages only in current tab
 		for child in history.VBox.get_children():
-			if child is MessageMarkdown and child.loading:
-				child.loading = false  # Re-enables controls via _toggle_controls(true)
-				history.VBox.remove_child(child)
-				child.queue_free()
+			if child is MessageMarkdown:
+				# Clear loading animation (used during initial response)
+				if child.loading:
+					child.loading = false
+					history.VBox.remove_child(child)
+					child.queue_free()
+				# Clear loading_append animation (used during agent mode)
+				elif child.loading_append:
+					child.loading_append = false
+
+		# Finish agent mode if active
+		_finish_agent_mode()
 
 		# Decrement ref count for the stopped request
 		_active_chat_requests -= 1

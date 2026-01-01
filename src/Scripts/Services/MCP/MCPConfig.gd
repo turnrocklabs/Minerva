@@ -136,10 +136,10 @@ func _add_default_servers() -> void:
 	nudge.auto_connect = true
 	servers.append(nudge)
 
-	# Co-Browser service (browser automation) - uses HTTP REST API on port 8677
-	var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
+	# Co-Browser MCP server (browser automation) - uses MCP JSON-RPC on port 8678
+	# Note: MCP endpoint is at /mcp, health check at root - MCPServerConnection handles this
+	var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8678")
 	cobrowser.auto_connect = false  # User must explicitly enable
-	cobrowser.skip_mcp_init = true  # REST API, not MCP JSON-RPC
 	servers.append(cobrowser)
 
 	# CodeTools MCP server (code manipulation tools) - uses MCP JSON-RPC on port 8700
@@ -261,9 +261,8 @@ func load_config() -> Error:
 		servers.append(nudge)
 
 	if not get_server("cobrowser"):
-		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
+		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8678")
 		cobrowser.auto_connect = false
-		cobrowser.skip_mcp_init = true
 		servers.append(cobrowser)
 
 	if not get_server("codetools"):

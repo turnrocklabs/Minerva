@@ -129,8 +129,13 @@ func ensure_node_is_visible(node: Control) -> void:
 		scroll_tween.tween_property(scroll_container, "scroll_vertical", clamp(center_position, 0, max_scroll), scroll_time)
 
 
-## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list 
+## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list
+## Returns null for hidden items (e.g., TOOL results that are shown in parent message)
 func add_history_item(item: ChatHistoryItem, add_as_child: bool = true) -> MessageMarkdown:
+	# Skip rendering for hidden TOOL items (they're displayed in parent MODEL message)
+	if item.Role == ChatHistoryItem.ChatRole.TOOL and not item.Visible:
+		return null
+
 	var msg_node = MessageMarkdown.new_message()
 	msg_node.history_item = item
 	item.rendered_node = msg_node

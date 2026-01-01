@@ -443,12 +443,9 @@ func _reconnect_mcp_server(server_name: String) -> void:
 		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
 		return
 
+	# Disconnect first if connected (to force fresh connection)
 	if mcp.is_server_connected(server_name):
-		SingletonObject.create_toast_notification(
-			"%s: Already connected" % server_name,
-			ToastNotification.Type.SUCCESS
-		)
-		return
+		mcp.disconnect_server(server_name)
 
 	SingletonObject.create_toast_notification(
 		"%s: Connecting..." % server_name,
