@@ -1,4 +1,4 @@
-[gd_scene load_steps=65 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=67 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -38,6 +38,7 @@
 [ext_resource type="Texture2D" uid="uid://cx862fulcqndu" path="res://assets/icons/edit_icons/edit.svg" id="24_spfkh"]
 [ext_resource type="Texture2D" uid="uid://dd64jugx3u72c" path="res://assets/icons/send_icons/send_icon_24_no_bg.png" id="25_30sgg"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="26_30sgg"]
+[ext_resource type="Texture2D" uid="uid://53u7c73tgq4o" path="res://assets/icons/render_viewport/render_viewport_icon_24.png" id="27_idhh2"]
 [ext_resource type="Texture2D" uid="uid://coj8ug8ba8d1k" path="res://assets/icons/Mask-24-24.png" id="28_oylf0"]
 [ext_resource type="Texture2D" uid="uid://dpes4lo607aq2" path="res://assets/icons/magic_wand.svg" id="29_mwand"]
 [ext_resource type="Texture2D" uid="uid://bufam2j57wnr6" path="res://assets/icons/selection_active.svg" id="30_selact"]
@@ -49,6 +50,7 @@
 [ext_resource type="Script" uid="uid://dvwb1nc8tv8e" path="res://Scripts/UI/Controls/GraphicsEditor/tools/LassoSelectTool.gd" id="36_lasso"]
 [ext_resource type="Texture2D" uid="uid://cs57wo2b1qycy" path="res://assets/icons/lasso_select.svg" id="37_lassoicon"]
 [ext_resource type="Script" uid="uid://dk1ha137jdcrs" path="res://Scripts/UI/Controls/GraphicsEditor/SelectionOverlay.gd" id="38_selover"]
+[ext_resource type="Texture2D" uid="uid://dm77rkbe2s6yq" path="res://assets/icons/render_viewport/screenshot_icon_24.png" id="39_yj5gr"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="47_hu8v1"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
@@ -182,10 +184,11 @@ _strength_slider = NodePath("../../h/HSplitContainer/v/HBoxContainer/h/ToolOptio
 _brush_size_slider = NodePath("../../h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer/SizeVSlider")
 editor = NodePath("../..")
 
-[node name="RenderViewTool" type="Node" parent="Tools" node_paths=PackedStringArray("control", "editor")]
+[node name="RenderViewTool" type="Node" parent="Tools" node_paths=PackedStringArray("control", "get_texture_button", "editor")]
 unique_name_in_owner = true
 script = ExtResource("9_vtsnj")
 control = NodePath("../../h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control")
+get_texture_button = NodePath("../../h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl/GetTextureButton")
 editor = NodePath("../..")
 
 [node name="EyedropperTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
@@ -311,15 +314,10 @@ icon = ExtResource("17_tml0f")
 [node name="RenderViewportButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 4
 tooltip_text = "RenderViewport"
 toggle_mode = true
-text = "RV"
-
-[node name="GetTextureButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-tooltip_text = "Take Viewport shot"
-text = "TS"
+icon = ExtResource("27_idhh2")
 
 [node name="Button2" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 visible = false
@@ -616,6 +614,18 @@ handle_input_locally = false
 gui_disable_input = true
 size = Vector2i(1659, 736)
 render_target_update_mode = 4
+
+[node name="GetTextureButton" type="Button" parent="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl"]
+unique_name_in_owner = true
+visible = false
+z_index = 12
+layout_mode = 2
+offset_left = 349.0
+offset_top = 8.0
+offset_right = 381.0
+offset_bottom = 55.0
+tooltip_text = "Take Viewport shot"
+icon = ExtResource("39_yj5gr")
 
 [node name="Control" type="Control" parent="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
 unique_name_in_owner = true
@@ -1372,7 +1382,6 @@ text = "Select Layers...
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
 [connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/RenderViewportButton" to="." method="_on_render_viewport_button_toggled"]
-[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/GetTextureButton" to="." method="_on_get_texture_button_pressed"]
 [connection signal="item_selected" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
 [connection signal="color_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer/ColorPickerButton" to="." method="_on_color_picker_button_color_changed"]
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
@@ -1384,6 +1393,7 @@ text = "Select Layers...
 [connection signal="color_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/FillColorPickerButton" to="." method="_on_fill_selection_color_changed"]
 [connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/VBoxContainer/LayerCardsButton" to="." method="_on_layer_cards_button_pressed"]
 [connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/VBoxContainer/PromptButton" to="." method="_on_prompt_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl/GetTextureButton" to="." method="_on_get_texture_button_pressed"]
 [connection signal="draw" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control" to="." method="_on_control_draw"]
 [connection signal="gui_input" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
 [connection signal="mouse_entered" from="h/HSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]

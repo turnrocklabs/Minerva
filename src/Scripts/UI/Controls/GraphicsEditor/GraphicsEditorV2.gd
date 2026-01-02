@@ -1942,7 +1942,6 @@ func check_ai_buttons_toggle() -> void:
 
 
 var draw_render_view: = false
-var _render_view_rect: = Rect2(Vector2.ZERO, Vector2.ZERO)
 func _on_draw_rect(rect: Rect2) -> void:
 	render_view_control.draw_render_view = draw_render_view
 	render_view_control._rect = rect
@@ -2241,6 +2240,7 @@ func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
 		_tools_option_button.item_selected.emit(0)
 		_tools_option_button.grab_focus()
 		render_view_control.draw_render_view = false
+		render_view_control.get_texture_button.hide()
 		render_view_control.queue_redraw()
 		return
 	

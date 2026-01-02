@@ -4,7 +4,7 @@ extends BaseTool
 #signal draw_render_rect(rect: Rect2)
 
 @export var control: Control = null #LayersContainer
-
+@export var get_texture_button: Button = null
 # Enum for different resize handles
 enum ResizeHandle {
 	NONE,
@@ -28,7 +28,8 @@ func _tool_selected() -> void:
 	_reset_state()
 	editor.render_view_control.draw_render_view = true
 	editor.render_view_control.queue_redraw()
-	editor.set_custom_cursor(null, Input.CURSOR_CROSS) 
+	editor.set_custom_cursor(null, Input.CURSOR_CROSS)
+	get_texture_button.show()
 
 
 func _reset_state() -> void:
@@ -39,13 +40,22 @@ func _reset_state() -> void:
 	_initial_mouse_pos_canvas = Vector2.ZERO
 	_initial_rect_pos_canvas = Vector2.ZERO
 	_initial_rect_size_canvas = Vector2.ZERO
+	get_texture_button.hide()
 
 
 func handle_input_event(event: InputEvent) -> bool:
 	var canvas_local_mouse_pos = editor.layers_container.get_local_mouse_position()
 	
+	if !editor.layers_container.get_rect().has_point(canvas_local_mouse_pos):
+		editor.set_custom_cursor(null, Input.CURSOR_ARROW)
+		return false
+	elif get_texture_button.get_rect().has_point(canvas_local_mouse_pos):
+		editor.set_custom_cursor(null, Input.CURSOR_POINTING_HAND)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.is_pressed():
+			if get_texture_button.get_rect().has_point(canvas_local_mouse_pos):
+				get_texture_button.pressed.emit()
+				get_texture_button.hide()
 			_initial_mouse_pos_canvas = canvas_local_mouse_pos
 			_initial_rect_pos_canvas = editor.render_view_control._rect.position
 			_initial_rect_size_canvas = editor.render_view_control._rect.size
@@ -163,12 +173,12 @@ func _get_resize_handle_at_pos(pos: Vector2) -> ResizeHandle:
 	if rect.size.x <= 0 or rect.size.y <= 0: return ResizeHandle.NONE
 	
 	var tl = rect.position
-	var tr = Vector2(rect.end.x, rect.position.y)
+	var _tr = Vector2(rect.end.x, rect.position.y)
 	var bl = Vector2(rect.position.x, rect.end.y)
 	var br = rect.end
 	
 	if Rect2(tl - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.TOP_LEFT
-	if Rect2(tr - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.TOP_RIGHT
+	if Rect2(_tr - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.TOP_RIGHT
 	if Rect2(bl - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.BOTTOM_LEFT
 	if Rect2(br - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.BOTTOM_RIGHT
 	
@@ -185,6 +195,6 @@ func _get_resize_handle_at_pos(pos: Vector2) -> ResizeHandle:
 		# Left edge
 		if Rect2(tl.x - HANDLE_SIZE/2, tl.y + HANDLE_SIZE/2, HANDLE_SIZE, rect.size.y - HANDLE_SIZE).has_point(pos): return ResizeHandle.LEFT
 		# Right edge
-		if Rect2(tr.x - HANDLE_SIZE/2, tr.y + HANDLE_SIZE/2, HANDLE_SIZE, rect.size.y - HANDLE_SIZE).has_point(pos): return ResizeHandle.RIGHT
+		if Rect2(_tr.x - HANDLE_SIZE/2, _tr.y + HANDLE_SIZE/2, HANDLE_SIZE, rect.size.y - HANDLE_SIZE).has_point(pos): return ResizeHandle.RIGHT
 
 	return ResizeHandle.NONE
