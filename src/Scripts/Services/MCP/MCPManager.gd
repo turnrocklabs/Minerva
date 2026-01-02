@@ -6,6 +6,7 @@ extends Node
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 const MCPServerConnectionScript := preload("res://Scripts/Services/MCP/MCPServerConnection.gd")
 const MCPConfigScript := preload("res://Scripts/Services/MCP/MCPConfig.gd")
+const MinervaMCPServerScript := preload("res://Scripts/Services/MCP/MinervaMCPServer.gd")
 
 signal server_connected(server_name: String)
 signal server_disconnected(server_name: String)
@@ -22,11 +23,18 @@ var tool_registry: Dictionary = {}  # tool_name -> MCPToolDefinition
 ## Configuration for MCP servers
 var config = null
 
+## Internal Minerva MCP server for controlling Minerva features
+var minerva_server: MinervaMCPServerScript = null
+
 
 func _ready() -> void:
 	print("[MCP] MCPManager._ready() called")
 	config = MCPConfigScript.new()
 	config.load_config()
+
+	# Initialize the internal Minerva server (but don't connect it yet)
+	minerva_server = MinervaMCPServerScript.new(self)
+
 	print("[MCP] After _ready(), tool_registry has %d tools" % tool_registry.size())
 
 
@@ -118,6 +126,32 @@ func disconnect_all() -> void:
 	for server_name in servers.keys():
 		disconnect_server(server_name)
 
+	# Also disconnect the Minerva server
+	if minerva_server and minerva_server.is_connected:
+		disconnect_minerva_server()
+
+
+## Connect the internal Minerva server (enables LLM control of Minerva features)
+func connect_minerva_server() -> Error:
+	if not minerva_server:
+		minerva_server = MinervaMCPServerScript.new(self)
+
+	minerva_server.connect_server()
+	server_connected.emit("minerva")
+	return OK
+
+
+## Disconnect the internal Minerva server
+func disconnect_minerva_server() -> void:
+	if minerva_server:
+		minerva_server.disconnect_server()
+		server_disconnected.emit("minerva")
+
+
+## Check if the Minerva server is connected
+func is_minerva_connected() -> bool:
+	return minerva_server != null and minerva_server.is_connected
+
 
 ## Execute a tool by name
 func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
@@ -130,6 +164,21 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 	var tool = tool_registry[tool_name]
 	var server_name = tool.server_name
 
+	# Handle internal Minerva server tools
+	if server_name == "minerva":
+		if not minerva_server or not minerva_server.is_connected:
+			return {"error": "Minerva server not connected", "success": false}
+
+		var result = await minerva_server.execute_tool(tool_name, arguments)
+
+		# Normalize result
+		if not result.has("success"):
+			result["success"] = not result.has("error")
+
+		tool_executed.emit(server_name, tool_name, result)
+		return result
+
+	# Handle external server tools
 	if not servers.has(server_name):
 		return {"error": "Server not connected: %s" % server_name, "success": false}
 

@@ -411,6 +411,12 @@ func _refresh_servers_submenu() -> void:
 		servers_submenu.add_item("%s %s" % [server_name, status], idx)
 		idx += 1
 
+	# Add the internal Minerva server (LLM control of Minerva features)
+	servers_submenu.add_separator()
+	var minerva_connected = mcp.is_minerva_connected()
+	var minerva_status = "✓" if minerva_connected else "✗"
+	servers_submenu.add_item("minerva (self) %s" % minerva_status, 200)
+
 	servers_submenu.add_separator()
 	servers_submenu.add_item("Refresh All", 100)
 
@@ -421,6 +427,10 @@ func _on_mcp_servers_submenu_pressed(id: int) -> void:
 		_reconnect_all_mcp_servers()
 		return
 
+	if id == 200:  # Minerva (self) server toggle
+		_toggle_minerva_server()
+		return
+
 	var mcp = SingletonObject.mcp_manager
 	if not mcp or not mcp.config:
 		return
@@ -429,6 +439,29 @@ func _on_mcp_servers_submenu_pressed(id: int) -> void:
 	if id >= 0 and id < server_names.size():
 		var server_name = server_names[id]
 		_reconnect_mcp_server(server_name)
+
+
+## Toggle the internal Minerva server connection
+func _toggle_minerva_server() -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
+		return
+
+	if mcp.is_minerva_connected():
+		mcp.disconnect_minerva_server()
+		SingletonObject.create_toast_notification(
+			"Minerva: Disconnected",
+			ToastNotification.Type.WARNING
+		)
+	else:
+		mcp.connect_minerva_server()
+		var tool_count = mcp.minerva_server.get_tool_count() if mcp.minerva_server else 0
+		SingletonObject.create_toast_notification(
+			"Minerva: Connected (%d tools)" % tool_count,
+			ToastNotification.Type.SUCCESS
+		)
+	_refresh_servers_submenu()
 
 
 ## Reconnect a single MCP server
