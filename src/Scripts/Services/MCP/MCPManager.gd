@@ -80,6 +80,9 @@ func connect_server(server_name: String) -> Error:
 	# Skip MCP init for REST APIs that don't support it (e.g., cobrowser)
 	connection.skip_mcp_init = server_config.skip_mcp_init
 
+	# Set MCP endpoint path (some servers use "/" instead of "/mcp")
+	connection.mcp_endpoint = server_config.mcp_endpoint
+
 	# Set working directory if configured (for codetools)
 	if not server_config.working_directory.is_empty():
 		connection.working_directory = server_config.working_directory
@@ -197,7 +200,14 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 func get_available_tools() -> Array:
 	var tools: Array = []
 	for tool_name in tool_registry:
-		tools.append(tool_registry[tool_name])
+		var tool = tool_registry[tool_name]
+		# Only include tools from actually connected servers
+		var server_name = tool.server_name
+		if server_name == "minerva":
+			if is_minerva_connected():
+				tools.append(tool)
+		elif is_server_connected(server_name):
+			tools.append(tool)
 	return tools
 
 
@@ -206,17 +216,29 @@ func get_tools_for_openai() -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
 	for tool_name in tool_registry:
 		var tool = tool_registry[tool_name]
-		tools.append(tool.to_openai_format())
+		# Only include tools from connected servers
+		var server_name = tool.server_name
+		var connected = (server_name == "minerva" and is_minerva_connected()) or is_server_connected(server_name)
+		if connected:
+			tools.append(tool.to_openai_format())
 	return tools
 
 
 ## Get tools formatted for Claude/Anthropic
 func get_tools_for_anthropic() -> Array[Dictionary]:
-	print("[MCP] get_tools_for_anthropic() called, tool_registry has %d tools" % tool_registry.size())
 	var tools: Array[Dictionary] = []
+	print("[MCP] get_tools_for_anthropic() checking %d tools in registry..." % tool_registry.size())
 	for tool_name in tool_registry:
 		var tool = tool_registry[tool_name]
-		tools.append(tool.to_anthropic_format())
+		var server_name = tool.server_name
+		var is_minerva = server_name == "minerva"
+		var minerva_connected = is_minerva_connected() if is_minerva else false
+		var server_connected = is_server_connected(server_name) if not is_minerva else false
+		var connected = minerva_connected or server_connected
+		print("[MCP]   Tool '%s' from '%s': minerva=%s, connected=%s" % [tool_name, server_name, minerva_connected, server_connected])
+		if connected:
+			tools.append(tool.to_anthropic_format())
+	print("[MCP] get_tools_for_anthropic() returning %d tools (filtered from %d in registry)" % [tools.size(), tool_registry.size()])
 	return tools
 
 

@@ -16,6 +16,7 @@ class ServerConfig:
 	var auto_connect: bool = true
 	var skip_mcp_init: bool = false  # For REST APIs that don't use MCP protocol
 	var working_directory: String = ""  # Working directory for file operations
+	var mcp_endpoint: String = "/mcp"  # MCP JSON-RPC endpoint path (some servers use "/" instead)
 
 	func _init(n: String = "", t: String = "http", u: String = "") -> void:
 		name = n
@@ -37,7 +38,8 @@ class ServerConfig:
 			"enabled": enabled,
 			"auto_connect": auto_connect,
 			"skip_mcp_init": skip_mcp_init,
-			"working_directory": working_directory
+			"working_directory": working_directory,
+			"mcp_endpoint": mcp_endpoint
 		}
 		if type == "stdio":
 			d["command"] = command
@@ -58,6 +60,7 @@ class ServerConfig:
 		config.auto_connect = data.get("auto_connect", true)
 		config.skip_mcp_init = data.get("skip_mcp_init", false)
 		config.working_directory = data.get("working_directory", "")
+		config.mcp_endpoint = data.get("mcp_endpoint", "/mcp")
 		return config
 
 
@@ -143,8 +146,10 @@ func _add_default_servers() -> void:
 	servers.append(cobrowser)
 
 	# CodeTools MCP server (code manipulation tools) - uses MCP JSON-RPC on port 8700
+	# Note: CodeTools uses "/" as endpoint, not "/mcp"
 	var codetools := ServerConfig.new("codetools", "http", "http://localhost:8700")
 	codetools.auto_connect = false  # User must explicitly enable
+	codetools.mcp_endpoint = "/"  # CodeTools serves JSON-RPC at root
 	# Default to current working directory (where Minerva was launched from)
 	var dir := DirAccess.open(".")
 	if dir:
@@ -268,6 +273,7 @@ func load_config() -> Error:
 	if not get_server("codetools"):
 		var codetools := ServerConfig.new("codetools", "http", "http://localhost:8700")
 		codetools.auto_connect = false
+		codetools.mcp_endpoint = "/"  # CodeTools serves JSON-RPC at root
 		servers.append(codetools)
 
 	return OK

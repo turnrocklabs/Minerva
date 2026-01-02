@@ -15,9 +15,12 @@ var ButtonCloseForPopUp
 # Add a new submenu for 'File'
 @onready var file_submenu: PopupMenu = PopupMenu.new()
 
-# MCP menu
-var mcp_menu: PopupMenu
-var servers_submenu: PopupMenu
+# Tools menu (formerly MCP menu)
+var tools_menu: PopupMenu
+var nudge_submenu: PopupMenu
+var cobrowser_submenu: PopupMenu
+var codetools_submenu: PopupMenu
+var minerva_submenu: PopupMenu
 
 func _on_file_index_pressed(index):
 	match index:
@@ -149,44 +152,52 @@ func _ready():
 	terminal_shortcut.events.append(terminal_input_event)
 	%View.set_item_shortcut(3, terminal_shortcut, true)
 
-	# Create MCP menu (before Help)
-	_setup_mcp_menu()
+	# Create Tools menu (before Help)
+	_setup_tools_menu()
 
 	# Connect to MCP signals for live status updates
 	_connect_mcp_signals()
 
 
-func _setup_mcp_menu() -> void:
-	mcp_menu = PopupMenu.new()
-	mcp_menu.name = "MCP"
-	mcp_menu.title = "MCP"
+func _setup_tools_menu() -> void:
+	tools_menu = PopupMenu.new()
+	tools_menu.name = "Tools"
+	tools_menu.title = "Tools"
 
-	# Note: Agent Mode is now per-chat, controlled via ChatHeader toggle
+	# Nudge submenu with connect + actions
+	nudge_submenu = PopupMenu.new()
+	nudge_submenu.name = "NudgeSubmenu"
+	nudge_submenu.id_pressed.connect(_on_nudge_submenu_pressed)
+	tools_menu.add_child(nudge_submenu)
+	tools_menu.add_submenu_item("Nudge", nudge_submenu.name)
 
-	# Create servers submenu for connection status/reconnect
-	servers_submenu = PopupMenu.new()
-	servers_submenu.name = "MCPServers"
-	servers_submenu.id_pressed.connect(_on_mcp_servers_submenu_pressed)
-	mcp_menu.add_child(servers_submenu)
-	mcp_menu.add_submenu_item("Servers", servers_submenu.name)
-	mcp_menu.add_separator()
+	# Cobrowser submenu
+	cobrowser_submenu = PopupMenu.new()
+	cobrowser_submenu.name = "CobrowserSubmenu"
+	cobrowser_submenu.id_pressed.connect(_on_cobrowser_submenu_pressed)
+	tools_menu.add_child(cobrowser_submenu)
+	tools_menu.add_submenu_item("Cobrowser", cobrowser_submenu.name)
 
-	# Nudge section - Pull operations
-	mcp_menu.add_item("Pull All from Nudge", 0)
-	mcp_menu.add_separator()
+	# Codetools submenu
+	codetools_submenu = PopupMenu.new()
+	codetools_submenu.name = "CodetoolsSubmenu"
+	codetools_submenu.id_pressed.connect(_on_codetools_submenu_pressed)
+	tools_menu.add_child(codetools_submenu)
+	tools_menu.add_submenu_item("Codetools", codetools_submenu.name)
 
-	# Push operations
-	mcp_menu.add_item("Push Current Tab to Nudge", 1)
-	mcp_menu.add_item("Push All Tabs to Nudge", 3)
-	mcp_menu.add_separator()
+	# Minerva (Self) submenu
+	minerva_submenu = PopupMenu.new()
+	minerva_submenu.name = "MinervaSubmenu"
+	minerva_submenu.id_pressed.connect(_on_minerva_submenu_pressed)
+	tools_menu.add_child(minerva_submenu)
+	tools_menu.add_submenu_item("Minerva (Self)", minerva_submenu.name)
 
-	# Delete operations
-	mcp_menu.add_item("Delete Current Tab from Nudge", 4)
+	tools_menu.add_separator()
+	tools_menu.add_item("Refresh All Connections", 100)
+	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
 
-	mcp_menu.id_pressed.connect(_on_mcp_menu_id_pressed)
-
-	# Refresh servers submenu when menu is about to show
-	mcp_menu.about_to_popup.connect(_on_mcp_menu_about_to_popup)
+	# Refresh submenus when menu is about to show
+	tools_menu.about_to_popup.connect(_on_tools_menu_about_to_popup)
 
 	# Insert before Help menu
 	var help_idx := -1
@@ -196,22 +207,15 @@ func _setup_mcp_menu() -> void:
 			break
 
 	if help_idx >= 0:
-		add_child(mcp_menu)
-		move_child(mcp_menu, help_idx)
+		add_child(tools_menu)
+		move_child(tools_menu, help_idx)
 	else:
-		add_child(mcp_menu)
+		add_child(tools_menu)
 
 
-func _on_mcp_menu_id_pressed(id: int) -> void:
-	match id:
-		0:  # Pull All from Nudge
-			_nudge_pull_all()
-		1:  # Push Current Tab to Nudge
-			_nudge_push_current_tab()
-		3:  # Push All Tabs to Nudge
-			_nudge_push_all_tabs()
-		4:  # Delete Current Tab from Nudge
-			_nudge_delete_current_tab()
+func _on_tools_menu_id_pressed(id: int) -> void:
+	if id == 100:
+		_reconnect_all_mcp_servers()
 
 
 func _nudge_pull_all() -> void:
@@ -384,61 +388,166 @@ func _show_nudge_status() -> void:
 		SingletonObject.create_toast_notification("Nudge: Not connected", ToastNotification.Type.ERROR)
 
 
-## Refresh the servers submenu with current connection status
-func _refresh_servers_submenu() -> void:
-	if not servers_submenu:
+## Refresh the Nudge submenu with connection status and actions
+func _refresh_nudge_submenu() -> void:
+	if not nudge_submenu:
 		return
 
-	servers_submenu.clear()
+	nudge_submenu.clear()
 
+	var mcp = SingletonObject.mcp_manager
+	var connected = mcp and mcp.is_server_connected("nudge")
+
+	# Connection toggle
+	var status_text = "✓ Connected" if connected else "✗ Disconnected"
+	nudge_submenu.add_item(status_text, 0)
+
+	nudge_submenu.add_separator()
+
+	# Nudge-specific actions
+	nudge_submenu.add_item("Pull All", 1)
+	nudge_submenu.add_item("Push Current Tab", 2)
+	nudge_submenu.add_item("Push All Tabs", 3)
+	nudge_submenu.add_item("Delete Current Tab", 4)
+
+	# Disable actions if not connected
+	for i in range(2, nudge_submenu.get_item_count()):
+		nudge_submenu.set_item_disabled(i, not connected)
+
+
+## Refresh the Cobrowser submenu
+func _refresh_cobrowser_submenu() -> void:
+	if not cobrowser_submenu:
+		return
+
+	cobrowser_submenu.clear()
+
+	var mcp = SingletonObject.mcp_manager
+	var connected = mcp and mcp.is_server_connected("cobrowser")
+	var status_text = "✓ Connected" if connected else "✗ Disconnected"
+	cobrowser_submenu.add_item(status_text, 0)
+
+
+## Refresh the Codetools submenu
+func _refresh_codetools_submenu() -> void:
+	if not codetools_submenu:
+		return
+
+	codetools_submenu.clear()
+
+	var mcp = SingletonObject.mcp_manager
+	var connected = mcp and mcp.is_server_connected("codetools")
+	var status_text = "✓ Connected" if connected else "✗ Disconnected"
+	codetools_submenu.add_item(status_text, 0)
+
+
+## Refresh the Minerva (Self) submenu
+func _refresh_minerva_submenu() -> void:
+	if not minerva_submenu:
+		return
+
+	minerva_submenu.clear()
+
+	var mcp = SingletonObject.mcp_manager
+	var connected = mcp and mcp.is_minerva_connected()
+	var status_text = "✓ Connected" if connected else "✗ Disconnected"
+	minerva_submenu.add_item(status_text, 0)
+
+
+## Refresh all tool submenus
+func _refresh_all_tool_submenus() -> void:
+	_refresh_nudge_submenu()
+	_refresh_cobrowser_submenu()
+	_refresh_codetools_submenu()
+	_refresh_minerva_submenu()
+
+
+## Handle Nudge submenu item pressed
+func _on_nudge_submenu_pressed(id: int) -> void:
+	match id:
+		0: _toggle_nudge_connection()
+		1: _nudge_pull_all()
+		2: _nudge_push_current_tab()
+		3: _nudge_push_all_tabs()
+		4: _nudge_delete_current_tab()
+
+
+## Handle Cobrowser submenu item pressed
+func _on_cobrowser_submenu_pressed(id: int) -> void:
+	if id == 0:
+		_toggle_cobrowser_connection()
+
+
+## Handle Codetools submenu item pressed
+func _on_codetools_submenu_pressed(id: int) -> void:
+	if id == 0:
+		_toggle_codetools_connection()
+
+
+## Handle Minerva submenu item pressed
+func _on_minerva_submenu_pressed(id: int) -> void:
+	if id == 0:
+		_toggle_minerva_server()
+
+
+## Toggle Nudge connection
+func _toggle_nudge_connection() -> void:
 	var mcp = SingletonObject.mcp_manager
 	if not mcp:
-		servers_submenu.add_item("MCP not initialized", -1)
-		servers_submenu.set_item_disabled(0, true)
+		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
 		return
 
-	var config = mcp.config
-	if not config:
-		servers_submenu.add_item("No config", -1)
-		servers_submenu.set_item_disabled(0, true)
-		return
-
-	var server_names = config.get_server_names()
-	var idx := 0
-	for server_name in server_names:
-		var connected = mcp.is_server_connected(server_name)
-		var status = "✓" if connected else "✗"
-		servers_submenu.add_item("%s %s" % [server_name, status], idx)
-		idx += 1
-
-	# Add the internal Minerva server (LLM control of Minerva features)
-	servers_submenu.add_separator()
-	var minerva_connected = mcp.is_minerva_connected()
-	var minerva_status = "✓" if minerva_connected else "✗"
-	servers_submenu.add_item("minerva (self) %s" % minerva_status, 200)
-
-	servers_submenu.add_separator()
-	servers_submenu.add_item("Refresh All", 100)
+	if mcp.is_server_connected("nudge"):
+		mcp.disconnect_server("nudge")
+		SingletonObject.create_toast_notification("Nudge: Disconnected", ToastNotification.Type.WARNING)
+	else:
+		SingletonObject.create_toast_notification("Nudge: Connecting...", ToastNotification.Type.WARNING)
+		var err = await mcp.connect_server("nudge")
+		if err == OK:
+			SingletonObject.create_toast_notification("Nudge: Connected", ToastNotification.Type.SUCCESS)
+		else:
+			SingletonObject.create_toast_notification("Nudge: Connection failed", ToastNotification.Type.ERROR)
+	_refresh_all_tool_submenus()
 
 
-## Handle server submenu item pressed
-func _on_mcp_servers_submenu_pressed(id: int) -> void:
-	if id == 100:  # Refresh All
-		_reconnect_all_mcp_servers()
-		return
-
-	if id == 200:  # Minerva (self) server toggle
-		_toggle_minerva_server()
-		return
-
+## Toggle Cobrowser connection
+func _toggle_cobrowser_connection() -> void:
 	var mcp = SingletonObject.mcp_manager
-	if not mcp or not mcp.config:
+	if not mcp:
+		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
 		return
 
-	var server_names = mcp.config.get_server_names()
-	if id >= 0 and id < server_names.size():
-		var server_name = server_names[id]
-		_reconnect_mcp_server(server_name)
+	if mcp.is_server_connected("cobrowser"):
+		mcp.disconnect_server("cobrowser")
+		SingletonObject.create_toast_notification("Cobrowser: Disconnected", ToastNotification.Type.WARNING)
+	else:
+		SingletonObject.create_toast_notification("Cobrowser: Connecting...", ToastNotification.Type.WARNING)
+		var err = await mcp.connect_server("cobrowser")
+		if err == OK:
+			SingletonObject.create_toast_notification("Cobrowser: Connected", ToastNotification.Type.SUCCESS)
+		else:
+			SingletonObject.create_toast_notification("Cobrowser: Connection failed", ToastNotification.Type.ERROR)
+	_refresh_all_tool_submenus()
+
+
+## Toggle Codetools connection
+func _toggle_codetools_connection() -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
+		return
+
+	if mcp.is_server_connected("codetools"):
+		mcp.disconnect_server("codetools")
+		SingletonObject.create_toast_notification("Codetools: Disconnected", ToastNotification.Type.WARNING)
+	else:
+		SingletonObject.create_toast_notification("Codetools: Connecting...", ToastNotification.Type.WARNING)
+		var err = await mcp.connect_server("codetools")
+		if err == OK:
+			SingletonObject.create_toast_notification("Codetools: Connected", ToastNotification.Type.SUCCESS)
+		else:
+			SingletonObject.create_toast_notification("Codetools: Connection failed", ToastNotification.Type.ERROR)
+	_refresh_all_tool_submenus()
 
 
 ## Toggle the internal Minerva server connection
@@ -461,7 +570,7 @@ func _toggle_minerva_server() -> void:
 			"Minerva: Connected (%d tools)" % tool_count,
 			ToastNotification.Type.SUCCESS
 		)
-	_refresh_servers_submenu()
+	_refresh_all_tool_submenus()
 
 
 ## Reconnect a single MCP server
@@ -491,7 +600,7 @@ func _reconnect_mcp_server(server_name: String) -> void:
 			"%s: Connection failed" % server_name,
 			ToastNotification.Type.ERROR
 		)
-	_refresh_servers_submenu()
+	_refresh_all_tool_submenus()
 
 
 ## Reconnect all MCP servers
@@ -525,7 +634,7 @@ func _reconnect_all_mcp_servers() -> void:
 			"MCP: %d/%d (%s failed)" % [connected, server_names.size(), ", ".join(failed)],
 			ToastNotification.Type.ERROR
 		)
-	_refresh_servers_submenu()
+	_refresh_all_tool_submenus()
 
 
 ## Connect to MCP manager signals for live status updates
@@ -540,14 +649,13 @@ func _connect_mcp_signals() -> void:
 
 ## Handle MCP server status change
 func _on_mcp_status_changed(_server_name: String) -> void:
-	_refresh_servers_submenu()
+	_refresh_all_tool_submenus()
 
 
-## Handle MCP menu about to show - refresh servers submenu
-func _on_mcp_menu_about_to_popup() -> void:
-	_refresh_servers_submenu()
+## Handle Tools menu about to show - refresh all tool submenus
+func _on_tools_menu_about_to_popup() -> void:
+	_refresh_all_tool_submenus()
 	_connect_mcp_signals()  # Try connecting signals if not already connected
-	# Note: Agent Mode is now per-chat, controlled via ChatHeader toggle
 
 
 ## Create an image note from a blob reference

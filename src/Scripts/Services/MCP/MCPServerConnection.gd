@@ -33,6 +33,9 @@ var is_connected: bool = false
 ## Skip MCP protocol initialization (for REST APIs that don't support it)
 var skip_mcp_init: bool = false
 
+## MCP endpoint path (default "/mcp", some servers use "/")
+var mcp_endpoint: String = "/mcp"
+
 ## Working directory for file operations (sent to server on initialize/set)
 var working_directory: String = ""
 
@@ -265,11 +268,12 @@ func _verify_http_connection() -> Error:
 	return OK
 
 
-## Get the MCP endpoint URL (appends /mcp if not already present)
+## Get the MCP endpoint URL using configured endpoint path
 func _get_mcp_endpoint() -> String:
-	if base_url.ends_with("/mcp"):
-		return base_url
-	return base_url.rstrip("/") + "/mcp"
+	var url = base_url.rstrip("/")
+	if mcp_endpoint == "/":
+		return url
+	return url + mcp_endpoint
 
 
 ## HTTP transport: Perform MCP initialize handshake

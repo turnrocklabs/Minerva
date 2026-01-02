@@ -28,15 +28,18 @@ const AGENT_CONTEXT_HARD_LIMIT: int = 100000  # Stop agent loop when exceeding t
 const AGENT_SUMMARIZE_THRESHOLD: int = 60000  # Trigger summarization above this token count
 const AGENT_KEEP_RECENT_MESSAGES: int = 6  # Keep this many recent messages when summarizing
 
-## Default system prompt for agent mode - provides guidance on efficient tool usage
-const DEFAULT_AGENT_SYSTEM_PROMPT: String = """You are an AI assistant with access to tools. Follow these guidelines for efficient tool usage:
+## Base agent system prompt - tool-specific sections added dynamically
+const AGENT_SYSTEM_PROMPT_BASE: String = """You are an AI assistant. You can only use tools that are explicitly provided to you in this conversation."""
 
+const AGENT_SYSTEM_PROMPT_GENERAL: String = """
 ## General Principles
 - Plan your approach before acting. Think about what information you need and the most efficient way to get it.
 - Prefer targeted queries over broad data fetches. Getting specific data is better than getting everything.
 - If a tool result is truncated, adapt your approach to use more targeted queries.
 - Complete the task in as few tool calls as possible while being thorough.
+"""
 
+const AGENT_SYSTEM_PROMPT_COBROWSER: String = """
 ## Co-Browser Tool Guidelines (when browsing web pages)
 - Start with `cobrowser_get_page_info` for quick page metadata.
 - Use `cobrowser_query_all` with specific CSS selectors to understand page structure before reading content.
@@ -45,17 +48,51 @@ const DEFAULT_AGENT_SYSTEM_PROMPT: String = """You are an AI assistant with acce
 - Use `cobrowser_scroll` to find content below the fold or in infinite scroll containers.
 - Look for patterns like `.infinite-scroll`, `[class*='feed']`, `[class*='post']` for dynamic content.
 - When reading, use specific selectors rather than broad ones to get targeted content.
+"""
 
+const AGENT_SYSTEM_PROMPT_CODETOOLS: String = """
 ## File/Code Tool Guidelines (when working with files)
 - Use `glob` to find files by pattern before reading them.
 - Use `grep` to search for specific content rather than reading entire files.
 - Read only the sections of files you need, not entire large files.
 - When editing, make targeted changes rather than rewriting entire files.
+"""
 
+const AGENT_SYSTEM_PROMPT_ERROR: String = """
 ## Error Handling
 - If a tool times out or fails, try a different approach rather than retrying the same thing.
 - If results are truncated, use more specific queries to get the data you need.
 """
+
+## Build the agent system prompt dynamically based on connected tools
+func _build_agent_system_prompt() -> String:
+	var mcp = SingletonObject.get_mcp_manager()
+	if not mcp:
+		return AGENT_SYSTEM_PROMPT_BASE
+
+	var tools = mcp.get_available_tools()
+	if tools.is_empty():
+		return AGENT_SYSTEM_PROMPT_BASE + "\n\nNote: No tools are currently connected. You cannot use any tools until they are enabled."
+
+	var prompt = AGENT_SYSTEM_PROMPT_BASE + AGENT_SYSTEM_PROMPT_GENERAL
+
+	# Check which tool categories are available
+	var has_cobrowser = false
+	var has_codetools = false
+	for tool in tools:
+		var name: String = tool.name if "name" in tool else ""
+		if name.begins_with("cobrowser"):
+			has_cobrowser = true
+		elif name in ["glob", "grep", "read", "read_file", "write", "write_file", "edit"]:
+			has_codetools = true
+
+	if has_cobrowser:
+		prompt += AGENT_SYSTEM_PROMPT_COBROWSER
+	if has_codetools:
+		prompt += AGENT_SYSTEM_PROMPT_CODETOOLS
+
+	prompt += AGENT_SYSTEM_PROMPT_ERROR
+	return prompt
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
@@ -460,11 +497,11 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 		# Handle agentic system prompt: use it instead of regular system prompt when agent mode is on
 		var effective_system_prompt: String = ""
 		if history.AgentModeEnabled:
-			# In agent mode: use custom agentic prompt, or fall back to default agent prompt
+			# In agent mode: use custom agentic prompt, or fall back to dynamically built agent prompt
 			if not history.AgenticSystemPrompt.is_empty():
 				effective_system_prompt = history.AgenticSystemPrompt
 			else:
-				effective_system_prompt = DEFAULT_AGENT_SYSTEM_PROMPT
+				effective_system_prompt = _build_agent_system_prompt()
 			# Append any existing regular system prompt to give additional context
 			if history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
 				if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
