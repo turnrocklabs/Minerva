@@ -161,10 +161,7 @@ func _setup_mcp_menu() -> void:
 	mcp_menu.name = "MCP"
 	mcp_menu.title = "MCP"
 
-	# Agent Mode toggle (ID 10)
-	mcp_menu.add_check_item("Agent Mode", 10)
-	mcp_menu.set_item_tooltip(mcp_menu.get_item_index(10), "Enable Agent Mode: Allow the LLM to use MCP tools")
-	mcp_menu.add_separator()
+	# Note: Agent Mode is now per-chat, controlled via ChatHeader toggle
 
 	# Create servers submenu for connection status/reconnect
 	servers_submenu = PopupMenu.new()
@@ -215,8 +212,6 @@ func _on_mcp_menu_id_pressed(id: int) -> void:
 			_nudge_push_all_tabs()
 		4:  # Delete Current Tab from Nudge
 			_nudge_delete_current_tab()
-		10:  # Agent Mode toggle
-			_toggle_agent_mode()
 
 
 func _nudge_pull_all() -> void:
@@ -519,25 +514,7 @@ func _on_mcp_status_changed(_server_name: String) -> void:
 func _on_mcp_menu_about_to_popup() -> void:
 	_refresh_servers_submenu()
 	_connect_mcp_signals()  # Try connecting signals if not already connected
-	# Update Agent Mode checkbox state
-	if SingletonObject.Chats:
-		var agent_mode_idx := mcp_menu.get_item_index(10)
-		mcp_menu.set_item_checked(agent_mode_idx, SingletonObject.Chats.agent_mode_enabled)
-
-
-## Toggle Agent Mode on/off
-func _toggle_agent_mode() -> void:
-	if not SingletonObject.Chats:
-		SingletonObject.create_toast_notification("Chat pane not available", ToastNotification.Type.ERROR)
-		return
-
-	var new_state := not SingletonObject.Chats.agent_mode_enabled
-	SingletonObject.Chats._on_agent_mode_toggled(new_state)
-
-	if new_state:
-		SingletonObject.create_toast_notification("Agent Mode enabled", ToastNotification.Type.SUCCESS)
-	else:
-		SingletonObject.create_toast_notification("Agent Mode disabled", ToastNotification.Type.WARNING)
+	# Note: Agent Mode is now per-chat, controlled via ChatHeader toggle
 
 
 ## Create an image note from a blob reference

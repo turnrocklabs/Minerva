@@ -65,6 +65,10 @@ var AgentContextHardLimit: int = 0:
 var AgentSummarizeThreshold: int = 0:
 	set(value): SingletonObject.call_deferred("save_state", false); AgentSummarizeThreshold = value
 
+## Whether agent mode is enabled for this chat
+var AgentModeEnabled: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentModeEnabled = value
+
 var VBox: VBoxChat
 var provider: BaseProvider
 
@@ -87,6 +91,7 @@ static var SERIALIZER_FIELDS = [
 	"AgentContextWarningThreshold",
 	"AgentContextHardLimit",
 	"AgentSummarizeThreshold",
+	"AgentModeEnabled",
 ]
 
 ## Initialize with a new HistoryId
@@ -158,6 +163,7 @@ func Serialize() -> Dictionary:
 		"AgentContextWarningThreshold": AgentContextWarningThreshold,
 		"AgentContextHardLimit": AgentContextHardLimit,
 		"AgentSummarizeThreshold": AgentSummarizeThreshold,
+		"AgentModeEnabled": AgentModeEnabled,
 	}
 	return save_dict
 
@@ -224,5 +230,7 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AgentContextHardLimit = int(data.get("AgentContextHardLimit", 0))
 	if data.has("AgentSummarizeThreshold"):
 		history.AgentSummarizeThreshold = int(data.get("AgentSummarizeThreshold", 0))
+	if data.has("AgentModeEnabled"):
+		history.AgentModeEnabled = data.get("AgentModeEnabled", false)
 
 	return history

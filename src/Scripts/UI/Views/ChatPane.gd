@@ -18,9 +18,6 @@ var _active_chat_requests: int = 0  # Ref count of active chat requests across a
 
 var _initializing_pane := false
 
-## Whether agent mode is enabled (allows LLM to use MCP tools)
-var agent_mode_enabled: bool = false
-
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
 
@@ -462,7 +459,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 
 		# Handle agentic system prompt: use it instead of regular system prompt when agent mode is on
 		var effective_system_prompt: String = ""
-		if agent_mode_enabled:
+		if history.AgentModeEnabled:
 			# In agent mode: use custom agentic prompt, or fall back to default agent prompt
 			if not history.AgenticSystemPrompt.is_empty():
 				effective_system_prompt = history.AgenticSystemPrompt
@@ -482,7 +479,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 			provider.system_prompt = effective_system_prompt
 
 		# Build history list, handling system prompt based on provider support
-		history_list = _build_history_list_with_system_prompt(history, provider, effective_system_prompt, predicate)
+		history_list = _build_history_list_with_system_prompt(history, provider, effective_system_prompt, predicate, history.AgentModeEnabled)
 
 	if not provider:
 		return []
@@ -506,7 +503,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 
 ## Build history list with proper handling of system prompt based on provider capabilities.
 ## If provider doesn't support system prompts, prepends system prompt to first user message.
-func _build_history_list_with_system_prompt(history: ChatHistory, provider: BaseProvider, system_prompt: String, predicate: Callable) -> Array[Variant]:
+func _build_history_list_with_system_prompt(history: ChatHistory, provider: BaseProvider, system_prompt: String, predicate: Callable, agent_mode: bool = false) -> Array[Variant]:
 	var history_list: Array[Variant] = []
 	var system_prompt_prepended := false
 
@@ -524,14 +521,14 @@ func _build_history_list_with_system_prompt(history: ChatHistory, provider: Base
 
 			if not should_continue:
 				# Add this item and then stop
-				var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended)
+				var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended, agent_mode)
 				if item:
 					if chat.Role == ChatHistoryItem.ChatRole.USER and not system_prompt_prepended:
 						system_prompt_prepended = true
 					history_list.append(item)
 				break
 
-		var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended)
+		var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended, agent_mode)
 		if item:
 			if chat.Role == ChatHistoryItem.ChatRole.USER and not system_prompt_prepended and not provider.supports_system_prompt:
 				system_prompt_prepended = true
@@ -541,11 +538,11 @@ func _build_history_list_with_system_prompt(history: ChatHistory, provider: Base
 
 
 ## Format a chat item, handling system prompt injection for providers that don't support system prompts.
-func _format_with_system_prompt_handling(chat: ChatHistoryItem, provider: BaseProvider, system_prompt: String, already_prepended: bool) -> Variant:
-	# Skip system prompt messages when using agentic system prompt OR when provider doesn't support system prompts
-	# (for agentic mode, we already set the provider.system_prompt property)
+func _format_with_system_prompt_handling(chat: ChatHistoryItem, provider: BaseProvider, system_prompt: String, already_prepended: bool, agent_mode: bool = false) -> Variant:
+	# Skip system prompt messages when agent mode is enabled OR provider doesn't support system prompts
+	# (in agent mode, we set provider.system_prompt separately)
 	if chat.Role == ChatHistoryItem.ChatRole.SYSTEM:
-		if agent_mode_enabled or not provider.supports_system_prompt:
+		if agent_mode or not provider.supports_system_prompt:
 			return null  # Don't include system message in history, we handle it separately
 
 	# If provider doesn't support system prompts and this is the first user message, prepend system prompt
@@ -586,9 +583,9 @@ func _on_btn_inspect_pressed():
 	if "system_prompt" in history.provider and history.provider.system_prompt:
 		request_body["system"] = history.provider.system_prompt
 
-	# Add tools if agent mode is enabled
-	print("[Inspector] agent_mode_enabled=%s, has_set_tools=%s" % [agent_mode_enabled, history.provider.has_method("set_tools")])
-	if agent_mode_enabled and history.provider.has_method("set_tools"):
+	# Add tools if agent mode is enabled for this chat
+	print("[Inspector] AgentModeEnabled=%s, has_set_tools=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools")])
+	if history.AgentModeEnabled and history.provider.has_method("set_tools"):
 		var mcp = SingletonObject.get_mcp_manager()
 		var mcp_tools = mcp.get_tools_for_anthropic()
 		print("[Inspector] Got %d tools from MCP" % mcp_tools.size())
@@ -829,8 +826,9 @@ func execute_regular_chat(text: String) -> void:
 	# Check is the last message is a user message and not do anything if true
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
 
-	# Setup agent mode tools if enabled
-	if agent_mode_enabled and history.provider.has_method("set_tools"):
+	# Setup agent mode tools if enabled for this chat
+	print("[Chat] Checking agent mode: AgentModeEnabled=%s, has_set_tools=%s, history_id=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools"), history.HistoryId])
+	if history.AgentModeEnabled and history.provider.has_method("set_tools"):
 		var mcp = SingletonObject.get_mcp_manager()
 		var mcp_tools = mcp.get_tools_for_anthropic()
 		# Filter out disabled tools for this chat
@@ -867,8 +865,8 @@ func execute_regular_chat(text: String) -> void:
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
 
-	# Handle tool calls if agent mode is enabled and response has tool calls
-	if agent_mode_enabled and bot_response and bot_response.has_tool_calls():
+	# Handle tool calls if agent mode is enabled for this chat and response has tool calls
+	if history.AgentModeEnabled and bot_response and bot_response.has_tool_calls():
 		# Store tool calls in the chat history item
 		chi.IsToolCall = true
 		chi.ToolCalls = bot_response.tool_calls
@@ -1539,7 +1537,19 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 
 
 func render_history(chat_history: ChatHistory):
-	
+
+	# Create wrapper VBoxContainer to hold header and scroll container
+	var wrapper = VBoxContainer.new()
+	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrapper.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	# Create and setup ChatHeader at top of each tab
+	var ChatHeaderScript = load("res://Scripts/UI/Controls/ChatHeader.gd")
+	var header = ChatHeaderScript.new()
+	header.setup(chat_history)
+	header.agent_mode_toggled.connect(_on_chat_header_agent_mode_toggled.bind(chat_history))
+	wrapper.add_child(header)
+
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
 	#scroll_container.follow_focus
@@ -1552,12 +1562,13 @@ func render_history(chat_history: ChatHistory):
 	chat_history.VBox = vboxChat
 
 	scroll_container.add_child(vboxChat)
+	wrapper.add_child(scroll_container)
 
 	# set the scroll container name and add it to the pane.
 	var _name = chat_history.HistoryName
 	#scroll_container.name = _name
-	%tcChats.add_child(scroll_container)
-	var tab_idx = %tcChats.get_tab_idx_from_control(scroll_container)
+	%tcChats.add_child(wrapper)
+	var tab_idx = %tcChats.get_tab_idx_from_control(wrapper)
 	%tcChats.set_tab_title(tab_idx, _name)
 	
 	var multi_slider_containers: = {}
@@ -1594,7 +1605,7 @@ func _ready():
 	# SingletonObject.initialize_chats(self)
 	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
 
-	# Hide AgentModeToggle - moved to MCP menu
+	# Hide old AgentModeToggle in chat controls - agent mode is now per-chat via ChatHeader
 	%AgentModeToggle.hide()
 
 	#this is for overriding the separation in the open file dialog
@@ -1753,18 +1764,23 @@ func _on_btn_clear_pressed():
 	%txtMainUserInput.text = ""
 
 
-## Handle Agent Mode toggle
-func _on_agent_mode_toggled(toggled_on: bool) -> void:
-	agent_mode_enabled = toggled_on
+## Handle Agent Mode toggle from ChatHeader (per-chat)
+func _on_chat_header_agent_mode_toggled(toggled_on: bool, history: ChatHistory) -> void:
 	if toggled_on:
 		# Initialize MCP manager if not already done
 		var mcp = SingletonObject.get_mcp_manager()
 		var tools = mcp.get_available_tools()
-		print("[Agent Mode] Enabled with %d tools available" % tools.size())
+		print("[Agent Mode] Enabled for '%s' with %d tools available" % [history.HistoryName, tools.size()])
 		if tools.is_empty():
 			push_warning("Agent Mode enabled but no MCP tools are available. Connect to MCP servers first.")
 	else:
-		print("[Agent Mode] Disabled")
+		print("[Agent Mode] Disabled for '%s'" % history.HistoryName)
+
+
+## Handle Agent Mode toggle (legacy - kept for compatibility)
+func _on_agent_mode_toggled(toggled_on: bool) -> void:
+	# Legacy handler - agent mode is now per-chat via ChatHeader
+	pass
 
 
 ## When user types in the chat box, estimate tokens count based on selected provider
@@ -1788,9 +1804,19 @@ func _on_child_order_changed():
 	if _initializing_pane: return
 
 	# Update ChatList in the SingletonObject
-	SingletonObject.ChatList = []  # Comment this out temporarily
+	# Each tab is now a VBoxContainer wrapper containing [ChatHeader, ScrollContainer]
+	SingletonObject.ChatList = []
 	for child in get_children():
-		if child is ScrollContainer:
+		if child is VBoxContainer:
+			# New structure: VBoxContainer wrapper > ChatHeader + ScrollContainer
+			for sub_child in child.get_children():
+				if sub_child is ScrollContainer:
+					var vbox_chat = sub_child.get_child(0)
+					if vbox_chat is VBoxChat:
+						SingletonObject.ChatList.append(vbox_chat.chat_history)
+					break
+		elif child is ScrollContainer:
+			# Legacy structure for backwards compatibility
 			var vbox_chat = child.get_child(0)
 			if vbox_chat is VBoxChat:
 				SingletonObject.ChatList.append(vbox_chat.chat_history)
