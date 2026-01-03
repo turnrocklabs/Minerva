@@ -136,7 +136,7 @@ func _add_default_servers() -> void:
 	# Discovers port from PID file or defaults to 8765
 	var nudge_port := discover_nudge_port()
 	var nudge := ServerConfig.new("nudge", "http", "http://localhost:%d" % nudge_port)
-	nudge.auto_connect = true
+	nudge.auto_connect = false  # User must explicitly enable via Tools menu
 	servers.append(nudge)
 
 	# Co-Browser MCP server (browser automation) - uses MCP JSON-RPC on port 8678

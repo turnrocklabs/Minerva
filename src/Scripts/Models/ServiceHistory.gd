@@ -78,6 +78,7 @@ static var SERIALIZER_FIELDS = [
 	"HistoryItemList",
 	"Provider",
 	"ServiceType",
+	"HasUsedSystemPrompt",
 	"Temperature",
 	"TopP",
 	"FrequencyPenalty",
@@ -93,6 +94,21 @@ static var SERIALIZER_FIELDS = [
 	"AgentSummarizeThreshold",
 	"AgentModeEnabled",
 ]
+
+
+## Get the API_MODEL_PROVIDERS enum value for a provider instance
+static func _get_provider_enum(prov) -> int:
+	if not prov:
+		return SingletonObject.API_MODEL_PROVIDERS.HUMAN
+
+	var provider_script = prov.get_script()
+	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+		if SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
+			return key
+
+	# Fallback to first non-human provider
+	return SingletonObject.API_MODEL_PROVIDERS.GPT_NANO
+
 
 ## Initialize with a new HistoryId
 func _init(_provider, optional_historyId = null):
@@ -147,9 +163,10 @@ func Serialize() -> Dictionary:
 	var save_dict:Dictionary = {
 		"HistoryId" : HistoryId,
 		"HistoryName" : HistoryName,
-		# "Provider": SingletonObject.get_active_provider(SingletonObject.ChatList.find(self)),
+		"Provider": _get_provider_enum(provider),
 		"ServiceType": service_type,
 		"HistoryItemList" : serialized_items,
+		"HasUsedSystemPrompt": HasUsedSystemPrompt,
 		"Temperature": Temperature,
 		"TopP": TopP,
 		"FrequencyPenalty": FrequencyPenalty,
@@ -208,6 +225,10 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.FrequencyPenalty = data.get("FrequencyPenalty")
 	if data.get("PresencePenalty"):
 		history.PresencePenalty = data.get("PresencePenalty")
+
+	# System prompt flag
+	if data.has("HasUsedSystemPrompt"):
+		history.HasUsedSystemPrompt = data.get("HasUsedSystemPrompt", false)
 
 	# Agentic settings (with defaults for backwards compatibility)
 	if data.has("MaxToolCallRounds"):

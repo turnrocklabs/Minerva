@@ -97,20 +97,17 @@ func _setup_chats_service():
 ## TODO: This is showing up for testing only
 func _setup_coco_service():
 	var coco_service: = Service.new({})
-	
+
 	# Add the internal chat service to our tracking
 	services_by_type[ServiceHistory.ServiceType.COCO].append(coco_service)
-	
+
 	# Only create dropdown item if it doesn't exist for this service type
 	if not _history_type_exists_in_dropdown(ServiceHistory.ServiceType.COCO):
 		var item_id: = history_option_button.item_count
 		history_option_button.add_item("Autocoder", item_id)
 		# Store the service type as metadata instead of individual service
 		history_option_button.set_item_metadata(history_option_button.get_item_index(item_id), ServiceHistory.ServiceType.COCO)
-		
-		history_option_button.select(history_option_button.get_item_index(item_id))
-		# trigger the select callback	
-		_on_history_option_button_item_selected(history_option_button.get_item_index(item_id))
+		# Don't auto-select - let Chat remain the default view
 
 
 # Updated _on_hcp_service_deselected method for Chat class

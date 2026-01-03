@@ -190,6 +190,7 @@ icon_68 = ExtResource("6_gmsd4")
 
 [node name="HistoryOptionButton" type="OptionButton" parent="VBoxContainer3"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer3"]

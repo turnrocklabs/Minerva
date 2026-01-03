@@ -867,6 +867,10 @@ func _create_text_editor(args: Dictionary) -> Dictionary:
 	if not editor_pane:
 		return {"error": "Editor pane not available", "success": false}
 
+	# Check if file exists when file_path is provided
+	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
+		return {"error": "File not found: %s" % file_path, "success": false}
+
 	# Create the editor
 	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
 	var file_arg = file_path if not file_path.is_empty() else null
@@ -889,6 +893,10 @@ func _create_graphics_editor(args: Dictionary) -> Dictionary:
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
 		return {"error": "Editor pane not available", "success": false}
+
+	# Check if file exists when file_path is provided
+	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
+		return {"error": "File not found: %s" % file_path, "success": false}
 
 	# Create the graphics editor
 	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")

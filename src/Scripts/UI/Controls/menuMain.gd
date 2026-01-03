@@ -158,6 +158,9 @@ func _ready():
 	# Connect to MCP signals for live status updates
 	_connect_mcp_signals()
 
+	# Create Chats submenu (replaces the checkable "Chats" item with a submenu for Chat/Autocoder)
+	_setup_chats_submenu()
+
 
 func _setup_tools_menu() -> void:
 	tools_menu = PopupMenu.new()
@@ -216,6 +219,39 @@ func _setup_tools_menu() -> void:
 func _on_tools_menu_id_pressed(id: int) -> void:
 	if id == 100:
 		_reconnect_all_mcp_servers()
+
+
+## Setup the Chats submenu for switching between Chat and Autocoder views
+func _setup_chats_submenu() -> void:
+	var chats_submenu := PopupMenu.new()
+	chats_submenu.name = "ChatsSubmenu"
+	chats_submenu.add_radio_check_item("Chat", 0)
+	chats_submenu.add_radio_check_item("Autocoder", 1)
+	chats_submenu.add_separator()
+	chats_submenu.add_item("Hide Pane", 2)
+	chats_submenu.id_pressed.connect(_on_chats_submenu_id_pressed)
+	view.add_child(chats_submenu)
+
+	# Replace the first item (Chats) with a submenu and remove checkbox
+	view.set_item_as_checkable(0, false)
+	view.set_item_submenu(0, chats_submenu.name)
+
+
+## Handle Chats submenu selection for switching between Chat and Autocoder
+func _on_chats_submenu_id_pressed(id: int) -> void:
+	match id:
+		0:  # Chat
+			SingletonObject.main_ui.set_chat_pane_visible(true)
+			var chat_instance = SingletonObject.chat
+			if chat_instance:
+				chat_instance._switch_to_service_type(ServiceHistory.ServiceType.CHAT)
+		1:  # Autocoder
+			SingletonObject.main_ui.set_chat_pane_visible(true)
+			var chat_instance = SingletonObject.chat
+			if chat_instance:
+				chat_instance._switch_to_service_type(ServiceHistory.ServiceType.COCO)
+		2:  # Hide Pane
+			SingletonObject.main_ui.set_chat_pane_visible(false)
 
 
 func _nudge_pull_all() -> void:
@@ -918,8 +954,8 @@ func _on_view_id_pressed(id: int):
 	
 	if view.is_item_checkable(index):
 		view.toggle_item_checked(index)
-	
-	SingletonObject.main_ui.set_chat_pane_visible(view.is_item_checked(view.get_item_index(0)))
+
+	# Note: Chat pane visibility is now handled via ChatsSubmenu
 	SingletonObject.main_ui.set_editor_pane_visible(view.is_item_checked(view.get_item_index(1)))
 	SingletonObject.main_ui.set_notes_pane_visible(view.is_item_checked(view.get_item_index(2)))
 	SingletonObject.main_ui.set_terminal_pane_visible(view.is_item_checked(view.get_item_index(10)))
@@ -936,10 +972,23 @@ func _show_notes():
 		SingletonObject.notes_container.show_notes(i)
 
 func _on_view_about_to_popup():
-	view.set_item_checked(0, SingletonObject.main_ui.chat_pane.visible)
 	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)
 	view.set_item_checked(2, SingletonObject.main_ui.notes_pane.visible)
 	view.set_item_checked(view.get_item_index(10), SingletonObject.main_ui.terminal_pane.visible)
+
+	# Update Chats submenu radio state
+	var chats_submenu = view.get_node_or_null("ChatsSubmenu")
+	if chats_submenu:
+		var pane_visible = SingletonObject.main_ui.chat_pane.visible
+		var chat_instance = SingletonObject.chat
+		if chat_instance and pane_visible:
+			var is_chat = chat_instance.current_service_type == ServiceHistory.ServiceType.CHAT
+			chats_submenu.set_item_checked(0, is_chat)  # Chat
+			chats_submenu.set_item_checked(1, not is_chat)  # Autocoder
+		else:
+			# Pane is hidden - uncheck both
+			chats_submenu.set_item_checked(0, false)
+			chats_submenu.set_item_checked(1, false)
 
 func _on_file_about_to_popup():
 	#checks if current tabs exists and enables saving features if so
