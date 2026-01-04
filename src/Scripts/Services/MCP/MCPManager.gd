@@ -48,7 +48,7 @@ func _exit_tree() -> void:
 func initialize() -> void:
 	var auto_connect_servers = config.get_auto_connect_servers()
 	for server_config in auto_connect_servers:
-		var err = await connect_server(server_config.name)
+		var err: Error = await connect_server(server_config.name)
 		if err == OK:
 			print("MCP: Connected to %s (%s)" % [server_config.name, server_config.type])
 		else:
@@ -93,7 +93,7 @@ func connect_server(server_name: String) -> Error:
 	connection.error_occurred.connect(_on_server_error.bind(server_name))
 	connection.tool_result_received.connect(_on_tool_result.bind(server_name))
 
-	var err = await connection.connect_to_server()
+	var err: Error = await connection.connect_to_server()
 	if err != OK:
 		push_error("Failed to connect to MCP server %s: %s" % [server_name, error_string(err)])
 		server_error.emit(server_name, "Connection failed: %s" % error_string(err))

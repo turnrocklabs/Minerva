@@ -376,34 +376,50 @@ var undo: undoMain = undoMain.new()
 var AtT: AudioToTexts = AudioToTexts.new()
 
 #region UI Scaling
-var initial_ui_scale: float = 1
-var min_ui_scale: = 0.8
-var max_ui_scale: = 1.5
-var scaling_factor: = 0.04
+var initial_ui_scale: float = 1.0
+var min_ui_scale: float = 0.5
+var max_ui_scale: float = 2.5
+var scaling_factor: float = 0.04
 
 func increment_scale_ui() -> void:
-	var ui_scale = get_tree().root.content_scale_factor
+	var ui_scale: float = get_tree().root.content_scale_factor
 	if ui_scale < max_ui_scale:
-		get_tree().root.content_scale_factor = ui_scale + scaling_factor
+		var new_scale: float = minf(ui_scale + scaling_factor, max_ui_scale)
+		get_tree().root.content_scale_factor = new_scale
+		_save_ui_scale(new_scale)
 		main_scene.queue_redraw()
 
 
 func decrement_ui_scale() -> void:
-	var ui_scale = get_tree().root.content_scale_factor
+	var ui_scale: float = get_tree().root.content_scale_factor
 	if ui_scale > min_ui_scale:
-		get_tree().root.content_scale_factor = ui_scale - scaling_factor
+		var new_scale: float = maxf(ui_scale - scaling_factor, min_ui_scale)
+		get_tree().root.content_scale_factor = new_scale
+		_save_ui_scale(new_scale)
 		main_scene.queue_redraw()
 
 
 func reset_ui_scale() -> void:
 	get_tree().root.content_scale_factor = 1.0
+	_save_ui_scale(1.0)
 	main_scene.queue_redraw()
 
 
 func set_ui_scale(new_scale: float) -> void:
-	if new_scale > min_ui_scale and new_scale < max_ui_scale:
+	if new_scale >= min_ui_scale and new_scale <= max_ui_scale:
 		get_tree().root.content_scale_factor = new_scale
+		_save_ui_scale(new_scale)
 		main_scene.queue_redraw()
+
+
+func _save_ui_scale(scale: float) -> void:
+	save_to_config_file("UI", "scale", scale)
+
+
+func _load_ui_scale() -> void:
+	var saved_scale: float = config_file.get_value("UI", "scale", 1.0)
+	if saved_scale >= min_ui_scale and saved_scale <= max_ui_scale:
+		get_tree().root.content_scale_factor = saved_scale
 
 #endregion UI Scaling
 
@@ -436,11 +452,13 @@ func _ready():
 	transcription_notification_player.volume_db = 12
 	get_tree().root.call_deferred("add_child", transcription_notification_player)
 
-	#TODO add ui scale to the config file and retrieve it on app load
 	var err = config_file.load(_config_file_name)
 	if err != OK:
 		return null
-	
+
+	# Load UI scale from config
+	_load_ui_scale()
+
 	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
 		set_theme(theme_enum)

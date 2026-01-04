@@ -3,6 +3,9 @@
 extends MenuBar
 
 const NudgeMCPClientScript := preload("res://Scripts/Services/MCP/Servers/NudgeMCPClient.gd")
+const MCPServerRunnerScript := preload("res://Scripts/Services/MCP/MCPServerRunner.gd")
+
+var _server_runner = null
 
 @onready var view = $View as PopupMenu
 @onready var project: PopupMenu = $Project
@@ -152,6 +155,10 @@ func _ready():
 	terminal_shortcut.events.append(terminal_input_event)
 	%View.set_item_shortcut(3, terminal_shortcut, true)
 
+	# Initialize server runner
+	_server_runner = MCPServerRunnerScript.new()
+	_server_runner.server_error.connect(_on_server_runner_error)
+
 	# Create Tools menu (before Help)
 	_setup_tools_menu()
 
@@ -196,6 +203,7 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_submenu_item("Minerva (Self)", minerva_submenu.name)
 
 	tools_menu.add_separator()
+	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
 
@@ -217,8 +225,11 @@ func _setup_tools_menu() -> void:
 
 
 func _on_tools_menu_id_pressed(id: int) -> void:
-	if id == 100:
-		_reconnect_all_mcp_servers()
+	match id:
+		100:
+			_reconnect_all_mcp_servers()
+		101:
+			_show_mcp_installer()
 
 
 ## Setup the Chats submenu for switching between Chat and Autocoder views
@@ -433,10 +444,32 @@ func _refresh_nudge_submenu() -> void:
 
 	var mcp = SingletonObject.mcp_manager
 	var connected = mcp and mcp.is_server_connected("nudge")
+	var is_running = _server_runner and _server_runner.is_server_running("nudge")
+	var is_installed = _is_server_installed("nudge")
 
-	# Connection toggle
-	var status_text = "✓ Connected" if connected else "✗ Disconnected"
-	nudge_submenu.add_item(status_text, 0)
+	# Server status
+	var status_text := ""
+	if is_running:
+		status_text = "● Running (PID %d)" % _server_runner.get_server_pid("nudge")
+	elif is_installed:
+		status_text = "○ Stopped"
+	else:
+		status_text = "⚠ Not Installed"
+	nudge_submenu.add_item(status_text, -1)
+	nudge_submenu.set_item_disabled(0, true)
+
+	# Connection status
+	var conn_text = "  ✓ Connected" if connected else "  ✗ Disconnected"
+	nudge_submenu.add_item(conn_text, 0)
+
+	nudge_submenu.add_separator()
+
+	# Start/Stop server
+	if is_installed:
+		if is_running:
+			nudge_submenu.add_item("Stop Server", 10)
+		else:
+			nudge_submenu.add_item("Start Server", 11)
 
 	nudge_submenu.add_separator()
 
@@ -447,7 +480,8 @@ func _refresh_nudge_submenu() -> void:
 	nudge_submenu.add_item("Delete Current Tab", 4)
 
 	# Disable actions if not connected
-	for i in range(2, nudge_submenu.get_item_count()):
+	var action_start_idx := nudge_submenu.get_item_index(1)
+	for i in range(action_start_idx, nudge_submenu.get_item_count()):
 		nudge_submenu.set_item_disabled(i, not connected)
 
 
@@ -460,8 +494,34 @@ func _refresh_cobrowser_submenu() -> void:
 
 	var mcp = SingletonObject.mcp_manager
 	var connected = mcp and mcp.is_server_connected("cobrowser")
-	var status_text = "✓ Connected" if connected else "✗ Disconnected"
-	cobrowser_submenu.add_item(status_text, 0)
+	var is_running = _server_runner and _server_runner.is_server_running("cobrowser")
+	var is_installed = _is_server_installed("cobrowser")
+
+	# Server status
+	var status_text := ""
+	if is_running:
+		status_text = "● Running (PID %d)" % _server_runner.get_server_pid("cobrowser")
+	elif is_installed:
+		status_text = "○ Stopped"
+	else:
+		status_text = "⚠ Not Installed"
+	cobrowser_submenu.add_item(status_text, -1)
+	cobrowser_submenu.set_item_disabled(0, true)
+
+	# Connection status
+	var conn_text = "  ✓ Connected" if connected else "  ✗ Disconnected"
+	cobrowser_submenu.add_item(conn_text, 0)
+
+	cobrowser_submenu.add_separator()
+
+	# Start/Stop server
+	if is_installed:
+		if is_running:
+			cobrowser_submenu.add_item("Stop Server", 10)
+		else:
+			cobrowser_submenu.add_item("Start Server", 11)
+		cobrowser_submenu.add_separator()
+		cobrowser_submenu.add_item("Install Firefox Extension...", 20)
 
 
 ## Refresh the Codetools submenu
@@ -473,8 +533,32 @@ func _refresh_codetools_submenu() -> void:
 
 	var mcp = SingletonObject.mcp_manager
 	var connected = mcp and mcp.is_server_connected("codetools")
-	var status_text = "✓ Connected" if connected else "✗ Disconnected"
-	codetools_submenu.add_item(status_text, 0)
+	var is_running = _server_runner and _server_runner.is_server_running("codetools")
+	var is_installed = _is_server_installed("codetools")
+
+	# Server status
+	var status_text := ""
+	if is_running:
+		status_text = "● Running (PID %d)" % _server_runner.get_server_pid("codetools")
+	elif is_installed:
+		status_text = "○ Stopped"
+	else:
+		status_text = "⚠ Not Installed"
+	codetools_submenu.add_item(status_text, -1)
+	codetools_submenu.set_item_disabled(0, true)
+
+	# Connection status
+	var conn_text = "  ✓ Connected" if connected else "  ✗ Disconnected"
+	codetools_submenu.add_item(conn_text, 0)
+
+	codetools_submenu.add_separator()
+
+	# Start/Stop server
+	if is_installed:
+		if is_running:
+			codetools_submenu.add_item("Stop Server", 10)
+		else:
+			codetools_submenu.add_item("Start Server", 11)
 
 
 ## Refresh the Minerva (Self) submenu
@@ -506,18 +590,25 @@ func _on_nudge_submenu_pressed(id: int) -> void:
 		2: _nudge_push_current_tab()
 		3: _nudge_push_all_tabs()
 		4: _nudge_delete_current_tab()
+		10: _stop_server("nudge")
+		11: _start_server("nudge")
 
 
 ## Handle Cobrowser submenu item pressed
 func _on_cobrowser_submenu_pressed(id: int) -> void:
-	if id == 0:
-		_toggle_cobrowser_connection()
+	match id:
+		0: _toggle_cobrowser_connection()
+		10: _stop_server("cobrowser")
+		11: _start_server("cobrowser")
+		20: _install_cobrowser_firefox_extension()
 
 
 ## Handle Codetools submenu item pressed
 func _on_codetools_submenu_pressed(id: int) -> void:
-	if id == 0:
-		_toggle_codetools_connection()
+	match id:
+		0: _toggle_codetools_connection()
+		10: _stop_server("codetools")
+		11: _start_server("codetools")
 
 
 ## Handle Minerva submenu item pressed
@@ -538,7 +629,7 @@ func _toggle_nudge_connection() -> void:
 		SingletonObject.create_toast_notification("Nudge: Disconnected", ToastNotification.Type.WARNING)
 	else:
 		SingletonObject.create_toast_notification("Nudge: Connecting...", ToastNotification.Type.WARNING)
-		var err = await mcp.connect_server("nudge")
+		var err: int = await mcp.connect_server("nudge")
 		if err == OK:
 			SingletonObject.create_toast_notification("Nudge: Connected", ToastNotification.Type.SUCCESS)
 		else:
@@ -558,7 +649,7 @@ func _toggle_cobrowser_connection() -> void:
 		SingletonObject.create_toast_notification("Cobrowser: Disconnected", ToastNotification.Type.WARNING)
 	else:
 		SingletonObject.create_toast_notification("Cobrowser: Connecting...", ToastNotification.Type.WARNING)
-		var err = await mcp.connect_server("cobrowser")
+		var err: int = await mcp.connect_server("cobrowser")
 		if err == OK:
 			SingletonObject.create_toast_notification("Cobrowser: Connected", ToastNotification.Type.SUCCESS)
 		else:
@@ -578,7 +669,7 @@ func _toggle_codetools_connection() -> void:
 		SingletonObject.create_toast_notification("Codetools: Disconnected", ToastNotification.Type.WARNING)
 	else:
 		SingletonObject.create_toast_notification("Codetools: Connecting...", ToastNotification.Type.WARNING)
-		var err = await mcp.connect_server("codetools")
+		var err: int = await mcp.connect_server("codetools")
 		if err == OK:
 			SingletonObject.create_toast_notification("Codetools: Connected", ToastNotification.Type.SUCCESS)
 		else:
@@ -625,7 +716,7 @@ func _reconnect_mcp_server(server_name: String) -> void:
 		ToastNotification.Type.WARNING
 	)
 
-	var err = await mcp.connect_server(server_name)
+	var err: int = await mcp.connect_server(server_name)
 	if err == OK:
 		SingletonObject.create_toast_notification(
 			"%s: Connected" % server_name,
@@ -654,8 +745,8 @@ func _reconnect_all_mcp_servers() -> void:
 		if mcp.is_server_connected(server_name):
 			connected += 1
 			continue
-		var success = await mcp.connect_server(server_name)
-		if success:
+		var result: int = await mcp.connect_server(server_name)
+		if result == OK:
 			connected += 1
 		else:
 			failed.append(server_name)
@@ -1180,6 +1271,318 @@ func popUpClose():
 
 func _on_close_button_pressed() -> void:
 	popUpRecent.visible = false
+
+
+## Show the MCP Server Installer popup
+func _show_mcp_installer() -> void:
+	var installer_popup = get_tree().get_first_node_in_group("mcp_installer_popup")
+	if installer_popup:
+		installer_popup.popup_centered()
+	else:
+		push_error("MCP Server Installer popup not found. Ensure it's added to the scene tree.")
+		SingletonObject.create_toast_notification(
+			"MCP Installer not available",
+			ToastNotification.Type.ERROR
+		)
+
+
+## Check if a server is installed
+func _is_server_installed(server_name: String) -> bool:
+	var config := MCPConfig.new()
+	config.load_config()
+	return config.is_server_installed(server_name)
+
+
+## Start an MCP server
+func _start_server(server_name: String) -> void:
+	if not _server_runner:
+		SingletonObject.create_toast_notification(
+			"Server runner not initialized",
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	SingletonObject.create_toast_notification(
+		"%s: Starting..." % server_name.capitalize(),
+		ToastNotification.Type.WARNING
+	)
+
+	var err: Error = _server_runner.start_server(server_name)
+	if err == OK:
+		SingletonObject.create_toast_notification(
+			"%s: Started (PID %d)" % [server_name.capitalize(), _server_runner.get_server_pid(server_name)],
+			ToastNotification.Type.SUCCESS
+		)
+		# Auto-connect after starting - give server time to initialize
+		# uvicorn (cobrowser) takes longer to start
+		var wait_time := 3.0 if server_name == "cobrowser" else 1.5
+		await get_tree().create_timer(wait_time).timeout
+		await _auto_connect_after_start(server_name)
+	else:
+		SingletonObject.create_toast_notification(
+			"%s: Failed to start" % server_name.capitalize(),
+			ToastNotification.Type.ERROR
+		)
+
+	_refresh_all_tool_submenus()
+
+
+## Stop an MCP server
+func _stop_server(server_name: String) -> void:
+	if not _server_runner:
+		SingletonObject.create_toast_notification(
+			"Server runner not initialized",
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	# Disconnect first if connected
+	var mcp = SingletonObject.mcp_manager
+	if mcp and mcp.is_server_connected(server_name):
+		mcp.disconnect_server(server_name)
+
+	var err: Error = _server_runner.stop_server(server_name)
+	if err == OK:
+		SingletonObject.create_toast_notification(
+			"%s: Stopped" % server_name.capitalize(),
+			ToastNotification.Type.SUCCESS
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"%s: Failed to stop" % server_name.capitalize(),
+			ToastNotification.Type.ERROR
+		)
+
+	_refresh_all_tool_submenus()
+
+
+## Install the Cobrowser Firefox extension
+func _install_cobrowser_firefox_extension() -> void:
+	# Get the extension source path
+	var config := MCPConfig.new()
+	config.load_config()
+	var install_path := config.get_installation_path("cobrowser")
+
+	if install_path.is_empty():
+		SingletonObject.create_toast_notification(
+			"Cobrowser not installed",
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	var source_extension_path := install_path.path_join("src/extension-cobrowser")
+	var source_manifest := source_extension_path.path_join("manifest.json")
+
+	if not FileAccess.file_exists(source_manifest):
+		SingletonObject.create_toast_notification(
+			"Extension not found at: " + source_extension_path,
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	# Copy extension to Documents folder (Firefox can access this location)
+	var docs_path := ""
+	match OS.get_name():
+		"Windows":
+			docs_path = OS.get_environment("USERPROFILE").path_join("Documents")
+		_:
+			docs_path = OS.get_environment("HOME").path_join("Documents")
+
+	var dest_extension_path := docs_path.path_join("cobrowser-extension")
+
+	# Copy the extension files
+	var copy_result := _copy_directory_recursive(source_extension_path, dest_extension_path)
+	if not copy_result:
+		SingletonObject.create_toast_notification(
+			"Failed to copy extension to Documents",
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	# Open the extension folder in system file browser
+	OS.shell_open(dest_extension_path)
+
+	# Open Firefox to about:debugging
+	var firefox_path := ""
+	match OS.get_name():
+		"macOS":
+			firefox_path = "/Applications/Firefox.app/Contents/MacOS/firefox"
+		"Windows":
+			firefox_path = "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
+			if not FileAccess.file_exists(firefox_path):
+				firefox_path = "C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe"
+		_:  # Linux
+			firefox_path = "firefox"
+
+	# Launch Firefox to about:debugging
+	var args := PackedStringArray(["about:debugging#/runtime/this-firefox"])
+	OS.create_process(firefox_path, args)
+
+	# Show persistent instructions in a dialog
+	var dialog := Window.new()
+	dialog.title = "Install Firefox Extension"
+	dialog.size = Vector2i(500, 320)
+	dialog.transient = true
+	dialog.exclusive = true
+	dialog.wrap_controls = true
+
+	# Honor UI scale
+	dialog.content_scale_factor = get_tree().root.content_scale_factor
+
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dialog.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	margin.add_child(vbox)
+
+	var instructions := Label.new()
+	instructions.text = """Extension copied to Documents folder.
+
+In Firefox (now open):
+1. Click "Load Temporary Add-on..."
+2. Navigate to Documents → cobrowser-extension
+3. Select 'manifest.json'
+
+After loading, press Ctrl+Shift+Y in Firefox to toggle the extension."""
+	instructions.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(instructions)
+
+	var path_label := Label.new()
+	path_label.text = "Extension location:"
+	vbox.add_child(path_label)
+
+	var path_hbox := HBoxContainer.new()
+	path_hbox.add_theme_constant_override("separation", 10)
+	vbox.add_child(path_hbox)
+
+	var path_edit := LineEdit.new()
+	path_edit.text = dest_extension_path
+	path_edit.editable = false
+	path_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	path_hbox.add_child(path_edit)
+
+	var copy_btn := Button.new()
+	copy_btn.text = "Copy"
+	copy_btn.pressed.connect(func():
+		DisplayServer.clipboard_set(dest_extension_path)
+		copy_btn.text = "Copied!"
+		get_tree().create_timer(1.5).timeout.connect(func(): copy_btn.text = "Copy")
+	)
+	path_hbox.add_child(copy_btn)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(spacer)
+
+	var done_btn := Button.new()
+	done_btn.text = "Done"
+	done_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	done_btn.custom_minimum_size = Vector2(100, 0)
+	done_btn.pressed.connect(func(): dialog.queue_free())
+	vbox.add_child(done_btn)
+
+	dialog.close_requested.connect(func(): dialog.queue_free())
+
+	get_tree().root.add_child(dialog)
+	dialog.popup_centered()
+
+
+## Copy a directory recursively
+func _copy_directory_recursive(source: String, dest: String) -> bool:
+	# Create destination directory
+	if not DirAccess.dir_exists_absolute(dest):
+		var err := DirAccess.make_dir_recursive_absolute(dest)
+		if err != OK:
+			push_error("Failed to create directory: %s" % dest)
+			return false
+
+	var dir := DirAccess.open(source)
+	if not dir:
+		push_error("Failed to open source directory: %s" % source)
+		return false
+
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+
+	while file_name != "":
+		if file_name != "." and file_name != "..":
+			var source_path := source.path_join(file_name)
+			var dest_path := dest.path_join(file_name)
+
+			if dir.current_is_dir():
+				# Recursively copy subdirectory
+				if not _copy_directory_recursive(source_path, dest_path):
+					dir.list_dir_end()
+					return false
+			else:
+				# Copy file
+				var content := FileAccess.get_file_as_bytes(source_path)
+				if content.is_empty() and FileAccess.get_open_error() != OK:
+					push_error("Failed to read file: %s" % source_path)
+					dir.list_dir_end()
+					return false
+
+				var dest_file := FileAccess.open(dest_path, FileAccess.WRITE)
+				if not dest_file:
+					push_error("Failed to write file: %s" % dest_path)
+					dir.list_dir_end()
+					return false
+
+				dest_file.store_buffer(content)
+				dest_file.close()
+
+		file_name = dir.get_next()
+
+	dir.list_dir_end()
+	return true
+
+
+## Handle server runner errors
+func _on_server_runner_error(server_name: String, error_msg: String) -> void:
+	SingletonObject.create_toast_notification(
+		"%s: %s" % [server_name.capitalize(), error_msg],
+		ToastNotification.Type.ERROR
+	)
+	push_error("Server runner error for %s: %s" % [server_name, error_msg])
+
+
+## Auto-connect to a server after it starts
+func _auto_connect_after_start(server_name: String) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		SingletonObject.create_toast_notification(
+			"%s: MCP manager not available" % server_name.capitalize(),
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	SingletonObject.create_toast_notification(
+		"%s: Connecting..." % server_name.capitalize(),
+		ToastNotification.Type.WARNING
+	)
+
+	var err: int = await mcp.connect_server(server_name)
+	if err == OK:
+		SingletonObject.create_toast_notification(
+			"%s: Connected" % server_name.capitalize(),
+			ToastNotification.Type.SUCCESS
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"%s: Connection failed (error %d)" % [server_name.capitalize(), err],
+			ToastNotification.Type.ERROR
+		)
+	_refresh_all_tool_submenus()
 
 ###
 ### End Reference Information ###

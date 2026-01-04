@@ -67,6 +67,9 @@ class ServerConfig:
 ## List of configured MCP servers
 var servers: Array[ServerConfig] = []
 
+## Installation paths for MCP servers
+var installation_paths: Dictionary = {}
+
 ## Path to save/load configuration
 const CONFIG_PATH := "user://mcp_config.json"
 
@@ -139,8 +142,7 @@ func _add_default_servers() -> void:
 	nudge.auto_connect = false  # User must explicitly enable via Tools menu
 	servers.append(nudge)
 
-	# Co-Browser MCP server (browser automation) - uses MCP JSON-RPC on port 8678
-	# Note: MCP endpoint is at /mcp, health check at root - MCPServerConnection handles this
+	# Co-Browser server (browser automation) - MCP JSON-RPC on port 8678
 	var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8678")
 	cobrowser.auto_connect = false  # User must explicitly enable
 	servers.append(cobrowser)
@@ -212,11 +214,30 @@ func get_server_names() -> Array[String]:
 	return names
 
 
+## Set installation path for an MCP server
+func set_installation_path(server_name: String, path: String) -> void:
+	installation_paths[server_name] = path
+
+
+## Get installation path for an MCP server
+func get_installation_path(server_name: String) -> String:
+	return installation_paths.get(server_name, "")
+
+
+## Check if an MCP server is installed
+func is_server_installed(server_name: String) -> bool:
+	var path := get_installation_path(server_name)
+	if path.is_empty():
+		return false
+	return DirAccess.dir_exists_absolute(path)
+
+
 ## Save configuration to file
 func save_config() -> Error:
 	var data := {
 		"version": 1,
-		"servers": []
+		"servers": [],
+		"installation_paths": installation_paths
 	}
 
 	for server in servers:
@@ -253,6 +274,10 @@ func load_config() -> Error:
 
 	var data: Dictionary = json.data if json.data is Dictionary else {}
 
+	# Load installation paths
+	var paths_data: Dictionary = data.get("installation_paths", {})
+	installation_paths = paths_data
+
 	# Clear existing and load from file
 	servers.clear()
 	var servers_data: Array = data.get("servers", [])
@@ -266,8 +291,9 @@ func load_config() -> Error:
 		servers.append(nudge)
 
 	if not get_server("cobrowser"):
-		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8678")
+		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
 		cobrowser.auto_connect = false
+		cobrowser.skip_mcp_init = true
 		servers.append(cobrowser)
 
 	if not get_server("codetools"):
@@ -276,7 +302,31 @@ func load_config() -> Error:
 		codetools.mcp_endpoint = "/"  # CodeTools serves JSON-RPC at root
 		servers.append(codetools)
 
+	# Migration: Apply required property fixes for existing configs
+	_migrate_server_configs()
+
 	return OK
+
+
+## Migrate existing server configs to apply required property changes
+func _migrate_server_configs() -> void:
+	var needs_save := false
+
+	# Cobrowser MCP server runs on port 8678, not 8677
+	var cobrowser := get_server("cobrowser")
+	if cobrowser:
+		if cobrowser.url == "http://localhost:8677":
+			cobrowser.url = "http://localhost:8678"
+			needs_save = true
+			print("[MCPConfig] Migrated cobrowser: port 8677 -> 8678")
+		if cobrowser.skip_mcp_init:
+			cobrowser.skip_mcp_init = false
+			cobrowser.mcp_endpoint = "/mcp"
+			needs_save = true
+			print("[MCPConfig] Migrated cobrowser: enabled MCP init")
+
+	if needs_save:
+		save_config()
 
 
 ## Convert transport type string to enum
