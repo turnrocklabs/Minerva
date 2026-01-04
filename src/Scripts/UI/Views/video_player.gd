@@ -35,8 +35,12 @@ var video_path: String:
 				video_resource = VideoStreamTheora.new()
 				video_resource.file = value
 			else:
-				video_resource = FFmpegVideoStream.new()
-				video_resource.file = value
+				if ClassDB.class_exists("FFmpegVideoStream"):
+					video_resource = ClassDB.instantiate("FFmpegVideoStream")
+					video_resource.file = value
+				else:
+					push_error("FFmpegVideoStream not available - video format not supported")
+					return
 			if video_resource.file:
 				video_stream_player.stream = video_resource
 				h_slider.max_value = video_stream_player.get_stream_length()

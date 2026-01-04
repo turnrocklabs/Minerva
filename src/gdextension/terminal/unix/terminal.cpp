@@ -9,9 +9,15 @@
 #include <unistd.h>
 #include <termios.h>
 #include <sys/ioctl.h>
-#include <pty.h>
 #include <signal.h>
 #include <errno.h>
+
+// Platform-specific PTY headers
+#if defined(__APPLE__)
+    #include <util.h>
+#elif defined(__linux__)
+    #include <pty.h>
+#endif
 
 using namespace godot;
 

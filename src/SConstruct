@@ -22,6 +22,12 @@ elif env["platform"] == "linux":
     # Add Linux-specific libraries
     env.Append(LIBS=["util"])
     env.Append(CPPDEFINES=["PLATFORM_LINUX"])
+elif env["platform"] == "macos":
+    sources.append("gdextension/terminal/unix/terminal.cpp")
+    sources.append("gdextension/terminal/unix/subprocess.cpp")
+    # macOS uses the same PTY implementation as Linux
+    env.Append(LIBS=["util"])
+    env.Append(CPPDEFINES=["PLATFORM_MACOS"])
 
 # Build the library
 if env["platform"] == "macos":

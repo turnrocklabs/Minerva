@@ -48,8 +48,8 @@ var _http_client: HTTPRequest = null
 ## WebSocket client for persistent connections
 var _websocket: WebSocketPeer = null
 
-## SubProcess for STDIO transport
-var _subprocess: SubProcess = null
+## SubProcess for STDIO transport (type not specified - GDExtension may not be loaded)
+var _subprocess = null
 
 ## Pending requests awaiting responses (for async operations)
 var _pending_requests: Dictionary = {}  # request_id -> {callback, tool_name}
@@ -567,8 +567,11 @@ func _connect_stdio() -> Error:
 		push_error("STDIO transport requires command to be set")
 		return ERR_INVALID_PARAMETER
 
-	# Create SubProcess node
-	_subprocess = SubProcess.new()
+	# Create SubProcess node (check if GDExtension is available)
+	if not ClassDB.class_exists("SubProcess"):
+		push_error("SubProcess GDExtension not available - STDIO transport not supported")
+		return ERR_UNAVAILABLE
+	_subprocess = ClassDB.instantiate("SubProcess")
 
 	if not Engine.get_main_loop():
 		push_error("Cannot spawn subprocess: no scene tree available")
@@ -673,12 +676,12 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 
 	while elapsed < timeout:
 		if _subprocess.has_output():
-			var line := _subprocess.read_line()
+			var line: String = _subprocess.read_line()
 			if line.is_empty():
 				continue
 
 			# Debug: Log response (truncated for readability)
-			var log_line := line.left(200)
+			var log_line: String = line.left(200)
 			if line.length() > 200:
 				log_line += "..."
 			print("[MCP STDIO] Received: %s" % log_line)
