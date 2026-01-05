@@ -361,18 +361,18 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 # Process bot response into chat history item
 func process_bot_response(bot_response, _history_provider: BaseProvider) -> ChatHistoryItem:
 	var chi = ChatHistoryItem.new()
-	
-	if bot_response != null: 
+
+	if bot_response != null:
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
 		chi.provider = bot_response.provider
 		chi.Message = bot_response.text
 		chi.Error = bot_response.error
 		chi.Complete = bot_response.complete
-		chi.TokenCost = bot_response.completion_tokens
+		chi.OutputTokens = bot_response.completion_tokens
 		if bot_response.image:
 			chi.Images = ([bot_response.image] as Array[Image])
-	
+
 	return chi
 
 # Update UI after receiving bot response
@@ -380,8 +380,8 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory) -> void:
 	if bot_response != null:
-		# Update user message node
-		user_history_item.TokenCost = bot_response.prompt_tokens
+		# Update user message node with input tokens (prompt tokens for this turn)
+		user_history_item.InputTokens = bot_response.prompt_tokens
 		user_msg_node.render()
 
 		# Change the history item and the message node will update itself
@@ -414,8 +414,8 @@ func update_ui_after_response_no_signal(user_history_item: ChatHistoryItem, user
 							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory) -> void:
 	if bot_response != null:
-		# Update user message node
-		user_history_item.TokenCost = bot_response.prompt_tokens
+		# Update user message node with input tokens (prompt tokens for this turn)
+		user_history_item.InputTokens = bot_response.prompt_tokens
 		user_msg_node.render()
 
 		# Change the history item and the message node will update itself
@@ -697,7 +697,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.Error = bot_response.error
 	existing_response.provider = history.provider
 	existing_response.Complete = bot_response.complete
-	existing_response.TokenCost = bot_response.completion_tokens
+	existing_response.OutputTokens = bot_response.completion_tokens
 	if bot_response.image:
 		existing_response.Images = ([bot_response.image] as Array[Image])
 
@@ -798,7 +798,7 @@ func execute_hcp_chat():
 
 
 	var chi = ChatHistoryItem.new()
-	if bot_response != null: 
+	if bot_response != null:
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
 		chi.HcpStructure = provider.action.output_parameters
@@ -806,12 +806,12 @@ func execute_hcp_chat():
 		chi.Error = bot_response.error
 		chi.provider = history.provider
 		chi.Complete = bot_response.complete
-		chi.TokenCost = bot_response.completion_tokens
+		chi.OutputTokens = bot_response.completion_tokens
 		if bot_response.image:
 			chi.Images = ([bot_response.image] as Array[Image])
 
-		# Update user message node
-		user_history_item.TokenCost = bot_response.prompt_tokens
+		# Update user message node with input tokens (prompt tokens for this turn)
+		user_history_item.InputTokens = bot_response.prompt_tokens
 		user_msg_node.render()
 
 		# Change the history item and the message node will update itself
@@ -1409,11 +1409,11 @@ func create_message_new(inputs_idx: int) -> void:
 	
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
-	
-	# Update user message node
+
+	# Update user message node with input tokens (prompt tokens for this turn)
 	if bot_response != null:
-		user_history_item.TokenCost = bot_response.prompt_tokens
-	
+		user_history_item.InputTokens = bot_response.prompt_tokens
+
 	_mutex.lock()
 	_usr_chat_hist_items.append(user_history_item)
 	history.HistoryItemList.append(user_history_item)

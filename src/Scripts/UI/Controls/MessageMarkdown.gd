@@ -245,17 +245,45 @@ func _exit_edit_mode():
 	message_labels_container.visible = true
 
 func _update_tokens_cost() -> void:
-	var price = 0.0
+	var cost_dollars := 0.0
 	if history_item.provider:
-		price = history_item.provider.token_cost * history_item.TokenCost
+		var p = history_item.provider
+		# Cost = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+		cost_dollars = (
+			history_item.InputTokens * p.input_token_cost +
+			history_item.OutputTokens * p.output_token_cost
+		) / 1_000_000.0
 
 	tokens_cost.visible = true
+	var cost_text := _format_cost(cost_dollars)
+	var total_tokens: int = history_item.InputTokens + history_item.OutputTokens
+
 	if history_item.EstimatedTokenCost:
-		tokens_cost.text = "%s/%s" % [history_item.EstimatedTokenCost, history_item.TokenCost]
-		tokens_cost.tooltip_text = "Estimated %s tokens, used %s (%s$)" % [history_item.EstimatedTokenCost, history_item.TokenCost, price]
+		tokens_cost.text = "%s/%s" % [history_item.EstimatedTokenCost, total_tokens]
+		tokens_cost.tooltip_text = "Estimated %s tokens, used %s (%s)" % [
+			history_item.EstimatedTokenCost, total_tokens, cost_text
+		]
 	else:
-		tokens_cost.text = "%s" % history_item.TokenCost
-		tokens_cost.tooltip_text = "Used %s tokens (%s$)" % [history_item.TokenCost, price]
+		tokens_cost.text = "%s" % total_tokens
+		tokens_cost.tooltip_text = "Input: %d, Output: %d (%s)" % [
+			history_item.InputTokens, history_item.OutputTokens, cost_text
+		]
+
+
+## Format cost for display - uses cents for small amounts, dollars for larger
+func _format_cost(dollars: float) -> String:
+	if dollars < 0.001:
+		# Very tiny amounts - show fractions of cents
+		return "%.3f¢" % (dollars * 100)
+	elif dollars < 0.01:
+		# Small amounts - show in cents with 2 decimals
+		return "%.2f¢" % (dollars * 100)
+	elif dollars < 1.0:
+		# Medium amounts - show in cents, whole number
+		return "%.0f¢" % (dollars * 100)
+	else:
+		# Large amounts - show in dollars
+		return "$%.2f" % dollars
 
 
 ## Will disable/enable nodes in the `controls` group which contains all message buttons

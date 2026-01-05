@@ -126,6 +126,34 @@ func _init(_provider, optional_historyId = null):
 	if _provider and _provider.has_method("get"):  # Check it's a valid object
 		_provider.owner_history_id = self.HistoryId
 
+## Calculate total session cost in dollars for all messages in this history
+func get_session_cost() -> float:
+	var total := 0.0
+	for item in HistoryItemList:
+		# Use item's provider if available, otherwise fall back to history provider
+		var p: BaseProvider = item.provider if item.provider else provider
+		if p:
+			total += (item.InputTokens * p.input_token_cost +
+					 item.OutputTokens * p.output_token_cost) / 1_000_000.0
+	return total
+
+
+## Get total input tokens for this session
+func get_session_input_tokens() -> int:
+	var total := 0
+	for item in HistoryItemList:
+		total += item.InputTokens
+	return total
+
+
+## Get total output tokens for this session
+func get_session_output_tokens() -> int:
+	var total := 0
+	for item in HistoryItemList:
+		total += item.OutputTokens
+	return total
+
+
 ## Creates prompt from this history using the set provider.
 ## The `predicate` parameter is a `Callable` that returns an `Array` of 2 booleans.
 ## First determines if provided item should be added to the returned list,

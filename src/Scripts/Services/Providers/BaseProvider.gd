@@ -24,8 +24,15 @@ var display_name: String:
 ## Model short name to be displayed in the chat message bubble
 var short_name = "NA"
 
-## Cost of one token in $
-var token_cost: float = 0
+## Cost per million input tokens in $
+var input_token_cost: float = 0.0
+
+## Cost per million output tokens in $
+var output_token_cost: float = 0.0
+
+## Legacy: average cost per token (for backwards compat)
+var token_cost: float:
+	get: return (input_token_cost + output_token_cost) / 2.0 / 1_000_000.0
 
 ## Model capability flags - override in subclasses as needed
 var supports_temperature: bool = true

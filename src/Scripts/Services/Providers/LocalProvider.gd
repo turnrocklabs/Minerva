@@ -12,7 +12,8 @@ func _init():
 	model_name = "deepseek-r1:14b"
 	max_tokens = 8192
 	short_name = "d1"
-	token_cost = 0.0 # local model
+	input_token_cost = 0.0   # local model - free
+	output_token_cost = 0.0   # local model - free
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 	
@@ -144,4 +145,5 @@ class Gemma3 extends LocalProvider:
 		model_name = "gemma3:12b"
 		max_tokens = 8192
 		short_name = "g3"
-		token_cost = 0.0 # local model
+		input_token_cost = 0.0   # local model - free
+		output_token_cost = 0.0   # local model - free

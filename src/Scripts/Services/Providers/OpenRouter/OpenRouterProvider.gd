@@ -28,7 +28,8 @@ func _init():
 	model_name = "kimi-k2"
 	api_model_id = "moonshotai/kimi-k2"
 	short_name = "KK2"
-	token_cost = 0.60 / 1_000_000
+	input_token_cost = 0.30   # $0.30 per million input tokens
+	output_token_cost = 0.90   # $0.90 per million output tokens
 
 	# OpenRouter passes through to underlying model - defaults work for most
 	supports_temperature = true
@@ -59,6 +60,7 @@ func format_tools_for_request() -> Array:
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response := BotResponse.new()
+	bot_response.provider = self  # Always set provider, even for errors
 
 	if not response.success:
 		bot_response.error = response.message
@@ -347,7 +349,8 @@ class GLM47 extends OpenRouterProvider:
 		model_name = "glm-4.7"
 		display_name = "GLM-4.7"
 		short_name = "GLM"
-		token_cost = 0.40 / 1_000_000
+		input_token_cost = 0.20   # $0.20 per million input tokens
+		output_token_cost = 0.60   # $0.60 per million output tokens
 		is_reasoning_model = true
 
 
@@ -359,7 +362,8 @@ class MinimaxM21 extends OpenRouterProvider:
 		model_name = "minimax-m2.1"
 		display_name = "Minimax M2.1"
 		short_name = "MM2"
-		token_cost = 0.27 / 1_000_000
+		input_token_cost = 0.13   # $0.13 per million input tokens
+		output_token_cost = 0.40   # $0.40 per million output tokens
 
 
 ## Kimi K2 from Moonshot AI - Large MoE model for long-context
@@ -370,4 +374,5 @@ class KimiK2 extends OpenRouterProvider:
 		model_name = "kimi-k2"
 		display_name = "Kimi K2"
 		short_name = "KK2"
-		token_cost = 0.60 / 1_000_000
+		input_token_cost = 0.30   # $0.30 per million input tokens
+		output_token_cost = 0.90   # $0.90 per million output tokens

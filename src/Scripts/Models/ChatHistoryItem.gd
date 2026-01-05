@@ -18,6 +18,8 @@ static var SERIALIZER_FIELDS = [
 	"ModelShortName",
 	"EstimatedTokenCost",
 	"TokenCost",
+	"InputTokens",
+	"OutputTokens",
 	"Visible",
 	"Expanded",
 	"LastYSize",
@@ -83,9 +85,21 @@ var Visible: bool = true:
 var EstimatedTokenCost: int:
 	set(value): SingletonObject.call_deferred("save_state", false); EstimatedTokenCost = value
 
-## Amount of tokens of this history item
-var TokenCost: int = 0:
-	set(value): SingletonObject.call_deferred("save_state", false); TokenCost = value
+## Number of input tokens (prompt tokens) for this turn
+var InputTokens: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); InputTokens = value
+
+## Number of output tokens (completion tokens) for this turn
+var OutputTokens: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); OutputTokens = value
+
+## Amount of tokens of this history item (legacy - now computed from InputTokens + OutputTokens)
+var TokenCost: int:
+	get: return InputTokens + OutputTokens
+	set(value):
+		# Legacy setter - distribute to output tokens for backwards compat
+		OutputTokens = value
+		SingletonObject.call_deferred("save_state", false)
 
 var provider: BaseProvider:
 	set(value):
@@ -226,6 +240,8 @@ func Serialize() -> Dictionary:
 		"Visible": Visible,
 		"EstimatedTokenCost": EstimatedTokenCost,
 		"TokenCost": TokenCost,
+		"InputTokens": InputTokens,
+		"OutputTokens": OutputTokens,
 		"Images": images_,
 		"Captions": captions_,
 		"Expanded": Expanded,
@@ -249,11 +265,14 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 
 	# 1. In case we don't have model specified just use this as a fallback
 	# 2. Old project files don't have "Images" field
+	# 3. Migration: InputTokens/OutputTokens default to 0
 	data.merge({
 		"ModelName": "NA",
 		"ModelShortName": "NA",
 		"Visible": true,
 		"TokenCost": 0,
+		"InputTokens": 0,
+		"OutputTokens": 0,
 		"Images": [],
 		"Captions": []
 	})

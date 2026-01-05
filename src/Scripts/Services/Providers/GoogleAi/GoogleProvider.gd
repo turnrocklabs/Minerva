@@ -20,7 +20,8 @@ func _init():
 	# Default model - subclasses override these
 	model_name = "gemini-3-flash-preview"
 	short_name = "G3F"
-	token_cost = 0.15 / 1_000_000
+	input_token_cost = 0.50   # $0.50 per million input tokens
+	output_token_cost = 3.00   # $3 per million output tokens
 
 	# Gemini 3 supports temperature/top_p but works best at default
 	supports_temperature = true
@@ -49,6 +50,7 @@ func format_tools_for_request() -> Array:
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response := BotResponse.new()
+	bot_response.provider = self  # Always set provider, even for errors
 
 	if not response.success:
 		bot_response.error = response.message
@@ -361,7 +363,8 @@ class Flash extends GoogleProvider:
 		model_name = "gemini-3-flash-preview"
 		display_name = "Gemini 3 Flash"
 		short_name = "G3F"
-		token_cost = 0.15 / 1_000_000
+		input_token_cost = 0.50   # $0.50 per million input tokens
+		output_token_cost = 3.00   # $3 per million output tokens
 
 
 ## Gemini 3 Pro: Most capable model (preview)
@@ -371,4 +374,5 @@ class Pro extends GoogleProvider:
 		model_name = "gemini-3-pro-preview"
 		display_name = "Gemini 3 Pro"
 		short_name = "G3P"
-		token_cost = 1.25 / 1_000_000
+		input_token_cost = 2.00   # $2 per million input tokens
+		output_token_cost = 12.00  # $12 per million output tokens

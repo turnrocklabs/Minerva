@@ -24,7 +24,8 @@ func _init():
 	max_tokens = 64000
 	model_name = "claude-sonnet-4.5"
 	short_name = "CS"
-	token_cost = 3.00 / 1_000_000
+	input_token_cost = 3.00   # $3 per million input tokens
+	output_token_cost = 15.00  # $15 per million output tokens
 
 	# Claude supports temperature (0-1) and top_p, but not both together
 	supports_temperature = true
@@ -53,6 +54,7 @@ func format_tools_for_request() -> Array:
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response := BotResponse.new()
+	bot_response.provider = self  # Always set provider, even for errors
 
 	if not response.success:
 		bot_response.error = response.message
@@ -317,7 +319,8 @@ class Haiku extends AnthropicProvider:
 		display_name = "Claude Haiku 4.5"
 		short_name = "CH"
 		max_tokens = 8192
-		token_cost = 1.00 / 1_000_000
+		input_token_cost = 0.80   # $0.80 per million input tokens
+		output_token_cost = 4.00   # $4 per million output tokens
 
 
 ## Claude Sonnet 4.5: Best balance of speed and capability
@@ -329,7 +332,8 @@ class Sonnet extends AnthropicProvider:
 		display_name = "Claude Sonnet 4.5"
 		short_name = "CS"
 		max_tokens = 64000
-		token_cost = 3.00 / 1_000_000
+		input_token_cost = 3.00   # $3 per million input tokens
+		output_token_cost = 15.00  # $15 per million output tokens
 
 
 ## Claude Opus 4.5: Most capable for complex reasoning
@@ -341,4 +345,5 @@ class Opus extends AnthropicProvider:
 		display_name = "Claude Opus 4.5"
 		short_name = "CO"
 		max_tokens = 32000
-		token_cost = 15.00 / 1_000_000
+		input_token_cost = 5.00   # $5 per million input tokens
+		output_token_cost = 25.00  # $25 per million output tokens

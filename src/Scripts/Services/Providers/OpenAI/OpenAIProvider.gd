@@ -27,7 +27,8 @@ func _init():
 	# Default model - subclasses override these
 	model_name = "gpt-5.2"
 	short_name = "G5"
-	token_cost = 1.75 / 1_000_000
+	input_token_cost = 5.00   # $5 per million input tokens
+	output_token_cost = 15.00  # $15 per million output tokens
 
 	# GPT-5 reasoning models don't support temperature/top_p
 	is_reasoning_model = true
@@ -61,6 +62,7 @@ func format_tools_for_request() -> Array:
 
 func _parse_request_results(response: RequestResults) -> BotResponse:
 	var bot_response := BotResponse.new()
+	bot_response.provider = self  # Always set provider, even for errors
 
 	if not response.success:
 		bot_response.error = response.message
@@ -352,7 +354,8 @@ class Nano extends OpenAIProvider:
 		display_name = "GPT-5 Nano"
 		short_name = "G5N"
 		reasoning_effort = ""  # No reasoning for nano model
-		token_cost = 0.10 / 1_000_000
+		input_token_cost = 0.10   # $0.10 per million input tokens
+		output_token_cost = 0.40   # $0.40 per million output tokens
 
 		# Nano is not a reasoning model, supports all params
 		is_reasoning_model = false
@@ -370,7 +373,8 @@ class Standard extends OpenAIProvider:
 		display_name = "GPT-5.2"
 		short_name = "G5"
 		reasoning_effort = "medium"
-		token_cost = 1.75 / 1_000_000
+		input_token_cost = 5.00   # $5 per million input tokens
+		output_token_cost = 15.00  # $15 per million output tokens
 
 
 ## Deep: High reasoning for complex tasks requiring more thought
@@ -381,4 +385,5 @@ class Deep extends OpenAIProvider:
 		display_name = "GPT-5.2 Deep"
 		short_name = "G5D"
 		reasoning_effort = "xhigh"
-		token_cost = 1.75 / 1_000_000
+		input_token_cost = 5.00   # $5 per million input tokens
+		output_token_cost = 15.00  # $15 per million output tokens
