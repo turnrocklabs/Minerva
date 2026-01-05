@@ -246,33 +246,41 @@ layout_mode = 2
 size_flags_vertical = 4
 button_group = ExtResource("2_ymijy")
 allow_reselect = true
-item_count = 9
+item_count = 12
 popup/item_0/text = "Brush"
 popup/item_0/icon = ExtResource("10_vnb8d")
 popup/item_0/id = 0
 popup/item_1/text = "Eraser"
 popup/item_1/icon = ExtResource("11_m2a1o")
 popup/item_1/id = 1
-popup/item_2/text = "Bucket"
-popup/item_2/icon = ExtResource("12_u1itb")
-popup/item_2/id = 3
-popup/item_3/text = "Smudge"
-popup/item_3/icon = ExtResource("13_nl4xv")
-popup/item_3/id = 2
-popup/item_4/text = "Inset Image..."
-popup/item_4/id = 4
+popup/item_2/text = "Smudge"
+popup/item_2/icon = ExtResource("13_nl4xv")
+popup/item_2/id = 2
+popup/item_3/text = "Color Tools"
+popup/item_3/id = 11
+popup/item_3/separator = true
+popup/item_4/text = "Bucket"
+popup/item_4/icon = ExtResource("12_u1itb")
+popup/item_4/id = 3
 popup/item_5/text = "Eyedropper"
 popup/item_5/icon = ExtResource("10_pipet")
 popup/item_5/id = 5
-popup/item_6/text = "Magic Wand"
-popup/item_6/icon = ExtResource("29_mwand")
-popup/item_6/id = 6
-popup/item_7/text = "Rectangle Select"
-popup/item_7/icon = ExtResource("35_rectsel")
-popup/item_7/id = 7
-popup/item_8/text = "Lasso Select"
-popup/item_8/icon = ExtResource("37_lassoicon")
-popup/item_8/id = 8
+popup/item_6/text = "Layer Selection"
+popup/item_6/id = 10
+popup/item_6/separator = true
+popup/item_7/text = "Magic Wand"
+popup/item_7/icon = ExtResource("29_mwand")
+popup/item_7/id = 6
+popup/item_8/text = "Rectangle Select"
+popup/item_8/icon = ExtResource("35_rectsel")
+popup/item_8/id = 7
+popup/item_9/text = "Lasso Select"
+popup/item_9/icon = ExtResource("37_lassoicon")
+popup/item_9/id = 8
+popup/item_10/text = "Pan Layer"
+popup/item_10/id = 9
+popup/item_11/text = "Insert Image..."
+popup/item_11/id = 4
 
 [node name="SelectionIndicatorButton" type="MenuButton" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 unique_name_in_owner = true
@@ -284,6 +292,7 @@ icon = ExtResource("30_selact")
 
 [node name="PaneToolButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
+size_flags_horizontal = 4
 size_flags_vertical = 4
 tooltip_text = "Pan tool for moving the around"
 toggle_mode = true
@@ -313,20 +322,22 @@ icon = ExtResource("17_tml0f")
 
 [node name="RenderViewportButton" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_horizontal = 4
+size_flags_vertical = 4
 tooltip_text = "RenderViewport"
 toggle_mode = true
 icon = ExtResource("27_idhh2")
 
 [node name="Button2" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
-visible = false
 layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
 text = "Zoom Out"
 icon = ExtResource("18_bdl26")
 
 [node name="Button" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
-visible = false
 layout_mode = 2
 text = "Zoom In"
 icon = ExtResource("19_wq4ht")
@@ -360,6 +371,11 @@ popup/item_1/id = 1
 popup/item_2/text = "Green"
 popup/item_2/icon = SubResource("GradientTexture2D_oylf0")
 popup/item_2/id = 2
+
+[node name="Button3" type="Button" parent="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+layout_mode = 2
+size_flags_vertical = 4
+icon = ExtResource("17_tml0f")
 
 [node name="ToolOptionsContainer" type="MarginContainer" parent="h/HSplitContainer/v/HBoxContainer/h"]
 unique_name_in_owner = true
@@ -690,6 +706,7 @@ expand_mode = 3
 stretch_mode = 4
 
 [node name="HBoxContainer" type="HBoxContainer" parent="h/HSplitContainer/v/MarginContainer"]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 0
@@ -993,7 +1010,7 @@ always_on_top = true
 
 [node name="ImageGenPanelContainer" type="PanelContainer" parent="ImageGenWindow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(350, 0)
+custom_minimum_size = Vector2(50, 0)
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -1382,7 +1399,10 @@ text = "Select Layers...
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
 [connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/RenderViewportButton" to="." method="_on_render_viewport_button_toggled"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/Button2" to="." method="_on_zoom_out_button_pressed"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/Button" to="." method="_on_zoom_in_button_pressed"]
 [connection signal="item_selected" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
+[connection signal="pressed" from="h/HSplitContainer/v/HBoxContainer/h/ToolsContainer/Button3" to="." method="_on_center_view_button_pressed"]
 [connection signal="color_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer/ColorPickerButton" to="." method="_on_color_picker_button_color_changed"]
 [connection signal="toggled" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
 [connection signal="text_changed" from="h/HSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]

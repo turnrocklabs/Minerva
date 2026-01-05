@@ -1,4 +1,4 @@
-[gd_scene load_steps=69 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=70 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -23,6 +23,7 @@
 [ext_resource type="Texture2D" uid="uid://bywcdq5qn45nc" path="res://assets/icons/new_line_icons/new_line_icon.png" id="11_p11dv"]
 [ext_resource type="Texture2D" uid="uid://clgr7otagvdof" path="res://assets/icons/undo_icons/undo_arrow.png" id="11_srtkx"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="12_6jk4t"]
+[ext_resource type="Texture2D" uid="uid://53u7c73tgq4o" path="res://assets/icons/render_viewport/render_viewport_icon_24.png" id="12_a7b38"]
 [ext_resource type="Texture2D" uid="uid://cvtdxbauuuae2" path="res://assets/icons/reload-icons/reload-16.svg" id="13_xhsmd"]
 [ext_resource type="Script" uid="uid://dge3cj0ar0mj6" path="res://Scripts/Models/AudioToText.gd" id="14_rrnyx"]
 [ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="14_sknqf"]
@@ -264,7 +265,7 @@ access = 2
 unique_name_in_owner = true
 title = "Project"
 size = Vector2i(150, 166)
-item_count = 4
+item_count = 5
 item_0/text = "New"
 item_0/id = 0
 item_1/text = "Open"
@@ -275,6 +276,9 @@ item_2/disabled = true
 item_3/text = "Save As..."
 item_3/id = 3
 item_3/disabled = true
+item_4/text = "Export Area"
+item_4/icon = ExtResource("12_a7b38")
+item_4/id = 4
 
 [node name="File" type="PopupMenu" parent="VBoxRoot/HBoxContainer/menuMain"]
 unique_name_in_owner = true

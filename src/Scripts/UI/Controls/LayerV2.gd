@@ -258,12 +258,23 @@ func expand_to_point(point: Vector2) -> Vector2:
 	var max_x = max(current_size.x, point_x + 1)  # +1 to include the target pixel
 	var max_y = max(current_size.y, point_y + 1)  # +1 to include the target pixel
 	
-	var new_width = max_x - min_x
-	var new_height = max_y - min_y
+	var required_width = max_x - min_x
+	var required_height = max_y - min_y
+	
+	# Round up to next multiple of 64 (required for generative AI models)
+	var new_width = int(ceil(required_width / 64.0) * 64)
+	var new_height = int(ceil(required_height / 64.0) * 64)
+	
+	# Calculate extra space added by rounding
+	var extra_width = new_width - required_width
+	var extra_height = new_height - required_height
 	
 	# Calculate where to place the old image in the new expanded image
-	var offset_x = -min_x
-	var offset_y = -min_y
+	# Add extra space from rounding to the side that needed expansion:
+	# - If expanding left/top (min_x/min_y < 0), add extra space on left/top
+	# - If expanding right/bottom (min_x/min_y == 0), extra space stays on right/bottom (offset stays 0)
+	var offset_x = -min_x + (extra_width if min_x < 0 else 0)
+	var offset_y = -min_y + (extra_height if min_y < 0 else 0)
 	
 	# Create new expanded image with transparent background
 	var expanded_image = Image.create(new_width, new_height, false, image.get_format())
@@ -280,7 +291,9 @@ func expand_to_point(point: Vector2) -> Vector2:
 	# Replace the original image with the expanded one
 	image = expanded_image
 	
-	return Vector2(offset_x, offset_y)
+	# Return the visual offset (amount to adjust layer position) - this is the actual expansion amount,
+	# not including the padding from rounding, so content stays in the same visual position
+	return Vector2(-min_x, -min_y)
 
 func _on_resized() -> void:
 	pass

@@ -1218,15 +1218,15 @@ func redo_command() -> void:
 
 func _on_tools_option_button_item_selected(index: int) -> void:
 	match index:
-		0: _on_brush_tool_button_toggled(true)
-		1: _on_eraser_tool_button_toggled(true)
-		2: _on_bucket_tool_button_toggled(true)
-		3: _on_smudge_tool_button_toggled(true)
-		4: active_tool = null; _on_add_image_button_pressed()
-		5: active_tool = eyedropper_tool
-		6: active_tool = magic_wand_tool
-		7: active_tool = rectangle_select_tool
-		8: active_tool = lasso_select_tool
+		0: _on_brush_tool_button_toggled(true); return
+		1: _on_eraser_tool_button_toggled(true); return
+		4: _on_bucket_tool_button_toggled(true); return
+		2: _on_smudge_tool_button_toggled(true); return
+		11: active_tool = null; _on_add_image_button_pressed(); return
+		5: active_tool = eyedropper_tool; return
+		7: active_tool = magic_wand_tool; return
+		8: active_tool = rectangle_select_tool; return
+		9: active_tool = lasso_select_tool; return
 		_: pass
 	
 
@@ -2017,7 +2017,7 @@ func _position_view_top_left() -> void:
 func _on_zoom_out_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0) , ZOOM_DECREMENT - 0.15)
 
-																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																										
+
 func _on_zoom_in_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.15)
 
@@ -2118,14 +2118,37 @@ func _on_get_texture_button_pressed() -> void:
 	# Capture the image from the defined region
 	var image: Image = await compose_region_image(render_view_control._rect)
 	if not image.is_empty():
-		create_new_image_layer("Rendered Viewport Layer", image)
-		# Optionally clear the render view rect and deactivate the tool after capture
 		render_view_control._rect = Rect2() # Reset the rectangle
 		render_view_control.queue_redraw()
-		render_viewport_button.set_pressed_no_signal(false) # Untoggle the button
+		render_viewport_button.toggled.emit(false) # Untoggle the button
 		active_tool = null # Or go back to default tool (brush)
 		_tools_option_button.select(0)
 		_tools_option_button.item_selected.emit(0)
+		
+	var fd := FileDialog.new()
+	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*.png", "PNG Image")
+	add_child(fd)
+	fd.popup_centered(Vector2i(800, 600))
+
+	var path = await fd.file_selected
+	fd.queue_free()
+
+	if path.is_empty():
+		return
+
+	# Ensure .png extension
+	if not path.ends_with(".png"):
+		path += ".png"
+
+	# Convert to RGBA8 if needed
+	if image.get_format() != Image.FORMAT_RGBA8:
+		image.convert(Image.FORMAT_RGBA8)
+
+	var error = image.save_png(path)
+	if error != OK:
+		push_error("Failed to save layer: " + str(error))
 
 
 func compose_region_image(region: Rect2, show_dialog: = true) -> Image:
@@ -2242,11 +2265,13 @@ func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
 		render_view_control.draw_render_view = false
 		render_view_control.get_texture_button.hide()
 		render_view_control.queue_redraw()
+		render_viewport_button.hide()
 		return
 	
 	active_tool = render_view_tool 
 	render_viewport_button.release_focus()
 	render_view_control.draw_render_view = true
+	render_viewport_button.show()
 	render_view_control.queue_redraw()
 
 #region Gen AI Prompt History

@@ -206,6 +206,7 @@ func _update_transform(event: InputEventMouseMotion) -> void:
 	
 	# Force redraw to update transform rect
 	editor.queue_redraw()
+	editor.active_layer.queue_redraw()
 
 func _end_transform() -> void:
 	if _is_transforming and editor.active_layer:
@@ -272,28 +273,37 @@ func _handle_resize(event: InputEventMouseMotion) -> void:
 	
 	editor.active_layer.position += move_factor * editor.PAN_FACTOR * (1 / editor.input_area_camera.zoom.x)
 	editor.active_layer.size -= size_factor * editor.PAN_FACTOR * (1 / editor.input_area_camera.zoom.x)
+	editor.active_layer.pivot_offset = editor.active_layer.size * 0.5
 
 # Placeholder for the rotate operation - implement your own logic
 func _handle_rotate(event: InputEventMouseMotion) -> void:
 	# Get the distance of mouse from pivot
-	var pivot = editor.active_layer.global_position + editor.active_layer.size/2
+	var pivot = editor.active_layer.get_global_rect().get_center() #editor.active_layer.global_position + editor.active_layer.pivot_offset
 	
-	# Calculate how far mouse moved around the pivot
 	var move_delta = event.screen_relative
 	
+	var direction: Vector2 = Vector2.ZERO
+	if pivot.x > move_delta.x:
+		direction.x = -1
+	else:
+		direction.x = 1
+	if pivot.y > move_delta.y:
+		direction.y = -1
+	else:
+		direction.y = 1
+	
+	direction.angle_to_point(pivot)
 	# Cross product to determine direction (positive = CCW, negative = CW)
 	# This uses the relative movement and vector from pivot to mouse
 	var pivot_to_mouse = event.position - pivot
-	var direction = pivot_to_mouse.x * move_delta.y - pivot_to_mouse.y * move_delta.x
+	#var direction = pivot_to_mouse.x * move_delta.y - pivot_to_mouse.y * move_delta.x
 	
 	# Calculate rotation factor based on movement and distance
 	var rotation_speed = 0.005
-	var rotate_factor = move_delta.length() * rotation_speed * sign(direction)
+	var rotate_factor = move_delta.length() * rotation_speed * direction.angle_to(pivot)
 	
-	# Apply rotation
 	editor.active_layer.rotation += rotate_factor
 	
-
 
 # Placeholder for finalizing the transform - implement your own logic
 func _finalize_transform() -> void:

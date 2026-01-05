@@ -319,4 +319,3 @@ func _on_add_package_editor_pressed() -> void:
 
 func _on_add_many_new_files_editor_pressed() -> void:
 	%ManyNewFilesDialogWindow.popup()
-

@@ -2,9 +2,9 @@
 ### Title: menuMain
 extends MenuBar
 
-@onready var view = $View as PopupMenu
+@onready var view: = $View as PopupMenu
 @onready var project: PopupMenu = $Project
-@onready var edit: PopupMenu = %File
+
 
 var popUpRecent
 var recentList
@@ -146,25 +146,28 @@ func _ready():
 func _on_project_index_pressed(index):
 	match index:
 		0:
-			## Create a new blank project
+			# Create a new blank project
 			SingletonObject.NewProject.emit()
-			pass
 		1:
-			## Open a project
+			# Open a project
 			SingletonObject.OpenProject.emit()
-			pass
 		2:
-			## Save a project
+			# Save a project
 			SingletonObject.SaveProject.emit() 
-			pass
 		3:
-			## Save as a project
+			# Save as a project
 			SingletonObject.SaveProjectAs.emit()
-			pass
+		4:
+			# Export to image
+			var current_tab = SingletonObject.editor_pane.Tabs.get_current_tab_control()
+			print(current_tab)
+			if current_tab is Editor and current_tab.type == Editor.Type.GRAPHICS:
+				current_tab.graphics_editor._on_render_viewport_button_toggled(true)
+			
 		5:
 			popUpRecent.visible = true
 			load_recent_projects()
-			#pass
+
 
 func _on_view_id_pressed(id: int):
 	# if zoom items are selected
@@ -225,6 +228,11 @@ func _on_project_about_to_popup() -> void:
 	else:
 		%Project.set_item_disabled(2, true)
 		%Project.set_item_disabled(3, true)
+		
+	if SingletonObject.is_graphics_editor_open():
+		%Project.set_item_disabled(4, false)
+	else:
+		%Project.set_item_disabled(4, true)
 
 #this function gets call when the mouse ers over the MenuBar
 #it has a timer so it doesn't execute all the time
