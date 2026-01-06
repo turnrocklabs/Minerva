@@ -1,0 +1,295 @@
+[gd_scene load_steps=4 format=3 uid="uid://dnyspotlwly68"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderKanbanBoard.gd" id="1_kanban"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderKanbanDropZone.gd" id="2_dropzone"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_column"]
+bg_color = Color(0.1, 0.1, 0.12, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.18, 0.18, 0.2, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[node name="AutocoderKanbanBoard" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_kanban")
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 2
+vertical_scroll_mode = 0
+
+[node name="ColumnsContainer" type="HBoxContainer" parent="ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_constants/separation = 16
+
+[node name="PlanColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(280, 0)
+theme_override_constants/separation = 12
+
+[node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_column")
+
+[node name="ColumnMargin" type="MarginContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="ColumnContent" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+
+[node name="ColorBadge" type="ColorRect" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+custom_minimum_size = Vector2(4, 16)
+layout_mode = 2
+color = Color(0.5, 0.7, 1.0, 1)
+
+[node name="TitleLabel" type="Label" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Plan"
+
+[node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+text = "(0)"
+
+[node name="PlanList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+script = ExtResource("2_dropzone")
+target_status = 0
+
+[node name="InProgressColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(280, 0)
+theme_override_constants/separation = 12
+
+[node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_column")
+
+[node name="ColumnMargin" type="MarginContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="ColumnContent" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+
+[node name="ColorBadge" type="ColorRect" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+custom_minimum_size = Vector2(4, 16)
+layout_mode = 2
+color = Color(0.95, 0.8, 0.3, 1)
+
+[node name="TitleLabel" type="Label" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "In Progress"
+
+[node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+text = "(0)"
+
+[node name="InProgressList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+script = ExtResource("2_dropzone")
+target_status = 1
+
+[node name="AIReviewColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(280, 0)
+theme_override_constants/separation = 12
+
+[node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_column")
+
+[node name="ColumnMargin" type="MarginContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="ColumnContent" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+
+[node name="ColorBadge" type="ColorRect" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+custom_minimum_size = Vector2(4, 16)
+layout_mode = 2
+color = Color(0.5, 0.9, 0.7, 1)
+
+[node name="TitleLabel" type="Label" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "AI Review"
+
+[node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+text = "(0)"
+
+[node name="AIReviewList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+script = ExtResource("2_dropzone")
+target_status = 2
+
+[node name="HumanReviewColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(280, 0)
+theme_override_constants/separation = 12
+
+[node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_column")
+
+[node name="ColumnMargin" type="MarginContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="ColumnContent" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+
+[node name="ColorBadge" type="ColorRect" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+custom_minimum_size = Vector2(4, 16)
+layout_mode = 2
+color = Color(0.9, 0.6, 0.3, 1)
+
+[node name="TitleLabel" type="Label" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Human Review"
+
+[node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+text = "(0)"
+
+[node name="HumanReviewList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+script = ExtResource("2_dropzone")
+target_status = 3
+
+[node name="DoneColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(280, 0)
+theme_override_constants/separation = 12
+
+[node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_column")
+
+[node name="ColumnMargin" type="MarginContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="ColumnContent" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+
+[node name="ColorBadge" type="ColorRect" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+custom_minimum_size = Vector2(4, 16)
+layout_mode = 2
+color = Color(0.5, 0.5, 0.55, 1)
+
+[node name="TitleLabel" type="Label" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Done"
+
+[node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+text = "(0)"
+
+[node name="DoneList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+script = ExtResource("2_dropzone")
+target_status = 4

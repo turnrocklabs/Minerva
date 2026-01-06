@@ -1,30 +1,74 @@
-[gd_scene load_steps=2 format=3 uid="uid://d1b7vcn7n7b1r"]
+[gd_scene load_steps=4 format=3 uid="uid://d1b7vcn7n7b1r"]
 
 [ext_resource type="Script" uid="uid://c2j7g8b7gq4o1" path="res://Scripts/UI/Controls/Autocoder/AutocoderRawJsonRow.gd" id="1_0t6ws"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_json_row"]
+bg_color = Color(0.08, 0.08, 0.1, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.16, 0.16, 0.2, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_json_text"]
+bg_color = Color(0.05, 0.05, 0.07, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.12, 0.12, 0.15, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+
 [node name="AutocoderRawJsonRow" type="PanelContainer"]
 size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_json_row")
 script = ExtResource("1_0t6ws")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2
-theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 6
-theme_override_constants/margin_right = 8
-theme_override_constants/margin_bottom = 6
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
 
 [node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 8
 
-[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+[node name="Header" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="MarginContainer/VBoxContainer/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "{ }"
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.75, 0.75, 0.8, 1)
+theme_override_font_sizes/font_size = 12
 text = "Raw event"
 
 [node name="JsonTextEdit" type="TextEdit" parent="MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
-layout_mode = 2
 custom_minimum_size = Vector2(0, 120)
-read_only = true
-wrap_mode = 1
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.8, 0.7, 1)
+theme_override_font_sizes/font_size = 11
+theme_override_styles/normal = SubResource("StyleBoxFlat_json_text")
 text = ""
+editable = false
+wrap_mode = 1

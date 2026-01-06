@@ -32,6 +32,7 @@ var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditorV2
 var package_editor: PackageEditor
 var logs_viewer: AutocoderLogsViewer
+var kanban_board: AutocoderKanbanBoard
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -60,6 +61,7 @@ enum Type {
 	VIDEO,
 	PACKAGE,
 	LOGS,
+	KANBAN,
 }
 
 
@@ -180,6 +182,14 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			vbox_container.add_child(logs_widget)
 			editor.logs_viewer = logs_widget
 			logs_widget.entry_added.connect(editor._on_editor_changed)
+		
+		Editor.Type.KANBAN:
+			var kanban_scene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderKanbanBoard.tscn")
+			var kanban_widget: AutocoderKanbanBoard = kanban_scene.instantiate()
+			kanban_widget.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			kanban_widget.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(kanban_widget)
+			editor.kanban_board = kanban_widget
 			
 	return editor
 
@@ -209,7 +219,7 @@ func _ready():
 			Type.GRAPHICS: _load_graphics_file(file)
 			Type.VIDEO: video_player.video_path = file
 	
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -228,6 +238,12 @@ func _ready():
 		autowrap_button.show()
 		toggle_autowrap()
 	elif self.type == Type.LOGS:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		$VBoxContainer/ButtonsHBoxContainer.hide()
+	elif self.type == Type.KANBAN:
 		mic_button.hide()
 		autowrap_button.hide()
 		find_string_container.hide()

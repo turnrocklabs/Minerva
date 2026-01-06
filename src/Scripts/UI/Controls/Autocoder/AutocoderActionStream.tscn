@@ -1,0 +1,79 @@
+[gd_scene load_steps=3 format=3 uid="uid://action_stream_def456"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderActionStream.gd" id="1_stream"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.08, 0.08, 0.1, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="AutocoderActionStream" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_stream")
+
+[node name="MainPanel" type="PanelContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
+
+[node name="MainMargin" type="MarginContainer" parent="MainPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="MainContent" type="VBoxContainer" parent="MainPanel/MainMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="MainPanel/MainMargin/MainContent"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="MainPanel/MainMargin/MainContent/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "⚡"
+
+[node name="Title" type="Label" parent="MainPanel/MainMargin/MainContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.8, 0.8, 0.85, 1)
+theme_override_font_sizes/font_size = 13
+text = "Activity Stream"
+
+[node name="ClearButton" type="Button" parent="MainPanel/MainMargin/MainContent/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Clear"
+flat = true
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MainPanel/MainMargin/MainContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ActionsList" type="VBoxContainer" parent="MainPanel/MainMargin/MainContent/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="EmptyLabel" type="Label" parent="MainPanel/MainMargin/MainContent/ScrollContainer/ActionsList"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.45, 0.5, 1)
+theme_override_font_sizes/font_size = 12
+text = "No activity yet. Submit a job to see actions here."
+horizontal_alignment = 1
+autowrap_mode = 2

@@ -1,8 +1,39 @@
-[gd_scene load_steps=4 format=3 uid="uid://5g51ocdi12p0"]
+[gd_scene load_steps=6 format=3 uid="uid://5g51ocdi12p0"]
 
 [ext_resource type="Script" uid="uid://dk40goy2gi53r" path="res://Scripts/UI/Controls/Autocoder/manager/ArtifactBrowser.gd" id="1_ve8oy"]
 [ext_resource type="Texture2D" uid="uid://b4mldxp8undi7" path="res://assets/icons/MgGlass.png" id="2_ef0j0"]
 [ext_resource type="Texture2D" uid="uid://c7mnd5cf3tlbp" path="res://assets/icons/reload-icons/reload-24.svg" id="3_txu0a"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(0.12, 0.12, 0.14, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.2, 0.2, 0.22, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0, 0, 0, 0.15)
+shadow_size = 4
+shadow_offset = Vector2(0, 2)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_input"]
+bg_color = Color(0.08, 0.08, 0.1, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.25, 0.25, 0.28, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
 
 [node name="ArtifactBrowser" type="MarginContainer"]
 anchors_preset = 15
@@ -10,59 +41,103 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 5
-theme_override_constants/margin_top = 5
-theme_override_constants/margin_right = 5
-theme_override_constants/margin_bottom = 5
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
 script = ExtResource("1_ve8oy")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="."]
+[node name="MainVBox" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="SearchCard" type="PanelContainer" parent="MainVBox"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="CardMargin" type="MarginContainer" parent="MainVBox/SearchCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="SearchContent" type="VBoxContainer" parent="MainVBox/SearchCard/CardMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="MainVBox/SearchCard/CardMargin/SearchContent"]
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+[node name="Icon" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/Header"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "🔍"
 
-[node name="SearchLineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer"]
+[node name="Title" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Search & Filter"
+
+[node name="RefreshButton" type="Button" parent="MainVBox/SearchCard/CardMargin/SearchContent/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+tooltip_text = "Refresh the artifacts list"
+icon = ExtResource("3_txu0a")
+flat = true
+
+[node name="SearchRow" type="HBoxContainer" parent="MainVBox/SearchCard/CardMargin/SearchContent"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SearchLineEdit" type="LineEdit" parent="MainVBox/SearchCard/CardMargin/SearchContent/SearchRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_styles/normal = SubResource("StyleBoxFlat_input")
 tooltip_text = "Search artifacts"
-placeholder_text = "Search"
+placeholder_text = "Search by name, description, or tags..."
 
-[node name="SearchButton" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="SearchButton" type="Button" parent="MainVBox/SearchCard/CardMargin/SearchContent/SearchRow"]
 visible = false
 layout_mode = 2
 icon = ExtResource("2_ef0j0")
 
-[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer"]
+[node name="FiltersRow" type="HBoxContainer" parent="MainVBox/SearchCard/CardMargin/SearchContent"]
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_stretch_ratio = 2.0
+theme_override_constants/separation = 16
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer"]
+[node name="FrameworkGroup" type="VBoxContainer" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow"]
 layout_mode = 2
+theme_override_constants/separation = 4
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/FrameworkGroup"]
 layout_mode = 2
-text = "Framework:"
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 11
+text = "Framework"
 
-[node name="FrameworkOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
+[node name="FrameworkOptionButton" type="OptionButton" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/FrameworkGroup"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 0)
+custom_minimum_size = Vector2(140, 0)
 layout_mode = 2
 tooltip_text = "Filter by artifact framework"
 
-[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer2"]
-custom_minimum_size = Vector2(15, 0)
+[node name="LanguageGroup" type="VBoxContainer" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow"]
 layout_mode = 2
+theme_override_constants/separation = 4
 
-[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/LanguageGroup"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 11
 text = "Language"
 
-[node name="LanguageOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
+[node name="LanguageOptionButton" type="OptionButton" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/LanguageGroup"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 0)
+custom_minimum_size = Vector2(140, 0)
 layout_mode = 2
 tooltip_text = "Filter by artifact language"
 selected = 0
@@ -70,17 +145,19 @@ item_count = 1
 popup/item_0/text = "All"
 popup/item_0/id = 0
 
-[node name="Control2" type="Control" parent="VBoxContainer/HBoxContainer2"]
-custom_minimum_size = Vector2(15, 0)
+[node name="VisibilityGroup" type="VBoxContainer" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow"]
 layout_mode = 2
+theme_override_constants/separation = 4
 
-[node name="Label3" type="Label" parent="VBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/VisibilityGroup"]
 layout_mode = 2
-text = "Visibility:"
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 11
+text = "Visibility"
 
-[node name="VisibilityOptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer2"]
+[node name="VisibilityOptionButton" type="OptionButton" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/VisibilityGroup"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 0)
+custom_minimum_size = Vector2(120, 0)
 layout_mode = 2
 tooltip_text = "Filter by artifact visibility"
 selected = 0
@@ -89,227 +166,300 @@ item_count = 1
 popup/item_0/text = "All"
 popup/item_0/id = 0
 
-[node name="Control3" type="Control" parent="VBoxContainer/HBoxContainer2"]
-custom_minimum_size = Vector2(15, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="RefreshButton" type="Button" parent="VBoxContainer/HBoxContainer2"]
-layout_mode = 2
-tooltip_text = "Refresh the artifacts list"
-icon = ExtResource("3_txu0a")
-
-[node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer"]
+[node name="VSplitContainer" type="VSplitContainer" parent="MainVBox"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="ArtifactsTree" type="Tree" parent="VBoxContainer/VSplitContainer"]
+[node name="ListCard" type="PanelContainer" parent="MainVBox/VSplitContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="CardMargin" type="MarginContainer" parent="MainVBox/VSplitContainer/ListCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="ListContent" type="VBoxContainer" parent="MainVBox/VSplitContainer/ListCard/CardMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="MainVBox/VSplitContainer/ListCard/CardMargin/ListContent"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="MainVBox/VSplitContainer/ListCard/CardMargin/ListContent/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "📦"
+
+[node name="Title" type="Label" parent="MainVBox/VSplitContainer/ListCard/CardMargin/ListContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Artifacts"
+
+[node name="ArtifactsTree" type="Tree" parent="MainVBox/VSplitContainer/ListCard/CardMargin/ListContent"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_font_sizes/font_size = 12
 column_titles_visible = true
 hide_folding = true
 select_mode = 1
 
-[node name="ArtifactDetailsContainer" type="PanelContainer" parent="VBoxContainer/VSplitContainer"]
+[node name="DetailsCard" type="PanelContainer" parent="MainVBox/VSplitContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
 
-[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="MainVBox/VSplitContainer/DetailsCard"]
 layout_mode = 2
-theme_override_constants/margin_left = 10
-theme_override_constants/margin_top = 10
-theme_override_constants/margin_right = 10
-theme_override_constants/margin_bottom = 10
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
 
-[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer"]
 layout_mode = 2
+horizontal_scroll_mode = 0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_constants/separation = 12
 
-[node name="TitleLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="Header" type="HBoxContainer" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "📄"
+
+[node name="TitleLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 15
 text = "No artifact selected"
 
-[node name="HSeparator" type="HSeparator" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="DetailsGrid" type="GridContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="DetailsGrid" type="GridContainer" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 8
 columns = 2
 
-[node name="FrameworkKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="FrameworkKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "Framework:"
 
-[node name="FrameworkValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="FrameworkValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "-"
 
-[node name="LanguageKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="LanguageKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "Language:"
 
-[node name="LanguageValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="LanguageValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "-"
 
-[node name="SizeKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="SizeKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "Size:"
 
-[node name="SizeValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="SizeValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "-"
 
-[node name="UploadedKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="UploadedKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "Uploaded:"
 
-[node name="UploadedValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="UploadedValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "-"
 
-[node name="OwnerKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="OwnerKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "Owner:"
 
-[node name="OwnerValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="OwnerValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "-"
 
-[node name="VisibilityKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="VisibilityKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "Visibility:"
 
-[node name="VisibilityValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="VisibilityValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "-"
 
-[node name="TagsKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="TagsKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
 size_flags_vertical = 1
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "Tags:"
 
-[node name="TagsValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
+[node name="TagsValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "-"
 autowrap_mode = 3
 
-[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="HSeparator2" type="HSeparator" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="DescriptionKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="DescriptionKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "Description:"
 
-[node name="DescriptionValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="DescriptionValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
+theme_override_font_sizes/font_size = 13
 text = "-"
 autowrap_mode = 3
 
-[node name="HSeparator3" type="HSeparator" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="HSeparator3" type="HSeparator" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="URIKeyLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="URIKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
+theme_override_font_sizes/font_size = 12
 text = "URI:"
 
-[node name="URIValueLabel" type="Label" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="URIValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
-theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.5, 0.65, 0.8, 1)
+theme_override_font_sizes/font_size = 11
 text = "-"
 autowrap_mode = 3
 
-[node name="HSeparator4" type="HSeparator" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="HSeparator4" type="HSeparator" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="ActionsContainer" type="HBoxContainer" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer"]
+[node name="ActionsContainer" type="HBoxContainer" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
+theme_override_constants/separation = 10
 
-[node name="DownloadButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+[node name="DownloadButton" type="Button" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 32)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 tooltip_text = "Download artifact to local disk"
 disabled = true
 text = "Download"
 
-[node name="CopyURIButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+[node name="CopyURIButton" type="Button" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 32)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 tooltip_text = "Copy artifact URI to clipboard"
 disabled = true
 text = "Copy URI"
+flat = true
 
-[node name="SelectButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+[node name="SelectButton" type="Button" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(70, 32)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 tooltip_text = "Use this artifact in job"
 disabled = true
 text = "Select"
 
-[node name="EditMetadataButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+[node name="EditMetadataButton" type="Button" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 32)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 tooltip_text = "Edit artifact metadata (owner only)"
 disabled = true
 text = "Edit Metadata"
+flat = true
 
-[node name="DeleteButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+[node name="DeleteButton" type="Button" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(70, 32)
 layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.5, 0.5, 1)
+theme_override_font_sizes/font_size = 12
 tooltip_text = "Delete artifact (owner only)"
 disabled = true
 text = "Delete"
+flat = true
 
-[node name="Control" type="Control" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+[node name="Control" type="Control" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="CancelButton" type="Button" parent="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
+[node name="CancelButton" type="Button" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(70, 32)
 layout_mode = 2
+theme_override_font_sizes/font_size = 12
 tooltip_text = "Close dialog"
 text = "Cancel"
+flat = true
 
-[connection signal="text_changed" from="VBoxContainer/HBoxContainer/SearchLineEdit" to="." method="_on_search_line_edit_text_changed"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer/SearchButton" to="." method="_on_search_button_pressed"]
-[connection signal="item_selected" from="VBoxContainer/HBoxContainer2/FrameworkOptionButton" to="." method="_on_framework_option_button_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/HBoxContainer2/LanguageOptionButton" to="." method="_on_language_option_button_item_selected"]
-[connection signal="item_selected" from="VBoxContainer/HBoxContainer2/VisibilityOptionButton" to="." method="_on_visibility_option_button_item_selected"]
-[connection signal="pressed" from="VBoxContainer/HBoxContainer2/RefreshButton" to="." method="_on_refresh_button_pressed"]
-[connection signal="item_selected" from="VBoxContainer/VSplitContainer/ArtifactsTree" to="." method="_on_artifact_selected"]
-[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/DownloadButton" to="." method="_on_download_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/CopyURIButton" to="." method="_on_copy_uri_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/SelectButton" to="." method="_on_select_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/EditMetadataButton" to="." method="_on_edit_metadata_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/DeleteButton" to="." method="_on_delete_button_pressed"]
-[connection signal="pressed" from="VBoxContainer/VSplitContainer/ArtifactDetailsContainer/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/CancelButton" to="." method="_on_cancel_button_pressed"]
+[connection signal="text_changed" from="MainVBox/SearchCard/CardMargin/SearchContent/SearchRow/SearchLineEdit" to="." method="_on_search_line_edit_text_changed"]
+[connection signal="pressed" from="MainVBox/SearchCard/CardMargin/SearchContent/SearchRow/SearchButton" to="." method="_on_search_button_pressed"]
+[connection signal="pressed" from="MainVBox/SearchCard/CardMargin/SearchContent/Header/RefreshButton" to="." method="_on_refresh_button_pressed"]
+[connection signal="item_selected" from="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/FrameworkGroup/FrameworkOptionButton" to="." method="_on_framework_option_button_item_selected"]
+[connection signal="item_selected" from="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/LanguageGroup/LanguageOptionButton" to="." method="_on_language_option_button_item_selected"]
+[connection signal="item_selected" from="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/VisibilityGroup/VisibilityOptionButton" to="." method="_on_visibility_option_button_item_selected"]
+[connection signal="item_selected" from="MainVBox/VSplitContainer/ListCard/CardMargin/ListContent/ArtifactsTree" to="." method="_on_artifact_selected"]
+[connection signal="pressed" from="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/DownloadButton" to="." method="_on_download_button_pressed"]
+[connection signal="pressed" from="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/CopyURIButton" to="." method="_on_copy_uri_button_pressed"]
+[connection signal="pressed" from="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/SelectButton" to="." method="_on_select_button_pressed"]
+[connection signal="pressed" from="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/EditMetadataButton" to="." method="_on_edit_metadata_button_pressed"]
+[connection signal="pressed" from="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/DeleteButton" to="." method="_on_delete_button_pressed"]
+[connection signal="pressed" from="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/ActionsContainer/CancelButton" to="." method="_on_cancel_button_pressed"]

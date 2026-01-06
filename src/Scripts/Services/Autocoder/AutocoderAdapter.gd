@@ -47,7 +47,7 @@ class GenerationOutput extends RefCounted:
 #     "topic": "autocoder/generate"
 # }
 
-func generate(prompt: String, session_id: String = "", input_archive_uri: String = "", require_permission: = false) -> GenerationOutput:
+func generate(prompt: String, session_id: String = "", input_archive_uri: String = "", require_permission: bool = false, model: String = "", review_agent_ids: Array = []) -> GenerationOutput:
 	if not Core.client._connected:
 		SingletonObject.create_toast_notification("Can't start autocoder. Core not connected")
 		return null
@@ -64,6 +64,12 @@ func generate(prompt: String, session_id: String = "", input_archive_uri: String
 
 	if not input_archive_uri.is_empty():
 		data["input_archive_uri"] = input_archive_uri
+
+	if not model.is_empty():
+		data["model"] = model
+
+	if not review_agent_ids.is_empty():
+		data["review_agent_ids"] = review_agent_ids
 	
 	var msg = await Core.send_message(service, action, data).receive()
 
@@ -90,6 +96,33 @@ func generate(prompt: String, session_id: String = "", input_archive_uri: String
 		user_id,
 		iteration,
 	)
+
+
+## Respond to a permission request (approve or reject)
+func respond_permission(permission_id: String, response: String) -> bool:
+	if not Core.client._connected:
+		push_warning("Cannot respond to permission - Core not connected")
+		return false
+
+	var normalized = response.strip_edges().to_lower()
+	if normalized != "approve" and normalized != "reject":
+		push_warning("Invalid permission response: %s" % response)
+		return false
+
+	var msg := {
+		"cmd": "response",
+		"topic": "autocoder/permission",
+		"params": {
+			"client_id": Core.client.client_id,
+			"request_id": permission_id,
+			"result": {
+				"response": normalized
+			}
+		}
+	}
+
+	Core.client.send_message_to_core(msg)
+	return true
 
 
 ## Cleanup workspace before starting a new session
@@ -255,6 +288,64 @@ func get_review_models() -> Array[Dictionary]:
 			models.append(model_data)
 
 	return models
+
+
+## Get available generation models for Autocoder sessions
+## Returns array of {id, name} dictionaries
+func list_generation_models() -> Array[Dictionary]:
+	var models: Array[Dictionary] = []
+
+	if not Core.client._connected:
+		return models
+
+	var action := _get_generation_models_action()
+	if not action:
+		push_warning("List generation models action not found")
+		return models
+
+	var msg = await Core.send_message(service, action, {}).receive()
+
+	if not msg:
+		return models
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to get generation models")
+		push_warning("List generation models error: %s" % error_msg)
+		return models
+
+	var result_models = safe_extract(msg, ["params", "result", "models"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_ARRAY], [])
+
+	for model_data in result_models:
+		if model_data is Dictionary:
+			models.append(model_data)
+
+	return models
+
+
+func _get_generation_models_action() -> Action:
+	var topics := PackedStringArray([
+		"autocoder/list-models",
+		"autocoder/list-generation-models",
+		"autocoder/get-models",
+		"autocoder/get-generation-models"
+	])
+
+	for topic in topics:
+		var action = get_action(topic)
+		if action:
+			return action
+
+	if service and service.actions:
+		for action in service.actions:
+			if not action:
+				continue
+			var topic = str(action.topic).to_lower()
+			if not topic.begins_with("autocoder/"):
+				continue
+			if "model" in topic and "review" not in topic:
+				return action
+
+	return null
 
 
 ## Request another AI review for a session (max 5 reviews)

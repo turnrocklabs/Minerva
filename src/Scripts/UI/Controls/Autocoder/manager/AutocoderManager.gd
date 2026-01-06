@@ -11,6 +11,20 @@ var _monitoring_sessions: PackedStringArray
 # keep an array of notification message handlers so they dont go out of scope and get garbage collected
 var _notification_message_handlers: Array[Core.AwaitMessage]
 
+# Permission request queue (OpenCode approvals)
+var _permission_queue: Array[Dictionary] = []
+var _active_permission_request: Dictionary = {}
+
+@onready var _permission_popup: PersistentWindow = %PermissionPopup
+@onready var _permission_queue_label: Label = %PermissionQueueLabel
+@onready var _permission_title_label: Label = %PermissionTitleLabel
+@onready var _permission_type_label: Label = %PermissionTypeLabel
+@onready var _permission_pattern_text: TextEdit = %PermissionPatternText
+@onready var _permission_metadata_text: TextEdit = %PermissionMetadataText
+@onready var _permission_approve_button: Button = %PermissionApproveButton
+@onready var _permission_reject_button: Button = %PermissionRejectButton
+@onready var _permission_copy_button: Button = %PermissionCopyButton
+
 # Debug logging to file - captures ALL autocoder traffic for debugging
 var _log_file: FileAccess = null
 const LOG_FILE_PATH = "user://autocoder_traffic.log"
@@ -49,6 +63,38 @@ func _init() -> void:
 func _ready() -> void:
 	# Get reference to submit job manager
 	submit_job_manager = get_node("TabContainer/Jobs") as AutocoderSubmitJobManager
+
+	if _permission_pattern_text:
+		_permission_pattern_text.editable = false
+		_permission_pattern_text.scroll_vertical = 0
+
+	if _permission_metadata_text:
+		_permission_metadata_text.editable = false
+		_permission_metadata_text.scroll_vertical = 0
+
+	_permission_approve_button.pressed.connect(_on_permission_approve_pressed)
+	_permission_reject_button.pressed.connect(_on_permission_reject_pressed)
+	_permission_copy_button.pressed.connect(_on_permission_copy_pressed)
+	if _permission_popup:
+		_permission_popup.close_requested.connect(_on_permission_close_requested)
+	
+	# Auto-open kanban board on startup
+	_open_default_kanban_board.call_deferred()
+
+
+func _open_default_kanban_board() -> void:
+	# Open a default kanban board for workflow overview
+	if not SingletonObject.editor_pane:
+		return
+	
+	var kanban_editor: Editor = SingletonObject.editor_pane.add(
+		Editor.Type.KANBAN,
+		null,
+		"Workflow Board"
+	)
+	
+	if kanban_editor and kanban_editor.kanban_board:
+		info("Default kanban board opened")
 
 
 func info(input):
@@ -93,10 +139,129 @@ func _on_core_disconnected():
 	info("Core disconnected")
 
 func _on_core_message_received(data):
+	if data is Dictionary and data.get("cmd", "") == "request" and data.get("topic", "") == "autocoder/permission":
+		_enqueue_permission_request(data)
+		return
+
 	if data is Dictionary and data.get("cmd", "") == "event" and data.get("entity_type", "") == "core":
 		var params = data.get("params", {})
 		if params.get("name", "") == "service_disconnected":
 			info("Service %s disconnected" % params.get("service_id", "Unknown"))
+
+
+func _enqueue_permission_request(msg: Dictionary) -> void:
+	var params = msg.get("params", {})
+	if not (params is Dictionary):
+		return
+
+	var request_id = str(params.get("request_id", ""))
+	var payload = params.get("data", {})
+
+	if request_id.is_empty():
+		return
+
+	if _permission_queue.any(func(item): return str(item.get("request_id", "")) == request_id):
+		return
+
+	if _active_permission_request.get("request_id", "") == request_id:
+		return
+
+	_permission_queue.append({
+		"request_id": request_id,
+		"data": payload if payload is Dictionary else {}
+	})
+
+	_present_next_permission_request()
+
+
+func _present_next_permission_request() -> void:
+	if not _active_permission_request.is_empty():
+		_update_permission_queue_label()
+		return
+
+	if _permission_queue.is_empty():
+		_permission_popup.hide()
+		return
+
+	_active_permission_request = _permission_queue.pop_front()
+	_show_permission_request(_active_permission_request)
+
+
+func _show_permission_request(request: Dictionary) -> void:
+	var data = request.get("data", {})
+	var title = str(data.get("title", "Permission request"))
+	var request_type = str(data.get("type", "unknown"))
+	var pattern = str(data.get("pattern", ""))
+	var metadata = data.get("metadata", {})
+
+	_permission_title_label.text = "Title: %s" % title
+	_permission_type_label.text = "Type: %s" % request_type
+	_permission_pattern_text.text = pattern
+	_permission_metadata_text.text = JSON.stringify(metadata, "  ")
+
+	_update_permission_queue_label()
+
+	if not _permission_popup.visible:
+		_permission_popup.popup_centered()
+
+
+func _update_permission_queue_label() -> void:
+	var total = _permission_queue.size()
+	var index = 0
+	if not _active_permission_request.is_empty():
+		index = 1
+		total += 1
+	_permission_queue_label.text = "Queue: %d of %d" % [index, total]
+
+
+func _on_permission_approve_pressed() -> void:
+	_handle_permission_response("approve")
+
+
+func _on_permission_reject_pressed() -> void:
+	_handle_permission_response("reject")
+
+
+func _handle_permission_response(response: String) -> void:
+	if _active_permission_request.is_empty():
+		return
+
+	var request_id = str(_active_permission_request.get("request_id", ""))
+	if request_id.is_empty():
+		_active_permission_request = {}
+		_present_next_permission_request()
+		return
+
+	if autocoder_adapter:
+		var success = autocoder_adapter.respond_permission(request_id, response)
+		if not success:
+			SingletonObject.ErrorDisplay(
+				"Permission Response Failed",
+				"Failed to send %s response for permission request." % response
+			)
+			# Don't clear the request, let user try again
+			return
+
+	_active_permission_request = {}
+	_present_next_permission_request()
+
+
+func _on_permission_copy_pressed() -> void:
+	if _active_permission_request.is_empty():
+		return
+
+	var payload = _active_permission_request.get("data", {})
+	var text = JSON.stringify(payload, "  ")
+	DisplayServer.clipboard_set(text)
+	SingletonObject.create_toast_notification("Permission details copied.", ToastNotification.Type.SUCCESS)
+
+
+func _on_permission_close_requested() -> void:
+	if _active_permission_request.is_empty():
+		_permission_popup.hide()
+		return
+
+	_permission_popup.popup_centered()
 
 
 ## Load session history on app startup
@@ -276,7 +441,7 @@ func _subscribe_to_session(session_id: String) -> void:
 
 ## Handle iteration notification for a specific session
 func _handle_iteration_notification(session_id: String, topic: String, payload: Dictionary) -> void:
-	# Find the log viewer for this session
+	# Find the kanban board or log viewer for this session
 	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
 		return
 
@@ -285,39 +450,50 @@ func _handle_iteration_notification(session_id: String, topic: String, payload: 
 			continue
 
 		var editor = tab as Editor
-		if editor.type != Editor.Type.LOGS:
-			continue
+		
+		# Route to kanban board
+		if editor.type == Editor.Type.KANBAN:
+			var kanban = editor.kanban_board
+			if kanban and kanban.get_meta("session_id", "") == session_id:
+				var status = payload.get("status", "unknown")
+				info("Routing iteration notification to kanban for session %s (status: %s)" % [session_id, status])
+				
+				# TODO: Update kanban board with iteration data
+				# For now, just log it
+				
+				# Show error dialog if status is error
+				if status == "error":
+					var error_msg = str(payload.get("error", ""))
+					if error_msg.is_empty():
+						error_msg = str(payload.get("summary", ""))
+					if error_msg.is_empty():
+						error_msg = str(payload.get("message", ""))
+					if error_msg.is_empty():
+						error_msg = "Unknown error occurred"
+					SingletonObject.ErrorDisplay("Generation Failed", error_msg)
+				
+				# Don't return - also route to logs viewer if present
+		
+		# Route to logs viewer
+		if editor.type == Editor.Type.LOGS:
+			var logs_viewer = editor.logs_viewer
+			if not logs_viewer:
+				continue
 
-		var logs_viewer = editor.logs_viewer
-		if not logs_viewer:
-			continue
+			# Check if this viewer is for our session
+			if logs_viewer.session_id == session_id:
+				var status = payload.get("status", "unknown")
+				info("Routing iteration notification to logs viewer for session %s (status: %s)" % [session_id, status])
 
-		# Check if this viewer is for our session
-		if logs_viewer.session_id == session_id:
-			var status = payload.get("status", "unknown")
-			info("Routing iteration notification to viewer for session %s (status: %s)" % [session_id, status])
-
-			logs_viewer.add_iteration_entry(topic, payload)
-
-			# Show error dialog if status is error
-			if status == "error":
-				var error_msg = str(payload.get("error", ""))
-				if error_msg.is_empty():
-					error_msg = str(payload.get("summary", ""))
-				if error_msg.is_empty():
-					error_msg = str(payload.get("message", ""))
-				if error_msg.is_empty():
-					error_msg = "Unknown error occurred"
-				SingletonObject.ErrorDisplay("Generation Failed", error_msg)
-
-			return
+				logs_viewer.add_iteration_entry(topic, payload)
+				return
 
 	info("No viewer found for session %s (not currently monitoring)" % session_id)
 
 
 ## Handle LLM notification for a specific session
 func _handle_llm_notification(session_id: String, topic: String, payload: Variant) -> void:
-	# Find the log viewer for this session
+	# Find the kanban board or log viewer for this session
 	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
 		return
 
@@ -326,22 +502,29 @@ func _handle_llm_notification(session_id: String, topic: String, payload: Varian
 			continue
 
 		var editor = tab as Editor
-		if editor.type != Editor.Type.LOGS:
-			continue
+		
+		# Route to kanban board (for future use)
+		if editor.type == Editor.Type.KANBAN:
+			var kanban = editor.kanban_board
+			if kanban and kanban.get_meta("session_id", "") == session_id:
+				# TODO: Update kanban board with LLM data
+				pass
+		
+		# Route to logs viewer
+		if editor.type == Editor.Type.LOGS:
+			var logs_viewer = editor.logs_viewer
+			if not logs_viewer:
+				continue
 
-		var logs_viewer = editor.logs_viewer
-		if not logs_viewer:
-			continue
-
-		# Check if this viewer is for our session
-		if logs_viewer.session_id == session_id:
-			logs_viewer.add_telemetry_entry(topic, payload)
-			return
+			# Check if this viewer is for our session
+			if logs_viewer.session_id == session_id:
+				logs_viewer.add_telemetry_entry(topic, payload)
+				return
 
 
 ## Handle action notification for a specific session (hierarchical action stream)
 func _handle_action_notification(session_id: String, topic: String, payload: Dictionary) -> void:
-	# Find the log viewer for this session
+	# Find the kanban board or log viewer for this session
 	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
 		return
 
@@ -350,27 +533,38 @@ func _handle_action_notification(session_id: String, topic: String, payload: Dic
 			continue
 
 		var editor = tab as Editor
-		if editor.type != Editor.Type.LOGS:
-			continue
+		
+		# Route to kanban board
+		if editor.type == Editor.Type.KANBAN:
+			var kanban = editor.kanban_board
+			if kanban and kanban.get_meta("session_id", "") == session_id:
+				var action_type = payload.get("action_type", "UNKNOWN")
+				info("Routing action notification to kanban: %s (type: %s)" % [session_id, action_type])
+				
+				# TODO: Update kanban board with action data
+				# - Could create tasks from tool calls
+				# - Could update task status based on action status
+		
+		# Route to logs viewer
+		if editor.type == Editor.Type.LOGS:
+			var logs_viewer = editor.logs_viewer
+			if not logs_viewer:
+				continue
 
-		var logs_viewer = editor.logs_viewer
-		if not logs_viewer:
-			continue
+			# Check if this viewer is for our session
+			if logs_viewer.session_id == session_id:
+				var action_type = payload.get("action_type", "UNKNOWN")
+				info("Routing action notification to logs viewer: %s (type: %s)" % [session_id, action_type])
 
-		# Check if this viewer is for our session
-		if logs_viewer.session_id == session_id:
-			var action_type = payload.get("action_type", "UNKNOWN")
-			info("Routing action notification to viewer: %s (type: %s)" % [session_id, action_type])
-
-			logs_viewer.add_action_entry(topic, payload)
-			return
+				logs_viewer.add_action_entry(topic, payload)
+				return
 
 	info("No viewer found for session %s action notification" % session_id)
 
 
 func monitor_session(user_id: String, session_id: String, _notification_topics: Array[String] = []):
 	"""
-	Open a log viewer for a session and subscribe to its notification topics.
+	Open a kanban board for a session and subscribe to its notification topics.
 	Subscribes to session-specific topics (no wildcards) to receive iteration and LLM traffic updates.
 	"""
 
@@ -382,22 +576,48 @@ func monitor_session(user_id: String, session_id: String, _notification_topics: 
 		info("Already monitoring session %s" % session_id)
 		return
 
-	info("Opening log viewer for session %s" % session_id)
+	info("Opening kanban board for session %s" % session_id)
 
 	# Subscribe to session-specific topics (NO wildcards)
 	_subscribe_to_session(session_id)
 
+	# Create kanban board tab
+	var kanban_editor: Editor = SingletonObject.editor_pane.add(
+		Editor.Type.KANBAN,
+		null,
+		"Session %s" % session_id.substr(0, 12)
+	)
+
+	var kanban: AutocoderKanbanBoard = kanban_editor.kanban_board
+	if not kanban:
+		SingletonObject.ErrorDisplay("Can't open kanban", "Kanban board unavailable")
+		return
+
+	# Store session info on the kanban board for later use
+	kanban.set_meta("user_id", user_id)
+	kanban.set_meta("session_id", session_id)
+
+	# Mark as monitored
+	_monitoring_sessions.append(session_id)
+
+	info("Kanban board opened for session %s (subscribed to session-specific topics)" % session_id)
+
+
+func open_logs_viewer(user_id: String, session_id: String) -> AutocoderLogsViewer:
+	"""
+	Open a log viewer for a session (for debugging/advanced view).
+	"""
 	# Create log viewer tab
 	var log_editor: Editor = SingletonObject.editor_pane.add(
 		Editor.Type.LOGS,
 		null,
-		"Autocoder Session %s" % session_id
+		"Logs %s" % session_id.substr(0, 12)
 	)
 
 	var log_viewer: AutocoderLogsViewer = log_editor.logs_viewer
 	if not log_viewer:
 		SingletonObject.ErrorDisplay("Can't open logs", "Log viewer unavailable")
-		return
+		return null
 
 	# Configure the viewer with session-specific topics
 	var session_topics: PackedStringArray = PackedStringArray([
@@ -408,7 +628,4 @@ func monitor_session(user_id: String, session_id: String, _notification_topics: 
 	log_viewer.configure_session(user_id, session_id, session_topics)
 	log_viewer.mark_saved_snapshot()
 
-	# Mark as monitored
-	_monitoring_sessions.append(session_id)
-
-	info("Log viewer opened for session %s (subscribed to session-specific topics)" % session_id)
+	return log_viewer

@@ -79,6 +79,8 @@ static var COLUMN_NAMES: Dictionary = {
 var artifacts: Array[Artifact] = []
 var selected_artifact: Artifact = null:
 	set(value):
+		if selected_artifact == value:
+			return
 		selected_artifact = value
 
 		_copy_uri_button.disabled = not selected_artifact

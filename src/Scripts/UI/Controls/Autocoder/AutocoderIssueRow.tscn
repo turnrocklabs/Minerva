@@ -1,43 +1,71 @@
-[gd_scene load_steps=2 format=3 uid="uid://c12b7d5xv4o1s"]
+[gd_scene load_steps=3 format=3 uid="uid://c12b7d5xv4o1s"]
 
 [ext_resource type="Script" uid="uid://c0y5u2p0l7m8c" path="res://Scripts/UI/Controls/Autocoder/AutocoderIssueRow.gd" id="1_5o3hf"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_issue_row"]
+bg_color = Color(0.12, 0.1, 0.1, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.25, 0.18, 0.18, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
 [node name="AutocoderIssueRow" type="PanelContainer"]
 size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_issue_row")
 script = ExtResource("1_5o3hf")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 2
-theme_override_constants/margin_left = 8
-theme_override_constants/margin_top = 6
-theme_override_constants/margin_right = 8
-theme_override_constants/margin_bottom = 6
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
 
 [node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 6
 
 [node name="Header" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Icon" type="Label" parent="MarginContainer/VBoxContainer/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "⚠️"
 
 [node name="LocationLabel" type="Label" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
+theme_override_font_sizes/font_size = 12
 text = "file:line"
 
 [node name="SeverityLabel" type="Label" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.7, 0.4, 1)
+theme_override_font_sizes/font_size = 11
 text = "severity"
 
 [node name="SummaryLabel" type="Label" parent="MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.92, 1)
+theme_override_font_sizes/font_size = 13
 text = "Issue summary"
+autowrap_mode = 3
 
 [node name="ExcerptLabel" type="Label" parent="MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
-autowrap_mode = 3
+theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
+theme_override_font_sizes/font_size = 11
 text = ""
+autowrap_mode = 3

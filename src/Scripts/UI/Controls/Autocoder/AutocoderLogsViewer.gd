@@ -34,7 +34,7 @@ const LLM_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderLLM
 @onready var _review_state_label: Label = %ReviewStateLabel
 @onready var _review_summary_label: Label = %ReviewSummaryLabel
 
-@onready var _review_panel: HBoxContainer = %ReviewPanel
+@onready var _review_panel: PanelContainer = %ReviewPanel
 @onready var _request_review_button: Button = %RequestReviewButton
 @onready var _approve_button: Button = %ApproveButton
 
@@ -44,9 +44,9 @@ const LLM_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderLLM
 @onready var _patch_copy_button: Button = %PatchCopyButton
 @onready var _archive_copy_button: Button = %ArchiveCopyButton
 
-@onready var _timeline_header: Label = %TimelineHeader
+@onready var _timeline_header: HBoxContainer = %TimelineHeader
 @onready var _timeline_list: VBoxContainer = %TimelineList
-@onready var _issues_header: Label = %IssuesHeader
+@onready var _issues_header: HBoxContainer = %IssuesHeader
 @onready var _issues_list: VBoxContainer = %IssuesList
 
 @onready var _advanced_section: VBoxContainer = %AdvancedSection
@@ -62,11 +62,31 @@ var _tool_rows: Dictionary = {}  # action_id -> AutocoderToolRow
 
 
 func _ready() -> void:
-	_request_review_button.pressed.connect(_on_request_review_pressed)
-	_approve_button.pressed.connect(_on_approve_pressed)
-	_advanced_toggle.toggled.connect(_on_advanced_toggled)
-	_patch_copy_button.pressed.connect(_on_patch_copy_pressed)
-	_archive_copy_button.pressed.connect(_on_archive_copy_pressed)
+	# Null safety checks for @onready nodes
+	if not _request_review_button:
+		push_warning("AutocoderLogsViewer: _request_review_button not found")
+	else:
+		_request_review_button.pressed.connect(_on_request_review_pressed)
+	
+	if not _approve_button:
+		push_warning("AutocoderLogsViewer: _approve_button not found")
+	else:
+		_approve_button.pressed.connect(_on_approve_pressed)
+	
+	if not _advanced_toggle:
+		push_warning("AutocoderLogsViewer: _advanced_toggle not found")
+	else:
+		_advanced_toggle.toggled.connect(_on_advanced_toggled)
+	
+	if not _patch_copy_button:
+		push_warning("AutocoderLogsViewer: _patch_copy_button not found")
+	else:
+		_patch_copy_button.pressed.connect(_on_patch_copy_pressed)
+	
+	if not _archive_copy_button:
+		push_warning("AutocoderLogsViewer: _archive_copy_button not found")
+	else:
+		_archive_copy_button.pressed.connect(_on_archive_copy_pressed)
 
 	_reset_view()
 
@@ -184,25 +204,37 @@ func export_text() -> String:
 
 
 func _reset_view() -> void:
-	_session_label.text = "Session: %s" % (session_id if not session_id.is_empty() else "-")
-	_status_label.text = "Idle"
-	_spinner_label.visible = false
+	if _session_label:
+		_session_label.text = "Session: %s" % (session_id if not session_id.is_empty() else "-")
+	if _status_label:
+		_status_label.text = "Idle"
+	if _spinner_label:
+		_spinner_label.visible = false
 
-	_summary_panel.visible = false
-	_review_panel.visible = false
-	_artifacts_panel.visible = false
+	if _summary_panel:
+		_summary_panel.visible = false
+	if _review_panel:
+		_review_panel.visible = false
+	if _artifacts_panel:
+		_artifacts_panel.visible = false
 
-	_advanced_toggle.button_pressed = false
-	_advanced_section.visible = false
+	if _advanced_toggle:
+		_advanced_toggle.button_pressed = false
+	if _advanced_section:
+		_advanced_section.visible = false
 
 	_request_review_sent = false
 	_approve_sent = false
 	_status_override = ""
 
-	_clear_list(_timeline_list)
-	_clear_list(_issues_list)
-	_clear_list(_raw_list)
-	_clear_list(_llm_list)
+	if _timeline_list:
+		_clear_list(_timeline_list)
+	if _issues_list:
+		_clear_list(_issues_list)
+	if _raw_list:
+		_clear_list(_raw_list)
+	if _llm_list:
+		_clear_list(_llm_list)
 
 	_active_llm_cards.clear()
 	_action_rows.clear()
@@ -216,10 +248,12 @@ func _update_summary_panel() -> void:
 	var summary = _store.ai_review_summary
 	var counts_line = _build_review_counts_line()
 
-	_review_state_label.text = ""
-	_review_summary_label.text = ""
+	if _review_state_label:
+		_review_state_label.text = ""
+	if _review_summary_label:
+		_review_summary_label.text = ""
 
-	if not review_state.is_empty():
+	if not review_state.is_empty() and _review_state_label:
 		_review_state_label.text = "Review state: %s" % review_state
 
 	var summary_lines: Array[String] = []
@@ -228,9 +262,11 @@ func _update_summary_panel() -> void:
 	if not counts_line.is_empty():
 		summary_lines.append(counts_line)
 
-	_review_summary_label.text = "\n".join(summary_lines)
+	if _review_summary_label:
+		_review_summary_label.text = "\n".join(summary_lines)
 
-	_summary_panel.visible = (not review_state.is_empty()) or (not summary_lines.is_empty())
+	if _summary_panel:
+		_summary_panel.visible = (not review_state.is_empty()) or (not summary_lines.is_empty())
 
 
 func _update_review_panel(payload: Dictionary) -> void:
@@ -238,23 +274,32 @@ func _update_review_panel(payload: Dictionary) -> void:
 		_status_override = ""
 		_request_review_sent = false
 		_approve_sent = false
-		_review_panel.visible = false
-		_request_review_button.disabled = true
-		_approve_button.disabled = true
+		if _review_panel:
+			_review_panel.visible = false
+		if _request_review_button:
+			_request_review_button.disabled = true
+		if _approve_button:
+			_approve_button.disabled = true
 		return
 
 	if _store.review_state == "awaiting_user":
 		if payload.has("review_result"):
 			_request_review_sent = false
 
-		_review_panel.visible = true
-		_request_review_button.disabled = _request_review_sent
-		_approve_button.disabled = _approve_sent
+		if _review_panel:
+			_review_panel.visible = true
+		if _request_review_button:
+			_request_review_button.disabled = _request_review_sent
+		if _approve_button:
+			_approve_button.disabled = _approve_sent
 		return
 
-	_review_panel.visible = false
-	_request_review_button.disabled = true
-	_approve_button.disabled = true
+	if _review_panel:
+		_review_panel.visible = false
+	if _request_review_button:
+		_request_review_button.disabled = true
+	if _approve_button:
+		_approve_button.disabled = true
 
 
 func _update_artifacts_panel() -> void:
@@ -262,25 +307,33 @@ func _update_artifacts_panel() -> void:
 	var has_archive = not _store.archive_uri.is_empty()
 
 	if not has_patch and not has_archive:
-		_artifacts_panel.visible = false
+		if _artifacts_panel:
+			_artifacts_panel.visible = false
 		return
 
-	_artifacts_panel.visible = true
-	_patch_value_label.text = _store.patch_uri if has_patch else "-"
-	_archive_value_label.text = _store.archive_uri if has_archive else "-"
-	_patch_copy_button.disabled = not has_patch
-	_archive_copy_button.disabled = not has_archive
+	if _artifacts_panel:
+		_artifacts_panel.visible = true
+	if _patch_value_label:
+		_patch_value_label.text = _store.patch_uri if has_patch else "-"
+	if _archive_value_label:
+		_archive_value_label.text = _store.archive_uri if has_archive else "-"
+	if _patch_copy_button:
+		_patch_copy_button.disabled = not has_patch
+	if _archive_copy_button:
+		_archive_copy_button.disabled = not has_archive
 
 
 func _update_status_labels() -> void:
 	var is_running = _store.has_running_action()
-	_status_label.text = AutocoderLogFormatter.format_status_label(
-		_store.review_state,
-		_store.current_status,
-		is_running,
-		_status_override
-	)
-	_spinner_label.visible = is_running
+	if _status_label:
+		_status_label.text = AutocoderLogFormatter.format_status_label(
+			_store.review_state,
+			_store.current_status,
+			is_running,
+			_status_override
+		)
+	if _spinner_label:
+		_spinner_label.visible = is_running
 
 
 func _add_action_row(payload: Dictionary) -> void:
@@ -299,7 +352,8 @@ func _add_action_row(payload: Dictionary) -> void:
 	var row: AutocoderActionRow = ACTION_ROW_SCENE.instantiate()
 	var summary = AutocoderLogFormatter.format_action_summary(action_type, payload)
 	var secondary = AutocoderLogFormatter.format_action_secondary(action_type, payload)
-	_timeline_list.add_child(row)
+	if _timeline_list:
+		_timeline_list.add_child(row)
 	row.setup(summary, status, secondary)
 
 	# Track the row by action_id for future updates
@@ -337,7 +391,8 @@ func _add_tool_row(payload: Dictionary) -> void:
 
 	# Create new row
 	var row: AutocoderToolRow = TOOL_ROW_SCENE.instantiate()
-	_timeline_list.add_child(row)
+	if _timeline_list:
+		_timeline_list.add_child(row)
 	row.setup(tool, description, command, path, status, returncode, stdout, stderr)
 
 	# Track the row by action_id for future updates
@@ -354,21 +409,24 @@ func _add_issue_row(issue: Dictionary) -> void:
 	var summary = str(issue.get("summary", ""))
 	var excerpt = str(issue.get("code_excerpt", ""))
 	var has_fix = bool(issue.get("has_fix", false))
-	_issues_list.add_child(row)
+	if _issues_list:
+		_issues_list.add_child(row)
 	row.setup(location, severity, summary, excerpt, has_fix)
 	_update_list_headers()
 
 
 func _add_raw_row(title: String, data: Variant) -> void:
 	var row: AutocoderRawJsonRow = RAW_ROW_SCENE.instantiate()
-	_raw_list.add_child(row)
+	if _raw_list:
+		_raw_list.add_child(row)
 	row.setup(title, data)
 
 
 func _add_llm_row(payload: Dictionary) -> void:
 	var title = "LLM: %s" % str(payload.get("type", "event"))
 	var row: AutocoderRawJsonRow = RAW_ROW_SCENE.instantiate()
-	_llm_list.add_child(row)
+	if _llm_list:
+		_llm_list.add_child(row)
 	row.setup(title, payload)
 
 
@@ -382,10 +440,40 @@ func _on_request_review_pressed() -> void:
 		SingletonObject.ErrorDisplay("Review Request", "Autocoder not connected.")
 		return
 
+	# Show dialog to get custom prompt
+	var dialog = _create_review_request_dialog()
+	var prompt_edit: TextEdit = dialog.get_node("%CustomPromptEdit")
+
+	# Use a dictionary to capture values from lambda
+	var result = {"confirmed": false, "custom_prompt": ""}
+
+	dialog.confirmed.connect(
+		func():
+			result["confirmed"] = true
+			result["custom_prompt"] = prompt_edit.text.strip_edges()
+	)
+
+	dialog.canceled.connect(
+		func():
+			result["confirmed"] = false
+	)
+
+	dialog.popup_centered()
+
+	# Wait for dialog to close
+	await dialog.visibility_changed
+
+	if not dialog.visible:
+		dialog.queue_free()
+		if not result["confirmed"]:
+			return
+
+	var custom_prompt = result["custom_prompt"]
+
 	_request_review_button.disabled = true
 	_status_override = "Review started"
 
-	var ok = await adapter.request_review(user_id, session_id)
+	var ok = await adapter.request_review(user_id, session_id, custom_prompt)
 	if not ok:
 		_request_review_button.disabled = false
 		_status_override = ""
@@ -479,8 +567,10 @@ func _clear_list(container: VBoxContainer) -> void:
 
 
 func _update_list_headers() -> void:
-	_timeline_header.visible = _timeline_list.get_child_count() > 0
-	_issues_header.visible = _issues_list.get_child_count() > 0
+	if _timeline_header and _timeline_list:
+		_timeline_header.visible = _timeline_list.get_child_count() > 0
+	if _issues_header and _issues_list:
+		_issues_header.visible = _issues_list.get_child_count() > 0
 
 
 ## LLM Event Handlers for live streaming display
@@ -509,7 +599,8 @@ func _handle_llm_request(payload: Dictionary) -> void:
 
 	# Create new LLM card and add to TIMELINE (not separate section)
 	var card: AutocoderLLMCard = LLM_CARD_SCENE.instantiate()
-	_timeline_list.add_child(card)
+	if _timeline_list:
+		_timeline_list.add_child(card)
 	card.setup_request(event_id, model, message_count, messages if messages is Array else [])
 
 	# Track the card by multiple identifiers for response correlation
@@ -682,7 +773,8 @@ func _handle_llm_error(payload: Dictionary) -> void:
 
 	# Otherwise create a new error card in timeline
 	var error_card = LLM_CARD_SCENE.instantiate()
-	_timeline_list.add_child(error_card)
+	if _timeline_list:
+		_timeline_list.add_child(error_card)
 	error_card.setup_request(request_id, "Error", 0, [])
 	error_card.mark_error(error_message)
 
@@ -701,6 +793,47 @@ func _handle_llm_tool_call(payload: Dictionary) -> void:
 	var tool_input = payload.get("input", {})
 
 	card.add_tool_call(tool_name, tool_input)
+
+
+func _create_review_request_dialog() -> AcceptDialog:
+	var dialog := AcceptDialog.new()
+	dialog.title = "Request Another Review"
+	dialog.dialog_text = ""
+	dialog.min_size = Vector2i(600, 300)
+	dialog.ok_button_text = "Request Review"
+
+	var vbox := VBoxContainer.new()
+	vbox.name = "VBox"
+	dialog.add_child(vbox)
+
+	# Instructions
+	var instructions := Label.new()
+	instructions.text = "Enter optional custom instructions for the review agents:"
+	vbox.add_child(instructions)
+
+	vbox.add_child(HSeparator.new())
+
+	# Custom prompt text edit
+	var prompt_label := Label.new()
+	prompt_label.text = "Custom Prompt (optional):"
+	vbox.add_child(prompt_label)
+
+	var prompt_edit := TextEdit.new()
+	prompt_edit.unique_name_in_owner = true
+	prompt_edit.name = "CustomPromptEdit"
+	prompt_edit.placeholder_text = "e.g., Focus on security issues and performance bottlenecks"
+	prompt_edit.custom_minimum_size = Vector2(0, 120)
+	prompt_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	vbox.add_child(prompt_edit)
+
+	# Info label
+	var info := Label.new()
+	info.text = "Leave blank to use default review behavior."
+	info.add_theme_font_size_override("font_size", 11)
+	vbox.add_child(info)
+
+	SingletonObject.add_child(dialog)
+	return dialog
 
 
 func _get_adapter() -> AutocoderAdapter:

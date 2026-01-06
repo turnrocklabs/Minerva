@@ -107,30 +107,32 @@ func _build_agent_card(agent: Dictionary) -> PanelContainer:
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var tools_enabled = bool(agent.get("tools_enabled", false))
-	var border_color = Color(0.3, 0.8, 0.5) if tools_enabled else Color(0.4, 0.4, 0.4)
+	var border_color = Color(0.25, 0.5, 0.35) if tools_enabled else Color(0.2, 0.2, 0.22)
 
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.15, 0.15, 0.17)
+	style.bg_color = Color(0.1, 0.1, 0.12)
 	style.border_color = border_color
-	style.border_width_left = 3
-	style.set_corner_radius_all(4)
-	style.content_margin_left = 8
-	style.content_margin_right = 8
-	style.content_margin_top = 6
-	style.content_margin_bottom = 6
+	style.set_border_width_all(1)
+	style.border_width_left = 3 if tools_enabled else 1
+	style.set_corner_radius_all(10)
+	style.content_margin_left = 14
+	style.content_margin_right = 14
+	style.content_margin_top = 12
+	style.content_margin_bottom = 12
 	panel.add_theme_stylebox_override("panel", style)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
+	vbox.add_theme_constant_override("separation", 8)
 	panel.add_child(vbox)
 
 	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 8)
+	header.add_theme_constant_override("separation", 10)
 	vbox.add_child(header)
 
 	var name_label := Label.new()
 	name_label.text = str(agent.get("name", "Unnamed Agent"))
-	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.add_theme_font_size_override("font_size", 14)
+	name_label.add_theme_color_override("font_color", Color(0.95, 0.95, 0.97))
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(name_label)
 
@@ -138,7 +140,7 @@ func _build_agent_card(agent: Dictionary) -> PanelContainer:
 	var model_label := Label.new()
 	model_label.text = model_text if not model_text.is_empty() else "default model"
 	model_label.add_theme_font_size_override("font_size", 11)
-	model_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	model_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
 	header.add_child(model_label)
 
 	var prompt_preview := str(agent.get("prompt", ""))
@@ -148,31 +150,35 @@ func _build_agent_card(agent: Dictionary) -> PanelContainer:
 	var prompt_label := Label.new()
 	prompt_label.text = prompt_preview
 	prompt_label.add_theme_font_size_override("font_size", 12)
-	prompt_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+	prompt_label.add_theme_color_override("font_color", Color(0.65, 0.65, 0.7))
 	prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(prompt_label)
 
 	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 8)
+	footer.add_theme_constant_override("separation", 12)
 	vbox.add_child(footer)
 
 	var setup_count = _get_setup_count(agent.get("setup_commands", []))
 	var meta_label := Label.new()
-	meta_label.text = "Setup: %d | Tools: %s" % [setup_count, "On" if tools_enabled else "Off"]
+	var tools_text = "🔧 Tools On" if tools_enabled else "Tools Off"
+	meta_label.text = "Setup: %d | %s" % [setup_count, tools_text]
 	meta_label.add_theme_font_size_override("font_size", 11)
-	meta_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	meta_label.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))
 	meta_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer.add_child(meta_label)
 
 	var edit_button := Button.new()
 	edit_button.text = "Edit"
-	edit_button.add_theme_font_size_override("font_size", 11)
+	edit_button.flat = true
+	edit_button.add_theme_font_size_override("font_size", 12)
 	edit_button.pressed.connect(func(): _on_edit_agent_pressed(agent))
 	footer.add_child(edit_button)
 
 	var delete_button := Button.new()
 	delete_button.text = "Delete"
-	delete_button.add_theme_font_size_override("font_size", 11)
+	delete_button.flat = true
+	delete_button.add_theme_font_size_override("font_size", 12)
+	delete_button.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
 	delete_button.pressed.connect(func(): _on_delete_agent_pressed(str(agent.get("agent_id", ""))))
 	footer.add_child(delete_button)
 

@@ -1,0 +1,192 @@
+[gd_scene load_steps=4 format=3 uid="uid://compact_submit_abc123"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderCompactSubmit.gd" id="1_compact"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(0.12, 0.12, 0.14, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.2, 0.2, 0.22, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_input"]
+bg_color = Color(0.08, 0.08, 0.1, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.25, 0.25, 0.28, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+
+[node name="AutocoderCompactSubmit" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_compact")
+
+[node name="MainPanel" type="PanelContainer" parent="."]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="MainMargin" type="MarginContainer" parent="MainPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="MainContent" type="VBoxContainer" parent="MainPanel/MainMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="SessionRow" type="HBoxContainer" parent="MainPanel/MainMargin/MainContent"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SessionLabel" type="Label" parent="MainPanel/MainMargin/MainContent/SessionRow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
+theme_override_font_sizes/font_size = 12
+text = "Session:"
+
+[node name="SessionOptionButton" type="OptionButton" parent="MainPanel/MainMargin/MainContent/SessionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+
+[node name="ModeRow" type="HBoxContainer" parent="MainPanel/MainMargin/MainContent"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ModeLabel" type="Label" parent="MainPanel/MainMargin/MainContent/ModeRow"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
+theme_override_font_sizes/font_size = 12
+text = "Mode:"
+
+[node name="ModeOptionButton" type="OptionButton" parent="MainPanel/MainMargin/MainContent/ModeRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+item_count = 3
+popup/item_0/text = "Plan"
+popup/item_0/id = 0
+popup/item_1/text = "Coder"
+popup/item_1/id = 1
+popup/item_2/text = "Review"
+popup/item_2/id = 2
+
+[node name="PromptSection" type="VBoxContainer" parent="MainPanel/MainMargin/MainContent"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PromptLabel" type="Label" parent="MainPanel/MainMargin/MainContent/PromptSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
+theme_override_font_sizes/font_size = 11
+text = "What do you want to build?"
+
+[node name="PromptTextEdit" type="TextEdit" parent="MainPanel/MainMargin/MainContent/PromptSection"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_input")
+placeholder_text = "Describe your task..."
+wrap_mode = 1
+
+[node name="OptionsRow" type="HBoxContainer" parent="MainPanel/MainMargin/MainContent"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ModelSection" type="HBoxContainer" parent="MainPanel/MainMargin/MainContent/OptionsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ModelLabel" type="Label" parent="MainPanel/MainMargin/MainContent/OptionsRow/ModelSection"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 11
+text = "Model:"
+
+[node name="ModelOptionButton" type="OptionButton" parent="MainPanel/MainMargin/MainContent/OptionsRow/ModelSection"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+
+[node name="ChecksSection" type="HBoxContainer" parent="MainPanel/MainMargin/MainContent/OptionsRow"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="AutoReviewCheckBox" type="CheckBox" parent="MainPanel/MainMargin/MainContent/OptionsRow/ChecksSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Auto-review"
+
+[node name="RequirePermissionCheckBox" type="CheckBox" parent="MainPanel/MainMargin/MainContent/OptionsRow/ChecksSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Permissions"
+
+[node name="ArtifactRow" type="HBoxContainer" parent="MainPanel/MainMargin/MainContent"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ArtifactButton" type="Button" parent="MainPanel/MainMargin/MainContent/ArtifactRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Add Files"
+flat = true
+
+[node name="ArtifactLabel" type="Label" parent="MainPanel/MainMargin/MainContent/ArtifactRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
+theme_override_font_sizes/font_size = 11
+text = "No artifact selected"
+text_overrun_behavior = 3
+
+[node name="ReviewAgentsContainer" type="VBoxContainer" parent="MainPanel/MainMargin/MainContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ReviewAgentsLabel" type="Label" parent="MainPanel/MainMargin/MainContent/ReviewAgentsContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
+theme_override_font_sizes/font_size = 11
+text = "Review Agents:"
+
+[node name="ReviewAgentsList" type="VBoxContainer" parent="MainPanel/MainMargin/MainContent/ReviewAgentsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SubmitButton" type="Button" parent="MainPanel/MainMargin/MainContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Start Planning"

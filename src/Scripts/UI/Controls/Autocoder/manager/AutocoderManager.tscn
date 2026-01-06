@@ -1,9 +1,10 @@
-[gd_scene load_steps=5 format=3 uid="uid://dmi6sts02m7by"]
+[gd_scene load_steps=6 format=3 uid="uid://dmi6sts02m7by"]
 
 [ext_resource type="Script" uid="uid://bt3dwo5xpuwsh" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderManager.gd" id="1_a2bat"]
 [ext_resource type="PackedScene" uid="uid://dhvyes0wg8qlw" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderSubmitJobManager.tscn" id="2_kd6yi"]
 [ext_resource type="PackedScene" uid="uid://e4srp1nnpl8g" path="res://Scripts/UI/Controls/Autocoder/manager/AutocoderSessionView.tscn" id="3_o2x8u"]
 [ext_resource type="PackedScene" uid="uid://di7eawe2krtme" path="res://Scripts/UI/Controls/Autocoder/manager/ReviewAgentManager.tscn" id="4_tf35b"]
+[ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="5_perm"]
 
 [node name="AutocoderManager" type="VBoxContainer"]
 anchors_preset = 15
@@ -31,3 +32,77 @@ metadata/_tab_index = 1
 visible = false
 layout_mode = 2
 metadata/_tab_index = 2
+
+[node name="PermissionPopup" parent="." instance=ExtResource("5_perm")]
+unique_name_in_owner = true
+title = "🔒 Permission Request"
+visible = false
+size = Vector2i(640, 420)
+
+[node name="PermissionMargin" type="MarginContainer" parent="PermissionPopup"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="PermissionBox" type="VBoxContainer" parent="PermissionPopup/PermissionMargin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PermissionHeaderLabel" type="Label" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+layout_mode = 2
+text = "🔒 Permission Request"
+
+[node name="PermissionQueueLabel" type="Label" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Queue: 0"
+
+[node name="PermissionTitleLabel" type="Label" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Title: -"
+
+[node name="PermissionTypeLabel" type="Label" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Type: -"
+
+[node name="PermissionPatternLabel" type="Label" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+layout_mode = 2
+text = "Pattern"
+
+[node name="PermissionPatternText" type="TextEdit" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+wrap_mode = 1
+
+[node name="PermissionMetadataLabel" type="Label" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+layout_mode = 2
+text = "Metadata"
+
+[node name="PermissionMetadataText" type="TextEdit" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 140)
+layout_mode = 2
+wrap_mode = 1
+
+[node name="PermissionButtons" type="HBoxContainer" parent="PermissionPopup/PermissionMargin/PermissionBox"]
+layout_mode = 2
+
+[node name="PermissionApproveButton" type="Button" parent="PermissionPopup/PermissionMargin/PermissionBox/PermissionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "✅ Approve"
+
+[node name="PermissionRejectButton" type="Button" parent="PermissionPopup/PermissionMargin/PermissionBox/PermissionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "❌ Reject"
+
+[node name="PermissionCopyButton" type="Button" parent="PermissionPopup/PermissionMargin/PermissionBox/PermissionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "📋 Copy"

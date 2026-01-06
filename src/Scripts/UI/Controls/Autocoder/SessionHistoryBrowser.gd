@@ -16,39 +16,46 @@ func _ready() -> void:
 
 
 func _build_ui() -> void:
+	add_theme_constant_override("separation", 12)
+	
 	# Header with refresh button
 	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 8)
+	header.add_theme_constant_override("separation", 10)
 	add_child(header)
 
 	var title_label := Label.new()
-	title_label.text = "Previous Sessions"
-	title_label.add_theme_font_size_override("font_size", 14)
+	title_label.text = "Recent Sessions"
+	title_label.add_theme_font_size_override("font_size", 13)
+	title_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
 	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title_label)
 
 	_refresh_button = Button.new()
 	_refresh_button.text = "Refresh"
+	_refresh_button.flat = true
+	_refresh_button.add_theme_font_size_override("font_size", 12)
 	_refresh_button.pressed.connect(_on_refresh_pressed)
 	header.add_child(_refresh_button)
 
 	# Scroll container for sessions
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(0, 150)
+	scroll.custom_minimum_size = Vector2(0, 120)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)
 
 	# Session list container
 	_session_list_container = VBoxContainer.new()
 	_session_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_session_list_container.add_theme_constant_override("separation", 4)
+	_session_list_container.add_theme_constant_override("separation", 8)
 	scroll.add_child(_session_list_container)
 
 	# Loading label
 	_loading_label = Label.new()
 	_loading_label.text = "Loading sessions..."
 	_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_loading_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	_loading_label.add_theme_font_size_override("font_size", 12)
+	_loading_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
 	_loading_label.visible = false
 	_session_list_container.add_child(_loading_label)
 
@@ -56,7 +63,8 @@ func _build_ui() -> void:
 	_empty_label = Label.new()
 	_empty_label.text = "No previous sessions found.\nStart a new generation to create your first session."
 	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_empty_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	_empty_label.add_theme_font_size_override("font_size", 12)
+	_empty_label.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))
 	_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_empty_label.visible = false
 	_session_list_container.add_child(_empty_label)
@@ -95,69 +103,74 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	# Style
+	var status = str(session.get("status", "unknown")).to_lower()
+	var status_color = _get_status_color(status)
+
+	# Modern card style with subtle left border accent
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.15, 0.15, 0.17)
-	style.border_color = _get_status_color(session.get("status", ""))
+	style.bg_color = Color(0.1, 0.1, 0.12)
+	style.border_color = Color(0.18, 0.18, 0.2)
+	style.set_border_width_all(1)
 	style.border_width_left = 3
-	style.set_corner_radius_all(4)
-	style.content_margin_left = 8
-	style.content_margin_right = 8
-	style.content_margin_top = 6
-	style.content_margin_bottom = 6
+	style.border_color = status_color.darkened(0.3)
+	style.set_corner_radius_all(10)
+	style.content_margin_left = 14
+	style.content_margin_right = 14
+	style.content_margin_top = 12
+	style.content_margin_bottom = 12
 	panel.add_theme_stylebox_override("panel", style)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 4)
+	vbox.add_theme_constant_override("separation", 8)
 	panel.add_child(vbox)
 
 	# Header row: session ID + status badge
 	var header_row := HBoxContainer.new()
-	header_row.add_theme_constant_override("separation", 8)
+	header_row.add_theme_constant_override("separation", 10)
 	vbox.add_child(header_row)
 
 	var session_id = str(session.get("session_id", "unknown"))
-	var short_id = session_id.substr(0, 20) if session_id.length() > 20 else session_id
+	var short_id = session_id.substr(0, 18) if session_id.length() > 18 else session_id
 
 	var id_label := Label.new()
 	id_label.text = short_id
 	id_label.add_theme_font_size_override("font_size", 13)
+	id_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.92))
 	id_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header_row.add_child(id_label)
 
-	# Status badge
-	var status = str(session.get("status", "unknown")).to_lower()
+	# Status badge with modern pill style
 	var status_badge := Label.new()
-	status_badge.text = status.capitalize()
-	status_badge.add_theme_font_size_override("font_size", 11)
-	status_badge.add_theme_color_override("font_color", _get_status_color(status))
+	status_badge.text = _get_status_emoji(status) + " " + status.capitalize()
+	status_badge.add_theme_font_size_override("font_size", 10)
+	status_badge.add_theme_color_override("font_color", status_color)
 
 	var badge_style := StyleBoxFlat.new()
-	badge_style.bg_color = _get_status_color(status).darkened(0.7)
-	badge_style.set_corner_radius_all(3)
-	badge_style.content_margin_left = 6
-	badge_style.content_margin_right = 6
-	badge_style.content_margin_top = 2
-	badge_style.content_margin_bottom = 2
+	badge_style.bg_color = status_color.darkened(0.75)
+	badge_style.set_corner_radius_all(10)
+	badge_style.content_margin_left = 8
+	badge_style.content_margin_right = 8
+	badge_style.content_margin_top = 3
+	badge_style.content_margin_bottom = 3
 	status_badge.add_theme_stylebox_override("normal", badge_style)
 	header_row.add_child(status_badge)
 
 	# Prompt preview
 	var prompt = str(session.get("prompt", "No prompt"))
-	var prompt_preview = prompt.substr(0, 100)
-	if prompt.length() > 100:
+	var prompt_preview = prompt.substr(0, 80)
+	if prompt.length() > 80:
 		prompt_preview += "..."
 
 	var prompt_label := Label.new()
 	prompt_label.text = prompt_preview
 	prompt_label.add_theme_font_size_override("font_size", 12)
-	prompt_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+	prompt_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
 	prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(prompt_label)
 
 	# Footer row: timestamp + actions
 	var footer_row := HBoxContainer.new()
-	footer_row.add_theme_constant_override("separation", 8)
+	footer_row.add_theme_constant_override("separation", 10)
 	vbox.add_child(footer_row)
 
 	# Timestamp
@@ -165,41 +178,57 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 	var time_label := Label.new()
 	time_label.text = _format_timestamp(created_at)
 	time_label.add_theme_font_size_override("font_size", 11)
-	time_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	time_label.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))
 	time_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(time_label)
 
-	# Action buttons
+	# Action buttons with modern flat style
 	var view_btn := Button.new()
 	view_btn.text = "View"
+	view_btn.flat = true
 	view_btn.add_theme_font_size_override("font_size", 11)
 	view_btn.pressed.connect(func(): _on_session_view_clicked(session))
 	footer_row.add_child(view_btn)
 
 	# Only show resume button for active sessions
-	if status in ["in_review", "processing", "active"]:
+	if status in ["in_review", "processing", "active", "awaiting_user"]:
 		var resume_btn := Button.new()
 		resume_btn.text = "Resume"
+		resume_btn.flat = true
 		resume_btn.add_theme_font_size_override("font_size", 11)
-		resume_btn.add_theme_color_override("font_color", Color(0.5, 1.0, 0.7))
+		resume_btn.add_theme_color_override("font_color", Color(0.5, 0.9, 0.7))
 		resume_btn.pressed.connect(func(): _on_session_resume_clicked(session))
 		footer_row.add_child(resume_btn)
 
 	return panel
 
 
+func _get_status_emoji(status: String) -> String:
+	match status.to_lower():
+		"complete":
+			return "✅"
+		"in_review", "awaiting_user":
+			return "🔍"
+		"processing", "active":
+			return "⚡"
+		"error":
+			return "❌"
+		_:
+			return "◯"
+
+
 func _get_status_color(status: String) -> Color:
 	match status.to_lower():
 		"complete":
-			return Color(0.3, 1.0, 0.3)
-		"in_review":
-			return Color(1.0, 0.9, 0.3)
+			return Color(0.4, 0.9, 0.5)
+		"in_review", "awaiting_user":
+			return Color(0.95, 0.8, 0.3)
 		"processing", "active":
-			return Color(0.5, 1.0, 1.0)
+			return Color(0.5, 0.8, 1.0)
 		"error":
-			return Color(1.0, 0.3, 0.3)
+			return Color(0.95, 0.4, 0.4)
 		_:
-			return Color(0.6, 0.6, 0.6)
+			return Color(0.55, 0.55, 0.6)
 
 
 func _format_timestamp(timestamp: String) -> String:
