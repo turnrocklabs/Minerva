@@ -20,6 +20,12 @@ var _layer_start_position: Vector2 = Vector2.ZERO
 var _layer_start_size: Vector2 = Vector2.ZERO
 var _layer_start_rotation: float = 0.0
 var _rotation_center: Vector2 = Vector2.ZERO
+var _last_mouse_position: Vector2 = Vector2.ZERO  # For rotation angle calculation
+
+# Rotation constants (from PanTool)
+const ROTATION_THRESHOLD: float = 0.005  # Minimum angular change to trigger rotation (in radians)
+const ROTATION_SENSITIVITY: float = 1.0  # How fast layer rotation responds to mouse angular movement (1.0 = 1:1)
+const MIN_DISTANCE_FROM_ROT_CENTER: float = 15.0  # Mouse must be at least this far from center to detect rotation reliably
 
 # Resize position tracking
 var _resize_reference_positions = {}
@@ -72,6 +78,9 @@ func _reset_state() -> void:
 func handle_input_event(event: InputEvent) -> bool:
 	if not editor.active_layer: return false
 
+	# Store original event position before localization (needed for rotation calculations)
+	var original_event_position = event.position if event is InputEventMouse else Vector2.ZERO
+	
 	event = editor.active_layer.localize_input(event)
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -81,13 +90,13 @@ func handle_input_event(event: InputEvent) -> bool:
 			#return false
 
 		if event.pressed:
-			_start_transform(event)
+			_start_transform(event, original_event_position)
 		else:
 			_end_transform()
 		return true
 
 	elif event is InputEventMouseMotion and _is_transforming:
-		_update_transform(event)
+		_update_transform(event, original_event_position)
 		return true
 
 	elif event is InputEventMouseMotion and not _is_transforming and editor.active_layer:
@@ -131,18 +140,25 @@ func _get_opposite_handle(handle_type: int) -> int:
 			return LayerV2.TransformPoint.RIGHT
 	return LayerV2.TransformPoint.NONE
 
-func _start_transform(event: InputEvent) -> void:
+func _start_transform(event: InputEvent, editor_local_position: Vector2) -> void:
 	if not editor.active_layer:
 		return
 	
-	# Store initial global position
+	# Store initial global position (layer-local for other operations)
 	_drag_start_global_pos = event.position
 	_layer_start_position = editor.active_layer.position
 	_layer_start_size = editor.active_layer.custom_minimum_size
 	_layer_start_rotation = editor.active_layer.rotation
 	
-	# Store global center of layer for rotation
-	_rotation_center = editor.active_layer.global_position + editor.active_layer.size/2
+	# Store initial mouse position in editor-local space for rotation calculation
+	_last_mouse_position = editor_local_position
+	
+	# Calculate rotation center: layer's pivot point in editor's local coordinate space
+	# This matches the PanTool's approach for consistent rotation behavior
+	var layer_global_rect = editor.active_layer.get_global_rect()
+	# Convert layer's global center (pivot point) to the editor's local input area coordinates
+	_rotation_center = editor.get_global_transform().affine_inverse() * (layer_global_rect.position + editor.active_layer.pivot_offset)
+	
 	print("Transform started at position: ", _layer_start_position, " with rotation: ", _layer_start_rotation)
 	
 	# Cache global positions of all control handles
@@ -191,7 +207,7 @@ func _start_transform(event: InputEvent) -> void:
 	_initial_click_position = local_pos
 	_backup_original_state()
 
-func _update_transform(event: InputEventMouseMotion) -> void:
+func _update_transform(event: InputEventMouseMotion, editor_local_position: Vector2) -> void:
 	if not _is_transforming or not editor.active_layer:
 		return
 	
@@ -202,7 +218,7 @@ func _update_transform(event: InputEventMouseMotion) -> void:
 		TransformMode.RESIZE:
 			_handle_resize(event)
 		TransformMode.ROTATE:
-			_handle_rotate(event)
+			_handle_rotate(editor_local_position)
 	
 	# Force redraw to update transform rect
 	editor.queue_redraw()
@@ -275,34 +291,38 @@ func _handle_resize(event: InputEventMouseMotion) -> void:
 	editor.active_layer.size -= size_factor * editor.PAN_FACTOR * (1 / editor.input_area_camera.zoom.x)
 	editor.active_layer.pivot_offset = editor.active_layer.size * 0.5
 
-# Placeholder for the rotate operation - implement your own logic
-func _handle_rotate(event: InputEventMouseMotion) -> void:
-	# Get the distance of mouse from pivot
-	var pivot = editor.active_layer.get_global_rect().get_center() #editor.active_layer.global_position + editor.active_layer.pivot_offset
+# Rotate operation using circular motion detection (from PanTool)
+func _handle_rotate(editor_local_position: Vector2) -> void:
+	var current_mouse_position = editor_local_position
 	
-	var move_delta = event.screen_relative
+	# Calculate angular change using the same logic as PanTool
+	var angular_change = _calculate_rotation_angle_delta(_last_mouse_position, current_mouse_position, _rotation_center)
 	
-	var direction: Vector2 = Vector2.ZERO
-	if pivot.x > move_delta.x:
-		direction.x = -1
-	else:
-		direction.x = 1
-	if pivot.y > move_delta.y:
-		direction.y = -1
-	else:
-		direction.y = 1
+	# Apply rotation if angular change exceeds threshold
+	if abs(angular_change) > ROTATION_THRESHOLD:
+		editor.active_layer.rotation += angular_change * ROTATION_SENSITIVITY * editor.PAN_FACTOR * (1 / editor.input_area_camera.zoom.x)
 	
-	direction.angle_to_point(pivot)
-	# Cross product to determine direction (positive = CCW, negative = CW)
-	# This uses the relative movement and vector from pivot to mouse
-	var pivot_to_mouse = event.position - pivot
-	#var direction = pivot_to_mouse.x * move_delta.y - pivot_to_mouse.y * move_delta.x
+	# Update last mouse position for next frame
+	_last_mouse_position = current_mouse_position
+
+# Calculates the signed angle between two mouse positions relative to a center point.
+# This implements the same rotation logic as PanTool for consistency.
+func _calculate_rotation_angle_delta(prev_pos: Vector2, curr_pos: Vector2, center: Vector2) -> float:
+	var vec_prev_to_mouse = prev_pos - center
+	var vec_curr_to_mouse = curr_pos - center
 	
-	# Calculate rotation factor based on movement and distance
-	var rotation_speed = 0.005
-	var rotate_factor = move_delta.length() * rotation_speed * direction.angle_to(pivot)
+	# Filter out if mouse is too close to the rotation center (can cause erratic angles)
+	if vec_prev_to_mouse.length() < MIN_DISTANCE_FROM_ROT_CENTER or vec_curr_to_mouse.length() < MIN_DISTANCE_FROM_ROT_CENTER:
+		return 0.0
 	
-	editor.active_layer.rotation += rotate_factor
+	# Get normalized vectors from center to mouse positions
+	var normalized_vec_prev = vec_prev_to_mouse.normalized()
+	var normalized_vec_curr = vec_curr_to_mouse.normalized()
+	
+	# Calculate the smallest signed angle between these two normalized vectors
+	var angle_delta = normalized_vec_prev.angle_to(normalized_vec_curr)
+	
+	return angle_delta
 	
 
 # Placeholder for finalizing the transform - implement your own logic

@@ -542,13 +542,17 @@ func _gui_input(event: InputEvent) -> void:
 			if event.is_pressed():
 				dragging = true
 				last_mouse_position = event.position
+				return
 			else:
 				dragging = false
-
+				return
+		
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_zoom(event.position, ZOOM_INCREMENT)
+			return
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_zoom(event.position, ZOOM_DECREMENT)
+			return
 	if event is InputEventMouseMotion:
 		if dragging:
 			# Pan all layers together
@@ -558,13 +562,24 @@ func _gui_input(event: InputEvent) -> void:
 			return
 	#endregion Move Canvas
 	
-	# if we have a active tool and at least one of selected layers is visible
-	if active_tool and (selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) ):
-		if active_tool.handle_input_event(event):
-			_compose_result_expired = true
-			saved = false
-			graphics_editor_changed.emit()
-		accept_event()
+	# Handle active tool input
+	# PanTool should work even without visible layers (for panning the canvas)
+	# Other tools need visible layers to function
+	if active_tool:
+		var should_handle = false
+		if active_tool is PanTool:
+			# PanTool can work without layers
+			should_handle = true
+		elif selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
+			# Other tools need visible layers
+			should_handle = true
+		
+		if should_handle:
+			if active_tool.handle_input_event(event):
+				_compose_result_expired = true
+				saved = false
+				graphics_editor_changed.emit()
+				accept_event()  # Only accept if tool actually handled the event
 
 
 func _pan_canvas(relative: Vector2) -> void:
@@ -1882,7 +1897,9 @@ func _on_resized() -> void:
 
 var floating_windows_active: = false
 func response_layout_toggle() -> void:
-	print(size.x)
+	if collapsed_by_user:
+		return
+	
 	if size.x <= 860:
 		floating_windows_active = true
 		if full_size_ai_container.get_child_count() > 0:
@@ -2388,3 +2405,14 @@ func _on_animation_option_button_item_selected(index: int) -> void:
 func _on_animation_frames_option_button_item_selected(index: int) -> void:
 	spritesheet_frames = animation_frames_option_button.get_item_text(index)
 	spritesheet_anim_is_active = spritesheet_settings_container.visible
+
+
+@export var MIN_DOCK_PANEL_WIDTH: = 410.0 # Define the minimum width for the docked panel in pixels before it collapses.
+var _is_dock_panel_collapsed_by_drag: bool = false # Tracks if the dock panel is currently collapsed due to user dragging.
+var _last_non_collapsed_split_offset: int = 0 # Stores the splitter's position before a drag-collapse, for restoration.
+@onready var main_h_split_container: HSplitContainer = $h/MainHSplitContainer
+
+var collapsed_by_user: = false
+func _on_main_h_split_container_dragged(offset: int) -> void:
+	
+	pass

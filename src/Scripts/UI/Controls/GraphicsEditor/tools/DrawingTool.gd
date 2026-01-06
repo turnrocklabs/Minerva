@@ -191,7 +191,7 @@ func _start_stroke(event: InputEvent) -> void:
 	
 	# this needs to be calculated after the stroke has been finished
 	# Create drawing command - captures "before" state
-	# var stroke_bounds = _calculate_stroke_bounds(event.position)
+	var stroke_bounds = _calculate_stroke_bounds(event.position)
 
 	current_stroke_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
 

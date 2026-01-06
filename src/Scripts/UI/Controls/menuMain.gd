@@ -157,13 +157,12 @@ func _on_project_index_pressed(index):
 		3:
 			# Save as a project
 			SingletonObject.SaveProjectAs.emit()
-		4:
-			# Export to image
-			var current_tab = SingletonObject.editor_pane.Tabs.get_current_tab_control()
-			print(current_tab)
-			if current_tab is Editor and current_tab.type == Editor.Type.GRAPHICS:
-				current_tab.graphics_editor._on_render_viewport_button_toggled(true)
-			
+		#4:
+			## Export to image
+			#var current_tab = SingletonObject.editor_pane.Tabs.get_current_tab_control()
+			#print(current_tab)
+			#if current_tab is Editor and current_tab.type == Editor.Type.GRAPHICS:
+				#current_tab.graphics_editor._on_render_viewport_button_toggled(true)
 		5:
 			popUpRecent.visible = true
 			load_recent_projects()
