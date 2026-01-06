@@ -4,6 +4,9 @@ signal create_system_prompt_message(message)
 
 @onready var _provider_option_button = %ProviderOptionButton as OptionButton
 
+# Nano Banana Pro settings container (created dynamically)
+var _nbp_settings_container: VBoxContainer = null
+
 
 enum GPT_params {
 	temp,
@@ -310,6 +313,129 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 
 	# System prompt section visibility
 	%SystemPromptVBoxContainer.visible = provider.supports_system_prompt
+
+	# Nano Banana Pro settings
+	var is_nbp: bool = provider.get("is_nano_banana_pro") == true
+	_update_nbp_settings_visibility(is_nbp)
+
+
+## Create or update Nano Banana Pro settings UI
+func _update_nbp_settings_visibility(show: bool) -> void:
+	if not show:
+		if _nbp_settings_container:
+			_nbp_settings_container.visible = false
+		return
+
+	# Create NBP settings if they don't exist
+	if _nbp_settings_container == null:
+		_create_nbp_settings()
+
+	_nbp_settings_container.visible = true
+
+	# Update values from singleton
+	var search_btn = _nbp_settings_container.get_node("GoogleSearchHBox/GoogleSearchCheckButton") as CheckButton
+	var aspect_btn = _nbp_settings_container.get_node("AspectRatioHBox/AspectRatioOptionButton") as OptionButton
+	var size_btn = _nbp_settings_container.get_node("ImageSizeHBox/ImageSizeOptionButton") as OptionButton
+
+	if search_btn:
+		search_btn.button_pressed = SingletonObject.nbp_google_search_enabled
+	if aspect_btn:
+		_select_option_by_text(aspect_btn, SingletonObject.nbp_aspect_ratio)
+	if size_btn:
+		_select_option_by_text(size_btn, SingletonObject.nbp_image_size)
+
+
+func _select_option_by_text(btn: OptionButton, text: String) -> void:
+	for i in btn.get_item_count():
+		if btn.get_item_text(i) == text:
+			btn.select(i)
+			return
+
+
+## Create the Nano Banana Pro settings UI dynamically
+func _create_nbp_settings() -> void:
+	_nbp_settings_container = VBoxContainer.new()
+	_nbp_settings_container.name = "NBPSettingsContainer"
+
+	# Add separator
+	var sep = HSeparator.new()
+	_nbp_settings_container.add_child(sep)
+
+	# Add header label
+	var header = Label.new()
+	header.text = "Nano Banana Pro Settings:"
+	header.add_theme_font_size_override("font_size", 14)
+	_nbp_settings_container.add_child(header)
+
+	# Google Search grounding toggle
+	var search_hbox = HBoxContainer.new()
+	search_hbox.name = "GoogleSearchHBox"
+	var search_label = Label.new()
+	search_label.text = "Google Search Grounding:"
+	search_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	search_label.tooltip_text = "Ground image generation in real-time web data (current events, weather, etc.)"
+	search_hbox.add_child(search_label)
+	var search_btn = CheckButton.new()
+	search_btn.name = "GoogleSearchCheckButton"
+	search_btn.button_pressed = SingletonObject.nbp_google_search_enabled
+	search_btn.toggled.connect(_on_nbp_google_search_toggled)
+	search_hbox.add_child(search_btn)
+	_nbp_settings_container.add_child(search_hbox)
+
+	# Aspect Ratio
+	var aspect_hbox = HBoxContainer.new()
+	aspect_hbox.name = "AspectRatioHBox"
+	var aspect_label = Label.new()
+	aspect_label.text = "Aspect Ratio:"
+	aspect_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	aspect_hbox.add_child(aspect_label)
+	var aspect_btn = OptionButton.new()
+	aspect_btn.name = "AspectRatioOptionButton"
+	for ratio in ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]:
+		aspect_btn.add_item(ratio)
+	_select_option_by_text(aspect_btn, SingletonObject.nbp_aspect_ratio)
+	aspect_btn.item_selected.connect(_on_nbp_aspect_ratio_selected)
+	aspect_hbox.add_child(aspect_btn)
+	_nbp_settings_container.add_child(aspect_hbox)
+
+	# Image Size
+	var size_hbox = HBoxContainer.new()
+	size_hbox.name = "ImageSizeHBox"
+	var size_label = Label.new()
+	size_label.text = "Image Size:"
+	size_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_hbox.add_child(size_label)
+	var size_btn = OptionButton.new()
+	size_btn.name = "ImageSizeOptionButton"
+	for sz in ["1K", "2K", "4K"]:
+		size_btn.add_item(sz)
+	_select_option_by_text(size_btn, SingletonObject.nbp_image_size)
+	size_btn.item_selected.connect(_on_nbp_image_size_selected)
+	size_hbox.add_child(size_btn)
+	_nbp_settings_container.add_child(size_hbox)
+
+	# Add to the Model tab after the parameter sliders (before System Prompt separator)
+	var model_vbox = %PresenceHBoxContainer.get_parent()
+	var insert_idx = %PresenceHBoxContainer.get_index() + 1
+	model_vbox.add_child(_nbp_settings_container)
+	model_vbox.move_child(_nbp_settings_container, insert_idx)
+
+
+func _on_nbp_google_search_toggled(enabled: bool) -> void:
+	SingletonObject.nbp_google_search_enabled = enabled
+	print("NBP Google Search Grounding: %s" % enabled)
+
+
+func _on_nbp_aspect_ratio_selected(index: int) -> void:
+	var btn = _nbp_settings_container.get_node("AspectRatioHBox/AspectRatioOptionButton") as OptionButton
+	SingletonObject.nbp_aspect_ratio = btn.get_item_text(index)
+	print("NBP Aspect Ratio: %s" % SingletonObject.nbp_aspect_ratio)
+
+
+func _on_nbp_image_size_selected(index: int) -> void:
+	var btn = _nbp_settings_container.get_node("ImageSizeHBox/ImageSizeOptionButton") as OptionButton
+	SingletonObject.nbp_image_size = btn.get_item_text(index)
+	print("NBP Image Size: %s" % SingletonObject.nbp_image_size)
 
 
 func _on_record_system_prompt_button_pressed() -> void:

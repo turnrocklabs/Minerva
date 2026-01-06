@@ -366,6 +366,40 @@ var max_image_iterations: int = 3:
 			max_image_iterations = saved if saved != null and saved > 0 else 3
 		return max_image_iterations
 
+## Nano Banana Pro (Google Image) settings
+var nbp_google_search_enabled: bool = false:
+	set(value):
+		nbp_google_search_enabled = value
+		save_to_config_file("NanoBananaPro", "google_search_enabled", value)
+	get:
+		var saved = get_config_file_value("NanoBananaPro", "google_search_enabled")
+		if saved != null:
+			if saved is bool:
+				nbp_google_search_enabled = saved
+			else:
+				nbp_google_search_enabled = str(saved).to_lower() == "true"
+		return nbp_google_search_enabled
+
+var nbp_aspect_ratio: String = "1:1":
+	set(value):
+		nbp_aspect_ratio = value
+		save_to_config_file("NanoBananaPro", "aspect_ratio", value)
+	get:
+		var saved = get_config_file_value("NanoBananaPro", "aspect_ratio")
+		if saved != null and not saved.is_empty():
+			nbp_aspect_ratio = saved
+		return nbp_aspect_ratio
+
+var nbp_image_size: String = "1K":
+	set(value):
+		nbp_image_size = value
+		save_to_config_file("NanoBananaPro", "image_size", value)
+	get:
+		var saved = get_config_file_value("NanoBananaPro", "image_size")
+		if saved != null and not saved.is_empty():
+			nbp_image_size = saved
+		return nbp_image_size
+
 #endregion Image Generation Settings
 
 #region Chats
@@ -612,9 +646,7 @@ enum API_MODEL_PROVIDERS {
 	GEMINI_FLASH,
 	GEMINI_PRO,
 	# Google Images
-	IMAGEN_4_FAST,
-	IMAGEN_4,
-	IMAGEN_4_ULTRA,
+	NANO_BANANA_PRO,
 	# Anthropic
 	CLAUDE_HAIKU,
 	CLAUDE_SONNET,
@@ -642,10 +674,8 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	# Google Chat - Gemini 3
 	API_MODEL_PROVIDERS.GEMINI_FLASH: GoogleProvider.Flash,
 	API_MODEL_PROVIDERS.GEMINI_PRO: GoogleProvider.Pro,
-	# Google Images - Imagen 4
-	API_MODEL_PROVIDERS.IMAGEN_4_FAST: GoogleImageProvider.Imagen4Fast,
-	API_MODEL_PROVIDERS.IMAGEN_4: GoogleImageProvider.Imagen4,
-	API_MODEL_PROVIDERS.IMAGEN_4_ULTRA: GoogleImageProvider.Imagen4Ultra,
+	# Google Images
+	API_MODEL_PROVIDERS.NANO_BANANA_PRO: GoogleImageProvider.NanaBananaPro,
 	# Anthropic - Claude 4.5
 	API_MODEL_PROVIDERS.CLAUDE_HAIKU: AnthropicProvider.Haiku,
 	API_MODEL_PROVIDERS.CLAUDE_SONNET: AnthropicProvider.Sonnet,
