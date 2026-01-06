@@ -6,6 +6,9 @@ extends BaseProvider
 ## Prompt character limit varies by model
 var prompt_limit: int = 4000
 
+## Whether this model supports response_format parameter (DALL-E 3 does, GPT-Image models don't)
+var supports_response_format: bool = true
+
 
 func _init():
 	provider_name = "OpenAI Images"
@@ -59,8 +62,11 @@ func generate_content(prompt_array: Array[Variant], additional_params: Dictionar
 	var request_body: Dictionary = {
 		"model": model_name,
 		"prompt": current_prompt_text.left(prompt_limit),
-		"response_format": "b64_json",
 	}
+
+	# Only add response_format for models that support it (DALL-E 3)
+	if supports_response_format:
+		request_body["response_format"] = "b64_json"
 
 	request_body.merge(additional_params)
 
@@ -250,28 +256,6 @@ func _form_data_append_bytes(buffer: PackedByteArray, bytes_to_append: PackedByt
 # Model Variants
 # ============================================================================
 
-## DALL-E 3: Standard quality image generation
-class DallE3 extends OpenAIImageProvider:
-	func _init():
-		super()
-		model_name = "dall-e-3"
-		display_name = "DALL-E 3"
-		short_name = "DE3"
-		prompt_limit = 4000
-		token_cost = 0.04  # Fixed cost per image
-
-
-## GPT-Image-1: Advanced image generation with longer prompts
-class GPTImage1 extends OpenAIImageProvider:
-	func _init():
-		super()
-		model_name = "gpt-image-1"
-		display_name = "GPT Image 1"
-		short_name = "GI1"
-		prompt_limit = 32000
-		token_cost = 0.02
-
-
 ## GPT-Image-1.5: Latest image generation capabilities
 class GPTImage15 extends OpenAIImageProvider:
 	func _init():
@@ -281,3 +265,4 @@ class GPTImage15 extends OpenAIImageProvider:
 		short_name = "GI15"
 		prompt_limit = 32000
 		token_cost = 0.03
+		supports_response_format = false  # GPT-Image models don't support this parameter

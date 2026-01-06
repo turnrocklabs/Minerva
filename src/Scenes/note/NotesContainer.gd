@@ -26,6 +26,9 @@ func _ready() -> void:
 
 	get_tab_bar().gui_input.connect(_on_tab_bar_gui_input)
 
+	# Enable tab rearrangement by dragging
+	get_tab_bar().drag_to_rearrange_enabled = true
+
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 

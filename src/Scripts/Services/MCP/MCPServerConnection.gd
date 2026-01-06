@@ -449,8 +449,12 @@ func _call_tool_http(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# MCP tool results are wrapped in content array: {content: [{type, text}]}
 	# Extract and parse the actual result from content[0].text
 	if result is Dictionary and result.has("content"):
-		var content: Array = result.get("content", [])
-		if content.size() > 0 and content[0] is Dictionary:
+		var content_raw = result.get("content", [])
+		# Handle case where content is a string instead of array
+		if content_raw is String:
+			result = {"text": content_raw, "success": true}
+		elif content_raw is Array and content_raw.size() > 0 and content_raw[0] is Dictionary:
+			var content: Array = content_raw
 			var content_item: Dictionary = content[0]
 			if content_item.get("type") == "text":
 				var text_content: String = content_item.get("text", "{}")

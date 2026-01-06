@@ -587,14 +587,16 @@ func create_toast_notification(content: String, type: = ToastNotification.Type.I
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK, OPENROUTER }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK, OPENROUTER, CLAUDE_CODE }
 
 # Preload provider scripts to ensure class_names are available
 const OpenAIProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd")
 const OpenAIImageProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
 const GoogleProvider = preload("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd")
+const GoogleImageProvider = preload("res://Scripts/Services/Providers/GoogleAi/GoogleImageProvider.gd")
 const AnthropicProvider = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
 const OpenRouterProvider = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
+const ClaudeCodeProvider = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
@@ -605,12 +607,14 @@ enum API_MODEL_PROVIDERS {
 	GPT_STANDARD,
 	GPT_DEEP,
 	# OpenAI Images
-	DALLE,
-	GPT_IMAGE_1,
 	GPT_IMAGE_15,
-	# Google
+	# Google Chat
 	GEMINI_FLASH,
 	GEMINI_PRO,
+	# Google Images
+	IMAGEN_4_FAST,
+	IMAGEN_4,
+	IMAGEN_4_ULTRA,
 	# Anthropic
 	CLAUDE_HAIKU,
 	CLAUDE_SONNET,
@@ -621,6 +625,9 @@ enum API_MODEL_PROVIDERS {
 	OPENROUTER_GLM47,
 	OPENROUTER_MINIMAX_M21,
 	OPENROUTER_KIMI_K2,
+	# Claude Code (Max/Pro)
+	CLAUDE_CODE_SONNET,
+	CLAUDE_CODE_OPUS,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -631,12 +638,14 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.GPT_STANDARD: OpenAIProvider.Standard,
 	API_MODEL_PROVIDERS.GPT_DEEP: OpenAIProvider.Deep,
 	# OpenAI Images
-	API_MODEL_PROVIDERS.DALLE: OpenAIImageProvider.DallE3,
-	API_MODEL_PROVIDERS.GPT_IMAGE_1: OpenAIImageProvider.GPTImage1,
 	API_MODEL_PROVIDERS.GPT_IMAGE_15: OpenAIImageProvider.GPTImage15,
-	# Google - Gemini 3
+	# Google Chat - Gemini 3
 	API_MODEL_PROVIDERS.GEMINI_FLASH: GoogleProvider.Flash,
 	API_MODEL_PROVIDERS.GEMINI_PRO: GoogleProvider.Pro,
+	# Google Images - Imagen 4
+	API_MODEL_PROVIDERS.IMAGEN_4_FAST: GoogleImageProvider.Imagen4Fast,
+	API_MODEL_PROVIDERS.IMAGEN_4: GoogleImageProvider.Imagen4,
+	API_MODEL_PROVIDERS.IMAGEN_4_ULTRA: GoogleImageProvider.Imagen4Ultra,
 	# Anthropic - Claude 4.5
 	API_MODEL_PROVIDERS.CLAUDE_HAIKU: AnthropicProvider.Haiku,
 	API_MODEL_PROVIDERS.CLAUDE_SONNET: AnthropicProvider.Sonnet,
@@ -647,6 +656,9 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProvider.GLM47,
 	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProvider.MinimaxM21,
 	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: OpenRouterProvider.KimiK2,
+	# Claude Code (Max/Pro)
+	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProvider.Sonnet,
+	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProvider.Opus,
 }
 
 ## Model name aliases for backward compatibility with saved projects

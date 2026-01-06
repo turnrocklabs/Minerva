@@ -377,7 +377,13 @@ func _on_continue_button_pressed():
 		loading = false
 
 func _on_clip_button_pressed():
-	DisplayServer.clipboard_set(label.markdown_text + "\n")
+	# Use error text if this is an error message, otherwise use markdown_text
+	var text_to_copy: String = ""
+	if history_item and history_item.Error:
+		text_to_copy = "Error: %s" % history_item.Error
+	else:
+		text_to_copy = label.markdown_text
+	DisplayServer.clipboard_set(text_to_copy + "\n")
 
 
 func _on_note_button_pressed():
@@ -400,8 +406,11 @@ func _on_note_button_pressed():
 		# Determine what text to add to notes
 		var note_text: String = ""
 
+		# Check for error message first
+		if history_item.Error and not history_item.Error.is_empty():
+			note_text = "Error: %s" % history_item.Error
 		# First try to use the Message field (for regular chat services)
-		if history_item.Message and not history_item.Message.is_empty():
+		elif history_item.Message and not history_item.Message.is_empty():
 			note_text = history_item.Message
 		# If HcpData exists (for HCP Core services), serialize it to JSON
 		elif history_item.HcpData and not history_item.HcpData.is_empty():

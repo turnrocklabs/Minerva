@@ -1,0 +1,236 @@
+class_name GoogleImageProvider
+extends BaseProvider
+## Google Imagen image generation provider.
+## Supports Imagen 4 family (Fast, Standard, Ultra)
+
+## Prompt character limit
+var prompt_limit: int = 4000
+
+
+func _init():
+	provider_name = "Google Imagen"
+	BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+	PROVIDER = SingletonObject.API_PROVIDER.GOOGLE
+
+	# Default model - subclasses override these
+	model_name = "imagen-4.0-generate-001"
+	short_name = "IM4"
+	display_name = "Imagen 4"
+	token_cost = 0.04  # Fixed cost per image
+
+
+func _parse_request_results(response: RequestResults) -> BotResponse:
+	var bot_response := BotResponse.new()
+	bot_response.provider = self
+
+	if not response.success:
+		bot_response.error = response.message
+		return bot_response
+
+	var data: Variant
+	if response.http_request_result == HTTPRequest.RESULT_SUCCESS:
+		var body_text := response.body.get_string_from_utf8()
+		print("[Imagen] Raw response: %s" % body_text.left(500))
+		data = JSON.parse_string(body_text)
+
+		if response.response_code >= 200 and response.response_code <= 299:
+			bot_response = to_bot_response(data)
+		else:
+			if data != null and "error" in data and data["error"] is Dictionary:
+				bot_response.error = data["error"].get("message", "Unknown API error")
+			elif data != null and "message" in data:
+				bot_response.error = data["message"]
+			else:
+				bot_response.error = "Unexpected error occurred. HTTP Code: %s" % response.response_code
+	else:
+		push_error("Invalid HTTP result. Response Code: %s, HTTP Client Result: %s" % [response.response_code, response.http_request_result])
+		bot_response.error = "Unexpected error occurred with HTTP Client. Code %s" % response.http_request_result
+
+	return bot_response
+
+
+func generate_content(prompt_array: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
+	var current_prompt_text: String = ""
+	if not prompt_array.is_empty() and prompt_array.back() is Dictionary and "text" in prompt_array.back():
+		current_prompt_text = str(prompt_array.back()["text"])
+
+	if current_prompt_text.is_empty():
+		var err_response := BotResponse.new()
+		err_response.error = "Cannot generate image: Prompt is empty."
+		SingletonObject.chat_completed.emit(err_response)
+		return err_response
+
+	# Imagen API uses predict endpoint with instances/parameters format
+	var request_body: Dictionary = {
+		"instances": [
+			{"prompt": current_prompt_text.left(prompt_limit)}
+		],
+		"parameters": {
+			"sampleCount": 1,
+			"aspectRatio": "1:1",
+		}
+	}
+
+	request_body.merge(additional_params, true)
+
+	print("[Imagen] Request body: %s" % JSON.stringify(request_body))
+
+	var response: RequestResults = await make_request(
+		"%s/%s:predict?key=%s" % [BASE_URL, model_name, API_KEY],
+		HTTPClient.METHOD_POST,
+		JSON.stringify(request_body),
+		[
+			"Content-Type: application/json",
+		],
+	)
+
+	var item = _parse_request_results(response)
+	SingletonObject.chat_completed.emit(item)
+	return item
+
+
+# Response format:
+# {
+#   "predictions": [
+#     {
+#       "bytesBase64Encoded": "...",
+#       "mimeType": "image/png"
+#     }
+#   ]
+# }
+func to_bot_response(data: Variant) -> BotResponse:
+	var response = BotResponse.new()
+	response.provider = self
+
+	if data == null:
+		response.error = "Failed to parse response from API."
+		return response
+
+	# Check for predictions array (Imagen format)
+	var predictions = data.get("predictions", [])
+	if predictions.is_empty():
+		# Try alternative format
+		var generated_images = data.get("generatedImages", [])
+		if not generated_images.is_empty():
+			predictions = generated_images
+
+	if predictions.is_empty():
+		response.error = "No images generated. Response: %s" % str(data).left(200)
+		if data.has("error"):
+			response.error = "API Error: %s" % data["error"].get("message", str(data["error"]))
+		return response
+
+	var image_data = predictions[0]
+	if not image_data is Dictionary:
+		response.error = "Invalid image data format."
+		return response
+
+	# Try different field names for base64 data
+	var b64_data: String = ""
+	if "bytesBase64Encoded" in image_data:
+		b64_data = image_data["bytesBase64Encoded"]
+	elif "imageBytes" in image_data:
+		b64_data = image_data["imageBytes"]
+	elif "image" in image_data and image_data["image"] is Dictionary:
+		b64_data = image_data["image"].get("imageBytes", "")
+
+	if b64_data.is_empty():
+		response.error = "No image data found in response. Keys: %s" % str(image_data.keys())
+		return response
+
+	response.image = Image.new()
+	var raw_bytes = Marshalls.base64_to_raw(b64_data)
+
+	# Try PNG first, then JPEG
+	var err = response.image.load_png_from_buffer(raw_bytes)
+	if err != OK:
+		err = response.image.load_jpg_from_buffer(raw_bytes)
+		if err != OK:
+			response.error = "Failed to load image from buffer. Error code: %s" % err
+			response.image = null
+			return response
+
+	# Set caption from prompt
+	if response.image:
+		response.image.set_meta("caption", "Generated by %s" % display_name)
+
+	return response
+
+
+func wrap_memory(item: Note) -> Variant:
+	if item.type == Note.Type.TEXT:
+		return (item.get_controls_container() as NoteTextControls).content
+	else:
+		push_warning("Tried to wrap memory but the given note type is not implemented for image generation")
+	return ""
+
+
+func Format(chat_item: ChatHistoryItem) -> Variant:
+	# Collect text notes
+	var text_notes: = PackedStringArray()
+
+	for note: Variant in chat_item.InjectedNotes:
+		if note is String:
+			text_notes.append(note)
+
+	# Wrap all text notes together once
+	var notes_section := ""
+	if not text_notes.is_empty():
+		notes_section = "### Reference Information ###\n"
+		notes_section += "\n\n".join(text_notes)
+		notes_section += "\n### End Reference Information ###\n\n"
+
+	# Combine notes section with user message
+	var full_text := "%s%s" % [notes_section, chat_item.Message]
+	full_text = full_text.strip_edges()
+
+	return {
+		"text": full_text,
+	}
+
+
+func estimate_tokens(_input: String) -> int:
+	return 0
+
+
+func estimate_tokens_from_prompt(_input_prompt_array: Array[Variant]) -> float:
+	# Image generation has fixed cost per image, not based on tokens
+	return 0.0
+
+
+func continue_partial_response(_partial_chi: ChatHistoryItem):
+	return null
+
+
+# ============================================================================
+# Model Variants
+# ============================================================================
+
+## Imagen 4 Fast: Quick generation for high-volume tasks
+class Imagen4Fast extends GoogleImageProvider:
+	func _init():
+		super()
+		model_name = "imagen-4.0-fast-generate-001"
+		display_name = "Imagen 4 Fast"
+		short_name = "IM4F"
+		token_cost = 0.02  # $0.02 per image
+
+
+## Imagen 4: Standard quality generation
+class Imagen4 extends GoogleImageProvider:
+	func _init():
+		super()
+		model_name = "imagen-4.0-generate-001"
+		display_name = "Imagen 4"
+		short_name = "IM4"
+		token_cost = 0.04  # $0.04 per image
+
+
+## Imagen 4 Ultra: Highest quality, detailed outputs
+class Imagen4Ultra extends GoogleImageProvider:
+	func _init():
+		super()
+		model_name = "imagen-4.0-ultra-generate-001"
+		display_name = "Imagen 4 Ultra"
+		short_name = "IM4U"
+		token_cost = 0.06  # $0.06 per image
