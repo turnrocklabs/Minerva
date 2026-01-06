@@ -51,6 +51,9 @@ func load_current_chat_settings() -> void:
 		%ContextHardLimitSpinBox.value = 0
 		%SummarizeThresholdSpinBox.value = 0
 
+		# Image generation settings (global, not per-chat)
+		%MaxImageIterationsSpinBox.value = SingletonObject.max_image_iterations
+
 		# Still populate tool checkboxes (for visibility)
 		populate_tool_checkboxes()
 
@@ -204,6 +207,9 @@ func _on_about_to_popup() -> void:
 		%ContextWarningSpinBox.value = current_chat_tab_ref.AgentContextWarningThreshold
 		%ContextHardLimitSpinBox.value = current_chat_tab_ref.AgentContextHardLimit
 		%SummarizeThresholdSpinBox.value = current_chat_tab_ref.AgentSummarizeThreshold
+
+		# Image generation settings (global, not per-chat)
+		%MaxImageIterationsSpinBox.value = SingletonObject.max_image_iterations
 
 		# Populate tool checkboxes
 		populate_tool_checkboxes()
@@ -437,6 +443,11 @@ func _on_summarize_threshold_spin_box_value_changed(value: float) -> void:
 		print("AgentSummarizeThreshold: " + str(current_chat_tab_ref.AgentSummarizeThreshold))
 	else:
 		print("no chats are open right now")
+
+
+func _on_max_image_iterations_spin_box_value_changed(value: float) -> void:
+	SingletonObject.max_image_iterations = int(value)
+	print("max_image_iterations: " + str(SingletonObject.max_image_iterations))
 
 #endregion Agentic settings
 

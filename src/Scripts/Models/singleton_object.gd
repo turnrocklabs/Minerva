@@ -353,6 +353,21 @@ func get_mcp_manager() -> Node:
 
 #endregion MCP
 
+#region Image Generation Settings
+
+## Maximum iterations allowed for iterative image generation in agentic mode
+var max_image_iterations: int = 3:
+	set(value):
+		max_image_iterations = clampi(value, 1, 20)
+		save_to_config_file("ImageGeneration", "max_image_iterations", max_image_iterations)
+	get:
+		if max_image_iterations <= 0:
+			var saved = get_config_file_value("ImageGeneration", "max_image_iterations")
+			max_image_iterations = saved if saved != null and saved > 0 else 3
+		return max_image_iterations
+
+#endregion Image Generation Settings
+
 #region Chats
 @warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)

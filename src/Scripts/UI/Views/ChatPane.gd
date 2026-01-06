@@ -18,6 +18,9 @@ var _active_chat_requests: int = 0  # Ref count of active chat requests across a
 
 var _initializing_pane := false
 
+## Debounce timer for token estimation to avoid expensive recalculation on every keystroke
+var _token_estimation_timer: Timer
+
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
 
@@ -973,11 +976,15 @@ func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reaso
 ## Clean up UI state after agent mode finishes (success or error).
 ## Re-enables notes and decrements active request counter.
 func _finish_agent_mode() -> void:
-	# Re-enable notes (which re-enables UI controls)
+	# Disable notes in containers
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
+
+	# Clear detached note proxies (editor "Send to LLM" toggles)
+	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+	SingletonObject.detached_note_proxies.clear()
 
 	# Decrement active requests and update stop button
 	_active_chat_requests -= 1
@@ -1140,7 +1147,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0,
 	# Build continuation prompt with tool results
 	# Use create_prompt() to properly handle system messages (filters them from messages array
 	# and sets provider.system_prompt for Anthropic/Google)
-	var continuation_list = await create_prompt()
+	# NOTE: Use refresh_detached=false to use cached notes (created when tool enabled "Send to LLM")
+	# instead of calling the initializer again, which can cause issues with graphics composition
+	var continuation_list = await create_prompt(null, false)
 
 	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
 
@@ -1655,6 +1664,13 @@ func _ready():
 
 	SingletonObject.Chats = self
 
+	# Setup debounce timer for token estimation (300ms delay)
+	_token_estimation_timer = Timer.new()
+	_token_estimation_timer.one_shot = true
+	_token_estimation_timer.wait_time = 0.3
+	_token_estimation_timer.timeout.connect(_on_token_estimation_timer_timeout)
+	add_child(_token_estimation_timer)
+
 
 ## Handle global input - ESC key triggers stop
 func _unhandled_input(event: InputEvent) -> void:
@@ -1735,14 +1751,72 @@ func update_token_estimation(provider: BaseProvider = null):
 		else:
 			provider = SingletonObject.ChatList[current_tab].provider
 
-	var chi = ChatHistoryItem.new()
-	chi.Message = %txtMainUserInput.text
-
-	var token_count = provider.estimate_tokens_from_prompt(await create_prompt(chi, false, provider))
+	# Use fast estimation that avoids expensive base64 encoding
+	var token_count = await _estimate_tokens_fast(provider)
 
 	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) * 100, 0.01)]
 	if (provider.token_cost * token_count) * 100 < 0.01:
 		%EstimatedTokensLabel.text = "%s¢" % 0.01
+
+
+## Fast token estimation that avoids expensive operations like base64 encoding.
+## Only does the full create_prompt() when actually sending messages.
+func _estimate_tokens_fast(provider: BaseProvider) -> float:
+	var token_count: float = 0.0
+
+	# Estimate tokens from user input text
+	token_count += provider.estimate_tokens(%txtMainUserInput.text)
+
+	# Estimate tokens from chat history (text and images)
+	if not SingletonObject.ChatList.is_empty():
+		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+		for chat: ChatHistoryItem in history.HistoryItemList:
+			token_count += provider.estimate_tokens(chat.Message)
+			# Also count images in chat history
+			for img: Image in chat.Images:
+				if img:
+					var tiles_x = ceil(img.get_width() / 512.0)
+					var tiles_y = ceil(img.get_height() / 512.0)
+					token_count += (tiles_x * tiles_y) * 170.0 + 85.0
+
+	# Estimate tokens from enabled notes (text notes directly, images by dimensions)
+	for i in SingletonObject.notes_container.get_tab_count():
+		for note: Note in SingletonObject.notes_container.get_notes(i):
+			if note.enabled:
+				token_count += _estimate_note_tokens(note)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		for note: Note in SingletonObject.drawer_notes_container.get_notes(i):
+			if note.enabled:
+				token_count += _estimate_note_tokens(note)
+
+	# Estimate tokens from detached notes (editor notes with "send to chat" enabled)
+	for proxy_note in SingletonObject.detached_note_proxies:
+		var note: Note = await proxy_note.create_note(true)  # use_cached=true
+		if note:
+			token_count += _estimate_note_tokens(note)
+
+	return token_count
+
+
+## Estimate tokens for a note without expensive encoding
+func _estimate_note_tokens(note: Note) -> float:
+	match note.type:
+		Note.Type.TEXT:
+			var controls = note.get_controls_container() as NoteTextControls
+			if controls:
+				return float(controls.content.length()) / 4.0  # Rough estimate: 4 chars per token
+		Note.Type.IMAGE:
+			var controls = note.get_controls_container() as NoteImageControls
+			if controls:
+				# Use cached image property (no GPU copy, no encoding)
+				var img: Image = controls.image
+				if img:
+					# Estimate image tokens from dimensions (OpenAI formula)
+					var tiles_x = ceil(img.get_width() / 512.0)
+					var tiles_y = ceil(img.get_height() / 512.0)
+					return (tiles_x * tiles_y) * 170.0 + 85.0
+	return 0.0
 
 # region Edit provider Title
 
@@ -1821,12 +1895,21 @@ func _on_agent_mode_toggled(toggled_on: bool) -> void:
 
 
 ## When user types in the chat box, estimate tokens count based on selected provider
+## Uses debouncing to avoid expensive recalculation on every keystroke
 func _on_txt_main_user_input_text_changed():
-	update_token_estimation()
 	if %txtMainUserInput.text == "":
 		%EstimatedTokensLabel.text = "%s¢" % 0.00
+		_token_estimation_timer.stop()
+		return
+	# Restart debounce timer - actual estimation runs after 300ms of no typing
+	_token_estimation_timer.start()
 
 func _on_txt_main_user_input_text_set():
+	# Direct call for programmatic text setting (not continuous typing)
+	update_token_estimation()
+
+## Called when debounce timer expires - actually run the expensive token estimation
+func _on_token_estimation_timer_timeout():
 	update_token_estimation()
 
 func _on_btn_microphone_pressed():

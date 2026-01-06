@@ -314,7 +314,7 @@ func _update_adapter_info():
 ## If [param refresh_detached] is `true`, detached notes will be regenerated to match current editor content.
 func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Variant]:
 	var output: Array[Variant] = []
-	
+
 	var notes: Array[Note]
 
 	for i in SingletonObject.notes_container.get_tab_count():
@@ -323,20 +323,32 @@ func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Varia
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		notes.append_array(SingletonObject.drawer_notes_container.get_notes(i).filter(func(note: Note): return note.enabled))
 
+	print("[NotesContainer] to_prompt: %d detached proxies, refresh_detached=%s" % [SingletonObject.detached_note_proxies.size(), refresh_detached])
 	for proxy_note in SingletonObject.detached_note_proxies:
-		var note: = await proxy_note.create_note(not refresh_detached)
-		
+		var use_cached := not refresh_detached
+		print("[NotesContainer] Creating note from proxy (use_cached=%s)" % use_cached)
+		var note: = await proxy_note.create_note(use_cached)
+
 		if note:
+			print("[NotesContainer] Got note: type=%s, controls=%s" % [note.type, note.get_controls_container()])
 			notes.append(note)
 			if refresh_detached:
 				note.enabled = false # so the editor/terminal can catch and disable the check button
 		else:
+			print("[NotesContainer] ERROR: proxy_note.create_note() returned null")
 			SingletonObject.ErrorDisplay("Note Error", "Couldn't generate a Note object")
 
 	# notes are filtered for enabled ones, except for detached note
 	# if detached notes are present
+	print("[NotesContainer] Wrapping %d notes for prompt" % notes.size())
 	for note in notes:
-		output.append(provider.wrap_memory(note))
+		var wrapped = provider.wrap_memory(note)
+		print("[NotesContainer] Wrapped note type=%s, result_type=%s" % [note.type, typeof(wrapped)])
+		# Skip null/invalid wrapped results (e.g., from empty images)
+		if wrapped == null:
+			push_warning("[NotesContainer] Skipping null wrapped note (type=%s)" % note.type)
+			continue
+		output.append(wrapped)
 
 	return output
 

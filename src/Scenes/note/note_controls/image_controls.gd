@@ -10,12 +10,18 @@ var sha256: String:
 	get: return Note.generate_content_sha256(image.save_png_to_buffer())
 
 var _image_backing: Image
+## Cached image to avoid expensive GPU->CPU texture extraction on every access
+var _image_cache: Image
+
 ## The image content of the note.[br]
 ## If set image has a [caption] meta attached to it
 ## it's used as the image caption.[br]
 ## Like so, if there is a caption available it is set in the retuned image [caption] meta.
 var image: Image:
 	set(value):
+		# Store a cached copy to avoid expensive get_image() calls on every access
+		_image_cache = value.duplicate() if value else null
+
 		if is_node_ready():
 			_texture_rect.texture = ImageTexture.create_from_image(value)
 			if value.has_meta("caption"): # extract caption if available
@@ -25,10 +31,16 @@ var image: Image:
 
 		note.changed.emit()
 	get:
-		if is_node_ready():
-			var img: = _texture_rect.texture.get_image()
-			img.set_meta("caption", caption)
-			return img
+		# Return cached image instead of expensive GPU->CPU texture extraction
+		# Note: Returns reference to cached image - callers should duplicate if they need to modify
+		if _image_cache:
+			_image_cache.set_meta("caption", caption)
+			return _image_cache
+		elif is_node_ready() and _texture_rect.texture:
+			# Fallback: extract from texture if cache is somehow missing
+			_image_cache = _texture_rect.texture.get_image()
+			_image_cache.set_meta("caption", caption)
+			return _image_cache
 		else:
 			return _image_backing
 
@@ -58,6 +70,8 @@ func _ready() -> void:
 		_texture_rect.texture = ImageTexture.create_from_image(_image_backing)
 		if _image_backing.has_meta("caption"): # extract caption if available
 			caption = _image_backing.get_meta("caption")
+		# Populate cache from backing image
+		_image_cache = _image_backing.duplicate()
 		_image_backing = null
 
 	_caption_line_edit.text = _caption_backing
@@ -65,7 +79,8 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	# Explicitly release the texture to prevent leaks during shutdown
+	# Explicitly release the texture and cache to prevent leaks during shutdown
 	if _texture_rect and _texture_rect.texture:
 		print("[NoteImageControls] Releasing texture on exit")
 		_texture_rect.texture = null
+	_image_cache = null

@@ -118,7 +118,19 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 
 func wrap_memory(item: Note) -> Variant:
 	if item.type == Note.Type.IMAGE:
-		return (item.get_controls_container() as NoteImageControls).image
+		var controls = item.get_controls_container() as NoteImageControls
+		if not controls:
+			push_error("[AnthropicProvider] wrap_memory: IMAGE note has no controls!")
+			return null
+		var img = controls.image
+		if not img:
+			push_error("[AnthropicProvider] wrap_memory: IMAGE note controls.image is null!")
+			return null
+		if img.is_empty():
+			push_error("[AnthropicProvider] wrap_memory: IMAGE note image is empty! (size: %dx%d)" % [img.get_width(), img.get_height()])
+			return null
+		print("[AnthropicProvider] wrap_memory: IMAGE note OK (size: %dx%d, format: %s)" % [img.get_width(), img.get_height(), img.get_format()])
+		return img
 
 	elif item.type == Note.Type.TEXT:
 		return (item.get_controls_container() as NoteTextControls).content
@@ -209,12 +221,19 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 
 	# Add image notes
 	for img in media_notes:
+		if not img or not img is Image:
+			push_warning("[AnthropicProvider] Skipping invalid image note (null or wrong type)")
+			continue
+		var png_buffer = img.save_png_to_buffer()
+		if png_buffer.is_empty():
+			push_warning("[AnthropicProvider] Skipping image with empty PNG buffer (size: %dx%d, format: %s)" % [img.get_width(), img.get_height(), img.get_format()])
+			continue
 		content.append({
 			"type": "image",
 			"source": {
 				"type": "base64",
 				"media_type": "image/png",
-				"data": Marshalls.raw_to_base64(img.save_png_to_buffer()),
+				"data": Marshalls.raw_to_base64(png_buffer),
 			}
 		})
 

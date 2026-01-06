@@ -935,19 +935,25 @@ class Proxy extends RefCounted:
 	## If [param use_cached] is `true` and this method was used to create a valid [class Note] object,
 	## that object will be reused IF the object is still valid (`is_instance_valid`).
 	func create_note(use_cached: = false) -> Note:
-		
+		print("[Note.Proxy] create_note(use_cached=%s) called" % use_cached)
+
 		if use_cached and is_instance_valid(_cache):
+			print("[Note.Proxy] Returning cached note: %s" % _cache)
 			return _cache
 
 		if _initializer and _initializer.is_valid():
+			print("[Note.Proxy] Calling initializer...")
 			var result = await _initializer.call()
+			print("[Note.Proxy] Initializer returned: %s" % result)
 
 			if not result is Note:
 				push_error("Note.Proxy initializer return value is not a Note object, but instead: %s" % result)
 				return null
 
 			_cache = result
+			print("[Note.Proxy] Emitting note_created signal...")
 			note_created.emit(result)
+			print("[Note.Proxy] note_created signal emitted")
 			return result
 
 		push_error("Note.Proxy initializer is not a valid Callable: %s" % _initializer)

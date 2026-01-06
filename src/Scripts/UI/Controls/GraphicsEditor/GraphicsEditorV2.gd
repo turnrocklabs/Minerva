@@ -142,6 +142,193 @@ const WORKFLOW_DEFAULT_STEPS: Dictionary = {
 }
 var current_workflow: Workflow = Workflow.Z_TURBO
 
+#region AI Capabilities Registry (for MCP tools)
+
+## Model metadata mapping - keyed by topic for lookup from Core discovery
+## This provides fallback/default metadata when Core doesn't provide it
+const MODEL_METADATA: Dictionary = {
+	"media_gen/z_turbo_image_generate": {
+		"id": "z_turbo",
+		"name": "Z-Turbo",
+		"default_steps": 9,
+		"supports_edit": false,
+		"supports_mask": false
+	},
+	"media_gen/image_generation": {
+		"id": "qwen",
+		"name": "Qwen",
+		"default_steps": 8,
+		"supports_edit": true,
+		"supports_mask": true
+	}
+}
+
+## Registered AI models for MCP tools
+## Each: {id, name, topic, default_steps, supports_actions: ["create", "edit", "mask_edit"]}
+var ai_models: Array[Dictionary] = []
+
+## Available AI actions
+const AI_ACTIONS: Array[Dictionary] = [
+	{"id": "create", "name": "Create Image", "requires_layer": false, "requires_mask": false},
+	{"id": "edit", "name": "Edit Image", "requires_layer": true, "requires_mask": false},
+	{"id": "mask_edit", "name": "Mask Inpaint", "requires_layer": true, "requires_mask": true}
+]
+
+## Initialize AI models from local metadata (called on _ready)
+func _init_ai_models() -> void:
+	ai_models.clear()
+	for topic in MODEL_METADATA:
+		var meta: Dictionary = MODEL_METADATA[topic]
+		var supports_actions: Array[String] = ["create"]
+		if meta.get("supports_edit", false):
+			supports_actions.append("edit")
+		if meta.get("supports_mask", false):
+			supports_actions.append("mask_edit")
+
+		ai_models.append({
+			"id": meta["id"],
+			"name": meta["name"],
+			"topic": topic,
+			"default_steps": meta["default_steps"],
+			"supports_actions": supports_actions
+		})
+
+
+## Get AI capabilities for MCP tools
+func get_ai_capabilities() -> Dictionary:
+	return {
+		"success": true,
+		"models": ai_models,
+		"actions": AI_ACTIONS,
+		"parameters": {
+			"width": {"min": MIN_IMAGE_RES, "max": MAX_IMAGE_GEN_RES, "default": DEFAULT_IMAGE_GEN_RES, "step": 64},
+			"height": {"min": MIN_IMAGE_RES, "max": MAX_IMAGE_GEN_RES, "default": DEFAULT_IMAGE_GEN_RES, "step": 64},
+			"steps": {"min": 1, "max": 50},
+			"cfg": {"min": 1.0, "max": 20.0, "default": 7.0},
+			"denoise": {"min": 0.0, "max": 1.0, "default": 0.75}
+		},
+		"layers": _get_layers_info()
+	}
+
+
+## Get layer information for capabilities response
+func _get_layers_info() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for layer in layers:
+		var type_name: String
+		match layer.type:
+			LayerV2.Type.IMAGE:
+				type_name = "image"
+			LayerV2.Type.MASK:
+				type_name = "mask"
+			LayerV2.Type.CONTROL:
+				type_name = "control"
+			_:
+				type_name = "unknown"
+		result.append({
+			"name": layer.name,  # Node.name property
+			"type": type_name
+		})
+	return result
+
+
+## Find a model by its ID
+func _find_model_by_id(model_id: String) -> Dictionary:
+	for model in ai_models:
+		if model["id"] == model_id:
+			return model
+	return {}
+
+
+## Find a layer by name
+func _find_layer_by_name(layer_name: String) -> LayerV2:
+	for layer in layers:
+		if layer.name == layer_name:  # Node.name property
+			return layer
+	return null
+
+
+## Execute an AI action (called by MCP tools)
+func execute_ai_action(params: Dictionary) -> Dictionary:
+	var model_id: String = params.get("model", "")
+	var action_id: String = params.get("action", "")
+	var prompt: String = params.get("prompt", "")
+
+	# Validate prompt
+	if prompt.is_empty():
+		return {"error": "Prompt is required", "success": false}
+
+	# Validate model exists
+	var model: Dictionary = _find_model_by_id(model_id)
+	if model.is_empty():
+		return {"error": "Unknown model: %s" % model_id, "success": false}
+
+	# Validate action supported by model
+	if action_id not in model["supports_actions"]:
+		return {"error": "Model '%s' doesn't support action '%s'" % [model_id, action_id], "success": false}
+
+	# Build generation params
+	var gen_params: Dictionary = {
+		"positive_prompt": prompt,
+		"negative_prompt": params.get("negative_prompt", ""),
+		"width": params.get("width", DEFAULT_IMAGE_GEN_RES),
+		"height": params.get("height", DEFAULT_IMAGE_GEN_RES),
+		"steps": params.get("steps", model["default_steps"]),
+		"cfg": params.get("cfg", 7.0),
+		"denoise": params.get("denoise", 0.75),
+		"topic": model["topic"]
+	}
+
+	# Route to appropriate handler based on action
+	match action_id:
+		"create":
+			_current_image_gen_request_id = MediaGen.send_media_gen_request(gen_params)
+			return {"success": true, "request_id": _current_image_gen_request_id, "message": "Image generation started"}
+
+		"edit":
+			var source_layer_name: String = params.get("source_layer", "")
+			var source_layer: LayerV2 = _find_layer_by_name(source_layer_name)
+			if not source_layer:
+				return {"error": "Source layer not found: %s" % source_layer_name, "success": false}
+			if source_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Source layer must be an image layer", "success": false}
+
+			# Get image buffer from layer
+			var image_buffer: PackedByteArray = source_layer.image.save_png_to_buffer()
+			_current_image_gen_request_id = MediaGen.send_media_edit_request(gen_params, image_buffer)
+			return {"success": true, "request_id": _current_image_gen_request_id, "message": "Image edit started"}
+
+		"mask_edit":
+			var source_layer_name: String = params.get("source_layer", "")
+			var mask_layer_name: String = params.get("mask_layer", "")
+
+			var source_layer: LayerV2 = _find_layer_by_name(source_layer_name)
+			if not source_layer:
+				return {"error": "Source layer not found: %s" % source_layer_name, "success": false}
+			if source_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Source layer must be an image layer", "success": false}
+
+			var mask_layer: LayerV2 = _find_layer_by_name(mask_layer_name)
+			if not mask_layer:
+				return {"error": "Mask layer not found: %s" % mask_layer_name, "success": false}
+			if mask_layer.type != LayerV2.Type.MASK:
+				return {"error": "Mask layer must be a mask layer", "success": false}
+
+			# Get image and mask buffers
+			var image_buffer: PackedByteArray = source_layer.image.save_png_to_buffer()
+			var mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(mask_layer.image, Color.WHITE, "white")
+
+			var images_dir: Array = [
+				{"filename": "input_image.png", "buffer": image_buffer},
+				{"filename": "mask.png", "buffer": mask_buffer}
+			]
+			_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(gen_params, images_dir)
+			return {"success": true, "request_id": _current_image_gen_request_id, "message": "Mask edit started"}
+
+	return {"error": "Unknown action: %s" % action_id, "success": false}
+
+#endregion
+
 var canvas_size: = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)
 
 var _custom_cursor: Resource
@@ -201,6 +388,9 @@ var _previous_tool_before_eraser: BaseTool = null  # Store tool to return to aft
 var _current_image_gen_request_id: String = ""
 
 func _ready() -> void:
+	# Initialize AI models registry for MCP tools
+	_init_ai_models()
+
 	layer_cards_popup_panel.hide()
 	image_gen_window.hide()
 	progress_window.hide()
@@ -391,6 +581,9 @@ func add_control_layer(layer: LayerV2, select: = true) -> LayerV2:
 
 func add_layer(layer: LayerV2, select: = true) -> LayerV2:
 	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
+
+	# Invalidate compose cache when new layer is added (needed for iterative generation)
+	_compose_result_expired = true
 
 	var layer_card: = LayerCard.create(self, layer)
 
@@ -714,15 +907,9 @@ func _handle_selection_shortcuts(event: InputEventKey) -> void:
 
 
 func _draw() -> void:
-	for layer in selected_layers: layer.queue_redraw()
-	for layer in selected_mask_layers: layer.queue_redraw()
-	for layer in selected_control_layers: layer.queue_redraw()
-	for c: LayerCard in layer_cards_container.get_children():
-		c.queue_redraw()
-	for c: LayerCard in mask_layer_cards_container.get_children():
-		c.queue_redraw()
-	for c: LayerCard in control_layer_cards_container.get_children():
-		c.queue_redraw()
+	# NOTE: Do NOT call queue_redraw() on children here - it causes cascading redraws
+	# and severe performance issues. Children should manage their own redraw schedules.
+	pass
 
 ## Delegates drag handling functions to given layer.[br]
 ## See [method Control.set_drag_forwarding].

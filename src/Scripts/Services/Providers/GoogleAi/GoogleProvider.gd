@@ -58,7 +58,10 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 	var data: Variant
 	if response.http_request_result == HTTPRequest.RESULT_SUCCESS:
-		data = JSON.parse_string(response.body.get_string_from_utf8())
+		var body_text := response.body.get_string_from_utf8()
+		print("[Gemini] Raw response body: %s" % body_text.left(2000))
+		data = JSON.parse_string(body_text)
+		print("[Gemini] Parsed data: %s" % str(data).left(1000))
 		if response.response_code >= 200 and response.response_code <= 299:
 			bot_response = to_bot_response(data)
 		else:
@@ -315,20 +318,42 @@ func to_bot_response(data: Variant) -> BotResponse:
 	response.provider = self
 
 	var candidate = (data["candidates"] as Array).pop_front()
+	print("[Gemini] candidate: %s" % str(candidate).left(500))
 
 	if not candidate:
 		response.error = "No candidates"
+		return response
+
+	# Handle error finish reasons
+	var finish_reason: String = candidate.get("finishReason", "")
+	if finish_reason == "UNEXPECTED_TOOL_CALL":
+		response.error = "Gemini error: Tool result without matching tool call in history. This can happen when editing chats with tool interactions. Try starting a fresh chat."
+		return response
+	elif finish_reason == "SAFETY":
+		response.error = "Gemini blocked this response due to safety filters."
+		return response
+	elif finish_reason == "RECITATION":
+		response.error = "Gemini blocked this response due to recitation concerns."
 		return response
 
 	if not "finishReason" in candidate:
 		response.complete = false
 
 	var content = candidate.get("content", {})
+	print("[Gemini] content: %s" % str(content).left(500))
+
+	# Handle empty content
+	if content.is_empty():
+		response.error = "Gemini returned empty content (finishReason: %s)" % finish_reason
+		return response
 
 	# Parse parts - can be text and/or functionCall
 	if content.has("parts"):
+		print("[Gemini] parts count: %d" % content["parts"].size())
 		for part in content["parts"]:
+			print("[Gemini] part keys: %s" % str(part.keys()))
 			if "text" in part:
+				print("[Gemini] Found text part, length: %d" % part["text"].length())
 				response.text += "\n%s" % part["text"]
 			elif "functionCall" in part:
 				# Parse function call

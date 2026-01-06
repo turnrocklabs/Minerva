@@ -251,7 +251,12 @@ func Serialize() -> Dictionary:
 		"isMerged": isMerged,
 		"SliderContainerId": SliderContainerId,
 		"MultiSliderContainerId": MultiSliderContainerId,
-		"ToolExecutions": ToolExecutions
+		"ToolExecutions": ToolExecutions,
+		# Tool-related fields for agentic mode
+		"ToolCallId": ToolCallId,
+		"ToolName": ToolName,
+		"ToolCalls": ToolCalls,
+		"IsToolCall": IsToolCall
 	}
 	return save_dict
 
@@ -329,6 +334,13 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 				if value is Array:
 					executions.assign(value)
 				value = executions
+
+			"ToolCalls":
+				# Convert to typed array for backwards compatibility
+				var calls: Array[Dictionary] = []
+				if value is Array:
+					calls.assign(value)
+				value = calls
 
 		chi.set(prop, value)
 

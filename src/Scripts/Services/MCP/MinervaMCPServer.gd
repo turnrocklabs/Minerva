@@ -17,6 +17,10 @@ const SERVER_NAME: String = "minerva"
 ## Pending message responses keyed by chat_id
 var _pending_responses: Dictionary = {}  # chat_id -> response_data
 
+## Session-wide tracking of iterative generation attempts (prevents bypass via new editors)
+var _session_iterative_attempts: int = 0
+var _session_attempts_reset_time: int = 0
+
 
 func _init(manager = null) -> void:
 	mcp_manager = manager
@@ -129,6 +133,14 @@ func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _save_editor(arguments)
 		"minerva_close_editor":
 			return await _close_editor(arguments)
+
+		# Graphics editor AI tools
+		"minerva_graphics_get_capabilities":
+			return _get_graphics_capabilities(arguments)
+		"minerva_graphics_generate":
+			return _generate_graphics(arguments)
+		"minerva_graphics_generate_iterative":
+			return await _generate_graphics_iterative(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -460,6 +472,118 @@ func _register_editor_tools() -> void:
 				}
 			},
 			"required": ["editor_name"]
+		}
+	)
+
+	# Graphics editor AI tools
+	_register_tool("minerva_graphics_get_capabilities",
+		"Get available AI models, actions, and parameters for a graphics editor. Call this before generating images to discover what's available.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the graphics editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_graphics_generate",
+		"Generate or edit an image using AI (fire-and-forget, returns immediately). NOTE: If you need to SEE the result or ITERATE based on quality, use minerva_graphics_generate_iterative instead - it blocks until the image is visible. This tool is only for when you don't need to evaluate the output.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the graphics editor tab"
+				},
+				"model": {
+					"type": "string",
+					"description": "Model ID from capabilities (e.g., 'z_turbo', 'qwen')"
+				},
+				"action": {
+					"type": "string",
+					"description": "Action ID: 'create', 'edit', or 'mask_edit'"
+				},
+				"prompt": {
+					"type": "string",
+					"description": "Positive prompt describing what to generate"
+				},
+				"negative_prompt": {
+					"type": "string",
+					"description": "Optional: what to avoid in generation"
+				},
+				"width": {
+					"type": "integer",
+					"description": "Image width (64-2048, divisible by 64). Default: 1024"
+				},
+				"height": {
+					"type": "integer",
+					"description": "Image height (64-2048, divisible by 64). Default: 1024"
+				},
+				"steps": {
+					"type": "integer",
+					"description": "Generation steps (more = higher quality). Default varies by model."
+				},
+				"source_layer": {
+					"type": "string",
+					"description": "Layer name for 'edit' and 'mask_edit' actions"
+				},
+				"mask_layer": {
+					"type": "string",
+					"description": "Mask layer name for 'mask_edit' action"
+				}
+			},
+			"required": ["editor_name", "model", "action", "prompt"]
+		}
+	)
+
+	_register_tool("minerva_graphics_generate_iterative",
+		"Generate an image with iterative refinement. This tool BLOCKS until the image is fully generated and visible, then returns. After it returns, the new image is visible and you can evaluate it immediately. Use for iterative refinement where you need to see each result before deciding to continue.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the graphics editor tab"
+				},
+				"model": {
+					"type": "string",
+					"description": "Model ID from capabilities (e.g., 'z_turbo', 'qwen')"
+				},
+				"action": {
+					"type": "string",
+					"description": "Action ID: 'create', 'edit', or 'mask_edit'"
+				},
+				"prompt": {
+					"type": "string",
+					"description": "Positive prompt describing what to generate"
+				},
+				"negative_prompt": {
+					"type": "string",
+					"description": "Optional: what to avoid in generation"
+				},
+				"width": {
+					"type": "integer",
+					"description": "Image width (64-2048, divisible by 64). Default: 1024"
+				},
+				"height": {
+					"type": "integer",
+					"description": "Image height (64-2048, divisible by 64). Default: 1024"
+				},
+				"steps": {
+					"type": "integer",
+					"description": "Generation steps (more = higher quality). Default varies by model."
+				},
+				"criteria": {
+					"type": "string",
+					"description": "Success criteria to evaluate against (e.g., 'full front view of star-fighter')"
+				}
+			},
+			"required": ["editor_name", "model", "action", "prompt", "criteria"]
+			# Note: iteration is tracked SERVER-SIDE. Do not pass iteration parameter.
 		}
 	)
 
@@ -1017,5 +1141,210 @@ func _close_editor(args: Dictionary) -> Dictionary:
 	editor_pane.Tabs.remove_child(editor)
 
 	return {"success": true, "message": "Editor closed"}
+
+
+func _get_graphics_capabilities(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_editor_by_name(editor_name)
+	if not editor:
+		return {"error": "Editor not found: %s" % editor_name, "success": false}
+
+	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorScript.Type.GRAPHICS:
+		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
+
+	if not editor.graphics_editor:
+		return {"error": "Graphics editor not initialized", "success": false}
+
+	return editor.graphics_editor.get_ai_capabilities()
+
+
+func _generate_graphics(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_editor_by_name(editor_name)
+	if not editor:
+		return {"error": "Editor not found: %s" % editor_name, "success": false}
+
+	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorScript.Type.GRAPHICS:
+		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
+
+	if not editor.graphics_editor:
+		return {"error": "Graphics editor not initialized", "success": false}
+
+	var result = editor.graphics_editor.execute_ai_action(args)
+
+	# Add warning that image won't be visible to LLM (non-iterative is fire-and-forget)
+	if result.get("success", false):
+		result["warning"] = "IMPORTANT: This is the non-iterative tool. The generated image will NOT be visible to you (the LLM). You cannot evaluate or describe this image. If you need to see and evaluate the result, use minerva_graphics_generate_iterative instead."
+		result["image_visible"] = false
+
+	return result
+
+
+func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var max_iterations: int = SingletonObject.max_image_iterations
+	var criteria: String = args.get("criteria", "")
+
+	# SESSION-WIDE iteration tracking (prevents bypass via creating new editors)
+	var current_time := Time.get_ticks_msec()
+	var reset_threshold := 5 * 60 * 1000  # Reset after 5 minutes of inactivity
+
+	# Reset counter if it's been too long since last attempt (allows new sessions)
+	if current_time - _session_attempts_reset_time > reset_threshold:
+		_session_iterative_attempts = 0
+
+	# Increment attempt counter BEFORE doing anything
+	_session_iterative_attempts += 1
+	_session_attempts_reset_time = current_time
+	var iteration: int = _session_iterative_attempts
+
+	print("[MinervaMCPServer] Iterative generation: %d/%d (session-wide)" % [iteration, max_iterations])
+
+	# Check iteration limit (session-enforced)
+	if iteration > max_iterations:
+		# Reset for next session
+		_session_iterative_attempts = 0
+		return {
+			"error": "Maximum iterations (%d) reached for this session. Creating new editors will NOT bypass this limit. You must accept the current result or ask the user to increase the limit in settings." % max_iterations,
+			"success": false,
+			"iteration": iteration,
+			"max_iterations": max_iterations
+		}
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_editor_by_name(editor_name)
+	if not editor:
+		return {"error": "Editor not found: %s" % editor_name, "success": false}
+
+	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorScript.Type.GRAPHICS:
+		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
+
+	if not editor.graphics_editor:
+		return {"error": "Graphics editor not initialized", "success": false}
+
+	# Start generation
+	var result = editor.graphics_editor.execute_ai_action(args)
+	print("[MinervaMCPServer] execute_ai_action result: %s" % str(result))
+	if not result.get("success"):
+		print("[MinervaMCPServer] Generation failed: %s" % result.get("error", "unknown"))
+		return result
+
+	var request_id: String = result.get("request_id", "")
+	print("[MinervaMCPServer] Waiting for image generation to complete (blocking): %s" % request_id)
+
+	# === BLOCKING: Wait for image generation to complete ===
+	var image_state := {"completed": false, "received_id": ""}
+	var image_handler := func(_fname: String, rid: String, _buffer: PackedByteArray):
+		if rid == request_id:
+			image_state.completed = true
+			image_state.received_id = rid
+			print("[MinervaMCPServer] Image generation signal received for: %s" % rid)
+
+	MediaGen.pass_image_to_editor.connect(image_handler)
+
+	# Wait for image with timeout (4 minutes for slow generation backends)
+	var image_timeout := 240.0
+	var image_elapsed := 0.0
+	while not image_state.completed and image_elapsed < image_timeout:
+		await Engine.get_main_loop().create_timer(0.2).timeout
+		image_elapsed += 0.2
+
+	# Disconnect the handler
+	if MediaGen.pass_image_to_editor.is_connected(image_handler):
+		MediaGen.pass_image_to_editor.disconnect(image_handler)
+
+	if not image_state.completed:
+		push_error("[MinervaMCPServer] Timeout waiting for image generation")
+		return {"error": "Image generation timed out after %.0f seconds" % image_timeout, "success": false}
+
+	print("[MinervaMCPServer] Image generated after %.1f seconds, now preparing for display..." % image_elapsed)
+
+	# Wait for graphics editor to process the image buffer
+	await Engine.get_main_loop().create_timer(0.5).timeout
+
+	# === BLOCKING: Wait for note to be ready ===
+	if not editor or not is_instance_valid(editor):
+		return {"error": "Editor no longer valid", "success": false}
+
+	# Toggle OFF first to clean up any existing state
+	print("[MinervaMCPServer] Toggling OFF to clean up existing state...")
+	editor.toggle(false)
+
+	# Wait for proxy to be fully cleaned up (event-driven, not arbitrary timeout)
+	var cleanup_start := Time.get_ticks_msec()
+	while editor._proxy_note != null:
+		await Engine.get_main_loop().process_frame
+		if Time.get_ticks_msec() - cleanup_start > 5000:  # 5s safety timeout
+			push_warning("[MinervaMCPServer] Proxy cleanup taking too long, proceeding anyway")
+			break
+
+	print("[MinervaMCPServer] Cleanup complete, setting up signal handler...")
+
+	# === BLOCKING: Wait for note to be ready (using same pattern as image wait) ===
+	# Connect handler BEFORE toggle to ensure we don't miss the signal
+	var note_state := {"received": false, "note": null}
+	var note_handler := func(note: Note):
+		print("[MinervaMCPServer] note_ready_for_chat handler fired! note=%s" % note)
+		note_state["received"] = true
+		note_state["note"] = note
+
+	editor.note_ready_for_chat.connect(note_handler, CONNECT_ONE_SHOT)
+
+	# Toggle ON - this triggers _on_check_button_toggled which creates the proxy and note
+	editor.toggle(true)
+	print("[MinervaMCPServer] Toggled ON, waiting for note_ready_for_chat signal...")
+
+	# Poll until note is ready or timeout (same pattern that works for image generation)
+	var note_timeout := 120.0
+	var note_elapsed := 0.0
+	while not note_state["received"] and note_elapsed < note_timeout:
+		await Engine.get_main_loop().create_timer(0.2).timeout
+		note_elapsed += 0.2
+		if int(note_elapsed) % 5 == 0 and note_elapsed > 0.3:
+			print("[MinervaMCPServer] Still waiting for note... %.1fs elapsed, state=%s" % [note_elapsed, note_state])
+
+	# Clean up handler if we timed out
+	if not note_state["received"]:
+		if editor.note_ready_for_chat.is_connected(note_handler):
+			editor.note_ready_for_chat.disconnect(note_handler)
+		push_error("[MinervaMCPServer] Timeout waiting for note_ready_for_chat after %.0f seconds" % note_timeout)
+		return {"error": "Note composition timed out after %.0f seconds" % note_timeout, "success": false}
+
+	var received_note = note_state["note"]
+	print("[MinervaMCPServer] Note ready! Received: %s" % received_note)
+
+	if received_note == null:
+		push_error("[MinervaMCPServer] note_ready_for_chat returned null")
+		return {"error": "Note composition failed - received null note", "success": false}
+
+	print("[MinervaMCPServer] Note ready after %.1f seconds. Total time: %.1f seconds" % [note_elapsed, image_elapsed + note_elapsed])
+
+	# === SUCCESS: Image is now visible to the LLM ===
+	var response_msg: String
+	if iteration < max_iterations:
+		response_msg = "Image generation complete (iteration %d/%d). The image is now visible. Evaluate it against the criteria: '%s'. If it meets the criteria, inform the user. If not, call this tool again with an adjusted prompt (iteration is tracked automatically)." % [iteration, max_iterations, criteria]
+	else:
+		response_msg = "Image generation complete (FINAL iteration %d/%d). The image is now visible. This was the LAST allowed iteration for this session. Creating new editors or using other tools will NOT give you more attempts. Evaluate it against the criteria: '%s' and inform the user of the final result." % [iteration, max_iterations, criteria]
+
+	return {
+		"success": true,
+		"message": response_msg,
+		"iteration": iteration,
+		"max_iterations": max_iterations,
+		"image_visible": true
+	}
 
 #endregion
