@@ -222,6 +222,7 @@ size_flags_horizontal = 3
 drag_area_highlight_in_editor = true
 
 [node name="v" type="VBoxContainer" parent="h/MainHSplitContainer"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -759,7 +760,6 @@ layout_mode = 2
 
 [node name="FullSizeAIContainer" type="MarginContainer" parent="h/MainHSplitContainer/DockPanelContainer/DockSplitContainer"]
 unique_name_in_owner = true
-visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/margin_bottom = 7
@@ -1399,6 +1399,8 @@ text = "Select Layers...
 "
 
 [connection signal="resized" from="." to="." method="_on_resized"]
+[connection signal="drag_ended" from="h/MainHSplitContainer" to="." method="_on_main_h_split_container_drag_ended"]
+[connection signal="drag_started" from="h/MainHSplitContainer" to="." method="_on_main_h_split_container_drag_started"]
 [connection signal="dragged" from="h/MainHSplitContainer" to="." method="_on_main_h_split_container_dragged"]
 [connection signal="item_selected" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/ToolsOptionButton" to="." method="_on_tools_option_button_item_selected"]
 [connection signal="about_to_popup" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/SelectionIndicatorButton" to="." method="_on_selection_indicator_about_to_popup"]

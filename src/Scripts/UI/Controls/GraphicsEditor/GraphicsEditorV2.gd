@@ -2407,12 +2407,39 @@ func _on_animation_frames_option_button_item_selected(index: int) -> void:
 	spritesheet_anim_is_active = spritesheet_settings_container.visible
 
 
-@export var MIN_DOCK_PANEL_WIDTH: = 410.0 # Define the minimum width for the docked panel in pixels before it collapses.
+@export var MIN_DOCK_PANEL_WIDTH: = 500.0 # Define the minimum width for the docked panel in pixels before it collapses.
 var _is_dock_panel_collapsed_by_drag: bool = false # Tracks if the dock panel is currently collapsed due to user dragging.
 var _last_non_collapsed_split_offset: int = 0 # Stores the splitter's position before a drag-collapse, for restoration.
-@onready var main_h_split_container: HSplitContainer = $h/MainHSplitContainer
+var _drag_check_timer: Timer = null # Timer to check panel size after drag ends
+@onready var main_h_split_container: HSplitContainer = %MainHSplitContainer
+@onready var v: VBoxContainer = %v
 
 var collapsed_by_user: = false
 func _on_main_h_split_container_dragged(offset: int) -> void:
+	if floating_windows_active:
+		return
 	
-	pass
+	var dock_panel_center: = dock_panel_container.get_global_rect().get_center().x - 100
+	
+	if get_global_mouse_position().x >= dock_panel_center and !_is_dock_panel_collapsed_by_drag:
+		
+		dock_split_container.hide()
+		_is_dock_panel_collapsed_by_drag = true
+		return
+	
+	var v_zone: = v.get_global_rect().end.x
+	
+	
+	if dock_panel_container.size.x > 100 and _is_dock_panel_collapsed_by_drag and (get_global_mouse_position().x <= v_zone - 10):
+		if dock_panel_container.size.x > 200:
+			dock_split_container.show()
+			_is_dock_panel_collapsed_by_drag = false
+		#return
+
+var dragging_split: = false
+func _on_main_h_split_container_drag_ended() -> void:
+	dragging_split = false
+
+
+func _on_main_h_split_container_drag_started() -> void:
+	dragging_split = true
