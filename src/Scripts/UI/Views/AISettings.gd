@@ -131,20 +131,49 @@ func sync_provider_to_current_chat() -> void:
 
 func _ready():
 	super()
+	_rebuild_provider_dropdown()
+
+	# Rebuild dropdown when providers are enabled/disabled
+	SingletonObject.provider_enabled_changed.connect(_on_provider_enabled_changed)
+
+	if SingletonObject.config_has_saved_section("Providers"):
+		var provider = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
+		if provider != null:
+			var idx = _provider_option_button.get_item_index(provider)
+			if idx >= 0:
+				_provider_option_button.select(idx)
+
+
+## Handle provider enable/disable changes
+func _on_provider_enabled_changed(_provider: SingletonObject.API_PROVIDER, _enabled: bool) -> void:
+	_rebuild_provider_dropdown()
+
+
+## Rebuild the provider dropdown with only enabled providers
+func _rebuild_provider_dropdown() -> void:
+	var current_id = _provider_option_button.get_selected_id()
+	_provider_option_button.clear()
+
 	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
 	sorted_keys.sort_custom(
 		func(a: SingletonObject.API_MODEL_PROVIDERS, b: SingletonObject.API_MODEL_PROVIDERS):
 			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
 	)
+
 	for key in sorted_keys:
+		# Skip models whose provider is disabled
+		if not SingletonObject.is_model_enabled(key):
+			continue
+
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance = script.new()
 		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.display_name], key)
-	
-	if SingletonObject.config_has_saved_section("Providers"):
-		var provider  = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
-		if provider != null:
-			_provider_option_button.select(_provider_option_button.get_item_index(provider))
+
+	# Restore previous selection if still available
+	if current_id >= 0:
+		var idx = _provider_option_button.get_item_index(current_id)
+		if idx >= 0:
+			_provider_option_button.select(idx)
 
 
 func _on_provider_option_button_item_selected(index: int):

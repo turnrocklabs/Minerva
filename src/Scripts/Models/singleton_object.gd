@@ -41,6 +41,9 @@ signal toggle_verbose_logging(enabled)
 @warning_ignore("unused_signal")
 signal stop_all_requests(history_id: String)
 
+## Emitted when a provider's enabled state changes - UI should refresh model lists
+signal provider_enabled_changed(provider: API_PROVIDER, enabled: bool)
+
 ## History IDs that have been cancelled - check and remove when acting on cancellation
 var cancelled_history_ids: Array[String] = []
 
@@ -474,7 +477,9 @@ func _load_ui_scale() -> void:
 #endregion UI Scaling
 
 func _ready():
-	
+	# Initialize enabled providers from config
+	_init_enabled_providers()
+
 	SingletonObject.notes_draw_state_changed.connect(
 		func(state: int):
 			notes_draw_state = state
@@ -691,6 +696,81 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProviderScript.Opus,
 }
+
+## Maps each model to its parent provider (for enable/disable filtering)
+const MODEL_TO_PROVIDER: Dictionary = {
+	API_MODEL_PROVIDERS.HUMAN: API_PROVIDER.LOCAL,
+	# OpenAI
+	API_MODEL_PROVIDERS.GPT_NANO: API_PROVIDER.OPENAI,
+	API_MODEL_PROVIDERS.GPT_STANDARD: API_PROVIDER.OPENAI,
+	API_MODEL_PROVIDERS.GPT_DEEP: API_PROVIDER.OPENAI,
+	API_MODEL_PROVIDERS.GPT_IMAGE_15: API_PROVIDER.OPENAI,
+	# Google
+	API_MODEL_PROVIDERS.GEMINI_FLASH: API_PROVIDER.GOOGLE,
+	API_MODEL_PROVIDERS.GEMINI_PRO: API_PROVIDER.GOOGLE,
+	API_MODEL_PROVIDERS.NANO_BANANA_PRO: API_PROVIDER.GOOGLE,
+	# Anthropic
+	API_MODEL_PROVIDERS.CLAUDE_HAIKU: API_PROVIDER.ANTHROPIC,
+	API_MODEL_PROVIDERS.CLAUDE_SONNET: API_PROVIDER.ANTHROPIC,
+	API_MODEL_PROVIDERS.CLAUDE_OPUS: API_PROVIDER.ANTHROPIC,
+	# TurnRock
+	API_MODEL_PROVIDERS.TURNROCK: API_PROVIDER.TURNROCK,
+	# OpenRouter
+	API_MODEL_PROVIDERS.OPENROUTER_GLM47: API_PROVIDER.OPENROUTER,
+	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: API_PROVIDER.OPENROUTER,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: API_PROVIDER.OPENROUTER,
+	# Claude Code
+	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,
+	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: API_PROVIDER.CLAUDE_CODE,
+}
+
+## User-friendly names for providers (used in menu)
+const PROVIDER_DISPLAY_NAMES: Dictionary = {
+	API_PROVIDER.GOOGLE: "Google",
+	API_PROVIDER.OPENAI: "OpenAI",
+	API_PROVIDER.ANTHROPIC: "Anthropic",
+	API_PROVIDER.LOCAL: "Local",
+	API_PROVIDER.TURNROCK: "TurnRock",
+	API_PROVIDER.OPENROUTER: "OpenRouter",
+	API_PROVIDER.CLAUDE_CODE: "Claude Code",
+}
+
+## Enabled state for each provider (all enabled by default)
+var _enabled_providers: Dictionary = {}
+
+## Initialize enabled providers from config or defaults
+func _init_enabled_providers() -> void:
+	# Default all providers to enabled
+	for provider in API_PROVIDER.values():
+		_enabled_providers[provider] = true
+
+	# Load saved state from config
+	if config_has_saved_section("EnabledProviders"):
+		for provider in API_PROVIDER.values():
+			var provider_name = API_PROVIDER.keys()[provider]
+			var saved = get_config_file_value("EnabledProviders", provider_name)
+			if saved != null:
+				_enabled_providers[provider] = saved
+
+## Check if a provider is enabled
+func is_provider_enabled(provider: API_PROVIDER) -> bool:
+	return _enabled_providers.get(provider, true)
+
+## Check if a model's provider is enabled
+func is_model_enabled(model: API_MODEL_PROVIDERS) -> bool:
+	var provider = MODEL_TO_PROVIDER.get(model, API_PROVIDER.LOCAL)
+	return is_provider_enabled(provider)
+
+## Set a provider's enabled state
+func set_provider_enabled(provider: API_PROVIDER, enabled: bool) -> void:
+	_enabled_providers[provider] = enabled
+	var provider_name = API_PROVIDER.keys()[provider]
+	save_to_config_file("EnabledProviders", provider_name, enabled)
+	provider_enabled_changed.emit(provider, enabled)
+
+## Get display name for a provider
+func get_provider_display_name(provider: API_PROVIDER) -> String:
+	return PROVIDER_DISPLAY_NAMES.get(provider, "Unknown")
 
 ## Model name aliases for backward compatibility with saved projects
 const MODEL_ALIASES: Dictionary = {

@@ -32,11 +32,21 @@ var _current_set_key: Variant = "default"
 func _ready():
 	_setup_default_provider_set()
 	switch_to_provider_set("default")
-	
+
 	if Core:
 		Core.service_selected.connect(_on_service_selected)
-	
+
+	# Rebuild dropdown when providers are enabled/disabled
+	SingletonObject.provider_enabled_changed.connect(_on_provider_enabled_changed)
+
 	_load_saved_provider()
+
+
+## Handle provider enable/disable changes
+func _on_provider_enabled_changed(_provider: SingletonObject.API_PROVIDER, _enabled: bool) -> void:
+	# Rebuild the default set and always refresh dropdown
+	_setup_default_provider_set()
+	_rebuild_dropdown()
 
 
 ## Switches to the appropriate provider set for a single service
@@ -118,28 +128,37 @@ func clear_service_provider_set(service: Service):
 
 #region Private Methods
 
-## Creates the default provider set with all standard AI providers
+## Creates the default provider set with all standard AI providers (filtered by enabled state)
 func _setup_default_provider_set():
 	var items: Array[ProviderItem] = []
-	
+
 	var sorted_keys: Array = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
+	# Remove HUMAN and TURNROCK from sorting - they'll be added at the end if enabled
 	sorted_keys.erase(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
 	sorted_keys.erase(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
-	
+
 	sorted_keys.sort_custom(
 		func(a, b):
 			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < \
 				   SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
 	)
-	
-	sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
-	
+
+	# Add TURNROCK and HUMAN at the end (they're special/local providers)
+	if SingletonObject.is_model_enabled(SingletonObject.API_MODEL_PROVIDERS.TURNROCK):
+		sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
+	if SingletonObject.is_model_enabled(SingletonObject.API_MODEL_PROVIDERS.HUMAN):
+		sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
+
 	for key in sorted_keys:
+		# Skip models whose provider is disabled
+		if not SingletonObject.is_model_enabled(key):
+			continue
+
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance = script.new()
 		var item := ProviderItem.new(instance.display_name, key, script, null, "")
 		items.append(item)
-	
+
 	_provider_sets["default"] = items
 
 
@@ -187,18 +206,22 @@ func _create_combined_set(services: Array, key: String, include_standard: bool):
 func _rebuild_dropdown():
 	# Store current selection before rebuilding
 	var current_provider = get_selected_provider()
-	
+
 	clear()
-	
+
 	var items: Array = _provider_sets.get(_current_set_key, [])
 	var separator_added := false
-	
+
 	for item: ProviderItem in items:
+		# Skip disabled providers (filter at display time for all set types)
+		if not item.is_core_provider() and not SingletonObject.is_model_enabled(item.id):
+			continue
+
 		# Add visual separator before first CoreProvider
 		if item.is_core_provider() and not separator_added and get_item_count() > 0:
 			add_separator()
 			separator_added = true
-		
+
 		add_item(item.display_name, item.id)
 		var item_index := get_item_count() - 1
 		

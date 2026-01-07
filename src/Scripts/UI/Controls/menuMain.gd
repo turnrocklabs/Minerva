@@ -25,6 +25,9 @@ var cobrowser_submenu: PopupMenu
 var codetools_submenu: PopupMenu
 var minerva_submenu: PopupMenu
 
+# Providers menu for enabling/disabling API providers
+var providers_menu: PopupMenu
+
 func _on_file_index_pressed(index):
 	match index:
 		1:
@@ -162,6 +165,9 @@ func _ready():
 	# Create Tools menu (before Help)
 	_setup_tools_menu()
 
+	# Create Providers menu (for enabling/disabling API providers)
+	_setup_providers_menu()
+
 	# Connect to MCP signals for live status updates
 	_connect_mcp_signals()
 
@@ -230,6 +236,57 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_reconnect_all_mcp_servers()
 		101:
 			_show_mcp_installer()
+
+
+## Setup the Providers menu for enabling/disabling API providers
+func _setup_providers_menu() -> void:
+	providers_menu = PopupMenu.new()
+	providers_menu.name = "Providers"
+	providers_menu.title = "Providers"
+
+	# Add checkbox items for each provider
+	for provider in SingletonObject.API_PROVIDER.values():
+		var display_name = SingletonObject.get_provider_display_name(provider)
+		providers_menu.add_check_item(display_name, provider)
+
+	# Connect signals
+	providers_menu.id_pressed.connect(_on_providers_menu_id_pressed)
+	providers_menu.about_to_popup.connect(_on_providers_menu_about_to_popup)
+
+	# Insert before Help menu (after Tools)
+	var help_idx := -1
+	for i in get_child_count():
+		if get_child(i).name == "Help":
+			help_idx = i
+			break
+
+	if help_idx >= 0:
+		add_child(providers_menu)
+		move_child(providers_menu, help_idx)
+	else:
+		add_child(providers_menu)
+
+
+## Handle Providers menu item selection (toggle enabled state)
+func _on_providers_menu_id_pressed(id: int) -> void:
+	var provider = id as SingletonObject.API_PROVIDER
+	var currently_enabled = SingletonObject.is_provider_enabled(provider)
+	SingletonObject.set_provider_enabled(provider, not currently_enabled)
+
+	var display_name = SingletonObject.get_provider_display_name(provider)
+	var new_state = "enabled" if not currently_enabled else "disabled"
+	SingletonObject.create_toast_notification(
+		"%s provider %s" % [display_name, new_state],
+		ToastNotification.Type.INFO
+	)
+
+
+## Sync checkbox states before Providers menu is shown
+func _on_providers_menu_about_to_popup() -> void:
+	for provider in SingletonObject.API_PROVIDER.values():
+		var index = providers_menu.get_item_index(provider)
+		if index >= 0:
+			providers_menu.set_item_checked(index, SingletonObject.is_provider_enabled(provider))
 
 
 ## Setup the Chats submenu for switching between Chat and Autocoder views
