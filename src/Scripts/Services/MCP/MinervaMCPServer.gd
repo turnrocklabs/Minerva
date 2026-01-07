@@ -9,13 +9,10 @@ const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefi
 var mcp_manager
 
 ## Whether the minerva server is connected (enabled)
-var is_connected: bool = false
+var server_enabled: bool = false
 
 ## Server name for tool registration
 const SERVER_NAME: String = "minerva"
-
-## Pending message responses keyed by chat_id
-var _pending_responses: Dictionary = {}  # chat_id -> response_data
 
 ## Session-wide tracking of iterative generation attempts (prevents bypass via new editors)
 var _session_iterative_attempts: int = 0
@@ -66,27 +63,27 @@ func unregister_tools() -> void:
 
 ## Connect (enable) the minerva server - registers tools
 func connect_server() -> void:
-	if is_connected:
+	if server_enabled:
 		return
 
 	register_tools()
-	is_connected = true
+	server_enabled = true
 	print("[MinervaMCPServer] Connected")
 
 
 ## Disconnect (disable) the minerva server - unregisters tools
 func disconnect_server() -> void:
-	if not is_connected:
+	if not server_enabled:
 		return
 
 	unregister_tools()
-	is_connected = false
+	server_enabled = false
 	print("[MinervaMCPServer] Disconnected")
 
 
 ## Execute a minerva_* tool
 func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
-	if not is_connected:
+	if not server_enabled:
 		return {"error": "Minerva server not connected", "success": false}
 
 	print("[MinervaMCPServer] Executing: %s" % tool_name)
@@ -94,13 +91,13 @@ func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
 		# Chat tools
 		"minerva_create_chat":
-			return await _create_chat(arguments)
+			return _create_chat(arguments)
 		"minerva_set_system_prompt":
 			return _set_system_prompt(arguments)
 		"minerva_set_agent_mode":
 			return _set_agent_mode(arguments)
 		"minerva_send_message":
-			return await _send_message(arguments)
+			return _send_message(arguments)
 		"minerva_get_chat_history":
 			return _get_chat_history(arguments)
 		"minerva_close_chat":
@@ -132,7 +129,7 @@ func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_save_editor":
 			return _save_editor(arguments)
 		"minerva_close_editor":
-			return await _close_editor(arguments)
+			return _close_editor(arguments)
 
 		# Graphics editor AI tools
 		"minerva_graphics_get_capabilities":
@@ -851,7 +848,7 @@ func _create_note_tab(args: Dictionary) -> Dictionary:
 		return {"error": "Notes container not available", "success": false}
 
 	var note_vbox = notes_container.create_tab(name_)
-	var tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
+	var _tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
 
 	return {
 		"success": true,
@@ -996,9 +993,11 @@ func _create_text_editor(args: Dictionary) -> Dictionary:
 		return {"error": "File not found: %s" % file_path, "success": false}
 
 	# Create the editor
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	var file_arg = file_path if not file_path.is_empty() else null
-	var editor = editor_pane.add(EditorScript.Type.TEXT, file_arg, name_, null)
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	var file_arg: Variant = null
+	if not file_path.is_empty():
+		file_arg = file_path
+	var editor = editor_pane.add(EditorGDScript.Type.TEXT, file_arg, name_, null)
 
 	# Set content if provided
 	if not content.is_empty() and editor.code_edit:
@@ -1023,9 +1022,11 @@ func _create_graphics_editor(args: Dictionary) -> Dictionary:
 		return {"error": "File not found: %s" % file_path, "success": false}
 
 	# Create the graphics editor
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	var file_arg = file_path if not file_path.is_empty() else null
-	var editor = editor_pane.add(EditorScript.Type.GRAPHICS, file_arg, name_, null)
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	var file_arg: Variant = null
+	if not file_path.is_empty():
+		file_arg = file_path
+	var editor = editor_pane.add(EditorGDScript.Type.GRAPHICS, file_arg, name_, null)
 
 	return {
 		"success": true,
@@ -1043,8 +1044,8 @@ func _get_editor_content(args: Dictionary) -> Dictionary:
 	if not editor:
 		return {"error": "Editor not found: %s" % editor_name, "success": false}
 
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorScript.Type.TEXT:
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.TEXT:
 		return {"error": "Not a text editor", "success": false}
 
 	if not editor.code_edit:
@@ -1068,8 +1069,8 @@ func _update_editor(args: Dictionary) -> Dictionary:
 	if not editor:
 		return {"error": "Editor not found: %s" % editor_name, "success": false}
 
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorScript.Type.TEXT:
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.TEXT:
 		return {"error": "Not a text editor", "success": false}
 
 	if not editor.code_edit:
@@ -1153,8 +1154,8 @@ func _get_graphics_capabilities(args: Dictionary) -> Dictionary:
 	if not editor:
 		return {"error": "Editor not found: %s" % editor_name, "success": false}
 
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorScript.Type.GRAPHICS:
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.GRAPHICS:
 		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
 
 	if not editor.graphics_editor:
@@ -1173,8 +1174,8 @@ func _generate_graphics(args: Dictionary) -> Dictionary:
 	if not editor:
 		return {"error": "Editor not found: %s" % editor_name, "success": false}
 
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorScript.Type.GRAPHICS:
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.GRAPHICS:
 		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
 
 	if not editor.graphics_editor:
@@ -1228,8 +1229,8 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 	if not editor:
 		return {"error": "Editor not found: %s" % editor_name, "success": false}
 
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorScript.Type.GRAPHICS:
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.GRAPHICS:
 		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
 
 	if not editor.graphics_editor:

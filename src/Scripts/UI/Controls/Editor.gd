@@ -863,7 +863,7 @@ func _on_check_button_toggled(toggled_on: bool):
 		_proxy_note = Note.Proxy.new(_create_note)
 
 		_proxy_note.note_created.connect(func(note: Note):
-			print("[Editor] note_created signal received! note=%s, type=%s" % [note, note.type if note else "null"])
+			print("[Editor] note_created signal received! note=%s, type=%s" % [note, str(note.type) if note else "null"])
 			note.changed.connect(_on_proxy_note_changed.bind(note))
 			print("[Editor] Emitting note_ready_for_chat signal...")
 			note_ready_for_chat.emit(note)

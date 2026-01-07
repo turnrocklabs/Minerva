@@ -64,7 +64,7 @@ func generate_circular_mask_bytes(size: int = 1024, circle_radius: int = 200) ->
 	return mask_buffer
 
 
-func generate_mask_bytes(mask_layer_image: Image, _mask_color: Color, channel: String) -> PackedByteArray:
+func generate_mask_bytes(mask_layer_image: Image, _mask_color: Color, _channel: String) -> PackedByteArray:
 
 	var mask_image := Image.create(mask_layer_image.get_width(), mask_layer_image.get_height(), false, Image.FORMAT_RGBA8) # RGBA image for color channel support
 	mask_image.fill(Color.BLACK)

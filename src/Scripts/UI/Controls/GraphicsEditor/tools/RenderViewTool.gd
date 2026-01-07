@@ -163,12 +163,12 @@ func _get_resize_handle_at_pos(pos: Vector2) -> ResizeHandle:
 	if rect.size.x <= 0 or rect.size.y <= 0: return ResizeHandle.NONE
 	
 	var tl = rect.position
-	var tr = Vector2(rect.end.x, rect.position.y)
+	var top_right = Vector2(rect.end.x, rect.position.y)
 	var bl = Vector2(rect.position.x, rect.end.y)
 	var br = rect.end
 	
 	if Rect2(tl - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.TOP_LEFT
-	if Rect2(tr - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.TOP_RIGHT
+	if Rect2(top_right - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.TOP_RIGHT
 	if Rect2(bl - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.BOTTOM_LEFT
 	if Rect2(br - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)).has_point(pos): return ResizeHandle.BOTTOM_RIGHT
 	
@@ -185,6 +185,6 @@ func _get_resize_handle_at_pos(pos: Vector2) -> ResizeHandle:
 		# Left edge
 		if Rect2(tl.x - HANDLE_SIZE/2, tl.y + HANDLE_SIZE/2, HANDLE_SIZE, rect.size.y - HANDLE_SIZE).has_point(pos): return ResizeHandle.LEFT
 		# Right edge
-		if Rect2(tr.x - HANDLE_SIZE/2, tr.y + HANDLE_SIZE/2, HANDLE_SIZE, rect.size.y - HANDLE_SIZE).has_point(pos): return ResizeHandle.RIGHT
+		if Rect2(top_right.x - HANDLE_SIZE/2, top_right.y + HANDLE_SIZE/2, HANDLE_SIZE, rect.size.y - HANDLE_SIZE).has_point(pos): return ResizeHandle.RIGHT
 
 	return ResizeHandle.NONE

@@ -90,7 +90,6 @@ func connect_server(server_name: String) -> Error:
 	# Connect signals
 	connection.connected.connect(_on_server_connected.bind(server_name))
 	connection.disconnected.connect(_on_server_disconnected.bind(server_name))
-	connection.error_occurred.connect(_on_server_error.bind(server_name))
 	connection.tool_result_received.connect(_on_tool_result.bind(server_name))
 
 	var err: Error = await connection.connect_to_server()
@@ -169,17 +168,17 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 
 	# Handle internal Minerva server tools
 	if server_name == "minerva":
-		if not minerva_server or not minerva_server.is_connected:
+		if not minerva_server or not minerva_server.server_enabled:
 			return {"error": "Minerva server not connected", "success": false}
 
-		var result = await minerva_server.execute_tool(tool_name, arguments)
+		var minerva_result = await minerva_server.execute_tool(tool_name, arguments)
 
 		# Normalize result
-		if not result.has("success"):
-			result["success"] = not result.has("error")
+		if not minerva_result.has("success"):
+			minerva_result["success"] = not minerva_result.has("error")
 
-		tool_executed.emit(server_name, tool_name, result)
-		return result
+		tool_executed.emit(server_name, tool_name, minerva_result)
+		return minerva_result
 
 	# Handle external server tools
 	if not servers.has(server_name):
@@ -233,9 +232,9 @@ func get_tools_for_anthropic() -> Array[Dictionary]:
 		var server_name = tool.server_name
 		var is_minerva = server_name == "minerva"
 		var minerva_connected = is_minerva_connected() if is_minerva else false
-		var server_connected = is_server_connected(server_name) if not is_minerva else false
-		var connected = minerva_connected or server_connected
-		print("[MCP]   Tool '%s' from '%s': minerva=%s, connected=%s" % [tool_name, server_name, minerva_connected, server_connected])
+		var external_connected = is_server_connected(server_name) if not is_minerva else false
+		var connected = minerva_connected or external_connected
+		print("[MCP]   Tool '%s' from '%s': minerva=%s, connected=%s" % [tool_name, server_name, minerva_connected, external_connected])
 		if connected:
 			tools.append(tool.to_anthropic_format())
 	print("[MCP] get_tools_for_anthropic() returning %d tools (filtered from %d in registry)" % [tools.size(), tool_registry.size()])
@@ -316,10 +315,6 @@ func _on_server_connected(server_name: String) -> void:
 func _on_server_disconnected(server_name: String) -> void:
 	_unregister_server_tools(server_name)
 	server_disconnected.emit(server_name)
-
-
-func _on_server_error(error: String, server_name: String) -> void:
-	server_error.emit(server_name, error)
 
 
 func _on_tool_result(tool_name: String, result: Dictionary, server_name: String) -> void:

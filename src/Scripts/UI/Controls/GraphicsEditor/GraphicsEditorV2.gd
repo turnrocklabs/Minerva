@@ -2275,7 +2275,7 @@ func check_ai_buttons_toggle() -> void:
 
 
 var draw_render_view: = false
-var _render_view_rect: = Rect2(Vector2.ZERO, Vector2.ZERO)
+
 func _on_draw_rect(rect: Rect2) -> void:
 	render_view_control.draw_render_view = draw_render_view
 	render_view_control._rect = rect

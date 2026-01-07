@@ -318,7 +318,7 @@ func _on_mirror_button_pressed() -> void:
 ## Render skeleton to 2D OpenPose image
 func _on_render_button_pressed() -> void:
 	_update_status("Rendering to 2D...")
-	var image = await render_to_2d_image(render_size)
+	var image = render_to_2d_image(render_size)
 	pose_rendered.emit(image)
 	_update_status("Rendered to layer")
 
@@ -330,17 +330,17 @@ func _on_close_button_pressed() -> void:
 
 
 ## Render the skeleton to a 2D OpenPose-style image
-func render_to_2d_image(size: Vector2i) -> Image:
+func render_to_2d_image(img_size: Vector2i) -> Image:
 	if not pose_skeleton:
-		return _create_empty_image(size)
+		return _create_empty_image(img_size)
 
 	# Create OpenPose-style output directly by projecting 3D positions to 2D
-	return _create_openpose_image(size)
+	return _create_openpose_image(img_size)
 
 
 ## Create OpenPose-style 2D image by projecting 3D positions
-func _create_openpose_image(size: Vector2i) -> Image:
-	var output = Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
+func _create_openpose_image(img_size: Vector2i) -> Image:
+	var output = Image.create(img_size.x, img_size.y, false, Image.FORMAT_RGBA8)
 	output.fill(Color.BLACK)
 
 	if not pose_skeleton:
@@ -398,8 +398,8 @@ func _project_to_2d(pos_3d: Vector3, center: Vector3, ortho_size: float, img_siz
 	return Vector2(x, y)
 
 
-func _create_empty_image(size: Vector2i) -> Image:
-	var img = Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
+func _create_empty_image(img_size: Vector2i) -> Image:
+	var img = Image.create(img_size.x, img_size.y, false, Image.FORMAT_RGBA8)
 	img.fill(Color.BLACK)
 	return img
 
@@ -432,7 +432,8 @@ func _draw_line_on_image(img: Image, from: Vector2, to: Vector2, color: Color, t
 	var sy = 1 if y0 < y1 else -1
 	var err = dx - dy
 
-	var half_thick = thickness / 2
+	@warning_ignore("integer_division")
+	var half_thick: int = thickness / 2
 
 	while true:
 		# Draw thick point

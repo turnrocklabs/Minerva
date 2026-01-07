@@ -168,16 +168,16 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	# Handle assistant messages with tool calls (MODEL role is used for bot responses)
 	var is_assistant_role = chat_item.Role == ChatHistoryItem.ChatRole.ASSISTANT or chat_item.Role == ChatHistoryItem.ChatRole.MODEL
 	if is_assistant_role and chat_item.IsToolCall and not chat_item.ToolCalls.is_empty():
-		var content: Array = []
+		var tool_content: Array = []
 		# Add any text content first
 		if not chat_item.Message.is_empty():
-			content.append({
+			tool_content.append({
 				"type": "text",
 				"text": chat_item.Message
 			})
 		# Add tool_use blocks
 		for tool_call in chat_item.ToolCalls:
-			content.append({
+			tool_content.append({
 				"type": "tool_use",
 				"id": tool_call.get("id", ""),
 				"name": tool_call.get("name", ""),
@@ -185,7 +185,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 			})
 		return {
 			"role": "assistant",
-			"content": content
+			"content": tool_content
 		}
 
 	# Collect text notes and media notes separately

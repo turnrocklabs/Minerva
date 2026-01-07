@@ -7,7 +7,6 @@ const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefi
 
 signal connected()
 signal disconnected()
-signal error_occurred(message: String)
 signal tool_result_received(tool_name: String, result: Dictionary)
 
 enum TransportType { HTTP, WEBSOCKET, STDIO }
@@ -28,7 +27,7 @@ var stdio_command: String = ""
 var stdio_args: PackedStringArray = []
 
 ## Whether the server is currently connected
-var is_connected: bool = false
+var server_connected: bool = false
 
 ## Skip MCP protocol initialization (for REST APIs that don't support it)
 var skip_mcp_init: bool = false
@@ -41,9 +40,6 @@ var working_directory: String = ""
 
 ## Available tools from this server
 var tools: Array = []
-
-## HTTP client for making requests
-var _http_client: HTTPRequest = null
 
 ## WebSocket client for persistent connections
 var _websocket: WebSocketPeer = null
@@ -104,7 +100,7 @@ func connect_to_server() -> Error:
 ## Disconnect from the server
 func disconnect_from_server() -> void:
 	print("[MCP %s] Disconnecting..." % server_name)
-	is_connected = false
+	server_connected = false
 
 	# Clear pending requests
 	_pending_requests.clear()
@@ -146,7 +142,7 @@ func list_tools() -> Array:
 
 ## Refresh the list of available tools from the server
 func refresh_tools() -> Error:
-	print("[MCP] Refreshing tools from %s (connected=%s)..." % [server_name, is_connected])
+	print("[MCP] Refreshing tools from %s (connected=%s)..." % [server_name, server_connected])
 
 	# Skip tool discovery for REST APIs that don't support MCP protocol
 	if skip_mcp_init:
@@ -193,7 +189,7 @@ func call_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 func set_working_directory(directory: String) -> Dictionary:
 	working_directory = directory
 
-	if not is_connected:
+	if not server_connected:
 		# Just store it, will be sent on next connect
 		return {"success": true, "workingDirectory": directory}
 
@@ -245,11 +241,11 @@ func _verify_http_connection() -> Error:
 
 		if not health_ok:
 			print("[MCP HTTP] Health check failed")
-			is_connected = false
+			server_connected = false
 			return ERR_CANT_CONNECT
 
 		print("[MCP HTTP] Connected (REST API mode)")
-		is_connected = true
+		server_connected = true
 		connected.emit()
 		return OK
 
@@ -259,11 +255,11 @@ func _verify_http_connection() -> Error:
 	var init_result := await _http_initialize()
 	if init_result.get("error"):
 		push_error("MCP HTTP initialization failed: %s" % init_result.get("error"))
-		is_connected = false
+		server_connected = false
 		return ERR_CANT_CONNECT
 
 	print("[MCP HTTP] Connected with session: %s" % _session_id.left(16))
-	is_connected = true
+	server_connected = true
 	connected.emit()
 	return OK
 
@@ -499,7 +495,7 @@ func _connect_websocket() -> Error:
 		_websocket = null
 		return ERR_CANT_CONNECT
 
-	is_connected = true
+	server_connected = true
 	connected.emit()
 	return OK
 
@@ -612,7 +608,7 @@ func _connect_stdio() -> Error:
 		return ERR_CANT_CONNECT
 
 	print("[MCP STDIO] Handshake successful!")
-	is_connected = true
+	server_connected = true
 	connected.emit()
 	return OK
 
@@ -638,11 +634,11 @@ func _mcp_initialize() -> Dictionary:
 		return response
 
 	# Send initialized notification (no response expected)
-	var notification := {
+	var init_notification := {
 		"jsonrpc": "2.0",
 		"method": "notifications/initialized"
 	}
-	_subprocess.write_data(JSON.stringify(notification) + "\n")
+	_subprocess.write_data(JSON.stringify(init_notification) + "\n")
 
 	return response.get("result", {})
 
@@ -717,13 +713,13 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 	# For tools/list, use that method directly
 	if tool_name == "tools/list":
-		var request := {
+		var list_request := {
 			"jsonrpc": "2.0",
 			"id": _next_request_id(),
 			"method": "tools/list",
 			"params": {}
 		}
-		return await _stdio_request(request)
+		return await _stdio_request(list_request)
 
 	# For regular tool calls, use tools/call with wrapped params
 	var request := {

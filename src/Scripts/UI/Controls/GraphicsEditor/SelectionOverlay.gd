@@ -70,17 +70,6 @@ func _draw_rectangle_selection_preview() -> void:
 	# Transform rect to screen coordinates
 	var screen_rect = Rect2(rect.position + layer_pos, rect.size)
 
-	# Draw dashed rectangle outline
-	var dash_length = 6.0
-	var gap_length = 3.0
-	var color = Color.WHITE
-
-	# Define the four corners
-	var top_left = screen_rect.position
-	var top_right = screen_rect.position + Vector2(screen_rect.size.x, 0)
-	var bottom_right = screen_rect.end
-	var bottom_left = screen_rect.position + Vector2(0, screen_rect.size.y)
-
 	# Draw rectangle outline - black background with white foreground for visibility on any color
 	draw_rect(screen_rect, Color.BLACK, false, 3.0)
 	draw_rect(screen_rect, Color.WHITE, false, 1.0)

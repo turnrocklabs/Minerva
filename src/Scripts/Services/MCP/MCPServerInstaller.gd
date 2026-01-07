@@ -170,7 +170,6 @@ func install_servers(base_path: String, servers: Array) -> Dictionary:
 	}
 
 	# Ensure base directory exists
-	var dir := DirAccess.open(".")
 	if not DirAccess.dir_exists_absolute(base_path):
 		var err := DirAccess.make_dir_recursive_absolute(base_path)
 		if err != OK:
@@ -265,11 +264,11 @@ func _clone_repo(repo_url: String, target_dir: String) -> bool:
 	if DirAccess.dir_exists_absolute(target_dir.path_join(".git")):
 		log_message.emit("Repository already exists, pulling latest...", false)
 		# Try to pull latest
-		var output: Array = []
-		var exit_code := OS.execute("git", ["-C", target_dir, "pull"], output, true)
-		if output.size() > 0:
-			log_message.emit(output[0].strip_edges(), false)
-		return exit_code == 0
+		var pull_output: Array = []
+		var pull_exit_code := OS.execute("git", ["-C", target_dir, "pull"], pull_output, true)
+		if pull_output.size() > 0:
+			log_message.emit(pull_output[0].strip_edges(), false)
+		return pull_exit_code == 0
 
 	# Clone fresh
 	var output: Array = []

@@ -38,7 +38,7 @@ func _draw() -> void:
 
 	# Draw resize handles at corners and midpoints
 	var tl = visual_rect.position
-	var tr = Vector2(visual_rect.end.x, visual_rect.position.y)
+	var top_right = Vector2(visual_rect.end.x, visual_rect.position.y)
 	var bl = Vector2(visual_rect.position.x, visual_rect.end.y)
 	var br = visual_rect.end
 	var tc = Vector2(visual_rect.position.x + visual_rect.size.x / 2, visual_rect.position.y)
@@ -46,7 +46,7 @@ func _draw() -> void:
 	var ml = Vector2(visual_rect.position.x, visual_rect.position.y + visual_rect.size.y / 2)
 	var mr = Vector2(visual_rect.end.x, visual_rect.position.y + visual_rect.size.y / 2)
 
-	var handles = [tl, tr, bl, br, tc, bc, ml, mr]
+	var handles = [tl, top_right, bl, br, tc, bc, ml, mr]
 	for handle_pos in handles:
 		draw_rect(Rect2(handle_pos - Vector2(HANDLE_SIZE/2, HANDLE_SIZE/2), Vector2(HANDLE_SIZE, HANDLE_SIZE)), HANDLE_COLOR, true)
 

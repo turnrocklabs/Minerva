@@ -4,9 +4,6 @@ extends RefCounted
 ## Uses HTTP transport to communicate with the Co-Browser service on port 8677.
 ## Enables browser automation through the Firefox extension.
 
-signal command_completed(result: Dictionary)
-signal connection_status_changed(connected: bool)
-
 ## Service configuration
 const DEFAULT_HOST := "localhost"
 const DEFAULT_PORT := 8677
@@ -238,7 +235,7 @@ func native_scroll(direction: String, amount: int = 3, timeout: float = DEFAULT_
 ## Send a command to the Co-Browser service
 func _send_command(command_type: String, payload: Dictionary, timeout: float) -> Dictionary:
 	if _session_id.is_empty():
-		var sessions_result = await get_active_sessions()
+		var _sessions_result = await get_active_sessions()
 		if _session_id.is_empty():
 			return {"success": false, "error": "No active session. Is Firefox extension connected?"}
 

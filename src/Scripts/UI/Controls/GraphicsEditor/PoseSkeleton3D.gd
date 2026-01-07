@@ -318,31 +318,33 @@ func get_bone_global_position(bone_name: String) -> Vector3:
 
 
 ## Set the rotation of a bone by name
-func set_bone_rotation(bone_name: String, rotation: Quaternion) -> void:
+func set_bone_rotation(bone_name: String, bone_rotation: Quaternion) -> void:
 	var bone_idx = skeleton.find_bone(bone_name)
 	if bone_idx >= 0:
-		skeleton.set_bone_pose_rotation(bone_idx, rotation)
+		skeleton.set_bone_pose_rotation(bone_idx, bone_rotation)
 
 
 ## Set the rotation of a bone with anatomical constraints applied
-func set_bone_rotation_constrained(bone_name: String, rotation: Quaternion) -> void:
+func set_bone_rotation_constrained(bone_name: String, bone_rotation: Quaternion) -> void:
 	var bone_idx = skeleton.find_bone(bone_name)
 	if bone_idx < 0:
 		return
 
+	var final_rotation = bone_rotation
+
 	# Apply anatomical limits if this joint has constraints
 	if bone_name in JOINT_LIMITS:
 		var limits = JOINT_LIMITS[bone_name]
-		var euler = rotation.get_euler()
+		var euler = final_rotation.get_euler()
 
 		match limits.axis:
 			"x": euler.x = clamp(euler.x, limits.min, limits.max)
 			"y": euler.y = clamp(euler.y, limits.min, limits.max)
 			"z": euler.z = clamp(euler.z, limits.min, limits.max)
 
-		rotation = Quaternion.from_euler(euler)
+		final_rotation = Quaternion.from_euler(euler)
 
-	skeleton.set_bone_pose_rotation(bone_idx, rotation)
+	skeleton.set_bone_pose_rotation(bone_idx, final_rotation)
 
 
 ## Get the rotation of a bone by name

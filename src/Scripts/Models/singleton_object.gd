@@ -38,6 +38,7 @@ signal toggle_verbose_logging(enabled)
 
 ## Emitted when user requests to stop active AI/tool operations
 ## history_id: The HistoryId of the chat to stop, or empty string to stop all
+@warning_ignore("unused_signal")
 signal stop_all_requests(history_id: String)
 
 ## History IDs that have been cancelled - check and remove when acting on cancellation
@@ -624,13 +625,13 @@ func create_toast_notification(content: String, type: = ToastNotification.Type.I
 enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK, OPENROUTER, CLAUDE_CODE }
 
 # Preload provider scripts to ensure class_names are available
-const OpenAIProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd")
-const OpenAIImageProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
-const GoogleProvider = preload("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd")
-const GoogleImageProvider = preload("res://Scripts/Services/Providers/GoogleAi/GoogleImageProvider.gd")
-const AnthropicProvider = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
-const OpenRouterProvider = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
-const ClaudeCodeProvider = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
+const OpenAIProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd")
+const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
+const GoogleProviderScript = preload("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd")
+const GoogleImageProviderScript = preload("res://Scripts/Services/Providers/GoogleAi/GoogleImageProvider.gd")
+const AnthropicProviderScript = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
+const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
+const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
@@ -666,29 +667,29 @@ enum API_MODEL_PROVIDERS {
 var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
 	# OpenAI Chat - GPT-5.2 with different reasoning levels
-	API_MODEL_PROVIDERS.GPT_NANO: OpenAIProvider.Nano,
-	API_MODEL_PROVIDERS.GPT_STANDARD: OpenAIProvider.Standard,
-	API_MODEL_PROVIDERS.GPT_DEEP: OpenAIProvider.Deep,
+	API_MODEL_PROVIDERS.GPT_NANO: OpenAIProviderScript.Nano,
+	API_MODEL_PROVIDERS.GPT_STANDARD: OpenAIProviderScript.Standard,
+	API_MODEL_PROVIDERS.GPT_DEEP: OpenAIProviderScript.Deep,
 	# OpenAI Images
-	API_MODEL_PROVIDERS.GPT_IMAGE_15: OpenAIImageProvider.GPTImage15,
+	API_MODEL_PROVIDERS.GPT_IMAGE_15: OpenAIImageProviderScript.GPTImage15,
 	# Google Chat - Gemini 3
-	API_MODEL_PROVIDERS.GEMINI_FLASH: GoogleProvider.Flash,
-	API_MODEL_PROVIDERS.GEMINI_PRO: GoogleProvider.Pro,
+	API_MODEL_PROVIDERS.GEMINI_FLASH: GoogleProviderScript.Flash,
+	API_MODEL_PROVIDERS.GEMINI_PRO: GoogleProviderScript.Pro,
 	# Google Images
-	API_MODEL_PROVIDERS.NANO_BANANA_PRO: GoogleImageProvider.NanaBananaPro,
+	API_MODEL_PROVIDERS.NANO_BANANA_PRO: GoogleImageProviderScript.NanaBananaPro,
 	# Anthropic - Claude 4.5
-	API_MODEL_PROVIDERS.CLAUDE_HAIKU: AnthropicProvider.Haiku,
-	API_MODEL_PROVIDERS.CLAUDE_SONNET: AnthropicProvider.Sonnet,
-	API_MODEL_PROVIDERS.CLAUDE_OPUS: AnthropicProvider.Opus,
+	API_MODEL_PROVIDERS.CLAUDE_HAIKU: AnthropicProviderScript.Haiku,
+	API_MODEL_PROVIDERS.CLAUDE_SONNET: AnthropicProviderScript.Sonnet,
+	API_MODEL_PROVIDERS.CLAUDE_OPUS: AnthropicProviderScript.Opus,
 	# TurnRock
 	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
 	# OpenRouter
-	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProvider.GLM47,
-	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProvider.MinimaxM21,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: OpenRouterProvider.KimiK2,
+	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProviderScript.GLM47,
+	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProviderScript.MinimaxM21,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: OpenRouterProviderScript.KimiK2,
 	# Claude Code (Max/Pro)
-	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProvider.Sonnet,
-	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProvider.Opus,
+	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
+	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProviderScript.Opus,
 }
 
 ## Model name aliases for backward compatibility with saved projects

@@ -320,8 +320,8 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 
 
 ## Create or update Nano Banana Pro settings UI
-func _update_nbp_settings_visibility(show: bool) -> void:
-	if not show:
+func _update_nbp_settings_visibility(should_show: bool) -> void:
+	if not should_show:
 		if _nbp_settings_container:
 			_nbp_settings_container.visible = false
 		return

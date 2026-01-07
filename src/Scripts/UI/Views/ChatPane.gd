@@ -1,7 +1,7 @@
 class_name ChatPane
 extends TabContainer
 
-const OpenAIImageProvider = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
+const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
 
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
@@ -83,10 +83,10 @@ func _build_agent_system_prompt() -> String:
 	var has_cobrowser = false
 	var has_codetools = false
 	for tool in tools:
-		var name: String = tool.name if "name" in tool else ""
-		if name.begins_with("cobrowser"):
+		var tool_name: String = tool.name if "name" in tool else ""
+		if tool_name.begins_with("cobrowser"):
 			has_cobrowser = true
-		elif name in ["glob", "grep", "read", "read_file", "write", "write_file", "edit"]:
+		elif tool_name in ["glob", "grep", "read", "read_file", "write", "write_file", "edit"]:
 			has_codetools = true
 
 	if has_cobrowser:
@@ -292,7 +292,7 @@ func check_tool_path_permissions(tool_name: String, tool_args: Dictionary, allow
 	# For bash, check if command might access restricted paths
 	# (This is a basic check - bash commands are harder to restrict)
 	if tool_name == "bash" and tool_args.has("command"):
-		var cmd = str(tool_args.get("command", ""))
+		var _cmd = str(tool_args.get("command", ""))
 		# Skip path checking for bash - it's too complex to parse reliably
 		# The user should disable bash entirely if they want strict path control
 		pass
@@ -348,7 +348,7 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 	var bot_response
 	
 	# Append the optional parameters for OpenAI models, send request and wait for the response
-	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is OpenAIImageProvider:
+	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is OpenAIImageProviderScript:
 		var optional_params = {
 			"temperature": history.Temperature,
 			"top_p": history.TopP,
@@ -561,11 +561,11 @@ func _build_history_list_with_system_prompt(history: ChatHistory, provider: Base
 
 			if not should_continue:
 				# Add this item and then stop
-				var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended, agent_mode)
-				if item:
+				var break_item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended, agent_mode)
+				if break_item:
 					if chat.Role == ChatHistoryItem.ChatRole.USER and not system_prompt_prepended:
 						system_prompt_prepended = true
-					history_list.append(item)
+					history_list.append(break_item)
 				break
 
 		var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended, agent_mode)
@@ -998,10 +998,10 @@ func _finish_agent_mode() -> void:
 ## All responses are accumulated into a single message box (accumulator_chi).
 ## @param history: The chat history
 ## @param tool_calls: Array of tool calls to execute
-## @param round: Current round number (for recursion)
+## @param current_round: Current round number (for recursion)
 ## @param accumulator_chi: The first MODEL ChatHistoryItem that accumulates all display content
 ## @param user_history_item: The user's message, for emitting response_arrived at the end
-func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0,
+func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: int = 0,
 					   accumulator_chi: ChatHistoryItem = null,
 					   user_history_item: ChatHistoryItem = null) -> void:
 	var max_rounds = history.MaxToolCallRounds if history.MaxToolCallRounds > 0 else DEFAULT_MAX_TOOL_CALL_ROUNDS
@@ -1013,7 +1013,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0,
 		if user_history_item and accumulator_chi:
 			user_history_item.response_arrived.emit(accumulator_chi)
 
-	if round >= max_rounds:
+	if current_round >= max_rounds:
 		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % max_rounds)
 		# Add tool_result blocks for unexecuted tools so conversation can continue
 		_add_unexecuted_tool_results(history, tool_calls, "Max tool call rounds (%d) reached" % max_rounds)
@@ -1030,7 +1030,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0,
 
 	var mcp_manager = SingletonObject.get_mcp_manager()
 
-	print("[Agent] Round %d: Processing %d tool calls" % [round, tool_calls.size()])
+	print("[Agent] Round %d: Processing %d tool calls" % [current_round, tool_calls.size()])
 
 	# Use accumulator if provided, otherwise get the last MODEL item
 	var model_chi: ChatHistoryItem = accumulator_chi if accumulator_chi else _get_last_model_history_item(history)
@@ -1219,7 +1219,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, round: int = 0,
 			return
 
 		# Recursively handle more tool calls (keep same accumulator)
-		await handle_tool_calls(history, continuation_response.tool_calls, round + 1,
+		await handle_tool_calls(history, continuation_response.tool_calls, current_round + 1,
 							   model_chi, user_history_item)
 	else:
 		# No more tool calls, finalize the response
@@ -1889,7 +1889,7 @@ func _on_chat_header_agent_mode_toggled(toggled_on: bool, history: ChatHistory) 
 
 
 ## Handle Agent Mode toggle (legacy - kept for compatibility)
-func _on_agent_mode_toggled(toggled_on: bool) -> void:
+func _on_agent_mode_toggled(_toggled_on: bool) -> void:
 	# Legacy handler - agent mode is now per-chat via ChatHeader
 	pass
 
