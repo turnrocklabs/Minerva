@@ -8,6 +8,8 @@ signal cell_selected(row: int, col: int)
 signal cell_double_clicked(row: int, col: int)
 signal selection_changed(start_row: int, start_col: int, end_row: int, end_col: int)
 signal scroll_changed(offset: Vector2)
+signal navigation_requested(direction: String)
+signal edit_requested()
 
 ## Reference to spreadsheet data
 var data: SpreadsheetDataScript = null
@@ -54,6 +56,14 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_ALL
 	clip_contents = true
+
+	# Prevent Tab from leaving the spreadsheet by setting focus neighbors to self
+	focus_neighbor_top = get_path()
+	focus_neighbor_bottom = get_path()
+	focus_neighbor_left = get_path()
+	focus_neighbor_right = get_path()
+	focus_next = get_path()
+	focus_previous = get_path()
 
 	# Get default font
 	font = ThemeDB.fallback_font
@@ -264,6 +274,102 @@ func _gui_input(event: InputEvent) -> void:
 		_handle_mouse_button(event)
 	elif event is InputEventMouseMotion:
 		_handle_mouse_motion(event)
+	elif event is InputEventKey:
+		_handle_key_input(event)
+
+
+func _handle_key_input(event: InputEventKey) -> void:
+	if not event.pressed:
+		return
+
+	var key := event.keycode
+
+	# Handle Tab - move to next/previous cell
+	if key == KEY_TAB:
+		accept_event()  # Prevent Godot's focus navigation
+		if event.shift_pressed:
+			navigation_requested.emit("left")
+		else:
+			navigation_requested.emit("right")
+		return
+
+	# Handle Enter - move down or edit
+	if key == KEY_ENTER or key == KEY_KP_ENTER:
+		accept_event()
+		if event.shift_pressed:
+			navigation_requested.emit("up")
+		else:
+			navigation_requested.emit("down")
+		return
+
+	# Handle arrow keys
+	if key == KEY_UP:
+		accept_event()
+		navigation_requested.emit("up")
+		return
+
+	if key == KEY_DOWN:
+		accept_event()
+		navigation_requested.emit("down")
+		return
+
+	if key == KEY_LEFT:
+		accept_event()
+		navigation_requested.emit("left")
+		return
+
+	if key == KEY_RIGHT:
+		accept_event()
+		navigation_requested.emit("right")
+		return
+
+	# Handle F2 or starting to type - begin editing
+	if key == KEY_F2:
+		accept_event()
+		edit_requested.emit()
+		return
+
+	# Handle Delete/Backspace - clear selection
+	if key == KEY_DELETE or key == KEY_BACKSPACE:
+		accept_event()
+		navigation_requested.emit("delete")
+		return
+
+	# Handle Escape - clear selection mode
+	if key == KEY_ESCAPE:
+		accept_event()
+		navigation_requested.emit("escape")
+		return
+
+	# Handle Home/End
+	if key == KEY_HOME:
+		accept_event()
+		if event.ctrl_pressed:
+			navigation_requested.emit("home_doc")
+		else:
+			navigation_requested.emit("home_row")
+		return
+
+	if key == KEY_END:
+		accept_event()
+		if event.ctrl_pressed:
+			navigation_requested.emit("end_doc")
+		else:
+			navigation_requested.emit("end_row")
+		return
+
+	# Start editing on printable characters
+	if _is_printable_key(event):
+		accept_event()
+		edit_requested.emit()
+
+
+func _is_printable_key(event: InputEventKey) -> bool:
+	# Check if the key press would produce a printable character
+	var unicode := event.unicode
+	if unicode > 31 and unicode != 127:  # Printable ASCII range
+		return true
+	return false
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:

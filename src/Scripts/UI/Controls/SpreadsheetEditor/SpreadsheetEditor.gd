@@ -230,6 +230,7 @@ func _build_inline_editor() -> void:
 	inline_editor.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	inline_editor.text_submitted.connect(_on_inline_edit_submitted)
 	inline_editor.focus_exited.connect(_on_inline_edit_focus_lost)
+	inline_editor.gui_input.connect(_on_inline_editor_gui_input)
 	# Add to grid_container so it overlays the cells
 	grid_container.add_child(inline_editor)
 
@@ -240,6 +241,8 @@ func _connect_signals() -> void:
 	cells_canvas.cell_double_clicked.connect(_on_cell_double_clicked)
 	cells_canvas.selection_changed.connect(_on_canvas_selection_changed)
 	cells_canvas.scroll_changed.connect(_on_scroll_changed)
+	cells_canvas.navigation_requested.connect(_on_canvas_navigation)
+	cells_canvas.edit_requested.connect(_on_canvas_edit_requested)
 
 	# Column header signals
 	column_headers.column_clicked.connect(_on_column_clicked)
@@ -354,6 +357,47 @@ func _on_canvas_selection_changed(start_row: int, start_col: int, end_row: int, 
 	row_headers.set_selected_rows(selected_rows)
 
 	selection_changed.emit(start_row, start_col, end_row, end_col)
+
+
+func _on_canvas_navigation(direction: String) -> void:
+	# Handle navigation commands from CellsCanvas
+	if is_editing:
+		return
+
+	match direction:
+		"up":
+			_move_selection(-1, 0)
+		"down":
+			_move_selection(1, 0)
+		"left":
+			_move_selection(0, -1)
+		"right":
+			_move_selection(0, 1)
+		"delete":
+			_delete_selection()
+		"escape":
+			cells_canvas.clear_selection()
+		"home_row":
+			_move_to_cell(current_row, 0)
+		"home_doc":
+			_move_to_cell(0, 0)
+		"end_row":
+			_move_to_cell(current_row, spreadsheet_data.column_count - 1)
+		"end_doc":
+			_move_to_cell(spreadsheet_data.row_count - 1, spreadsheet_data.column_count - 1)
+
+
+func _on_canvas_edit_requested() -> void:
+	if not is_editing:
+		_start_inline_edit()
+
+
+func _move_to_cell(row: int, col: int) -> void:
+	current_row = clampi(row, 0, spreadsheet_data.row_count - 1)
+	current_col = clampi(col, 0, spreadsheet_data.column_count - 1)
+	cells_canvas.select_cell(current_row, current_col)
+	cells_canvas.scroll_to_cell(current_row, current_col)
+	_update_selection_display()
 
 
 func _on_column_clicked(col: int) -> void:
@@ -516,6 +560,31 @@ func _on_inline_edit_submitted(new_text: String) -> void:
 
 func _on_inline_edit_focus_lost() -> void:
 	_end_inline_edit(true)
+
+
+func _on_inline_editor_gui_input(event: InputEvent) -> void:
+	if not event is InputEventKey:
+		return
+	var key_event := event as InputEventKey
+	if not key_event.pressed:
+		return
+
+	var key := key_event.keycode
+
+	# Handle Tab in inline editor - commit and move to next cell
+	if key == KEY_TAB:
+		get_viewport().set_input_as_handled()
+		_set_current_cell_value(inline_editor.text)
+		_end_inline_edit(false)
+		if key_event.shift_pressed:
+			_move_selection(0, -1)
+		else:
+			_move_selection(0, 1)
+
+	# Handle Escape - cancel edit
+	elif key == KEY_ESCAPE:
+		get_viewport().set_input_as_handled()
+		_end_inline_edit(false)
 
 
 func _set_current_cell_value(value: String, record_history: bool = true) -> void:

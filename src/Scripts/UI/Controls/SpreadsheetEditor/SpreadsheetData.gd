@@ -3,6 +3,7 @@ extends RefCounted
 ## Main data model for spreadsheet containing cells, metadata, and charts.
 
 const SpreadsheetCellScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetCell.gd")
+const FormulaEngineScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/FormulaEngine.gd")
 
 signal data_changed()
 signal cell_changed(row: int, col: int)
@@ -82,8 +83,19 @@ const MAX_ROW_HEIGHT := 200.0
 ## Key: "row,col" -> Array of dependent cell keys that reference this cell
 var _cell_dependencies: Dictionary = {}
 
+## Reverse dependency map: which cells does this cell depend on?
+## Key: "row,col" -> Array of cell keys this cell references
+var _cell_references: Dictionary = {}
+
+## Formula engine instance
+var _formula_engine = null
+
+## Flag to prevent recursive recalculation during batch updates
+var _is_recalculating: bool = false
+
 
 func _init(rows: int = 100, cols: int = 26) -> void:
+	_formula_engine = FormulaEngineScript.new()
 	row_count = rows
 	column_count = cols
 	_init_metadata()
@@ -155,8 +167,24 @@ func get_cell_value(row: int, col: int) -> Variant:
 ## Set cell value (creates cell if needed)
 func set_cell_value(row: int, col: int, value: Variant) -> void:
 	var cell := get_cell(row, col)
+	var key := cell_key(row, col)
+
+	# Remove old dependencies
+	_remove_cell_dependencies(key)
+
+	# Set the value
 	cell.set_value(value)
 	_expand_if_needed(row, col)
+
+	# If it's a formula, evaluate it and set up dependencies
+	if cell.has_formula():
+		_setup_formula_dependencies(row, col, cell.formula)
+		_evaluate_cell_formula(row, col, cell)
+
+	# Recalculate cells that depend on this cell
+	if not _is_recalculating:
+		_recalculate_dependents(key)
+
 	cell_changed.emit(row, col)
 	data_changed.emit()
 
@@ -624,3 +652,161 @@ func to_json_array() -> Array:
 		result.append(row_data)
 
 	return result
+
+
+# ============================================================================
+# FORMULA EVALUATION AND DEPENDENCY TRACKING
+# ============================================================================
+
+## Evaluate a cell's formula and update its computed value
+func _evaluate_cell_formula(row: int, col: int, cell) -> void:
+	if not cell.has_formula():
+		return
+
+	# Check for circular reference
+	var key := cell_key(row, col)
+	if _has_circular_reference(key):
+		cell.set_computed_value(0, "#CIRCULAR!")
+		return
+
+	var result = _formula_engine.evaluate_formula(cell.formula, self, row, col)
+
+	if result.is_error:
+		cell.set_computed_value(0, result.error)
+	else:
+		cell.value = result.value
+		cell.set_computed_value(result.value)
+
+
+## Set up dependency tracking for a formula cell
+func _setup_formula_dependencies(row: int, col: int, formula: String) -> void:
+	var key := cell_key(row, col)
+	var refs: Array = _formula_engine.get_all_references(formula)
+
+	# Track what this cell references
+	var ref_keys: Array = []
+	for ref in refs:
+		var ref_key := cell_key(ref.y, ref.x)
+		ref_keys.append(ref_key)
+
+		# Add this cell to the dependency list of the referenced cell
+		if not _cell_dependencies.has(ref_key):
+			_cell_dependencies[ref_key] = []
+		if key not in _cell_dependencies[ref_key]:
+			_cell_dependencies[ref_key].append(key)
+
+	_cell_references[key] = ref_keys
+
+
+## Remove dependency tracking for a cell
+func _remove_cell_dependencies(key: String) -> void:
+	# Get the cells this cell was referencing
+	if not _cell_references.has(key):
+		return
+
+	var old_refs: Array = _cell_references[key]
+	for ref_key in old_refs:
+		if _cell_dependencies.has(ref_key):
+			var idx: int = _cell_dependencies[ref_key].find(key)
+			if idx >= 0:
+				_cell_dependencies[ref_key].remove_at(idx)
+
+	_cell_references.erase(key)
+
+
+## Recalculate all cells that depend on the changed cell
+func _recalculate_dependents(key: String) -> void:
+	if not _cell_dependencies.has(key):
+		return
+
+	_is_recalculating = true
+
+	# Get list of dependent cells
+	var dependents: Array = _cell_dependencies[key].duplicate()
+
+	# Recalculate each dependent cell
+	for dep_key in dependents:
+		var pos := parse_cell_key(dep_key)
+		if pos.x >= 0 and pos.y >= 0:
+			var cell := get_cell_if_exists(pos.y, pos.x)
+			if cell and cell.has_formula():
+				_evaluate_cell_formula(pos.y, pos.x, cell)
+				# Recursively recalculate cells that depend on this one
+				_recalculate_dependents(dep_key)
+
+	_is_recalculating = false
+
+
+## Check if a cell has a circular reference
+func _has_circular_reference(start_key: String, visited: Dictionary = {}) -> bool:
+	if visited.has(start_key):
+		return true
+
+	if not _cell_references.has(start_key):
+		return false
+
+	visited[start_key] = true
+
+	for ref_key in _cell_references[start_key]:
+		if _has_circular_reference(ref_key, visited):
+			return true
+
+	visited.erase(start_key)
+	return false
+
+
+## Recalculate all formula cells in the spreadsheet
+func recalculate_all() -> void:
+	_is_recalculating = true
+
+	# Build a list of all formula cells
+	var formula_cells: Array = []
+	for key in cells:
+		var cell = cells[key]
+		if cell.has_formula():
+			formula_cells.append(key)
+
+	# Sort by dependency order (cells with no dependencies first)
+	var sorted_cells := _topological_sort(formula_cells)
+
+	# Evaluate in order
+	for key in sorted_cells:
+		var pos := parse_cell_key(key)
+		if pos.x >= 0 and pos.y >= 0:
+			var cell := get_cell_if_exists(pos.y, pos.x)
+			if cell and cell.has_formula():
+				_evaluate_cell_formula(pos.y, pos.x, cell)
+
+	_is_recalculating = false
+	data_changed.emit()
+
+
+## Topological sort of formula cells for dependency-order evaluation
+func _topological_sort(cell_keys: Array) -> Array:
+	var result: Array = []
+	var visited: Dictionary = {}
+	var temp_visited: Dictionary = {}
+
+	for key in cell_keys:
+		if not visited.has(key):
+			_topological_visit(key, visited, temp_visited, result)
+
+	return result
+
+
+func _topological_visit(key: String, visited: Dictionary, temp_visited: Dictionary, result: Array) -> void:
+	if temp_visited.has(key):
+		return  # Circular reference - skip
+	if visited.has(key):
+		return
+
+	temp_visited[key] = true
+
+	# Visit all cells this cell depends on
+	if _cell_references.has(key):
+		for ref_key in _cell_references[key]:
+			_topological_visit(ref_key, visited, temp_visited, result)
+
+	temp_visited.erase(key)
+	visited[key] = true
+	result.append(key)
