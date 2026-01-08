@@ -59,20 +59,34 @@ func _draw() -> void:
 	# Background
 	draw_rect(Rect2(Vector2.ZERO, size), bg_color)
 
-	# Calculate visible rows
-	var start_row := _get_row_at_y(scroll_offset_y)
-	var end_row := _get_row_at_y(scroll_offset_y + size.y) + 1
+	var frozen_rows := data.frozen_rows
+	var frozen_row_height := _get_row_y(frozen_rows)
 
-	start_row = maxi(0, start_row)
+	# Draw scrollable row headers (after frozen rows)
+	var start_row := _get_row_at_y(frozen_row_height + scroll_offset_y)
+	start_row = maxi(frozen_rows, start_row)
+	var end_row := _get_row_at_y(scroll_offset_y + size.y) + 1
 	end_row = mini(data.row_count, end_row)
 
-	# Draw row headers
 	for row in range(start_row, end_row):
-		_draw_row_header(row)
+		_draw_row_header(row, scroll_offset_y)
+
+	# Draw frozen row headers (always visible at top)
+	if frozen_rows > 0:
+		for row in range(frozen_rows):
+			_draw_row_header(row, 0)
+		# Draw separator line
+		draw_line(
+			Vector2(0, frozen_row_height),
+			Vector2(size.x, frozen_row_height),
+			Color(0.5, 0.5, 0.6, 1.0),
+			2.0
+		)
 
 	# Draw resize handle indicator if hovering
 	if is_over_resize_handle and resizing_row < 0:
-		var handle_y := _get_row_y(hovered_row + 1) - scroll_offset_y
+		var offset := 0.0 if hovered_row < frozen_rows else scroll_offset_y
+		var handle_y := _get_row_y(hovered_row + 1) - offset
 		draw_line(
 			Vector2(0, handle_y),
 			Vector2(size.x, handle_y),
@@ -81,13 +95,15 @@ func _draw() -> void:
 		)
 
 
-func _draw_row_header(row: int) -> void:
-	var y := _get_row_y(row) - scroll_offset_y
+func _draw_row_header(row: int, offset: float = 0.0) -> void:
+	var y := _get_row_y(row) - offset
 	var height := data.get_row_height(row)
 	var rect := Rect2(0, y, size.x, height)
 
 	# Background
 	var bg := bg_color
+	if row < data.frozen_rows:
+		bg = bg.lightened(0.05)  # Slightly lighter for frozen rows
 	if row in selected_rows:
 		bg = selected_bg_color
 	elif row == hovered_row:

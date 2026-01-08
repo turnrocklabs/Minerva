@@ -74,44 +74,79 @@ func _draw() -> void:
 	if not data:
 		return
 
-	var visible_rect := Rect2(scroll_offset, size)
+	var frozen_rows := data.frozen_rows
+	var frozen_cols := data.frozen_cols
+	var frozen_row_height := _get_row_y(frozen_rows)
+	var frozen_col_width := _get_col_x(frozen_cols)
 
-	# Calculate visible cell range
-	var start_col := _get_col_at_x(visible_rect.position.x)
-	var end_col := _get_col_at_x(visible_rect.end.x) + 1
-	var start_row := _get_row_at_y(visible_rect.position.y)
-	var end_row := _get_row_at_y(visible_rect.end.y) + 1
+	# Calculate visible cell range for scrollable area
+	# The scrollable area starts at (frozen_col_width, frozen_row_height) in screen space
+	# We need to find which data rows/cols map to this visible region
+	var scrollable_start_x := frozen_col_width + scroll_offset.x
+	var scrollable_start_y := frozen_row_height + scroll_offset.y
+	var scrollable_end_x := scroll_offset.x + size.x
+	var scrollable_end_y := scroll_offset.y + size.y
 
-	start_col = maxi(0, start_col)
+	var start_col := _get_col_at_x(scrollable_start_x)
+	var end_col := _get_col_at_x(scrollable_end_x) + 1
+	var start_row := _get_row_at_y(scrollable_start_y)
+	var end_row := _get_row_at_y(scrollable_end_y) + 1
+
+	start_col = maxi(frozen_cols, start_col)
 	end_col = mini(data.column_count, end_col)
-	start_row = maxi(0, start_row)
+	start_row = maxi(frozen_rows, start_row)
 	end_row = mini(data.row_count, end_row)
 
-	# Draw cell backgrounds
-	_draw_cell_backgrounds(start_row, start_col, end_row, end_col)
+	# 1. Draw scrollable area (non-frozen cells)
+	# The scrollable area uses scroll_offset directly - when scroll_offset = 0,
+	# the first scrollable row/col appears right after the frozen area
+	_draw_region(start_row, start_col, end_row, end_col, scroll_offset)
 
-	# Draw selection
+	# 2. Draw frozen rows (top strip, scrolls horizontally only)
+	if frozen_rows > 0:
+		var frozen_row_start_col := _get_col_at_x(frozen_col_width + scroll_offset.x)
+		frozen_row_start_col = maxi(frozen_cols, frozen_row_start_col)
+		var frozen_row_end_col := _get_col_at_x(scroll_offset.x + size.x) + 1
+		frozen_row_end_col = mini(data.column_count, frozen_row_end_col)
+		var frozen_row_offset := Vector2(scroll_offset.x, 0)
+		_draw_region(0, frozen_row_start_col, frozen_rows, frozen_row_end_col, frozen_row_offset)
+
+	# 3. Draw frozen columns (left strip, scrolls vertically only)
+	if frozen_cols > 0:
+		var frozen_col_start_row := _get_row_at_y(frozen_row_height + scroll_offset.y)
+		frozen_col_start_row = maxi(frozen_rows, frozen_col_start_row)
+		var frozen_col_end_row := _get_row_at_y(scroll_offset.y + size.y) + 1
+		frozen_col_end_row = mini(data.row_count, frozen_col_end_row)
+		var frozen_col_offset := Vector2(0, scroll_offset.y)
+		_draw_region(frozen_col_start_row, 0, frozen_col_end_row, frozen_cols, frozen_col_offset)
+
+	# 4. Draw frozen corner (top-left intersection, doesn't scroll at all)
+	if frozen_rows > 0 and frozen_cols > 0:
+		_draw_region(0, 0, frozen_rows, frozen_cols, Vector2.ZERO)
+
+	# Draw selection across all regions
 	_draw_selection()
 
 	# Draw hover highlight
 	if hovered_cell.x >= 0 and hovered_cell.y >= 0:
 		_draw_cell_highlight(hovered_cell.y, hovered_cell.x, hover_color)
 
-	# Draw grid lines
-	_draw_grid_lines(start_row, start_col, end_row, end_col)
-
-	# Draw cell content
-	_draw_cell_content(start_row, start_col, end_row, end_col)
-
-	# Draw frozen pane separators
+	# Draw frozen pane separators on top
 	_draw_frozen_separators()
 
 
-func _draw_cell_backgrounds(start_row: int, start_col: int, end_row: int, end_col: int) -> void:
+## Draw a region of cells with the given offset
+func _draw_region(start_row: int, start_col: int, end_row: int, end_col: int, offset: Vector2) -> void:
+	_draw_cell_backgrounds_region(start_row, start_col, end_row, end_col, offset)
+	_draw_grid_lines_region(start_row, start_col, end_row, end_col, offset)
+	_draw_cell_content_region(start_row, start_col, end_row, end_col, offset)
+
+
+func _draw_cell_backgrounds_region(start_row: int, start_col: int, end_row: int, end_col: int, offset: Vector2) -> void:
 	for row in range(start_row, end_row):
 		for col in range(start_col, end_col):
 			var rect := _get_cell_rect(row, col)
-			rect.position -= scroll_offset
+			rect.position -= offset
 
 			var cell := data.get_cell_if_exists(row, col)
 			var bg := cell_bg_color
@@ -120,6 +155,10 @@ func _draw_cell_backgrounds(start_row: int, start_col: int, end_row: int, end_co
 			if row < data.header_row_count:
 				bg = header_bg_color
 
+			# Frozen row/col gets slightly different background
+			if row < data.frozen_rows or col < data.frozen_cols:
+				bg = bg.lightened(0.05)
+
 			# Custom cell background
 			if cell and cell.bg_color != Color.TRANSPARENT:
 				bg = cell.bg_color
@@ -127,33 +166,39 @@ func _draw_cell_backgrounds(start_row: int, start_col: int, end_row: int, end_co
 			draw_rect(rect, bg)
 
 
-func _draw_grid_lines(start_row: int, start_col: int, end_row: int, end_col: int) -> void:
+func _draw_grid_lines_region(start_row: int, start_col: int, end_row: int, end_col: int, offset: Vector2) -> void:
+	# Calculate region bounds for clipping lines
+	var region_left := _get_col_x(start_col) - offset.x
+	var region_top := _get_row_y(start_row) - offset.y
+	var region_right := _get_col_x(end_col) - offset.x
+	var region_bottom := _get_row_y(end_row) - offset.y
+
 	# Vertical lines
-	var x := _get_col_x(start_col) - scroll_offset.x
+	var x := _get_col_x(start_col) - offset.x
 	for col in range(start_col, end_col + 1):
 		var col_width := data.get_column_width(col) if col < data.column_count else SpreadsheetDataScript.DEFAULT_COLUMN_WIDTH
 		draw_line(
-			Vector2(x, 0),
-			Vector2(x, size.y),
+			Vector2(x, region_top),
+			Vector2(x, region_bottom),
 			grid_line_color,
 			1.0
 		)
 		x += col_width
 
 	# Horizontal lines
-	var y := _get_row_y(start_row) - scroll_offset.y
+	var y := _get_row_y(start_row) - offset.y
 	for row in range(start_row, end_row + 1):
 		var row_height := data.get_row_height(row) if row < data.row_count else SpreadsheetDataScript.DEFAULT_ROW_HEIGHT
 		draw_line(
-			Vector2(0, y),
-			Vector2(size.x, y),
+			Vector2(region_left, y),
+			Vector2(region_right, y),
 			grid_line_color,
 			1.0
 		)
 		y += row_height
 
 
-func _draw_cell_content(start_row: int, start_col: int, end_row: int, end_col: int) -> void:
+func _draw_cell_content_region(start_row: int, start_col: int, end_row: int, end_col: int, offset: Vector2) -> void:
 	for row in range(start_row, end_row):
 		for col in range(start_col, end_col):
 			var cell := data.get_cell_if_exists(row, col)
@@ -161,7 +206,7 @@ func _draw_cell_content(start_row: int, start_col: int, end_row: int, end_col: i
 				continue
 
 			var rect := _get_cell_rect(row, col)
-			rect.position -= scroll_offset
+			rect.position -= offset
 
 			var display_text: String = cell.get_display_text()
 			if display_text.is_empty():
@@ -220,12 +265,15 @@ func _draw_selection_rect(sel_rect: Rect2i) -> void:
 	if sel_rect.size.x <= 0 or sel_rect.size.y <= 0:
 		return
 
-	# Draw selection fill
+	# For selections spanning frozen and non-frozen areas, we need to draw multiple rects
+	# For simplicity, we'll use the offset for the top-left cell
+	var offset := _get_cell_offset(sel_rect.position.y, sel_rect.position.x)
+
 	var start_rect := _get_cell_rect(sel_rect.position.y, sel_rect.position.x)
 	var end_rect := _get_cell_rect(sel_rect.end.y - 1, sel_rect.end.x - 1)
 
 	var visual_rect := Rect2(
-		start_rect.position - scroll_offset,
+		start_rect.position - offset,
 		Vector2(end_rect.end.x - start_rect.position.x, end_rect.end.y - start_rect.position.y)
 	)
 
@@ -235,8 +283,19 @@ func _draw_selection_rect(sel_rect: Rect2i) -> void:
 
 func _draw_cell_highlight(row: int, col: int, color: Color) -> void:
 	var rect := _get_cell_rect(row, col)
-	rect.position -= scroll_offset
+	rect.position -= _get_cell_offset(row, col)
 	draw_rect(rect, color)
+
+
+## Get the scroll offset to use for a cell based on frozen panes
+func _get_cell_offset(row: int, col: int) -> Vector2:
+	var offset := Vector2.ZERO
+
+	if col >= data.frozen_cols:
+		offset.x = scroll_offset.x
+	if row >= data.frozen_rows:
+		offset.y = scroll_offset.y
+	return offset
 
 
 func _draw_frozen_separators() -> void:
@@ -497,7 +556,7 @@ func _get_cell_rect(row: int, col: int) -> Rect2:
 
 func get_cell_screen_rect(row: int, col: int) -> Rect2:
 	var rect := _get_cell_rect(row, col)
-	rect.position -= scroll_offset
+	rect.position -= _get_cell_offset(row, col)
 	return rect
 
 

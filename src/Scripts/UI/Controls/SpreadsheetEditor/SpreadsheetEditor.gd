@@ -146,6 +146,25 @@ func _build_toolbar() -> void:
 	header_btn.pressed.connect(_on_header_row_pressed)
 	toolbar.add_child(header_btn)
 
+	# Separator
+	var sep3 := VSeparator.new()
+	toolbar.add_child(sep3)
+
+	# Freeze pane button with dropdown
+	var freeze_btn := MenuButton.new()
+	freeze_btn.text = "Freeze"
+	freeze_btn.tooltip_text = "Freeze Rows/Columns"
+	var freeze_popup := freeze_btn.get_popup()
+	freeze_popup.add_item("No Freeze", 0)
+	freeze_popup.add_item("Freeze Top Row", 1)
+	freeze_popup.add_item("Freeze First Column", 2)
+	freeze_popup.add_item("Freeze Top Row & First Column", 3)
+	freeze_popup.add_separator()
+	freeze_popup.add_item("Freeze Above Current Row", 4)
+	freeze_popup.add_item("Freeze Left of Current Column", 5)
+	freeze_popup.id_pressed.connect(_on_freeze_option_selected)
+	toolbar.add_child(freeze_btn)
+
 	# Spacer
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -851,6 +870,33 @@ func _on_header_row_pressed() -> void:
 				cell.alignment = HORIZONTAL_ALIGNMENT_CENTER if meta.is_header else HORIZONTAL_ALIGNMENT_LEFT
 
 	cells_canvas.queue_redraw()
+	content_changed.emit()
+
+
+func _on_freeze_option_selected(id: int) -> void:
+	match id:
+		0:  # No Freeze
+			spreadsheet_data.frozen_rows = 0
+			spreadsheet_data.frozen_cols = 0
+		1:  # Freeze Top Row
+			spreadsheet_data.frozen_rows = 1
+			spreadsheet_data.frozen_cols = 0
+		2:  # Freeze First Column
+			spreadsheet_data.frozen_rows = 0
+			spreadsheet_data.frozen_cols = 1
+		3:  # Freeze Top Row & First Column
+			spreadsheet_data.frozen_rows = 1
+			spreadsheet_data.frozen_cols = 1
+		4:  # Freeze Above Current Row
+			spreadsheet_data.frozen_rows = current_row
+			# Don't change frozen_cols
+		5:  # Freeze Left of Current Column
+			spreadsheet_data.frozen_cols = current_col
+			# Don't change frozen_rows
+
+	cells_canvas.queue_redraw()
+	column_headers.queue_redraw()
+	row_headers.queue_redraw()
 	content_changed.emit()
 
 

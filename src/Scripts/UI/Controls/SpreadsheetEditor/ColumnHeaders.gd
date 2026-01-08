@@ -60,20 +60,34 @@ func _draw() -> void:
 	# Background
 	draw_rect(Rect2(Vector2.ZERO, size), bg_color)
 
-	# Calculate visible columns
-	var start_col := _get_col_at_x(scroll_offset_x)
-	var end_col := _get_col_at_x(scroll_offset_x + size.x) + 1
+	var frozen_cols := data.frozen_cols
+	var frozen_col_width := _get_col_x(frozen_cols)
 
-	start_col = maxi(0, start_col)
+	# Draw scrollable column headers (after frozen columns)
+	var start_col := _get_col_at_x(frozen_col_width + scroll_offset_x)
+	start_col = maxi(frozen_cols, start_col)
+	var end_col := _get_col_at_x(scroll_offset_x + size.x) + 1
 	end_col = mini(data.column_count, end_col)
 
-	# Draw column headers
 	for col in range(start_col, end_col):
-		_draw_column_header(col)
+		_draw_column_header(col, scroll_offset_x)
+
+	# Draw frozen column headers (always visible at left)
+	if frozen_cols > 0:
+		for col in range(frozen_cols):
+			_draw_column_header(col, 0)
+		# Draw separator line
+		draw_line(
+			Vector2(frozen_col_width, 0),
+			Vector2(frozen_col_width, size.y),
+			Color(0.5, 0.5, 0.6, 1.0),
+			2.0
+		)
 
 	# Draw resize handle indicator if hovering
 	if is_over_resize_handle and resizing_col < 0:
-		var handle_x := _get_col_x(hovered_col + 1) - scroll_offset_x
+		var offset := 0.0 if hovered_col < frozen_cols else scroll_offset_x
+		var handle_x := _get_col_x(hovered_col + 1) - offset
 		draw_line(
 			Vector2(handle_x, 0),
 			Vector2(handle_x, size.y),
@@ -82,13 +96,15 @@ func _draw() -> void:
 		)
 
 
-func _draw_column_header(col: int) -> void:
-	var x := _get_col_x(col) - scroll_offset_x
+func _draw_column_header(col: int, offset: float = 0.0) -> void:
+	var x := _get_col_x(col) - offset
 	var width := data.get_column_width(col)
 	var rect := Rect2(x, 0, width, size.y)
 
 	# Background
 	var bg := bg_color
+	if col < data.frozen_cols:
+		bg = bg.lightened(0.05)  # Slightly lighter for frozen columns
 	if col in selected_cols:
 		bg = selected_bg_color
 	elif col == hovered_col:
