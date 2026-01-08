@@ -24,6 +24,11 @@ func serialize() -> Array:
 		match editor.type:
 			editor.Type.TEXT:
 				content = editor.code_edit.text
+			editor.Type.SPREADSHEET:
+				if editor.spreadsheet_editor:
+					content = editor.spreadsheet_editor.serialize()
+				else:
+					content = {}
 			editor.Type.GRAPHICS:
 				var layers: Array[Dictionary] = []
 				# Get the GraphicsEditorV2 instance
@@ -102,7 +107,13 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 
 		if editor_inst.type == Editor.Type.TEXT:
 			editor_inst.code_edit.text = editor_ser.get("content")
-			
+
+		elif editor_inst.type == Editor.Type.SPREADSHEET:
+			if editor_inst.spreadsheet_editor:
+				var content = editor_ser.get("content")
+				if content and content is Dictionary:
+					editor_inst.spreadsheet_editor.deserialize(content)
+
 		elif editor_inst.type == Editor.Type.GRAPHICS:
 			var graphics_editor: GraphicsEditorV2 = editor_inst.graphics_editor
 			if graphics_editor:

@@ -8,6 +8,10 @@ const SpreadsheetCellsCanvasScript := preload("res://Scripts/UI/Controls/Spreads
 const SpreadsheetColumnHeadersScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/ColumnHeaders.gd")
 const SpreadsheetRowHeadersScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/RowHeaders.gd")
 const SpreadsheetHistoryScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetHistory.gd")
+const SpreadsheetFileHandlerScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetFileHandler.gd")
+const SpreadsheetChartScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetChart.gd")
+const ChartRendererScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/ChartRenderer.gd")
+const ChartCanvasScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/ChartCanvas.gd")
 
 signal content_changed()
 signal selection_changed(start_row: int, start_col: int, end_row: int, end_col: int)
@@ -24,6 +28,7 @@ var toolbar: HBoxContainer
 var formula_bar: HBoxContainer
 var cell_address_label: Label
 var formula_edit: LineEdit
+var split_container: VSplitContainer
 var grid_container: Control
 var corner_panel: Panel
 var column_headers  # SpreadsheetColumnHeaders
@@ -32,6 +37,17 @@ var cells_canvas  # SpreadsheetCellsCanvas
 var h_scrollbar: HScrollBar
 var v_scrollbar: VScrollBar
 var inline_editor: LineEdit
+var import_dialog: FileDialog
+var export_dialog: FileDialog
+
+## Chart components
+var chart_panel: PanelContainer
+var chart_header: HBoxContainer
+var chart_toggle_btn: Button
+var chart_container: VBoxContainer
+var chart_canvases: Array = []  # Array of ChartCanvas
+var charts: Array = []  # Array of SpreadsheetChart
+var chart_config_dialog: Window
 
 ## Current selection
 var current_row: int = 0
@@ -81,11 +97,21 @@ func _build_ui() -> void:
 	# Formula bar
 	_build_formula_bar()
 
-	# Grid area
+	# Split container for grid and chart panel
+	split_container = VSplitContainer.new()
+	split_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	split_container.dragger_visibility = SplitContainer.DRAGGER_VISIBLE
+	main_container.add_child(split_container)
+
+	# Grid area (in split container)
 	_build_grid_area()
 
 	# Inline editor (hidden initially)
 	_build_inline_editor()
+
+	# Chart panel (in split container, resizable)
+	_build_chart_panel()
 
 
 func _build_toolbar() -> void:
@@ -165,6 +191,35 @@ func _build_toolbar() -> void:
 	freeze_popup.id_pressed.connect(_on_freeze_option_selected)
 	toolbar.add_child(freeze_btn)
 
+	# Separator
+	var sep4 := VSeparator.new()
+	toolbar.add_child(sep4)
+
+	# Import button
+	var import_btn := Button.new()
+	import_btn.text = "Import"
+	import_btn.tooltip_text = "Import from CSV/TSV/Excel"
+	import_btn.pressed.connect(_on_import_pressed)
+	toolbar.add_child(import_btn)
+
+	# Export button
+	var export_btn := Button.new()
+	export_btn.text = "Export"
+	export_btn.tooltip_text = "Export to CSV/TSV/Excel"
+	export_btn.pressed.connect(_on_export_pressed)
+	toolbar.add_child(export_btn)
+
+	# Separator
+	var sep5 := VSeparator.new()
+	toolbar.add_child(sep5)
+
+	# Chart button
+	var chart_btn := Button.new()
+	chart_btn.text = "Chart"
+	chart_btn.tooltip_text = "Create Chart from Selection"
+	chart_btn.pressed.connect(_on_chart_pressed)
+	toolbar.add_child(chart_btn)
+
 	# Spacer
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -202,7 +257,7 @@ func _build_grid_area() -> void:
 	grid_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	grid_container.clip_contents = true
-	main_container.add_child(grid_container)
+	split_container.add_child(grid_container)
 
 	# Corner panel (top-left)
 	corner_panel = Panel.new()
@@ -252,6 +307,55 @@ func _build_inline_editor() -> void:
 	inline_editor.gui_input.connect(_on_inline_editor_gui_input)
 	# Add to grid_container so it overlays the cells
 	grid_container.add_child(inline_editor)
+
+
+func _build_chart_panel() -> void:
+	# Chart panel (resizable via split container)
+	chart_panel = PanelContainer.new()
+	chart_panel.visible = false
+	chart_panel.custom_minimum_size.y = 100
+	chart_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	split_container.add_child(chart_panel)
+
+	var panel_vbox := VBoxContainer.new()
+	chart_panel.add_child(panel_vbox)
+
+	# Header with collapse button
+	chart_header = HBoxContainer.new()
+	panel_vbox.add_child(chart_header)
+
+	chart_toggle_btn = Button.new()
+	chart_toggle_btn.text = "Charts"
+	chart_toggle_btn.toggle_mode = true
+	chart_toggle_btn.button_pressed = true
+	chart_toggle_btn.toggled.connect(_on_chart_toggle)
+	chart_header.add_child(chart_toggle_btn)
+
+	var add_chart_btn := Button.new()
+	add_chart_btn.text = "+"
+	add_chart_btn.tooltip_text = "Add Chart"
+	add_chart_btn.pressed.connect(_on_add_chart_pressed)
+	chart_header.add_child(add_chart_btn)
+
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chart_header.add_child(spacer)
+
+	var close_btn := Button.new()
+	close_btn.text = "X"
+	close_btn.tooltip_text = "Close Charts Panel"
+	close_btn.pressed.connect(_on_close_chart_panel)
+	chart_header.add_child(close_btn)
+
+	# Chart container (scrollable)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panel_vbox.add_child(scroll)
+
+	chart_container = VBoxContainer.new()
+	chart_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(chart_container)
 
 
 func _connect_signals() -> void:
@@ -1098,10 +1202,335 @@ func set_content(csv_text: String) -> void:
 			spreadsheet_data.set_cell_value(row, col, values[col])
 
 
+## File Import/Export
+
+func _on_import_pressed() -> void:
+	if not import_dialog:
+		_create_import_dialog()
+	import_dialog.popup_centered(Vector2(800, 600))
+
+
+func _on_export_pressed() -> void:
+	if not export_dialog:
+		_create_export_dialog()
+	export_dialog.popup_centered(Vector2(800, 600))
+
+
+func _create_import_dialog() -> void:
+	import_dialog = FileDialog.new()
+	import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	import_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	import_dialog.title = "Import Spreadsheet"
+	import_dialog.filters = SpreadsheetFileHandlerScript.get_import_filters()
+	import_dialog.file_selected.connect(_on_import_file_selected)
+	add_child(import_dialog)
+
+
+func _create_export_dialog() -> void:
+	export_dialog = FileDialog.new()
+	export_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	export_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	export_dialog.title = "Export Spreadsheet"
+	export_dialog.filters = SpreadsheetFileHandlerScript.get_export_filters()
+	export_dialog.file_selected.connect(_on_export_file_selected)
+	add_child(export_dialog)
+
+
+func _on_import_file_selected(path: String) -> void:
+	var err := SpreadsheetFileHandlerScript.import_file(path, spreadsheet_data)
+	if err != OK:
+		push_error("Failed to import file: " + path + " (error: " + str(err) + ")")
+		return
+
+	# Update UI
+	cells_canvas.set_data(spreadsheet_data)
+	column_headers.set_data(spreadsheet_data)
+	row_headers.set_data(spreadsheet_data)
+	cells_canvas.queue_redraw()
+	column_headers.queue_redraw()
+	row_headers.queue_redraw()
+	_update_scrollbar_ranges()
+	_update_selection_display()
+	content_changed.emit()
+
+
+func _on_export_file_selected(path: String) -> void:
+	var err := SpreadsheetFileHandlerScript.export_file(path, spreadsheet_data)
+	if err != OK:
+		push_error("Failed to export file: " + path + " (error: " + str(err) + ")")
+
+
+## Chart Methods
+
+func _on_chart_pressed() -> void:
+	# Create a chart from current selection
+	_show_chart_config_dialog()
+
+
+func _on_chart_toggle(toggled: bool) -> void:
+	chart_container.visible = toggled
+
+
+func _on_add_chart_pressed() -> void:
+	_show_chart_config_dialog()
+
+
+func _on_close_chart_panel() -> void:
+	chart_panel.visible = false
+
+
+func _show_chart_config_dialog() -> void:
+	if not chart_config_dialog:
+		_create_chart_config_dialog()
+
+	# Pre-populate with selection
+	var sel_rect: Rect2i = cells_canvas.get_selection_rect()
+	if sel_rect.size != Vector2i.ZERO:
+		# Use first column as X, rest as series
+		var x_start := SpreadsheetDataScript.cell_to_reference(sel_rect.position.y, sel_rect.position.x)
+		var x_end := SpreadsheetDataScript.cell_to_reference(sel_rect.end.y - 1, sel_rect.position.x)
+		_chart_x_range_edit.text = x_start + ":" + x_end
+
+		# Add other columns as series
+		_chart_series_edit.text = ""
+		for col in range(sel_rect.position.x + 1, sel_rect.end.x):
+			var s_start := SpreadsheetDataScript.cell_to_reference(sel_rect.position.y, col)
+			var s_end := SpreadsheetDataScript.cell_to_reference(sel_rect.end.y - 1, col)
+			if not _chart_series_edit.text.is_empty():
+				_chart_series_edit.text += ","
+			_chart_series_edit.text += s_start + ":" + s_end
+
+	chart_config_dialog.popup_centered(Vector2(400, 350))
+
+
+var _chart_title_edit: LineEdit
+var _chart_type_option: OptionButton
+var _chart_x_range_edit: LineEdit
+var _chart_series_edit: LineEdit
+var _chart_x_is_date_check: CheckBox
+var _chart_header_row_check: CheckBox
+
+
+func _create_chart_config_dialog() -> void:
+	chart_config_dialog = Window.new()
+	chart_config_dialog.title = "Create Chart"
+	chart_config_dialog.size = Vector2(500, 420)
+	chart_config_dialog.min_size = Vector2(450, 390)
+	chart_config_dialog.transient = true
+	chart_config_dialog.exclusive = true
+	chart_config_dialog.close_requested.connect(func(): chart_config_dialog.hide())
+	add_child(chart_config_dialog)
+
+	var vbox := VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.add_theme_constant_override("separation", 10)
+	chart_config_dialog.add_child(vbox)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(margin)
+
+	var form := VBoxContainer.new()
+	form.add_theme_constant_override("separation", 8)
+	margin.add_child(form)
+
+	# Title
+	var title_row := HBoxContainer.new()
+	form.add_child(title_row)
+	var title_label := Label.new()
+	title_label.text = "Title:"
+	title_label.custom_minimum_size.x = 80
+	title_row.add_child(title_label)
+	_chart_title_edit = LineEdit.new()
+	_chart_title_edit.text = "Chart"
+	_chart_title_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(_chart_title_edit)
+
+	# Type
+	var type_row := HBoxContainer.new()
+	form.add_child(type_row)
+	var type_label := Label.new()
+	type_label.text = "Type:"
+	type_label.custom_minimum_size.x = 80
+	type_row.add_child(type_label)
+	_chart_type_option = OptionButton.new()
+	_chart_type_option.add_item("Line Chart", SpreadsheetChartScript.ChartType.LINE)
+	_chart_type_option.add_item("Bar Chart", SpreadsheetChartScript.ChartType.BAR)
+	_chart_type_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	type_row.add_child(_chart_type_option)
+
+	# X Range
+	var x_row := HBoxContainer.new()
+	form.add_child(x_row)
+	var x_label := Label.new()
+	x_label.text = "X Range:"
+	x_label.custom_minimum_size.x = 80
+	x_row.add_child(x_label)
+	_chart_x_range_edit = LineEdit.new()
+	_chart_x_range_edit.placeholder_text = "e.g., A1:A10"
+	_chart_x_range_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	x_row.add_child(_chart_x_range_edit)
+
+	# X is Date
+	var date_row := HBoxContainer.new()
+	form.add_child(date_row)
+	var date_spacer := Control.new()
+	date_spacer.custom_minimum_size.x = 80
+	date_row.add_child(date_spacer)
+	_chart_x_is_date_check = CheckBox.new()
+	_chart_x_is_date_check.text = "X-axis contains dates"
+	date_row.add_child(_chart_x_is_date_check)
+
+	# First row is header
+	var header_row := HBoxContainer.new()
+	form.add_child(header_row)
+	var header_spacer := Control.new()
+	header_spacer.custom_minimum_size.x = 80
+	header_row.add_child(header_spacer)
+	_chart_header_row_check = CheckBox.new()
+	_chart_header_row_check.text = "First row contains headers"
+	_chart_header_row_check.button_pressed = true  # Default to checked
+	header_row.add_child(_chart_header_row_check)
+
+	# Series
+	var series_row := HBoxContainer.new()
+	form.add_child(series_row)
+	var series_label := Label.new()
+	series_label.text = "Series:"
+	series_label.custom_minimum_size.x = 80
+	series_row.add_child(series_label)
+	_chart_series_edit = LineEdit.new()
+	_chart_series_edit.placeholder_text = "e.g., B1:B10,C1:C10"
+	_chart_series_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	series_row.add_child(_chart_series_edit)
+
+	# Help text
+	var help := Label.new()
+	help.text = "Enter ranges separated by commas for multiple series."
+	help.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
+	form.add_child(help)
+
+	# Spacer
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	form.add_child(spacer)
+
+	# Buttons
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_END
+	btn_row.add_theme_constant_override("separation", 10)
+	form.add_child(btn_row)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.pressed.connect(func(): chart_config_dialog.hide())
+	btn_row.add_child(cancel_btn)
+
+	var create_btn := Button.new()
+	create_btn.text = "Create"
+	create_btn.pressed.connect(_on_create_chart_confirmed)
+	btn_row.add_child(create_btn)
+
+
+func _on_create_chart_confirmed() -> void:
+	var chart := SpreadsheetChartScript.new()
+	chart.title = _chart_title_edit.text
+	chart.type = _chart_type_option.get_selected_id()
+	chart.x_range = _chart_x_range_edit.text
+	chart.x_is_date = _chart_x_is_date_check.button_pressed
+	chart.first_row_is_header = _chart_header_row_check.button_pressed
+
+	# Parse series
+	var series_text := _chart_series_edit.text.strip_edges()
+	if not series_text.is_empty():
+		var series_ranges := series_text.split(",")
+		for range_str in series_ranges:
+			var trimmed := range_str.strip_edges()
+			if not trimmed.is_empty():
+				chart.add_series(trimmed)
+
+	# Add the chart
+	add_chart(chart)
+
+	chart_config_dialog.hide()
+
+
+func add_chart(chart: SpreadsheetChartScript) -> void:
+	charts.append(chart)
+
+	# Create chart canvas
+	var canvas := ChartCanvasScript.new()
+	canvas.custom_minimum_size = Vector2(0, chart.height)
+	canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	canvas.set_chart(chart)
+	chart_canvases.append(canvas)
+	chart_container.add_child(canvas)
+
+	# Create chart wrapper with controls
+	var wrapper := HBoxContainer.new()
+	chart_container.move_child(canvas, chart_container.get_child_count() - 1)
+
+	# Update chart with data
+	_update_chart(charts.size() - 1)
+
+	# Show chart panel and set initial split
+	if not chart_panel.visible:
+		chart_panel.visible = true
+		# Set split to show chart at ~40% of available height
+		await get_tree().process_frame
+		var total_height := split_container.size.y
+		split_container.split_offset = int(total_height * 0.6)
+
+	content_changed.emit()
+
+
+func remove_chart(index: int) -> void:
+	if index < 0 or index >= charts.size():
+		return
+
+	charts.remove_at(index)
+	var canvas: Control = chart_canvases[index]
+	chart_canvases.remove_at(index)
+	canvas.queue_free()
+
+	content_changed.emit()
+
+
+func _update_chart(index: int) -> void:
+	if index < 0 or index >= charts.size():
+		return
+
+	var chart: SpreadsheetChartScript = charts[index]
+	var canvas: Control = chart_canvases[index]
+
+	var chart_data: ChartRendererScript.ChartData = ChartRendererScript.process(chart, spreadsheet_data)
+	canvas.set_chart_data(chart_data)
+
+
+func _update_all_charts() -> void:
+	for i in range(charts.size()):
+		_update_chart(i)
+
+
+## Override serialize to include charts
 func serialize() -> Dictionary:
-	return spreadsheet_data.to_dict()
+	var data: Dictionary = spreadsheet_data.to_dict()
+
+	# Add charts
+	var charts_data: Array[Dictionary] = []
+	for chart in charts:
+		charts_data.append(chart.to_dict())
+	data["charts"] = charts_data
+
+	return data
 
 
+## Override deserialize to restore charts
 func deserialize(data: Dictionary) -> void:
 	spreadsheet_data = SpreadsheetDataScript.new()
 	spreadsheet_data.load_from_dict(data)
@@ -1109,4 +1538,20 @@ func deserialize(data: Dictionary) -> void:
 	column_headers.set_data(spreadsheet_data)
 	row_headers.set_data(spreadsheet_data)
 	spreadsheet_data.data_changed.connect(_on_data_changed)
+
+	# Restore charts
+	charts.clear()
+	for canvas in chart_canvases:
+		canvas.queue_free()
+	chart_canvases.clear()
+
+	var charts_data: Array = data.get("charts", [])
+	for chart_data in charts_data:
+		var chart := SpreadsheetChartScript.new()
+		chart.load_from_dict(chart_data)
+		add_chart(chart)
+
+	if charts.size() > 0:
+		chart_panel.visible = true
+
 	_update_layout()

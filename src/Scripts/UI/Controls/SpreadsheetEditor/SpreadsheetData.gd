@@ -654,6 +654,75 @@ func to_json_array() -> Array:
 	return result
 
 
+## Load data from CSV string
+func from_csv(csv_text: String, delimiter: String = ",") -> void:
+	# Clear existing cells
+	cells.clear()
+
+	var lines := csv_text.split("\n")
+	var max_cols := 0
+	var actual_rows := 0
+
+	for row_idx in range(lines.size()):
+		var line := lines[row_idx].strip_edges()
+		if line.is_empty():
+			continue
+
+		var values: Array = _parse_csv_line(line, delimiter)
+		max_cols = maxi(max_cols, values.size())
+		actual_rows = row_idx + 1
+
+		for col_idx in range(values.size()):
+			var val: String = values[col_idx]
+			if not val.is_empty():
+				set_cell_value(row_idx, col_idx, val)
+
+	# Update counts and metadata
+	if max_cols > column_count:
+		column_count = max_cols
+	if actual_rows > row_count:
+		row_count = actual_rows
+
+	_init_metadata()
+
+	structure_changed.emit()
+	data_changed.emit()
+
+
+## Parse a CSV line handling quoted fields
+func _parse_csv_line(line: String, delimiter: String) -> Array:
+	var values := []
+	var current := ""
+	var in_quotes := false
+	var i := 0
+
+	while i < line.length():
+		var ch := line[i]
+
+		if in_quotes:
+			if ch == '"':
+				# Check for escaped quote
+				if i + 1 < line.length() and line[i + 1] == '"':
+					current += '"'
+					i += 1
+				else:
+					in_quotes = false
+			else:
+				current += ch
+		else:
+			if ch == '"':
+				in_quotes = true
+			elif ch == delimiter:
+				values.append(current)
+				current = ""
+			else:
+				current += ch
+		i += 1
+
+	values.append(current)
+	return values
+
+
 # ============================================================================
 # FORMULA EVALUATION AND DEPENDENCY TRACKING
 # ============================================================================
