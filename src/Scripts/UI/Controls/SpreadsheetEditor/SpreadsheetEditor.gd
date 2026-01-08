@@ -7,12 +7,16 @@ const SpreadsheetCellScript := preload("res://Scripts/UI/Controls/SpreadsheetEdi
 const SpreadsheetCellsCanvasScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/CellsCanvas.gd")
 const SpreadsheetColumnHeadersScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/ColumnHeaders.gd")
 const SpreadsheetRowHeadersScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/RowHeaders.gd")
+const SpreadsheetHistoryScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetHistory.gd")
 
 signal content_changed()
 signal selection_changed(start_row: int, start_col: int, end_row: int, end_col: int)
 
 ## Spreadsheet data
 var spreadsheet_data  # SpreadsheetData
+
+## Undo/redo history
+var history  # SpreadsheetHistory
 
 ## UI Components
 var main_container: VBoxContainer
@@ -36,6 +40,12 @@ var current_col: int = 0
 ## Editing state
 var is_editing: bool = false
 
+## Resize tracking for history
+var _resize_col_start_width: float = 0.0
+var _resize_row_start_height: float = 0.0
+var _resize_col: int = -1
+var _resize_row: int = -1
+
 ## Header sizes
 var row_header_width: float = 50.0
 var column_header_height: float = 24.0
@@ -44,6 +54,9 @@ var column_header_height: float = 24.0
 func _ready() -> void:
 	# Initialize data
 	spreadsheet_data = SpreadsheetDataScript.new()
+
+	# Initialize history
+	history = SpreadsheetHistoryScript.new()
 
 	# Build UI
 	_build_ui()
@@ -230,11 +243,16 @@ func _connect_signals() -> void:
 
 	# Column header signals
 	column_headers.column_clicked.connect(_on_column_clicked)
+	column_headers.column_resize_started.connect(_on_column_resize_started)
 	column_headers.column_resize.connect(_on_column_resize)
+	column_headers.column_resize_ended.connect(_on_column_resize_ended)
+	column_headers.column_autofit_requested.connect(_on_column_autofit)
 
 	# Row header signals
 	row_headers.row_clicked.connect(_on_row_clicked)
+	row_headers.row_resize_started.connect(_on_row_resize_started)
 	row_headers.row_resize.connect(_on_row_resize)
+	row_headers.row_resize_ended.connect(_on_row_resize_ended)
 
 	# Scrollbar signals
 	h_scrollbar.value_changed.connect(_on_h_scroll_changed)
@@ -348,6 +366,11 @@ func _on_row_clicked(row: int) -> void:
 	cells_canvas.select_range(row, 0, row, spreadsheet_data.column_count - 1)
 
 
+func _on_column_resize_started(col: int) -> void:
+	_resize_col = col
+	_resize_col_start_width = spreadsheet_data.get_column_width(col)
+
+
 func _on_column_resize(col: int, new_width: float) -> void:
 	spreadsheet_data.set_column_width(col, new_width)
 	cells_canvas.queue_redraw()
@@ -355,11 +378,69 @@ func _on_column_resize(col: int, new_width: float) -> void:
 	_update_scrollbar_ranges()
 
 
+func _on_column_resize_ended(col: int) -> void:
+	if _resize_col >= 0:
+		var new_width: float = spreadsheet_data.get_column_width(col)
+		if new_width != _resize_col_start_width:
+			history.record_column_resize(_resize_col, _resize_col_start_width, new_width)
+	_resize_col = -1
+
+
+func _on_column_autofit(col: int) -> void:
+	var old_width: float = spreadsheet_data.get_column_width(col)
+	var new_width := _calculate_column_fit_width(col)
+
+	if new_width != old_width:
+		spreadsheet_data.set_column_width(col, new_width)
+		history.record_column_resize(col, old_width, new_width)
+		cells_canvas.queue_redraw()
+		column_headers.queue_redraw()
+		_update_scrollbar_ranges()
+		content_changed.emit()
+
+
+func _calculate_column_fit_width(col: int) -> float:
+	var cell_font: Font = cells_canvas.font
+	var cell_font_size: int = cells_canvas.font_size
+	var padding: float = cells_canvas.cell_padding * 2.0
+	var min_width: float = 40.0  # Minimum column width
+	var max_width: float = SpreadsheetDataScript.MAX_COLUMN_WIDTH
+
+	# Start with header label width
+	var header_label: String = SpreadsheetDataScript.get_column_label(col)
+	if col < spreadsheet_data.column_meta.size() and not spreadsheet_data.column_meta[col].header_name.is_empty():
+		header_label = spreadsheet_data.column_meta[col].header_name
+	var widest: float = cell_font.get_string_size(header_label, HORIZONTAL_ALIGNMENT_LEFT, -1, cell_font_size).x + padding
+
+	# Check all rows for the widest content
+	for row in range(spreadsheet_data.row_count):
+		var cell = spreadsheet_data.get_cell_if_exists(row, col)
+		if cell and not cell.is_empty():
+			var display_text: String = cell.get_display_text()
+			var text_width: float = cell_font.get_string_size(display_text, HORIZONTAL_ALIGNMENT_LEFT, -1, cell_font_size).x + padding
+			widest = maxf(widest, text_width)
+
+	return clampf(widest, min_width, max_width)
+
+
+func _on_row_resize_started(row: int) -> void:
+	_resize_row = row
+	_resize_row_start_height = spreadsheet_data.get_row_height(row)
+
+
 func _on_row_resize(row: int, new_height: float) -> void:
 	spreadsheet_data.set_row_height(row, new_height)
 	cells_canvas.queue_redraw()
 	row_headers.queue_redraw()
 	_update_scrollbar_ranges()
+
+
+func _on_row_resize_ended(row: int) -> void:
+	if _resize_row >= 0:
+		var new_height: float = spreadsheet_data.get_row_height(row)
+		if new_height != _resize_row_start_height:
+			history.record_row_resize(_resize_row, _resize_row_start_height, new_height)
+	_resize_row = -1
 
 
 func _update_selection_display() -> void:
@@ -437,8 +518,24 @@ func _on_inline_edit_focus_lost() -> void:
 	_end_inline_edit(true)
 
 
-func _set_current_cell_value(value: String) -> void:
+func _set_current_cell_value(value: String, record_history: bool = true) -> void:
+	# Get old value for history
+	var old_value: Variant = ""
+	var old_formula: String = ""
+	var cell = spreadsheet_data.get_cell_if_exists(current_row, current_col)
+	if cell:
+		old_value = cell.value
+		old_formula = cell.formula
+
+	# Set new value
 	spreadsheet_data.set_cell_value(current_row, current_col, value)
+
+	# Record in history
+	if record_history:
+		var new_cell = spreadsheet_data.get_cell_if_exists(current_row, current_col)
+		var new_formula: String = new_cell.formula if new_cell else ""
+		history.record_cell_edit(current_row, current_col, old_value, value, old_formula, new_formula)
+
 	_update_selection_display()
 	content_changed.emit()
 
@@ -477,10 +574,10 @@ func _handle_key_input(event: InputEventKey) -> bool:
 				_paste_selection()
 				return true
 			KEY_Z:
-				# TODO: Undo
+				_perform_undo()
 				return true
 			KEY_Y:
-				# TODO: Redo
+				_perform_redo()
 				return true
 
 	# Handle navigation
@@ -553,14 +650,35 @@ func _move_selection(row_delta: int, col_delta: int, extend: bool = false) -> vo
 
 
 func _delete_selection() -> void:
-	var sel_rect: Rect2i = cells_canvas.get_selection_rect()
-	if sel_rect.size == Vector2i.ZERO:
-		spreadsheet_data.clear_cell(current_row, current_col)
-	else:
+	var all_rects: Array[Rect2i] = cells_canvas.get_all_selection_rects()
+	if all_rects.is_empty():
+		all_rects = [Rect2i(current_col, current_row, 1, 1)]
+
+	# Process each selection rect
+	for sel_rect in all_rects:
+		# Capture old cells for history
+		var old_cells: Dictionary = {}
+		for row in range(sel_rect.position.y, sel_rect.end.y):
+			for col in range(sel_rect.position.x, sel_rect.end.x):
+				var cell = spreadsheet_data.get_cell_if_exists(row, col)
+				if cell and not cell.is_empty():
+					var key := SpreadsheetDataScript.cell_key(row, col)
+					old_cells[key] = cell.to_dict()
+
+		# Clear the range
 		spreadsheet_data.clear_range(
 			sel_rect.position.y, sel_rect.position.x,
 			sel_rect.end.y - 1, sel_rect.end.x - 1
 		)
+
+		# Record in history
+		if not old_cells.is_empty():
+			history.record_range_clear(
+				sel_rect.position.y, sel_rect.position.x,
+				sel_rect.end.y - 1, sel_rect.end.x - 1,
+				old_cells
+			)
+
 	content_changed.emit()
 
 
@@ -588,17 +706,38 @@ func _paste_selection() -> void:
 	var start_row := current_row
 	var start_col := current_col
 
+	# Capture old cells for history
+	var old_cells: Dictionary = {}
+	var new_cells: Dictionary = {}
+
 	for row_offset in range(lines.size()):
 		var line := lines[row_offset]
 		var values := line.split("\t")
 
 		for col_offset in range(values.size()):
+			var row := start_row + row_offset
+			var col := start_col + col_offset
 			var value := values[col_offset]
-			spreadsheet_data.set_cell_value(
-				start_row + row_offset,
-				start_col + col_offset,
-				value
-			)
+
+			# Capture old value
+			var key := SpreadsheetDataScript.cell_key(row, col)
+			var old_cell = spreadsheet_data.get_cell_if_exists(row, col)
+			if old_cell:
+				old_cells[key] = old_cell.to_dict()
+			else:
+				old_cells[key] = {}  # Empty cell
+
+			# Set new value
+			spreadsheet_data.set_cell_value(row, col, value)
+
+			# Capture new value
+			var new_cell = spreadsheet_data.get_cell_if_exists(row, col)
+			if new_cell:
+				new_cells[key] = new_cell.to_dict()
+
+	# Record in history
+	if not new_cells.is_empty():
+		history.record_range_edit(start_row, start_col, old_cells, new_cells)
 
 	content_changed.emit()
 
@@ -647,26 +786,180 @@ func _on_header_row_pressed() -> void:
 
 
 func _apply_format_to_selection(format: Dictionary) -> void:
-	var sel_rect: Rect2i = cells_canvas.get_selection_rect()
-	if sel_rect.size == Vector2i.ZERO:
-		sel_rect = Rect2i(current_col, current_row, 1, 1)
+	var all_rects: Array[Rect2i] = cells_canvas.get_all_selection_rects()
+	if all_rects.is_empty():
+		all_rects = [Rect2i(current_col, current_row, 1, 1)]
 
-	for row in range(sel_rect.position.y, sel_rect.end.y):
-		for col in range(sel_rect.position.x, sel_rect.end.x):
-			var cell = spreadsheet_data.get_cell(row, col)
+	# Collect format changes for history
+	var format_changes: Array = []
 
-			if format.has("bold"):
-				cell.bold = not cell.bold if format["bold"] == true else format["bold"]
-			if format.has("italic"):
-				cell.italic = not cell.italic if format["italic"] == true else format["italic"]
-			if format.has("alignment"):
-				cell.alignment = format["alignment"]
-			if format.has("text_color"):
-				cell.text_color = format["text_color"]
-			if format.has("bg_color"):
-				cell.bg_color = format["bg_color"]
+	for sel_rect in all_rects:
+		for row in range(sel_rect.position.y, sel_rect.end.y):
+			for col in range(sel_rect.position.x, sel_rect.end.x):
+				var cell = spreadsheet_data.get_cell(row, col)
+
+				# Capture old format
+				var old_format: Dictionary = {
+					"bold": cell.bold,
+					"italic": cell.italic,
+					"alignment": cell.alignment,
+					"text_color": cell.text_color,
+					"bg_color": cell.bg_color,
+				}
+
+				# Apply format changes
+				if format.has("bold"):
+					cell.bold = not cell.bold if format["bold"] == true else format["bold"]
+				if format.has("italic"):
+					cell.italic = not cell.italic if format["italic"] == true else format["italic"]
+				if format.has("alignment"):
+					cell.alignment = format["alignment"]
+				if format.has("text_color"):
+					cell.text_color = format["text_color"]
+				if format.has("bg_color"):
+					cell.bg_color = format["bg_color"]
+
+				# Capture new format
+				var new_format: Dictionary = {
+					"bold": cell.bold,
+					"italic": cell.italic,
+					"alignment": cell.alignment,
+					"text_color": cell.text_color,
+					"bg_color": cell.bg_color,
+				}
+
+				# Only record if format actually changed
+				if old_format != new_format:
+					format_changes.append({
+						"row": row,
+						"col": col,
+						"old_format": old_format,
+						"new_format": new_format,
+					})
+
+	# Record in history
+	if not format_changes.is_empty():
+		history.record_range_format(format_changes)
 
 	cells_canvas.queue_redraw()
+	content_changed.emit()
+
+
+## Undo/Redo
+
+func _perform_undo() -> void:
+	if not history.can_undo():
+		return
+
+	var action = history.undo()
+	if not action:
+		return
+
+	_apply_history_action(action, true)
+
+
+func _perform_redo() -> void:
+	if not history.can_redo():
+		return
+
+	var action = history.redo()
+	if not action:
+		return
+
+	_apply_history_action(action, false)
+
+
+func _apply_history_action(action, is_undo: bool) -> void:
+	match action.type:
+		SpreadsheetHistoryScript.ActionType.CELL_EDIT:
+			var row: int = action.data["row"]
+			var col: int = action.data["col"]
+			var value = action.data["old_value"] if is_undo else action.data["new_value"]
+
+			# Temporarily store current position
+			var prev_row := current_row
+			var prev_col := current_col
+
+			# Move to the cell and set value without recording history
+			current_row = row
+			current_col = col
+			_set_current_cell_value(str(value), false)
+
+			# Restore position
+			current_row = prev_row
+			current_col = prev_col
+
+		SpreadsheetHistoryScript.ActionType.CELL_FORMAT:
+			var row: int = action.data["row"]
+			var col: int = action.data["col"]
+			var format_data: Dictionary = action.data["old_format"] if is_undo else action.data["new_format"]
+
+			var cell = spreadsheet_data.get_cell(row, col)
+			if format_data.has("bold"):
+				cell.bold = format_data["bold"]
+			if format_data.has("italic"):
+				cell.italic = format_data["italic"]
+			if format_data.has("alignment"):
+				cell.alignment = format_data["alignment"]
+			if format_data.has("text_color"):
+				cell.text_color = format_data["text_color"]
+			if format_data.has("bg_color"):
+				cell.bg_color = format_data["bg_color"]
+
+		SpreadsheetHistoryScript.ActionType.RANGE_CLEAR:
+			if is_undo:
+				# Restore old cells
+				var old_cells: Dictionary = action.data["old_cells"]
+				for key in old_cells:
+					var cell = SpreadsheetCellScript.new()
+					cell.load_from_dict(old_cells[key])
+					var pos = SpreadsheetDataScript.parse_cell_key(key)
+					spreadsheet_data.set_cell(pos.y, pos.x, cell)
+
+		SpreadsheetHistoryScript.ActionType.RANGE_EDIT:
+			var cells_data: Dictionary = action.data["old_cells"] if is_undo else action.data["new_cells"]
+			var _start_row: int = action.data["start_row"]
+			var _start_col: int = action.data["start_col"]
+
+			for key in cells_data:
+				var cell = SpreadsheetCellScript.new()
+				cell.load_from_dict(cells_data[key])
+				var pos = SpreadsheetDataScript.parse_cell_key(key)
+				spreadsheet_data.set_cell(pos.y, pos.x, cell)
+
+		SpreadsheetHistoryScript.ActionType.RANGE_FORMAT:
+			var cells: Array = action.data["cells"]
+			for cell_data in cells:
+				var row: int = cell_data["row"]
+				var col: int = cell_data["col"]
+				var format_data: Dictionary = cell_data["old_format"] if is_undo else cell_data["new_format"]
+
+				var cell = spreadsheet_data.get_cell(row, col)
+				if format_data.has("bold"):
+					cell.bold = format_data["bold"]
+				if format_data.has("italic"):
+					cell.italic = format_data["italic"]
+				if format_data.has("alignment"):
+					cell.alignment = format_data["alignment"]
+				if format_data.has("text_color"):
+					cell.text_color = format_data["text_color"]
+				if format_data.has("bg_color"):
+					cell.bg_color = format_data["bg_color"]
+
+		SpreadsheetHistoryScript.ActionType.ROW_RESIZE:
+			var row: int = action.data["row"]
+			var height: float = action.data["old_height"] if is_undo else action.data["new_height"]
+			spreadsheet_data.set_row_height(row, height)
+			row_headers.queue_redraw()
+
+		SpreadsheetHistoryScript.ActionType.COLUMN_RESIZE:
+			var col: int = action.data["col"]
+			var width: float = action.data["old_width"] if is_undo else action.data["new_width"]
+			spreadsheet_data.set_column_width(col, width)
+			column_headers.queue_redraw()
+
+	cells_canvas.queue_redraw()
+	_update_selection_display()
 	content_changed.emit()
 
 

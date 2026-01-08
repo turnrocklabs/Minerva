@@ -20,6 +20,10 @@ var selection_anchor: Vector2i = Vector2i(-1, -1)  # Start of selection
 var selection_active: Vector2i = Vector2i(-1, -1)  # Current end of selection
 var is_selecting: bool = false
 
+## Multi-selection state (for Ctrl+Click)
+## Each item is a Rect2i representing a selection range
+var additional_selections: Array[Rect2i] = []
+
 ## Hover state
 var hovered_cell: Vector2i = Vector2i(-1, -1)
 
@@ -190,10 +194,21 @@ func _draw_cell_content(start_row: int, start_col: int, end_row: int, end_col: i
 
 
 func _draw_selection() -> void:
+	# Draw additional selections first (from Ctrl+Click)
+	for sel_rect in additional_selections:
+		_draw_selection_rect(sel_rect)
+
+	# Draw current selection
 	if selection_anchor.x < 0 or selection_active.x < 0:
 		return
 
 	var sel_rect := get_selection_rect()
+	_draw_selection_rect(sel_rect)
+
+
+func _draw_selection_rect(sel_rect: Rect2i) -> void:
+	if sel_rect.size.x <= 0 or sel_rect.size.y <= 0:
+		return
 
 	# Draw selection fill
 	var start_rect := _get_cell_rect(sel_rect.position.y, sel_rect.position.x)
@@ -267,8 +282,16 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 				if event.shift_pressed and selection_anchor.x >= 0:
 					# Extend selection
 					selection_active = cell
+				elif event.ctrl_pressed and selection_anchor.x >= 0:
+					# Ctrl+Click: Add current selection to additional selections and start new one
+					var current_rect := get_selection_rect()
+					if current_rect.size.x > 0 and current_rect.size.y > 0:
+						additional_selections.append(current_rect)
+					selection_anchor = cell
+					selection_active = cell
 				else:
-					# New selection
+					# New selection (clear additional selections)
+					additional_selections.clear()
 					selection_anchor = cell
 					selection_active = cell
 
@@ -399,6 +422,7 @@ func get_selection_rect() -> Rect2i:
 
 
 func select_cell(row: int, col: int) -> void:
+	additional_selections.clear()
 	selection_anchor = Vector2i(col, row)
 	selection_active = Vector2i(col, row)
 	_emit_selection_changed()
@@ -406,6 +430,7 @@ func select_cell(row: int, col: int) -> void:
 
 
 func select_range(start_row: int, start_col: int, end_row: int, end_col: int) -> void:
+	additional_selections.clear()
 	selection_anchor = Vector2i(start_col, start_row)
 	selection_active = Vector2i(end_col, end_row)
 	_emit_selection_changed()
@@ -413,9 +438,31 @@ func select_range(start_row: int, start_col: int, end_row: int, end_col: int) ->
 
 
 func clear_selection() -> void:
+	additional_selections.clear()
 	selection_anchor = Vector2i(-1, -1)
 	selection_active = Vector2i(-1, -1)
 	queue_redraw()
+
+
+## Returns all selection rectangles (additional + current)
+func get_all_selection_rects() -> Array[Rect2i]:
+	var result: Array[Rect2i] = []
+	result.append_array(additional_selections)
+
+	var current := get_selection_rect()
+	if current.size.x > 0 and current.size.y > 0:
+		result.append(current)
+
+	return result
+
+
+## Check if a cell is in any selection
+func is_cell_selected(row: int, col: int) -> bool:
+	for sel_rect in get_all_selection_rects():
+		if col >= sel_rect.position.x and col < sel_rect.end.x and \
+		   row >= sel_rect.position.y and row < sel_rect.end.y:
+			return true
+	return false
 
 
 func _emit_selection_changed() -> void:

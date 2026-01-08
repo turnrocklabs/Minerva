@@ -8,6 +8,7 @@ signal column_clicked(col: int)
 signal column_resize_started(col: int)
 signal column_resize(col: int, new_width: float)
 signal column_resize_ended(col: int)
+signal column_autofit_requested(col: int)
 
 ## Reference to spreadsheet data
 var data: SpreadsheetDataScript = null
@@ -129,9 +130,13 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	var x := event.position.x + scroll_offset_x
 
 	if event.pressed:
-		# Check if clicking on resize handle
+		# Check if double-clicking on resize handle (auto-fit)
 		var resize_col := _get_resize_handle_col(event.position.x)
 		if resize_col >= 0:
+			if event.double_click:
+				# Auto-fit column width
+				column_autofit_requested.emit(resize_col)
+				return
 			resizing_col = resize_col
 			resize_start_x = event.position.x
 			resize_start_width = data.get_column_width(resize_col)
