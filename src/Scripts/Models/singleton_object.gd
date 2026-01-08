@@ -32,6 +32,36 @@ var supported_audio_formats: PackedStringArray = ["mp3", "wav", "ogg"]
 var experimental_enabled: bool = false
 signal toggle_experimental(enabled)
 
+## When enabled, prints verbose/debug logging (discovery data, service info, etc.)
+var verbose_logging: bool = false
+signal toggle_verbose_logging(enabled)
+
+## Emitted when user requests to stop active AI/tool operations
+## history_id: The HistoryId of the chat to stop, or empty string to stop all
+@warning_ignore("unused_signal")
+signal stop_all_requests(history_id: String)
+
+## Emitted when a provider's enabled state changes - UI should refresh model lists
+signal provider_enabled_changed(provider: API_PROVIDER, enabled: bool)
+
+## History IDs that have been cancelled - check and remove when acting on cancellation
+var cancelled_history_ids: Array[String] = []
+
+## Check if a history_id has been cancelled without clearing it (for repeated checks in loops)
+func is_cancelled(history_id: String) -> bool:
+	return history_id in cancelled_history_ids
+
+## Clear the cancelled state for a history_id (call when cancellation is fully handled)
+func clear_cancelled(history_id: String) -> void:
+	var idx := cancelled_history_ids.find(history_id)
+	if idx >= 0:
+		cancelled_history_ids.remove_at(idx)
+
+## Helper for verbose logging - only prints if verbose_logging is enabled
+func verbose_log(message: String) -> void:
+	if verbose_logging:
+		print(message)
+
 var syntax_manager: SyntaxManager
 
 # used by the old editor.
@@ -49,6 +79,8 @@ var is_square
 var is_crayon
 var is_marker
 #endregion global variables
+
+var GEN_AI_HIST_FILE_PATH: = "user://gen_ai_history.csv"
 
 #region Config File
 var _config_file_name: String = "user://config_file.cfg"
@@ -328,6 +360,95 @@ var autocoder_manager: AutocodeManager
 
 #endregion Autocoder
 
+#region MCP
+
+const MCPManagerScript := preload("res://Scripts/Services/MCP/MCPManager.gd")
+const CoBrowserMCPClientScript := preload("res://Scripts/Services/MCP/Servers/CoBrowserMCPClient.gd")
+
+## Manager for MCP (Model Context Protocol) server connections
+var mcp_manager: Node = null
+
+## Co-Browser client for browser automation
+var cobrowser_client: RefCounted = null
+
+## Initialize MCP manager (call from main scene _ready)
+func initialize_mcp() -> void:
+	if mcp_manager:
+		return
+	mcp_manager = MCPManagerScript.new()
+	add_child(mcp_manager)
+	await mcp_manager.initialize()
+
+## Initialize Co-Browser client (call when needed)
+func get_cobrowser_client() -> RefCounted:
+	if not cobrowser_client:
+		cobrowser_client = CoBrowserMCPClientScript.new()
+	return cobrowser_client
+
+## Check if Co-Browser is available
+func is_cobrowser_available() -> bool:
+	var client = get_cobrowser_client()
+	return await client.has_active_session()
+
+
+## Get the MCP manager instance (lazy initialization)
+func get_mcp_manager() -> Node:
+	if not mcp_manager:
+		mcp_manager = MCPManagerScript.new()
+		add_child(mcp_manager)
+	return mcp_manager
+
+#endregion MCP
+
+#region Image Generation Settings
+
+## Maximum iterations allowed for iterative image generation in agentic mode
+var max_image_iterations: int = 3:
+	set(value):
+		max_image_iterations = clampi(value, 1, 20)
+		save_to_config_file("ImageGeneration", "max_image_iterations", max_image_iterations)
+	get:
+		if max_image_iterations <= 0:
+			var saved = get_config_file_value("ImageGeneration", "max_image_iterations")
+			max_image_iterations = saved if saved != null and saved > 0 else 3
+		return max_image_iterations
+
+## Nano Banana Pro (Google Image) settings
+var nbp_google_search_enabled: bool = false:
+	set(value):
+		nbp_google_search_enabled = value
+		save_to_config_file("NanoBananaPro", "google_search_enabled", value)
+	get:
+		var saved = get_config_file_value("NanoBananaPro", "google_search_enabled")
+		if saved != null:
+			if saved is bool:
+				nbp_google_search_enabled = saved
+			else:
+				nbp_google_search_enabled = str(saved).to_lower() == "true"
+		return nbp_google_search_enabled
+
+var nbp_aspect_ratio: String = "1:1":
+	set(value):
+		nbp_aspect_ratio = value
+		save_to_config_file("NanoBananaPro", "aspect_ratio", value)
+	get:
+		var saved = get_config_file_value("NanoBananaPro", "aspect_ratio")
+		if saved != null and not saved.is_empty():
+			nbp_aspect_ratio = saved
+		return nbp_aspect_ratio
+
+var nbp_image_size: String = "1K":
+	set(value):
+		nbp_image_size = value
+		save_to_config_file("NanoBananaPro", "image_size", value)
+	get:
+		var saved = get_config_file_value("NanoBananaPro", "image_size")
+		if saved != null and not saved.is_empty():
+			nbp_image_size = saved
+		return nbp_image_size
+
+#endregion Image Generation Settings
+
 #region Chats
 @warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)
@@ -351,39 +472,57 @@ var undo: undoMain = undoMain.new()
 var AtT: AudioToTexts = AudioToTexts.new()
 
 #region UI Scaling
-var initial_ui_scale: float = 1
-var min_ui_scale: = 0.8
-var max_ui_scale: = 1.5
-var scaling_factor: = 0.04
+var initial_ui_scale: float = 1.0
+var min_ui_scale: float = 0.5
+var max_ui_scale: float = 2.5
+var scaling_factor: float = 0.04
 
 func increment_scale_ui() -> void:
-	var ui_scale = get_tree().root.content_scale_factor
+	var ui_scale: float = get_tree().root.content_scale_factor
 	if ui_scale < max_ui_scale:
-		get_tree().root.content_scale_factor = ui_scale + scaling_factor
+		var new_scale: float = minf(ui_scale + scaling_factor, max_ui_scale)
+		get_tree().root.content_scale_factor = new_scale
+		_save_ui_scale(new_scale)
 		main_scene.queue_redraw()
 
 
 func decrement_ui_scale() -> void:
-	var ui_scale = get_tree().root.content_scale_factor
+	var ui_scale: float = get_tree().root.content_scale_factor
 	if ui_scale > min_ui_scale:
-		get_tree().root.content_scale_factor = ui_scale - scaling_factor
+		var new_scale: float = maxf(ui_scale - scaling_factor, min_ui_scale)
+		get_tree().root.content_scale_factor = new_scale
+		_save_ui_scale(new_scale)
 		main_scene.queue_redraw()
 
 
 func reset_ui_scale() -> void:
 	get_tree().root.content_scale_factor = 1.0
+	_save_ui_scale(1.0)
 	main_scene.queue_redraw()
 
 
 func set_ui_scale(new_scale: float) -> void:
-	if new_scale > min_ui_scale and new_scale < max_ui_scale:
+	if new_scale >= min_ui_scale and new_scale <= max_ui_scale:
 		get_tree().root.content_scale_factor = new_scale
+		_save_ui_scale(new_scale)
 		main_scene.queue_redraw()
+
+
+func _save_ui_scale(scale: float) -> void:
+	save_to_config_file("UI", "scale", scale)
+
+
+func _load_ui_scale() -> void:
+	var saved_scale: float = config_file.get_value("UI", "scale", 1.0)
+	if saved_scale >= min_ui_scale and saved_scale <= max_ui_scale:
+		get_tree().root.content_scale_factor = saved_scale
 
 #endregion UI Scaling
 
 func _ready():
-	
+	# Initialize enabled providers from config
+	_init_enabled_providers()
+
 	SingletonObject.notes_draw_state_changed.connect(
 		func(state: int):
 			notes_draw_state = state
@@ -411,11 +550,13 @@ func _ready():
 	transcription_notification_player.volume_db = 12
 	get_tree().root.call_deferred("add_child", transcription_notification_player)
 
-	#TODO add ui scale to the config file and retrieve it on app load
 	var err = config_file.load(_config_file_name)
 	if err != OK:
 		return null
-	
+
+	# Load UI scale from config
+	_load_ui_scale()
+
 	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
 		set_theme(theme_enum)
@@ -432,10 +573,39 @@ func _ready():
 	set_output_device(get_output_device())
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
-	
+
+	# Load verbose logging setting
+	set_verbose_logging(config_file.get_value("Logging", "verbose", false))
+
 	syntax_manager = SyntaxManager.new()
 	add_child(syntax_manager)
-	
+
+	# Initialize MCP manager (connects to Nudge, etc.)
+	# Defer to avoid add_child errors during scene tree setup
+	initialize_mcp.call_deferred()
+
+
+func _exit_tree() -> void:
+	# Ensure proper cleanup order during shutdown
+	print("[SingletonObject] Cleaning up...")
+
+	# Explicitly free all notes to release their textures before Godot cleanup
+	if notes_container:
+		print("[SingletonObject] Clearing notes container...")
+		for tab_idx in range(notes_container.get_tab_count()):
+			var vbox = notes_container.get_tab_control(tab_idx)
+			if vbox and vbox.has_method("get_notes"):
+				for note in vbox.get_notes():
+					if is_instance_valid(note):
+						note.queue_free()
+
+	# Clear registered objects (notes, etc.)
+	clear_registered_objects()
+
+	# Force RenderingServer to release pending resources
+	RenderingServer.force_sync()
+
+	print("[SingletonObject] Cleanup complete")
 
 
 var chat_notification_player: AudioStreamPlayer
@@ -480,7 +650,15 @@ func ErrorDisplay(error_title:String, error_message: String, on_close_focus: Nod
 		errorPopup.close_requested.connect(func(): on_close_focus.grab_focus())
 
 func create_toast_notification(content: String, type: = ToastNotification.Type.INFO):
-	
+	# Also log to console for debugging
+	match type:
+		ToastNotification.Type.ERROR:
+			push_error("[Toast] %s" % content)
+		ToastNotification.Type.WARNING:
+			push_warning("[Toast] %s" % content)
+		_:
+			print("[Toast] %s" % content)
+
 	var toast: = ToastNotification.create(type, content)
 
 	main_scene.add_child(toast)
@@ -492,38 +670,176 @@ func create_toast_notification(content: String, type: = ToastNotification.Type.I
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK, OPENROUTER, CLAUDE_CODE }
+
+# Preload provider scripts to ensure class_names are available
+const OpenAIProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd")
+const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
+const GoogleProviderScript = preload("res://Scripts/Services/Providers/GoogleAi/GoogleProvider.gd")
+const GoogleImageProviderScript = preload("res://Scripts/Services/Providers/GoogleAi/GoogleImageProvider.gd")
+const AnthropicProviderScript = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
+const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
+const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
 	HUMAN,
-	FREE_MODEL,
-	LOW_COST,
-	BEST_GENERALIST,
-	BEST_CODER,
-	BEST_PLANNER,
-	BEST_REVIEWER,
-	BEST_REASONER,
-	DALLE,
-	GPT_IMAGE_1,
+	# OpenAI Chat
+	GPT_NANO,
+	GPT_STANDARD,
+	GPT_DEEP,
+	# OpenAI Images
+	GPT_IMAGE_15,
+	# Google Chat
+	GEMINI_FLASH,
+	GEMINI_PRO,
+	# Google Images
+	NANO_BANANA_PRO,
+	# Anthropic
+	CLAUDE_HAIKU,
+	CLAUDE_SONNET,
+	CLAUDE_OPUS,
+	# TurnRock
 	TURNROCK,
+	# OpenRouter
+	OPENROUTER_GLM47,
+	OPENROUTER_MINIMAX_M21,
+	OPENROUTER_KIMI_K2,
+	# Claude Code (Max/Pro)
+	CLAUDE_CODE_SONNET,
+	CLAUDE_CODE_OPUS,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
 var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
-	# API_MODEL_PROVIDERS.FREE_MODEL: LocalProvider.Gemma3,  # Orphaned - local provider disabled
-	API_MODEL_PROVIDERS.LOW_COST: GoogleAi,
-	API_MODEL_PROVIDERS.BEST_GENERALIST: ChatGPTo3.GPT5,
-	API_MODEL_PROVIDERS.BEST_CODER: ClaudeSonnet.Sonnet4,
-	API_MODEL_PROVIDERS.BEST_PLANNER: ClaudeSonnet.Opus4_1,
-	API_MODEL_PROVIDERS.BEST_REVIEWER: GoogleAi_PRO,
-	API_MODEL_PROVIDERS.BEST_REASONER: ChatGPTo3.GPT5High,
-	API_MODEL_PROVIDERS.DALLE: DallE,
-	API_MODEL_PROVIDERS.GPT_IMAGE_1: GPTImage1,
+	# OpenAI Chat - GPT-5.2 with different reasoning levels
+	API_MODEL_PROVIDERS.GPT_NANO: OpenAIProviderScript.Nano,
+	API_MODEL_PROVIDERS.GPT_STANDARD: OpenAIProviderScript.Standard,
+	API_MODEL_PROVIDERS.GPT_DEEP: OpenAIProviderScript.Deep,
+	# OpenAI Images
+	API_MODEL_PROVIDERS.GPT_IMAGE_15: OpenAIImageProviderScript.GPTImage15,
+	# Google Chat - Gemini 3
+	API_MODEL_PROVIDERS.GEMINI_FLASH: GoogleProviderScript.Flash,
+	API_MODEL_PROVIDERS.GEMINI_PRO: GoogleProviderScript.Pro,
+	# Google Images
+	API_MODEL_PROVIDERS.NANO_BANANA_PRO: GoogleImageProviderScript.NanaBananaPro,
+	# Anthropic - Claude 4.5
+	API_MODEL_PROVIDERS.CLAUDE_HAIKU: AnthropicProviderScript.Haiku,
+	API_MODEL_PROVIDERS.CLAUDE_SONNET: AnthropicProviderScript.Sonnet,
+	API_MODEL_PROVIDERS.CLAUDE_OPUS: AnthropicProviderScript.Opus,
+	# TurnRock
 	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
+	# OpenRouter
+	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProviderScript.GLM47,
+	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProviderScript.MinimaxM21,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: OpenRouterProviderScript.KimiK2,
+	# Claude Code (Max/Pro)
+	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
+	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProviderScript.Opus,
 }
+
+## Maps each model to its parent provider (for enable/disable filtering)
+const MODEL_TO_PROVIDER: Dictionary = {
+	API_MODEL_PROVIDERS.HUMAN: API_PROVIDER.LOCAL,
+	# OpenAI
+	API_MODEL_PROVIDERS.GPT_NANO: API_PROVIDER.OPENAI,
+	API_MODEL_PROVIDERS.GPT_STANDARD: API_PROVIDER.OPENAI,
+	API_MODEL_PROVIDERS.GPT_DEEP: API_PROVIDER.OPENAI,
+	API_MODEL_PROVIDERS.GPT_IMAGE_15: API_PROVIDER.OPENAI,
+	# Google
+	API_MODEL_PROVIDERS.GEMINI_FLASH: API_PROVIDER.GOOGLE,
+	API_MODEL_PROVIDERS.GEMINI_PRO: API_PROVIDER.GOOGLE,
+	API_MODEL_PROVIDERS.NANO_BANANA_PRO: API_PROVIDER.GOOGLE,
+	# Anthropic
+	API_MODEL_PROVIDERS.CLAUDE_HAIKU: API_PROVIDER.ANTHROPIC,
+	API_MODEL_PROVIDERS.CLAUDE_SONNET: API_PROVIDER.ANTHROPIC,
+	API_MODEL_PROVIDERS.CLAUDE_OPUS: API_PROVIDER.ANTHROPIC,
+	# TurnRock
+	API_MODEL_PROVIDERS.TURNROCK: API_PROVIDER.TURNROCK,
+	# OpenRouter
+	API_MODEL_PROVIDERS.OPENROUTER_GLM47: API_PROVIDER.OPENROUTER,
+	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: API_PROVIDER.OPENROUTER,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: API_PROVIDER.OPENROUTER,
+	# Claude Code
+	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,
+	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: API_PROVIDER.CLAUDE_CODE,
+}
+
+## User-friendly names for providers (used in menu)
+const PROVIDER_DISPLAY_NAMES: Dictionary = {
+	API_PROVIDER.GOOGLE: "Google",
+	API_PROVIDER.OPENAI: "OpenAI",
+	API_PROVIDER.ANTHROPIC: "Anthropic",
+	API_PROVIDER.LOCAL: "Local",
+	API_PROVIDER.TURNROCK: "TurnRock",
+	API_PROVIDER.OPENROUTER: "OpenRouter",
+	API_PROVIDER.CLAUDE_CODE: "Claude Code",
+}
+
+## Enabled state for each provider (all enabled by default)
+var _enabled_providers: Dictionary = {}
+
+## Initialize enabled providers from config or defaults
+func _init_enabled_providers() -> void:
+	# Default all providers to enabled
+	for provider in API_PROVIDER.values():
+		_enabled_providers[provider] = true
+
+	# Load saved state from config
+	if config_has_saved_section("EnabledProviders"):
+		for provider in API_PROVIDER.values():
+			var provider_name = API_PROVIDER.keys()[provider]
+			var saved = get_config_file_value("EnabledProviders", provider_name)
+			if saved != null:
+				_enabled_providers[provider] = saved
+
+## Check if a provider is enabled
+func is_provider_enabled(provider: API_PROVIDER) -> bool:
+	return _enabled_providers.get(provider, true)
+
+## Check if a model's provider is enabled
+func is_model_enabled(model: API_MODEL_PROVIDERS) -> bool:
+	var provider = MODEL_TO_PROVIDER.get(model, API_PROVIDER.LOCAL)
+	return is_provider_enabled(provider)
+
+## Set a provider's enabled state
+func set_provider_enabled(provider: API_PROVIDER, enabled: bool) -> void:
+	_enabled_providers[provider] = enabled
+	var provider_name = API_PROVIDER.keys()[provider]
+	save_to_config_file("EnabledProviders", provider_name, enabled)
+	provider_enabled_changed.emit(provider, enabled)
+
+## Get display name for a provider
+func get_provider_display_name(provider: API_PROVIDER) -> String:
+	return PROVIDER_DISPLAY_NAMES.get(provider, "Unknown")
+
+## Model name aliases for backward compatibility with saved projects
+const MODEL_ALIASES: Dictionary = {
+	# Old OpenAI names -> New
+	"gpt-5-thinking": "gpt-5.2",
+	"gpt-5": "gpt-5.2",
+	"o4-mini-medium": "gpt-5.2",
+	"o4-mini-high": "gpt-5.2",
+	"gpt-4o": "gpt-5.2",
+	"gpt-3.5-turbo": "gpt-5.2",
+	"o3": "gpt-5.2",
+	# Old Google names -> New
+	"gemini-2.5-flash": "gemini-3-flash-preview",
+	"gemini-3-flash": "gemini-3-flash-preview",
+	# Old Anthropic names -> New
+	"claude-45-sonnet": "claude-sonnet-4.5",
+	"claude-sonnet-45": "claude-sonnet-4.5",
+	"claude-sonnet-4-5-20250929": "claude-sonnet-4.5",
+	"claude-opus-4-1": "claude-opus-4.5",
+	# Old image model names
+	"dall-e-2": "dall-e-3",
+}
+
+## Resolve old model names to new ones for backward compatibility
+func resolve_model_alias(saved_name: String) -> String:
+	return MODEL_ALIASES.get(saved_name, saved_name)
 
 # ## This function will return the `API_MODEL_PROVIDERS` enum value
 # ## for the provider currently in use by passed tab or the active one
@@ -767,7 +1083,13 @@ func toggle_experimental_actions(enable: bool) -> void:
 		i = i as Control
 		i.visible = enable
 	experimental_enabled = enable
-	save_to_config_file("Experimental", "enabled", enable)
+
+
+## Set verbose logging state and save to config
+func set_verbose_logging(enable: bool) -> void:
+	verbose_logging = enable
+	save_to_config_file("Logging", "verbose", enable)
+	toggle_verbose_logging.emit(enable)
 
 #region Output Device
 

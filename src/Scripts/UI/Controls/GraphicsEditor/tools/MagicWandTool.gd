@@ -11,9 +11,11 @@ func _ready() -> void:
 
 func _on_tool_changed(tool_: BaseTool) -> void:
 	if tool_ == self:
-		# Use crosshair cursor for precision
-		editor.set_custom_cursor(null)
-		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+		# Use magic wand icon as cursor with hotspot at bottom-left sparkle
+		var cursor_texture = load("res://assets/icons/magic_wand.svg")
+		var cursor_image = cursor_texture.get_image()
+		cursor_image.resize(24, 24)
+		editor.set_custom_cursor(cursor_image, Input.CursorShape.CURSOR_ARROW, Vector2(5, 19))
 
 func handle_input_event(event: InputEvent) -> bool:
 	if not editor.active_layer:
@@ -127,7 +129,7 @@ func _apply_selection(new_mask: Image) -> void:
 	# Update the selection cache after modifying the mask
 	editor._update_selection_cache()
 	editor.selection_changed.emit()
-	editor.layers_container.queue_redraw()
+	editor.selection_overlay.queue_redraw()
 
 func _colors_match(c1: Color, c2: Color) -> bool:
 	# Exact match for now (could add tolerance slider later)

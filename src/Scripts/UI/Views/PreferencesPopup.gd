@@ -29,6 +29,7 @@ const PROVIDERS = {
 	SingletonObject.API_PROVIDER.ANTHROPIC: "anthropic",
 	SingletonObject.API_PROVIDER.GOOGLE: "google_vertex",
 	SingletonObject.API_PROVIDER.LOCAL: "sglang",
+	SingletonObject.API_PROVIDER.OPENROUTER: "openrouter",
 }
 
 # --- Authentication Presets ---
@@ -45,6 +46,7 @@ const AUTH_PRESET_CUSTOM_IDX = 2 # Index of the "Custom" option in the OptionBut
 	"google_vertex": %leGoogleVertex,
 	"anthropic": %leAnthropic,
 	"openai": %leOpenAI,
+	"openrouter": %leOpenRouter,
 
 	"hcp_auto_connect": %leConnectAuto,
 	"hcp_url": %leCoreUrl,             # Core WebSocket URL
@@ -69,6 +71,7 @@ func _ready():
 			config_file.set_value("API KEYS", "google_vertex", "")
 			config_file.set_value("API KEYS", "anthropic", "")
 			config_file.set_value("API KEYS", "openai", "")
+			config_file.set_value("API KEYS", "openrouter", "")
 
 			config_file.set_value("USER", "first_name", "Not")
 			config_file.set_value("USER", "last_name", "Available")
@@ -95,6 +98,11 @@ func _ready():
 		var enable_exp: bool = SingletonObject.config_file.get_value("Experimental", "enabled")
 		_on_experimental_check_button_toggled(enable_exp)
 		%ExperimentalCheckButton.button_pressed = enable_exp
+
+	# Load verbose logging setting
+	if SingletonObject.config_has_saved_section("Logging"):
+		var enable_verbose: bool = SingletonObject.config_file.get_value("Logging", "verbose", false)
+		%VerboseLoggingCheckButton.button_pressed = enable_verbose
 
 	populate_output_devices_button()
 
@@ -145,6 +153,7 @@ func set_field_values():
 	_fields["google_vertex"].text = config_file.get_value("API KEYS", "google_vertex", "")
 	_fields["anthropic"].text = config_file.get_value("API KEYS", "anthropic", "")
 	_fields["openai"].text = config_file.get_value("API KEYS", "openai", "")
+	_fields["openrouter"].text = config_file.get_value("API KEYS", "openrouter", "")
 
 	_fields["hcp_url"].text = config_file.get_value("HCP", "url", WS_PRESET_PROD) # Core WS URL
 	_fields["hcp_auto_connect"].button_pressed = config_file.get_value("HCP", "auto_connect", true)
@@ -195,6 +204,7 @@ func _on_btn_save_prefs_pressed():
 	config_file.set_value("API KEYS", "google_vertex", _fields["google_vertex"].text)
 	config_file.set_value("API KEYS", "anthropic", _fields["anthropic"].text)
 	config_file.set_value("API KEYS", "openai", _fields["openai"].text)
+	config_file.set_value("API KEYS", "openrouter", _fields["openrouter"].text)
 
 	config_file.set_value("HCP", "url", _fields["hcp_url"].text) # Core WS URL
 	# --- Save the actual text from the Auth Base URL LineEdit ---
@@ -246,6 +256,10 @@ func _on_anthropic_check_box_toggled(toggled_on: bool) -> void:
 func _on_google_vertex_check_box_toggled(toggled_on: bool) -> void:
 	%leGoogleVertex.secret = !toggled_on
 
+
+func _on_open_router_check_box_toggled(toggled_on: bool) -> void:
+	%leOpenRouter.secret = !toggled_on
+
 #region Theme preference
 
 func set_theme_option_menu(theme_enum: int):
@@ -286,6 +300,10 @@ func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
 	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
 	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
 	SingletonObject.toggle_experimental.emit(toggled_on)
+
+
+func _on_verbose_logging_check_button_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_verbose_logging(toggled_on)
 
 
 func populate_output_devices_button() -> void:

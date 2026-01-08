@@ -4,7 +4,9 @@ extends VBoxContainer
 static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/list/item_container/item_container.tscn")
 
 @onready var _items_container: VBoxContainer = %VBoxContainer
+@warning_ignore("unused_private_class_variable")
 @onready var _items_label: Label = %Label
+@warning_ignore("unused_private_class_variable")
 @onready var _remove_button: Button = %RemoveButton
 
 var _parent_list: ListField

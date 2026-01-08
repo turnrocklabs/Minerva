@@ -19,7 +19,8 @@ func _init() -> void:
 	)
 
 func info(input):
-	print("#\n#### NoteSyncManager: %s\n#" % str(input))
+	if SingletonObject.verbose_logging:
+		print("#\n#### NoteSyncManager: %s\n#" % str(input))
 
 ## Makes the current [member active_service] adapter fetch all notes and threads
 ## and sync them with the local ones. LOCAL ALWAYS WINS.

@@ -134,6 +134,9 @@ var _initialized: = false
 @onready var sync_controller_button: Button = %SyncControllerButton
 @onready var sync_texture_rect: TextureRect = %SyncStateTextureRect
 @onready var use_state_button: Button = %UseStateButton
+@onready var _nudge_export_button: MenuButton = %NudgeExportButton
+
+const NudgeMCPClientScript := preload("res://Scripts/Services/MCP/Servers/NudgeMCPClient.gd")
 
 @onready var _notes_control_container: Container = %NoteControlsContainer
 # container that holds all the content and gives the note its background
@@ -432,6 +435,9 @@ func _on_note_initialized():
 
 	_initialized = true
 
+	# Setup Nudge export button
+	_setup_nudge_export_button()
+
 ## Return whether the note is ready and all fields are set
 func is_note_initialized() -> bool:
 	return _initialized
@@ -577,7 +583,7 @@ func _on_resize_control_gui_input(event: InputEvent) -> void:
 # region Drag
 
 func _notification(what: int) -> void:
-	
+
 	match what:
 		NOTIFICATION_DRAG_BEGIN:
 			if not _error:
@@ -587,6 +593,11 @@ func _notification(what: int) -> void:
 				_panel_container.theme_type_variation = &"ErrorNote" if _error else &""
 				_panel_container.remove_theme_stylebox_override("panel")
 				_top_controls.mouse_filter = Control.MOUSE_FILTER_STOP
+		NOTIFICATION_PREDELETE:
+			# Ensure all backing controls are cleaned up before deletion
+			for control in _backing_note_controls:
+				if is_instance_valid(control) and not control.is_queued_for_deletion():
+					control.queue_free()
 
 func _on_mouse_exited() -> void:
 	if _error:
@@ -924,19 +935,25 @@ class Proxy extends RefCounted:
 	## If [param use_cached] is `true` and this method was used to create a valid [class Note] object,
 	## that object will be reused IF the object is still valid (`is_instance_valid`).
 	func create_note(use_cached: = false) -> Note:
-		
+		print("[Note.Proxy] create_note(use_cached=%s) called" % use_cached)
+
 		if use_cached and is_instance_valid(_cache):
+			print("[Note.Proxy] Returning cached note: %s" % _cache)
 			return _cache
 
 		if _initializer and _initializer.is_valid():
+			print("[Note.Proxy] Calling initializer...")
 			var result = await _initializer.call()
+			print("[Note.Proxy] Initializer returned: %s" % result)
 
 			if not result is Note:
 				push_error("Note.Proxy initializer return value is not a Note object, but instead: %s" % result)
 				return null
 
 			_cache = result
+			print("[Note.Proxy] Emitting note_created signal...")
 			note_created.emit(result)
+			print("[Note.Proxy] note_created signal emitted")
 			return result
 
 		push_error("Note.Proxy initializer is not a valid Callable: %s" % _initializer)
@@ -959,10 +976,178 @@ func get_remote_metadata() -> Dictionary:
 ## [code]remote_metadata.merge(data, true)[/code]
 func update_remote_metadata(data: Dictionary):
 	var remote_metadata: = get_remote_metadata()
-	
+
 	remote_metadata.merge(data, true)
 
 	set_meta("remote_metadata", remote_metadata)
 
-
 # endregion
+
+#region Nudge Export
+
+func _setup_nudge_export_button() -> void:
+	_update_nudge_export_visibility()
+
+	# Listen for MCP server connections to update visibility
+	if SingletonObject.mcp_manager:
+		if not SingletonObject.mcp_manager.server_connected.is_connected(_on_mcp_server_connected):
+			SingletonObject.mcp_manager.server_connected.connect(_on_mcp_server_connected)
+		if not SingletonObject.mcp_manager.server_disconnected.is_connected(_on_mcp_server_disconnected):
+			SingletonObject.mcp_manager.server_disconnected.connect(_on_mcp_server_disconnected)
+
+
+func _on_mcp_server_connected(server_name: String) -> void:
+	if server_name == "nudge":
+		_update_nudge_export_visibility()
+
+
+func _on_mcp_server_disconnected(server_name: String) -> void:
+	if server_name == "nudge":
+		_update_nudge_export_visibility()
+
+
+func _update_nudge_export_visibility() -> void:
+	# Check if Nudge MCP is available
+	var nudge_available := false
+	if SingletonObject.mcp_manager:
+		nudge_available = SingletonObject.mcp_manager.is_server_connected("nudge")
+
+	_nudge_export_button.visible = nudge_available
+
+	if nudge_available:
+		var popup := _nudge_export_button.get_popup()
+		popup.clear()
+		popup.add_item("Push to Nudge", 0)
+		popup.add_item("Refresh from Nudge", 1)
+		popup.add_separator()
+		popup.add_item("Delete from Nudge", 2)
+		if not popup.id_pressed.is_connected(_on_nudge_menu_item_pressed):
+			popup.id_pressed.connect(_on_nudge_menu_item_pressed)
+
+
+func _on_nudge_menu_item_pressed(id: int) -> void:
+	match id:
+		0:  # Push to Nudge
+			_on_nudge_push_pressed()
+		1:  # Refresh from Nudge
+			_on_nudge_refresh_pressed()
+		2:  # Delete from Nudge
+			_on_nudge_delete_pressed()
+
+
+## Get the component name (tab name) for this note
+func _get_nudge_component() -> String:
+	# Walk up to find the NoteVBox parent to get the tab/component name
+	var parent := get_parent()
+	while parent:
+		if parent is NoteVBox:
+			return parent.name
+		parent = parent.get_parent()
+	# Fallback to default component
+	return "minerva-notes"
+
+
+func _on_nudge_push_pressed() -> void:
+	if title.is_empty():
+		SingletonObject.create_toast_notification(
+			"Cannot push: Note has no title",
+			ToastNotification.Type.WARNING
+		)
+		return
+
+	var nudge_client := NudgeMCPClientScript.new()
+	var component := _get_nudge_component()
+
+	var result: Dictionary = await nudge_client.push_note_simple(self, component)
+	if result.get("error"):
+		SingletonObject.create_toast_notification(
+			"Failed to push: %s" % result.get("error"),
+			ToastNotification.Type.ERROR
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"Pushed '%s' to '%s'" % [title, component],
+			ToastNotification.Type.SUCCESS
+		)
+
+
+func _on_nudge_refresh_pressed() -> void:
+	if title.is_empty():
+		SingletonObject.create_toast_notification(
+			"Cannot refresh: Note has no title (key)",
+			ToastNotification.Type.WARNING
+		)
+		return
+
+	var nudge_client := NudgeMCPClientScript.new()
+	var component := _get_nudge_component()
+
+	# Use title as key (new mapping)
+	var result: Dictionary = await nudge_client.get_hint(component, title)
+	if result.get("error"):
+		SingletonObject.create_toast_notification(
+			"Failed to refresh: %s" % result.get("error"),
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	var hint: Dictionary = result.get("hint", {})
+	var value = hint.get("value")
+
+	if value == null:
+		SingletonObject.create_toast_notification(
+			"Note '%s' not found in '%s'" % [title, component],
+			ToastNotification.Type.WARNING
+		)
+		return
+
+	# Update note content based on value type
+	var content: String
+	if value is String:
+		content = value
+	elif value is Dictionary or value is Array:
+		content = JSON.stringify(value, "  ")
+	else:
+		content = str(value)
+
+	if type == Type.TEXT:
+		var text_controls = get_controls_container() as NoteTextControls
+		if text_controls:
+			text_controls.content = content
+
+	# Store hint data for round-trip
+	set_meta("nudge_hint", {"component": component, "key": title, "hint": hint})
+
+	SingletonObject.create_toast_notification(
+		"Refreshed '%s' from Nudge" % title,
+		ToastNotification.Type.SUCCESS
+	)
+
+
+func _on_nudge_delete_pressed() -> void:
+	if title.is_empty():
+		SingletonObject.create_toast_notification(
+			"Cannot delete: Note has no title (key)",
+			ToastNotification.Type.WARNING
+		)
+		return
+
+	var nudge_client := NudgeMCPClientScript.new()
+	var component := _get_nudge_component()
+
+	var result: Dictionary = await nudge_client.delete_hint(component, title)
+	if result.get("error"):
+		SingletonObject.create_toast_notification(
+			"Failed to delete: %s" % result.get("error"),
+			ToastNotification.Type.ERROR
+		)
+	else:
+		# Clear nudge metadata
+		if has_meta("nudge_hint"):
+			remove_meta("nudge_hint")
+		SingletonObject.create_toast_notification(
+			"Deleted '%s' from '%s'" % [title, component],
+			ToastNotification.Type.SUCCESS
+		)
+
+#endregion Nudge Export

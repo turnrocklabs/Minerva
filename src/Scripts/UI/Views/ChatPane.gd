@@ -1,6 +1,8 @@
 class_name ChatPane
 extends TabContainer
 
+const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
+
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
 var container: TabContainer  # Store the TabContainer
@@ -10,21 +12,297 @@ var container: TabContainer  # Store the TabContainer
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
 @onready var _chat_button: Button = %btnChat
-var _active_chat_request: = false
+var _active_chat_requests: int = 0  # Ref count of active chat requests across all tabs
 
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
 
 var _initializing_pane := false
+
+## Debounce timer for token estimation to avoid expensive recalculation on every keystroke
+var _token_estimation_timer: Timer
+
+## Default max tool call rounds (fallback if per-chat setting is 0)
+const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
+
+## Agent mode context management constants
+const AGENT_MAX_TOOL_RESULT_LENGTH: int = 8000  # Truncate tool results longer than this
+const AGENT_CONTEXT_WARNING_THRESHOLD: int = 80000  # Warn when estimated tokens exceed this
+const AGENT_CONTEXT_HARD_LIMIT: int = 100000  # Stop agent loop when exceeding this
+const AGENT_SUMMARIZE_THRESHOLD: int = 60000  # Trigger summarization above this token count
+const AGENT_KEEP_RECENT_MESSAGES: int = 6  # Keep this many recent messages when summarizing
+
+## Base agent system prompt - tool-specific sections added dynamically
+const AGENT_SYSTEM_PROMPT_BASE: String = """You are an AI assistant. You can only use tools that are explicitly provided to you in this conversation."""
+
+const AGENT_SYSTEM_PROMPT_GENERAL: String = """
+## General Principles
+- Plan your approach before acting. Think about what information you need and the most efficient way to get it.
+- Prefer targeted queries over broad data fetches. Getting specific data is better than getting everything.
+- If a tool result is truncated, adapt your approach to use more targeted queries.
+- Complete the task in as few tool calls as possible while being thorough.
+"""
+
+const AGENT_SYSTEM_PROMPT_COBROWSER: String = """
+## Co-Browser Tool Guidelines (when browsing web pages)
+- Start with `cobrowser_get_page_info` for quick page metadata.
+- Use `cobrowser_query_all` with specific CSS selectors to understand page structure before reading content.
+- AVOID `cobrowser_get_state` - it returns the entire DOM and is very expensive.
+- AVOID `cobrowser_screenshot` unless specifically needed - it can be slow.
+- Use `cobrowser_scroll` to find content below the fold or in infinite scroll containers.
+- Look for patterns like `.infinite-scroll`, `[class*='feed']`, `[class*='post']` for dynamic content.
+- When reading, use specific selectors rather than broad ones to get targeted content.
+"""
+
+const AGENT_SYSTEM_PROMPT_CODETOOLS: String = """
+## File/Code Tool Guidelines (when working with files)
+- Use `glob` to find files by pattern before reading them.
+- Use `grep` to search for specific content rather than reading entire files.
+- Read only the sections of files you need, not entire large files.
+- When editing, make targeted changes rather than rewriting entire files.
+"""
+
+const AGENT_SYSTEM_PROMPT_ERROR: String = """
+## Error Handling
+- If a tool times out or fails, try a different approach rather than retrying the same thing.
+- If results are truncated, use more specific queries to get the data you need.
+"""
+
+## Build the agent system prompt dynamically based on connected tools
+func _build_agent_system_prompt() -> String:
+	var mcp = SingletonObject.get_mcp_manager()
+	if not mcp:
+		return AGENT_SYSTEM_PROMPT_BASE
+
+	var tools = mcp.get_available_tools()
+	if tools.is_empty():
+		return AGENT_SYSTEM_PROMPT_BASE + "\n\nNote: No tools are currently connected. You cannot use any tools until they are enabled."
+
+	var prompt = AGENT_SYSTEM_PROMPT_BASE + AGENT_SYSTEM_PROMPT_GENERAL
+
+	# Check which tool categories are available
+	var has_cobrowser = false
+	var has_codetools = false
+	for tool in tools:
+		var tool_name: String = tool.name if "name" in tool else ""
+		if tool_name.begins_with("cobrowser"):
+			has_cobrowser = true
+		elif tool_name in ["glob", "grep", "read", "read_file", "write", "write_file", "edit"]:
+			has_codetools = true
+
+	if has_cobrowser:
+		prompt += AGENT_SYSTEM_PROMPT_COBROWSER
+	if has_codetools:
+		prompt += AGENT_SYSTEM_PROMPT_CODETOOLS
+
+	prompt += AGENT_SYSTEM_PROMPT_ERROR
+	return prompt
 
 # Script of the default provider to use when creating new chat tab
 var default_provider_script: Script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0]
 
 var latest_msg: Control
 var latest_usr_msg: MessageMarkdown
+
+## Check if a path is within the allowed directories for a chat.
+## Returns true if allowed (or no restrictions), false if blocked.
+func is_path_allowed(path: String, allowed_dirs: Array[String]) -> bool:
+	if allowed_dirs.is_empty():
+		return true  # No restrictions
+	for dir in allowed_dirs:
+		if path.begins_with(dir):
+			return true
+	return false
+
+## Truncate a tool result string if it exceeds the maximum length (agent mode only).
+## Returns the truncated string with a marker indicating truncation.
+## If max_length is 0 or negative, uses the default AGENT_MAX_TOOL_RESULT_LENGTH.
+func truncate_tool_result(result_str: String, max_length: int = 0) -> String:
+	var limit = max_length if max_length > 0 else AGENT_MAX_TOOL_RESULT_LENGTH
+	if result_str.length() <= limit:
+		return result_str
+	var truncated = result_str.substr(0, limit)
+	# Try to truncate at a natural boundary (newline or space)
+	var last_newline = truncated.rfind("\n")
+	var last_space = truncated.rfind(" ")
+	var cut_point = max(last_newline, last_space)
+	if cut_point > limit * 0.8:  # Only use natural boundary if it's not too far back
+		truncated = truncated.substr(0, cut_point)
+	# Add truncation notice with guidance
+	var notice = """
+
+...[TRUNCATED - Result was %d chars, showing first %d]
+
+HINT: This result was too large and was truncated. To get the information you need:
+- Use more specific CSS selectors with cobrowser_query_all or cobrowser_read
+- For web pages, target specific elements rather than the whole page
+- Avoid cobrowser_get_state (returns entire DOM) - use targeted queries instead
+- Consider if you already have enough information to proceed""" % [result_str.length(), truncated.length()]
+	return truncated + notice
+
+
+## Estimate the current context size for a chat history in agent mode.
+## Returns estimated token count.
+func estimate_agent_context_size(history: ChatHistory) -> int:
+	var total_tokens := 0
+	for item in history.HistoryItemList:
+		# Rough estimation: ~4 chars per token for English text
+		total_tokens += ceili(item.Message.length() / 4.0)
+		# Add extra for tool call metadata
+		if item.IsToolCall:
+			total_tokens += 50 * item.ToolCalls.size()
+	return total_tokens
+
+
+## Check if agent context is approaching limits. Returns status dict.
+## {ok: bool, warning: bool, message: String, estimated_tokens: int, summarize_threshold: int}
+## Uses per-chat settings if set, otherwise falls back to defaults.
+func check_agent_context_limits(history: ChatHistory) -> Dictionary:
+	var estimated = estimate_agent_context_size(history)
+
+	# Use per-chat settings if set (> 0), otherwise fall back to defaults
+	var hard_limit = history.AgentContextHardLimit if history.AgentContextHardLimit > 0 else AGENT_CONTEXT_HARD_LIMIT
+	var warning_threshold = history.AgentContextWarningThreshold if history.AgentContextWarningThreshold > 0 else AGENT_CONTEXT_WARNING_THRESHOLD
+	var summarize_threshold = history.AgentSummarizeThreshold if history.AgentSummarizeThreshold > 0 else AGENT_SUMMARIZE_THRESHOLD
+
+	if estimated >= hard_limit:
+		return {
+			"ok": false,
+			"warning": true,
+			"message": "Context limit exceeded (%d tokens). Stopping agent." % estimated,
+			"estimated_tokens": estimated,
+			"summarize_threshold": summarize_threshold
+		}
+	elif estimated >= warning_threshold:
+		return {
+			"ok": true,
+			"warning": true,
+			"message": "Context getting large (%d tokens). Consider summarizing." % estimated,
+			"estimated_tokens": estimated,
+			"summarize_threshold": summarize_threshold
+		}
+	return {
+		"ok": true,
+		"warning": false,
+		"message": "",
+		"estimated_tokens": estimated,
+		"summarize_threshold": summarize_threshold
+	}
+
+
+## Summarize older messages in the chat history to reduce context size.
+## Keeps recent messages intact and replaces older ones with a summary.
+func summarize_agent_history(history: ChatHistory) -> void:
+	var item_count = history.HistoryItemList.size()
+	if item_count <= AGENT_KEEP_RECENT_MESSAGES + 1:  # +1 for potential system prompt
+		return  # Not enough messages to summarize
+
+	# Find where to split: keep system prompt (if any) + last N messages
+	var has_system_prompt = not history.HistoryItemList.is_empty() and \
+		history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM
+
+	var keep_from_end = AGENT_KEEP_RECENT_MESSAGES
+	var summarize_start = 1 if has_system_prompt else 0
+	var summarize_end = item_count - keep_from_end
+
+	if summarize_end <= summarize_start:
+		return  # Nothing to summarize
+
+	# Build summary of old messages
+	var summary_parts: PackedStringArray = []
+	var tool_calls_count := 0
+	var user_messages_count := 0
+	var assistant_messages_count := 0
+
+	for i in range(summarize_start, summarize_end):
+		var item = history.HistoryItemList[i]
+		match item.Role:
+			ChatHistoryItem.ChatRole.USER:
+				user_messages_count += 1
+				# Include brief excerpt of user messages
+				var excerpt = item.Message.substr(0, 200)
+				if item.Message.length() > 200:
+					excerpt += "..."
+				summary_parts.append("User: %s" % excerpt)
+			ChatHistoryItem.ChatRole.MODEL, ChatHistoryItem.ChatRole.ASSISTANT:
+				assistant_messages_count += 1
+				if item.IsToolCall:
+					tool_calls_count += item.ToolCalls.size()
+					for tc in item.ToolCalls:
+						summary_parts.append("Called tool: %s" % tc.get("name", "unknown"))
+			ChatHistoryItem.ChatRole.TOOL:
+				# Just note that tool results were received
+				summary_parts.append("Tool result received: %s" % item.ToolName)
+
+	# Create summary message
+	var summary_text = """### Conversation Summary ###
+This summarizes %d earlier messages in this conversation.
+- User messages: %d
+- Assistant responses: %d
+- Tool calls made: %d
+
+Key points from earlier conversation:
+%s
+### End Summary ###""" % [
+		summarize_end - summarize_start,
+		user_messages_count,
+		assistant_messages_count,
+		tool_calls_count,
+		"\n".join(summary_parts)
+	]
+
+	# Create summary item as a user message (so it's included in context)
+	var summary_item = ChatHistoryItem.new()
+	summary_item.Role = ChatHistoryItem.ChatRole.USER
+	summary_item.Message = summary_text
+	summary_item.provider = history.provider
+
+	# Rebuild history: [system_prompt?] + [summary] + [recent messages]
+	var new_history: Array[ChatHistoryItem] = []
+	if has_system_prompt:
+		new_history.append(history.HistoryItemList[0])
+	new_history.append(summary_item)
+	for i in range(summarize_end, item_count):
+		new_history.append(history.HistoryItemList[i])
+
+	# Replace history
+	history.HistoryItemList = new_history
+
+	print("[Agent] Summarized %d messages into 1. New history size: %d" % [
+		summarize_end - summarize_start, new_history.size()
+	])
+
+
+## Check tool arguments for paths and validate against allowed directories.
+## Returns error dict if blocked, null if allowed.
+func check_tool_path_permissions(tool_name: String, tool_args: Dictionary, allowed_dirs: Array[String]) -> Variant:
+	if allowed_dirs.is_empty():
+		return null  # No restrictions
+
+	# Tools that operate on paths
+	var path_tools = ["read", "write", "edit", "glob", "grep", "bash"]
+	if tool_name not in path_tools:
+		return null  # Tool doesn't use paths
+
+	# Check "path" argument
+	if tool_args.has("path"):
+		var path_arg = str(tool_args.get("path", ""))
+		if not is_path_allowed(path_arg, allowed_dirs):
+			return {"error": "Path not allowed: %s" % path_arg, "blocked_by": "AllowedDirectories"}
+
+	# For bash, check if command might access restricted paths
+	# (This is a basic check - bash commands are harder to restrict)
+	if tool_name == "bash" and tool_args.has("command"):
+		var _cmd = str(tool_args.get("command", ""))
+		# Skip path checking for bash - it's too complex to parse reliably
+		# The user should disable bash entirely if they want strict path control
+		pass
+
+	return null  # Allowed
+
 # Extract common functionality for handling user history item creation
 func create_user_history_item(text: String) -> ChatHistoryItem:
-	return ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, 
-							   ChatHistoryItem.ChatRole.USER, 
+	return ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
+							   ChatHistoryItem.ChatRole.USER,
 							   text)
 
 # Handle human provider message creation
@@ -70,7 +348,7 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 	var bot_response
 	
 	# Append the optional parameters for OpenAI models, send request and wait for the response
-	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and (not history.provider is DallE and not history.provider is GPTImage1):
+	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is OpenAIImageProviderScript:
 		var optional_params = {
 			"temperature": history.Temperature,
 			"top_p": history.TopP,
@@ -86,27 +364,27 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 # Process bot response into chat history item
 func process_bot_response(bot_response, _history_provider: BaseProvider) -> ChatHistoryItem:
 	var chi = ChatHistoryItem.new()
-	
-	if bot_response != null: 
+
+	if bot_response != null:
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
 		chi.provider = bot_response.provider
 		chi.Message = bot_response.text
 		chi.Error = bot_response.error
 		chi.Complete = bot_response.complete
-		chi.TokenCost = bot_response.completion_tokens
+		chi.OutputTokens = bot_response.completion_tokens
 		if bot_response.image:
 			chi.Images = ([bot_response.image] as Array[Image])
-	
+
 	return chi
 
 # Update UI after receiving bot response
-func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control, 
-							 model_msg_node: Control, chi: ChatHistoryItem, 
+func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control,
+							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory) -> void:
 	if bot_response != null:
-		# Update user message node
-		user_history_item.TokenCost = bot_response.prompt_tokens
+		# Update user message node with input tokens (prompt tokens for this turn)
+		user_history_item.InputTokens = bot_response.prompt_tokens
 		user_msg_node.render()
 
 		# Change the history item and the message node will update itself
@@ -115,22 +393,49 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 
 		## Inform the user history item that the response has arrived
 		user_history_item.response_arrived.emit(chi)
-		
+
 		await get_tree().process_frame
 		history.VBox.ensure_node_is_visible(model_msg_node)
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
 	else:
 		model_msg_node.queue_free()
-	
+
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
-	
+
 	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
 	SingletonObject.detached_note_proxies.clear()
+
+
+## Same as update_ui_after_response but WITHOUT emitting response_arrived signal.
+## Used for agent mode tool chains where we only want the signal at the end.
+func update_ui_after_response_no_signal(user_history_item: ChatHistoryItem, user_msg_node: Control,
+							 model_msg_node: Control, chi: ChatHistoryItem,
+							 bot_response, history: ChatHistory) -> void:
+	if bot_response != null:
+		# Update user message node with input tokens (prompt tokens for this turn)
+		user_history_item.InputTokens = bot_response.prompt_tokens
+		user_msg_node.render()
+
+		# Change the history item and the message node will update itself
+		model_msg_node.history_item = chi
+		history.HistoryItemList.append(chi)
+
+		# NOTE: We intentionally do NOT emit response_arrived here
+		# It will be emitted when the tool chain completes
+
+		await get_tree().process_frame
+		history.VBox.ensure_node_is_visible(model_msg_node)
+		model_msg_node.loading = false
+		model_msg_node.first_time_message = true
+	else:
+		model_msg_node.queue_free()
+
+	# Don't disable notes during tool chain - they stay disabled until chain completes
 
 
 ## add new chat 
@@ -181,35 +486,116 @@ func ensure_chat_open() -> void:
 ## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
 ## Check `History.to_prompt` for explanation on `predicate`.
 func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
-	
+
 	# if we don't have any chats history_list will be empty
 	var history_list: Array[Variant] = []
 	var provider: BaseProvider = provider_fallback
+	var history: ChatHistory = null
 
 	if not SingletonObject.ChatList.is_empty():
-		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+		history = SingletonObject.ChatList[current_tab]
 		if not provider:
 			provider = history.provider
-		history_list = history.to_prompt(predicate)
-	
+
+		# Handle agentic system prompt: use it instead of regular system prompt when agent mode is on
+		var effective_system_prompt: String = ""
+		if history.AgentModeEnabled:
+			# In agent mode: use custom agentic prompt, or fall back to dynamically built agent prompt
+			if not history.AgenticSystemPrompt.is_empty():
+				effective_system_prompt = history.AgenticSystemPrompt
+			else:
+				effective_system_prompt = _build_agent_system_prompt()
+			# Append any existing regular system prompt to give additional context
+			if history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
+				if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
+					effective_system_prompt += "\n\n## Additional Instructions\n" + history.HistoryItemList[0].Message
+		elif history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
+			# Not in agent mode: use regular system prompt if it's a system prompt
+			if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
+				effective_system_prompt = history.HistoryItemList[0].Message
+
+		# Set system_prompt property on provider (used by Anthropic, Google)
+		if "system_prompt" in provider and provider.supports_system_prompt:
+			provider.system_prompt = effective_system_prompt
+
+		# Build history list, handling system prompt based on provider support
+		history_list = _build_history_list_with_system_prompt(history, provider, effective_system_prompt, predicate, history.AgentModeEnabled)
+
 	if not provider:
 		return []
-	
+
 	# any notes container `to_prompt` will go over both standard and drawer notes
 	var working_memory: Array = await SingletonObject.notes_container.to_prompt(provider, refresh_detached)
-	
+
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
-	
+
 	# append the working memory
 	if append_item:
 		append_item.InjectedNotes = working_memory
 		# also append the new item since it's not in the history yet
 		var item = provider.Format(append_item)
 		if item: history_list.append(item)
-	
+
 	return history_list
+
+
+## Build history list with proper handling of system prompt based on provider capabilities.
+## If provider doesn't support system prompts, prepends system prompt to first user message.
+func _build_history_list_with_system_prompt(history: ChatHistory, provider: BaseProvider, system_prompt: String, predicate: Callable, agent_mode: bool = false) -> Array[Variant]:
+	var history_list: Array[Variant] = []
+	var system_prompt_prepended := false
+
+	for chat: ChatHistoryItem in history.HistoryItemList:
+		# Apply predicate if provided
+		if predicate.is_valid():
+			var results = predicate.call(chat)
+			var should_add: bool = results[0]
+			var should_continue: bool = results[1]
+
+			if not should_add:
+				if not should_continue:
+					break
+				continue
+
+			if not should_continue:
+				# Add this item and then stop
+				var break_item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended, agent_mode)
+				if break_item:
+					if chat.Role == ChatHistoryItem.ChatRole.USER and not system_prompt_prepended:
+						system_prompt_prepended = true
+					history_list.append(break_item)
+				break
+
+		var item: Variant = _format_with_system_prompt_handling(chat, provider, system_prompt, system_prompt_prepended, agent_mode)
+		if item:
+			if chat.Role == ChatHistoryItem.ChatRole.USER and not system_prompt_prepended and not provider.supports_system_prompt:
+				system_prompt_prepended = true
+			history_list.append(item)
+
+	return history_list
+
+
+## Format a chat item, handling system prompt injection for providers that don't support system prompts.
+func _format_with_system_prompt_handling(chat: ChatHistoryItem, provider: BaseProvider, system_prompt: String, already_prepended: bool, agent_mode: bool = false) -> Variant:
+	# Skip system prompt messages when agent mode is enabled OR provider doesn't support system prompts
+	# (in agent mode, we set provider.system_prompt separately)
+	if chat.Role == ChatHistoryItem.ChatRole.SYSTEM:
+		if agent_mode or not provider.supports_system_prompt:
+			return null  # Don't include system message in history, we handle it separately
+
+	# If provider doesn't support system prompts and this is the first user message, prepend system prompt
+	if not provider.supports_system_prompt and chat.Role == ChatHistoryItem.ChatRole.USER and not already_prepended and not system_prompt.is_empty():
+		# Create a modified chat item with prepended system prompt
+		var modified_chat := ChatHistoryItem.new()
+		modified_chat.Role = chat.Role
+		modified_chat.Message = "### System Instructions ###\n%s\n### End System Instructions ###\n\n%s" % [system_prompt, chat.Message]
+		modified_chat.InjectedNotes = chat.InjectedNotes
+		modified_chat.Images = chat.Images
+		return provider.Format(modified_chat)
+
+	return provider.Format(chat)
 
 
 func _on_btn_inspect_pressed():
@@ -224,9 +610,31 @@ func _on_btn_inspect_pressed():
 
 	ensure_chat_open()
 
-	var stringified_history:String = JSON.stringify(history_list, "\t")
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+
+	# Build full request body like the provider would
+	var request_body: Dictionary = {
+		"model": history.provider.api_model_id if "api_model_id" in history.provider else "unknown",
+		"messages": history_list,
+		"max_tokens": history.provider.max_tokens if "max_tokens" in history.provider else 4096,
+	}
+
+	# Add system prompt if available
+	if "system_prompt" in history.provider and history.provider.system_prompt:
+		request_body["system"] = history.provider.system_prompt
+
+	# Add tools if agent mode is enabled for this chat
+	print("[Inspector] AgentModeEnabled=%s, has_set_tools=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools")])
+	if history.AgentModeEnabled and history.provider.has_method("set_tools"):
+		var mcp = SingletonObject.get_mcp_manager()
+		var mcp_tools = mcp.get_tools_for_anthropic()
+		print("[Inspector] Got %d tools from MCP" % mcp_tools.size())
+		if not mcp_tools.is_empty():
+			request_body["tools"] = mcp_tools
+
+	var stringified_history:String = JSON.stringify(request_body, "\t")
 	%cdePrompt.text = stringified_history
-	
+
 	## show the inspector popup
 	var target_size = %tcChats.size
 	%InspectorPopup.exclusive = true
@@ -292,7 +700,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	existing_response.Error = bot_response.error
 	existing_response.provider = history.provider
 	existing_response.Complete = bot_response.complete
-	existing_response.TokenCost = bot_response.completion_tokens
+	existing_response.OutputTokens = bot_response.completion_tokens
 	if bot_response.image:
 		existing_response.Images = ([bot_response.image] as Array[Image])
 
@@ -318,15 +726,20 @@ func _on_chat_pressed():
 
 
 func _on_send_message_button_item_selected(index: int) -> void:
-	
+
 	# Ensure we have open chat so we can get its history and disable the notes
 	ensure_chat_open()
 	%SendMessageButton.selected = -1
+
+	# Clear any leftover cancelled flag from previous requests
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	SingletonObject.clear_cancelled(history.HistoryId)
+
 	#replacing All underscores to avoid but that transform all text to itelic when we using underscors (_text_text)
 	var filteredInput: String = %txtMainUserInput.text#.replace("_",r"\_")
 	%txtMainUserInput.text = ""
 	audio_stop_1.disabled = false
-	_active_chat_request = true
+	_active_chat_requests += 1
 	match index:
 		0:
 			execute_regular_chat(filteredInput)
@@ -388,7 +801,7 @@ func execute_hcp_chat():
 
 
 	var chi = ChatHistoryItem.new()
-	if bot_response != null: 
+	if bot_response != null:
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
 		chi.HcpStructure = provider.action.output_parameters
@@ -396,12 +809,12 @@ func execute_hcp_chat():
 		chi.Error = bot_response.error
 		chi.provider = history.provider
 		chi.Complete = bot_response.complete
-		chi.TokenCost = bot_response.completion_tokens
+		chi.OutputTokens = bot_response.completion_tokens
 		if bot_response.image:
 			chi.Images = ([bot_response.image] as Array[Image])
 
-		# Update user message node
-		user_history_item.TokenCost = bot_response.prompt_tokens
+		# Update user message node with input tokens (prompt tokens for this turn)
+		user_history_item.InputTokens = bot_response.prompt_tokens
 		user_msg_node.render()
 
 		# Change the history item and the message node will update itself
@@ -428,12 +841,12 @@ func execute_regular_chat(text: String) -> void:
 			return
 
 	if text.is_empty(): return
-	
+
 	ensure_chat_open()
-	
+
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
-	
+
 	var user_history_item = create_user_history_item(text)
 	user_history_item.provider = history.provider
 	# if we're using the human provider, handle it here
@@ -444,21 +857,36 @@ func execute_regular_chat(text: String) -> void:
 
 		for i in SingletonObject.drawer_notes_container.get_tab_count():
 			SingletonObject.drawer_notes_container.disable_notes(i)
-		
+
 		SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
 		SingletonObject.detached_note_proxies.clear()
 
 		return # if user is using Human provider we finish here
-	
+
 	# Check is the last message is a user message and not do anything if true
 	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
-	
+
+	# Setup agent mode tools if enabled for this chat
+	print("[Chat] Checking agent mode: AgentModeEnabled=%s, has_set_tools=%s, history_id=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools"), history.HistoryId])
+	if history.AgentModeEnabled and history.provider.has_method("set_tools"):
+		var mcp = SingletonObject.get_mcp_manager()
+		var mcp_tools = mcp.get_tools_for_anthropic()
+		# Filter out disabled tools for this chat
+		var filtered_tools = mcp_tools.filter(func(tool):
+			return tool.get("name", "") not in history.DisabledTools
+		)
+		print("[Agent] Setting up tools: %d available, %d after filtering" % [mcp_tools.size(), filtered_tools.size()])
+		for t in filtered_tools:
+			print("[Agent]   - %s" % t.get("name", "?"))
+		history.provider.set_tools(filtered_tools)
+		print("[Agent] Provider tools_enabled: %s" % history.provider.tools_enabled)
+
 	# make a chat request
 	var history_list: = await create_prompt(user_history_item)
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
-	
+
 	# rerender the message since we changed the history item
 	var user_msg_node: = history.VBox.add_history_item(user_history_item)
 	user_msg_node.first_time_message = true
@@ -470,15 +898,348 @@ func execute_regular_chat(text: String) -> void:
 										ChatHistoryItem.ChatRole.MODEL,
 										"")
 	dummy_item.provider = history.provider
-	
+
 	var model_msg_node = create_model_message_node(history, dummy_item)
 	var bot_response = await generate_content_from_provider(history, history_list)
-	
+
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
-	update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
-	audio_stop_1.disabled = true
-	_active_chat_request = false
+
+	# Handle tool calls if agent mode is enabled for this chat and response has tool calls
+	if history.AgentModeEnabled and bot_response and bot_response.has_tool_calls():
+		# Store tool calls in the chat history item
+		chi.IsToolCall = true
+		chi.ToolCalls = bot_response.tool_calls
+
+		# Update UI with the assistant's response (but DON'T emit response_arrived yet)
+		# We'll emit it when the tool chain completes
+		update_ui_after_response_no_signal(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+
+		# Handle tool execution and continue conversation
+		# Pass the initial model CHI as accumulator and user_history_item for final signal
+		await handle_tool_calls(history, bot_response.tool_calls, 0, chi, user_history_item)
+	else:
+		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+
+	_active_chat_requests -= 1
+	if _active_chat_requests <= 0:
+		_active_chat_requests = 0  # Ensure non-negative
+		audio_stop_1.disabled = true
+
+
+## Get the last MODEL/ASSISTANT history item (the one that made the tool calls)
+func _get_last_model_history_item(history: ChatHistory) -> ChatHistoryItem:
+	for i in range(history.HistoryItemList.size() - 1, -1, -1):
+		var item = history.HistoryItemList[i]
+		if item.Role == ChatHistoryItem.ChatRole.MODEL or item.Role == ChatHistoryItem.ChatRole.ASSISTANT:
+			return item
+	return null
+
+
+## Add tool_result blocks for tools that were not executed (due to cancellation, limits, etc.)
+## This ensures the conversation can continue without API errors about missing tool_results.
+func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reason: String) -> void:
+	var model_chi = _get_last_model_history_item(history)
+	var error_result = JSON.stringify({"error": "Tool not executed: %s" % reason})
+
+	for tool_call in tool_calls:
+		var tool_id: String = tool_call.get("id", "")
+		var tool_name: String = tool_call.get("name", "")
+		var tool_args: Dictionary = tool_call.get("arguments", {})
+
+		# Add to ToolExecutions for UI display
+		if model_chi:
+			var execution_entry = {
+				"call_id": tool_id,
+				"tool_name": tool_name,
+				"arguments": tool_args,
+				"status": "error",
+				"result": error_result
+			}
+			model_chi.ToolExecutions.append(execution_entry)
+			if model_chi.rendered_node:
+				model_chi.rendered_node.update_tool_execution(tool_id, error_result, true)
+
+		# Create hidden tool result history item for API continuity
+		var tool_result_item = ChatHistoryItem.new()
+		tool_result_item.Role = ChatHistoryItem.ChatRole.TOOL
+		tool_result_item.ToolCallId = tool_id
+		tool_result_item.ToolName = tool_name
+		tool_result_item.Message = error_result
+		tool_result_item.provider = history.provider
+		tool_result_item.Visible = false  # Hidden - shown in parent message
+
+		history.HistoryItemList.append(tool_result_item)
+		print("[Agent] Added unexecuted tool_result for: %s (reason: %s)" % [tool_name, reason])
+
+
+## Clean up UI state after agent mode finishes (success or error).
+## Re-enables notes and decrements active request counter.
+func _finish_agent_mode() -> void:
+	# Disable notes in containers
+	for i in SingletonObject.notes_container.get_tab_count():
+		SingletonObject.notes_container.disable_notes(i)
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		SingletonObject.drawer_notes_container.disable_notes(i)
+
+	# Clear detached note proxies (editor "Send to LLM" toggles)
+	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+	SingletonObject.detached_note_proxies.clear()
+
+	# Decrement active requests and update stop button
+	_active_chat_requests -= 1
+	if _active_chat_requests <= 0:
+		_active_chat_requests = 0
+		audio_stop_1.disabled = true
+
+
+## Handle tool calls from an LLM response in agentic mode.
+## Executes tools, adds results to history, and continues the conversation.
+## All responses are accumulated into a single message box (accumulator_chi).
+## @param history: The chat history
+## @param tool_calls: Array of tool calls to execute
+## @param current_round: Current round number (for recursion)
+## @param accumulator_chi: The first MODEL ChatHistoryItem that accumulates all display content
+## @param user_history_item: The user's message, for emitting response_arrived at the end
+func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: int = 0,
+					   accumulator_chi: ChatHistoryItem = null,
+					   user_history_item: ChatHistoryItem = null) -> void:
+	var max_rounds = history.MaxToolCallRounds if history.MaxToolCallRounds > 0 else DEFAULT_MAX_TOOL_CALL_ROUNDS
+
+	# Helper to finish with signal emission
+	var finish_with_signal = func():
+		_finish_agent_mode()
+		# Emit response_arrived to trigger completion sound
+		if user_history_item and accumulator_chi:
+			user_history_item.response_arrived.emit(accumulator_chi)
+
+	if current_round >= max_rounds:
+		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % max_rounds)
+		# Add tool_result blocks for unexecuted tools so conversation can continue
+		_add_unexecuted_tool_results(history, tool_calls, "Max tool call rounds (%d) reached" % max_rounds)
+		finish_with_signal.call()
+		return
+
+	# Check for cancellation at start
+	if SingletonObject.is_cancelled(history.HistoryId):
+		SingletonObject.clear_cancelled(history.HistoryId)
+		# Add tool_result blocks for unexecuted tools so conversation can continue
+		_add_unexecuted_tool_results(history, tool_calls, "Cancelled by user")
+		finish_with_signal.call()
+		return
+
+	var mcp_manager = SingletonObject.get_mcp_manager()
+
+	print("[Agent] Round %d: Processing %d tool calls" % [current_round, tool_calls.size()])
+
+	# Use accumulator if provided, otherwise get the last MODEL item
+	var model_chi: ChatHistoryItem = accumulator_chi if accumulator_chi else _get_last_model_history_item(history)
+
+	# Execute each tool call and collect results
+	for i in range(tool_calls.size()):
+		var tool_call = tool_calls[i]
+
+		# Check for cancellation before each tool
+		if SingletonObject.is_cancelled(history.HistoryId):
+			SingletonObject.clear_cancelled(history.HistoryId)
+			# Add tool_results for remaining unexecuted tools (current + rest)
+			var remaining_tools = tool_calls.slice(i)
+			_add_unexecuted_tool_results(history, remaining_tools, "Cancelled by user")
+			finish_with_signal.call()
+			return
+
+		var tool_id: String = tool_call.get("id", "")
+		var tool_name: String = tool_call.get("name", "")
+		var tool_args: Dictionary = tool_call.get("arguments", {})
+
+		print("[Agent] Executing tool: %s (id=%s)" % [tool_name, tool_id])
+
+		# Add execution entry to model_chi BEFORE executing (status: "calling")
+		var execution_entry = {
+			"call_id": tool_id,
+			"tool_name": tool_name,
+			"arguments": tool_args,
+			"status": "calling",
+			"result": ""
+		}
+		model_chi.ToolExecutions.append(execution_entry)
+
+		# Update the rendered node to show this tool call
+		if model_chi.rendered_node:
+			model_chi.rendered_node.update_tool_execution(tool_id, "", false)
+
+		# Check path permissions before executing
+		var path_error = check_tool_path_permissions(tool_name, tool_args, history.AllowedDirectories)
+		var result: Dictionary
+		if path_error != null:
+			print("[Agent] Tool blocked by AllowedDirectories: %s" % tool_name)
+			result = path_error
+		else:
+			# Execute the tool
+			result = await mcp_manager.execute_tool(tool_name, tool_args)
+
+		print("[Agent] Tool result: %s" % str(result).left(200))
+
+		# Stringify and truncate the result to prevent context explosion
+		var result_str = JSON.stringify(result)
+		var original_len = result_str.length()
+		result_str = truncate_tool_result(result_str, history.AgentMaxToolResultLength)
+		if result_str.length() < original_len:
+			print("[Agent] Truncated tool result from %d to %d chars" % [original_len, result_str.length()])
+
+		# Update execution entry with result
+		var is_error = result.get("error") != null
+		execution_entry["result"] = result_str
+		execution_entry["status"] = "error" if is_error else "done"
+
+		# Update the rendered node with the result
+		if model_chi.rendered_node:
+			model_chi.rendered_node.update_tool_execution(tool_id, result_str, is_error)
+
+		# Create tool result history item (hidden - for API continuity only)
+		var tool_result_item = ChatHistoryItem.new()
+		tool_result_item.Role = ChatHistoryItem.ChatRole.TOOL
+		tool_result_item.ToolCallId = tool_id
+		tool_result_item.ToolName = tool_name
+		tool_result_item.Message = result_str
+		tool_result_item.provider = history.provider
+		tool_result_item.Visible = false  # Don't render separately - shown in parent message
+
+		# Add to history (this is critical - must happen before continuation)
+		history.HistoryItemList.append(tool_result_item)
+
+	# Add tool block marker to message for proper interleaving during render
+	# Format: {{TOOL_BLOCK:count}} where count is the number of tool executions for this round
+	var tool_count = tool_calls.size()
+	if not model_chi.Message.is_empty():
+		model_chi.Message += "\n\n{{TOOL_BLOCK:%d}}" % tool_count
+	else:
+		model_chi.Message = "{{TOOL_BLOCK:%d}}" % tool_count
+
+	# Check context limits before continuing
+	var context_status = check_agent_context_limits(history)
+	if not context_status.ok:
+		# Hard limit exceeded - stop the agent loop
+		push_warning("Agent mode: %s" % context_status.message)
+		finish_with_signal.call()
+		return
+	elif context_status.warning:
+		# Warning threshold - try to summarize
+		if context_status.estimated_tokens >= context_status.summarize_threshold:
+			summarize_agent_history(history)
+			var new_size = estimate_agent_context_size(history)
+			print("[Agent] Context reduced to ~%d tokens" % new_size)
+
+	# Ensure tools are still enabled for continuation request (with filtering)
+	if history.provider.has_method("set_tools"):
+		var mcp_tools = mcp_manager.get_tools_for_anthropic()
+		var filtered_tools = mcp_tools.filter(func(tool):
+			return tool.get("name", "") not in history.DisabledTools
+		)
+		history.provider.set_tools(filtered_tools)
+
+	# Check for cancellation before continuation
+	if SingletonObject.is_cancelled(history.HistoryId):
+		SingletonObject.clear_cancelled(history.HistoryId)
+		finish_with_signal.call()
+		return
+
+	# Build continuation prompt with tool results
+	# Use create_prompt() to properly handle system messages (filters them from messages array
+	# and sets provider.system_prompt for Anthropic/Google)
+	# NOTE: Use refresh_detached=false to use cached notes (created when tool enabled "Send to LLM")
+	# instead of calling the initializer again, which can cause issues with graphics composition
+	var continuation_list = await create_prompt(null, false)
+
+	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
+
+	# Show loading state at bottom of message (append mode - doesn't hide content)
+	if model_chi.rendered_node:
+		model_chi.rendered_node.loading_append = true
+
+	# Get LLM's response to tool results
+	var continuation_response = await generate_content_from_provider(history, continuation_list)
+
+	if not continuation_response:
+		print("[Agent] ERROR: No continuation response received")
+		if model_chi.rendered_node:
+			model_chi.rendered_node.loading_append = false
+		finish_with_signal.call()
+		return
+
+	# Check for errors in response
+	if continuation_response.error:
+		print("[Agent] ERROR in response: %s" % continuation_response.error)
+		# Append error message to accumulator
+		model_chi.Message += "\n\n[Agent Error: %s]" % continuation_response.error
+		if model_chi.rendered_node:
+			model_chi.rendered_node.loading_append = false
+			model_chi.rendered_node.render()
+		finish_with_signal.call()
+		return
+
+	# Process the continuation response
+	var continuation_chi = process_bot_response(continuation_response, history.provider)
+
+	print("[Agent] Continuation has tool_calls: %s" % continuation_response.has_tool_calls())
+
+	# Append continuation text to accumulator (if any)
+	if not continuation_chi.Message.is_empty():
+		if model_chi.Message.is_empty():
+			model_chi.Message = continuation_chi.Message
+		else:
+			model_chi.Message += "\n\n" + continuation_chi.Message
+
+	# Check if there are more tool calls
+	if continuation_response.has_tool_calls():
+		continuation_chi.IsToolCall = true
+		continuation_chi.ToolCalls = continuation_response.tool_calls
+		continuation_chi.Visible = false  # Don't render separately - shown in accumulator
+
+		# Add to history for API continuity (but hidden from UI)
+		history.HistoryItemList.append(continuation_chi)
+
+		# NOTE: Do NOT update model_chi.ToolCalls - that would corrupt the API history!
+		# The ToolCalls stay with their respective ChatHistoryItems for proper API serialization.
+		# We only use ToolExecutions for UI display (which is already being updated correctly).
+
+		# Update the accumulator's rendered node
+		if model_chi.rendered_node:
+			model_chi.rendered_node.loading_append = false
+			model_chi.rendered_node.render()
+			await get_tree().process_frame
+			history.VBox.ensure_node_is_visible(model_chi.rendered_node)
+
+		# Check for cancellation before recursion
+		if SingletonObject.is_cancelled(history.HistoryId):
+			SingletonObject.clear_cancelled(history.HistoryId)
+			# Add tool_results for unexecuted tools so conversation can continue
+			_add_unexecuted_tool_results(history, continuation_response.tool_calls, "Cancelled by user")
+			finish_with_signal.call()
+			return
+
+		# Recursively handle more tool calls (keep same accumulator)
+		await handle_tool_calls(history, continuation_response.tool_calls, current_round + 1,
+							   model_chi, user_history_item)
+	else:
+		# No more tool calls, finalize the response
+		print("[Agent] Final response (no more tool calls)")
+		continuation_chi.Visible = false  # Don't render separately
+
+		# Add to history for API continuity (but hidden from UI)
+		history.HistoryItemList.append(continuation_chi)
+
+		# Final update to accumulator
+		# NOTE: Do NOT clear IsToolCall - the accumulator must retain its tool_calls
+		# for API serialization so subsequent requests see the proper message sequence
+		if model_chi.rendered_node:
+			model_chi.rendered_node.loading_append = false
+			model_chi.rendered_node.first_time_message = true
+			model_chi.rendered_node.render()
+			await get_tree().process_frame
+			history.VBox.ensure_node_is_visible(model_chi.rendered_node)
+
+		finish_with_signal.call()
 
 
 func execute_sequential_chat(text_input: String) -> void:
@@ -490,8 +1251,8 @@ func execute_sequential_chat(text_input: String) -> void:
 	_inputs = get_separated_messages(text_input)
 	
 	for i in _inputs:
-		if _cancelled_chat_requests:
-			_cancelled_chat_requests = false
+		if SingletonObject.is_cancelled(history.HistoryId):
+			SingletonObject.clear_cancelled(history.HistoryId)
 			return
 		var user_history_item = create_user_history_item(i)
 		
@@ -534,9 +1295,11 @@ func execute_sequential_chat(text_input: String) -> void:
 		
 		var chi = process_bot_response(bot_response, history.provider)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
-	audio_stop_1.disabled = true
-	_active_chat_request = false
-	
+	_active_chat_requests -= 1
+	if _active_chat_requests <= 0:
+		_active_chat_requests = 0
+		audio_stop_1.disabled = true
+
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)
 
@@ -598,11 +1361,13 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 		_user_parallel_chat_UUID = ""
 		_parallel_chat_UUID = ""
 		_multi_slider_container_UUID = ""
-		audio_stop_1.disabled = true
-		_active_chat_request = false
-	
-	if _cancelled_chat_requests:
-		_cancelled_chat_requests = false
+		_active_chat_requests -= 1
+		if _active_chat_requests <= 0:
+			_active_chat_requests = 0
+			audio_stop_1.disabled = true
+
+	if SingletonObject.is_cancelled(history.HistoryId):
+		SingletonObject.clear_cancelled(history.HistoryId)
 		return
 	var usr_msg_node: = history.VBox.add_history_item(user_msg, false)
 	var mdl_msg_node: = history.VBox.add_history_item(bot_response, false)
@@ -653,11 +1418,11 @@ func create_message_new(inputs_idx: int) -> void:
 	
 	# Create history item from bot response
 	var chi = process_bot_response(bot_response, history.provider)
-	
-	# Update user message node
+
+	# Update user message node with input tokens (prompt tokens for this turn)
 	if bot_response != null:
-		user_history_item.TokenCost = bot_response.prompt_tokens
-	
+		user_history_item.InputTokens = bot_response.prompt_tokens
+
 	_mutex.lock()
 	_usr_chat_hist_items.append(user_history_item)
 	history.HistoryItemList.append(user_history_item)
@@ -818,7 +1583,19 @@ func hide_chat_history_item(item: ChatHistoryItem, history: ChatHistory = null, 
 
 
 func render_history(chat_history: ChatHistory):
-	
+
+	# Create wrapper VBoxContainer to hold header and scroll container
+	var wrapper = VBoxContainer.new()
+	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrapper.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	# Create and setup ChatHeader at top of each tab
+	var ChatHeaderScript = load("res://Scripts/UI/Controls/ChatHeader.gd")
+	var header = ChatHeaderScript.new()
+	header.setup(chat_history)
+	header.agent_mode_toggled.connect(_on_chat_header_agent_mode_toggled.bind(chat_history))
+	wrapper.add_child(header)
+
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
 	#scroll_container.follow_focus
@@ -831,12 +1608,13 @@ func render_history(chat_history: ChatHistory):
 	chat_history.VBox = vboxChat
 
 	scroll_container.add_child(vboxChat)
+	wrapper.add_child(scroll_container)
 
 	# set the scroll container name and add it to the pane.
 	var _name = chat_history.HistoryName
 	#scroll_container.name = _name
-	%tcChats.add_child(scroll_container)
-	var tab_idx = %tcChats.get_tab_idx_from_control(scroll_container)
+	%tcChats.add_child(wrapper)
+	var tab_idx = %tcChats.get_tab_idx_from_control(wrapper)
 	%tcChats.set_tab_title(tab_idx, _name)
 	
 	var multi_slider_containers: = {}
@@ -869,19 +1647,37 @@ func render_history(chat_history: ChatHistory):
 func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
-	
+
 	# SingletonObject.initialize_chats(self)
 	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
-	
+
+	# Hide old AgentModeToggle in chat controls - agent mode is now per-chat via ChatHeader
+	%AgentModeToggle.hide()
+
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
 	hbox.set("theme_override_constants/separation", 12)
-	
+
 	SingletonObject.note_toggled.connect(_on_note_toggled)
 	SingletonObject.note_changed.connect(_on_note_changed)
 
 	SingletonObject.Chats = self
+
+	# Setup debounce timer for token estimation (300ms delay)
+	_token_estimation_timer = Timer.new()
+	_token_estimation_timer.one_shot = true
+	_token_estimation_timer.wait_time = 0.3
+	_token_estimation_timer.timeout.connect(_on_token_estimation_timer_timeout)
+	add_child(_token_estimation_timer)
+
+
+## Handle global input - ESC key triggers stop
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		if _active_chat_requests > 0:
+			_on_audio_stop_1_pressed()
+			get_viewport().set_input_as_handled()
 
 
 # if a note is enabled/disabled recalculate the token cost
@@ -955,14 +1751,72 @@ func update_token_estimation(provider: BaseProvider = null):
 		else:
 			provider = SingletonObject.ChatList[current_tab].provider
 
-	var chi = ChatHistoryItem.new()
-	chi.Message = %txtMainUserInput.text
-
-	var token_count = provider.estimate_tokens_from_prompt(await create_prompt(chi, false, provider))
+	# Use fast estimation that avoids expensive base64 encoding
+	var token_count = await _estimate_tokens_fast(provider)
 
 	%EstimatedTokensLabel.text = "%s¢" % [snapped( (provider.token_cost * token_count) * 100, 0.01)]
 	if (provider.token_cost * token_count) * 100 < 0.01:
 		%EstimatedTokensLabel.text = "%s¢" % 0.01
+
+
+## Fast token estimation that avoids expensive operations like base64 encoding.
+## Only does the full create_prompt() when actually sending messages.
+func _estimate_tokens_fast(provider: BaseProvider) -> float:
+	var token_count: float = 0.0
+
+	# Estimate tokens from user input text
+	token_count += provider.estimate_tokens(%txtMainUserInput.text)
+
+	# Estimate tokens from chat history (text and images)
+	if not SingletonObject.ChatList.is_empty():
+		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+		for chat: ChatHistoryItem in history.HistoryItemList:
+			token_count += provider.estimate_tokens(chat.Message)
+			# Also count images in chat history
+			for img: Image in chat.Images:
+				if img:
+					var tiles_x = ceil(img.get_width() / 512.0)
+					var tiles_y = ceil(img.get_height() / 512.0)
+					token_count += (tiles_x * tiles_y) * 170.0 + 85.0
+
+	# Estimate tokens from enabled notes (text notes directly, images by dimensions)
+	for i in SingletonObject.notes_container.get_tab_count():
+		for note: Note in SingletonObject.notes_container.get_notes(i):
+			if note.enabled:
+				token_count += _estimate_note_tokens(note)
+
+	for i in SingletonObject.drawer_notes_container.get_tab_count():
+		for note: Note in SingletonObject.drawer_notes_container.get_notes(i):
+			if note.enabled:
+				token_count += _estimate_note_tokens(note)
+
+	# Estimate tokens from detached notes (editor notes with "send to chat" enabled)
+	for proxy_note in SingletonObject.detached_note_proxies:
+		var note: Note = await proxy_note.create_note(true)  # use_cached=true
+		if note:
+			token_count += _estimate_note_tokens(note)
+
+	return token_count
+
+
+## Estimate tokens for a note without expensive encoding
+func _estimate_note_tokens(note: Note) -> float:
+	match note.type:
+		Note.Type.TEXT:
+			var controls = note.get_controls_container() as NoteTextControls
+			if controls:
+				return float(controls.content.length()) / 4.0  # Rough estimate: 4 chars per token
+		Note.Type.IMAGE:
+			var controls = note.get_controls_container() as NoteImageControls
+			if controls:
+				# Use cached image property (no GPU copy, no encoding)
+				var img: Image = controls.image
+				if img:
+					# Estimate image tokens from dimensions (OpenAI formula)
+					var tiles_x = ceil(img.get_width() / 512.0)
+					var tiles_y = ceil(img.get_height() / 512.0)
+					return (tiles_x * tiles_y) * 170.0 + 85.0
+	return 0.0
 
 # region Edit provider Title
 
@@ -1012,6 +1866,8 @@ func _on_attach_file_dialog_files_selected(paths: PackedStringArray):
 
 
 func _on_btn_chat_settings_pressed():
+	%AISettings.sync_provider_to_current_chat()
+	%AISettings.load_current_chat_settings()
 	%AISettings.popup_centered()
 
 
@@ -1019,13 +1875,41 @@ func _on_btn_clear_pressed():
 	%txtMainUserInput.text = ""
 
 
+## Handle Agent Mode toggle from ChatHeader (per-chat)
+func _on_chat_header_agent_mode_toggled(toggled_on: bool, history: ChatHistory) -> void:
+	if toggled_on:
+		# Initialize MCP manager if not already done
+		var mcp = SingletonObject.get_mcp_manager()
+		var tools = mcp.get_available_tools()
+		print("[Agent Mode] Enabled for '%s' with %d tools available" % [history.HistoryName, tools.size()])
+		if tools.is_empty():
+			push_warning("Agent Mode enabled but no MCP tools are available. Connect to MCP servers first.")
+	else:
+		print("[Agent Mode] Disabled for '%s'" % history.HistoryName)
+
+
+## Handle Agent Mode toggle (legacy - kept for compatibility)
+func _on_agent_mode_toggled(_toggled_on: bool) -> void:
+	# Legacy handler - agent mode is now per-chat via ChatHeader
+	pass
+
+
 ## When user types in the chat box, estimate tokens count based on selected provider
+## Uses debouncing to avoid expensive recalculation on every keystroke
 func _on_txt_main_user_input_text_changed():
-	update_token_estimation()
 	if %txtMainUserInput.text == "":
 		%EstimatedTokensLabel.text = "%s¢" % 0.00
+		_token_estimation_timer.stop()
+		return
+	# Restart debounce timer - actual estimation runs after 300ms of no typing
+	_token_estimation_timer.start()
 
 func _on_txt_main_user_input_text_set():
+	# Direct call for programmatic text setting (not continuous typing)
+	update_token_estimation()
+
+## Called when debounce timer expires - actually run the expensive token estimation
+func _on_token_estimation_timer_timeout():
 	update_token_estimation()
 
 func _on_btn_microphone_pressed():
@@ -1040,9 +1924,19 @@ func _on_child_order_changed():
 	if _initializing_pane: return
 
 	# Update ChatList in the SingletonObject
-	SingletonObject.ChatList = []  # Comment this out temporarily
+	# Each tab is now a VBoxContainer wrapper containing [ChatHeader, ScrollContainer]
+	SingletonObject.ChatList = []
 	for child in get_children():
-		if child is ScrollContainer:
+		if child is VBoxContainer:
+			# New structure: VBoxContainer wrapper > ChatHeader + ScrollContainer
+			for sub_child in child.get_children():
+				if sub_child is ScrollContainer:
+					var vbox_chat = sub_child.get_child(0)
+					if vbox_chat is VBoxChat:
+						SingletonObject.ChatList.append(vbox_chat.chat_history)
+					break
+		elif child is ScrollContainer:
+			# Legacy structure for backwards compatibility
 			var vbox_chat = child.get_child(0)
 			if vbox_chat is VBoxChat:
 				SingletonObject.ChatList.append(vbox_chat.chat_history)
@@ -1142,19 +2036,36 @@ func get_first_chat_item() -> ChatHistoryItem:
 
 #endregion Add New HistoryItem
 
-var _cancelled_chat_requests: = false
 func _on_audio_stop_1_pressed() -> void:
-	if _active_chat_request:
+	if _active_chat_requests > 0:
 		var history: ChatHistory = SingletonObject.ChatList[current_tab]
-		history.provider.cancel_active_resquests()
-		history.VBox.remove_child(latest_msg)
-		audio_stop_1.disabled = true
-		_active_chat_request = false
-		_cancelled_chat_requests = true
-		for i in history.VBox.get_children():
-			if i is MessageMarkdown:
-				if i.loading:
-					i.loading = false
+
+		# Track this history as cancelled so agentic loops can check
+		SingletonObject.cancelled_history_ids.append(history.HistoryId)
+
+		# Emit signal with current tab's identity - only matching providers will cancel
+		SingletonObject.stop_all_requests.emit(history.HistoryId)
+
+		# Clean up loading messages only in current tab
+		for child in history.VBox.get_children():
+			if child is MessageMarkdown:
+				# Clear loading animation (used during initial response)
+				if child.loading:
+					child.loading = false
+					history.VBox.remove_child(child)
+					child.queue_free()
+				# Clear loading_append animation (used during agent mode)
+				elif child.loading_append:
+					child.loading_append = false
+
+		# Finish agent mode if active
+		_finish_agent_mode()
+
+		# Decrement ref count for the stopped request
+		_active_chat_requests -= 1
+		if _active_chat_requests <= 0:
+			_active_chat_requests = 0
+			audio_stop_1.disabled = true
 	else:
 		SingletonObject.AtT._StopConverting()
 

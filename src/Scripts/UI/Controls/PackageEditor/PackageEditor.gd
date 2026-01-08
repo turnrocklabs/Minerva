@@ -9,9 +9,13 @@ signal artifact_uploaded(artifact: Artifact)
 
 static var _scn: = preload("res://Scripts/UI/Controls/PackageEditor/PackageEditor.tscn")
 
+@warning_ignore("unused_private_class_variable")
 static var _file_icon: = preload("res://assets/icons/file/file.svg")
+@warning_ignore("unused_private_class_variable")
 static var _folder_icon: = preload("res://assets/icons/folder.svg")
+@warning_ignore("unused_private_class_variable")
 static var _check_off: = preload("res://assets/icons/unchecked.svg")
+@warning_ignore("unused_private_class_variable")
 static var _check_on: = preload("res://assets/icons/checked.svg")
 
 @onready var _package_margin_container: MarginContainer = %PackageMarginContainer

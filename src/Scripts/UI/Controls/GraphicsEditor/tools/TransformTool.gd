@@ -237,7 +237,7 @@ func _backup_original_state() -> void:
 
 # Placeholder for the move operation - implement your own logic
 func _handle_move(event: InputEventMouseMotion) -> void:
-	editor.active_layer.position += event.screen_relative
+	editor.active_layer.position += event.screen_relative * editor.PAN_FACTOR * (1 / editor.input_area_camera.zoom.x)
 
 # Placeholder for the resize operation - implement your own logic
 func _handle_resize(event: InputEventMouseMotion) -> void:
@@ -253,7 +253,7 @@ func _handle_resize(event: InputEventMouseMotion) -> void:
 			move_factor *= Vector2(0, 1)
 		LayerV2.TransformPoint.TOP_RIGHT:
 			size_factor *= Vector2(-1, 1)
-			move_factor *= Vector2(0, 	1)
+			move_factor *= Vector2(0, 1)
 		LayerV2.TransformPoint.RIGHT:
 			size_factor *= Vector2.LEFT
 			move_factor *= Vector2.ZERO
@@ -269,10 +269,9 @@ func _handle_resize(event: InputEventMouseMotion) -> void:
 		LayerV2.TransformPoint.LEFT:
 			size_factor *= Vector2.RIGHT
 			move_factor *= Vector2(1, 0)
-
-
-	editor.active_layer.position += move_factor
-	editor.active_layer.size -= size_factor
+	
+	editor.active_layer.position += move_factor * editor.PAN_FACTOR * (1 / editor.input_area_camera.zoom.x)
+	editor.active_layer.size -= size_factor * editor.PAN_FACTOR * (1 / editor.input_area_camera.zoom.x)
 
 # Placeholder for the rotate operation - implement your own logic
 func _handle_rotate(event: InputEventMouseMotion) -> void:

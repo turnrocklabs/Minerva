@@ -10,7 +10,9 @@ var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-
 
 var _output_label_nodes: Array[TextLayer]
 
-var terminal:  = Terminal.new()
+# Terminal is from a GDExtension that may not be available
+var terminal = null
+var _terminal_available: bool = false
 
 
 var _viewport_start: int = 0
@@ -44,7 +46,14 @@ func _update_font_metrics():
 	char_width = char_metrics.x
 
 func _ready():
-	add_child(terminal)
+	# Check if Terminal GDExtension is available
+	if ClassDB.class_exists("Terminal"):
+		terminal = ClassDB.instantiate("Terminal")
+		_terminal_available = true
+		add_child(terminal)
+	else:
+		push_error("Terminal GDExtension not available - terminal functionality disabled")
+		return
 
 	visibility_changed.connect(
 		func():
@@ -218,7 +227,7 @@ func _on_check_button_toggled(_toggled_on: bool, _btn: CheckButton):
 	# item.Enabled = toggled_on
 
 
-func _on_output_received(text: String, type: Terminal.Type) -> void:
+func _on_output_received(text: String, type: int) -> void:
 	var matches: = WINDOWS_CWD_REGEX.search_all(text)
 
 	# check if last check button is toggled on and update the content
@@ -239,7 +248,8 @@ func _on_output_received(text: String, type: Terminal.Type) -> void:
 			_create_check_button((_cursor_pos.x + text.count("\n", match_.get_start(), match_.get_end()) -1))
 		
 
-	if type == Terminal.Type.TEXT:
+	# Terminal.Type.TEXT = 0 (from GDExtension)
+	if type == 0:  # TERMINAL_TYPE_TEXT
 
 		# TODO: buffer the text, split by \n \b or smth
 		for i in text.length():

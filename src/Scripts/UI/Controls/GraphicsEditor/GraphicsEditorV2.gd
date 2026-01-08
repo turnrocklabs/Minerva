@@ -1,21 +1,28 @@
 class_name GraphicsEditorV2
 extends PanelContainer
 
-static var ZOOM_INCREMENT: = 1.05
-static var ZOOM_DECREMENT: = 0.95
-
 signal active_tool_changed(tool_: BaseTool)
 @warning_ignore("unused_signal")
 signal active_layer_changed(layer: LayerV2)
 signal active_layer_is_mask_layer(is_mask_layer: bool)
+signal active_layer_is_control_layer(is_control_layer: bool)
 
 signal compose_progress_updated(progress: float)
 signal compose_finished(image: Image)
 signal delete_layer(layer: LayerV2)
 signal selection_changed()
-#signal lock_unlock_media_gen_ui(lock: bool)
+
+@export_category("Editor Canvas parameters")
+@export_range(0.01, 0.9) var MIN_ZOOM: = 0.07
+@export_range(1.1, 4.0) var MAX_ZOOM: = 2.5
+@export var ZOOM_INCREMENT: = 1.05
+@export var ZOOM_DECREMENT: = 0.95
+@export_range(1.03, 2.0) var PAN_FACTOR: = 1.25
 
 @onready var layers_container: LayersContainer = %LayersContainer
+@onready var selection_overlay: Control = %SelectionOverlay  # SelectionOverlay type causes circular dependency
+@onready var pose_editor_window: Window = %PoseEditorWindow
+@onready var pose_editor_panel: Control = %PoseEditorPanel  # PoseEditorPanel type - avoid circular ref
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
 @onready var layer_cards_popup_panel: Window = %LayerCardsPopupPanel
@@ -41,6 +48,7 @@ signal selection_changed()
 @onready var _speech_bubble_options: Control = %SpeechBubbleOptions
 @onready var _selection_options_container: Control = %SelectionOptions
 @onready var selection_indicator_button: MenuButton = %SelectionIndicatorButton
+@onready var selection_mode_label: Label = %SelectionModeLabel
 
 @onready var drawing_tool: DrawingTool = %DrawingTool
 @onready var smudge_tool: SmudgeTool = %SmudgeTool
@@ -52,6 +60,9 @@ signal selection_changed()
 @onready var render_view_tool: RenderViewTool = %RenderViewTool
 @onready var eyedropper_tool: EyedropperTool = %EyedropperTool
 @onready var magic_wand_tool: MagicWandTool = %MagicWandTool
+@onready var rectangle_select_tool: RectangleSelectTool = %RectangleSelectTool
+@onready var lasso_select_tool: LassoSelectTool = %LassoSelectTool
+@onready var pose_editor_tool = %PoseEditorTool  # PoseEditorTool type - avoid circular ref
 
 
 @onready var tool_options_mapping: = {
@@ -62,16 +73,15 @@ signal selection_changed()
 	speech_bubble_tool: _speech_bubble_options,
 	eyedropper_tool: _brush_options_container,
 	magic_wand_tool: _selection_options_container,
+	rectangle_select_tool: _selection_options_container,
+	lasso_select_tool: _selection_options_container,
 }
 
 @onready var image_gen_window: Window = %ImageGenWindow
 @onready var prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var send_prompt_button: Button = %SendPromptButton
 @onready var negative_text_edit: TextEdit = %NegativeTextEdit
-@onready var image_width_line_edit: LineEdit = %ImageWidthLineEdit
-@onready var image_height_line_edit: LineEdit = %ImageHeightLineEdit
 @onready var image_width_option_button: OptionButton = %ImageWidthOptionButton
-@onready var image_height_option_button: OptionButton = %ImageHeightOptionButton
 @onready var advanced_settings_check_button: CheckButton = %AdvancedSettingsCheckButton
 @onready var advanced_settings_container: VBoxContainer = %AdvancedSettingsContainer
 @onready var prompt_button: Button = %PromptButton
@@ -85,6 +95,7 @@ signal selection_changed()
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
 @onready var mask_layer_cards_container: VBoxContainer = %MaskLayerCardsContainer
+@onready var control_layer_cards_container: VBoxContainer = %ControlLayerCardsContainer
 @onready var image_gen_panel_container: PanelContainer = %ImageGenPanelContainer
 @onready var tool_size_v_slider: VSlider = %ToolSizeVSlider
 @onready var copy_layer_button: Button = %CopyLayerButton
@@ -98,6 +109,9 @@ signal selection_changed()
 @onready var edit_img_button: Button = %EditImgButton
 @onready var send_mask_edit_button: Button = %SendMaskEditButton
 @onready var ai_action_label: Label = %AIActionLabel
+@onready var spritesheet_settings_container: VBoxContainer = %SpritesheetSettingsContainer
+@onready var animation_option_button: OptionButton = %AnimationOptionButton
+@onready var animation_frames_option_button: OptionButton = %AnimationFramesOptionButton
 
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
@@ -108,12 +122,13 @@ signal selection_changed()
 @onready var render_viewport_button: Button = %RenderViewportButton
 @onready var render_view_control: RenderViewRect = %RenderViewControl
 @onready var connection_label: Label = %ConnectionLabel
+@onready var drawing_area_sub_viewport: SubViewport = %DrawingAreaSubViewport
 
 #endregion
 
-const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total numgber of pixels must be divisible by 64
-const MAX_IMAGE_GEN_RES: int = 2500
-const MIN_IMAGE_RES: int = 512
+const DEFAULT_IMAGE_GEN_RES: int = 1024 # The total number of pixels must be divisible by 64
+const MAX_IMAGE_GEN_RES: int = 2048
+const MIN_IMAGE_RES: int = 64
 
 # Workflow selection for image generation
 enum Workflow { Z_TURBO, QWEN }
@@ -127,11 +142,199 @@ const WORKFLOW_DEFAULT_STEPS: Dictionary = {
 }
 var current_workflow: Workflow = Workflow.Z_TURBO
 
-var canvas_size: = Vector2i(1000, 1000)
+#region AI Capabilities Registry (for MCP tools)
+
+## Model metadata mapping - keyed by topic for lookup from Core discovery
+## This provides fallback/default metadata when Core doesn't provide it
+const MODEL_METADATA: Dictionary = {
+	"media_gen/z_turbo_image_generate": {
+		"id": "z_turbo",
+		"name": "Z-Turbo",
+		"default_steps": 9,
+		"supports_edit": false,
+		"supports_mask": false
+	},
+	"media_gen/image_generation": {
+		"id": "qwen",
+		"name": "Qwen",
+		"default_steps": 8,
+		"supports_edit": true,
+		"supports_mask": true
+	}
+}
+
+## Registered AI models for MCP tools
+## Each: {id, name, topic, default_steps, supports_actions: ["create", "edit", "mask_edit"]}
+var ai_models: Array[Dictionary] = []
+
+## Available AI actions
+const AI_ACTIONS: Array[Dictionary] = [
+	{"id": "create", "name": "Create Image", "requires_layer": false, "requires_mask": false},
+	{"id": "edit", "name": "Edit Image", "requires_layer": true, "requires_mask": false},
+	{"id": "mask_edit", "name": "Mask Inpaint", "requires_layer": true, "requires_mask": true}
+]
+
+## Initialize AI models from local metadata (called on _ready)
+func _init_ai_models() -> void:
+	ai_models.clear()
+	for topic in MODEL_METADATA:
+		var meta: Dictionary = MODEL_METADATA[topic]
+		var supports_actions: Array[String] = ["create"]
+		if meta.get("supports_edit", false):
+			supports_actions.append("edit")
+		if meta.get("supports_mask", false):
+			supports_actions.append("mask_edit")
+
+		ai_models.append({
+			"id": meta["id"],
+			"name": meta["name"],
+			"topic": topic,
+			"default_steps": meta["default_steps"],
+			"supports_actions": supports_actions
+		})
+
+
+## Get AI capabilities for MCP tools
+func get_ai_capabilities() -> Dictionary:
+	return {
+		"success": true,
+		"models": ai_models,
+		"actions": AI_ACTIONS,
+		"parameters": {
+			"width": {"min": MIN_IMAGE_RES, "max": MAX_IMAGE_GEN_RES, "default": DEFAULT_IMAGE_GEN_RES, "step": 64},
+			"height": {"min": MIN_IMAGE_RES, "max": MAX_IMAGE_GEN_RES, "default": DEFAULT_IMAGE_GEN_RES, "step": 64},
+			"steps": {"min": 1, "max": 50},
+			"cfg": {"min": 1.0, "max": 20.0, "default": 7.0},
+			"denoise": {"min": 0.0, "max": 1.0, "default": 0.75}
+		},
+		"layers": _get_layers_info()
+	}
+
+
+## Get layer information for capabilities response
+func _get_layers_info() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for layer in layers:
+		var type_name: String
+		match layer.type:
+			LayerV2.Type.IMAGE:
+				type_name = "image"
+			LayerV2.Type.MASK:
+				type_name = "mask"
+			LayerV2.Type.CONTROL:
+				type_name = "control"
+			_:
+				type_name = "unknown"
+		result.append({
+			"name": layer.name,  # Node.name property
+			"type": type_name
+		})
+	return result
+
+
+## Find a model by its ID
+func _find_model_by_id(model_id: String) -> Dictionary:
+	for model in ai_models:
+		if model["id"] == model_id:
+			return model
+	return {}
+
+
+## Find a layer by name
+func _find_layer_by_name(layer_name: String) -> LayerV2:
+	for layer in layers:
+		if layer.name == layer_name:  # Node.name property
+			return layer
+	return null
+
+
+## Execute an AI action (called by MCP tools)
+func execute_ai_action(params: Dictionary) -> Dictionary:
+	var model_id: String = params.get("model", "")
+	var action_id: String = params.get("action", "")
+	var prompt: String = params.get("prompt", "")
+
+	# Validate prompt
+	if prompt.is_empty():
+		return {"error": "Prompt is required", "success": false}
+
+	# Validate model exists
+	var model: Dictionary = _find_model_by_id(model_id)
+	if model.is_empty():
+		return {"error": "Unknown model: %s" % model_id, "success": false}
+
+	# Validate action supported by model
+	if action_id not in model["supports_actions"]:
+		return {"error": "Model '%s' doesn't support action '%s'" % [model_id, action_id], "success": false}
+
+	# Build generation params
+	var gen_params: Dictionary = {
+		"positive_prompt": prompt,
+		"negative_prompt": params.get("negative_prompt", ""),
+		"width": params.get("width", DEFAULT_IMAGE_GEN_RES),
+		"height": params.get("height", DEFAULT_IMAGE_GEN_RES),
+		"steps": params.get("steps", model["default_steps"]),
+		"cfg": params.get("cfg", 7.0),
+		"denoise": params.get("denoise", 0.75),
+		"topic": model["topic"]
+	}
+
+	# Route to appropriate handler based on action
+	match action_id:
+		"create":
+			_current_image_gen_request_id = MediaGen.send_media_gen_request(gen_params)
+			return {"success": true, "request_id": _current_image_gen_request_id, "message": "Image generation started"}
+
+		"edit":
+			var source_layer_name: String = params.get("source_layer", "")
+			var source_layer: LayerV2 = _find_layer_by_name(source_layer_name)
+			if not source_layer:
+				return {"error": "Source layer not found: %s" % source_layer_name, "success": false}
+			if source_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Source layer must be an image layer", "success": false}
+
+			# Get image buffer from layer
+			var image_buffer: PackedByteArray = source_layer.image.save_png_to_buffer()
+			_current_image_gen_request_id = MediaGen.send_media_edit_request(gen_params, image_buffer)
+			return {"success": true, "request_id": _current_image_gen_request_id, "message": "Image edit started"}
+
+		"mask_edit":
+			var source_layer_name: String = params.get("source_layer", "")
+			var mask_layer_name: String = params.get("mask_layer", "")
+
+			var source_layer: LayerV2 = _find_layer_by_name(source_layer_name)
+			if not source_layer:
+				return {"error": "Source layer not found: %s" % source_layer_name, "success": false}
+			if source_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Source layer must be an image layer", "success": false}
+
+			var mask_layer: LayerV2 = _find_layer_by_name(mask_layer_name)
+			if not mask_layer:
+				return {"error": "Mask layer not found: %s" % mask_layer_name, "success": false}
+			if mask_layer.type != LayerV2.Type.MASK:
+				return {"error": "Mask layer must be a mask layer", "success": false}
+
+			# Get image and mask buffers
+			var image_buffer: PackedByteArray = source_layer.image.save_png_to_buffer()
+			var mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(mask_layer.image, Color.WHITE, "white")
+
+			var images_dir: Array = [
+				{"filename": "input_image.png", "buffer": image_buffer},
+				{"filename": "mask.png", "buffer": mask_buffer}
+			]
+			_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(gen_params, images_dir)
+			return {"success": true, "request_id": _current_image_gen_request_id, "message": "Mask edit started"}
+
+	return {"error": "Unknown action: %s" % action_id, "success": false}
+
+#endregion
+
+var canvas_size: = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)
 
 var _custom_cursor: Resource
-var _custom_cursor_shape: int
+var _custom_cursor_shape: int = 0  # Control.CursorShape as int
 var _custom_cursor_hotspot: Vector2
+var _mouse_in_layers_container: bool = false
 
 
 const COMMANDS_SIZE: = 15
@@ -143,11 +346,15 @@ var layers: Array[LayerV2]
 ## Array of selected layers, in order in which they were selected
 var selected_layers: Array[LayerV2] = []
 var selected_mask_layers: Array[LayerV2] = []
+var selected_control_layers: Array[LayerV2] = []
 var is_active_layer_mask: = false
+var is_active_layer_control: = false
 var active_layer: LayerV2:
 	get:
-		if selected_layers.is_empty() and selected_mask_layers.is_empty():
-			return layers[0] if not layers.is_empty() else null 
+		if selected_layers.is_empty() and selected_mask_layers.is_empty() and selected_control_layers.is_empty():
+			return layers[0] if not layers.is_empty() else null
+		if is_active_layer_control:
+			return selected_control_layers.get(0) if not selected_control_layers.is_empty() else null
 		if is_active_layer_mask:
 			return selected_mask_layers.get(0) if not selected_mask_layers.is_empty() else null
 		else:
@@ -164,6 +371,7 @@ const MARCHING_ANTS_SPEED: float = 10.0  # pixels per second
 var _selection_is_empty: bool = true  # Cached flag to avoid O(W×H) scan on every pixel check
 var _cached_selection_edges: Array[Vector2i] = []  # Cached edge pixels for marching ants
 var _edges_cache_valid: bool = false  # Whether edge cache is up to date
+var _selection_bbox: Rect2i = Rect2i()  # Bounding box of selection for optimized iteration
 
 var active_tool: BaseTool:
 	set(value):
@@ -180,6 +388,9 @@ var _previous_tool_before_eraser: BaseTool = null  # Store tool to return to aft
 var _current_image_gen_request_id: String = ""
 
 func _ready() -> void:
+	# Initialize AI models registry for MCP tools
+	_init_ai_models()
+
 	layer_cards_popup_panel.hide()
 	image_gen_window.hide()
 	progress_window.hide()
@@ -190,22 +401,29 @@ func _ready() -> void:
 	compose_progress_updated.connect(_on_compose_progress)
 	compose_finished.connect(_on_compose_complete)
 	active_layer_is_mask_layer.connect(_on_active_layer_mask_layer)
+	active_layer_is_control_layer.connect(_on_active_layer_control_layer)
 	# Connect pen inverted signals
 	drawing_tool.pen_inverted_changed.connect(_on_pen_inverted_changed)
 	eraser_tool.pen_normal_detected.connect(_on_pen_normal_detected)
-	render_view_tool.draw_render_rect.connect(_on_draw_rect)
 	# Connect selection changed signal to update UI
 	selection_changed.connect(_on_selection_changed)
 	_setup_selection_popup_menu()
 	# Connect media generation signal to receive generated images
 	MediaGen.pass_image_to_editor.connect(_on_image_received)
+	MediaGen.lock_media_gen_ui.connect(_on_lock_media_gen_ui)
 	
 	var temp_res: = MIN_IMAGE_RES
+	var id_to_select: = 0
+	var counter: = 0
 	while temp_res + 64 <= MAX_IMAGE_GEN_RES:
 		var res: = str(temp_res)
 		image_width_option_button.add_item(res)
-		image_height_option_button.add_item(res)
-		temp_res += 128
+		if temp_res == DEFAULT_IMAGE_GEN_RES:
+			id_to_select = counter
+		temp_res += 64
+		counter += 1
+	
+	image_width_option_button.select(id_to_select)
 	
 	delete_layer.connect(_on_delete_layer)
 	
@@ -218,10 +436,7 @@ func _ready() -> void:
 	else:
 		disable_ai_features(1)
 	
-	Core.client.connection_established.connect(
-		func () -> void:
-			enable_ai_features()
-	)
+	Core.client.connection_established.connect(enable_ai_features)
 	
 	Core.client.connection_error.connect(disable_ai_features)
 	
@@ -235,7 +450,15 @@ func _ready() -> void:
 				enable_ai_features()
 	)
 	
+	input_area_camera.position = layers_container.get_global_rect().get_center()
+	input_area_camera.offset = Vector2.ZERO
+	
+	workflow_option_button.select(0)
+
 	response_layout_toggle()
+
+	# Position drawing area at top-left of viewport on startup
+	call_deferred("_position_view_top_left")
 
 
 func _process(delta: float) -> void:
@@ -245,10 +468,31 @@ func _process(delta: float) -> void:
 		if _marching_ants_timer >= 0.1:  # Update every 100ms
 			_marching_ants_offset = fmod(_marching_ants_offset + 1.0, 8.0)
 			_marching_ants_timer = 0.0
-			layers_container.queue_redraw()
+			selection_overlay.queue_redraw()
+
+	# Update selection mode label based on modifier keys
+	_update_selection_mode_label()
 
 
-func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
+func _update_selection_mode_label() -> void:
+	if not selection_mode_label or not _selection_options_container.visible:
+		return
+
+	var mode_text: String
+	if Input.is_key_pressed(KEY_SHIFT) and Input.is_key_pressed(KEY_ALT):
+		mode_text = "Mode: Intersect"
+	elif Input.is_key_pressed(KEY_SHIFT):
+		mode_text = "Mode: Add"
+	elif Input.is_key_pressed(KEY_ALT):
+		mode_text = "Mode: Subtract"
+	else:
+		mode_text = "Mode: Replace"
+
+	if selection_mode_label.text != mode_text:
+		selection_mode_label.text = mode_text
+
+
+func setup(canvas_size_: Vector2i = Vector2i(DEFAULT_IMAGE_GEN_RES, DEFAULT_IMAGE_GEN_RES)) -> void:
 	# Create layers in order (first created appears at bottom in visual stack)
 	create_new_layer("Background", canvas_size_, Color.WHITE, false)
 	create_new_layer("Canvas", canvas_size_, Color.TRANSPARENT, false, true)
@@ -256,6 +500,7 @@ func setup(canvas_size_: Vector2i = Vector2i(1000, 1000)) -> void:
 
 
 func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true, locked: = false) -> LayerV2:
+	deselect_layers()
 	var layer: = LayerV2.create_drawing_layer(layer_name, dimensions, color)
 	
 	layer.locked = locked
@@ -265,6 +510,7 @@ func create_new_layer(layer_name: String, dimensions: Vector2i, color: Color = C
 	return layer
 
 func create_new_image_layer(layer_name: String, image: Image, select: = true) -> LayerV2:
+	deselect_layers()
 	var layer: = LayerV2.create_image_layer(layer_name, image)
 	
 	add_layer(layer, select)
@@ -273,6 +519,7 @@ func create_new_image_layer(layer_name: String, image: Image, select: = true) ->
 
 
 func create_new_mask_layer(layer_name: String, dimensions: Vector2i, color: Color = Color.TRANSPARENT, select: = true, locked: = false) -> LayerV2:
+	deselect_layers()
 	var layer: = LayerV2.create_mask_layer(layer_name, dimensions, color)
 	
 	layer.locked = locked
@@ -299,12 +546,44 @@ func add_mask_layer(layer: LayerV2, select: = true) -> LayerV2:
 	layers_container.add_child(layer, true)
 
 	layers.append(layer)
-	
+
+	return layer
+
+
+func create_new_control_layer(layer_name: String, dimensions: Vector2i, control_type: LayerV2.ControlType = LayerV2.ControlType.POSE, select: = true) -> LayerV2:
+	var layer: = LayerV2.create_control_layer(layer_name, dimensions, control_type)
+
+	add_control_layer(layer, select)
+
+	return layer
+
+
+func add_control_layer(layer: LayerV2, select: = true) -> LayerV2:
+	layer.tree_exiting.connect(_on_control_layer_tree_exiting.bind(layer))
+
+	var layer_card: = LayerCard.create(self, layer)
+
+	layer_card.layer_selected.connect(_on_layer_card_selected.bind(layer, layer_card))
+	layer_card.layer_deselected.connect(_on_layer_card_deselected.bind(layer, layer_card))
+	layer_card.reorder.connect(_on_layer_card_reorder.bind(layer_card))
+	layer_card.layer_clicked.connect(_on_layer_card_clicked.bind(layer_card))
+
+	control_layer_cards_container.add_child(layer_card)
+	control_layer_cards_container.move_child(layer_card, 0)
+	layer_card.selected = select
+
+	layers_container.add_child(layer, true)
+
+	layers.append(layer)
+
 	return layer
 
 
 func add_layer(layer: LayerV2, select: = true) -> LayerV2:
 	layer.tree_exiting.connect(_on_layer_tree_exiting.bind(layer))
+
+	# Invalidate compose cache when new layer is added (needed for iterative generation)
+	_compose_result_expired = true
 
 	var layer_card: = LayerCard.create(self, layer)
 
@@ -334,27 +613,57 @@ func _on_mask_layer_tree_exiting(layer: LayerV2) -> void:
 	layers.erase(layer)
 
 
+func _on_control_layer_tree_exiting(layer: LayerV2) -> void:
+	selected_control_layers.erase(layer)
+	layers.erase(layer)
+
+
 func _on_layer_card_selected(layer: LayerV2, _layer_card: LayerCard):
 	if not selected_layers.has(layer) and (LayerV2.Type.DRAWING == layer.type or LayerV2.Type.IMAGE == layer.type):
 		selected_layers.append(layer)
 	if not selected_mask_layers.has(layer) and LayerV2.Type.MASK == layer.type:
 		selected_mask_layers.append(layer)
-	if selected_layers.size() > 0 and selected_layers.get(0).type != LayerV2.Type.MASK:
+	if not selected_control_layers.has(layer) and LayerV2.Type.CONTROL == layer.type:
+		selected_control_layers.append(layer)
+
+	# Determine which layer type is now active
+	is_active_layer_control = false
+	is_active_layer_mask = false
+	if selected_control_layers.size() > 0 and selected_control_layers[0].type == LayerV2.Type.CONTROL:
+		is_active_layer_control = true
+		active_layer_is_control_layer.emit(true)
 		active_layer_is_mask_layer.emit(false)
 	elif selected_mask_layers.size() > 0 and selected_mask_layers[0].type == LayerV2.Type.MASK:
+		is_active_layer_mask = true
 		active_layer_is_mask_layer.emit(true)
-	
+		active_layer_is_control_layer.emit(false)
+	elif selected_layers.size() > 0:
+		active_layer_is_mask_layer.emit(false)
+		active_layer_is_control_layer.emit(false)
+
 	check_ai_buttons_toggle()
 
 
 func _on_layer_card_deselected(layer: LayerV2, _layer_card: LayerCard):
 	selected_layers.erase(layer)
 	selected_mask_layers.erase(layer)
-	if selected_layers.size() > 0 and selected_layers.get(0).type != LayerV2.Type.MASK:
+	selected_control_layers.erase(layer)
+
+	# Determine which layer type is now active
+	is_active_layer_control = false
+	is_active_layer_mask = false
+	if selected_control_layers.size() > 0 and selected_control_layers[0].type == LayerV2.Type.CONTROL:
+		is_active_layer_control = true
+		active_layer_is_control_layer.emit(true)
 		active_layer_is_mask_layer.emit(false)
 	elif selected_mask_layers.size() > 0 and selected_mask_layers[0].type == LayerV2.Type.MASK:
+		is_active_layer_mask = true
 		active_layer_is_mask_layer.emit(true)
-	
+		active_layer_is_control_layer.emit(false)
+	elif selected_layers.size() > 0:
+		active_layer_is_mask_layer.emit(false)
+		active_layer_is_control_layer.emit(false)
+
 	check_ai_buttons_toggle()
 
 
@@ -362,18 +671,23 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 	if button_index == MOUSE_BUTTON_LEFT:
 
 		if layer_card.layer.locked: return # ignore locked layers
-		
+
 		if Input.is_key_pressed(KEY_CTRL):
 			layer_card.selected = not layer_card.selected
 		elif layer_card.selected:
 			layer_card.selected = false
 		else:
-			if layer_card.layer.type != LayerV2.Type.MASK:
-				for c: LayerCard in layer_cards_container.get_children():
-					c.selected = false
-			else:
-				for c: LayerCard in mask_layer_cards_container.get_children():
-					c.selected = false
+			# Deselect other layers in the same category
+			match layer_card.layer.type:
+				LayerV2.Type.MASK:
+					for c: LayerCard in mask_layer_cards_container.get_children():
+						c.selected = false
+				LayerV2.Type.CONTROL:
+					for c: LayerCard in control_layer_cards_container.get_children():
+						c.selected = false
+				_:  # IMAGE, DRAWING, SPEECH_BUBBLE
+					for c: LayerCard in layer_cards_container.get_children():
+						c.selected = false
 			layer_card.selected = true
 
 
@@ -442,8 +756,19 @@ func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 
 	_custom_cursor_shape = shape
 	_custom_cursor_hotspot = hotspot
 
-	if layers_container.get_rect().has_point(layers_container.get_local_mouse_position()):
-		Input.set_custom_mouse_cursor(image, shape, hotspot)
+	if image:
+		# Only apply cursor globally if mouse is inside the drawing area
+		if _mouse_in_layers_container:
+			Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
+		# Set the control's cursor to use the custom image
+		layers_container.mouse_default_cursor_shape = Control.CURSOR_ARROW
+	else:
+		# Clear any custom cursor image
+		Input.set_custom_mouse_cursor(null)
+		# Set the control's default cursor shape directly
+		# This is the correct way to change cursor over Control nodes
+		# Cast int to CursorShape enum
+		layers_container.mouse_default_cursor_shape = shape as Control.CursorShape
 
 func reorder_layer(layer: LayerV2, index: int) -> void:
 	if not layer.has_meta("layer_card") or not layer.get_meta("layer_card") is LayerCard:
@@ -478,6 +803,10 @@ func reorder_layer(layer: LayerV2, index: int) -> void:
 # Control with tools is set to stop the mouse events to accommodate for the below input hadnling
 var dragging: = false
 var last_mouse_position: Vector2 = Vector2.ZERO
+
+func _on_layers_container_gui_input(event: InputEvent) -> void:
+	_gui_input(event)
+
 func _gui_input(event: InputEvent) -> void:
 	
 	#region Move Canvas
@@ -503,7 +832,7 @@ func _gui_input(event: InputEvent) -> void:
 	#endregion Move Canvas
 	
 	# if we have a active tool and at least one of selected layers is visible
-	if active_tool and (selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) ):
+	if active_tool and (selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_control_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) ):
 		if active_tool.handle_input_event(event):
 			_compose_result_expired = true
 			saved = false
@@ -512,11 +841,13 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _pan_canvas(relative: Vector2) -> void:
-	input_area_camera.offset -= relative * 1.25 * (1 / input_area_camera.zoom.x) 
+	if input_area_camera.zoom.x == 0.0:
+		return
+	input_area_camera.offset -= relative * PAN_FACTOR * (1 / input_area_camera.zoom.x) 
 
 
 func _zoom(mouse_position: Vector2, factor: float) -> void:
-	if input_area_camera.zoom.x * factor < 0.1 or input_area_camera.zoom.x * factor > 2.5:
+	if input_area_camera.zoom.x * factor < MIN_ZOOM or input_area_camera.zoom.x * factor > MAX_ZOOM:
 		return
 	# Get viewport size (the SubViewport that contains the camera)
 	var viewport_size = input_area_camera.get_viewport().size
@@ -576,15 +907,9 @@ func _handle_selection_shortcuts(event: InputEventKey) -> void:
 
 
 func _draw() -> void:
-	
-	
-	
-	for layer in selected_layers: layer.queue_redraw()
-	for layer in selected_mask_layers: layer.queue_redraw()
-	for c: LayerCard in layer_cards_container.get_children():
-		c.queue_redraw()
-	for c: LayerCard in mask_layer_cards_container.get_children():
-		c.queue_redraw()
+	# NOTE: Do NOT call queue_redraw() on children here - it causes cascading redraws
+	# and severe performance issues. Children should manage their own redraw schedules.
+	pass
 
 ## Delegates drag handling functions to given layer.[br]
 ## See [method Control.set_drag_forwarding].
@@ -656,21 +981,40 @@ func _on_pen_normal_detected() -> void:
 func has_selection() -> bool:
 	return selection_mask != null and not _selection_is_empty
 
-## Update the cached _selection_is_empty flag - call this when selection changes
+## Update the cached _selection_is_empty flag and bounding box - call this when selection changes
 func _update_selection_cache() -> void:
 	_edges_cache_valid = false  # Invalidate edges cache too
 	if not selection_mask:
 		_selection_is_empty = true
+		_selection_bbox = Rect2i()
 		_cached_selection_edges.clear()
 		return
-	# Scan to determine if selection is empty
-	for y in selection_mask.get_height():
-		for x in selection_mask.get_width():
+
+	# Scan to determine if selection is empty and calculate bounding box
+	var w = selection_mask.get_width()
+	var h = selection_mask.get_height()
+	var min_x = w
+	var min_y = h
+	var max_x = -1
+	var max_y = -1
+	var found_any = false
+
+	for y in h:
+		for x in w:
 			if selection_mask.get_pixel(x, y).r > 0.5:
-				_selection_is_empty = false
-				return
-	_selection_is_empty = true
-	_cached_selection_edges.clear()
+				found_any = true
+				min_x = mini(min_x, x)
+				min_y = mini(min_y, y)
+				max_x = maxi(max_x, x)
+				max_y = maxi(max_y, y)
+
+	if found_any:
+		_selection_is_empty = false
+		_selection_bbox = Rect2i(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+	else:
+		_selection_is_empty = true
+		_selection_bbox = Rect2i()
+		_cached_selection_edges.clear()
 
 ## Get cached selection edges for marching ants rendering
 func get_selection_edges() -> Array[Vector2i]:
@@ -678,15 +1022,21 @@ func get_selection_edges() -> Array[Vector2i]:
 		return _cached_selection_edges
 
 	_cached_selection_edges.clear()
-	if not selection_mask:
+	if not selection_mask or _selection_is_empty:
 		_edges_cache_valid = true
 		return _cached_selection_edges
 
 	var w = selection_mask.get_width()
 	var h = selection_mask.get_height()
 
-	for y in h:
-		for x in w:
+	# Only iterate over bounding box instead of entire image for performance
+	var x_start = _selection_bbox.position.x
+	var y_start = _selection_bbox.position.y
+	var x_end = x_start + _selection_bbox.size.x
+	var y_end = y_start + _selection_bbox.size.y
+
+	for y in range(y_start, y_end):
+		for x in range(x_start, x_end):
 			if selection_mask.get_pixel(x, y).r > 0.5:
 				# Check if this is an edge pixel (has unselected neighbor)
 				var is_edge = false
@@ -708,6 +1058,7 @@ func create_selection_mask(size_: Vector2i) -> void:
 	selection_mask = Image.create(size_.x, size_.y, false, Image.FORMAT_L8)
 	selection_mask.fill(Color.BLACK)
 	_selection_is_empty = true
+	_selection_bbox = Rect2i()
 	_edges_cache_valid = false
 	_cached_selection_edges.clear()
 
@@ -716,10 +1067,11 @@ func clear_selection() -> void:
 	if selection_mask:
 		selection_mask.fill(Color.BLACK)
 	_selection_is_empty = true
+	_selection_bbox = Rect2i()
 	_edges_cache_valid = false
 	_cached_selection_edges.clear()
 	selection_changed.emit()
-	queue_redraw()
+	selection_overlay.queue_redraw()
 
 ## Select the entire canvas
 func select_all() -> void:
@@ -793,12 +1145,6 @@ func is_pixel_selected(x: int, y: int) -> bool:
 
 #region LayersCards PopUp panel
 func _on_new_layer_button_pressed() -> void:
-	# clear layers and create a new one
-	for c: LayerCard in layer_cards_container.get_children():
-		c.selected = false
-	for c: LayerCard in mask_layer_cards_container.get_children():
-		c.selected = false
-	
 	create_new_layer("Layer", canvas_size)
 
 
@@ -861,7 +1207,11 @@ func _on_smudge_tool_button_toggled(toggled_on: bool) -> void:
 	active_tool = smudge_tool if toggled_on else null
 
 func _on_layers_container_mouse_entered() -> void:
-	Input.set_custom_mouse_cursor(_custom_cursor, _custom_cursor_shape, _custom_cursor_hotspot)
+	_mouse_in_layers_container = true
+	# Re-apply custom cursor image when entering the layers container
+	# The mouse_default_cursor_shape property handles the cursor shape automatically
+	if _custom_cursor:
+		Input.set_custom_mouse_cursor(_custom_cursor, Input.CURSOR_ARROW, _custom_cursor_hotspot)
 
 
 func _on_add_image_button_pressed() -> void:
@@ -889,6 +1239,7 @@ func _on_file_selected(fp: String) -> void:
 	_tools_option_button.item_selected.emit(0)
 
 func _on_layers_container_mouse_exited() -> void:
+	_mouse_in_layers_container = false
 	Input.set_custom_mouse_cursor(null)
 
 
@@ -1143,6 +1494,9 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		4: active_tool = null; _on_add_image_button_pressed()
 		5: active_tool = eyedropper_tool
 		6: active_tool = magic_wand_tool
+		7: active_tool = rectangle_select_tool
+		8: active_tool = lasso_select_tool
+		9: active_tool = pose_editor_tool
 		_: pass
 	
 
@@ -1179,7 +1533,7 @@ func compose_final_image(show_dialog: = true) -> Image:
 	
 	if show_dialog:
 		# Show progress window
-		progress_window.popup()
+		progress_window.popup_centered()
 		progress_window_label.text = "Composing image..."
 		progress_window_bar.value = 0
 	
@@ -1307,9 +1661,25 @@ func _on_compose_finished(image: Image):
 
 # Add this to handle cleanup when the node is being destroyed:
 func _exit_tree():
+	if MediaGen.pass_image_to_editor.is_connected(_on_image_received):
+		MediaGen.pass_image_to_editor.disconnect(_on_image_received)
+	
+	if MediaGen.lock_media_gen_ui.is_connected(_on_lock_media_gen_ui):
+		MediaGen.lock_media_gen_ui.disconnect(_on_lock_media_gen_ui)
+	
+	if Core.client.connection_established.is_connected(enable_ai_features):
+		Core.client.connection_established.disconnect(enable_ai_features)
+	
+	if Core.client.connection_error.is_connected(disable_ai_features):
+		Core.client.connection_error.disconnect(disable_ai_features)
+	
+	if Core.client.connection_closed.is_connected(disable_ai_features):
+		Core.client.connection_closed.disconnect(disable_ai_features)
+	
 	if _current_compose_thread != null and _current_compose_thread.is_alive():
 		_current_compose_thread.wait_to_finish()
 	_current_compose_thread = null
+ 
 # Static helper functions that don't access node properties
 static func _get_rotated_corners_static(position_: Vector2, size_: Vector2, rotation_: float, pivot_offset_: Vector2) -> Array[Vector2]:
 	var corners: Array[Vector2] = []
@@ -1380,10 +1750,11 @@ func _on_send_prompt_button_pressed() -> void:
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
 	SingletonObject.main_scene.add_child(toast)
+	save_prompt_to_history(params["positive_prompt"], params["negative_prompt"])
+	prompt_text_edit.text = ""
 
 
 func _on_image_received(filename:String, request_id: String, buffer: PackedByteArray) -> void:
-	# Always hide progress window when receiving response (success or failure)
 	if request_id != _current_image_gen_request_id:
 		return
 	send_prompt_button.modulate = Color.WHITE
@@ -1454,7 +1825,7 @@ func _on_edit_button_pressed() -> void:
 
 func _on_edit_img_button_pressed() -> void:
 	if ai_request_type == AI_REQUEST.EDIT_IMAGE:
-		if selected_layers.size() < 1:
+		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
 			return
 		
 		var layer_to_send: LayerV2 = selected_layers[0]
@@ -1492,7 +1863,7 @@ func _on_edit_img_button_pressed() -> void:
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
 	elif  ai_request_type == AI_REQUEST.MASK_EDIT:
-		if selected_layers.size() < 1:
+		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
 			return
 		if !selected_layers[0].has_meta("linked_mask_layer") and selected_mask_layers.size() < 1:
 			display_message("Mask Required", "Select a mask layer for masked editing.")
@@ -1501,10 +1872,6 @@ func _on_edit_img_button_pressed() -> void:
 		
 		if image_layer_to_edit == null:
 			return
-		#for i: LayerV2 in selected_layers:
-			#if i.selected:
-				#image_layer_to_edit = i
-				#break
 		if prompt_text_edit.text.is_empty():
 			display_message("Input Required", "Please enter a positive prompt for masked image editing.")
 			return
@@ -1534,7 +1901,6 @@ func _on_edit_img_button_pressed() -> void:
 			}
 		images_dir.append(image_file)
 		
-		#var mask_dir: = {}
 		var mask_color_channel: = ""
 		if image_layer_to_edit.has_meta("linked_mask_layer"):
 			var i: LayerV2 = image_layer_to_edit.get_meta("linked_mask_layer")
@@ -1584,7 +1950,7 @@ func _on_edit_img_button_pressed() -> void:
 					}
 					images_dir.append(mask_file)
 		
-		var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
+		var toast: = ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
 		SingletonObject.main_scene.add_child(toast)
 		
 		var selective_editing_params: Dictionary = get_params_image_gen()
@@ -1592,6 +1958,7 @@ func _on_edit_img_button_pressed() -> void:
 		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(selective_editing_params, images_dir)
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
+	prompt_text_edit.text = ""
 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 	advanced_settings_container.visible = toggled_on
@@ -1600,8 +1967,9 @@ func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 func get_params_image_gen() -> Dictionary:
 	if prompt_text_edit.text.is_empty():
 		return {}
-		
-	var image_res: int = image_width_line_edit.text.to_int() if !image_width_line_edit.text.is_empty() and image_width_line_edit.text.is_valid_int() else DEFAULT_IMAGE_GEN_RES
+	
+	var idx: = image_width_option_button.selected
+	var image_res: int = image_width_option_button.get_item_text(idx).to_int()
 	return {
 		"positive_prompt" = prompt_text_edit.text,
 		"negative_prompt" = negative_text_edit.text,
@@ -1671,14 +2039,12 @@ func _on_mask_edit_button_pressed() -> void:
 
 #region LayersCards Masks PopUp panel
 func _on_new_mask_layer_button_pressed() -> void:
-	# clear layers and create a new one
-	for c: LayerCard in layer_cards_container.get_children():
-		c.selected = false
-	
-	for c: LayerCard in mask_layer_cards_container.get_children():
-		c.selected = false
-	
-	create_new_mask_layer("Mask Layer", canvas_size)
+	var new_layer_size: = Vector2.ZERO
+	if active_layer != null:
+		new_layer_size = active_layer.base_image.get_size()
+	else:
+		new_layer_size = canvas_size
+	create_new_mask_layer("Mask Layer", new_layer_size)
 	_on_mask_color_option_button_item_selected(mask_color_option_button.selected)
 
 
@@ -1697,6 +2063,43 @@ func _on_copy_mask_layer_button_pressed() -> void:
 
 func _on_merge_mask_layers_button_pressed() -> void:
 	merge_layers(selected_mask_layers.duplicate())
+
+
+func _on_new_control_layer_button_pressed() -> void:
+	# Deselect other layers
+	for c: LayerCard in layer_cards_container.get_children():
+		c.selected = false
+	for c: LayerCard in mask_layer_cards_container.get_children():
+		c.selected = false
+	for c: LayerCard in control_layer_cards_container.get_children():
+		c.selected = false
+
+	create_new_control_layer("Pose Layer", canvas_size, LayerV2.ControlType.POSE)
+
+
+func _on_delete_control_layer_button_pressed() -> void:
+	for i: LayerCard in control_layer_cards_container.get_children():
+		if i.selected:
+			i.delete_layer()
+
+
+func _on_open_pose_editor_button_pressed() -> void:
+	# Open the 3D pose editor window
+	if pose_editor_window:
+		pose_editor_window.show()
+		pose_editor_window.grab_focus()
+
+
+func _on_pose_editor_window_close_requested() -> void:
+	if pose_editor_window:
+		pose_editor_window.hide()
+
+
+func _on_pose_editor_panel_pose_rendered(image: Image) -> void:
+	# Update the active CONTROL layer with the rendered 2D pose image
+	if active_layer and active_layer.type == LayerV2.Type.CONTROL:
+		active_layer.image = image
+		active_layer.queue_redraw()
 
 #endregion LayersCards Masks PopUp panel
 
@@ -1749,6 +2152,32 @@ func _on_active_layer_mask_layer(is_mask: bool) -> void:
 		_tools_option_button.set_item_disabled(3, false)
 		_tools_option_button.set_item_disabled(4, false)
 		color_picker_button.color = last_selected_color
+
+
+func _on_active_layer_control_layer(is_control: bool) -> void:
+	is_active_layer_control = is_control
+
+	if is_control:
+		# Check if it's a POSE control layer and auto-select pose tool
+		if active_layer and active_layer.control_type == LayerV2.ControlType.POSE:
+			_tools_option_button.select(9)  # Pose Editor
+			_tools_option_button.item_selected.emit(9)
+		# Disable drawing tools that don't apply to control layers
+		_tools_option_button.set_item_disabled(0, true)  # Brush
+		_tools_option_button.set_item_disabled(1, true)  # Eraser
+		_tools_option_button.set_item_disabled(2, true)  # Bucket
+		_tools_option_button.set_item_disabled(3, true)  # Smudge
+		_tools_option_button.set_item_disabled(4, true)  # Add Image
+	else:
+		# Re-enable tools when switching away from control layer
+		_tools_option_button.set_item_disabled(0, false)
+		_tools_option_button.set_item_disabled(1, false)
+		_tools_option_button.set_item_disabled(2, false)
+		_tools_option_button.set_item_disabled(3, false)
+		_tools_option_button.set_item_disabled(4, false)
+		# Switch back to brush tool
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
 
 
 func _on_image_gen_window_close_requested() -> void:
@@ -1845,37 +2274,12 @@ func check_ai_buttons_toggle() -> void:
 		edit_img_button.tooltip_text = _edit_img_base_tooltip
 
 
-func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
-	if not toggled_on:
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
-		_tools_option_button.grab_focus()
-		draw_render_view = false
-		_on_draw_rect(_render_view_rect)
-		return
-	
-	active_tool = render_view_tool if toggled_on else null
-	render_viewport_button.release_focus()
-	draw_render_view = true
-	_on_draw_rect(_render_view_rect)
-	render_view_control.queue_redraw()
-
 var draw_render_view: = false
-var _render_view_rect: = Rect2(Vector2.ZERO, Vector2.ZERO)
+
 func _on_draw_rect(rect: Rect2) -> void:
 	render_view_control.draw_render_view = draw_render_view
-	#render_view_control.rect_start = rect.position
-	#render_view_control.rect_end = rect.end
 	render_view_control._rect = rect
 	render_view_control.queue_redraw()
-	#_rect_start_global_pos = rect_pos
-	#_rect_end_global_pos = rect_size
-
-
-func _on_get_texture_button_pressed() -> void:
-	var texture: ViewportTexture = render_view_control.get_render_viewport_texture()
-	var image: = texture.get_image()
-	create_new_image_layer("render_viewport layer",image)
 
 
 func _on_workflow_option_button_item_selected(index: int) -> void:
@@ -1883,43 +2287,65 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 		0:  # Z-Turbo
 			current_workflow = Workflow.Z_TURBO
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.Z_TURBO]
+			edit_img_button.disabled = true
+			send_mask_edit_button.disabled = true
 		1:  # Qwen
 			current_workflow = Workflow.QWEN
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
+			edit_img_button.disabled = false
+			send_mask_edit_button.disabled = false
 
 
 func toggle_enable_ai_fields(enable: bool = true) -> void:
 	send_action_button.disabled = not enable
 	send_prompt_button.disabled = not enable
-	edit_img_button.disabled = not enable
-	send_mask_edit_button.disabled = not enable
 	prompt_button.disabled = not enable
 	negative_prompt_mic_button.disabled = not enable
 	positive_prompt_mic_button.disabled = not enable
 	prompt_text_edit.editable = enable
 	negative_text_edit.editable = enable
 	advanced_settings_check_button.disabled = not enable
+	if workflow_option_button.selected == 0:
+		edit_img_button.disabled = true
+		send_mask_edit_button.disabled = true
+	else:
+		edit_img_button.disabled = not enable
+		send_mask_edit_button.disabled = not enable
 	workflow_option_button.disabled = not enable
 
-
-func disable_ai_features(_error: int) -> void:
-			connection_label.text = "Not Connected to backend.\nConnect to backend to \naccess AI Features."
-			connection_label.show()
-			toggle_enable_ai_fields(false)
+func disable_ai_features(error: int) -> void:
+	if error != 0:
+		connection_label.text = "Not Connected to backend.\nConnect to backend to \naccess AI Features."
+		connection_label.show()
+	toggle_enable_ai_fields(false)
 
 func enable_ai_features() -> void:
-	connection_label.hide()
+	if connection_label.visible:
+		connection_label.hide()
 	toggle_enable_ai_fields()
 
 
-func _on_center_view_button_pressed() -> void:
-	if active_layer == null:
-		return
-	var pos: = active_layer.get_rect().get_center()
+func _on_lock_media_gen_ui(lock: bool = true) -> void:
+	if lock:
+		disable_ai_features(0)
+	else:
+		enable_ai_features()
 
-	pos = input_area_camera.get_canvas_transform().basis_xform(pos)
-	input_area_camera.offset = pos
-	input_area_camera.queue_redraw()
+
+func _on_center_view_button_pressed() -> void:
+	center_view()
+
+
+## Position the drawing area at the top-left of the viewport
+func _position_view_top_left() -> void:
+	var viewport_size = input_area_camera.get_viewport().size
+	# Camera2D centers on its position, so offset to put content at top-left
+	# Account for zoom: at zoom 0.5, we see 2x the area, so offset needs adjustment
+	var zoom_factor = input_area_camera.zoom.x
+	# Offset camera so origin (0,0) appears at top-left with some padding
+	var padding = Vector2(20, 20)
+	input_area_camera.offset = Vector2.ZERO
+	input_area_camera.position = (Vector2(viewport_size) / 2.0) / zoom_factor - padding
 
 
 func _on_zoom_out_button_pressed() -> void:
@@ -1928,6 +2354,23 @@ func _on_zoom_out_button_pressed() -> void:
 																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																										
 func _on_zoom_in_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.15)
+
+
+func center_view(layer: LayerV2 = null) -> void:
+	if layer == null and active_layer != null:
+		layer = active_layer
+	else:
+		layer = layers_container.get_child(0)
+	if input_area_camera != null and layer != null:
+		input_area_camera.position = layer.get_global_rect().get_center()
+		input_area_camera.offset = Vector2.ZERO
+
+
+func deselect_layers() -> void:
+	for c: LayerCard in layer_cards_container.get_children():
+		c.selected = false
+	for c: LayerCard in mask_layer_cards_container.get_children():
+		c.selected = false
 
 
 #region Selection UI
@@ -1999,3 +2442,257 @@ func _on_fill_selection_color_changed(color: Color) -> void:
 	fill_selection(color)
 
 #endregion
+
+func _on_get_texture_button_pressed() -> void:
+	# Ensure the render view rectangle exists and has a valid size
+	if not render_view_control._rect.size.x > 0 or not render_view_control._rect.size.y > 0:
+		display_message("Error", "Render view rectangle is empty or invalid.")
+		return
+
+	# Capture the image from the defined region
+	var image: Image = await compose_region_image(render_view_control._rect)
+	if not image.is_empty():
+		create_new_image_layer("Rendered Viewport Layer", image)
+		# Optionally clear the render view rect and deactivate the tool after capture
+		render_view_control._rect = Rect2() # Reset the rectangle
+		render_view_control.queue_redraw()
+		render_viewport_button.set_pressed_no_signal(false) # Untoggle the button
+		active_tool = null # Or go back to default tool (brush)
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+
+
+func compose_region_image(region: Rect2, show_dialog: = true) -> Image:
+	if region.size.x <= 0 or region.size.y <= 0:
+		push_error("Cannot compose image for an empty or invalid region: %s" % region)
+		return Image.new()
+
+	if _current_compose_thread != null and _current_compose_thread.is_alive():
+		print("Compose already running, ignoring request for region")
+		return Image.new()
+
+	if _current_compose_thread != null:
+		if _current_compose_thread.is_alive():
+			_current_compose_thread.wait_to_finish()
+		_current_compose_thread = null
+
+	if show_dialog:
+		progress_window.popup_centered()
+		progress_window_label.text = "Composing region image..."
+		progress_window_bar.value = 0
+
+	var layer_data: Array[Dictionary] = []
+	var layer_nodes = layers_container.get_children().filter(func(n): return n is LayerV2)
+
+	for layer in layer_nodes:
+		if layer is LayerV2 and layer.visible and layer.image and not layer.image.is_empty():
+			layer_data.append({
+				"image": layer.image,
+				"position": layer.position,
+				"rotation": layer.rotation,
+				"pivot_offset": layer.pivot_offset,
+				"size": layer.size
+			})
+
+	_current_compose_thread = Thread.new()
+	_current_compose_thread.start(_compose_image_region_thread_worker.bind(layer_data, region))
+
+	var img = await compose_finished # This signal currently emits _compose_result_image
+	saved = true
+	return img
+
+func _compose_image_region_thread_worker(layer_data: Array[Dictionary], region: Rect2):
+	print("Starting compose region worker thread for region: %s" % region)
+	var result_image = _compose_final_image_worker_for_region(layer_data, region)
+	call_deferred("_on_compose_finished", result_image) # Use existing signal
+
+
+func _compose_final_image_worker_for_region(layer_data: Array[Dictionary], region: Rect2) -> Image:
+	if layer_data.is_empty() or region.size.x <= 0 or region.size.y <= 0:
+		return Image.new()
+
+	var width = int(region.size.x)
+	var height = int(region.size.y)
+	var output_image := Image.create(width, height, false, Image.FORMAT_RGBA8)
+	output_image.fill(Color(0, 0, 0, 0)) # Transparent background
+
+	# Estimate total pixels for progress reporting more accurately
+	# Only layers that potentially intersect the region will contribute significantly
+	var estimated_pixels_per_layer = width * height # Max possible contribution
+	var total_pixels = estimated_pixels_per_layer * layer_data.size()
+	var processed_pixels = 0
+	# Update progress every 1% or 1000 pixels, whichever is larger
+	var progress_update_interval: int = max(1000, int(total_pixels / 100.0))
+	if progress_update_interval == 0: progress_update_interval = 1 # Avoid division by zero
+
+	# Blend all layers onto the output image
+	for layer_idx in range(layer_data.size()):
+		var data = layer_data[layer_idx]
+		var layer_image = data.image
+		
+		if not layer_image or layer_image.is_empty():
+			processed_pixels += width * height # Assume full region skipped for progress
+			continue
+		
+		var rotation_rad = data.rotation
+		var pivot = data.pivot_offset
+		var layer_pos = data.position
+		
+		# Process each pixel in the output image space
+		for out_y in range(height):
+			for out_x in range(width):
+				# Get global position corresponding to output_image pixel
+				var global_pos = Vector2(out_x, out_y) + region.position
+				
+				# Convert to layer local space (accounting for rotation)
+				var local_pos = _global_to_layer_space_static(global_pos, layer_pos, rotation_rad, pivot)
+				
+				# Check if the point is within the layer's image
+				var img_x = int(local_pos.x)
+				var img_y = int(local_pos.y)
+				
+				if img_x >= 0 and img_x < layer_image.get_width() and img_y >= 0 and img_y < layer_image.get_height():
+					var src_color = layer_image.get_pixel(img_x, img_y)
+					
+					if src_color.a > 0.01: # Skip fully transparent pixels
+						var dst_color = output_image.get_pixel(out_x, out_y)
+						var blended = _blend_colors(dst_color, src_color)
+						output_image.set_pixel(out_x, out_y, blended)
+				
+				processed_pixels += 1
+				
+				if processed_pixels % progress_update_interval == 0:
+					var progress = float(processed_pixels) / float(total_pixels)
+					call_deferred("_emit_progress", progress)
+	
+	return output_image
+
+
+func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
+	if not toggled_on:
+		_tools_option_button.select(0)
+		_tools_option_button.item_selected.emit(0)
+		_tools_option_button.grab_focus()
+		render_view_control.draw_render_view = false
+		render_view_control.queue_redraw()
+		return
+	
+	active_tool = render_view_tool 
+	render_viewport_button.release_focus()
+	render_view_control.draw_render_view = true
+	render_view_control.queue_redraw()
+
+#region Gen AI Prompt History
+func _on_prompt_history_button_pressed() -> void:
+	var hist_window: = Window.new()
+	var root_vbox_container: = VBoxContainer.new()
+	var panel: = PanelContainer.new()
+	var scroll_container: = ScrollContainer.new()
+	var label: = Label.new()
+	
+	add_child(hist_window)
+	
+	hist_window.size = Vector2i(400, 300)
+	hist_window.title = "Prompt History"
+	
+	hist_window.add_child(root_vbox_container)
+	root_vbox_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root_vbox_container.set_offsets_preset(Control.PRESET_FULL_RECT)
+	root_vbox_container.add_theme_constant_override("separation", 0)
+	
+	var content_margin: = MarginContainer.new()
+	root_vbox_container.add_child(content_margin)
+	content_margin.set_h_size_flags(Control.SIZE_EXPAND_FILL)
+	content_margin.set_v_size_flags(Control.SIZE_EXPAND_FILL)
+	
+	content_margin.add_child(panel)
+	panel.set_h_size_flags(Control.SIZE_EXPAND_FILL)
+	panel.set_v_size_flags(Control.SIZE_EXPAND_FILL)
+	
+	panel.add_child(scroll_container)
+	scroll_container.set_h_size_flags(Control.SIZE_EXPAND_FILL)
+	scroll_container.set_v_size_flags(Control.SIZE_EXPAND_FILL)
+	
+	scroll_container.add_theme_constant_override("h_scroll_separation", 0)
+	scroll_container.add_theme_constant_override("v_scroll_separation", 0)
+	
+	scroll_container.add_child(label)
+	label.set_h_size_flags(Control.SIZE_EXPAND_FILL)
+	label.set_v_size_flags(Control.SIZE_SHRINK_BEGIN)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	label.text = get_gen_ai_history()
+
+	label.add_theme_color_override("font_color", Color.WHITE)
+
+	hist_window.close_requested.connect(func() -> void:
+		hist_window.queue_free()
+	)
+	
+	hist_window.popup()
+
+
+func get_gen_ai_history() -> String:
+	var file_path = SingletonObject.GEN_AI_HIST_FILE_PATH
+	var file = FileAccess.open(file_path, FileAccess.READ)
+
+	if file:
+		var content = file.get_as_text()
+		file.close()
+		if content.is_empty():
+			return "No History Found"
+		return content
+	else:
+		return "No History Found"
+
+
+func _csv_escape(text: String) -> String:
+	var needs_quoting = text.contains(",") or text.contains("\"") or text.contains("\n")
+	var escaped_text = text.replace("\"", "\"\"")
+	
+	if needs_quoting:
+		return "\"" + escaped_text + "\""
+	else:
+		return escaped_text
+
+
+func save_prompt_to_history(positive_prompt: String, negative_prompt: String) -> void:
+	var file_path = SingletonObject.GEN_AI_HIST_FILE_PATH
+	
+	var current_time: = Time.get_datetime_string_from_system(true, true)
+	
+	var escaped_time: = _csv_escape(current_time)
+	var escaped_positive_prompt: = _csv_escape(positive_prompt.strip_edges())
+	var escaped_negative_prompt: = _csv_escape(negative_prompt.strip_edges())
+	
+	var history_entry: = "%s,%s,%s\n" % [escaped_time, escaped_positive_prompt, escaped_negative_prompt]
+	
+	var file: = FileAccess.open(file_path, FileAccess.READ_WRITE)
+	if file:
+		if file.get_length() == 0:
+			file.store_string(_csv_escape("Timestamp") + "," + _csv_escape("Positive Prompt") + "," + _csv_escape("Negative Prompt") + "\n")
+		
+		file.seek_end()
+		file.store_string(history_entry)
+		file.close()
+		print("Prompt saved to history (CSV): %s" % history_entry.strip_edges())
+	else:
+		push_error("Failed to open prompt history file for writing: %s" % file_path)
+
+#endregion Gen AI Prompt History
+
+var sprite_anim_selected: = ""
+var spritesheet_frames: = ""
+var spritesheet_anim_is_active: = false
+func _on_sprite_sheet_check_button_toggled(toggled_on: bool) -> void:
+	spritesheet_settings_container.visible = toggled_on
+	spritesheet_anim_is_active = toggled_on
+
+
+func _on_animation_option_button_item_selected(index: int) -> void:
+	sprite_anim_selected =  animation_option_button.get_item_text(index)
+	spritesheet_anim_is_active = spritesheet_settings_container.visible
+
+
+func _on_animation_frames_option_button_item_selected(index: int) -> void:
+	spritesheet_frames = animation_frames_option_button.get_item_text(index)
+	spritesheet_anim_is_active = spritesheet_settings_container.visible

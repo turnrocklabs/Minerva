@@ -12,6 +12,7 @@ static var graphics_editor_scene = preload("res://Scenes/GraphicsEditorV2.tscn")
 
 signal content_changed()
 signal save_dialog(dialog_result: DialogResult)
+signal note_ready_for_chat(note: Note)  ## Emitted when "Send to LLM" note is created and ready
 enum DialogResult { SAVE, CANCEL, CLOSE }
 
 # Flags to represent the saved states
@@ -37,6 +38,9 @@ var kanban_board: AutocoderKanbanBoard
 
 @onready var autowrap_button: Button = %AutowrapButton
 @onready var mic_button: Button = %MicButton
+@onready var code_syntax_button: IconsButton = $VBoxContainer/ButtonsHBoxContainer/CodeSyntaxButton
+@onready var find_button: IconsButton = %FindButton
+@onready var reload_button: IconsButton = %reloadButton
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -100,7 +104,8 @@ var file: String:
 		if code_edit != null:
 			if code_syntax_enabled:
 				code_edit.syntax_highlighter = update_code_hightlighter(file)
-		%reloadButton.disabled = false
+		if reload_button != null:
+			reload_button.disabled = false
 
 #var file_path: String
 var type: Type
@@ -252,10 +257,24 @@ func _ready():
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
+		code_syntax_button.hide()
+		find_button.hide()
+		%btnApplyDiff.hide()
+		reload_button.hide()
+		
+		mic_button.queue_free()
+		autowrap_button.queue_free()
+		code_syntax_button.queue_free()
+		find_button.queue_free()
+		find_string_container.queue_free()
+		jump_to_line_panel.queue_free()
+		%btnApplyDiff.queue_free()
+		reload_button.queue_free()
 	
-	text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
-	text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
-	text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
+	if type == Type.TEXT:
+		text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
+		text_is_incoplete.pressed.connect(_on_close_warrning.bind(text_is_incoplete))
+		text_is_smaller_and_incoplete.pressed.connect(_on_close_warrning.bind(text_is_smaller_and_incoplete))
 
 
 func _exit_tree() -> void:
@@ -802,14 +821,16 @@ func add_new_line() -> void:
 
 
 func undo_action():
-	if Type.TEXT != type:
-		return
-	
-	code_edit.undo()
-	code_edit.grab_focus()
-	text_is_smaller.visible = false
-	text_is_incoplete.visible = false
-	text_is_smaller_and_incoplete.visible = false
+	match type:
+		Type.TEXT:
+			code_edit.undo()
+			code_edit.grab_focus()
+			text_is_smaller.visible = false
+			text_is_incoplete.visible = false
+			text_is_smaller_and_incoplete.visible = false
+		Type.GRAPHICS:
+			if graphics_editor:
+				graphics_editor.undo_command()
 
 func clear_text():
 	if Type.TEXT != type:
@@ -834,19 +855,32 @@ func _supports_note():
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
 func _create_note() -> Note:
-	
+	print("[Editor] _create_note() called, type=%s" % type)
+
 	if not _supports_note():
+		print("[Editor] _create_note: type not supported, returning null")
 		return null
 
 	var note: Note
 
 	match type:
 		Type.TEXT:
+			print("[Editor] Creating TEXT note...")
 			note = Note.create_text_note("Editor Note", code_edit.text)
 		Type.GRAPHICS:
-			note = Note.create_image_note("Editor Note", await graphics_editor.compose_final_image())
-	
+			print("[Editor] Creating GRAPHICS note, calling compose_final_image()...")
+			var image = await graphics_editor.compose_final_image()
+			if image:
+				print("[Editor] compose_final_image() returned: %s (size: %dx%d, format: %s)" % [image, image.get_width(), image.get_height(), image.get_format()])
+				if image.is_empty():
+					push_error("[Editor] compose_final_image() returned an empty image!")
+			else:
+				push_error("[Editor] compose_final_image() returned null!")
+			note = Note.create_image_note("Editor Note", image)
+			print("[Editor] Image note created: %s" % note)
+
 	note.enabled = true
+	print("[Editor] _create_note() returning note: %s" % note)
 
 	return note
 
@@ -862,6 +896,7 @@ func _update_note(note: Note) -> void:
 
 var _proxy_note: Note.Proxy
 func _on_check_button_toggled(toggled_on: bool):
+	print("[Editor] _on_check_button_toggled(%s) called for editor type=%s" % [toggled_on, type])
 
 	if not _supports_note():
 		SingletonObject.ErrorDisplay("Not supported", "Notes for this editor type are not supported.")
@@ -869,18 +904,39 @@ func _on_check_button_toggled(toggled_on: bool):
 		return
 
 	if toggled_on:
+		print("[Editor] Creating proxy and starting note creation...")
 		_proxy_note = Note.Proxy.new(_create_note)
+
+		_proxy_note.note_created.connect(func(note: Note):
+			print("[Editor] note_created signal received! note=%s, type=%s" % [note, str(note.type) if note else "null"])
+			note.changed.connect(_on_proxy_note_changed.bind(note))
+			print("[Editor] Emitting note_ready_for_chat signal...")
+			note_ready_for_chat.emit(note)
+			print("[Editor] note_ready_for_chat emitted")
+		)
+
+		# Start note creation AFTER connecting signal handler
 		_proxy_note.create_note()
-		
-		_proxy_note.note_created.connect(func(note: Note): note.changed.connect(_on_proxy_note_changed.bind(note)))
+		print("[Editor] create_note() called (async), handler connected")
 
 		SingletonObject.detached_note_proxies.append(_proxy_note)
-		
+		print("[Editor] Proxy added to detached_note_proxies")
+
+		# Update token estimation when editor note is enabled
+		if SingletonObject.Chats:
+			SingletonObject.Chats.update_token_estimation()
+
 	else:
+		print("[Editor] Toggling OFF, cleaning up proxy...")
 		if _proxy_note:
 			SingletonObject.detached_note_proxies.erase(_proxy_note)
 
 		_proxy_note = null
+		print("[Editor] Proxy cleared")
+
+		# Update token estimation when editor note is disabled
+		if SingletonObject.Chats:
+			SingletonObject.Chats.update_token_estimation()
 
 func _on_proxy_note_changed(_prop_name: StringName, note: Note) -> void:
 	_note_check_button.set_pressed_no_signal(note.enabled)

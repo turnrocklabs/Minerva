@@ -1,6 +1,8 @@
 class_name MessageMarkdown
 extends HBoxContainer
 
+const ToolCallBlockScript = preload("res://Scripts/UI/Controls/ToolCallBlock.gd")
+
 # Exported variables for UI components and colors
 @export var left_control: Control
 @export var right_control: Control
@@ -88,6 +90,13 @@ var loading:= false:
 		loading = value
 		_update_sizes()
 
+## When true, loading indicator appears at the bottom without hiding content.
+## Use this for agent mode where we want to show accumulated content while waiting.
+var loading_append: bool = false:
+	set(value):
+		loading_append = value
+		_update_loading_append()
+
 ## Enables the edit button for this node if it's displaying a user message.
 ## Changing this property for non user messages has no effect.
 var editable:= false:
@@ -156,13 +165,37 @@ func _ready() -> void:
 ## sets loading label visibility to `loading_` and toggles_controls
 func set_message_loading(loading_: bool):
 	%LoadingLabel.visible = loading_
-	
+
 	%MessageLabelsContainer.visible = not loading_
 	%ImagesGridContainer.visible = not loading_
 
 	_toggle_controls(not loading_)
 	await get_tree().process_frame
 	_update_sizes()
+
+
+var _append_loading_label: RichTextLabel = null
+
+## Updates the append-mode loading indicator (shows at bottom without hiding content)
+func _update_loading_append() -> void:
+	if loading_append:
+		# Create loading label at bottom of message_labels_container if needed
+		if not _append_loading_label:
+			_append_loading_label = RichTextLabel.new()
+			_append_loading_label.bbcode_enabled = true
+			_append_loading_label.text = "[wave amp=50.0 freq=4.0 connected=1]●︎●︎●︎[/wave]"
+			_append_loading_label.custom_minimum_size = Vector2(0, 23)
+			_append_loading_label.fit_content = true
+			_append_loading_label.scroll_active = false
+		if _append_loading_label.get_parent() != message_labels_container:
+			message_labels_container.add_child(_append_loading_label)
+		# Ensure it's at the bottom
+		message_labels_container.move_child(_append_loading_label, -1)
+		_append_loading_label.visible = true
+	else:
+		# Hide/remove the append loading label
+		if _append_loading_label and is_instance_valid(_append_loading_label):
+			_append_loading_label.visible = false
 
 
 ## This function will rerender the messaged using set `history_item`.
@@ -186,7 +219,12 @@ func render() -> void:
 
 	history_item.rendered_node = self
 
+	# Clear tool blocks dictionary before recreating labels
+	# (because _create_code_labels clears message_labels_container children)
+	_tool_blocks.clear()
+
 	_create_code_labels()
+	_create_tool_blocks()
 	
 
 
@@ -207,17 +245,45 @@ func _exit_edit_mode():
 	message_labels_container.visible = true
 
 func _update_tokens_cost() -> void:
-	var price = 0.0
+	var cost_dollars := 0.0
 	if history_item.provider:
-		price = history_item.provider.token_cost * history_item.TokenCost
+		var p = history_item.provider
+		# Cost = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+		cost_dollars = (
+			history_item.InputTokens * p.input_token_cost +
+			history_item.OutputTokens * p.output_token_cost
+		) / 1_000_000.0
 
 	tokens_cost.visible = true
+	var cost_text := _format_cost(cost_dollars)
+	var total_tokens: int = history_item.InputTokens + history_item.OutputTokens
+
 	if history_item.EstimatedTokenCost:
-		tokens_cost.text = "%s/%s" % [history_item.EstimatedTokenCost, history_item.TokenCost]
-		tokens_cost.tooltip_text = "Estimated %s tokens, used %s (%s$)" % [history_item.EstimatedTokenCost, history_item.TokenCost, price]
+		tokens_cost.text = "%s/%s" % [history_item.EstimatedTokenCost, total_tokens]
+		tokens_cost.tooltip_text = "Estimated %s tokens, used %s (%s)" % [
+			history_item.EstimatedTokenCost, total_tokens, cost_text
+		]
 	else:
-		tokens_cost.text = "%s" % history_item.TokenCost
-		tokens_cost.tooltip_text = "Used %s tokens (%s$)" % [history_item.TokenCost, price]
+		tokens_cost.text = "%s" % total_tokens
+		tokens_cost.tooltip_text = "Input: %d, Output: %d (%s)" % [
+			history_item.InputTokens, history_item.OutputTokens, cost_text
+		]
+
+
+## Format cost for display - uses cents for small amounts, dollars for larger
+func _format_cost(dollars: float) -> String:
+	if dollars < 0.001:
+		# Very tiny amounts - show fractions of cents
+		return "%.3f¢" % (dollars * 100)
+	elif dollars < 0.01:
+		# Small amounts - show in cents with 2 decimals
+		return "%.2f¢" % (dollars * 100)
+	elif dollars < 1.0:
+		# Medium amounts - show in cents, whole number
+		return "%.0f¢" % (dollars * 100)
+	else:
+		# Large amounts - show in dollars
+		return "$%.2f" % dollars
 
 
 ## Will disable/enable nodes in the `controls` group which contains all message buttons
@@ -266,11 +332,6 @@ func _setup_model_message():
 	for ch in %ImagesGridContainer.get_children(): ch.free()
 
 	for image in history_item.Images:
-		var texture_rect = TextureRect.new()
-		texture_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		texture_rect.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
-		texture_rect.texture = ImageTexture.create_from_image(image)
-
 		var img_node = ChatImage.create(image)
 
 		# tell the vBoxChat if image is activated
@@ -316,7 +377,13 @@ func _on_continue_button_pressed():
 		loading = false
 
 func _on_clip_button_pressed():
-	DisplayServer.clipboard_set(label.markdown_text + "\n")
+	# Use error text if this is an error message, otherwise use markdown_text
+	var text_to_copy: String = ""
+	if history_item and history_item.Error:
+		text_to_copy = "Error: %s" % history_item.Error
+	else:
+		text_to_copy = label.markdown_text
+	DisplayServer.clipboard_set(text_to_copy + "\n")
 
 
 func _on_note_button_pressed():
@@ -339,8 +406,11 @@ func _on_note_button_pressed():
 		# Determine what text to add to notes
 		var note_text: String = ""
 
+		# Check for error message first
+		if history_item.Error and not history_item.Error.is_empty():
+			note_text = "Error: %s" % history_item.Error
 		# First try to use the Message field (for regular chat services)
-		if history_item.Message and not history_item.Message.is_empty():
+		elif history_item.Message and not history_item.Message.is_empty():
 			note_text = history_item.Message
 		# If HcpData exists (for HCP Core services), serialize it to JSON
 		elif history_item.HcpData and not history_item.HcpData.is_empty():
@@ -457,21 +527,25 @@ func update_expanded(dict_index: String, is_expanded: bool) -> void:
 	history_item.CodeLabelsState[dict_index] = is_expanded
 
 #signal code_labels_updated
+## Regex for tool block markers: {{TOOL_BLOCK:N}}
+var _tool_block_regex: RegEx = null
+
 func _create_code_labels():
 	var segments: Array[TextSegment] = _extract_text_segments(TextSegment.new(label.text))
 
 	# Hide the label since we're showing the message content in nodes below
 	# but keep it so we can access the message content easily
 	label.visible = false
-	
+
 	for child in message_labels_container.get_children(): child.queue_free()
-	
+
 	var indexes: int = history_item.Images.size()
 	indexes += 1
-	
-	for ts in segments:
-		var node: Node
 
+	# Track which tool executions we've rendered (for interleaving)
+	var tool_exec_index: int = 0
+
+	for ts in segments:
 		if ts.syntax:
 			var temp_UUID: String = ""
 			var temp_expanded: bool = true
@@ -482,25 +556,71 @@ func _create_code_labels():
 				first_time_message = false
 			elif first_time_message and ts.content.split("\n").size() >= max_lines_expanded_code_segment:
 				temp_expanded = false
-			node = CodeMarkdownLabel.create(ts.content, ts.syntax, str(indexes), temp_UUID, temp_expanded)
+			var node = CodeMarkdownLabel.create(ts.content, ts.syntax, str(indexes), temp_UUID, temp_expanded)
 			node.created_text_note.connect(update_linked_dict)
 			node.update_expanded.connect(update_expanded)
 			indexes += 1
+			message_labels_container.add_child(node)
 		else:
-			# Maybe have this node as scene
-			node = RichTextLabel.new()
-			node.threaded = true
-			node.fit_content = true
-			node.bbcode_enabled = true
-			node.selection_enabled = true
-			node.text = ts.content
-			node.context_menu_enabled = true
-			node.mouse_filter = Control.MOUSE_FILTER_PASS
+			# Handle tool block markers in text segments
+			tool_exec_index = _create_text_with_tool_blocks(ts.content, tool_exec_index)
 
-			# set the color for model message
-			if history_item.Role != ChatHistoryItem.ChatRole.USER: node.set("theme_override_colors/default_color", Color.BLACK)
-		
-		message_labels_container.add_child(node)
+
+## Creates text labels with tool blocks interleaved at marker positions.
+## Returns the updated tool execution index.
+func _create_text_with_tool_blocks(text: String, tool_exec_start: int) -> int:
+	# Initialize regex if needed
+	if not _tool_block_regex:
+		_tool_block_regex = RegEx.new()
+		_tool_block_regex.compile(r"\{\{TOOL_BLOCK:(\d+)\}\}")
+
+	var tool_exec_index = tool_exec_start
+	var last_end = 0
+	var matches = _tool_block_regex.search_all(text)
+
+	for match_ in matches:
+		# Add text before the marker
+		var before_text = text.substr(last_end, match_.get_start() - last_end).strip_edges()
+		if not before_text.is_empty():
+			_add_text_label(before_text)
+
+		# Render tool blocks for this marker
+		var count = int(match_.get_string(1))
+		for i in range(count):
+			if tool_exec_index < history_item.ToolExecutions.size():
+				var execution = history_item.ToolExecutions[tool_exec_index]
+				var tool_id = execution.get("call_id", "")
+				var block = ToolCallBlockScript.create(execution)
+				_tool_blocks[tool_id] = block
+				message_labels_container.add_child(block)
+				tool_exec_index += 1
+
+		last_end = match_.get_end()
+
+	# Add remaining text after last marker
+	var remaining_text = text.substr(last_end).strip_edges()
+	if not remaining_text.is_empty():
+		_add_text_label(remaining_text)
+
+	return tool_exec_index
+
+
+## Helper to add a RichTextLabel for text content
+func _add_text_label(text: String) -> void:
+	var node = RichTextLabel.new()
+	node.threaded = true
+	node.fit_content = true
+	node.bbcode_enabled = true
+	node.selection_enabled = true
+	node.text = text
+	node.context_menu_enabled = true
+	node.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	# set the color for model message
+	if history_item.Role != ChatHistoryItem.ChatRole.USER:
+		node.set("theme_override_colors/default_color", Color.BLACK)
+
+	message_labels_container.add_child(node)
 
 
 func _on_expand_button_pressed() -> void:
@@ -730,10 +850,59 @@ func _on_message_text_edit_text_set() -> void:
 		%SetTextButton.visible = false
 		await get_tree().process_frame
 		render()
-		
+
 		message_labels_container.visible = true
 		_update_sizes()
 	else:
 		text_message_container.visible = false
 		%SetTextButton.visible = false
 		message_labels_container.visible = false
+
+
+# ============================================================================
+# Tool Call Block Rendering
+# ============================================================================
+
+## Dictionary mapping tool_id -> ToolCallBlockScript for live updates
+var _tool_blocks: Dictionary = {}
+
+
+## Create tool call blocks from the history item's ToolExecutions array
+func _create_tool_blocks() -> void:
+	if not history_item.IsToolCall or history_item.ToolExecutions.is_empty():
+		return
+
+	for execution in history_item.ToolExecutions:
+		var tool_id = execution.get("call_id", "")
+
+		if _tool_blocks.has(tool_id):
+			# Update existing block
+			var block: ToolCallBlockScript = _tool_blocks[tool_id]
+			if execution.has("result"):
+				block.set_result(execution.get("result", ""), execution.get("status") == "error")
+		else:
+			# Create new block
+			var block = ToolCallBlockScript.create(execution)
+			_tool_blocks[tool_id] = block
+			message_labels_container.add_child(block)
+
+
+## Update a tool execution with result data (called during live tool execution)
+func update_tool_execution(tool_id: String, result: String, is_error: bool = false) -> void:
+	if _tool_blocks.has(tool_id):
+		# Update existing block
+		var block: ToolCallBlockScript = _tool_blocks[tool_id]
+		block.set_result(result, is_error)
+	else:
+		# Block doesn't exist yet - find the execution data and create it
+		for execution in history_item.ToolExecutions:
+			if execution.get("call_id") == tool_id:
+				var block = ToolCallBlockScript.create(execution)
+				_tool_blocks[tool_id] = block
+				message_labels_container.add_child(block)
+				if not result.is_empty():
+					block.set_result(result, is_error)
+				break
+
+	await get_tree().process_frame
+	_update_sizes()

@@ -15,12 +15,15 @@ func _init(service_: Service = null, action_: Action = null):
 		model_name = "%s (%s)" % [service.name if service else "Core", action.name]
 	
 	short_name = service.name[0] if service else "C"
-	
-	token_cost = 0.000015
+
+	# HCP services - approximate pricing
+	input_token_cost = 10.0   # $10 per million input tokens
+	output_token_cost = 20.0   # $20 per million output tokens
 
 
 func _parse_request_results(response: Dictionary) -> BotResponse:
 	var bot_response:= BotResponse.new()
+	bot_response.provider = self  # Always set provider, even for errors
 
 	# { "cmd": "error", "entity_type": "core", "params":
 		# { "client_id": "1745160706.99", "error": "Request messages must include a \'data\' field in params", "request_id": "1745160715.808_2592814796" },

@@ -26,6 +26,9 @@ func _ready() -> void:
 
 	get_tab_bar().gui_input.connect(_on_tab_bar_gui_input)
 
+	# Enable tab rearrangement by dragging
+	get_tab_bar().drag_to_rearrange_enabled = true
+
 	# tab bar need mouse_filter set to pass to allow the tab container to catch drag event and call _can_drop_data
 	get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
 
@@ -70,6 +73,27 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 	current_tab = new_tab_index
 
 	return notes_vbox
+
+
+## Find a tab by name, or create it if it doesn't exist.
+## Returns the NoteVBox for that tab.
+func find_or_create_tab(tab_name: String) -> NoteVBox:
+	# Search existing tabs
+	for i in get_tab_count():
+		if get_tab_title(i) == tab_name:
+			return get_tab_control(i) as NoteVBox
+
+	# Not found, create new tab
+	return create_tab(tab_name)
+
+
+## Get a tab by name if it exists, otherwise return null
+func find_tab_by_name(tab_name: String) -> NoteVBox:
+	for i in get_tab_count():
+		if get_tab_title(i) == tab_name:
+			return get_tab_control(i) as NoteVBox
+	return null
+
 
 func add_note_vbox(notes_vbox: NoteVBox) -> void:
 	var new_tab_index: = get_tab_count()
@@ -293,7 +317,7 @@ func _update_adapter_info():
 ## If [param refresh_detached] is `true`, detached notes will be regenerated to match current editor content.
 func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Variant]:
 	var output: Array[Variant] = []
-	
+
 	var notes: Array[Note]
 
 	for i in SingletonObject.notes_container.get_tab_count():
@@ -302,20 +326,32 @@ func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Varia
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		notes.append_array(SingletonObject.drawer_notes_container.get_notes(i).filter(func(note: Note): return note.enabled))
 
+	print("[NotesContainer] to_prompt: %d detached proxies, refresh_detached=%s" % [SingletonObject.detached_note_proxies.size(), refresh_detached])
 	for proxy_note in SingletonObject.detached_note_proxies:
-		var note: = await proxy_note.create_note(not refresh_detached)
-		
+		var use_cached := not refresh_detached
+		print("[NotesContainer] Creating note from proxy (use_cached=%s)" % use_cached)
+		var note: = await proxy_note.create_note(use_cached)
+
 		if note:
+			print("[NotesContainer] Got note: type=%s, controls=%s" % [note.type, note.get_controls_container()])
 			notes.append(note)
 			if refresh_detached:
 				note.enabled = false # so the editor/terminal can catch and disable the check button
 		else:
+			print("[NotesContainer] ERROR: proxy_note.create_note() returned null")
 			SingletonObject.ErrorDisplay("Note Error", "Couldn't generate a Note object")
 
 	# notes are filtered for enabled ones, except for detached note
 	# if detached notes are present
+	print("[NotesContainer] Wrapping %d notes for prompt" % notes.size())
 	for note in notes:
-		output.append(provider.wrap_memory(note))
+		var wrapped = provider.wrap_memory(note)
+		print("[NotesContainer] Wrapped note type=%s, result_type=%s" % [note.type, typeof(wrapped)])
+		# Skip null/invalid wrapped results (e.g., from empty images)
+		if wrapped == null:
+			push_warning("[NotesContainer] Skipping null wrapped note (type=%s)" % note.type)
+			continue
+		output.append(wrapped)
 
 	return output
 

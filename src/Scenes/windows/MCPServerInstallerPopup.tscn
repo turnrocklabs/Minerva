@@ -1,0 +1,163 @@
+[gd_scene load_steps=2 format=3 uid="uid://cj7k8m9p2qrs1"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Views/MCPServerInstallerPopup.gd" id="1_script"]
+
+[node name="MCPServerInstallerPopup" type="Window"]
+title = "MCP Server Installer"
+initial_position = 2
+size = Vector2i(700, 650)
+popup_window = true
+script = ExtResource("1_script")
+
+[node name="Panel" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"bgPanel"
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "MCP Server Installer"
+horizontal_alignment = 1
+
+[node name="DescriptionLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Install MCP servers to enable AI tools integration."
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="DirectoryContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="DirectoryLabel" type="Label" parent="MarginContainer/VBoxContainer/DirectoryContainer"]
+layout_mode = 2
+text = "Install Directory:"
+
+[node name="InstallPathEdit" type="LineEdit" parent="MarginContainer/VBoxContainer/DirectoryContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Select installation directory..."
+
+[node name="BrowseButton" type="Button" parent="MarginContainer/VBoxContainer/DirectoryContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Browse..."
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ServersLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Select servers to install:"
+
+[node name="ServersContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="NudgeCheckbox" type="CheckBox" parent="MarginContainer/VBoxContainer/ServersContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Nudge - Session-scoped hint cache (port 8765)"
+
+[node name="CoBrowserCheckbox" type="CheckBox" parent="MarginContainer/VBoxContainer/ServersContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "CoBrowser - Browser automation via Firefox (port 8677)"
+
+[node name="CodeToolsCheckbox" type="CheckBox" parent="MarginContainer/VBoxContainer/ServersContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "CodeTools - Code manipulation tools (port 8700)"
+
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="PrerequisitesLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Prerequisites: Checking..."
+
+[node name="StatusLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Ready to install"
+horizontal_alignment = 1
+
+[node name="ProgressBar" type="ProgressBar" parent="MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+value = 50.0
+
+[node name="LogContainer" type="PanelContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LogOutput" type="RichTextLabel" parent="MarginContainer/VBoxContainer/LogContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+text = "Installation log will appear here..."
+scroll_following = true
+selection_enabled = true
+
+[node name="HSeparator4" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ButtonContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 20
+
+[node name="InstallButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "Install Selected"
+
+[node name="CancelButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "Close"
+
+[node name="DirectoryDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Select Installation Directory"
+initial_position = 2
+size = Vector2i(600, 400)
+ok_button_text = "Select"
+file_mode = 2
+access = 2
+
+[connection signal="close_requested" from="." to="." method="hide"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/DirectoryContainer/BrowseButton" to="." method="_on_browse_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/ButtonContainer/InstallButton" to="." method="_on_install_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/ButtonContainer/CancelButton" to="." method="hide"]
+[connection signal="dir_selected" from="DirectoryDialog" to="." method="_on_directory_dialog_dir_selected"]

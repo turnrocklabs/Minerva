@@ -98,7 +98,8 @@ func _open_default_kanban_board() -> void:
 
 
 func info(input):
-	print("#\n#### Autocoder: %s\n#" % str(input))
+	if SingletonObject.verbose_logging:
+		print("#\n#### Autocoder: %s\n#" % str(input))
 
 
 func _on_core_connected():

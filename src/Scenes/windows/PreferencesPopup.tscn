@@ -1,13 +1,13 @@
-[gd_scene load_steps=9 format=3 uid="uid://booxo77json0y"]
+[gd_scene load_steps=9 format=3]
 
-[ext_resource type="Script" uid="uid://b02us2hre5m42" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
-[ext_resource type="Texture2D" uid="uid://mnjjw54u5kxx" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
-[ext_resource type="Script" uid="uid://63wcsxjjtlug" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
-[ext_resource type="Texture2D" uid="uid://dn26pgus7wmxi" path="res://assets/icons/save_icons/save-48-white.png" id="4_0f5nr"]
-[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="4_nlyvs"]
-[ext_resource type="Texture2D" uid="uid://dmhyo26833yx8" path="res://assets/icons/save_icons/save-64-white.png" id="5_346qj"]
-[ext_resource type="PackedScene" uid="uid://cl4gj0ckqhtah" path="res://Scenes/windows/hcp_logs.tscn" id="7_6m13a"]
-[ext_resource type="PackedScene" uid="uid://bx4qo4lmxtd8q" path="res://Scripts/UI/Controls/service_selection.tscn" id="8_g7jo0"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/PreferencesPopup.gd" id="1_snp1b"]
+[ext_resource type="Texture2D" path="res://assets/icons/save_icons/save-24-white.png" id="2_kl0rj"]
+[ext_resource type="Script" path="res://Scripts/UI/Views/icons_button.gd" id="3_5qeyl"]
+[ext_resource type="Texture2D" path="res://assets/icons/save_icons/save-48-white.png" id="4_0f5nr"]
+[ext_resource type="Texture2D" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="4_nlyvs"]
+[ext_resource type="Texture2D" path="res://assets/icons/save_icons/save-64-white.png" id="5_346qj"]
+[ext_resource type="PackedScene" path="res://Scenes/windows/hcp_logs.tscn" id="7_6m13a"]
+[ext_resource type="PackedScene" path="res://Scripts/UI/Controls/service_selection.tscn" id="8_g7jo0"]
 
 [node name="PreferencesPopup" type="Window"]
 title = "Preferences"
@@ -271,6 +271,20 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
 
+[node name="VerboseLoggingHBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
+layout_mode = 2
+
+[node name="VerboseLoggingLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VerboseLoggingHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Verbose Logging:"
+tooltip_text = "When enabled, prints detailed debug information to the console (discovery data, service info, etc.)"
+
+[node name="VerboseLoggingCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VerboseLoggingHBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+
 [node name="Control" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2"]
 layout_mode = 2
 size_flags_vertical = 3
@@ -458,6 +472,26 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"visibilityCheckButton"
 
+[node name="HBoxContainer4" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer4"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.3
+text = "OpenRouter"
+
+[node name="leOpenRouter" type="LineEdit" parent="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer4"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+secret = true
+
+[node name="OpenRouterCheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer4" groups=["visibilityButton"]]
+layout_mode = 2
+theme_type_variation = &"visibilityCheckButton"
+
 [node name="Services" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
@@ -514,6 +548,7 @@ visible = false
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer/HBoxContainer5/PasswordCheckbox" to="." method="_on_password_checkbox_toggled"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VBoxContainer/HcpLogsButton" to="." method="_on_hcp_logs_button_pressed"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/ExperimentalHBoxContainer/ExperimentalCheckButton" to="." method="_on_experimental_check_button_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/VerboseLoggingHBoxContainer/VerboseLoggingCheckButton" to="." method="_on_verbose_logging_check_button_toggled"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/TabContainer/Account/MarginContainer/ScrollContainer/VBoxContainer2/CoreConnetButton" to="." method="_on_core_connet_button_pressed"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/MicrophoneContainer/Microphones" to="." method="_on_microphones_item_selected"]
 [connection signal="item_selected" from="MarginContainer/VBoxContainer/TabContainer/Audio & Video/MarginContainer/VBoxContainer/OutputDeviceContainer/OutputDeviceButton" to="." method="_on_output_device_button_item_selected"]
@@ -521,6 +556,7 @@ visible = false
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer/GoogleVertexCheckBox" to="." method="_on_google_vertex_check_box_toggled"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer2/AnthropicCheckBox" to="." method="_on_anthropic_check_box_toggled"]
 [connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer3/OpenAICheckBox" to="." method="_on_open_ai_check_box_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/API Keys/MarginContainer/SectionsContainer/APIKeysVBoxContainer/HBoxContainer4/OpenRouterCheckBox" to="." method="_on_open_router_check_box_toggled"]
 [connection signal="service_deselected" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_service_deselected"]
 [connection signal="service_selected" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_service_selected"]
 [connection signal="visibility_changed" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_visibility_changed"]

@@ -2,7 +2,7 @@ class_name ChatHistoryItem
 extends RefCounted
 
 enum PartType {TEXT, CODE, JPEG}
-enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM}
+enum ChatRole {USER, ASSISTANT, MODEL, SYSTEM, TOOL}
 
 static var SERIALIZER_FIELDS = [
 	"Role",
@@ -18,6 +18,8 @@ static var SERIALIZER_FIELDS = [
 	"ModelShortName",
 	"EstimatedTokenCost",
 	"TokenCost",
+	"InputTokens",
+	"OutputTokens",
 	"Visible",
 	"Expanded",
 	"LastYSize",
@@ -25,7 +27,12 @@ static var SERIALIZER_FIELDS = [
 	"CodeLabelsState",
 	"isMerged",
 	"SliderContainerId", # if 2 or more items share the same ID they get put in the same SliderContainer
-	"MultiSliderContainerId"# if 2 or more items share the same ID they get put in the same SliderContainer
+	"MultiSliderContainerId", # if 2 or more items share the same ID they get put in the same SliderContainer
+	"ToolCallId",
+	"ToolName",
+	"ToolCalls",
+	"IsToolCall",
+	"ToolExecutions"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -78,9 +85,21 @@ var Visible: bool = true:
 var EstimatedTokenCost: int:
 	set(value): SingletonObject.call_deferred("save_state", false); EstimatedTokenCost = value
 
-## Amount of tokens of this history item
-var TokenCost: int = 0:
-	set(value): SingletonObject.call_deferred("save_state", false); TokenCost = value
+## Number of input tokens (prompt tokens) for this turn
+var InputTokens: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); InputTokens = value
+
+## Number of output tokens (completion tokens) for this turn
+var OutputTokens: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); OutputTokens = value
+
+## Amount of tokens of this history item (legacy - now computed from InputTokens + OutputTokens)
+var TokenCost: int:
+	get: return InputTokens + OutputTokens
+	set(value):
+		# Legacy setter - distribute to output tokens for backwards compat
+		OutputTokens = value
+		SingletonObject.call_deferred("save_state", false)
 
 var provider: BaseProvider:
 	set(value):
@@ -109,6 +128,28 @@ var SliderContainerId: String = "":
 
 var MultiSliderContainerId: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); MultiSliderContainerId = value
+
+## Tool call ID (for TOOL role responses - correlates with the tool_call that triggered this)
+var ToolCallId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); ToolCallId = value
+
+## Tool name (for TOOL role - which tool was called)
+var ToolName: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); ToolName = value
+
+## Tool arguments (for ASSISTANT role with tool calls)
+var ToolCalls: Array[Dictionary] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); ToolCalls = value
+
+## Whether this is a tool call message
+var IsToolCall: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); IsToolCall = value
+
+## Tool execution data for displaying in UI
+## Structure: [{call_id: String, tool_name: String, arguments: Dictionary, result: String, status: String}]
+## status can be: "calling", "done", "error"
+var ToolExecutions: Array[Dictionary] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); ToolExecutions = value
 
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
@@ -199,6 +240,8 @@ func Serialize() -> Dictionary:
 		"Visible": Visible,
 		"EstimatedTokenCost": EstimatedTokenCost,
 		"TokenCost": TokenCost,
+		"InputTokens": InputTokens,
+		"OutputTokens": OutputTokens,
 		"Images": images_,
 		"Captions": captions_,
 		"Expanded": Expanded,
@@ -207,8 +250,13 @@ func Serialize() -> Dictionary:
 		"CodeLabelsState": CodeLabelsState,
 		"isMerged": isMerged,
 		"SliderContainerId": SliderContainerId,
-		"MultiSliderContainerId": MultiSliderContainerId
-		
+		"MultiSliderContainerId": MultiSliderContainerId,
+		"ToolExecutions": ToolExecutions,
+		# Tool-related fields for agentic mode
+		"ToolCallId": ToolCallId,
+		"ToolName": ToolName,
+		"ToolCalls": ToolCalls,
+		"IsToolCall": IsToolCall
 	}
 	return save_dict
 
@@ -222,11 +270,14 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 
 	# 1. In case we don't have model specified just use this as a fallback
 	# 2. Old project files don't have "Images" field
+	# 3. Migration: InputTokens/OutputTokens default to 0
 	data.merge({
 		"ModelName": "NA",
 		"ModelShortName": "NA",
 		"Visible": true,
 		"TokenCost": 0,
+		"InputTokens": 0,
+		"OutputTokens": 0,
 		"Images": [],
 		"Captions": []
 	})
@@ -273,9 +324,23 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 				# base64 string is invalid if it's less than 4 characters
 				if not b64_notes.length() < 4:
 					value = Marshalls.base64_to_variant(b64_notes)
-				
+
 				if not value:
 					value = []
+
+			"ToolExecutions":
+				# Convert to typed array for backwards compatibility
+				var executions: Array[Dictionary] = []
+				if value is Array:
+					executions.assign(value)
+				value = executions
+
+			"ToolCalls":
+				# Convert to typed array for backwards compatibility
+				var calls: Array[Dictionary] = []
+				if value is Array:
+					calls.assign(value)
+				value = calls
 
 		chi.set(prop, value)
 

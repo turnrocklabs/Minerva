@@ -35,8 +35,12 @@ var video_path: String:
 				video_resource = VideoStreamTheora.new()
 				video_resource.file = value
 			else:
-				video_resource = FFmpegVideoStream.new()
-				video_resource.file = value
+				if ClassDB.class_exists("FFmpegVideoStream"):
+					video_resource = ClassDB.instantiate("FFmpegVideoStream")
+					video_resource.file = value
+				else:
+					push_error("FFmpegVideoStream not available - video format not supported")
+					return
 			if video_resource.file:
 				video_stream_player.stream = video_resource
 				h_slider.max_value = video_stream_player.get_stream_length()
@@ -273,8 +277,6 @@ func _on_screenshot_button_pressed() -> void:
 	if image == null:
 		print("Failed to get image from viewport texture")
 		return
-	# Create a Texture from the Image if needed
-	ImageTexture.create_from_image(image)
 	# Proceed with the rest of your code
 	var stream_position = "%s at position %s" % [video_path.get_file(), str(video_stream_player.stream_position)]
 	var ep: EditorPane = SingletonObject.editor_container.editor_pane

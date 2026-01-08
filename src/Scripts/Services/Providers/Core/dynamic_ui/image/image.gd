@@ -9,9 +9,14 @@ static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/i
 @onready var _file_dialog: FileDialog = %FileDialog
 @onready var _button: Button = %Button
 
-
-
+var _image_texture: ImageTexture
 var image_path: String
+
+
+func _exit_tree() -> void:
+	# Release texture to prevent RID leaks
+	if _texture_rect and _texture_rect.texture:
+		_texture_rect.texture = null
 
 static func create(field_params: Dictionary, input: = true) -> ImageField:
 	
@@ -53,13 +58,16 @@ func update_output(fa: FileAccess) -> void:
 		print_debug("FileAccess object is null")
 		_texture_rect.texture = null
 		return
-	
+
 	var img: = Image.new()
 	img.load_png_from_buffer(fa.get_buffer(fa.get_length()))
 
-	var tex: = ImageTexture.create_from_image(img)
-	
-	_texture_rect.texture = tex
+	# Reuse existing texture if possible
+	if _image_texture:
+		_image_texture.set_image(img)
+	else:
+		_image_texture = ImageTexture.create_from_image(img)
+	_texture_rect.texture = _image_texture
 
 func _on_button_pressed() -> void:
 	_file_dialog.show()
@@ -69,5 +77,9 @@ func _on_file_dialog_file_selected(path: String) -> void:
 	# TODO: add error handling
 	image_path = path
 	var img: = Image.load_from_file(path)
-	var tex: = ImageTexture.create_from_image(img)
-	_texture_rect.texture = tex
+	# Reuse existing texture if possible
+	if _image_texture:
+		_image_texture.set_image(img)
+	else:
+		_image_texture = ImageTexture.create_from_image(img)
+	_texture_rect.texture = _image_texture

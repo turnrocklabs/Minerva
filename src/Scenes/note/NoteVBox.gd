@@ -63,9 +63,8 @@ func _ready() -> void:
 	_remote_service_label.visible = supports_remote
 	_remote_option_container.visible = supports_remote
 	_bulk_upload_button.visible = supports_remote
-	
+
 	auto_upload = _auto_upload_backing
-	
 
 func _on_vbox_child_entered_tree(node: Node):
 	if node is Note and supports_remote:
@@ -290,3 +289,11 @@ func _on_remove_all_button_pressed() -> void:
 
 func _on_add_note_button_pressed() -> void:
 	add_note_requested.emit()
+
+
+## Find a note by its title in this tab
+func _find_note_by_title(note_title: String) -> Note:
+	for note in get_notes():
+		if note.title == note_title:
+			return note
+	return null

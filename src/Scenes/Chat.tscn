@@ -190,6 +190,7 @@ icon_68 = ExtResource("6_gmsd4")
 
 [node name="HistoryOptionButton" type="OptionButton" parent="VBoxContainer3"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer3"]
@@ -296,6 +297,12 @@ layout_mode = 2
 
 [node name="Control2" type="Control" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls"]
 layout_mode = 2
+
+[node name="AgentModeToggle" type="CheckButton" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Enable Agent Mode: Allow the LLM to use MCP tools (Nudge, Co-Browser, etc.)"
+text = "Agent"
 
 [node name="btnClear" type="Button" parent="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls"]
 layout_mode = 2
@@ -457,6 +464,7 @@ size_flags_vertical = 3
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/btnChatSettings" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_chat_settings_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/btnInspect" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_inspect_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/btnTest" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_test_pressed"]
+[connection signal="toggled" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/AgentModeToggle" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_agent_mode_toggled"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/btnClear" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_clear_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/btnMicrophone" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_btn_microphone_pressed"]
 [connection signal="pressed" from="VBoxContainer3/VSplitContainer/VBoxContainer/HBoxContainer/ChatControls/AudioStop1" to="VBoxContainer3/VSplitContainer/VBoxContainer2/tcChats" method="_on_audio_stop_1_pressed"]

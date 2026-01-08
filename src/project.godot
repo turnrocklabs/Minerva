@@ -14,7 +14,7 @@ config/name="Minerva"
 config/tags=PackedStringArray("desktop")
 run/main_scene="res://Scenes/MainScene.tscn"
 run/enable_alt_space_menu=true
-config/features=PackedStringArray("4.4", "Forward Plus")
+config/features=PackedStringArray("4.5", "Forward Plus")
 run/max_fps=60
 run/low_processor_mode=true
 run/low_processor_mode_sleep_usec=4000
@@ -194,3 +194,4 @@ limits/webrtc/max_channel_in_buffer_kb=102
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
+textures/vram_compression/import_etc2_astc=true

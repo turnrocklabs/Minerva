@@ -5,7 +5,15 @@ enum Type {
 	IMAGE,
 	DRAWING,
 	SPEECH_BUBBLE,
-	MASK
+	MASK,
+	CONTROL
+}
+
+enum ControlType {
+	POSE,
+	CANNY,
+	DEPTH,
+	SEGMENTATION
 }
 
 @onready var texture_rect: TextureRect = %TextureRect
@@ -47,30 +55,36 @@ var image: Image:
 	set(value):
 		image = value
 		if not image or image.is_empty(): return
-		
+
 		if not is_node_ready():
 			await ready
-		
+
 		if not base_image:
 			base_image = image.duplicate()
 
-		var img = ImageTexture.create_from_image(image)
-		
+		# Reuse existing ImageTexture if possible to avoid leaks
+		var img: ImageTexture
+		if texture_rect.texture is ImageTexture:
+			img = texture_rect.texture as ImageTexture
+			img.set_image(image)
+		else:
+			img = ImageTexture.create_from_image(image)
+			texture_rect.texture = img
+
 		await get_tree().process_frame
 
 		# Set the layer's minimum size to match the image
 		size = img.get_size()
-		
+
 		# Set the actual size if it's currently zero
 		if size == Vector2.ZERO:
 			size = img.get_size()
-		
+
 		# Set pivot to center for proper rotation
 		pivot_offset = size / 2
-		
-		# Set texture and let TextureRect size itself to the texture
-		texture_rect.texture = img
-		texture_rect.size = img.get_size()  # Use image size, not layer size
+
+		# Set texture size to match image
+		texture_rect.size = img.get_size()
 
 		queue_redraw()
 
@@ -87,6 +101,10 @@ var lock_color: bool = false
 var mask_color: Color = Color.WHITE
 var mask_color_name: String = "blue"
 
+# Control layer properties
+var control_type: ControlType = ControlType.POSE
+var control_strength: float = 1.0
+
 
 
 func _ready() -> void:
@@ -95,6 +113,12 @@ func _ready() -> void:
 	# Or use size flags to control behavior
 	size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+
+func _exit_tree() -> void:
+	# Release texture to prevent leaks during shutdown
+	if texture_rect and texture_rect.texture:
+		texture_rect.texture = null
 
 
 static func create_image_layer(name_: String, image_: Image) -> LayerV2:
@@ -132,14 +156,29 @@ static func create_speech_bubble_layer(name_: String, type_: CloudControl.Type =
 
 static func create_mask_layer(name_: String, size_: Vector2i, background_color: = Color.TRANSPARENT) -> LayerV2:
 	var layer: = _scene.instantiate()
-	
+
 	var img = Image.create(size_.x, size_.y, false, Image.Format.FORMAT_RGBA8)
 	img.fill(background_color)
-	
+
 	layer.image = img
 	layer.name = name_
 	layer.type = Type.MASK
-	
+
+	return layer
+
+
+static func create_control_layer(name_: String, size_: Vector2i, control_type_: ControlType = ControlType.POSE) -> LayerV2:
+	var layer: = _scene.instantiate()
+
+	# Create transparent image for the control layer
+	var img = Image.create(size_.x, size_.y, false, Image.Format.FORMAT_RGBA8)
+	img.fill(Color.TRANSPARENT)
+
+	layer.image = img
+	layer.name = name_
+	layer.type = Type.CONTROL
+	layer.control_type = control_type_
+
 	return layer
 
 
@@ -157,10 +196,21 @@ func get_rect_by_mouse_position(mouse_position: Vector2) -> TransformPoint:
 func _draw() -> void:
 	match type:
 		Type.IMAGE, Type.DRAWING, Type.MASK:
-			var img = ImageTexture.create_from_image(image)
-			texture_rect.texture = img
+			_update_texture_from_image()
 		Type.SPEECH_BUBBLE:
 			speech_bubble.queue_redraw()
+		Type.CONTROL:
+			_update_texture_from_image()
+
+
+## Update texture from image, reusing existing ImageTexture if possible
+func _update_texture_from_image() -> void:
+	if not image: return
+	# Reuse existing ImageTexture to avoid creating new texture on every draw
+	if texture_rect.texture is ImageTexture:
+		(texture_rect.texture as ImageTexture).set_image(image)
+	else:
+		texture_rect.texture = ImageTexture.create_from_image(image)
 	
 	# Draw the outline if visible
 	if outline_visible:
@@ -226,16 +276,16 @@ func _get_transform_rect_positions() -> Dictionary:
 func localize_input(event: InputEvent):
 	if not event is InputEventMouse:
 		return event
-	
+
 	var local_event = event.duplicate()
-	
+
 	match type:
-		Type.IMAGE, Type.DRAWING, Type.MASK:
+		Type.IMAGE, Type.DRAWING, Type.MASK, Type.CONTROL:
 			# Use global_position to bypass all parent UI element offsets
 			local_event.position = texture_rect.get_local_mouse_position()
 		Type.SPEECH_BUBBLE:
 			pass
-	
+
 	return local_event
 
 func expand_to_point(point: Vector2) -> Vector2:
@@ -309,13 +359,15 @@ func _adjust_control_size() -> void:
 				scaled_image.resize(int(size.x), int(size.y), Image.INTERPOLATE_LANCZOS)
 
 				image.copy_from(scaled_image)
-		
+
 		Type.DRAWING, Type.MASK:
 			texture_rect.size = size
 			if abs(image.get_width() - size.x) > 1 or abs(image.get_height() - size.y) > 1:
 
 				image.resize(int(size.x), int(size.y), Image.INTERPOLATE_LANCZOS)
 
-				
 		Type.SPEECH_BUBBLE:
 			speech_bubble.size = size
+
+		Type.CONTROL:
+			texture_rect.size = size

@@ -15,8 +15,85 @@ func _ready() -> void:
 
 
 func _draw() -> void:
-	if editor and editor.selection_visible and editor.has_selection():
-		_draw_marching_ants()
+	# Selection-related drawing (marching ants, selection previews) is now handled
+	# by SelectionOverlay, which is a sibling Control that draws on top of layers.
+	pass
+
+
+func _draw_lasso_selection_preview() -> void:
+	if not editor or not editor.active_layer:
+		return
+
+	var points = editor.lasso_select_tool.get_preview_points()
+	if points.size() < 2:
+		return
+
+	var layer_pos = editor.active_layer.position
+
+	# Build transformed points array for polyline
+	var screen_points = PackedVector2Array()
+	for point in points:
+		screen_points.append(point + layer_pos)
+
+	# Draw solid polyline for clear visibility
+	if screen_points.size() >= 2:
+		draw_polyline(screen_points, Color.WHITE, 2.0, true)
+
+	# Draw closing line back to start with lower opacity
+	if points.size() >= 3:
+		var from = points[-1] + layer_pos
+		var to = points[0] + layer_pos
+		draw_line(from, to, Color(1, 1, 1, 0.5), 1.0, true)
+
+
+func _draw_rectangle_selection_preview() -> void:
+	if not editor or not editor.active_layer:
+		return
+
+	var rect = editor.rectangle_select_tool.get_preview_rect()
+	var layer_pos = editor.active_layer.position
+
+	# Transform rect to screen coordinates
+	var screen_rect = Rect2(rect.position + layer_pos, rect.size)
+
+	# Draw dashed rectangle outline
+	var dash_length = 6.0
+	var gap_length = 3.0
+	var color = Color.WHITE
+
+	# Define the four corners
+	var top_left = screen_rect.position
+	var top_right = screen_rect.position + Vector2(screen_rect.size.x, 0)
+	var bottom_right = screen_rect.end
+	var bottom_left = screen_rect.position + Vector2(0, screen_rect.size.y)
+
+	# Draw the four sides clockwise from top-left
+	_draw_dashed_line(top_left, top_right, dash_length, gap_length, color)        # Top edge
+	_draw_dashed_line(top_right, bottom_right, dash_length, gap_length, color)    # Right edge
+	_draw_dashed_line(bottom_right, bottom_left, dash_length, gap_length, color)  # Bottom edge
+	_draw_dashed_line(bottom_left, top_left, dash_length, gap_length, color)      # Left edge
+
+
+func _draw_dashed_line(from: Vector2, to: Vector2, dash: float, gap: float, color: Color) -> void:
+	var total_length = from.distance_to(to)
+	if total_length < 0.01:
+		return
+
+	var direction = (to - from).normalized()
+	var pos = 0.0
+	var drawing = true
+
+	while pos < total_length:
+		var segment_length = dash if drawing else gap
+		var end_pos = min(pos + segment_length, total_length)
+
+		if drawing:
+			var start_point = from + direction * pos
+			var end_point = from + direction * end_pos
+			draw_line(start_point, end_point, color, 1.0)
+
+		pos = end_pos
+		drawing = not drawing
 
 
 func _draw_marching_ants() -> void:

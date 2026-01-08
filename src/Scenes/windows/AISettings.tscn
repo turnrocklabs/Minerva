@@ -5,15 +5,15 @@
 
 [node name="AISettings" type="Window"]
 initial_position = 4
-size = Vector2i(648, 590)
-unresizable = true
+size = Vector2i(648, 700)
 script = ExtResource("1_2377q")
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
-offset_left = 4.0
-offset_top = 4.0
-offset_right = 644.0
-offset_bottom = 476.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 theme_override_constants/margin_left = 15
 theme_override_constants/margin_top = 15
 theme_override_constants/margin_right = 15
@@ -32,31 +32,46 @@ horizontal_alignment = 1
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/MainVBox"]
 layout_mode = 2
 
-[node name="ProviderHBox" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+[node name="TabContainer" type="TabContainer" parent="MarginContainer/MainVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Model" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="ModelVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="ProviderHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="MarginContainer/MainVBox/ProviderHBox"]
+[node name="Label" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/ProviderHBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Default Provider:"
 vertical_alignment = 1
 
-[node name="ProviderOptionButton" type="OptionButton" parent="MarginContainer/MainVBox/ProviderHBox"]
+[node name="ProviderOptionButton" type="OptionButton" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/ProviderHBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="TemperatureHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+[node name="TemperatureHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 16
 
-[node name="TempLabel" type="Label" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
+[node name="TempLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TemperatureHBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Temperature"
 
-[node name="TempHSlider" type="HSlider" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
+[node name="TempHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TemperatureHBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
@@ -66,22 +81,31 @@ max_value = 2.0
 step = 0.1
 value = 1.0
 
-[node name="TempSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TemperatureHBoxContainer"]
+[node name="TempSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TemperatureHBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 text = "1.0"
 
-[node name="TopPHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+[node name="TemperatureWarning" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.7, 0.2, 1)
+theme_override_font_sizes/font_size = 12
+text = ""
+
+[node name="TopPHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="TopPLabel" type="Label" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
+[node name="TopPLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Top P:"
 
-[node name="TopPHSlider" type="HSlider" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
+[node name="TopPHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
@@ -91,23 +115,24 @@ max_value = 1.0
 step = 0.1
 value = 1.0
 
-[node name="TopPValueLabel" type="Label" parent="MarginContainer/MainVBox/TopPHBoxContainer"]
+[node name="TopPValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 text = "1"
 
-[node name="FrequencyBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+[node name="FrequencyBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 16
 
-[node name="FreqPenLabel" type="Label" parent="MarginContainer/MainVBox/FrequencyBoxContainer"]
+[node name="FreqPenLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Frequency Penalty:"
 
-[node name="FreqHSlider" type="HSlider" parent="MarginContainer/MainVBox/FrequencyBoxContainer"]
+[node name="FreqHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
@@ -116,24 +141,24 @@ min_value = -2.0
 max_value = 2.0
 step = 0.1
 
-[node name="FreqPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/FrequencyBoxContainer"]
+[node name="FreqPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
-text = "0
-"
+text = "0"
 
-[node name="PresenceHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox"]
+[node name="PresenceHBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 16
 
-[node name="PresPenLabel" type="Label" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
+[node name="PresPenLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Presence Penalty:"
 
-[node name="PresenceHSlider" type="HSlider" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
+[node name="PresenceHSlider" type="HSlider" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
@@ -142,43 +167,269 @@ min_value = -2.0
 max_value = 2.0
 step = 0.1
 
-[node name="PresPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/PresenceHBoxContainer"]
+[node name="PresPenSliderValueLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
-text = "0
-"
+text = "0"
 
-[node name="SystemPromptVBoxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox"]
+[node name="SystemPromptSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox"]
 layout_mode = 2
-theme_override_constants/separation = 16
 
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer"]
+[node name="SystemPromptVBoxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="systemPromptLabel" type="Label" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer"]
+[node name="systemPromptLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-tooltip_text = "System prompts are special messages used to steer 
+tooltip_text = "System prompts are special messages used to steer
 the behavior of the LLM Model if the model supports
- them.  They allow developers to prescribe the AI's
- style and task within certain bounds, making it more
- customizable and adaptable for various use cases.
-(At the moment Only ChatGPT Supports System Prompts)"
+them. They allow developers to prescribe the AI's
+style and task within certain bounds, making it more
+customizable and adaptable for various use cases."
 mouse_filter = 0
-text = "Type System Prompt Message: "
+text = "System Prompt:"
 
-[node name="RecordSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer"]
+[node name="RecordSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 icon = ExtResource("2_bfm0p")
 
-[node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/SystemPromptVBoxContainer"]
+[node name="SystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(320, 180)
+custom_minimum_size = Vector2(320, 120)
 layout_mode = 2
 placeholder_text = "Type System Prompt here"
+wrap_mode = 1
+caret_blink = true
+
+[node name="Agentic" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="AgenticVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="MaxToolRoundsHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="MaxToolRoundsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxToolRoundsHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Max Tool Rounds:"
+
+[node name="MaxToolRoundsSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxToolRoundsHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 100.0
+value = 10.0
+
+[node name="AutoContinueCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Auto-continue after tool calls"
+
+[node name="MaxImageIterationsHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="MaxImageIterationsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxImageIterationsHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Maximum iterations for iterative image generation.
+Used when LLM refines images based on criteria."
+mouse_filter = 0
+text = "Max Image Iterations:"
+
+[node name="MaxImageIterationsSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxImageIterationsHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 20.0
+value = 3.0
+
+[node name="ToolSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+
+[node name="ToolAccessVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ToolAccessLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ToolAccessVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Tool Access:"
+
+[node name="ToolMarginContainer" type="MarginContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ToolAccessVBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_right = 20
+
+[node name="ToolScrollContainer" type="ScrollContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ToolAccessVBox/ToolMarginContainer"]
+custom_minimum_size = Vector2(0, 150)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ToolCheckboxContainer" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ToolAccessVBox/ToolMarginContainer/ToolScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="DirSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+
+[node name="AllowedDirsVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="AllowedDirsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AllowedDirsVBox"]
+layout_mode = 2
+text = "Allowed Directories (one per line, empty = allow all):"
+
+[node name="AllowedDirsTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AllowedDirsVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+placeholder_text = "/home/user/projects
+/tmp/safe-work"
+wrap_mode = 1
+
+[node name="ContextLimitsSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+
+[node name="ContextLimitsVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ContextLimitsLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox"]
+layout_mode = 2
+tooltip_text = "Configure context management for agent mode.
+Set to 0 to use default values.
+These settings help prevent 'prompt too long' errors."
+mouse_filter = 0
+text = "Context Limits (0 = default):"
+
+[node name="MaxToolResultHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox"]
+layout_mode = 2
+
+[node name="MaxToolResultLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/MaxToolResultHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Maximum characters for a single tool result before truncation.
+Default: 8000"
+mouse_filter = 0
+text = "Max Tool Result Length:"
+
+[node name="MaxToolResultSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/MaxToolResultHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 50000.0
+step = 1000.0
+
+[node name="ContextWarningHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox"]
+layout_mode = 2
+
+[node name="ContextWarningLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextWarningHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Token count threshold for showing a warning.
+Default: 80000"
+mouse_filter = 0
+text = "Warning Threshold:"
+
+[node name="ContextWarningSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextWarningHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 200000.0
+step = 5000.0
+
+[node name="ContextHardLimitHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox"]
+layout_mode = 2
+
+[node name="ContextHardLimitLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextHardLimitHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Token count threshold for stopping the agent.
+Default: 100000"
+mouse_filter = 0
+text = "Hard Limit:"
+
+[node name="ContextHardLimitSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextHardLimitHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 250000.0
+step = 5000.0
+
+[node name="SummarizeThresholdHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox"]
+layout_mode = 2
+
+[node name="SummarizeThresholdLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/SummarizeThresholdHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Token count threshold for auto-summarizing history.
+Default: 60000"
+mouse_filter = 0
+text = "Summarize Threshold:"
+
+[node name="SummarizeThresholdSpinBox" type="SpinBox" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/SummarizeThresholdHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 200000.0
+step = 5000.0
+
+[node name="AgenticSystemPromptSeparator" type="HSeparator" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+
+[node name="AgenticSystemPromptVBox" type="VBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="AgenticSystemPromptLabel" type="Label" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "System prompt used when Agent Mode is enabled.
+This prompt guides the AI's behavior during tool use.
+Leave empty to use the default agent prompt with tool usage guidelines."
+mouse_filter = 0
+text = "Agent System Prompt (empty = use default):"
+
+[node name="RecordAgenticSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+icon = ExtResource("2_bfm0p")
+
+[node name="AgenticSystemPromptTextEdit" type="TextEdit" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 120)
+layout_mode = 2
+placeholder_text = "Default: AI assistant with tool usage guidelines...
+- Plan approach before acting
+- Use targeted queries over broad fetches
+- Avoid cobrowser_get_state (returns entire DOM)
+- Use cobrowser_scroll for content below fold
+(Leave empty to use this default)"
 wrap_mode = 1
 caret_blink = true
 
@@ -198,11 +449,21 @@ text = "Close"
 
 [connection signal="about_to_popup" from="." to="." method="_on_about_to_popup"]
 [connection signal="close_requested" from="." to="." method="_on_close_requested"]
-[connection signal="item_selected" from="MarginContainer/MainVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TemperatureHBoxContainer/TempHSlider" to="." method="_on_temp_h_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/TopPHBoxContainer/TopPHSlider" to="." method="_on_top_ph_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/FrequencyBoxContainer/FreqHSlider" to="." method="_on_freq_h_slider_value_changed"]
-[connection signal="value_changed" from="MarginContainer/MainVBox/PresenceHBoxContainer/PresenceHSlider" to="." method="_on_presence_h_slider_value_changed"]
-[connection signal="pressed" from="MarginContainer/MainVBox/SystemPromptVBoxContainer/HBoxContainer/RecordSystemPromptButton" to="." method="_on_record_system_prompt_button_pressed"]
+[connection signal="item_selected" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/ProviderHBox/ProviderOptionButton" to="." method="_on_provider_option_button_item_selected"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TemperatureHBoxContainer/TempHSlider" to="." method="_on_temp_h_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer/TopPHSlider" to="." method="_on_top_ph_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer/FreqHSlider" to="." method="_on_freq_h_slider_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer/PresenceHSlider" to="." method="_on_presence_h_slider_value_changed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer/RecordSystemPromptButton" to="." method="_on_record_system_prompt_button_pressed"]
 [connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/AcceptButton" to="." method="_on_accept_button_pressed"]
 [connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/CancelButton" to="." method="_on_cancel_button_pressed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxToolRoundsHBox/MaxToolRoundsSpinBox" to="." method="_on_max_tool_rounds_spin_box_value_changed"]
+[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AutoContinueCheckButton" to="." method="_on_auto_continue_check_button_toggled"]
+[connection signal="text_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AllowedDirsVBox/AllowedDirsTextEdit" to="." method="_on_allowed_dirs_text_edit_text_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/MaxToolResultHBox/MaxToolResultSpinBox" to="." method="_on_max_tool_result_spin_box_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextWarningHBox/ContextWarningSpinBox" to="." method="_on_context_warning_spin_box_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextHardLimitHBox/ContextHardLimitSpinBox" to="." method="_on_context_hard_limit_spin_box_value_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/SummarizeThresholdHBox/SummarizeThresholdSpinBox" to="." method="_on_summarize_threshold_spin_box_value_changed"]
+[connection signal="pressed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer/RecordAgenticSystemPromptButton" to="." method="_on_record_agentic_system_prompt_button_pressed"]
+[connection signal="text_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/AgenticSystemPromptTextEdit" to="." method="_on_agentic_system_prompt_text_edit_text_changed"]
+[connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxImageIterationsHBox/MaxImageIterationsSpinBox" to="." method="_on_max_image_iterations_spin_box_value_changed"]

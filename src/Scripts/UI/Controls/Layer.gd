@@ -2,6 +2,8 @@ class_name Layer
 extends TextureRect
 
 const _scene = preload("res://Scenes/Layer.tscn")
+var _image_texture: ImageTexture
+
 var image: Image:
 	set(new_image):
 		image = new_image
@@ -37,11 +39,19 @@ func _ready():
 
 
 func update(image_: Image = null):# this method get called every time a stroke is done on a layer
-	if image_ != null and !image_.is_empty():
-		texture = ImageTexture.create_from_image(image_)
-	else:
-		if self.image:
-			texture = ImageTexture.create_from_image(self.image)
+	var img_to_use: Image = image_ if (image_ != null and !image_.is_empty()) else self.image
+	if img_to_use:
+		# Reuse existing texture if possible
+		if _image_texture:
+			_image_texture.set_image(img_to_use)
+		else:
+			_image_texture = ImageTexture.create_from_image(img_to_use)
+		texture = _image_texture
+
+
+func _exit_tree() -> void:
+	# Release texture to prevent RID leaks
+	texture = null
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and dragging:

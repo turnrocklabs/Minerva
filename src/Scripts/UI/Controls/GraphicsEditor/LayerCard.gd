@@ -77,6 +77,12 @@ func _ready():
 	_setup_context_menu()
 
 
+func _exit_tree() -> void:
+	# Release texture to prevent leaks during shutdown
+	if texture_rect and texture_rect.texture:
+		texture_rect.texture = null
+
+
 func _draw() -> void:
 	if not layer: return
 
@@ -84,11 +90,29 @@ func _draw() -> void:
 		await ready
 
 	name_line_edit.text = layer.name
+	_update_preview_texture()
+
+
+## Update the preview texture from layer image. Reuses existing texture if possible.
+func _update_preview_texture() -> void:
+	if not layer: return
+
 	match layer.type:
 		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING, LayerV2.Type.MASK:
-			texture_rect.texture = ImageTexture.create_from_image(layer.image)
+			if layer.image:
+				# Reuse existing ImageTexture if we have one, otherwise create new
+				if texture_rect.texture is ImageTexture:
+					(texture_rect.texture as ImageTexture).set_image(layer.image)
+				else:
+					texture_rect.texture = ImageTexture.create_from_image(layer.image)
 		LayerV2.Type.SPEECH_BUBBLE:
-			texture_rect.texture = await get_texture(layer.speech_bubble)
+			# Speech bubble needs async texture generation
+			_update_speech_bubble_texture()
+
+
+func _update_speech_bubble_texture() -> void:
+	var tex = await get_texture(layer.speech_bubble)
+	texture_rect.texture = tex
 
 
 static func get_texture(control: Control) -> ImageTexture:

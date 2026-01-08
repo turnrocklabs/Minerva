@@ -6,11 +6,14 @@ func _init():
 
 	model_name = "human"
 	short_name = "HU"
-	token_cost = 5.0 # so it ends up at the bottom of the list
+	# Human provider - placeholder (sorts to bottom of list)
+	input_token_cost = 1000.0
+	output_token_cost = 1000.0
 
 
 func _parse_request_results(_response: RequestResults) -> BotResponse:
 	var bot_response:= BotResponse.new()
+	bot_response.provider = self  # Always set provider
 	return bot_response
 
 

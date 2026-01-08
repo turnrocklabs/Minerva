@@ -81,7 +81,8 @@ func get_selected_service_data() -> Array[Dictionary]:
 func load_saved_selected_services(services_data: Array) -> void:
 	_loaded_services.assign(services_data)
 
-	print("scv: ", _loaded_services)
+	if SingletonObject.verbose_logging:
+		print("scv: ", _loaded_services)
 
 
 ## Sets the available services, and clear the present warning if [param clear_warning] is true.

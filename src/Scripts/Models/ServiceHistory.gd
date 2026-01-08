@@ -35,20 +35,80 @@ var FrequencyPenalty: float = 0:
 var PresencePenalty: float = 0:
 	set(value): SingletonObject.call_deferred("save_state", false); PresencePenalty = value
 
+## Agentic settings - per-chat configuration for agent mode
+var MaxToolCallRounds: int = 10:
+	set(value): SingletonObject.call_deferred("save_state", false); MaxToolCallRounds = value
+
+var AutoContinueToolCalls: bool = true:
+	set(value): SingletonObject.call_deferred("save_state", false); AutoContinueToolCalls = value
+
+var DisabledTools: Array[String] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); DisabledTools = value
+
+var AllowedDirectories: Array[String] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); AllowedDirectories = value
+
+## Agentic system prompt - used instead of regular system prompt when agent mode is enabled
+var AgenticSystemPrompt: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); AgenticSystemPrompt = value
+
+## Agent context management settings (0 = use defaults from ChatPane)
+var AgentMaxToolResultLength: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentMaxToolResultLength = value
+
+var AgentContextWarningThreshold: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentContextWarningThreshold = value
+
+var AgentContextHardLimit: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentContextHardLimit = value
+
+var AgentSummarizeThreshold: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentSummarizeThreshold = value
+
+## Whether agent mode is enabled for this chat
+var AgentModeEnabled: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentModeEnabled = value
+
 var VBox: VBoxChat
 var provider: BaseProvider
 
 static var SERIALIZER_FIELDS = [
-	"HistoryId", 
-	"HistoryName", 
-	"HistoryItemList", 
+	"HistoryId",
+	"HistoryName",
+	"HistoryItemList",
 	"Provider",
 	"ServiceType",
-	"Temperature", 
+	"HasUsedSystemPrompt",
+	"Temperature",
 	"TopP",
 	"FrequencyPenalty",
-	"PresencePenalty"
+	"PresencePenalty",
+	"MaxToolCallRounds",
+	"AutoContinueToolCalls",
+	"DisabledTools",
+	"AllowedDirectories",
+	"AgenticSystemPrompt",
+	"AgentMaxToolResultLength",
+	"AgentContextWarningThreshold",
+	"AgentContextHardLimit",
+	"AgentSummarizeThreshold",
+	"AgentModeEnabled",
 ]
+
+
+## Get the API_MODEL_PROVIDERS enum value for a provider instance
+static func _get_provider_enum(prov) -> int:
+	if not prov:
+		return SingletonObject.API_MODEL_PROVIDERS.HUMAN
+
+	var provider_script = prov.get_script()
+	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+		if SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
+			return key
+
+	# Fallback to first non-human provider
+	return SingletonObject.API_MODEL_PROVIDERS.GPT_NANO
+
 
 ## Initialize with a new HistoryId
 func _init(_provider, optional_historyId = null):
@@ -62,6 +122,37 @@ func _init(_provider, optional_historyId = null):
 	else:
 		self.HistoryId = optional_historyId
 	HistoryItemList = []
+	# Set owner_history_id so provider knows which chat it belongs to
+	if _provider and _provider.has_method("get"):  # Check it's a valid object
+		_provider.owner_history_id = self.HistoryId
+
+## Calculate total session cost in dollars for all messages in this history
+func get_session_cost() -> float:
+	var total := 0.0
+	for item in HistoryItemList:
+		# Use item's provider if available, otherwise fall back to history provider
+		var p: BaseProvider = item.provider if item.provider else provider
+		if p:
+			total += (item.InputTokens * p.input_token_cost +
+					 item.OutputTokens * p.output_token_cost) / 1_000_000.0
+	return total
+
+
+## Get total input tokens for this session
+func get_session_input_tokens() -> int:
+	var total := 0
+	for item in HistoryItemList:
+		total += item.InputTokens
+	return total
+
+
+## Get total output tokens for this session
+func get_session_output_tokens() -> int:
+	var total := 0
+	for item in HistoryItemList:
+		total += item.OutputTokens
+	return total
+
 
 ## Creates prompt from this history using the set provider.
 ## The `predicate` parameter is a `Callable` that returns an `Array` of 2 booleans.
@@ -100,13 +191,24 @@ func Serialize() -> Dictionary:
 	var save_dict:Dictionary = {
 		"HistoryId" : HistoryId,
 		"HistoryName" : HistoryName,
-		# "Provider": SingletonObject.get_active_provider(SingletonObject.ChatList.find(self)),
+		"Provider": _get_provider_enum(provider),
 		"ServiceType": service_type,
 		"HistoryItemList" : serialized_items,
+		"HasUsedSystemPrompt": HasUsedSystemPrompt,
 		"Temperature": Temperature,
 		"TopP": TopP,
 		"FrequencyPenalty": FrequencyPenalty,
-		"PresencePenalty": PresencePenalty
+		"PresencePenalty": PresencePenalty,
+		"MaxToolCallRounds": MaxToolCallRounds,
+		"AutoContinueToolCalls": AutoContinueToolCalls,
+		"DisabledTools": DisabledTools,
+		"AllowedDirectories": AllowedDirectories,
+		"AgenticSystemPrompt": AgenticSystemPrompt,
+		"AgentMaxToolResultLength": AgentMaxToolResultLength,
+		"AgentContextWarningThreshold": AgentContextWarningThreshold,
+		"AgentContextHardLimit": AgentContextHardLimit,
+		"AgentSummarizeThreshold": AgentSummarizeThreshold,
+		"AgentModeEnabled": AgentModeEnabled,
 	}
 	return save_dict
 
@@ -151,5 +253,33 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.FrequencyPenalty = data.get("FrequencyPenalty")
 	if data.get("PresencePenalty"):
 		history.PresencePenalty = data.get("PresencePenalty")
-	
+
+	# System prompt flag
+	if data.has("HasUsedSystemPrompt"):
+		history.HasUsedSystemPrompt = data.get("HasUsedSystemPrompt", false)
+
+	# Agentic settings (with defaults for backwards compatibility)
+	if data.has("MaxToolCallRounds"):
+		history.MaxToolCallRounds = int(data.get("MaxToolCallRounds", 10))
+	if data.has("AutoContinueToolCalls"):
+		history.AutoContinueToolCalls = data.get("AutoContinueToolCalls", true)
+	if data.has("DisabledTools"):
+		var disabled = data.get("DisabledTools", [])
+		history.DisabledTools.assign(disabled)
+	if data.has("AllowedDirectories"):
+		var allowed = data.get("AllowedDirectories", [])
+		history.AllowedDirectories.assign(allowed)
+	if data.has("AgenticSystemPrompt"):
+		history.AgenticSystemPrompt = data.get("AgenticSystemPrompt", "")
+	if data.has("AgentMaxToolResultLength"):
+		history.AgentMaxToolResultLength = int(data.get("AgentMaxToolResultLength", 0))
+	if data.has("AgentContextWarningThreshold"):
+		history.AgentContextWarningThreshold = int(data.get("AgentContextWarningThreshold", 0))
+	if data.has("AgentContextHardLimit"):
+		history.AgentContextHardLimit = int(data.get("AgentContextHardLimit", 0))
+	if data.has("AgentSummarizeThreshold"):
+		history.AgentSummarizeThreshold = int(data.get("AgentSummarizeThreshold", 0))
+	if data.has("AgentModeEnabled"):
+		history.AgentModeEnabled = data.get("AgentModeEnabled", false)
+
 	return history

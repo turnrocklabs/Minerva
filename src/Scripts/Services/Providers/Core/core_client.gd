@@ -44,7 +44,7 @@ const MEDIA_GEN_DIVISIBLE_BY: = 64 # The total numgber of pixels must be divisib
 var _client: WebSocketPeer = WebSocketPeer.new() # Explicitly type _client
 var _entity_type: EntityType = EntityType.SOFTWARE_AGENT # Explicitly type _entity_type
 var client_id: String = ""
-var minerva_secret: String = "cats"
+#var minerva_secret: String = "cats"
 var _connected = false
 var _heartbeat_timer: Timer
 var register_timer: Timer
@@ -88,19 +88,16 @@ func _ready():
 	ProjectSettings.set_setting("network/limits/websocket/max_out_buffer_kb", 16384)
 	
 	client_id = UUIDGen.v7()
-	#_client.inbound_buffer_size = 32 * 1024 * 1024
-	#_client.outbound_buffer_size = 32 * 1024 * 1024
-	print("Client ID is %s" % client_id)
+	if SingletonObject.verbose_logging:
+		print("Client ID is %s" % client_id)
 	_heartbeat_timer = Timer.new()
 	_heartbeat_timer.set_one_shot(false)
 	_heartbeat_timer.set_wait_time(HEARTBEAT_INTERVAL)
 	_heartbeat_timer.timeout.connect(send_heartbeat)
 	add_child(_heartbeat_timer)
 	set_process(false)
-	#minerva_secret = OS.get_environment("MINERVA_SECRET")
-	if minerva_secret.is_empty():
-		print("Error: MINERVA_SECRET environment variable is not set")
-
+	#if minerva_secret.is_empty():
+		#print("Error: MINERVA_SECRET environment variable is not set")
 
 
 func _exit_tree() -> void:
@@ -114,7 +111,8 @@ func _clean():
 	for msg_id in _active_transfers.keys():
 		var t: Transfer = _active_transfers[msg_id]
 
-		print("Clearing transfer (%s)" % msg_id)
+		if SingletonObject.verbose_logging:
+			print("Clearing transfer (%s)" % msg_id)
 		clear_trasnfer(t)
 
 func clear_trasnfer(t: Transfer) -> void:
@@ -123,16 +121,18 @@ func clear_trasnfer(t: Transfer) -> void:
 	for fa in files:
 		fa.close()
 		var ferr: = DirAccess.remove_absolute(fa.get_path_absolute())
-		
+
 		if ferr == OK:
-			print("Removed %s" % fa.get_path_absolute())
+			if SingletonObject.verbose_logging:
+				print("Removed %s" % fa.get_path_absolute())
 		else:
 			push_error("%s while trying to delete %s" % [error_string(ferr), fa.get_path_absolute()])
 	
 	var derr: = DirAccess.remove_absolute(t.directory)
-	
+
 	if derr == OK:
-		print("Removed %s" % t.directory)
+		if SingletonObject.verbose_logging:
+			print("Removed %s" % t.directory)
 	else:
 		push_error("%s while trying to delete" % [error_string(derr), t.directory])
 
@@ -166,7 +166,8 @@ func connect_to_core(CORE_WS_URL_param: String) -> bool: # Explicitly type param
 	
 	# If we have an existing connection, close it properly
 	if current_state != WebSocketPeer.STATE_CLOSED:
-		print("Closing existing connection before reconnecting...")
+		if SingletonObject.verbose_logging:
+			print("Closing existing connection before reconnecting...")
 		close_connection("Reconnecting")
 		# Wait a frame for the connection to close
 		await get_tree().process_frame
@@ -221,10 +222,11 @@ func _process(_delta):
 			while _client.get_available_packet_count():
 				# Get the packet first, then check its type
 				var packet_buffer: PackedByteArray = _client.get_packet() # This consumes the packet
-				
+
 				# Debugging: Check packet_buffer size BEFORE was_string_packet()
 				# This helps confirm if get_packet() is returning data
-				print("DEBUG_PROCESS: Packet retrieved. Raw size: %s bytes." % packet_buffer.size())
+				if SingletonObject.verbose_logging:
+					print("DEBUG_PROCESS: Packet retrieved. Raw size: %s bytes." % packet_buffer.size())
 				
 				if _client.was_string_packet(): # Check if the *last* received packet was a string
 					var packet_string: String = packet_buffer.get_string_from_utf8() # Explicitly type
@@ -253,11 +255,13 @@ func _process(_delta):
 				_connected = false
 				_heartbeat_timer.stop()
 				connection_closed.emit()
-				print("connection closed !!!")
+				if SingletonObject.verbose_logging:
+					print("connection closed !!!")
 				# If we have queued messages and weren't intentionally closing, reconnect
 				if _message_queue.size() > 0 and not _is_reconnecting:
 					_is_reconnecting = true
-					print("Have queued messages, attempting reconnection...")
+					if SingletonObject.verbose_logging:
+						print("Have queued messages, attempting reconnection...")
 					connect_to_core(CORE_WS_URL)
 			
 			# Only stop processing if we're not trying to reconnect
@@ -313,15 +317,16 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 		var error_msg: String = data.get("params", {}).get("error", "") # Explicitly type
 		
 		if error_code == "AUTH_FAILED_PROFILE_CMD_ERROR" or "token" in error_msg.to_lower():
-			print("Authentication failed: %s" % error_msg) # Corrected string formatting
-			
+			push_warning("Authentication failed: %s" % error_msg)
+
 			# Only attempt auto-login once per connection
 			if not _auth_retry_attempted:
 				_auth_retry_attempted = true
 				auth_failed.emit()
 				return
 			else:
-				print("Auto-login already attempted, not retrying")
+				if SingletonObject.verbose_logging:
+					print("Auto-login already attempted, not retrying")
 				return
 	
 	elif cmd == "registration_confirmed" and entity_type == "core":
@@ -349,13 +354,16 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 		
 		# Handle final response for an image generation request that included binary transfer
 		if request_id == _current_binary_request_id:
-			print("  ✔️ Final SUCCESS for request_id=%s: %s" % [request_id, JSON.stringify(result, "\t", false)]) # Corrected string formatting
+			if SingletonObject.verbose_logging:
+				print("  ✔️ Final SUCCESS for request_id=%s: %s" % [request_id, JSON.stringify(result, "\t", false)])
 			if _binary_expected_files > 0 and _binary_files_completed == _binary_expected_files:
-				print("  📦 All %s files for request %s successfully saved." % [_binary_files_completed, request_id]) # Corrected string formatting
+				if SingletonObject.verbose_logging:
+					print("  📦 All %s files for request %s successfully saved." % [_binary_files_completed, request_id])
 				binary_transfer_complete.emit(request_id)
 				_reset_binary_transfer_state() # Reset state after full completion
 			elif _binary_expected_files > 0:
-				print("  ⚠️ Received final response but only %s/%s files completed for request %s" % [_binary_files_completed, _binary_expected_files, request_id]) # Corrected string formatting
+				if SingletonObject.verbose_logging:
+					print("  ⚠️ Received final response but only %s/%s files completed for request %s" % [_binary_files_completed, _binary_expected_files, request_id])
 				_reset_binary_transfer_state() # Reset anyway to prevent stale state
 		
 		# Always emit the response_received signal
@@ -364,17 +372,14 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 	# Always emit the general message_received signal
 	message_received.emit(data)
 	
-	if request_id != _current_binary_request_id:
+	if request_id != _current_binary_request_id and SingletonObject.verbose_logging:
 		var json_str = JSON.stringify(data)
-		print("📥 Received text message length: %s bytes" % json_str.length()) # Corrected string formatting
-		var chunk_idx: = 0
-		
+		print("📥 Received text message length: %s bytes" % json_str.length())
+
 		for i in range(0, json_str.length(), _max_chunk_length):
 			var chunk: =  json_str.substr(i, _max_chunk_length)
-			print("Chunk number: %d" % chunk_idx)
-			print("Received message: \n%s" % chunk)
-			
-			chunk_idx += 1
+			printraw(chunk)
+			# we have to wait for 3 frames in order to avoid output overflow
 			await get_tree().process_frame
 			await get_tree().process_frame
 			await get_tree().process_frame
@@ -430,7 +435,8 @@ func send_request(service_topic, user_input):
 
 func send_text_message_to_core(message):
 	var json_string = JSON.stringify(message)
-	print("Sending message: ", json_string)
+	if SingletonObject.verbose_logging:
+		print("Sending message: ", json_string)
 	_client.send_text(json_string)
 
 
@@ -466,12 +472,10 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 			"data": data
 		}
 	}
-
+	
 	var json_string = JSON.stringify(message)
-	# print("Sending message:")
-	# print(json_string)
 	_client.send_text(json_string)
-
+	
 	return request_id
 
 
@@ -497,7 +501,8 @@ func send_heartbeat():
 			"params": {}
 		}
 		send_text_message_to_core(heartbeat_msg)
-		print("Heartbeat sent")
+		if SingletonObject.verbose_logging:
+			print("Heartbeat sent")
 
 #region Cuauh's code
 func _reset_binary_transfer_state() -> void:
@@ -507,7 +512,8 @@ func _reset_binary_transfer_state() -> void:
 	_binary_expected_files = 0
 	_binary_files_completed = 0
 	_current_binary_request_id = ""
-	print("Binary transfer state reset.")
+	if SingletonObject.verbose_logging:
+		print("Binary transfer state reset.")
 
 # Helper to read 64-bit unsigned integer (little-endian)
 func _decode_u64_le(bytes_array: PackedByteArray, offset: int) -> int: # Explicitly type parameters and return
@@ -537,7 +543,8 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 	}
 	
 	var frame_name: String = frame_names.get(frame_type, "UNKNOWN(%d)" % frame_type)
-	print("🔷 Binary frame: %s, size: %s bytes" % [frame_name, msg.size()])
+	if SingletonObject.verbose_logging:
+		print("🔷 Binary frame: %s, size: %s bytes" % [frame_name, msg.size()])
 	
 	match frame_type:
 		NEW_MESSAGE:
@@ -552,9 +559,10 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				var header_bytes: PackedByteArray = payload.slice(8, 8 + json_len) # Explicitly type
 				var header_json_str: String = header_bytes.get_string_from_utf8() # Explicitly type
 				var header: Dictionary = parse_json_packet(header_json_str) # Explicitly type
-				
-				print("   📋 Binary header: %s files" % num_files)
-				print("   📋 Header: %s" % JSON.stringify(header, "\t", false))
+
+				if SingletonObject.verbose_logging:
+					print("   📋 Binary header: %s files" % num_files)
+					print("   📋 Header: %s" % JSON.stringify(header, "\t", false))
 				
 				# Validate this binary stream is for our request
 				var req_id: String = header.get("params", {}).get("request_id", "") # Explicitly type
@@ -562,19 +570,22 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				var hdr_topic: String = header.get("topic", "") # Explicitly type
 				
 				if hdr_cmd != "response" or not (hdr_topic.begins_with("media_gen/")):
-					print("  ℹ️ Binary header cmd=%s topic=%s not a media_gen response, ignoring." % [hdr_cmd, hdr_topic])
+					if SingletonObject.verbose_logging:
+						print("  ℹ️ Binary header cmd=%s topic=%s not a media_gen response, ignoring." % [hdr_cmd, hdr_topic])
 					return
 				
 				# If we receive a NEW_MESSAGE for a different request_id,
 				# we should reset and start tracking this new one.
 				if _current_binary_request_id != req_id:
-					print("  ℹ️ New binary stream detected for request_id=%s. Resetting previous state." % req_id)
+					if SingletonObject.verbose_logging:
+						print("  ℹ️ New binary stream detected for request_id=%s. Resetting previous state." % req_id)
 					_reset_binary_transfer_state()
 					_current_binary_request_id = req_id
-				
+
 				_binary_expected_files = num_files
 				_binary_files_completed = 0
-				print("🎯 Expecting %s files in binary transfer for request %s" % [_binary_expected_files, req_id])
+				if SingletonObject.verbose_logging:
+					print("🎯 Expecting %s files in binary transfer for request %s" % [_binary_expected_files, req_id])
 				
 				binary_new_message_received.emit(header, num_files)
 			else:
@@ -617,9 +628,11 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					# *** CRITICAL FIX: Re-assign the modified copy back to the dictionary ***
 					(_binary_files[file_index] as Dictionary)["buffer"] = buffer_copy_for_modify
 					# *** End CRITICAL FIX ***
-					print("   📁 FILE_INFO idx=%s name=%s size=%s (applied %s buffered bytes). Current buffer size: %s bytes." % [file_index, _name, file_size, (_binary_files[file_index] as Dictionary)["received"], buffer_copy_for_modify.size()]) # Added buffer size to log
+					if SingletonObject.verbose_logging:
+						print("   📁 FILE_INFO idx=%s name=%s size=%s (applied %s buffered bytes). Current buffer size: %s bytes." % [file_index, _name, file_size, (_binary_files[file_index] as Dictionary)["received"], buffer_copy_for_modify.size()])
 				else:
-					print("   📁 FILE_INFO idx=%s name=%s size=%s. Current buffer size: %s bytes." % [file_index, _name, file_size, ((_binary_files[file_index] as Dictionary)["buffer"] as PackedByteArray).size()]) # Added buffer size to log
+					if SingletonObject.verbose_logging:
+						print("   📁 FILE_INFO idx=%s name=%s size=%s. Current buffer size: %s bytes." % [file_index, _name, file_size, ((_binary_files[file_index] as Dictionary)["buffer"] as PackedByteArray).size()])
 				
 				binary_file_info_received.emit(file_index, _name, file_size)
 			else:
@@ -644,7 +657,8 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						file_index = idx
 						break
 				if file_index == -1: # All files might be complete, but more data arrives (e.g., error)
-					print("   ⚠️ FILE_DATA received but all known files are complete or no files registered. Buffering for index 0.")
+					if SingletonObject.verbose_logging:
+						print("   ⚠️ FILE_DATA received but all known files are complete or no files registered. Buffering for index 0.")
 					file_index = 0 # Fallback to 0 or handle as error
 			else:
 				# No file info received yet, assume index 0 and buffer
@@ -666,15 +680,17 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					var pct: float = 0.0 # Explicitly type
 					if (file_data_dict["size"] as int) > 0:
 						pct = (float(file_data_dict["received"]) / (file_data_dict["size"] as int)) * 100.0
-					print("   📊 FILE_DATA idx=%s: %s/%s (%s%%)" % [file_index, file_data_dict["received"], file_data_dict["size"], "%.1f" % pct]) # Corrected string formatting
+					if SingletonObject.verbose_logging:
+						print("   📊 FILE_DATA idx=%s: %s/%s (%s%%)" % [file_index, file_data_dict["received"], file_data_dict["size"], "%.1f" % pct])
 					binary_file_progress.emit(file_index, file_data_dict["received"] as int, file_data_dict["size"] as int, pct)
 			else:
 				# Defensive: buffer chunks that arrive before FILE_INFO
 				if not _binary_pending_chunks.has(file_index):
 					_binary_pending_chunks[file_index] = []
 				# Store a duplicate here because `payload` will be reused by the next `_handle_binary_frame` call
-				(_binary_pending_chunks[file_index] as Array).append(current_chunk.duplicate()) 
-				print("   ⚠️ FILE_DATA for unknown file index %s - buffering %s bytes" % [file_index, current_chunk.size()])
+				(_binary_pending_chunks[file_index] as Array).append(current_chunk.duplicate())
+				if SingletonObject.verbose_logging:
+					print("   ⚠️ FILE_DATA for unknown file index %s - buffering %s bytes" % [file_index, current_chunk.size()])
 		
 		FILE_END:
 			if payload.size() < 4:
@@ -700,30 +716,35 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				
 				var dir = DirAccess.open("user://temp/")
 				if dir == null: # Check for error
-					print("Error opening directory 'user://temp/'. Creating it.")
-					var err = DirAccess.make_dir_recursive_absolute("user://temp/") # Use make_dir_recursive_absolute for consistency, though make_dir_recursive is fine for user://
+					if SingletonObject.verbose_logging:
+						print("Error opening directory 'user://temp/'. Creating it.")
+					var err = DirAccess.make_dir_recursive_absolute("user://temp/")
 					if err != OK:
-						print("Failed to create directory 'user://temp/'. Error: %s" % err) # Corrected string formatting
+						push_error("Failed to create directory 'user://temp/'. Error: %s" % err)
 						return # Abort if directory can't be created
 				
 				
 				var file = FileAccess.open(out_path, FileAccess.WRITE)
 				if file:
-					print("file paht: %s"  % file.get_path_absolute())
+					if SingletonObject.verbose_logging:
+						print("file path: %s"  % file.get_path_absolute())
 					file.store_buffer(buf)
 					file.close()
 					_binary_files_completed += 1
-					print("   ✅ FILE_END idx=%s saved to %s (%s bytes). Total completed: %s/%s" % [file_index, out_path, buf.size(), _binary_files_completed, _binary_expected_files]) # Corrected string formatting
+					if SingletonObject.verbose_logging:
+						print("   ✅ FILE_END idx=%s saved to %s (%s bytes). Total completed: %s/%s" % [file_index, out_path, buf.size(), _binary_files_completed, _binary_expected_files])
 					#binary_file_saved.emit(file_index, _current_binary_request_id, fname, out_path)
 				else:
-					print(FileAccess.get_open_error())
-					print("   ❌ Could not save file %s" % out_path) # Corrected string formatting
+					push_error("FileAccess error: %s" % FileAccess.get_open_error())
+					push_error("   ❌ Could not save file %s" % out_path)
 				_reset_binary_transfer_state()
 			else:
-				print("   ⚠️ FILE_END for unknown file index %s" % file_index) # Corrected string formatting
-		
+				if SingletonObject.verbose_logging:
+					print("   ⚠️ FILE_END for unknown file index %s" % file_index)
+
 		_: # Default case for unknown frame type
-			print("   ❓ Unknown binary frame type: %s" % frame_type) # Corrected string formatting
+			if SingletonObject.verbose_logging:
+				print("   ❓ Unknown binary frame type: %s" % frame_type)
 
 
 func send_media_gen_request(generation_params: Dictionary, topic: String = "media_gen/image_generation") -> String: # Accepts a dictionary of parameters and optional topic
@@ -737,14 +758,6 @@ func send_media_gen_request(generation_params: Dictionary, topic: String = "medi
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
-				#"workflow": "image_generation",  # Updated workflow
-				## These are now being merged below
-				#"positive_prompt": generation_params.get("prompt"),
-				#"negative_prompt": generation_params.get("negative_prompt"),
-				#"width": 1024, # The total numgber of pixels must be divisible by 64
-				#"height": 1024,
-				#"steps": 8,
-				#"cfg": 1.0,
 			},
 			"auth": Core._jwt_token
 		}
@@ -831,7 +844,8 @@ func _queue_message_for_retry(message: Dictionary) -> void: # Explicitly type pa
 
 
 func _send_queued_messages() -> void:
-	print("Sending %d queued messages..." % _message_queue.size()) # Corrected string formatting
+	if SingletonObject.verbose_logging:
+		print("Sending %d queued messages..." % _message_queue.size())
 	for msg in _message_queue:
 		send_message_to_core(msg)
 	_message_queue.clear()
@@ -841,19 +855,22 @@ func send_message_to_core(message: Dictionary) -> void: # Explicitly type parame
 	# Check actual WebSocket state, not just our flag
 	var state = _client.get_ready_state()
 	if state != WebSocketPeer.STATE_OPEN:
-		print("WebSocket not open (state: %s). Attempting to reconnect..." % state) # Corrected string formatting
+		if SingletonObject.verbose_logging:
+			print("WebSocket not open (state: %s). Attempting to reconnect..." % state)
 		# Queue the message to send after reconnection
 		_queue_message_for_retry(message)
 		connect_to_core(CORE_WS_URL)
 		return
-	
+
 	if validate_message(message):
 		var json_string: String = JSON.stringify(message) # Explicitly type
-		print("Sending message: %s" % json_string) # Corrected string formatting
-		
+		if SingletonObject.verbose_logging:
+			print("Sending message: %s" % json_string)
+
 		if json_string.length() > 65536:  # 64KB threshold
-			print("Large message detected (%s bytes), sending as text" % json_string.length()) # Corrected string formatting
-		
+			if SingletonObject.verbose_logging:
+				print("Large message detected (%s bytes), sending as text" % json_string.length())
+
 		_client.send_text(json_string)
 	else:
 		print("Error: Invalid message format")

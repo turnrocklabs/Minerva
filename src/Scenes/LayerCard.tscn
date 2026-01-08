@@ -1,10 +1,10 @@
-[gd_scene load_steps=11 format=3 uid="uid://bgqhpokm027si"]
+[gd_scene load_steps=11 format=3]
 
-[ext_resource type="Script" uid="uid://dk5fww5r5sryf" path="res://Scripts/UI/Controls/GraphicsEditor/LayerCard.gd" id="1_8joxi"]
-[ext_resource type="Texture2D" uid="uid://vdjevdsprwgm" path="res://addons/markdownlabel/assets/screenshot.png" id="2_cfx4g"]
-[ext_resource type="Texture2D" uid="uid://b230p8vlrp4u2" path="res://assets/icons/eye_icons/visibility_visible.svg" id="2_tha0k"]
-[ext_resource type="Texture2D" uid="uid://dnno8km034xoy" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="3_bp0f0"]
-[ext_resource type="Shader" uid="uid://bl0c4qs7q74ap" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="4_utn5m"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/LayerCard.gd" id="1_8joxi"]
+[ext_resource type="Texture2D" path="res://addons/markdownlabel/assets/screenshot.png" id="2_cfx4g"]
+[ext_resource type="Texture2D" path="res://assets/icons/eye_icons/visibility_visible.svg" id="2_tha0k"]
+[ext_resource type="Texture2D" path="res://assets/icons/eye_icons/visibility_not_visible.png" id="3_bp0f0"]
+[ext_resource type="Shader" path="res://Scripts/UI/Controls/checkerboard.gdshader" id="4_utn5m"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_c4m65"]
 bg_color = Color(0.186202, 0.173051, 0.172226, 1)
@@ -91,6 +91,7 @@ flat = true
 [node name="PanelContainer" type="PanelContainer" parent="LayerCard/v/h"]
 material = SubResource("ShaderMaterial_o1dtc")
 layout_mode = 2
+mouse_filter = 1
 theme_override_styles/panel = SubResource("StyleBoxFlat_utn5m")
 
 [node name="TextureRect" type="TextureRect" parent="LayerCard/v/h/PanelContainer"]
@@ -99,6 +100,7 @@ custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 3
+mouse_filter = 2
 texture = ExtResource("2_cfx4g")
 expand_mode = 1
 stretch_mode = 5
