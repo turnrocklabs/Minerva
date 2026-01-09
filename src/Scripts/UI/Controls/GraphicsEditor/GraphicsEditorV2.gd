@@ -2240,67 +2240,39 @@ func _on_resized() -> void:
 			margin_con.position = Vector2.ZERO
 			margin_con.anchors_preset = Control.PRESET_FULL_RECT
 
-var floating_windows_active: = false
+var floating_windows_active: = true  # Always use floating windows mode
 func response_layout_toggle() -> void:
-	if collapsed_by_user:
-		return
-	
-	if size.x <= 860:
-		floating_windows_active = true
-		if full_size_ai_container.get_child_count() > 0:
-			full_size_ai_container.remove_child(image_gen_panel_container)
-			image_gen_window.size = image_gen_panel_container.size
-			image_gen_window.add_child(image_gen_panel_container)
-			image_gen_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
-			prompt_button.show()
-		if full_size_layers_container.get_child_count() > 0:
-			full_size_layers_container.remove_child(layer_cards_panel_container)
-			layer_cards_popup_panel.size = layer_cards_panel_container.size
-			layer_cards_popup_panel.add_child(layer_cards_panel_container)
-			layer_cards_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
-			layer_cards_toggle_button.show()
-		dock_panel_container.hide()
-	else:
-		floating_windows_active = false
-		if image_gen_window.get_child_count() > 0 and !image_gen_window.visible:
-			image_gen_window.remove_child(image_gen_panel_container)
-			full_size_ai_container.add_child(image_gen_panel_container)
-			prompt_button.hide()
-		if layer_cards_popup_panel.get_child_count() > 0 and !layer_cards_popup_panel.visible:
-			layer_cards_popup_panel.remove_child(layer_cards_panel_container)
-			full_size_layers_container.add_child(layer_cards_panel_container)
-			send_action_button.hide()
-			layer_cards_toggle_button.hide()
-		dock_panel_container.show()
-		dock_split_container.split_offset = 250
+	# Always use popup/floating window mode for Layers and AI panels
+	# Buttons are always visible, clicking them opens popup windows
+
+	if full_size_ai_container.get_child_count() > 0:
+		full_size_ai_container.remove_child(image_gen_panel_container)
+		image_gen_window.size = image_gen_panel_container.size
+		image_gen_window.add_child(image_gen_panel_container)
+		image_gen_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	prompt_button.show()
+
+	if full_size_layers_container.get_child_count() > 0:
+		full_size_layers_container.remove_child(layer_cards_panel_container)
+		layer_cards_popup_panel.size = layer_cards_panel_container.size
+		layer_cards_popup_panel.add_child(layer_cards_panel_container)
+		layer_cards_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer_cards_toggle_button.show()
+
+	dock_panel_container.hide()
 
 
 static var _edit_img_base_tooltip: = "Edit selected Image (edits the currently selected layer with the current prompt)"
 static var _mask_edit_base_tooltip: = "Send mask edit request (needs a mask layer and a regular layer to be selected)"
 func check_ai_buttons_toggle() -> void:
-	if !floating_windows_active:
-		if selected_layers.size() > 0:
-			edit_img_button.disabled = false
-			edit_img_button.tooltip_text = "%s (%s) " % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
-			if selected_mask_layers.size() > 0:
-				send_mask_edit_button.tooltip_text = "%s (%s, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name, selected_mask_layers[0].name]
-				send_mask_edit_button.disabled = false
-			else:
-				send_mask_edit_button.tooltip_text = "%s (%s, no mask selected)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
-				send_mask_edit_button.disabled = true
-		else:
-			edit_img_button.disabled = true
-			edit_img_button.tooltip_text = "No Layer Selected"
-			if selected_mask_layers.size() > 0:
-				send_mask_edit_button.tooltip_text = "%s (no layer selected, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_mask_layers[0].name]
+	# Always in floating windows mode - enable buttons based on connection status
+	if Core.connected:
+		edit_img_button.disabled = false
+		send_mask_edit_button.disabled = false
 	else:
-		if Core.connected:
-			edit_img_button.disabled = false
-			send_mask_edit_button.disabled = false
-		else:
-			edit_img_button.disabled = true
-			send_mask_edit_button.disabled = true
-		edit_img_button.tooltip_text = _edit_img_base_tooltip
+		edit_img_button.disabled = true
+		send_mask_edit_button.disabled = true
+	edit_img_button.tooltip_text = _edit_img_base_tooltip
 
 
 var draw_render_view: = false
@@ -2753,34 +2725,12 @@ func _on_animation_frames_option_button_item_selected(index: int) -> void:
 	spritesheet_anim_is_active = spritesheet_settings_container.visible
 
 
-@export var MIN_DOCK_PANEL_WIDTH: = 500.0 # Define the minimum width for the docked panel in pixels before it collapses.
-var _is_dock_panel_collapsed_by_drag: bool = false # Tracks if the dock panel is currently collapsed due to user dragging.
-var _last_non_collapsed_split_offset: int = 0 # Stores the splitter's position before a drag-collapse, for restoration.
-var _drag_check_timer: Timer = null # Timer to check panel size after drag ends
 @onready var main_h_split_container: HSplitContainer = %MainHSplitContainer
 @onready var v: VBoxContainer = %v
 
-var collapsed_by_user: = false
-func _on_main_h_split_container_dragged(offset: int) -> void:
-	if floating_windows_active:
-		return
-	
-	var dock_panel_center: = dock_panel_container.get_global_rect().get_center().x - 100
-	
-	if get_global_mouse_position().x >= dock_panel_center and !_is_dock_panel_collapsed_by_drag:
-		
-		dock_split_container.hide()
-		_is_dock_panel_collapsed_by_drag = true
-		return
-	
-	var v_zone: = v.get_global_rect().end.x
-	
-	
-	if dock_panel_container.size.x > 100 and _is_dock_panel_collapsed_by_drag and (get_global_mouse_position().x <= v_zone - 10):
-		if dock_panel_container.size.x > 200:
-			dock_split_container.show()
-			_is_dock_panel_collapsed_by_drag = false
-		#return
+func _on_main_h_split_container_dragged(_offset: int) -> void:
+	# Dock panel dragging is disabled - always using floating windows mode
+	pass
 
 var dragging_split: = false
 func _on_main_h_split_container_drag_ended() -> void:

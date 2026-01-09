@@ -327,7 +327,7 @@ text = "Speech"
 [node name="CenterViewButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 visible = false
 layout_mode = 2
-tooltip_text = "Centers the viewport."
+tooltip_text = "Center view and reset zoom"
 icon = ExtResource("17_tml0f")
 
 [node name="RenderViewportButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
@@ -390,6 +390,7 @@ flat = true
 [node name="Button3" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 layout_mode = 2
 size_flags_vertical = 4
+tooltip_text = "Center view and reset zoom"
 icon = ExtResource("17_tml0f")
 
 [node name="ToolOptionsContainer" type="MarginContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h"]
@@ -734,7 +735,7 @@ mouse_filter = 2
 
 [node name="CenterViewButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer"]
 layout_mode = 2
-tooltip_text = "Center View"
+tooltip_text = "Center view and reset zoom"
 focus_mode = 0
 icon = ExtResource("17_tml0f")
 flat = true
