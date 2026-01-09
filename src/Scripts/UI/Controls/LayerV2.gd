@@ -281,8 +281,10 @@ func localize_input(event: InputEvent):
 
 	match type:
 		Type.IMAGE, Type.DRAWING, Type.MASK, Type.CONTROL:
-			# Use global_position to bypass all parent UI element offsets
-			local_event.position = texture_rect.get_local_mouse_position()
+			# Transform global mouse position to layer's local coordinate space
+			# Using affine_inverse() properly handles rotation, scale, and translation
+			# This ensures hit detection works correctly even when layer is rotated
+			local_event.position = get_global_transform().affine_inverse() * get_global_mouse_position()
 		Type.SPEECH_BUBBLE:
 			pass
 

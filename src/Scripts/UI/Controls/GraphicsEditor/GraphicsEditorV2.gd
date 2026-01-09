@@ -460,6 +460,9 @@ func _ready() -> void:
 	# Position drawing area at top-left of viewport on startup
 	call_deferred("_position_view_top_left")
 
+	# Clear custom cursor when mouse leaves the entire graphics editor panel
+	mouse_exited.connect(_on_graphics_editor_mouse_exited)
+
 
 func _process(delta: float) -> void:
 	# Animate marching ants for selection
@@ -757,21 +760,17 @@ func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 
 	_custom_cursor_hotspot = hotspot
 
 	if image:
-		# Only apply cursor globally if mouse is inside the drawing area
-		if _mouse_in_layers_container:
-			Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
-		# Set the control's cursor to use the custom image
+		# Apply cursor globally - don't restrict to container bounds
+		# This prevents cursor flickering when pointer moves faster than rendered content
+		# (See: Felt Engineering blog on dynamic cursor rotation)
+		Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
 		layers_container.mouse_default_cursor_shape = Control.CURSOR_ARROW
-		print("set_custom_cursor: Using custom image, mouse_in_container=", _mouse_in_layers_container)
 	else:
 		# Clear any custom cursor image
 		Input.set_custom_mouse_cursor(null)
 		# Set the control's default cursor shape directly
-		# This is the correct way to change cursor over Control nodes
-		# Cast int to CursorShape enum
 		var casted_shape = shape as Control.CursorShape
 		layers_container.mouse_default_cursor_shape = casted_shape
-		print("set_custom_cursor: shape=", shape, " casted=", casted_shape, " actual=", layers_container.mouse_default_cursor_shape)
 
 func reorder_layer(layer: LayerV2, index: int) -> void:
 	if not layer.has_meta("layer_card") or not layer.get_meta("layer_card") is LayerCard:
@@ -1230,10 +1229,7 @@ func _on_smudge_tool_button_toggled(toggled_on: bool) -> void:
 
 func _on_layers_container_mouse_entered() -> void:
 	_mouse_in_layers_container = true
-	# Re-apply custom cursor image when entering the layers container
-	# The mouse_default_cursor_shape property handles the cursor shape automatically
-	if _custom_cursor:
-		Input.set_custom_mouse_cursor(_custom_cursor, Input.CURSOR_ARROW, _custom_cursor_hotspot)
+	# Cursor is now managed globally, no need to re-apply on container enter
 
 
 func _on_add_image_button_pressed() -> void:
@@ -1262,7 +1258,16 @@ func _on_file_selected(fp: String) -> void:
 
 func _on_layers_container_mouse_exited() -> void:
 	_mouse_in_layers_container = false
+	# Don't clear cursor on container exit - let tools manage cursor state globally
+	# This prevents cursor flickering when pointer moves outside container bounds
+	# but is still within the interactive area (e.g., transform handles outside layer)
+
+
+func _on_graphics_editor_mouse_exited() -> void:
+	# Clear custom cursor when leaving the entire graphics editor panel
+	# This restores normal cursor when moving to other UI elements
 	Input.set_custom_mouse_cursor(null)
+	layers_container.mouse_default_cursor_shape = Control.CURSOR_ARROW
 
 
 func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
