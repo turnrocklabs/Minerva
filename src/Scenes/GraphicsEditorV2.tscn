@@ -186,11 +186,10 @@ _strength_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolO
 _brush_size_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer/SizeVSlider")
 editor = NodePath("../..")
 
-[node name="RenderViewTool" type="Node" parent="Tools" node_paths=PackedStringArray("control", "get_texture_button", "editor")]
+[node name="RenderViewTool" type="Node" parent="Tools" node_paths=PackedStringArray("control", "editor")]
 unique_name_in_owner = true
 script = ExtResource("9_vtsnj")
 control = NodePath("../../h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control")
-get_texture_button = NodePath("../../h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl/GetTextureButton")
 editor = NodePath("../..")
 
 [node name="EyedropperTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
@@ -336,7 +335,7 @@ visible = false
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
-tooltip_text = "RenderViewport"
+tooltip_text = "Export region as PNG image"
 toggle_mode = true
 icon = ExtResource("27_idhh2")
 
@@ -646,18 +645,6 @@ handle_input_locally = false
 gui_disable_input = true
 size = Vector2i(1659, 736)
 render_target_update_mode = 4
-
-[node name="GetTextureButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl"]
-unique_name_in_owner = true
-visible = false
-z_index = 12
-layout_mode = 2
-offset_left = 349.0
-offset_top = 8.0
-offset_right = 381.0
-offset_bottom = 55.0
-tooltip_text = "Take Viewport shot"
-icon = ExtResource("39_yj5gr")
 
 [node name="Control" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
 unique_name_in_owner = true
@@ -1488,7 +1475,6 @@ text = "Select Layers...
 [connection signal="color_changed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions/FillColorPickerButton" to="." method="_on_fill_selection_color_changed"]
 [connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/VBoxContainer/LayerCardsButton" to="." method="_on_layer_cards_button_pressed"]
 [connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/VBoxContainer/PromptButton" to="." method="_on_prompt_button_pressed"]
-[connection signal="pressed" from="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl/GetTextureButton" to="." method="_on_get_texture_button_pressed"]
 [connection signal="draw" from="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control" to="." method="_on_control_draw"]
 [connection signal="gui_input" from="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
 [connection signal="mouse_entered" from="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]

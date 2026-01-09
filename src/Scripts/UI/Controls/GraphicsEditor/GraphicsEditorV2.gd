@@ -2444,46 +2444,71 @@ func _on_fill_selection_color_changed(color: Color) -> void:
 
 #endregion
 
-func _on_get_texture_button_pressed() -> void:
+## Export region and exit the render view tool
+## Called automatically when user draws a valid selection rectangle
+func export_region_and_exit() -> void:
 	# Ensure the render view rectangle exists and has a valid size
 	if not render_view_control._rect.size.x > 0 or not render_view_control._rect.size.y > 0:
-		display_message("Error", "Render view rectangle is empty or invalid.")
+		display_message("Error", "Selection rectangle is empty or invalid.")
+		_exit_render_view_tool()
 		return
 
-	# Capture the image from the defined region
-	var image: Image = await compose_region_image(render_view_control._rect)
-	if not image.is_empty():
-		render_view_control._rect = Rect2() # Reset the rectangle
-		render_view_control.queue_redraw()
-		render_viewport_button.toggled.emit(false) # Untoggle the button
-		active_tool = null # Or go back to default tool (brush)
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
-		
+	# Show file dialog
 	var fd := FileDialog.new()
 	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
 	fd.access = FileDialog.ACCESS_FILESYSTEM
 	fd.add_filter("*.png", "PNG Image")
+	fd.title = "Export Region as PNG"
 	add_child(fd)
+
+	# Track result
+	var selected_path: String = ""
+	fd.file_selected.connect(func(path: String): selected_path = path)
+	fd.canceled.connect(func(): fd.hide())
+
 	fd.popup_centered(Vector2i(800, 600))
 
-	var path = await fd.file_selected
+	# Wait for dialog to close
+	await fd.visibility_changed
 	fd.queue_free()
 
-	if path.is_empty():
+	# If no file selected, just exit cleanly
+	if selected_path.is_empty():
+		_exit_render_view_tool()
 		return
 
 	# Ensure .png extension
-	if not path.ends_with(".png"):
-		path += ".png"
+	if not selected_path.ends_with(".png"):
+		selected_path += ".png"
+
+	# Now capture the image (only if user confirmed)
+	var image: Image = await compose_region_image(render_view_control._rect)
+	if image.is_empty():
+		display_message("Error", "Failed to capture region image.")
+		_exit_render_view_tool()
+		return
 
 	# Convert to RGBA8 if needed
 	if image.get_format() != Image.FORMAT_RGBA8:
 		image.convert(Image.FORMAT_RGBA8)
 
-	var error = image.save_png(path)
+	var error = image.save_png(selected_path)
 	if error != OK:
-		push_error("Failed to save layer: " + str(error))
+		push_error("Failed to save image: " + str(error))
+		display_message("Error", "Failed to save image to: " + selected_path)
+
+	_exit_render_view_tool()
+
+
+## Clean up and exit the render view tool, returning to default tool
+func _exit_render_view_tool() -> void:
+	render_view_control._rect = Rect2()
+	render_view_control.draw_render_view = false
+	render_view_control.queue_redraw()
+	render_viewport_button.set_pressed_no_signal(false)
+	active_tool = null
+	_tools_option_button.select(0)
+	_tools_option_button.item_selected.emit(0)
 
 
 func compose_region_image(region: Rect2, show_dialog: = true) -> Image:
@@ -2598,12 +2623,12 @@ func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
 		_tools_option_button.item_selected.emit(0)
 		_tools_option_button.grab_focus()
 		render_view_control.draw_render_view = false
-		render_view_control.get_texture_button.hide()
+		render_view_control._rect = Rect2()
 		render_view_control.queue_redraw()
 		render_viewport_button.hide()
 		return
-	
-	active_tool = render_view_tool 
+
+	active_tool = render_view_tool
 	render_viewport_button.release_focus()
 	render_view_control.draw_render_view = true
 	render_viewport_button.show()

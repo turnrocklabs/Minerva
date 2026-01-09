@@ -226,6 +226,7 @@ icon_68 = ExtResource("21_tfrx0")
 [node name="ExportAreaButton" type="Button" parent="VBoxContainer/ButtonsHBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
+tooltip_text = "Export region as PNG image"
 icon = ExtResource("25_tritd")
 script = ExtResource("6_jf4nm")
 icon_24 = ExtResource("25_tritd")
