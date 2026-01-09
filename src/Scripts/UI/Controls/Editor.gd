@@ -550,6 +550,9 @@ func _on_create_note_button_pressed() -> void:
 			new_note = Note.create_text_note(tab_title, code_edit.text)
 		Type.GRAPHICS:
 			new_note = Note.create_image_note(tab_title, await graphics_editor.compose_final_image())
+		Type.SPREADSHEET:
+			var markdown_content: String = spreadsheet_editor.spreadsheet_data.to_markdown()
+			new_note = Note.create_spreadsheet_note(tab_title, tab_title, markdown_content)
 		_:
 			new_note = Note.create_error_note(tab_title, "Can't create a note for the specified Editor type (%s)" % type)
 
@@ -877,7 +880,7 @@ func _update_note(note: Note) -> void:
 
 	elif type == Type.SPREADSHEET:
 		var controls_container = note.get_controls_container() as NoteTextControls
-		controls_container.content = spreadsheet_editor.get_content()
+		controls_container.content = spreadsheet_editor.spreadsheet_data.to_markdown()
 
 
 var _proxy_note: Note.Proxy

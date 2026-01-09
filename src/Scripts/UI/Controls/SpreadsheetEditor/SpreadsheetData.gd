@@ -4,6 +4,7 @@ extends RefCounted
 
 const SpreadsheetCellScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetCell.gd")
 const FormulaEngineScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/FormulaEngine.gd")
+const SpreadsheetChartScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetChart.gd")
 
 signal data_changed()
 signal cell_changed(row: int, col: int)
@@ -219,6 +220,12 @@ func clear_range(start_row: int, start_col: int, end_row: int, end_col: int) -> 
 			var key := cell_key(row, col)
 			cells.erase(key)
 
+	data_changed.emit()
+
+
+## Clear all cells (used when importing new data)
+func clear() -> void:
+	cells.clear()
 	data_changed.emit()
 
 
@@ -608,31 +615,6 @@ func to_csv(delimiter: String = ",") -> String:
 	return "\n".join(lines)
 
 
-## Convert to markdown table string
-func to_markdown() -> String:
-	var used_range := get_used_range()
-	if used_range.size == Vector2i.ZERO:
-		return ""
-
-	var lines := PackedStringArray()
-
-	for row in range(used_range.position.y, used_range.end.y):
-		var values := PackedStringArray()
-		for col in range(used_range.position.x, used_range.end.x):
-			values.append(get_cell_display(row, col))
-
-		lines.append("| " + " | ".join(values) + " |")
-
-		# Add header separator after first row
-		if row == used_range.position.y:
-			var sep := PackedStringArray()
-			for col in range(used_range.position.x, used_range.end.x):
-				sep.append("---")
-			lines.append("| " + " | ".join(sep) + " |")
-
-	return "\n".join(lines)
-
-
 ## Convert to JSON array format
 func to_json_array() -> Array:
 	var used_range := get_used_range()
@@ -879,3 +861,228 @@ func _topological_visit(key: String, visited: Dictionary, temp_visited: Dictiona
 	temp_visited.erase(key)
 	visited[key] = true
 	result.append(key)
+
+
+## Convert spreadsheet data to markdown table format
+func to_markdown(include_formulas: bool = false) -> String:
+	var bounds := get_used_range()
+	if bounds.size.x == 0 or bounds.size.y == 0:
+		return ""
+
+	var lines: PackedStringArray = []
+	var col_widths: Array[int] = []
+
+	# Calculate column widths for alignment
+	for col in range(bounds.position.x, bounds.position.x + bounds.size.x):
+		var max_width := 3  # Minimum width
+		for row in range(bounds.position.y, bounds.position.y + bounds.size.y):
+			var text := _get_markdown_cell_text(row, col, include_formulas)
+			max_width = maxi(max_width, text.length())
+		col_widths.append(mini(max_width, 30))  # Cap at 30 chars
+
+	# Build header row (first row of data)
+	var header_parts: PackedStringArray = []
+	for col_idx in range(bounds.size.x):
+		var col := bounds.position.x + col_idx
+		var row := bounds.position.y
+		var text := _get_markdown_cell_text(row, col, include_formulas)
+		header_parts.append(_pad_cell(text, col_widths[col_idx]))
+
+	lines.append("| " + " | ".join(header_parts) + " |")
+
+	# Build separator row
+	var sep_parts: PackedStringArray = []
+	for col_idx in range(bounds.size.x):
+		sep_parts.append("-".repeat(col_widths[col_idx]))
+	lines.append("| " + " | ".join(sep_parts) + " |")
+
+	# Build data rows
+	for row in range(bounds.position.y + 1, bounds.position.y + bounds.size.y):
+		var row_parts: PackedStringArray = []
+		for col_idx in range(bounds.size.x):
+			var col := bounds.position.x + col_idx
+			var text := _get_markdown_cell_text(row, col, include_formulas)
+			row_parts.append(_pad_cell(text, col_widths[col_idx]))
+		lines.append("| " + " | ".join(row_parts) + " |")
+
+	# Append chart definitions if any
+	if charts.size() > 0:
+		var charts_data: Array = []
+		for chart in charts:
+			charts_data.append(chart.to_dict())
+		lines.append("")
+		lines.append("<!-- SPREADSHEET_CHARTS")
+		lines.append(JSON.stringify(charts_data))
+		lines.append("-->")
+
+	return "\n".join(lines)
+
+
+## Get cell text for markdown (escapes pipes)
+func _get_markdown_cell_text(row: int, col: int, include_formulas: bool) -> String:
+	var cell := get_cell_if_exists(row, col)
+	if not cell:
+		return ""
+
+	var text: String
+	if include_formulas and cell.has_formula():
+		text = cell.formula
+	else:
+		text = cell.get_display_text()
+
+	# Escape pipe characters
+	text = text.replace("|", "\\|")
+	# Remove newlines
+	text = text.replace("\n", " ")
+
+	return text
+
+
+## Pad cell text for aligned markdown table
+func _pad_cell(text: String, width: int) -> String:
+	if text.length() > width:
+		return text.substr(0, width - 1) + "…"
+	return text + " ".repeat(width - text.length())
+
+
+## Parse markdown table and update spreadsheet data
+func from_markdown(markdown: String) -> void:
+	var lines := markdown.strip_edges().split("\n")
+	if lines.size() < 2:
+		return
+
+	# Clear existing data and charts
+	clear()
+	charts.clear()
+
+	var data_rows: Array[PackedStringArray] = []
+	var in_chart_block := false
+	var chart_json_lines: PackedStringArray = []
+
+	for line in lines:
+		var trimmed := line.strip_edges()
+
+		# Check for chart block start
+		if trimmed == "<!-- SPREADSHEET_CHARTS":
+			in_chart_block = true
+			continue
+
+		# Check for chart block end
+		if in_chart_block and trimmed == "-->":
+			in_chart_block = false
+			# Parse chart JSON
+			var chart_json := "\n".join(chart_json_lines)
+			_parse_charts_json(chart_json)
+			chart_json_lines.clear()
+			continue
+
+		# Collect chart JSON lines
+		if in_chart_block:
+			chart_json_lines.append(line)
+			continue
+
+		# Skip empty lines
+		if trimmed.is_empty():
+			continue
+
+		# Skip separator rows (|---|---|)
+		if _is_markdown_separator(trimmed):
+			continue
+
+		# Parse table row
+		if trimmed.begins_with("|") and trimmed.ends_with("|"):
+			var row_data := _parse_markdown_row(trimmed)
+			if row_data.size() > 0:
+				data_rows.append(row_data)
+
+	# Populate spreadsheet
+	for row_idx in range(data_rows.size()):
+		var row_data: PackedStringArray = data_rows[row_idx]
+		for col_idx in range(row_data.size()):
+			var value := row_data[col_idx]
+			if not value.is_empty():
+				set_cell_value(row_idx, col_idx, value)
+
+	# Update row/column counts
+	if data_rows.size() > 0:
+		row_count = maxi(row_count, data_rows.size())
+		var max_cols := 0
+		for row_data in data_rows:
+			max_cols = maxi(max_cols, row_data.size())
+		column_count = maxi(column_count, max_cols)
+
+	structure_changed.emit()
+	data_changed.emit()
+
+
+## Parse chart definitions from JSON string
+func _parse_charts_json(json_str: String) -> void:
+	var json := JSON.new()
+	var error := json.parse(json_str)
+	if error != OK:
+		push_warning("Failed to parse chart JSON: %s" % json.get_error_message())
+		return
+
+	var charts_data = json.get_data()
+	if not charts_data is Array:
+		return
+
+	for chart_dict in charts_data:
+		if chart_dict is Dictionary:
+			var chart := SpreadsheetChartScript.new()
+			chart.load_from_dict(chart_dict)
+			charts.append(chart)
+
+
+## Check if a line is a markdown table separator
+func _is_markdown_separator(line: String) -> bool:
+	# Separator lines contain only |, -, :, and spaces
+	var cleaned := line.replace("|", "").replace("-", "").replace(":", "").replace(" ", "")
+	return cleaned.is_empty() and line.contains("-")
+
+
+## Parse a markdown table row into cell values
+func _parse_markdown_row(line: String) -> PackedStringArray:
+	var result: PackedStringArray = []
+
+	# Remove leading/trailing pipes
+	if line.begins_with("|"):
+		line = line.substr(1)
+	if line.ends_with("|"):
+		line = line.substr(0, line.length() - 1)
+
+	# Split by pipe, handling escaped pipes
+	var cells := _split_markdown_cells(line)
+
+	for cell_text in cells:
+		# Unescape pipes and trim
+		var value := cell_text.strip_edges().replace("\\|", "|")
+		result.append(value)
+
+	return result
+
+
+## Split markdown row by pipes, handling escaped pipes
+func _split_markdown_cells(line: String) -> PackedStringArray:
+	var result: PackedStringArray = []
+	var current := ""
+	var i := 0
+
+	while i < line.length():
+		if i < line.length() - 1 and line[i] == "\\" and line[i + 1] == "|":
+			# Escaped pipe - keep it
+			current += "\\|"
+			i += 2
+		elif line[i] == "|":
+			# Cell separator
+			result.append(current)
+			current = ""
+			i += 1
+		else:
+			current += line[i]
+			i += 1
+
+	# Add last cell
+	result.append(current)
+
+	return result

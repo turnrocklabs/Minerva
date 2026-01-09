@@ -147,8 +147,14 @@ func has_formula() -> bool:
 func refresh_display() -> void:
 	if type == CellType.NUMBER and value is float:
 		display_value = _format_number(value)
-	elif type == CellType.FORMULA and not error.is_empty():
-		display_value = "#ERROR"
+	elif type == CellType.FORMULA:
+		if not error.is_empty():
+			display_value = "#ERROR"
+		elif value is float:
+			# Format formula results (like SUM) with number format
+			display_value = _format_number(value)
+		else:
+			display_value = str(value) if value != null else ""
 	elif type != CellType.FORMULA:
 		display_value = str(value) if value != null else ""
 

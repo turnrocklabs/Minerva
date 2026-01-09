@@ -113,6 +113,9 @@ var content_type: String:
 ## and save to that file on serialize, taking the [property type] into account.
 var file: String
 
+## Linked spreadsheet editor name. When set, this note displays spreadsheet data as markdown.[br]
+## The Edit button will open/focus the spreadsheet editor instead of a text editor.
+var linked_spreadsheet: String = ""
 
 var expanded_height: float = 150
 
@@ -219,6 +222,36 @@ static func create_dummy_note(note_title: String) -> Note:
 	)
 
 	return note_scene
+
+
+## Create a note linked to a spreadsheet editor.[br]
+## The note displays spreadsheet data as markdown table.[br]
+## Clicking Edit opens the spreadsheet editor instead of a text editor.
+static func create_spreadsheet_note(note_title: String, spreadsheet_name: String, markdown_content: String, note_uuid: String = "", register: = true) -> Note:
+	var text_controls: NoteTextControls = _text_controls_scene.instantiate()
+	var note_scene: Note = _scene.instantiate()
+
+	note_scene._backing_note_controls.append(text_controls)
+
+	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
+
+	if register:
+		SingletonObject.register_object(note_scene, &"uuid")
+
+	text_controls.setup(note_scene, markdown_content)
+
+	note_scene.title = note_title
+	note_scene.type = Type.TEXT
+	note_scene.linked_spreadsheet = spreadsheet_name
+
+	note_scene.ready.connect(
+		func():
+			note_scene._set_controls_container(text_controls)
+			note_scene.initialized.emit()
+	)
+
+	return note_scene
+
 
 static func create_image_note(note_title: String, image: Image, caption: String = "", note_uuid: String = "", register: = true) -> Note:
 	var image_controls: NoteImageControls = _image_controls_scene.instantiate()
@@ -477,6 +510,11 @@ func _on_edit_button_pressed() -> void:
 
 	var editor_pane: EditorPane = SingletonObject.editor_container.editor_pane
 
+	# Handle linked spreadsheet notes - find/create the spreadsheet editor
+	if not linked_spreadsheet.is_empty():
+		_open_linked_spreadsheet(editor_pane)
+		return
+
 	for editor in editor_pane.get_open_editors():
 		if editor.associated_object == self:
 			var curr_idx: = editor_pane.Tabs.get_tab_idx_from_control(editor)
@@ -495,6 +533,30 @@ func _on_edit_button_pressed() -> void:
 			var editor: = editor_pane.add(Editor.Type.GRAPHICS, null, title, self, false)
 			var controls = get_controls_container() as NoteImageControls
 			editor.graphics_editor.create_new_image_layer(title, controls.image, true)
+
+
+## Open the linked spreadsheet editor, or create one if it doesn't exist
+func _open_linked_spreadsheet(editor_pane: EditorPane) -> void:
+	# Show the editor if it's hidden
+	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+	# Look for existing spreadsheet editor with matching name
+	for editor in editor_pane.get_open_editors():
+		if editor.tab_title == linked_spreadsheet and editor.type == Editor.Type.SPREADSHEET:
+			var curr_idx: = editor_pane.Tabs.get_tab_idx_from_control(editor)
+			editor_pane.Tabs.current_tab = curr_idx
+			return
+
+	# Create new spreadsheet editor with the note's markdown content
+	var editor = editor_pane.add(Editor.Type.SPREADSHEET, null, linked_spreadsheet, self)
+
+	# Parse the note's markdown content into the spreadsheet
+	if editor.spreadsheet_editor:
+		var controls = get_controls_container() as NoteTextControls
+		if controls and not controls.content.is_empty():
+			editor.spreadsheet_editor.spreadsheet_data.from_markdown(controls.content)
+			editor.spreadsheet_editor.sync_charts_from_data()
+			editor.spreadsheet_editor.cells_canvas.queue_redraw()
 
 
 func _on_hide_button_pressed() -> void:
@@ -735,6 +797,10 @@ func serialize() -> Dictionary:
 		"ContentType": content_type,
 	}
 
+	# Add linked spreadsheet if set
+	if not linked_spreadsheet.is_empty():
+		note_data["LinkedSpreadsheet"] = linked_spreadsheet
+
 	# Merge the controls data
 	note_data.merge(_serialize_controls_data())
 
@@ -891,6 +957,7 @@ static func deserialize(note_data: Dictionary, register = true) -> Note:
 			note.enabled = note_data.get("Enabled", true)
 			note.expanded = note_data.get("Expanded", true)
 			note.visible = note_data.get("Visible", true)
+			note.linked_spreadsheet = note_data.get("LinkedSpreadsheet", "")
 	)
 
 	return note

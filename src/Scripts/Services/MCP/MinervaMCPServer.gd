@@ -7,6 +7,9 @@ const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefi
 const SpreadsheetDataScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetData.gd")
 const SpreadsheetChartScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetChart.gd")
 const SpreadsheetFileHandlerScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetFileHandler.gd")
+const NoteScript := preload("res://Scripts/UI/Controls/Note.gd")
+const NotesContainerScript := preload("res://Scenes/note/NotesContainer.gd")
+const SpreadsheetCellScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetCell.gd")
 
 ## Reference to the MCPManager for tool registration
 var mcp_manager
@@ -162,6 +165,24 @@ func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _create_chart(arguments)
 		"minerva_get_chart_image":
 			return await _get_chart_image(arguments)
+		"minerva_list_charts":
+			return _list_charts(arguments)
+		"minerva_update_chart":
+			return _update_chart(arguments)
+		"minerva_delete_chart":
+			return _delete_chart(arguments)
+		"minerva_refresh_charts":
+			return _refresh_charts(arguments)
+		"minerva_link_spreadsheet_to_note":
+			return _link_spreadsheet_to_note(arguments)
+		"minerva_export_to_nudge":
+			return await _export_to_nudge(arguments)
+		"minerva_undo_spreadsheet":
+			return _undo_spreadsheet(arguments)
+		"minerva_redo_spreadsheet":
+			return _redo_spreadsheet(arguments)
+		"minerva_get_spreadsheet_history":
+			return _get_spreadsheet_history(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -861,6 +882,231 @@ func _register_spreadsheet_tools() -> void:
 				"height": {
 					"type": "integer",
 					"description": "Image height in pixels. Default: 400"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_list_charts",
+		"List all charts in a spreadsheet editor.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_update_chart",
+		"Update an existing chart's properties. Use this when data ranges change or to modify chart appearance.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"chart_id": {
+					"type": "string",
+					"description": "The chart ID to update (from minerva_list_charts or minerva_create_chart)"
+				},
+				"chart_index": {
+					"type": "integer",
+					"description": "Alternative: chart index (0-based) if chart_id not provided"
+				},
+				"title": {
+					"type": "string",
+					"description": "New chart title"
+				},
+				"type": {
+					"type": "string",
+					"description": "Chart type: 'line' or 'bar'",
+					"enum": ["line", "bar"]
+				},
+				"x_range": {
+					"type": "string",
+					"description": "New cell range for X-axis values (e.g., 'A1:A20')"
+				},
+				"series": {
+					"type": "array",
+					"description": "New array of series ranges (replaces existing series)",
+					"items": {"type": "string"}
+				},
+				"x_is_date": {
+					"type": "boolean",
+					"description": "Whether X-axis contains date values"
+				},
+				"first_row_is_header": {
+					"type": "boolean",
+					"description": "Whether first row contains headers"
+				},
+				"x_axis_label": {
+					"type": "string",
+					"description": "X-axis label"
+				},
+				"y_axis_label": {
+					"type": "string",
+					"description": "Y-axis label"
+				},
+				"show_legend": {
+					"type": "boolean",
+					"description": "Whether to show the legend"
+				},
+				"y_auto_scale": {
+					"type": "boolean",
+					"description": "Whether to auto-scale Y axis"
+				},
+				"y_min": {
+					"type": "number",
+					"description": "Y-axis minimum (when y_auto_scale is false)"
+				},
+				"y_max": {
+					"type": "number",
+					"description": "Y-axis maximum (when y_auto_scale is false)"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_delete_chart",
+		"Delete a chart from a spreadsheet editor.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"chart_id": {
+					"type": "string",
+					"description": "The chart ID to delete"
+				},
+				"chart_index": {
+					"type": "integer",
+					"description": "Alternative: chart index (0-based) if chart_id not provided"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_refresh_charts",
+		"Refresh all charts in a spreadsheet to reflect current data. Call this after updating spreadsheet data.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_link_spreadsheet_to_note",
+		"Create a linked note from a spreadsheet. The note displays the spreadsheet as a markdown table. Editing the note opens the spreadsheet editor. Changes sync bidirectionally.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab to link"
+				},
+				"note_title": {
+					"type": "string",
+					"description": "Title for the new note. Defaults to spreadsheet name if not provided"
+				},
+				"thread_name": {
+					"type": "string",
+					"description": "Name of the notes thread/tab to add the note to. Creates new thread if doesn't exist"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_export_to_nudge",
+		"Export spreadsheet data to the Nudge MCP hint system for quick LLM retrieval.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"component": {
+					"type": "string",
+					"description": "Nudge component name for organizing hints (e.g., 'finance', 'inventory')"
+				},
+				"key": {
+					"type": "string",
+					"description": "Nudge key for this data (e.g., 'monthly_revenue', 'stock_levels')"
+				},
+				"format": {
+					"type": "string",
+					"description": "Export format: 'raw' (full JSON), 'summary' (row/col counts, totals), 'schema' (column names/types), 'timeseries' (date-indexed), 'kv_pairs' (two-column key-value)",
+					"enum": ["raw", "summary", "schema", "timeseries", "kv_pairs"]
+				},
+				"include_charts": {
+					"type": "boolean",
+					"description": "Include chart descriptions in the export. Default: false"
+				}
+			},
+			"required": ["editor_name", "component", "key"]
+		}
+	)
+
+	_register_tool("minerva_undo_spreadsheet",
+		"Undo the last action in a spreadsheet editor. Returns information about what was undone.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"count": {
+					"type": "integer",
+					"description": "Number of actions to undo (default: 1). Use this to undo multiple steps at once."
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_redo_spreadsheet",
+		"Redo a previously undone action in a spreadsheet editor.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"count": {
+					"type": "integer",
+					"description": "Number of actions to redo (default: 1). Use this to redo multiple steps at once."
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_get_spreadsheet_history",
+		"Get the undo/redo history status of a spreadsheet editor.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
 				}
 			},
 			"required": ["editor_name"]
@@ -1748,7 +1994,7 @@ func _update_spreadsheet_data(args: Dictionary) -> Dictionary:
 		editor.spreadsheet_editor.set_content(csv_content)
 		updated_count = -1  # Indicate full replacement
 
-	# Update individual cells
+	# Update individual cells (with history recording)
 	if cells.size() > 0:
 		for cell_update in cells:
 			if cell_update is Dictionary:
@@ -1758,11 +2004,9 @@ func _update_spreadsheet_data(args: Dictionary) -> Dictionary:
 				if not cell_ref.is_empty():
 					var pos: Vector2i = SpreadsheetDataScript.parse_cell_reference(cell_ref)
 					if pos.x >= 0 and pos.y >= 0:
-						data.set_cell_value(pos.y, pos.x, value)
+						# Use history-recording method
+						editor.spreadsheet_editor.set_cell_value_with_history(pos.y, pos.x, value)
 						updated_count += 1
-
-		# Trigger redraw
-		editor.spreadsheet_editor.cells_canvas.queue_redraw()
 
 	return {
 		"success": true,
@@ -1795,12 +2039,11 @@ func _add_spreadsheet_row(args: Dictionary) -> Dictionary:
 	# Insert the row
 	data.insert_row(row_idx)
 
-	# Set values if provided
+	# Set values if provided (with history recording)
 	for col in range(values.size()):
-		data.set_cell_value(row_idx, col, values[col])
+		editor.spreadsheet_editor.set_cell_value_with_history(row_idx, col, values[col])
 
-	# Trigger redraw
-	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+	# Trigger redraw for row headers
 	editor.spreadsheet_editor.row_headers.queue_redraw()
 
 	return {
@@ -1836,19 +2079,18 @@ func _add_spreadsheet_column(args: Dictionary) -> Dictionary:
 	# Insert the column
 	data.insert_column(col_idx)
 
-	# Set header if provided (row 0)
+	# Set header if provided (row 0) with history recording
 	var start_row := 0
 	if not header.is_empty():
-		data.set_cell_value(0, col_idx, header)
+		editor.spreadsheet_editor.set_cell_value_with_history(0, col_idx, header)
 		start_row = 1
 
-	# Set values
+	# Set values with history recording
 	for i in range(values.size()):
-		data.set_cell_value(start_row + i, col_idx, values[i])
+		editor.spreadsheet_editor.set_cell_value_with_history(start_row + i, col_idx, values[i])
 
-	# Trigger redraw
-	editor.spreadsheet_editor.cells_canvas.queue_redraw()
-	editor.spreadsheet_editor._column_header.queue_redraw()
+	# Trigger redraw for column headers
+	editor.spreadsheet_editor.column_headers.queue_redraw()
 
 	return {
 		"success": true,
@@ -1901,41 +2143,34 @@ func _format_cells(args: Dictionary) -> Dictionary:
 	if cells_to_format.is_empty():
 		return {"error": "Invalid range: %s" % range_str, "success": false}
 
-	# Apply formatting
+	# Build format options dictionary
+	var format_options: Dictionary = {}
+
+	if args.has("bold"):
+		format_options["bold"] = args.get("bold", false)
+	if args.has("italic"):
+		format_options["italic"] = args.get("italic", false)
+	if args.has("alignment"):
+		var align_str: String = args.get("alignment", "left")
+		match align_str:
+			"left":
+				format_options["alignment"] = HORIZONTAL_ALIGNMENT_LEFT
+			"center":
+				format_options["alignment"] = HORIZONTAL_ALIGNMENT_CENTER
+			"right":
+				format_options["alignment"] = HORIZONTAL_ALIGNMENT_RIGHT
+	if args.has("text_color"):
+		format_options["text_color"] = Color.html(args.get("text_color", "#FFFFFF"))
+	if args.has("bg_color"):
+		format_options["bg_color"] = Color.html(args.get("bg_color", "#000000"))
+	if args.has("number_format"):
+		format_options["number_format"] = args.get("number_format", "none")
+
+	# Apply formatting with history recording
 	var formatted_count := 0
 	for cell_pos in cells_to_format:
-		var cell = data.get_cell(cell_pos.y, cell_pos.x)
-		var needs_refresh := false
-
-		if args.has("bold"):
-			cell.bold = args.get("bold", false)
-		if args.has("italic"):
-			cell.italic = args.get("italic", false)
-		if args.has("alignment"):
-			var align_str: String = args.get("alignment", "left")
-			match align_str:
-				"left":
-					cell.alignment = HORIZONTAL_ALIGNMENT_LEFT
-				"center":
-					cell.alignment = HORIZONTAL_ALIGNMENT_CENTER
-				"right":
-					cell.alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		if args.has("text_color"):
-			cell.text_color = Color.html(args.get("text_color", "#FFFFFF"))
-		if args.has("bg_color"):
-			cell.bg_color = Color.html(args.get("bg_color", "#000000"))
-		if args.has("number_format"):
-			cell.number_format = args.get("number_format", "none")
-			needs_refresh = true
-
-		# Refresh display value if format changed
-		if needs_refresh:
-			cell.refresh_display()
-
+		editor.spreadsheet_editor.format_cell_with_history(cell_pos.y, cell_pos.x, format_options)
 		formatted_count += 1
-
-	# Trigger redraw
-	editor.spreadsheet_editor.cells_canvas.queue_redraw()
 
 	return {
 		"success": true,
@@ -1978,15 +2213,12 @@ func _set_cell_formula(args: Dictionary) -> Dictionary:
 	if not formula.begins_with("="):
 		formula = "=" + formula
 
-	# Set the formula
-	data.set_cell_value(pos.y, pos.x, formula)
+	# Set the formula with history recording
+	editor.spreadsheet_editor.set_cell_value_with_history(pos.y, pos.x, formula)
 
 	# Get the computed result
 	var cell = data.get_cell(pos.y, pos.x)
 	var result: String = cell.get_display_text()
-
-	# Trigger redraw
-	editor.spreadsheet_editor.cells_canvas.queue_redraw()
 
 	return {
 		"success": true,
@@ -2089,6 +2321,548 @@ func _get_chart_image(args: Dictionary) -> Dictionary:
 		"format": "png",
 		"encoding": "base64",
 		"image_data": base64_png
+	}
+
+
+func _list_charts(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var charts_info: Array = []
+	for i in range(editor.spreadsheet_editor.charts.size()):
+		var chart = editor.spreadsheet_editor.charts[i]
+		var series_info: Array = []
+		for s in chart.series:
+			series_info.append({
+				"range": s.get("range", ""),
+				"name": s.get("name", "")
+			})
+
+		charts_info.append({
+			"index": i,
+			"id": chart.id,
+			"title": chart.title,
+			"type": "line" if chart.type == SpreadsheetChartScript.ChartType.LINE else "bar",
+			"x_range": chart.x_range,
+			"x_is_date": chart.x_is_date,
+			"first_row_is_header": chart.first_row_is_header,
+			"series": series_info
+		})
+
+	return {
+		"success": true,
+		"chart_count": charts_info.size(),
+		"charts": charts_info
+	}
+
+
+func _update_chart(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var chart_id: String = args.get("chart_id", "")
+	var chart_index: int = args.get("chart_index", -1)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	# Find chart by ID or index
+	var target_index: int = -1
+	if not chart_id.is_empty():
+		target_index = editor.spreadsheet_editor.get_chart_index(chart_id)
+	elif chart_index >= 0:
+		target_index = chart_index
+
+	if target_index < 0 or target_index >= editor.spreadsheet_editor.charts.size():
+		return {"error": "Chart not found. Provide valid chart_id or chart_index.", "success": false}
+
+	# Build properties dictionary from args
+	var properties: Dictionary = {}
+	if args.has("title"):
+		properties["title"] = args["title"]
+	if args.has("type"):
+		properties["type"] = args["type"]
+	if args.has("x_range"):
+		properties["x_range"] = args["x_range"]
+	if args.has("series"):
+		properties["series"] = args["series"]
+	if args.has("x_is_date"):
+		properties["x_is_date"] = args["x_is_date"]
+	if args.has("first_row_is_header"):
+		properties["first_row_is_header"] = args["first_row_is_header"]
+	if args.has("x_axis_label"):
+		properties["x_axis_label"] = args["x_axis_label"]
+	if args.has("y_axis_label"):
+		properties["y_axis_label"] = args["y_axis_label"]
+	if args.has("show_legend"):
+		properties["show_legend"] = args["show_legend"]
+	if args.has("y_auto_scale"):
+		properties["y_auto_scale"] = args["y_auto_scale"]
+	if args.has("y_min"):
+		properties["y_min"] = args["y_min"]
+	if args.has("y_max"):
+		properties["y_max"] = args["y_max"]
+
+	if properties.is_empty():
+		return {"error": "No properties to update. Provide at least one property.", "success": false}
+
+	# Update the chart
+	var success: bool = editor.spreadsheet_editor.update_chart_properties(target_index, properties)
+
+	if not success:
+		return {"error": "Failed to update chart", "success": false}
+
+	var chart = editor.spreadsheet_editor.charts[target_index]
+	return {
+		"success": true,
+		"chart_id": chart.id,
+		"chart_index": target_index,
+		"updated_properties": properties.keys(),
+		"message": "Chart updated successfully"
+	}
+
+
+func _delete_chart(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var chart_id: String = args.get("chart_id", "")
+	var chart_index: int = args.get("chart_index", -1)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	# Find chart by ID or index
+	var target_index: int = -1
+	if not chart_id.is_empty():
+		target_index = editor.spreadsheet_editor.get_chart_index(chart_id)
+	elif chart_index >= 0:
+		target_index = chart_index
+
+	if target_index < 0 or target_index >= editor.spreadsheet_editor.charts.size():
+		return {"error": "Chart not found. Provide valid chart_id or chart_index.", "success": false}
+
+	var deleted_id: String = editor.spreadsheet_editor.charts[target_index].id
+	editor.spreadsheet_editor.remove_chart(target_index)
+
+	return {
+		"success": true,
+		"deleted_chart_id": deleted_id,
+		"remaining_charts": editor.spreadsheet_editor.charts.size(),
+		"message": "Chart deleted successfully"
+	}
+
+
+func _refresh_charts(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	editor.spreadsheet_editor._update_all_charts()
+
+	return {
+		"success": true,
+		"charts_refreshed": editor.spreadsheet_editor.charts.size(),
+		"message": "All charts refreshed"
+	}
+
+
+func _link_spreadsheet_to_note(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var note_title: String = args.get("note_title", "")
+	var thread_name: String = args.get("thread_name", "Spreadsheets")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	# Use spreadsheet name as note title if not provided
+	if note_title.is_empty():
+		note_title = editor_name
+
+	# Get markdown content from spreadsheet
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	var markdown_content: String = data.to_markdown()
+
+	# Create the linked note
+	var note = NoteScript.create_spreadsheet_note(note_title, editor_name, markdown_content)
+
+	# Find or create the notes thread
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return {"error": "Notes container not available", "success": false}
+
+	var thread_vbox = notes_container.find_or_create_tab(thread_name)
+	thread_vbox.add_note(note)
+
+	return {
+		"success": true,
+		"note_uuid": note.uuid,
+		"note_title": note_title,
+		"thread_name": thread_name,
+		"linked_spreadsheet": editor_name,
+		"message": "Created linked note '%s' in thread '%s'. Edit button opens spreadsheet." % [note_title, thread_name]
+	}
+
+
+func _export_to_nudge(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var component: String = args.get("component", "")
+	var key: String = args.get("key", "")
+	var format_: String = args.get("format", "summary")
+	var include_charts: bool = args.get("include_charts", false)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if component.is_empty():
+		return {"error": "component is required", "success": false}
+
+	if key.is_empty():
+		return {"error": "key is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+
+	# Build the export value based on format
+	var export_value: Variant
+
+	match format_:
+		"raw":
+			export_value = _export_raw(data)
+		"summary":
+			export_value = _export_summary(data, editor.spreadsheet_editor)
+		"schema":
+			export_value = _export_schema(data)
+		"timeseries":
+			export_value = _export_timeseries(data)
+		"kv_pairs":
+			export_value = _export_kv_pairs(data)
+		_:
+			export_value = _export_summary(data, editor.spreadsheet_editor)
+
+	# Add chart info if requested
+	if include_charts and editor.spreadsheet_editor.charts.size() > 0:
+		var charts_info: Array = []
+		for chart in editor.spreadsheet_editor.charts:
+			charts_info.append({
+				"id": chart.id,
+				"title": chart.title,
+				"type": "line" if chart.type == SpreadsheetChartScript.ChartType.LINE else "bar",
+				"x_range": chart.x_range,
+				"series_count": chart.series.size()
+			})
+		if export_value is Dictionary:
+			export_value["charts"] = charts_info
+
+	# Call Nudge MCP to set the hint
+	var nudge_result: Dictionary = await _call_nudge_set_hint(component, key, export_value)
+
+	if nudge_result.has("error"):
+		return {"error": "Nudge export failed: %s" % nudge_result.get("error", "Unknown error"), "success": false}
+
+	return {
+		"success": true,
+		"component": component,
+		"key": key,
+		"format": format_,
+		"message": "Exported spreadsheet data to Nudge as %s/%s" % [component, key]
+	}
+
+
+## Export spreadsheet as raw JSON data
+func _export_raw(data: SpreadsheetDataScript) -> Dictionary:
+	var bounds := data.get_used_range()
+	var cells_data: Array = []
+
+	for row in range(bounds.position.y, bounds.position.y + bounds.size.y):
+		var row_data: Array = []
+		for col in range(bounds.position.x, bounds.position.x + bounds.size.x):
+			row_data.append(data.get_cell_display(row, col))
+		cells_data.append(row_data)
+
+	return {
+		"rows": bounds.size.y,
+		"columns": bounds.size.x,
+		"data": cells_data
+	}
+
+
+## Export spreadsheet summary (counts, headers, totals)
+func _export_summary(data: SpreadsheetDataScript, spreadsheet_editor) -> Dictionary:
+	var bounds := data.get_used_range()
+
+	# Get headers (first row)
+	var headers: Array = []
+	for col in range(bounds.position.x, bounds.position.x + bounds.size.x):
+		headers.append(data.get_cell_display(bounds.position.y, col))
+
+	# Calculate numeric totals per column
+	var totals: Dictionary = {}
+	for col in range(bounds.position.x, bounds.position.x + bounds.size.x):
+		var total: float = 0.0
+		var has_numbers := false
+		for row in range(bounds.position.y + 1, bounds.position.y + bounds.size.y):
+			var cell = data.get_cell_if_exists(row, col)
+			if cell and cell.type == SpreadsheetCellScript.CellType.NUMBER:
+				total += float(cell.value)
+				has_numbers = true
+		if has_numbers:
+			var header: String = headers[col - bounds.position.x] if col - bounds.position.x < headers.size() else "Column %d" % col
+			totals[header] = total
+
+	return {
+		"rows": bounds.size.y,
+		"columns": bounds.size.x,
+		"headers": headers,
+		"totals": totals,
+		"chart_count": spreadsheet_editor.charts.size() if spreadsheet_editor else 0
+	}
+
+
+## Export spreadsheet schema (column names and types)
+func _export_schema(data: SpreadsheetDataScript) -> Dictionary:
+	var bounds := data.get_used_range()
+	var columns: Array = []
+
+	for col in range(bounds.position.x, bounds.position.x + bounds.size.x):
+		var header: String = data.get_cell_display(bounds.position.y, col)
+
+		# Detect column type from first few data cells
+		var detected_type := "text"
+		var sample_values: Array = []
+		for row in range(bounds.position.y + 1, mini(bounds.position.y + 4, bounds.position.y + bounds.size.y)):
+			var cell = data.get_cell_if_exists(row, col)
+			if cell:
+				sample_values.append(data.get_cell_display(row, col))
+				if cell.type == SpreadsheetCellScript.CellType.NUMBER:
+					detected_type = "number"
+				elif cell.type == SpreadsheetCellScript.CellType.DATE:
+					detected_type = "date"
+				elif cell.type == SpreadsheetCellScript.CellType.FORMULA:
+					detected_type = "formula"
+
+		columns.append({
+			"name": header,
+			"type": detected_type,
+			"samples": sample_values
+		})
+
+	return {
+		"column_count": bounds.size.x,
+		"row_count": bounds.size.y - 1,  # Exclude header
+		"columns": columns
+	}
+
+
+## Export as time series (first column as date keys)
+func _export_timeseries(data: SpreadsheetDataScript) -> Dictionary:
+	var bounds := data.get_used_range()
+	var series: Dictionary = {}
+
+	# Get column headers
+	var headers: Array = []
+	for col in range(bounds.position.x, bounds.position.x + bounds.size.x):
+		headers.append(data.get_cell_display(bounds.position.y, col))
+
+	# Build time series with date as key
+	for row in range(bounds.position.y + 1, bounds.position.y + bounds.size.y):
+		var date_key: String = data.get_cell_display(row, bounds.position.x)
+		var values: Dictionary = {}
+
+		for col in range(bounds.position.x + 1, bounds.position.x + bounds.size.x):
+			var header: String = headers[col - bounds.position.x]
+			values[header] = data.get_cell_display(row, col)
+
+		series[date_key] = values
+
+	return {
+		"date_column": headers[0] if headers.size() > 0 else "Date",
+		"value_columns": headers.slice(1) if headers.size() > 1 else [],
+		"series": series
+	}
+
+
+## Export as key-value pairs from first two columns
+func _export_kv_pairs(data: SpreadsheetDataScript) -> Dictionary:
+	var bounds := data.get_used_range()
+	var pairs: Dictionary = {}
+
+	if bounds.size.x < 2:
+		return {"error": "Need at least 2 columns for key-value pairs"}
+
+	for row in range(bounds.position.y + 1, bounds.position.y + bounds.size.y):
+		var key_val: String = data.get_cell_display(row, bounds.position.x)
+		var value_val: String = data.get_cell_display(row, bounds.position.x + 1)
+		if not key_val.is_empty():
+			pairs[key_val] = value_val
+
+	return pairs
+
+
+## Call Nudge MCP server to set a hint
+func _call_nudge_set_hint(component: String, key: String, value: Variant) -> Dictionary:
+	# Try to find the Nudge MCP server connection
+	if not mcp_manager:
+		return {"error": "MCP manager not available"}
+
+	# Check if Nudge server is connected
+	if not mcp_manager.is_server_connected("nudge"):
+		return {"error": "Nudge MCP server not connected"}
+
+	# Call the nudge_set_hint tool
+	var result: Dictionary = await mcp_manager.execute_tool("nudge_set_hint", {
+		"component": component,
+		"key": key,
+		"value": value
+	})
+
+	return result
+
+
+## Undo the last action(s) in a spreadsheet
+func _undo_spreadsheet(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var count: int = args.get("count", 1)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var spreadsheet = editor.spreadsheet_editor
+
+	if not spreadsheet.can_undo():
+		return {
+			"success": false,
+			"message": "Nothing to undo",
+			"undo_count": 0,
+			"redo_count": spreadsheet.get_redo_count()
+		}
+
+	var undone := 0
+	for i in range(count):
+		if spreadsheet.undo():
+			undone += 1
+		else:
+			break
+
+	return {
+		"success": true,
+		"undone_count": undone,
+		"remaining_undo_count": spreadsheet.get_undo_count(),
+		"redo_count": spreadsheet.get_redo_count(),
+		"message": "Undid %d action(s)" % undone
+	}
+
+
+## Redo a previously undone action in a spreadsheet
+func _redo_spreadsheet(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var count: int = args.get("count", 1)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var spreadsheet = editor.spreadsheet_editor
+
+	if not spreadsheet.can_redo():
+		return {
+			"success": false,
+			"message": "Nothing to redo",
+			"undo_count": spreadsheet.get_undo_count(),
+			"redo_count": 0
+		}
+
+	var redone := 0
+	for i in range(count):
+		if spreadsheet.redo():
+			redone += 1
+		else:
+			break
+
+	return {
+		"success": true,
+		"redone_count": redone,
+		"undo_count": spreadsheet.get_undo_count(),
+		"remaining_redo_count": spreadsheet.get_redo_count(),
+		"message": "Redid %d action(s)" % redone
+	}
+
+
+## Get the undo/redo history status of a spreadsheet
+func _get_spreadsheet_history(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var spreadsheet = editor.spreadsheet_editor
+
+	return {
+		"success": true,
+		"can_undo": spreadsheet.can_undo(),
+		"can_redo": spreadsheet.can_redo(),
+		"undo_count": spreadsheet.get_undo_count(),
+		"redo_count": spreadsheet.get_redo_count()
 	}
 
 #endregion

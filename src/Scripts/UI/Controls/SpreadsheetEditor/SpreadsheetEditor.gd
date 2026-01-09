@@ -12,6 +12,7 @@ const SpreadsheetFileHandlerScript := preload("res://Scripts/UI/Controls/Spreads
 const SpreadsheetChartScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetChart.gd")
 const ChartRendererScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/ChartRenderer.gd")
 const ChartCanvasScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/ChartCanvas.gd")
+const NoteScript := preload("res://Scripts/UI/Controls/Note.gd")
 
 signal content_changed()
 signal selection_changed(start_row: int, start_col: int, end_row: int, end_col: int)
@@ -735,6 +736,7 @@ func _set_current_cell_value(value: String, record_history: bool = true) -> void
 func _on_data_changed() -> void:
 	cells_canvas.queue_redraw()
 	_update_selection_display()
+	_update_all_charts()
 
 
 func _input(event: InputEvent) -> void:
@@ -1202,6 +1204,130 @@ func set_content(csv_text: String) -> void:
 			spreadsheet_data.set_cell_value(row, col, values[col])
 
 
+## Undo/Redo Public API
+
+## Perform undo operation
+func undo() -> bool:
+	if not history.can_undo():
+		return false
+	_perform_undo()
+	return true
+
+
+## Perform redo operation
+func redo() -> bool:
+	if not history.can_redo():
+		return false
+	_perform_redo()
+	return true
+
+
+## Check if undo is available
+func can_undo() -> bool:
+	return history.can_undo()
+
+
+## Check if redo is available
+func can_redo() -> bool:
+	return history.can_redo()
+
+
+## Get the number of undoable actions
+func get_undo_count() -> int:
+	return history.get_undo_count()
+
+
+## Get the number of redoable actions
+func get_redo_count() -> int:
+	return history.get_redo_count()
+
+
+## Set a cell value with history recording (for external callers like MCP)
+func set_cell_value_with_history(row: int, col: int, value: Variant) -> void:
+	# Get old value for history
+	var cell = spreadsheet_data.get_cell_if_exists(row, col)
+	var old_value: Variant = ""
+	var old_formula: String = ""
+	if cell:
+		old_value = cell.value
+		old_formula = cell.formula
+
+	# Set the new value
+	spreadsheet_data.set_cell_value(row, col, value)
+
+	# Get new formula if applicable
+	var new_cell = spreadsheet_data.get_cell(row, col)
+	var new_formula: String = new_cell.formula if new_cell else ""
+
+	# Record in history
+	history.record_cell_edit(row, col, old_value, value, old_formula, new_formula)
+
+	# Trigger UI updates
+	cells_canvas.queue_redraw()
+	_update_selection_display()
+	content_changed.emit()
+
+
+## Apply formatting to a cell with history recording (for external callers like MCP)
+func format_cell_with_history(row: int, col: int, format_options: Dictionary) -> void:
+	var cell = spreadsheet_data.get_cell(row, col)
+
+	# Capture old format
+	var old_format := {
+		"bold": cell.bold,
+		"italic": cell.italic,
+		"alignment": cell.alignment,
+		"text_color": cell.text_color,
+		"bg_color": cell.bg_color,
+		"number_format": cell.number_format,
+	}
+
+	# Apply new format
+	if format_options.has("bold"):
+		cell.bold = format_options["bold"]
+	if format_options.has("italic"):
+		cell.italic = format_options["italic"]
+	if format_options.has("alignment"):
+		cell.alignment = format_options["alignment"]
+	if format_options.has("text_color"):
+		cell.text_color = format_options["text_color"]
+	if format_options.has("bg_color"):
+		cell.bg_color = format_options["bg_color"]
+	if format_options.has("number_format"):
+		cell.number_format = format_options["number_format"]
+		cell.refresh_display()
+
+	# Capture new format
+	var new_format := {
+		"bold": cell.bold,
+		"italic": cell.italic,
+		"alignment": cell.alignment,
+		"text_color": cell.text_color,
+		"bg_color": cell.bg_color,
+		"number_format": cell.number_format,
+	}
+
+	# Record in history
+	history.record_cell_format(row, col, old_format, new_format)
+
+	# Trigger UI updates
+	cells_canvas.queue_redraw()
+	content_changed.emit()
+
+
+## Begin a batch operation (groups multiple edits into one undo action)
+## Returns a batch_id to pass to end_batch()
+func begin_batch(description: String = "") -> int:
+	# For now, just return a marker - batch support can be enhanced later
+	return history.get_undo_count()
+
+
+## End a batch operation - all changes since begin_batch become one undo step
+func end_batch(batch_id: int) -> void:
+	# Future enhancement: merge actions since batch_id into one compound action
+	pass
+
+
 ## File Import/Export
 
 func _on_import_pressed() -> void:
@@ -1463,6 +1589,10 @@ func _on_create_chart_confirmed() -> void:
 func add_chart(chart: SpreadsheetChartScript) -> void:
 	charts.append(chart)
 
+	# Also add to data model if not already there
+	if not spreadsheet_data.charts.has(chart):
+		spreadsheet_data.charts.append(chart)
+
 	# Create chart canvas
 	var canvas := ChartCanvasScript.new()
 	canvas.custom_minimum_size = Vector2(0, chart.height)
@@ -1493,12 +1623,93 @@ func remove_chart(index: int) -> void:
 	if index < 0 or index >= charts.size():
 		return
 
+	var chart = charts[index]
 	charts.remove_at(index)
+
+	# Also remove from data model
+	var data_idx: int = spreadsheet_data.charts.find(chart)
+	if data_idx >= 0:
+		spreadsheet_data.charts.remove_at(data_idx)
+
 	var canvas: Control = chart_canvases[index]
 	chart_canvases.remove_at(index)
 	canvas.queue_free()
 
 	content_changed.emit()
+
+
+## Get chart by ID or index
+func get_chart(id_or_index) -> SpreadsheetChartScript:
+	if id_or_index is int:
+		if id_or_index >= 0 and id_or_index < charts.size():
+			return charts[id_or_index]
+	elif id_or_index is String:
+		for chart in charts:
+			if chart.id == id_or_index:
+				return chart
+	return null
+
+
+## Get chart index by ID
+func get_chart_index(chart_id: String) -> int:
+	for i in range(charts.size()):
+		if charts[i].id == chart_id:
+			return i
+	return -1
+
+
+## Update a chart and refresh its display
+func update_chart_properties(index: int, properties: Dictionary) -> bool:
+	if index < 0 or index >= charts.size():
+		return false
+
+	var chart: SpreadsheetChartScript = charts[index]
+
+	# Update properties
+	if properties.has("title"):
+		chart.title = properties["title"]
+	if properties.has("type"):
+		var type_str: String = properties["type"]
+		chart.type = SpreadsheetChartScript.ChartType.LINE if type_str == "line" else SpreadsheetChartScript.ChartType.BAR
+	if properties.has("x_range"):
+		chart.x_range = properties["x_range"]
+	if properties.has("x_is_date"):
+		chart.x_is_date = properties["x_is_date"]
+	if properties.has("first_row_is_header"):
+		chart.first_row_is_header = properties["first_row_is_header"]
+	if properties.has("x_axis_label"):
+		chart.x_axis_label = properties["x_axis_label"]
+	if properties.has("y_axis_label"):
+		chart.y_axis_label = properties["y_axis_label"]
+	if properties.has("show_legend"):
+		chart.show_legend = properties["show_legend"]
+	if properties.has("show_grid"):
+		chart.show_grid = properties["show_grid"]
+	if properties.has("y_auto_scale"):
+		chart.y_auto_scale = properties["y_auto_scale"]
+	if properties.has("y_min"):
+		chart.y_min = properties["y_min"]
+	if properties.has("y_max"):
+		chart.y_max = properties["y_max"]
+
+	# Update series if provided
+	if properties.has("series"):
+		chart.clear_series()
+		for series_range in properties["series"]:
+			if series_range is String:
+				chart.add_series(series_range)
+			elif series_range is Dictionary:
+				var range_str: String = series_range.get("range", "")
+				var name: String = series_range.get("name", "")
+				var color = series_range.get("color", Color.TRANSPARENT)
+				if color is String:
+					color = Color.from_string(color, Color.TRANSPARENT)
+				chart.add_series(range_str, name, color)
+
+	# Refresh the chart display
+	_update_chart(index)
+	content_changed.emit()
+	return true
 
 
 func _update_chart(index: int) -> void:
@@ -1515,6 +1726,35 @@ func _update_chart(index: int) -> void:
 func _update_all_charts() -> void:
 	for i in range(charts.size()):
 		_update_chart(i)
+
+
+## Sync charts from spreadsheet_data.charts to the visual chart canvases
+## Call this after loading data from markdown or external sources
+func sync_charts_from_data() -> void:
+	# Clear existing chart canvases (but not spreadsheet_data.charts - that's the source)
+	charts.clear()
+	for canvas in chart_canvases:
+		canvas.queue_free()
+	chart_canvases.clear()
+
+	# Create canvases for charts in spreadsheet_data
+	for chart in spreadsheet_data.charts:
+		# Add to local charts array (not to spreadsheet_data.charts since it's already there)
+		charts.append(chart)
+
+		# Create chart canvas
+		var canvas := ChartCanvasScript.new()
+		canvas.custom_minimum_size = Vector2(0, chart.height)
+		canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		canvas.set_chart(chart)
+		chart_canvases.append(canvas)
+		chart_container.add_child(canvas)
+
+		# Update chart with data
+		_update_chart(charts.size() - 1)
+
+	if charts.size() > 0:
+		chart_panel.visible = true
 
 
 ## Override serialize to include charts
@@ -1555,3 +1795,29 @@ func deserialize(data: Dictionary) -> void:
 		chart_panel.visible = true
 
 	_update_layout()
+
+
+## Sync linked notes with current spreadsheet data
+## Call this when the spreadsheet is saved or closed
+func sync_linked_notes(editor_name: String) -> void:
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return
+
+	var markdown_content: String = spreadsheet_data.to_markdown()
+
+	# Iterate through all note threads
+	for tab_idx in range(notes_container.Tabs.get_tab_count()):
+		var thread = notes_container.Tabs.get_tab_control(tab_idx)
+		if not thread:
+			continue
+
+		# Get notes in this thread
+		for child in thread.get_children():
+			if child is NoteScript and child.linked_spreadsheet == editor_name:
+				# Update the note's content
+				var controls = child.get_controls_container()
+				if controls and controls.has_method("set_content"):
+					controls.set_content(markdown_content)
+				elif controls and "content" in controls:
+					controls.content = markdown_content
