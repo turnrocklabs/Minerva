@@ -29,7 +29,7 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 2
       - id: check
@@ -50,7 +50,7 @@ jobs:
     if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
@@ -77,7 +77,7 @@ jobs:
           ${{ runner.os }}-godot-cpp-
         
     - name: Setup Python and SCons
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: '3.x'
     - run: pip install scons
@@ -99,7 +99,7 @@ jobs:
     if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
@@ -126,7 +126,7 @@ jobs:
           ${{ runner.os }}-godot-cpp-
     
     - name: Setup Python and SCons
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: '3.x'
     - run: pip install scons
@@ -153,7 +153,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:  
           submodules: 'true'
       
@@ -178,7 +178,7 @@ jobs:
         
       - name: Install Godot
         run: |
-          GODOT_VERSION="4.4"
+          GODOT_VERSION="4.5.1"
           RELEASE="stable"
           curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64.zip"
           unzip ./godot.zip
@@ -186,7 +186,7 @@ jobs:
 
       - name: Install Godot Export Templates
         run: |
-          GODOT_VERSION="4.4"
+          GODOT_VERSION="4.5.1"
           RELEASE="stable"
           TEMPLATE_DIR="$HOME/.local/share/godot/export_templates"
           curl -L -o ./godot-templates.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_export_templates.tpz"
@@ -306,7 +306,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         
       - name: Download build artifacts
         uses: actions/download-artifact@v4
