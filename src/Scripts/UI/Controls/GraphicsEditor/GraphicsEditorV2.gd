@@ -762,13 +762,16 @@ func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 
 			Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
 		# Set the control's cursor to use the custom image
 		layers_container.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		print("set_custom_cursor: Using custom image, mouse_in_container=", _mouse_in_layers_container)
 	else:
 		# Clear any custom cursor image
 		Input.set_custom_mouse_cursor(null)
 		# Set the control's default cursor shape directly
 		# This is the correct way to change cursor over Control nodes
 		# Cast int to CursorShape enum
-		layers_container.mouse_default_cursor_shape = shape as Control.CursorShape
+		var casted_shape = shape as Control.CursorShape
+		layers_container.mouse_default_cursor_shape = casted_shape
+		print("set_custom_cursor: shape=", shape, " casted=", casted_shape, " actual=", layers_container.mouse_default_cursor_shape)
 
 func reorder_layer(layer: LayerV2, index: int) -> void:
 	if not layer.has_meta("layer_card") or not layer.get_meta("layer_card") is LayerCard:

@@ -3,6 +3,9 @@ extends BaseTool
 
 enum TransformMode { RESIZE, MOVE, ROTATE }
 
+# Rotate cursor icon
+var _rotate_cursor_image: ImageTexture = null
+
 var _control_point_type: int = LayerV2.TransformPoint.NONE
 var _current_operation: TransformMode = TransformMode.MOVE
 var _is_transforming: bool = false
@@ -32,6 +35,10 @@ var _resize_reference_positions = {}
 var _handles_global_positions = {}
 
 func _ready() -> void:
+	# Create rotate cursor programmatically (SVG can't be loaded dynamically at runtime)
+	_rotate_cursor_image = _create_rotate_cursor(24)
+	print("TransformTool: Rotate cursor created: ", _rotate_cursor_image)
+
 	editor.active_tool_changed.connect(
 		func(tool_: BaseTool):
 			if tool_ == self:
@@ -40,6 +47,8 @@ func _ready() -> void:
 					editor.active_layer.transform_rect_visible = true
 					editor.queue_redraw()
 			else:
+				# Reset cursor when switching away from this tool
+				editor.set_custom_cursor(null, Input.CURSOR_ARROW)
 				if editor.active_layer:
 					editor.active_layer.transform_rect_visible = false
 					editor.queue_redraw()
@@ -61,7 +70,10 @@ func _process(_delta: float) -> void:
 
 func _tool_selected() -> void:
 	_reset_state()
-	
+
+	# Set default cursor for transform tool
+	editor.set_custom_cursor(null, Input.CURSOR_ARROW)
+
 	# Make transform boxes visible immediately when tool is selected
 	if editor.active_layer:
 		editor.active_layer.transform_rect_visible = true
@@ -101,11 +113,60 @@ func handle_input_event(event: InputEvent) -> bool:
 
 	elif event is InputEventMouseMotion and not _is_transforming and editor.active_layer:
 		# Update cursor when hovering over handles
-		pass
-		#var local_pos = editor.active_layer.get_global_transform().affine_inverse() * event.position
-		#var hover_point = editor.active_layer.get_rect_by_mouse_position(local_pos)
+		_update_cursor(event.position)
 
 	return false
+
+
+## Returns the appropriate cursor shape for a given transform point
+func _get_cursor_for_transform_point(point: LayerV2.TransformPoint) -> Input.CursorShape:
+	match point:
+		LayerV2.TransformPoint.TOP_LEFT, LayerV2.TransformPoint.BOTTOM_RIGHT:
+			return Input.CURSOR_FDIAGSIZE
+		LayerV2.TransformPoint.TOP_RIGHT, LayerV2.TransformPoint.BOTTOM_LEFT:
+			return Input.CURSOR_BDIAGSIZE
+		LayerV2.TransformPoint.LEFT, LayerV2.TransformPoint.RIGHT:
+			return Input.CURSOR_HSIZE
+		LayerV2.TransformPoint.TOP, LayerV2.TransformPoint.BOTTOM:
+			return Input.CURSOR_VSIZE
+		LayerV2.TransformPoint.MOVE:
+			return Input.CURSOR_MOVE
+	return Input.CURSOR_ARROW
+
+
+## Updates the cursor based on hover position over transform handles
+func _update_cursor(local_pos: Vector2) -> void:
+	if not editor.active_layer:
+		editor.set_custom_cursor(null, Input.CURSOR_ARROW)
+		return
+
+	var point = editor.active_layer.get_rect_by_mouse_position(local_pos)
+
+	# Debug logging for Bug 2 investigation
+	print("_update_cursor: local_pos=", local_pos, " detected_point=", point, " layer_size=", editor.active_layer.size)
+
+	if point == LayerV2.TransformPoint.ROTATE:
+		# Use custom rotate cursor
+		if _rotate_cursor_image:
+			editor.set_custom_cursor(_rotate_cursor_image, Input.CURSOR_ARROW, Vector2(12, 12))
+		else:
+			editor.set_custom_cursor(null, Input.CURSOR_ARROW)
+	elif point != LayerV2.TransformPoint.NONE:
+		# Use appropriate cursor for resize handles or move
+		var cursor_shape = _get_cursor_for_transform_point(point)
+		print("_update_cursor: Setting cursor for handle: ", point, " -> cursor_shape: ", cursor_shape)
+		editor.set_custom_cursor(null, cursor_shape)
+	else:
+		# Check if inside layer bounds for move cursor
+		var layer_rect = Rect2(Vector2.ZERO, editor.active_layer.size)
+		if layer_rect.has_point(local_pos):
+			editor.set_custom_cursor(null, Input.CURSOR_MOVE)
+		else:
+			# Outside layer = rotate mode (match _start_transform behavior)
+			if _rotate_cursor_image:
+				editor.set_custom_cursor(_rotate_cursor_image, Input.CURSOR_ARROW, Vector2(12, 12))
+			else:
+				editor.set_custom_cursor(null, Input.CURSOR_ARROW)
 
 func _get_handle_global_positions() -> Dictionary:
 	# Calculate global positions of all control handles
@@ -201,11 +262,28 @@ func _start_transform(event: InputEvent, editor_local_position: Vector2) -> void
 			_resize_reference_positions[opposite_handle] = _handles_global_positions[opposite_handle]
 		
 		print("Starting RESIZE operation with control point: ", _control_point_type)
-	
+
+	# Set cursor to reflect the current operation
+	_set_cursor_for_operation()
+
 	# Store initial state
 	_is_transforming = true
 	_initial_click_position = local_pos
 	_backup_original_state()
+
+
+## Sets the cursor based on the current transform operation
+func _set_cursor_for_operation() -> void:
+	match _current_operation:
+		TransformMode.MOVE:
+			editor.set_custom_cursor(null, Input.CURSOR_MOVE)
+		TransformMode.ROTATE:
+			if _rotate_cursor_image:
+				editor.set_custom_cursor(_rotate_cursor_image, Input.CURSOR_ARROW, Vector2(12, 12))
+			else:
+				editor.set_custom_cursor(null, Input.CURSOR_ARROW)
+		TransformMode.RESIZE:
+			editor.set_custom_cursor(null, _get_cursor_for_transform_point(_control_point_type))
 
 func _update_transform(event: InputEventMouseMotion, editor_local_position: Vector2) -> void:
 	if not _is_transforming or not editor.active_layer:
@@ -228,14 +306,17 @@ func _end_transform() -> void:
 	if _is_transforming and editor.active_layer:
 		print("TransformTool: Ending transform")
 		_finalize_transform()
-		
+
 		# Force redraw after operation completion
 		editor.active_layer._adjust_control_size()
 		editor.queue_redraw()
-	
+
 	_is_transforming = false
 	_control_point_type = LayerV2.TransformPoint.NONE
 	_resize_reference_positions.clear()
+
+	# Reset cursor to default
+	editor.set_custom_cursor(null, Input.CURSOR_ARROW)
 
 func _backup_original_state() -> void:
 	print("TransformTool: Backing up original state")
@@ -344,3 +425,55 @@ func _finalize_transform() -> void:
 	print("TransformTool: Transform finalized")
 	print("  - Final position: ", editor.active_layer.position)
 	print("  - Final rotation: ", editor.active_layer.rotation)
+
+
+## Creates a rotate cursor image programmatically (circular arrow)
+func _create_rotate_cursor(size: int) -> ImageTexture:
+	var image = Image.create(size, size, false, Image.FORMAT_RGBA8)
+	image.fill(Color.TRANSPARENT)
+
+	var center = Vector2(size / 2.0, size / 2.0)
+	var radius = size / 2.0 - 3.0
+	var line_color = Color.WHITE
+	var outline_color = Color.BLACK
+
+	# Draw circular arc (about 270 degrees)
+	for i in range(270):
+		var angle = deg_to_rad(i - 45)  # Start from top-right, go counter-clockwise
+		var x = center.x + cos(angle) * radius
+		var y = center.y + sin(angle) * radius
+
+		# Draw outline
+		for ox in range(-1, 2):
+			for oy in range(-1, 2):
+				var px = int(x + ox)
+				var py = int(y + oy)
+				if px >= 0 and px < size and py >= 0 and py < size:
+					if image.get_pixel(px, py).a < 0.5:
+						image.set_pixel(px, py, outline_color)
+
+		# Draw main line
+		var px = int(x)
+		var py = int(y)
+		if px >= 0 and px < size and py >= 0 and py < size:
+			image.set_pixel(px, py, line_color)
+
+	# Draw arrow head at the end (pointing counter-clockwise)
+	var arrow_angle = deg_to_rad(225)  # End of arc
+	var arrow_tip = center + Vector2(cos(arrow_angle), sin(arrow_angle)) * radius
+
+	# Arrow head lines
+	for i in range(6):
+		var t = i / 5.0
+		# First arrow line (pointing inward-tangent)
+		var a1_end = arrow_tip + Vector2(4, -4)
+		var p1 = arrow_tip.lerp(a1_end, t)
+		if int(p1.x) >= 0 and int(p1.x) < size and int(p1.y) >= 0 and int(p1.y) < size:
+			image.set_pixel(int(p1.x), int(p1.y), line_color)
+		# Second arrow line
+		var a2_end = arrow_tip + Vector2(-2, -5)
+		var p2 = arrow_tip.lerp(a2_end, t)
+		if int(p2.x) >= 0 and int(p2.x) < size and int(p2.y) >= 0 and int(p2.y) < size:
+			image.set_pixel(int(p2.x), int(p2.y), line_color)
+
+	return ImageTexture.create_from_image(image)
