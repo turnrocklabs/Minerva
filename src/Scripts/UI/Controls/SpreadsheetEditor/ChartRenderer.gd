@@ -189,7 +189,7 @@ static func _parse_numbers(values: PackedStringArray) -> PackedFloat64Array:
 	result.resize(values.size())
 
 	for i in range(values.size()):
-		var val := values[i].strip_edges()
+		var val := _clean_number_string(values[i])
 		if val.is_valid_float():
 			result[i] = val.to_float()
 		elif val.is_valid_int():
@@ -200,13 +200,53 @@ static func _parse_numbers(values: PackedStringArray) -> PackedFloat64Array:
 	return result
 
 
+## Clean a string for number parsing (strip currency symbols, commas, etc.)
+static func _clean_number_string(text: String) -> String:
+	var val := text.strip_edges()
+
+	# Handle empty string
+	if val.is_empty():
+		return ""
+
+	# Check for negative in parentheses: (123.45) -> -123.45
+	var is_negative := false
+	if val.begins_with("(") and val.ends_with(")"):
+		is_negative = true
+		val = val.substr(1, val.length() - 2)
+
+	# Check for leading minus
+	if val.begins_with("-"):
+		is_negative = true
+		val = val.substr(1)
+
+	# Strip currency symbols
+	val = val.replace("$", "")
+	val = val.replace("€", "")
+	val = val.replace("£", "")
+	val = val.replace("¥", "")
+
+	# Remove thousands separators (commas)
+	val = val.replace(",", "")
+
+	# Remove percent sign and note for later (handled separately)
+	val = val.replace("%", "")
+
+	val = val.strip_edges()
+
+	# Re-add negative sign if needed
+	if is_negative and not val.is_empty():
+		val = "-" + val
+
+	return val
+
+
 ## Try to parse values as numbers, return empty array if any fail
 static func _try_parse_numbers(values: PackedStringArray) -> PackedFloat64Array:
 	var result: PackedFloat64Array = []
 	result.resize(values.size())
 
 	for i in range(values.size()):
-		var val := values[i].strip_edges()
+		var val := _clean_number_string(values[i])
 		if val.is_valid_float():
 			result[i] = val.to_float()
 		elif val.is_valid_int():

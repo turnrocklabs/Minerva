@@ -35,6 +35,9 @@ var bg_color: Color = Color.TRANSPARENT
 ## Date format string for DATE type cells
 var date_format: String = "YYYY-MM-DD"
 
+## Number format for NUMBER type cells (none, currency, percent, decimal)
+var number_format: String = "none"
+
 
 func _init(initial_value: Variant = "") -> void:
 	set_value(initial_value)
@@ -140,6 +143,16 @@ func has_formula() -> bool:
 	return type == CellType.FORMULA and not formula.is_empty()
 
 
+## Refresh display value after format change
+func refresh_display() -> void:
+	if type == CellType.NUMBER and value is float:
+		display_value = _format_number(value)
+	elif type == CellType.FORMULA and not error.is_empty():
+		display_value = "#ERROR"
+	elif type != CellType.FORMULA:
+		display_value = str(value) if value != null else ""
+
+
 ## Create a duplicate of this cell
 func duplicate_cell() -> RefCounted:
 	var copy = get_script().new()
@@ -154,6 +167,7 @@ func duplicate_cell() -> RefCounted:
 	copy.text_color = text_color
 	copy.bg_color = bg_color
 	copy.date_format = date_format
+	copy.number_format = number_format
 	return copy
 
 
@@ -180,6 +194,8 @@ func to_dict() -> Dictionary:
 		data["bg_color"] = bg_color.to_html()
 	if date_format != "YYYY-MM-DD":
 		data["date_format"] = date_format
+	if number_format != "none":
+		data["number_format"] = number_format
 
 	return data
 
@@ -199,6 +215,8 @@ func load_from_dict(data: Dictionary) -> void:
 		bg_color = Color.html(data["bg_color"])
 	if data.has("date_format"):
 		date_format = data["date_format"]
+	if data.has("number_format"):
+		number_format = data["number_format"]
 
 	# Compute display value
 	if type == CellType.NUMBER and value is float:
@@ -211,15 +229,42 @@ func load_from_dict(data: Dictionary) -> void:
 
 ## Format a number for display
 func _format_number(num: float) -> String:
-	# Remove unnecessary decimals
-	if num == int(num):
-		return str(int(num))
+	match number_format:
+		"currency", "usd":
+			# Format as $X,XXX.XX
+			var is_negative := num < 0
+			var abs_num := absf(num)
+			var dollars := int(abs_num)
+			var cents := int(roundf((abs_num - dollars) * 100))
+			var dollars_str := _add_thousands_separator(dollars)
+			var result := "$%s.%02d" % [dollars_str, cents]
+			return "-" + result if is_negative else result
+		"percent":
+			return "%.2f%%" % (num * 100)
+		"decimal":
+			return "%.2f" % num
+		_:
+			# Default: remove unnecessary decimals
+			if num == int(num):
+				return str(int(num))
+			# Limit to reasonable precision
+			var formatted := "%.10f" % num
+			# Trim trailing zeros
+			formatted = formatted.rstrip("0").rstrip(".")
+			return formatted
 
-	# Limit to reasonable precision
-	var formatted := "%.10f" % num
-	# Trim trailing zeros
-	formatted = formatted.rstrip("0").rstrip(".")
-	return formatted
+
+## Add thousands separators to an integer
+func _add_thousands_separator(num: int) -> String:
+	var s := str(num)
+	var result := ""
+	var count := 0
+	for i in range(s.length() - 1, -1, -1):
+		if count > 0 and count % 3 == 0:
+			result = "," + result
+		result = s[i] + result
+		count += 1
+	return result
 
 
 ## Try to parse a string as a date

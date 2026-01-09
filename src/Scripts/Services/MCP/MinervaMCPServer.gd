@@ -768,6 +768,11 @@ func _register_spreadsheet_tools() -> void:
 				"bg_color": {
 					"type": "string",
 					"description": "Background color as hex (e.g., '#FFFF00' for yellow)"
+				},
+				"number_format": {
+					"type": "string",
+					"description": "Number display format: 'none' (default), 'currency' or 'usd' ($X,XXX.XX), 'percent' (X.XX%), 'decimal' (X.XX)",
+					"enum": ["none", "currency", "usd", "percent", "decimal"]
 				}
 			},
 			"required": ["editor_name", "range"]
@@ -1900,6 +1905,7 @@ func _format_cells(args: Dictionary) -> Dictionary:
 	var formatted_count := 0
 	for cell_pos in cells_to_format:
 		var cell = data.get_cell(cell_pos.y, cell_pos.x)
+		var needs_refresh := false
 
 		if args.has("bold"):
 			cell.bold = args.get("bold", false)
@@ -1918,6 +1924,13 @@ func _format_cells(args: Dictionary) -> Dictionary:
 			cell.text_color = Color.html(args.get("text_color", "#FFFFFF"))
 		if args.has("bg_color"):
 			cell.bg_color = Color.html(args.get("bg_color", "#000000"))
+		if args.has("number_format"):
+			cell.number_format = args.get("number_format", "none")
+			needs_refresh = true
+
+		# Refresh display value if format changed
+		if needs_refresh:
+			cell.refresh_display()
 
 		formatted_count += 1
 
