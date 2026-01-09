@@ -922,9 +922,13 @@ func _handle_selection_shortcuts(event: InputEventKey) -> void:
 
 
 func _draw() -> void:
-	# NOTE: Do NOT call queue_redraw() on children here - it causes cascading redraws
-	# and severe performance issues. Children should manage their own redraw schedules.
-	pass
+	# Propagate redraw to selected layers so their textures update when image pixels change
+	for layer in selected_layers: layer.queue_redraw()
+	for layer in selected_mask_layers: layer.queue_redraw()
+	for c: LayerCard in layer_cards_container.get_children():
+		c.queue_redraw()
+	for c: LayerCard in mask_layer_cards_container.get_children():
+		c.queue_redraw()
 
 ## Delegates drag handling functions to given layer.[br]
 ## See [method Control.set_drag_forwarding].

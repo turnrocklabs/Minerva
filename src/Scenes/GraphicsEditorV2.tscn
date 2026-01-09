@@ -1,4 +1,4 @@
-[gd_scene load_steps=68 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=69 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -52,6 +52,7 @@
 [ext_resource type="Script" uid="uid://dk1ha137jdcrs" path="res://Scripts/UI/Controls/GraphicsEditor/SelectionOverlay.gd" id="38_selover"]
 [ext_resource type="PackedScene" uid="uid://bxwrp4qt6c8km" path="res://Scenes/PoseEditorPanel.tscn" id="41_posepanel"]
 [ext_resource type="Texture2D" uid="uid://dm77rkbe2s6yq" path="res://assets/icons/render_viewport/screenshot_icon_24.png" id="39_yj5gr"]
+[ext_resource type="Script" uid="uid://dkjxy1m1lu3jf" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PoseEditorTool.gd" id="40_posetool"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="47_hu8v1"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
@@ -210,6 +211,11 @@ editor = NodePath("../..")
 [node name="LassoSelectTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("36_lasso")
+editor = NodePath("../..")
+
+[node name="PoseEditorTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("40_posetool")
 editor = NodePath("../..")
 
 [node name="h" type="HBoxContainer" parent="."]
