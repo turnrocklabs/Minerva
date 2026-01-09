@@ -129,7 +129,7 @@ func disconnect_all() -> void:
 		disconnect_server(server_name)
 
 	# Also disconnect the Minerva server
-	if minerva_server and minerva_server.is_connected:
+	if minerva_server and minerva_server.server_enabled:
 		disconnect_minerva_server()
 
 
@@ -152,7 +152,7 @@ func disconnect_minerva_server() -> void:
 
 ## Check if the Minerva server is connected
 func is_minerva_connected() -> bool:
-	return minerva_server != null and minerva_server.is_connected
+	return minerva_server != null and minerva_server.server_enabled
 
 
 ## Execute a tool by name

@@ -4,6 +4,9 @@ extends RefCounted
 ## Provides tools for managing chats, notes, and editors.
 
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
+const SpreadsheetDataScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetData.gd")
+const SpreadsheetChartScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetChart.gd")
+const SpreadsheetFileHandlerScript := preload("res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetFileHandler.gd")
 
 ## Reference to the MCPManager for tool registration
 var mcp_manager
@@ -32,6 +35,7 @@ func register_tools() -> void:
 	_register_chat_tools()
 	_register_notes_tools()
 	_register_editor_tools()
+	_register_spreadsheet_tools()
 
 	print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
@@ -138,6 +142,26 @@ func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _generate_graphics(arguments)
 		"minerva_graphics_generate_iterative":
 			return await _generate_graphics_iterative(arguments)
+
+		# Spreadsheet tools
+		"minerva_create_spreadsheet_editor":
+			return await _create_spreadsheet_editor(arguments)
+		"minerva_get_spreadsheet_data":
+			return _get_spreadsheet_data(arguments)
+		"minerva_update_spreadsheet_data":
+			return _update_spreadsheet_data(arguments)
+		"minerva_add_spreadsheet_row":
+			return _add_spreadsheet_row(arguments)
+		"minerva_add_spreadsheet_column":
+			return _add_spreadsheet_column(arguments)
+		"minerva_format_cells":
+			return _format_cells(arguments)
+		"minerva_set_cell_formula":
+			return _set_cell_formula(arguments)
+		"minerva_create_chart":
+			return _create_chart(arguments)
+		"minerva_get_chart_image":
+			return await _get_chart_image(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -581,6 +605,260 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["editor_name", "model", "action", "prompt", "criteria"]
 			# Note: iteration is tracked SERVER-SIDE. Do not pass iteration parameter.
+		}
+	)
+
+
+func _register_spreadsheet_tools() -> void:
+	_register_tool("minerva_create_spreadsheet_editor",
+		"Create a new spreadsheet editor tab. Returns an editor_name that can be used for subsequent operations.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the spreadsheet tab"
+				},
+				"csv_content": {
+					"type": "string",
+					"description": "Optional initial CSV content to populate the spreadsheet"
+				},
+				"file_path": {
+					"type": "string",
+					"description": "Optional file path to load (CSV, TSV, XLSX, or .minsheet)"
+				}
+			},
+			"required": ["name"]
+		}
+	)
+
+	_register_tool("minerva_get_spreadsheet_data",
+		"Get the data from a spreadsheet in various formats.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"format": {
+					"type": "string",
+					"description": "Output format: 'csv', 'json', or 'markdown'. Default: 'csv'",
+					"enum": ["csv", "json", "markdown"]
+				},
+				"range": {
+					"type": "string",
+					"description": "Optional cell range to get (e.g., 'A1:C10'). If not specified, returns all data."
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_update_spreadsheet_data",
+		"Update cells in a spreadsheet. Can update individual cells or load entire CSV content.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"csv_content": {
+					"type": "string",
+					"description": "Full CSV content to replace all data"
+				},
+				"cells": {
+					"type": "array",
+					"description": "Array of cell updates: [{\"cell\": \"A1\", \"value\": \"Hello\"}, ...]",
+					"items": {
+						"type": "object",
+						"properties": {
+							"cell": {"type": "string", "description": "Cell reference (e.g., 'A1', 'B2')"},
+							"value": {"description": "Value to set (string, number, or formula starting with '=')"}
+						},
+						"required": ["cell", "value"]
+					}
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_add_spreadsheet_row",
+		"Add a new row to the spreadsheet with optional values.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"at_row": {
+					"type": "integer",
+					"description": "Row index to insert at (0-based). If not specified, appends at the end."
+				},
+				"values": {
+					"type": "array",
+					"description": "Array of values for the new row (one per column)",
+					"items": {}
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_add_spreadsheet_column",
+		"Add a new column to the spreadsheet with optional header.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"at_col": {
+					"type": "integer",
+					"description": "Column index to insert at (0-based). If not specified, appends at the end."
+				},
+				"header": {
+					"type": "string",
+					"description": "Header text for the new column"
+				},
+				"values": {
+					"type": "array",
+					"description": "Array of values for the column (starting from row 1 if header is provided)",
+					"items": {}
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_format_cells",
+		"Apply formatting to cells or a range of cells.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"range": {
+					"type": "string",
+					"description": "Cell range to format (e.g., 'A1', 'A1:C1', 'A:A' for whole column)"
+				},
+				"bold": {
+					"type": "boolean",
+					"description": "Set text bold"
+				},
+				"italic": {
+					"type": "boolean",
+					"description": "Set text italic"
+				},
+				"alignment": {
+					"type": "string",
+					"description": "Text alignment: 'left', 'center', or 'right'",
+					"enum": ["left", "center", "right"]
+				},
+				"text_color": {
+					"type": "string",
+					"description": "Text color as hex (e.g., '#FF0000' for red)"
+				},
+				"bg_color": {
+					"type": "string",
+					"description": "Background color as hex (e.g., '#FFFF00' for yellow)"
+				}
+			},
+			"required": ["editor_name", "range"]
+		}
+	)
+
+	_register_tool("minerva_set_cell_formula",
+		"Set a formula in a specific cell.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"cell": {
+					"type": "string",
+					"description": "Cell reference (e.g., 'A1', 'B2')"
+				},
+				"formula": {
+					"type": "string",
+					"description": "Formula to set (e.g., '=SUM(A1:A10)', '=A1+B1'). The '=' prefix is optional."
+				}
+			},
+			"required": ["editor_name", "cell", "formula"]
+		}
+	)
+
+	_register_tool("minerva_create_chart",
+		"Create a chart from spreadsheet data.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"title": {
+					"type": "string",
+					"description": "Chart title"
+				},
+				"type": {
+					"type": "string",
+					"description": "Chart type: 'line' or 'bar'. Default: 'line'",
+					"enum": ["line", "bar"]
+				},
+				"x_range": {
+					"type": "string",
+					"description": "Cell range for X-axis values (e.g., 'A1:A10')"
+				},
+				"series": {
+					"type": "array",
+					"description": "Array of series ranges (e.g., ['B1:B10', 'C1:C10'])",
+					"items": {"type": "string"}
+				},
+				"x_is_date": {
+					"type": "boolean",
+					"description": "Whether X-axis contains date values. Default: false"
+				},
+				"first_row_is_header": {
+					"type": "boolean",
+					"description": "Whether first row contains headers (skip for data, use for labels). Default: true"
+				}
+			},
+			"required": ["editor_name", "x_range", "series"]
+		}
+	)
+
+	_register_tool("minerva_get_chart_image",
+		"Export a chart as a base64-encoded PNG image for LLM viewing.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"chart_index": {
+					"type": "integer",
+					"description": "Index of the chart to export (0-based). Default: 0 (first chart)"
+				},
+				"width": {
+					"type": "integer",
+					"description": "Image width in pixels. Default: 800"
+				},
+				"height": {
+					"type": "integer",
+					"description": "Image height in pixels. Default: 400"
+				}
+			},
+			"required": ["editor_name"]
 		}
 	)
 
@@ -1346,6 +1624,458 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 		"iteration": iteration,
 		"max_iterations": max_iterations,
 		"image_visible": true
+	}
+
+#endregion
+
+
+#region Spreadsheet Tool Implementations
+
+func _find_spreadsheet_editor(editor_name: String) -> Variant:
+	var editor = _find_editor_by_name(editor_name)
+	if not editor:
+		return null
+
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.SPREADSHEET:
+		return null
+
+	return editor
+
+
+func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
+	var name_: String = args.get("name", "Spreadsheet")
+	var csv_content: String = args.get("csv_content", "")
+	var file_path: String = args.get("file_path", "")
+
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return {"error": "Editor pane not available", "success": false}
+
+	# Check if file exists when file_path is provided
+	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
+		return {"error": "File not found: %s" % file_path, "success": false}
+
+	# Create the spreadsheet editor
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	var file_arg: Variant = null
+	if not file_path.is_empty():
+		file_arg = file_path
+	var editor = editor_pane.add(EditorGDScript.Type.SPREADSHEET, file_arg, name_, null)
+
+	# Wait for the spreadsheet editor to be ready
+	if not editor.spreadsheet_editor:
+		await Engine.get_main_loop().process_frame
+
+	# Set CSV content if provided (and no file was loaded)
+	if not csv_content.is_empty() and file_path.is_empty() and editor.spreadsheet_editor:
+		editor.spreadsheet_editor.set_content(csv_content)
+
+	return {
+		"success": true,
+		"editor_name": editor.tab_title,
+		"message": "Spreadsheet editor created. Use this editor_name for subsequent operations."
+	}
+
+
+func _get_spreadsheet_data(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var format_: String = args.get("format", "csv")
+	var range_str: String = args.get("range", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	var content: Variant
+	match format_:
+		"csv":
+			content = data.to_csv(",")
+		"json":
+			content = data.to_json_array()
+		"markdown":
+			content = data.to_markdown()
+		_:
+			content = data.to_csv(",")
+
+	return {
+		"success": true,
+		"format": format_,
+		"data": content,
+		"row_count": data.row_count,
+		"column_count": data.column_count
+	}
+
+
+func _update_spreadsheet_data(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var csv_content: String = args.get("csv_content", "")
+	var cells: Array = args.get("cells", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	var updated_count := 0
+
+	# If CSV content provided, replace all data
+	if not csv_content.is_empty():
+		editor.spreadsheet_editor.set_content(csv_content)
+		updated_count = -1  # Indicate full replacement
+
+	# Update individual cells
+	if cells.size() > 0:
+		for cell_update in cells:
+			if cell_update is Dictionary:
+				var cell_ref: String = cell_update.get("cell", "")
+				var value: Variant = cell_update.get("value", "")
+
+				if not cell_ref.is_empty():
+					var pos: Vector2i = SpreadsheetDataScript.parse_cell_reference(cell_ref)
+					if pos.x >= 0 and pos.y >= 0:
+						data.set_cell_value(pos.y, pos.x, value)
+						updated_count += 1
+
+		# Trigger redraw
+		editor.spreadsheet_editor.cells_canvas.queue_redraw()
+
+	return {
+		"success": true,
+		"message": "Spreadsheet updated" if updated_count == -1 else "Updated %d cells" % updated_count
+	}
+
+
+func _add_spreadsheet_row(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var at_row: int = args.get("at_row", -1)
+	var values: Array = args.get("values", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	# Determine row index
+	var row_idx: int = at_row if at_row >= 0 else data.row_count
+
+	# Insert the row
+	data.insert_row(row_idx)
+
+	# Set values if provided
+	for col in range(values.size()):
+		data.set_cell_value(row_idx, col, values[col])
+
+	# Trigger redraw
+	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+	editor.spreadsheet_editor.row_headers.queue_redraw()
+
+	return {
+		"success": true,
+		"row_index": row_idx,
+		"message": "Row added at index %d" % row_idx
+	}
+
+
+func _add_spreadsheet_column(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var at_col: int = args.get("at_col", -1)
+	var header: String = args.get("header", "")
+	var values: Array = args.get("values", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	# Determine column index
+	var col_idx: int = at_col if at_col >= 0 else data.column_count
+
+	# Insert the column
+	data.insert_column(col_idx)
+
+	# Set header if provided (row 0)
+	var start_row := 0
+	if not header.is_empty():
+		data.set_cell_value(0, col_idx, header)
+		start_row = 1
+
+	# Set values
+	for i in range(values.size()):
+		data.set_cell_value(start_row + i, col_idx, values[i])
+
+	# Trigger redraw
+	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+	editor.spreadsheet_editor._column_header.queue_redraw()
+
+	return {
+		"success": true,
+		"column_index": col_idx,
+		"column_label": SpreadsheetDataScript.get_column_label(col_idx),
+		"message": "Column added at index %d" % col_idx
+	}
+
+
+func _format_cells(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var range_str: String = args.get("range", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if range_str.is_empty():
+		return {"error": "range is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	# Parse the range
+	var cells_to_format: Array[Vector2i] = []
+
+	if range_str.contains(":"):
+		# Range like A1:C10
+		var parts: PackedStringArray = range_str.split(":")
+		var start_pos: Vector2i = SpreadsheetDataScript.parse_cell_reference(parts[0].strip_edges())
+		var end_pos: Vector2i = SpreadsheetDataScript.parse_cell_reference(parts[1].strip_edges())
+
+		if start_pos.x >= 0 and start_pos.y >= 0 and end_pos.x >= 0 and end_pos.y >= 0:
+			for row in range(mini(start_pos.y, end_pos.y), maxi(start_pos.y, end_pos.y) + 1):
+				for col in range(mini(start_pos.x, end_pos.x), maxi(start_pos.x, end_pos.x) + 1):
+					cells_to_format.append(Vector2i(col, row))
+	else:
+		# Single cell like A1
+		var pos: Vector2i = SpreadsheetDataScript.parse_cell_reference(range_str)
+		if pos.x >= 0 and pos.y >= 0:
+			cells_to_format.append(Vector2i(pos.x, pos.y))
+
+	if cells_to_format.is_empty():
+		return {"error": "Invalid range: %s" % range_str, "success": false}
+
+	# Apply formatting
+	var formatted_count := 0
+	for cell_pos in cells_to_format:
+		var cell = data.get_cell(cell_pos.y, cell_pos.x)
+
+		if args.has("bold"):
+			cell.bold = args.get("bold", false)
+		if args.has("italic"):
+			cell.italic = args.get("italic", false)
+		if args.has("alignment"):
+			var align_str: String = args.get("alignment", "left")
+			match align_str:
+				"left":
+					cell.alignment = HORIZONTAL_ALIGNMENT_LEFT
+				"center":
+					cell.alignment = HORIZONTAL_ALIGNMENT_CENTER
+				"right":
+					cell.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		if args.has("text_color"):
+			cell.text_color = Color.html(args.get("text_color", "#FFFFFF"))
+		if args.has("bg_color"):
+			cell.bg_color = Color.html(args.get("bg_color", "#000000"))
+
+		formatted_count += 1
+
+	# Trigger redraw
+	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+
+	return {
+		"success": true,
+		"cells_formatted": formatted_count,
+		"message": "Formatted %d cells" % formatted_count
+	}
+
+
+func _set_cell_formula(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var cell_ref: String = args.get("cell", "")
+	var formula: String = args.get("formula", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if cell_ref.is_empty():
+		return {"error": "cell is required", "success": false}
+
+	if formula.is_empty():
+		return {"error": "formula is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	# Parse cell reference
+	var pos: Vector2i = SpreadsheetDataScript.parse_cell_reference(cell_ref)
+	if pos.x < 0 or pos.y < 0:
+		return {"error": "Invalid cell reference: %s" % cell_ref, "success": false}
+
+	# Ensure formula starts with =
+	if not formula.begins_with("="):
+		formula = "=" + formula
+
+	# Set the formula
+	data.set_cell_value(pos.y, pos.x, formula)
+
+	# Get the computed result
+	var cell = data.get_cell(pos.y, pos.x)
+	var result: String = cell.get_display_text()
+
+	# Trigger redraw
+	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+
+	return {
+		"success": true,
+		"cell": cell_ref,
+		"formula": formula,
+		"result": result
+	}
+
+
+func _create_chart(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var title: String = args.get("title", "Chart")
+	var chart_type: String = args.get("type", "line")
+	var x_range: String = args.get("x_range", "")
+	var series: Array = args.get("series", [])
+	var x_is_date: bool = args.get("x_is_date", false)
+	var first_row_is_header: bool = args.get("first_row_is_header", true)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if x_range.is_empty():
+		return {"error": "x_range is required", "success": false}
+
+	if series.is_empty():
+		return {"error": "series is required (array of cell ranges)", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	# Create the chart
+	var chart := SpreadsheetChartScript.new()
+	chart.title = title
+	chart.type = SpreadsheetChartScript.ChartType.LINE if chart_type == "line" else SpreadsheetChartScript.ChartType.BAR
+	chart.x_range = x_range
+	chart.x_is_date = x_is_date
+	chart.first_row_is_header = first_row_is_header
+
+	# Add series
+	for series_range in series:
+		if series_range is String:
+			chart.add_series(series_range)
+
+	# Add the chart
+	editor.spreadsheet_editor.add_chart(chart)
+
+	return {
+		"success": true,
+		"chart_id": chart.id,
+		"chart_count": editor.spreadsheet_editor.charts.size(),
+		"message": "Chart created successfully"
+	}
+
+
+func _get_chart_image(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var chart_index: int = args.get("chart_index", 0)
+	var width: int = args.get("width", 800)
+	var height: int = args.get("height", 400)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var charts = editor.spreadsheet_editor.charts
+	if chart_index < 0 or chart_index >= charts.size():
+		return {"error": "Chart index out of range (have %d charts)" % charts.size(), "success": false}
+
+	var chart_canvas = editor.spreadsheet_editor._chart_canvas
+	if not chart_canvas:
+		return {"error": "Chart canvas not available", "success": false}
+
+	# Make sure the chart canvas has the right chart selected
+	var target_chart = charts[chart_index]
+	chart_canvas.set_chart(target_chart)
+	chart_canvas.update_from_spreadsheet(editor.spreadsheet_editor.spreadsheet_data)
+
+	# Capture the chart as base64 PNG
+	var base64_png: String = await chart_canvas.capture_to_base64_png(width, height)
+
+	if base64_png.is_empty():
+		return {"error": "Failed to capture chart image", "success": false}
+
+	return {
+		"success": true,
+		"chart_index": chart_index,
+		"chart_title": target_chart.title,
+		"width": width,
+		"height": height,
+		"format": "png",
+		"encoding": "base64",
+		"image_data": base64_png
 	}
 
 #endregion

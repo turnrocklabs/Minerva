@@ -357,3 +357,57 @@ func update_from_spreadsheet(spreadsheet_data) -> void:
 	if chart:
 		chart_data = ChartRendererScript.process(chart, spreadsheet_data)
 		queue_redraw()
+
+
+## Capture the chart as an Image (for export or LLM viewing)
+## Uses a SubViewport to render the chart at a specified size
+func capture_to_image(width: int = 800, height: int = 400) -> Image:
+	if not chart or not chart_data or not chart_data.has_data:
+		# Return a placeholder image with "No chart data" message
+		var img := Image.create(width, height, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0.15, 0.15, 0.18, 1.0))
+		return img
+
+	# Create a SubViewport to render the chart
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(width, height)
+	viewport.transparent_bg = false
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+	# Create a copy of this ChartCanvas to render in the viewport
+	var chart_copy = get_script().new()
+	chart_copy.chart = chart
+	chart_copy.chart_data = chart_data
+	chart_copy.size = Vector2(width, height)
+	chart_copy.font = font
+	chart_copy.font_size = font_size
+	chart_copy.title_font_size = title_font_size
+
+	viewport.add_child(chart_copy)
+
+	# Add viewport to tree temporarily
+	add_child(viewport)
+
+	# Wait for render
+	await RenderingServer.frame_post_draw
+
+	# Get the rendered image
+	var img := viewport.get_texture().get_image()
+
+	# Clean up
+	viewport.remove_child(chart_copy)
+	chart_copy.queue_free()
+	remove_child(viewport)
+	viewport.queue_free()
+
+	return img
+
+
+## Capture chart to base64-encoded PNG (for MCP tools)
+func capture_to_base64_png(width: int = 800, height: int = 400) -> String:
+	var img := await capture_to_image(width, height)
+	if img == null or img.is_empty():
+		return ""
+
+	var png_buffer := img.save_png_to_buffer()
+	return Marshalls.raw_to_base64(png_buffer)
