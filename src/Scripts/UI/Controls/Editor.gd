@@ -41,6 +41,7 @@ var spreadsheet_editor  # SpreadsheetEditor
 @onready var code_syntax_button: IconsButton = $VBoxContainer/ButtonsHBoxContainer/CodeSyntaxButton
 @onready var find_button: IconsButton = %FindButton
 @onready var reload_button: IconsButton = %reloadButton
+@onready var export_area_button: IconsButton = %ExportAreaButton
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -237,6 +238,7 @@ func _ready():
 	if self.type == Type.TEXT:
 		mic_button.show()
 		autowrap_button.show()
+		export_area_button.hide()
 		toggle_autowrap()
 	else:
 		mic_button.hide() 
@@ -245,6 +247,7 @@ func _ready():
 		find_button.hide()
 		%btnApplyDiff.hide()
 		reload_button.hide()
+		export_area_button.show()
 		
 		mic_button.queue_free()
 		autowrap_button.queue_free()
@@ -254,6 +257,9 @@ func _ready():
 		jump_to_line_panel.queue_free()
 		%btnApplyDiff.queue_free()
 		reload_button.queue_free()
+		
+		if export_area_button:
+			SingletonObject.editor_pane.Tabs.tab_changed.connect(_on_tab_connect)
 	
 	if type == Type.TEXT:
 		text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
@@ -959,3 +965,23 @@ func _on_graphics_editor_changed() -> void:
 
 func _on_spreadsheet_editor_changed() -> void:
 	content_changed.emit()
+
+
+func _on_export_area_button_pressed() -> void:
+	var current_tab = SingletonObject.editor_pane.Tabs.get_current_tab_control()
+
+	if current_tab is Editor and current_tab.type == Editor.Type.GRAPHICS:
+		current_tab.graphics_editor._on_render_viewport_button_toggled(true)
+
+
+func _on_tab_connect(tab_idx: int) -> void:
+	var current_tab = SingletonObject.editor_pane.Tabs.get_current_tab_control()
+
+	if current_tab is Editor and current_tab.type == Editor.Type.GRAPHICS:
+		if export_area_button:
+			export_area_button.disabled = false
+			export_area_button.show()
+	else:
+		if export_area_button:
+			export_area_button.disabled = true
+			export_area_button.hide()

@@ -334,4 +334,3 @@ func _on_add_spreadsheet_editor_pressed() -> void:
 
 func _on_add_many_new_files_editor_pressed() -> void:
 	%ManyNewFilesDialogWindow.popup()
-

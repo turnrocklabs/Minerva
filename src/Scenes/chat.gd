@@ -37,10 +37,10 @@ func _ready() -> void:
 	# Initialize the services dictionary
 	_initialize_services_by_type()
 	
-	_setup_chats_service()
-
 	# TODO: testing hardcode
 	_setup_coco_service()
+
+	_setup_chats_service()
 
 	Core.client.connection_established.connect(_on_core_connected)
 

@@ -172,9 +172,19 @@ func serialize_project() -> Dictionary:
 func deserialize_project(data: Dictionary) -> int:
 	# Handle legacy and new formats gracefully
 	#var version = data.get("version", "1.0")
-	
+
 	# Deserialize notes container (legacy notes system)
 	SingletonObject.notes_container.deserialize(data.get("ThreadList", []))
+
+	# Clear rendered_node references from currently displayed chats BEFORE clearing ChatList
+	if SingletonObject.Chats:
+		for chat_history in SingletonObject.ChatList:
+			chat_history.VBox = null
+			for item in chat_history.HistoryItemList:
+				item.rendered_node = null
+
+		# Clear the UI
+		SingletonObject.Chats.clear_all_chats()
 
 	# Clear existing histories
 	SingletonObject.ChatList.clear()
@@ -208,14 +218,6 @@ func deserialize_project(data: Dictionary) -> int:
 			fallback_notes.HistoryName = notes_item.get("HistoryName", "Notes")
 			SingletonObject.NotesList.append(fallback_notes)
 
-	# Initialize chat pane with histories
-	if SingletonObject.Chats:
-		_initialize_chat_pane()
-
-	# Initialize notes pane with histories
-	# if SingletonObject.Notes:
-		# _initialize_notes_pane()
-
 	# Deserialize editors
 	SingletonObject.editor_container.clear_editor_tabs()
 	var editor_nodes: Array = []
@@ -228,7 +230,15 @@ func deserialize_project(data: Dictionary) -> int:
 		SingletonObject.editor_pane.Tabs.set_tab_title(tab_idx, editor.tab_title)
 		if editor.file:
 			SingletonObject.editor_pane.Tabs.set_tab_tooltip(tab_idx, editor.file)
-	
+
+	# Initialize chat pane with histories
+	if SingletonObject.Chats:
+		_initialize_chat_pane()
+
+	# Initialize notes pane with histories
+	# if SingletonObject.Notes:
+		# _initialize_notes_pane()
+
 	# Restore tab indices with bounds checking
 	SingletonObject.last_tab_index = data.get("last_tab_index", 0)
 
@@ -269,20 +279,18 @@ func _initialize_chat_pane():
 	"""Initialize chat pane with existing chat histories"""
 	if not SingletonObject.Chats:
 		return
-		
-	SingletonObject.Chats.clear_all_chats()
 
 	SingletonObject.Chats._initializing_pane = true
-	
+
 	for i in SingletonObject.ChatList.size():
 		var chat_history: = SingletonObject.ChatList[i]
 		print(chat_history)
 
 		if not is_instance_valid(chat_history.provider):
 			chat_history.provider = _get_fallback_provider()
-		
+
 		SingletonObject.Chats.render_history(chat_history)
-	
+
 	SingletonObject.Chats._initializing_pane = false
 
 func _initialize_notes_pane():

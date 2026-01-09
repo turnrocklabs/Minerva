@@ -868,7 +868,14 @@ func save_state(state: bool):
 
 #checks if the editor pane has a current tab
 func is_editor_file_open() -> bool:
-	if editor_container.editor_pane.Tabs.get_current_tab_control():
+	var editor: Editor = editor_container.editor_pane.Tabs.get_current_tab_control()
+	if editor is Editor and editor.type == Editor.Type.TEXT:
+		return true
+	return false
+
+func is_graphics_editor_open() -> bool:
+	var editor: Editor = editor_container.editor_pane.Tabs.get_current_tab_control()
+	if editor is Editor and editor.type == Editor.Type.GRAPHICS:
 		return true
 	return false
 
@@ -892,7 +899,7 @@ func any_project_features_open() -> bool:
 
 #checks if ALL project features are open
 func all_project_features_open() -> bool:
-	if is_chat_open() and is_notes_open() and is_editor_file_open():
+	if is_chat_open() and is_notes_open() and (is_editor_file_open() or is_graphics_editor_open()):
 		return true
 	return false
 

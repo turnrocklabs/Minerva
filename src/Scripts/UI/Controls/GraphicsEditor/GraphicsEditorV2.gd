@@ -815,13 +815,17 @@ func _gui_input(event: InputEvent) -> void:
 			if event.is_pressed():
 				dragging = true
 				last_mouse_position = event.position
+				return
 			else:
 				dragging = false
-
+				return
+		
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_zoom(event.position, ZOOM_INCREMENT)
+			return
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_zoom(event.position, ZOOM_DECREMENT)
+			return
 	if event is InputEventMouseMotion:
 		if dragging:
 			# Pan all layers together
@@ -830,14 +834,25 @@ func _gui_input(event: InputEvent) -> void:
 			last_mouse_position = event.position
 			return
 	#endregion Move Canvas
-	
-	# if we have a active tool and at least one of selected layers is visible
-	if active_tool and (selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_control_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) ):
-		if active_tool.handle_input_event(event):
-			_compose_result_expired = true
-			saved = false
-			graphics_editor_changed.emit()
-		accept_event()
+
+	# Handle active tool input
+	# PanTool should work even without visible layers (for panning the canvas)
+	# Other tools need visible layers to function
+	if active_tool:
+		var should_handle = false
+		if active_tool is PanTool:
+			# PanTool can work without layers
+			should_handle = true
+		elif selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_control_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
+			# Other tools need visible layers
+			should_handle = true
+
+		if should_handle:
+			if active_tool.handle_input_event(event):
+				_compose_result_expired = true
+				saved = false
+				graphics_editor_changed.emit()
+				accept_event()  # Only accept if tool actually handled the event
 
 
 func _pan_canvas(relative: Vector2) -> void:
@@ -1487,16 +1502,16 @@ func redo_command() -> void:
 
 func _on_tools_option_button_item_selected(index: int) -> void:
 	match index:
-		0: _on_brush_tool_button_toggled(true)
-		1: _on_eraser_tool_button_toggled(true)
-		2: _on_bucket_tool_button_toggled(true)
-		3: _on_smudge_tool_button_toggled(true)
-		4: active_tool = null; _on_add_image_button_pressed()
-		5: active_tool = eyedropper_tool
-		6: active_tool = magic_wand_tool
-		7: active_tool = rectangle_select_tool
-		8: active_tool = lasso_select_tool
-		9: active_tool = pose_editor_tool
+		0: _on_brush_tool_button_toggled(true); return
+		1: _on_eraser_tool_button_toggled(true); return
+		2: _on_smudge_tool_button_toggled(true); return
+		3: _on_bucket_tool_button_toggled(true); return
+		4: active_tool = null; _on_add_image_button_pressed(); return
+		5: active_tool = eyedropper_tool; return
+		6: active_tool = magic_wand_tool; return
+		7: active_tool = rectangle_select_tool; return
+		8: active_tool = lasso_select_tool; return
+		9: active_tool = pose_editor_tool; return
 		_: pass
 	
 
@@ -2215,7 +2230,9 @@ func _on_resized() -> void:
 
 var floating_windows_active: = false
 func response_layout_toggle() -> void:
-	print(size.x)
+	if collapsed_by_user:
+		return
+	
 	if size.x <= 860:
 		floating_windows_active = true
 		if full_size_ai_container.get_child_count() > 0:
@@ -2351,7 +2368,7 @@ func _position_view_top_left() -> void:
 func _on_zoom_out_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0) , ZOOM_DECREMENT - 0.15)
 
-																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																										
+
 func _on_zoom_in_button_pressed() -> void:
 	_zoom(layers_container.position + (layers_container.size /2.0), ZOOM_INCREMENT + 0.15)
 
@@ -2452,14 +2469,37 @@ func _on_get_texture_button_pressed() -> void:
 	# Capture the image from the defined region
 	var image: Image = await compose_region_image(render_view_control._rect)
 	if not image.is_empty():
-		create_new_image_layer("Rendered Viewport Layer", image)
-		# Optionally clear the render view rect and deactivate the tool after capture
 		render_view_control._rect = Rect2() # Reset the rectangle
 		render_view_control.queue_redraw()
-		render_viewport_button.set_pressed_no_signal(false) # Untoggle the button
+		render_viewport_button.toggled.emit(false) # Untoggle the button
 		active_tool = null # Or go back to default tool (brush)
 		_tools_option_button.select(0)
 		_tools_option_button.item_selected.emit(0)
+		
+	var fd := FileDialog.new()
+	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*.png", "PNG Image")
+	add_child(fd)
+	fd.popup_centered(Vector2i(800, 600))
+
+	var path = await fd.file_selected
+	fd.queue_free()
+
+	if path.is_empty():
+		return
+
+	# Ensure .png extension
+	if not path.ends_with(".png"):
+		path += ".png"
+
+	# Convert to RGBA8 if needed
+	if image.get_format() != Image.FORMAT_RGBA8:
+		image.convert(Image.FORMAT_RGBA8)
+
+	var error = image.save_png(path)
+	if error != OK:
+		push_error("Failed to save layer: " + str(error))
 
 
 func compose_region_image(region: Rect2, show_dialog: = true) -> Image:
@@ -2574,12 +2614,15 @@ func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
 		_tools_option_button.item_selected.emit(0)
 		_tools_option_button.grab_focus()
 		render_view_control.draw_render_view = false
+		render_view_control.get_texture_button.hide()
 		render_view_control.queue_redraw()
+		render_viewport_button.hide()
 		return
 	
 	active_tool = render_view_tool 
 	render_viewport_button.release_focus()
 	render_view_control.draw_render_view = true
+	render_viewport_button.show()
 	render_view_control.queue_redraw()
 
 #region Gen AI Prompt History
@@ -2696,3 +2739,41 @@ func _on_animation_option_button_item_selected(index: int) -> void:
 func _on_animation_frames_option_button_item_selected(index: int) -> void:
 	spritesheet_frames = animation_frames_option_button.get_item_text(index)
 	spritesheet_anim_is_active = spritesheet_settings_container.visible
+
+
+@export var MIN_DOCK_PANEL_WIDTH: = 500.0 # Define the minimum width for the docked panel in pixels before it collapses.
+var _is_dock_panel_collapsed_by_drag: bool = false # Tracks if the dock panel is currently collapsed due to user dragging.
+var _last_non_collapsed_split_offset: int = 0 # Stores the splitter's position before a drag-collapse, for restoration.
+var _drag_check_timer: Timer = null # Timer to check panel size after drag ends
+@onready var main_h_split_container: HSplitContainer = %MainHSplitContainer
+@onready var v: VBoxContainer = %v
+
+var collapsed_by_user: = false
+func _on_main_h_split_container_dragged(offset: int) -> void:
+	if floating_windows_active:
+		return
+	
+	var dock_panel_center: = dock_panel_container.get_global_rect().get_center().x - 100
+	
+	if get_global_mouse_position().x >= dock_panel_center and !_is_dock_panel_collapsed_by_drag:
+		
+		dock_split_container.hide()
+		_is_dock_panel_collapsed_by_drag = true
+		return
+	
+	var v_zone: = v.get_global_rect().end.x
+	
+	
+	if dock_panel_container.size.x > 100 and _is_dock_panel_collapsed_by_drag and (get_global_mouse_position().x <= v_zone - 10):
+		if dock_panel_container.size.x > 200:
+			dock_split_container.show()
+			_is_dock_panel_collapsed_by_drag = false
+		#return
+
+var dragging_split: = false
+func _on_main_h_split_container_drag_ended() -> void:
+	dragging_split = false
+
+
+func _on_main_h_split_container_drag_started() -> void:
+	dragging_split = true
