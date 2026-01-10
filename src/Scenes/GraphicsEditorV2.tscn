@@ -1,4 +1,4 @@
-[gd_scene load_steps=69 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=70 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -54,6 +54,7 @@
 [ext_resource type="Texture2D" uid="uid://dm77rkbe2s6yq" path="res://assets/icons/render_viewport/screenshot_icon_24.png" id="39_yj5gr"]
 [ext_resource type="Script" uid="uid://dkjxy1m1lu3jf" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PoseEditorTool.gd" id="40_posetool"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="47_hu8v1"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TextTool.gd" id="48_texttool"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
 offsets = PackedFloat32Array(0.609626, 1)
@@ -217,6 +218,16 @@ unique_name_in_owner = true
 script = ExtResource("40_posetool")
 editor = NodePath("../..")
 
+[node name="TextTool" type="Node" parent="Tools" node_paths=PackedStringArray("font_option_button", "font_size_spin_box", "fill_color_picker", "stroke_color_picker", "stroke_width_slider", "editor")]
+unique_name_in_owner = true
+script = ExtResource("48_texttool")
+font_option_button = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox/FontOptionButton")
+font_size_spin_box = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/SizeVBox/FontSizeSpinBox")
+fill_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FillVBox/FillColorPicker")
+stroke_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeVBox/StrokeColorPicker")
+stroke_width_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox/StrokeWidthSlider")
+editor = NodePath("../..")
+
 [node name="h" type="HBoxContainer" parent="."]
 clip_contents = true
 layout_mode = 2
@@ -255,7 +266,7 @@ layout_mode = 2
 size_flags_vertical = 4
 button_group = ExtResource("2_ymijy")
 allow_reselect = true
-item_count = 12
+item_count = 13
 popup/item_0/text = "Brush"
 popup/item_0/icon = ExtResource("10_vnb8d")
 popup/item_0/id = 0
@@ -290,6 +301,8 @@ popup/item_10/text = "Pan Layer"
 popup/item_10/id = 9
 popup/item_11/text = "Insert Image..."
 popup/item_11/id = 4
+popup/item_12/text = "Text"
+popup/item_12/id = 12
 
 [node name="SelectionIndicatorButton" type="MenuButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 unique_name_in_owner = true
@@ -549,6 +562,87 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Selection mode: Hold Shift to Add, Alt to Subtract, Shift+Alt to Intersect"
 text = "Mode: Replace"
+
+[node name="TextOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="FontVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox"]
+layout_mode = 2
+text = "Font:"
+
+[node name="FontOptionButton" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+item_count = 4
+popup/item_0/text = "Cascadia Code"
+popup/item_0/id = 0
+popup/item_1/text = "Cascadia Code Bold"
+popup/item_1/id = 1
+popup/item_2/text = "Space Mono"
+popup/item_2/id = 2
+popup/item_3/text = "Space Mono Bold"
+popup/item_3/id = 3
+
+[node name="SizeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/SizeVBox"]
+layout_mode = 2
+text = "Size:"
+
+[node name="FontSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/SizeVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 8.0
+max_value = 200.0
+value = 48.0
+
+[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FillVBox"]
+layout_mode = 2
+text = "Fill:"
+
+[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FillVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+color = Color(1, 1, 1, 1)
+
+[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeVBox"]
+layout_mode = 2
+text = "Stroke:"
+
+[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+color = Color(0, 0, 0, 1)
+
+[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox"]
+layout_mode = 2
+text = "Width:"
+
+[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+min_value = 0.0
+max_value = 20.0
+value = 2.0
 
 [node name="VSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer"]
 layout_mode = 2

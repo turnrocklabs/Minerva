@@ -47,6 +47,7 @@ signal selection_changed()
 @onready var _eraser_options_container: Control = %EraserOptions
 @onready var _speech_bubble_options: Control = %SpeechBubbleOptions
 @onready var _selection_options_container: Control = %SelectionOptions
+@onready var _text_options_container: Control = %TextOptions
 @onready var selection_indicator_button: MenuButton = %SelectionIndicatorButton
 @onready var selection_mode_label: Label = %SelectionModeLabel
 
@@ -63,6 +64,7 @@ signal selection_changed()
 @onready var rectangle_select_tool: RectangleSelectTool = %RectangleSelectTool
 @onready var lasso_select_tool: LassoSelectTool = %LassoSelectTool
 @onready var pose_editor_tool = %PoseEditorTool  # PoseEditorTool type - avoid circular ref
+@onready var text_tool = %TextTool  # TextTool type - avoid circular ref
 
 
 @onready var tool_options_mapping: = {
@@ -75,6 +77,7 @@ signal selection_changed()
 	magic_wand_tool: _selection_options_container,
 	rectangle_select_tool: _selection_options_container,
 	lasso_select_tool: _selection_options_container,
+	text_tool: _text_options_container,
 }
 
 @onready var image_gen_window: Window = %ImageGenWindow
@@ -1523,6 +1526,7 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		7: active_tool = rectangle_select_tool; return
 		8: active_tool = lasso_select_tool; return
 		9: active_tool = pose_editor_tool; return
+		12: active_tool = text_tool; return
 		_: pass
 	
 
