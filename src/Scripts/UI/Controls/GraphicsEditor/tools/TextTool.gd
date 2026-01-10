@@ -14,10 +14,12 @@ var _inline_edit: LineEdit = null
 var _is_editing: bool = false
 var _editing_layer: LayerV2 = null  # Track which layer is being edited
 
-# Font paths
+# Font paths (alphabetical order)
 const FONTS = [
+	"res://assets/fonts/ArchitectsDaughter/ArchitectsDaughter-Regular.ttf",
 	"res://assets/fonts/CascadiaCode/CascadiaCode.ttf",
 	"res://assets/fonts/CascadiaCode/static/CascadiaCode-Bold.ttf",
+	"res://assets/fonts/Caveat/Caveat-Variable.ttf",
 	"res://assets/fonts/Mono_Space/SpaceMono-Regular.ttf",
 	"res://assets/fonts/Mono_Space/SpaceMono-Bold.ttf",
 ]

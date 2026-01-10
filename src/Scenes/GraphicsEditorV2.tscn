@@ -579,15 +579,19 @@ text = "Font:"
 [node name="FontOptionButton" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-item_count = 4
-popup/item_0/text = "Cascadia Code"
+item_count = 6
+popup/item_0/text = "Architects Daughter"
 popup/item_0/id = 0
-popup/item_1/text = "Cascadia Code Bold"
+popup/item_1/text = "Cascadia Code"
 popup/item_1/id = 1
-popup/item_2/text = "Space Mono"
+popup/item_2/text = "Cascadia Code Bold"
 popup/item_2/id = 2
-popup/item_3/text = "Space Mono Bold"
+popup/item_3/text = "Caveat (Cursive)"
 popup/item_3/id = 3
+popup/item_4/text = "Space Mono"
+popup/item_4/id = 4
+popup/item_5/text = "Space Mono Bold"
+popup/item_5/id = 5
 
 [node name="SizeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
 layout_mode = 2
