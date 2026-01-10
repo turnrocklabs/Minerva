@@ -6,7 +6,8 @@ enum Type {
 	DRAWING,
 	SPEECH_BUBBLE,
 	MASK,
-	CONTROL
+	CONTROL,
+	TEXT,
 }
 
 enum ControlType {
@@ -105,6 +106,14 @@ var mask_color_name: String = "blue"
 var control_type: ControlType = ControlType.POSE
 var control_strength: float = 1.0
 
+# Text layer properties
+var text_content: String = ""
+var text_font: Font = null
+var text_font_size: int = 48
+var text_fill_color: Color = Color.WHITE
+var text_stroke_color: Color = Color.BLACK
+var text_stroke_width: int = 2
+
 
 
 func _ready() -> void:
@@ -182,6 +191,28 @@ static func create_control_layer(name_: String, size_: Vector2i, control_type_: 
 	return layer
 
 
+static func create_text_layer(name_: String, text: String, font: Font,
+							  font_size: int, fill_color: Color,
+							  stroke_color: Color, stroke_width: int) -> LayerV2:
+	var layer: LayerV2 = _scene.instantiate()
+
+	layer.name = name_
+	layer.type = Type.TEXT
+	layer.text_content = text
+	layer.text_font = font
+	layer.text_font_size = font_size
+	layer.text_fill_color = fill_color
+	layer.text_stroke_color = stroke_color
+	layer.text_stroke_width = stroke_width
+
+	# Calculate and set size immediately so hit detection works
+	var padding = stroke_width + 4
+	var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	layer.size = text_size + Vector2(padding * 2, padding * 2)
+
+	return layer
+
+
 ## Return the [enum TransformPoint] type of the rect thats under the given [parameter mouse_position]
 func get_rect_by_mouse_position(mouse_position: Vector2) -> TransformPoint:
 	var _transform_rect_positions: = _get_transform_rect_positions()
@@ -201,6 +232,8 @@ func _draw() -> void:
 			speech_bubble.queue_redraw()
 		Type.CONTROL:
 			_update_texture_from_image()
+		Type.TEXT:
+			_draw_text_layer()
 
 
 ## Update texture from image, reusing existing ImageTexture if possible
@@ -211,12 +244,79 @@ func _update_texture_from_image() -> void:
 		(texture_rect.texture as ImageTexture).set_image(image)
 	else:
 		texture_rect.texture = ImageTexture.create_from_image(image)
-	
+
 	# Draw the outline if visible
 	if outline_visible:
 		draw_rect(Rect2(Vector2.ZERO, get_rect().size), outline_color, false)
 
-	if not transform_rect_visible: return
+	# Draw transform handles if visible
+	if transform_rect_visible:
+		_draw_transform_handles()
+
+
+## Draw text layer content using draw_string
+func _draw_text_layer() -> void:
+	if text_content.is_empty() or text_font == null:
+		return
+
+	var padding = text_stroke_width + 4
+	var pos = Vector2(padding, padding + text_font.get_ascent(text_font_size))
+
+	# Draw stroke (outline) first
+	if text_stroke_width > 0:
+		draw_string_outline(text_font, pos, text_content, HORIZONTAL_ALIGNMENT_LEFT,
+						   -1, text_font_size, text_stroke_width, text_stroke_color)
+
+	# Draw fill on top
+	draw_string(text_font, pos, text_content, HORIZONTAL_ALIGNMENT_LEFT,
+				-1, text_font_size, text_fill_color)
+
+	# Draw the outline if visible (like other layer types)
+	if outline_visible:
+		draw_rect(Rect2(Vector2.ZERO, size), outline_color, false)
+
+	# Draw transform handles if visible
+	if transform_rect_visible:
+		_draw_transform_handles()
+
+
+## Calculate and set the size based on text content
+func update_text_size() -> void:
+	if type != Type.TEXT or text_font == null:
+		return
+
+	var padding = text_stroke_width + 4
+	var text_size = text_font.get_string_size(text_content, HORIZONTAL_ALIGNMENT_LEFT, -1, text_font_size)
+	size = text_size + Vector2(padding * 2, padding * 2)
+	pivot_offset = size / 2
+
+
+## Update text properties and re-render
+func set_text_properties(text: String, font: Font = null, font_size: int = -1,
+						 fill_color: Color = Color(-1, -1, -1),
+						 stroke_color: Color = Color(-1, -1, -1),
+						 stroke_width: int = -1) -> void:
+	if type != Type.TEXT:
+		return
+
+	text_content = text
+	if font != null:
+		text_font = font
+	if font_size > 0:
+		text_font_size = font_size
+	if fill_color.r >= 0:
+		text_fill_color = fill_color
+	if stroke_color.r >= 0:
+		text_stroke_color = stroke_color
+	if stroke_width >= 0:
+		text_stroke_width = stroke_width
+
+	update_text_size()
+	queue_redraw()
+
+
+## Draw the transform handles (shared by image and text layers)
+func _draw_transform_handles() -> void:
 	
 	# Draw 8 control squares plus rotation handle
 	var drag_square_positions: = PackedVector2Array([
@@ -280,7 +380,7 @@ func localize_input(event: InputEvent):
 	var local_event = event.duplicate()
 
 	match type:
-		Type.IMAGE, Type.DRAWING, Type.MASK, Type.CONTROL:
+		Type.IMAGE, Type.DRAWING, Type.MASK, Type.CONTROL, Type.TEXT:
 			# Transform global mouse position to layer's local coordinate space
 			# Using affine_inverse() properly handles rotation, scale, and translation
 			# This ensures hit detection works correctly even when layer is rotated

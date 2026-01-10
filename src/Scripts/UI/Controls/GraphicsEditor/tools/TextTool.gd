@@ -12,6 +12,7 @@ extends BaseTool
 var _placement_position: Vector2 = Vector2.ZERO
 var _inline_edit: LineEdit = null
 var _is_editing: bool = false
+var _editing_layer: LayerV2 = null  # Track which layer is being edited
 
 # Font paths
 const FONTS = [
@@ -64,6 +65,13 @@ func handle_input_event(event: InputEvent) -> bool:
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.is_pressed():
+			# Check for double-click on existing TEXT layer
+			if event.double_click:
+				var clicked_layer = _get_text_layer_at_position(canvas_local_mouse_pos)
+				if clicked_layer:
+					_edit_existing_layer(clicked_layer)
+					return true
+
 			# If already editing, commit current text first
 			if _is_editing:
 				_commit_text()
@@ -138,9 +146,27 @@ func _commit_text() -> void:
 	_is_editing = false
 
 	if text.is_empty():
+		# If editing existing layer with empty text, delete the layer
+		if _editing_layer:
+			editor.remove_layer(_editing_layer)
+			_editing_layer = null
 		return
 
-	_create_text_layer(text)
+	if _editing_layer:
+		# Update existing layer
+		var font = _get_selected_font()
+		var font_size = int(font_size_spin_box.value) if font_size_spin_box else 48
+		var fill_color = fill_color_picker.color if fill_color_picker else Color.WHITE
+		var stroke_color = stroke_color_picker.color if stroke_color_picker else Color.BLACK
+		var stroke_width = int(stroke_width_slider.value) if stroke_width_slider else 2
+
+		_editing_layer.set_text_properties(text, font, font_size, fill_color, stroke_color, stroke_width)
+		_editing_layer.name = "Text: " + text.left(20)
+		_editing_layer.visible = true  # Restore visibility
+		_editing_layer = null
+	else:
+		# Create new layer
+		_create_text_layer(text)
 
 
 func _cancel_editing() -> void:
@@ -148,6 +174,53 @@ func _cancel_editing() -> void:
 		_inline_edit.visible = false
 		_inline_edit.text = ""
 	_is_editing = false
+	# Restore visibility of layer being edited
+	if _editing_layer:
+		_editing_layer.visible = true
+		_editing_layer = null
+
+
+## Find a TEXT layer at the given position (in layers_container local coords)
+func _get_text_layer_at_position(pos: Vector2) -> LayerV2:
+	# Check layers in reverse order (top layer first)
+	var layers = editor.layers_container.get_children()
+	for i in range(layers.size() - 1, -1, -1):
+		var layer = layers[i]
+		if layer is LayerV2 and layer.type == LayerV2.Type.TEXT:
+			# pos is in layers_container space, layer is a child of layers_container
+			# Use layer's transform to convert from parent space to layer local space
+			var local_pos = layer.get_transform().affine_inverse() * pos
+			if Rect2(Vector2.ZERO, layer.size).has_point(local_pos):
+				return layer
+	return null
+
+
+## Start editing an existing TEXT layer
+func _edit_existing_layer(layer: LayerV2) -> void:
+	# Cancel any current editing first (from the single-click before double-click)
+	if _is_editing and _inline_edit:
+		_inline_edit.visible = false
+		_inline_edit.text = ""
+		_is_editing = false
+
+	_editing_layer = layer
+	# Position at the layer's top-left (where text starts with padding)
+	_placement_position = layer.position
+
+	# Pre-populate options from layer
+	if font_size_spin_box:
+		font_size_spin_box.value = layer.text_font_size
+	if fill_color_picker:
+		fill_color_picker.color = layer.text_fill_color
+	if stroke_color_picker:
+		stroke_color_picker.color = layer.text_stroke_color
+	if stroke_width_slider:
+		stroke_width_slider.value = layer.text_stroke_width
+
+	_start_inline_edit()
+	_inline_edit.text = layer.text_content
+	# Hide the original layer while editing so we don't see double text
+	layer.visible = false
 
 
 func _create_text_layer(text: String) -> void:
@@ -158,138 +231,27 @@ func _create_text_layer(text: String) -> void:
 	var stroke_color = stroke_color_picker.color if stroke_color_picker else Color.BLACK
 	var stroke_width = int(stroke_width_slider.value) if stroke_width_slider else 2
 
-	# Render text to Image
-	var image = await _render_text_to_image(text, font, font_size, fill_color, stroke_color, stroke_width)
+	# Create TEXT layer (not IMAGE layer)
+	var layer = LayerV2.create_text_layer("Text: " + text.left(20), text, font,
+										  font_size, fill_color, stroke_color, stroke_width)
 
-	if image == null or image.is_empty():
-		push_error("TextTool: Failed to render text to image")
-		return
-
-	# Calculate target position before any async operations
+	# Calculate size BEFORE adding to tree
 	var padding = stroke_width + 4
-	var target_position = _placement_position - Vector2(padding, padding)
-	var image_size = image.get_size()
+	var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	var layer_size = text_size + Vector2(padding * 2, padding * 2)
 
-	# Create layer and add to editor
-	var layer = LayerV2.create_image_layer("Text: " + text.left(20), image)
+	# Add to editor first (this triggers _ready which sets anchors)
 	editor.add_layer(layer)
 
-	# Wait for the async image setter to complete (it awaits process_frame internally)
-	# Note: Don't await layer.ready - it already fired when add_layer() added it to tree
-	for i in range(3):
-		await editor.get_tree().process_frame
+	# Wait for tree to be ready
+	await editor.get_tree().process_frame
 
-	# Force TOP_LEFT anchors on both layer and texture_rect so position/size work correctly
-	# (Without this, offsets are interpreted as margins from stretched anchors)
+	# Now set position and size AFTER _ready() has run
 	layer.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	layer.position = target_position
-	layer.size = Vector2(image_size)
-
-	layer.texture_rect.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	layer.texture_rect.position = Vector2.ZERO
-	layer.texture_rect.size = Vector2(image_size)
-
-	# Use a one-shot timer as a final safeguard
-	var timer = editor.get_tree().create_timer(0.1)
-	timer.timeout.connect(func():
-		layer.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		layer.position = target_position
-		layer.size = Vector2(image_size)
-		layer.texture_rect.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		layer.texture_rect.position = Vector2.ZERO
-		layer.texture_rect.size = Vector2(image_size)
-	)
-
-
-func _render_text_to_image(text: String, font: Font, size: int,
-						   fill: Color, stroke: Color, stroke_width: int) -> Image:
-	# Handle multiline text - filter out empty lines
-	var lines = text.split("\n")
-	var text_lines: Array[TextLine] = []
-	var total_height: float = 0
-	var max_width: float = 0
-	var line_heights: Array[float] = []
-
-	for line in lines:
-		if line.strip_edges().is_empty():
-			continue  # Skip empty lines
-		var tl = TextLine.new()
-		tl.add_string(line, font, size)
-		text_lines.append(tl)
-		var line_size = tl.get_size()
-		max_width = max(max_width, line_size.x)
-		total_height += line_size.y
-		line_heights.append(line_size.y)
-
-	# Safety check - if no valid lines, create a placeholder
-	if text_lines.is_empty():
-		var tl = TextLine.new()
-		tl.add_string(text, font, size)
-		text_lines.append(tl)
-		var line_size = tl.get_size()
-		max_width = line_size.x
-		total_height = line_size.y
-		line_heights.append(line_size.y)
-
-	# Calculate image size with padding for stroke
-	var padding = stroke_width + 4  # Extra padding for safety
-	var img_width = int(max_width) + padding * 2
-	var img_height = int(total_height) + padding * 2
-
-	# Ensure minimum size
-	img_width = max(img_width, 10)
-	img_height = max(img_height, 10)
-
-	# Render via viewport
-	return await _render_via_viewport(text_lines, line_heights, img_width, img_height, padding,
-									 fill, stroke, stroke_width, font, size, text)
-
-
-func _render_via_viewport(text_lines: Array[TextLine], line_heights: Array[float],
-						  width: int, height: int, padding: int,
-						  fill: Color, stroke: Color, stroke_width: int,
-						  font: Font, font_size: int, text: String) -> Image:
-	# Create temporary SubViewport
-	var viewport = SubViewport.new()
-	viewport.size = Vector2i(width, height)
-	viewport.transparent_bg = true
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-
-	# Create Control to draw on - use position/size directly (anchors don't work well in SubViewport)
-	var draw_control = Control.new()
-	draw_control.position = Vector2.ZERO
-	draw_control.size = Vector2(width, height)
-
-	# Use a one-shot draw - try draw_string instead of TextLine
-	draw_control.draw.connect(func():
-		var pos = Vector2(padding, padding + text_lines[0].get_line_ascent())
-		print("TextTool: Using draw_string at pos=", pos, " font=", font, " text=", text)
-		# Use Control's draw_string method instead of TextLine.draw
-		if stroke_width > 0:
-			draw_control.draw_string_outline(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, stroke_width, stroke)
-		draw_control.draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, fill)
-	)
-
-	viewport.add_child(draw_control)
-	editor.get_tree().root.add_child(viewport)
-
-	# Force a redraw and wait for render
-	draw_control.queue_redraw()
-
-	# Wait for render - need frames to ensure the viewport renders
-	await RenderingServer.frame_post_draw
-	await RenderingServer.frame_post_draw
-
-	# Capture image
-	var image = viewport.get_texture().get_image()
-
-	# Note: flip_y removed - testing if it's needed
-	print("TextTool: Captured image size=", image.get_size())
-
-	# Cleanup
-	viewport.queue_free()
-
-	return image
+	layer.size = layer_size
+	layer.position = _placement_position
+	layer.pivot_offset = layer_size / 2
+	layer.queue_redraw()
 
 
 func _get_selected_font() -> Font:

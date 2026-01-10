@@ -2185,6 +2185,7 @@ func _on_active_layer_mask_layer(is_mask: bool) -> void:
 
 
 func _on_active_layer_control_layer(is_control: bool) -> void:
+	var was_control = is_active_layer_control  # Track previous state
 	is_active_layer_control = is_control
 
 	if is_control:
@@ -2205,9 +2206,10 @@ func _on_active_layer_control_layer(is_control: bool) -> void:
 		_tools_option_button.set_item_disabled(2, false)
 		_tools_option_button.set_item_disabled(3, false)
 		_tools_option_button.set_item_disabled(4, false)
-		# Switch back to brush tool
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
+		# Only switch back to brush tool if we were previously on a control layer
+		if was_control:
+			_tools_option_button.select(0)
+			_tools_option_button.item_selected.emit(0)
 
 
 func _on_image_gen_window_close_requested() -> void:
