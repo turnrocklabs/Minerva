@@ -329,16 +329,6 @@ layout_mode = 2
 tooltip_text = "Center view and reset zoom"
 icon = ExtResource("17_tml0f")
 
-[node name="RenderViewportButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-size_flags_horizontal = 4
-size_flags_vertical = 4
-tooltip_text = "Export region as PNG image"
-toggle_mode = true
-icon = ExtResource("27_idhh2")
-
 [node name="MaskContainer" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 unique_name_in_owner = true
 visible = false
@@ -1460,7 +1450,6 @@ text = "Select Layers...
 [connection signal="toggled" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/TransformToolButton" to="." method="_on_transform_tool_button_toggled"]
 [connection signal="toggled" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
 [connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
-[connection signal="toggled" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/RenderViewportButton" to="." method="_on_render_viewport_button_toggled"]
 [connection signal="item_selected" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
 [connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer/Button2" to="." method="_on_zoom_out_button_pressed"]
 [connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer/Button" to="." method="_on_zoom_in_button_pressed"]

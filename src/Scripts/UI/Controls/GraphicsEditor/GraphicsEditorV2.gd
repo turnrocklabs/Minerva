@@ -119,7 +119,6 @@ signal selection_changed()
 @onready var mini_map_control: Control = %MiniMapControl
 
 @onready var dock_split_container: VSplitContainer = %DockSplitContainer
-@onready var render_viewport_button: Button = %RenderViewportButton
 @onready var render_view_control: RenderViewRect = %RenderViewControl
 @onready var connection_label: Label = %ConnectionLabel
 @onready var drawing_area_sub_viewport: SubViewport = %DrawingAreaSubViewport
@@ -2448,44 +2447,28 @@ func _on_fill_selection_color_changed(color: Color) -> void:
 ## Called automatically when user draws a valid selection rectangle
 func export_region_and_exit() -> void:
 	# Ensure the render view rectangle exists and has a valid size
-	if not render_view_control._rect.size.x > 0 or not render_view_control._rect.size.y > 0:
+	var export_rect = render_view_control._rect
+	if not export_rect.size.x > 0 or not export_rect.size.y > 0:
 		display_message("Error", "Selection rectangle is empty or invalid.")
 		_exit_render_view_tool()
 		return
 
-	# Show file dialog
-	var fd := FileDialog.new()
-	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-	fd.access = FileDialog.ACCESS_FILESYSTEM
-	fd.add_filter("*.png", "PNG Image")
-	fd.title = "Export Region as PNG"
-	add_child(fd)
+	# Clear the selection rectangle immediately for better UX
+	_exit_render_view_tool()
 
-	# Track result
-	var selected_path: String = ""
-	fd.file_selected.connect(func(path: String): selected_path = path)
-	fd.canceled.connect(func(): fd.hide())
-
-	fd.popup_centered(Vector2i(800, 600))
-
-	# Wait for dialog to close
-	await fd.visibility_changed
-	fd.queue_free()
-
-	# If no file selected, just exit cleanly
+	# Show file dialog and wait for result
+	var selected_path = await _show_save_dialog()
 	if selected_path.is_empty():
-		_exit_render_view_tool()
 		return
 
 	# Ensure .png extension
 	if not selected_path.ends_with(".png"):
 		selected_path += ".png"
 
-	# Now capture the image (only if user confirmed)
-	var image: Image = await compose_region_image(render_view_control._rect)
+	# Capture the image from the saved rect
+	var image: Image = await compose_region_image(export_rect)
 	if image.is_empty():
 		display_message("Error", "Failed to capture region image.")
-		_exit_render_view_tool()
 		return
 
 	# Convert to RGBA8 if needed
@@ -2497,7 +2480,28 @@ func export_region_and_exit() -> void:
 		push_error("Failed to save image: " + str(error))
 		display_message("Error", "Failed to save image to: " + selected_path)
 
-	_exit_render_view_tool()
+
+## Show save dialog and return selected path, or empty string if cancelled
+func _show_save_dialog() -> String:
+	var fd := FileDialog.new()
+	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*.png", "PNG Image")
+	fd.title = "Export Region as PNG"
+	add_child(fd)
+
+	var result: Array = []  # Use array to capture in closure (reference type)
+	fd.file_selected.connect(func(path: String): result.append(path))
+	fd.canceled.connect(func(): pass)
+
+	fd.popup_centered(Vector2i(800, 600))
+
+	# Wait for either signal to fire
+	while result.is_empty() and fd.visible:
+		await get_tree().process_frame
+
+	fd.queue_free()
+	return result[0] if result.size() > 0 else ""
 
 
 ## Clean up and exit the render view tool, returning to default tool
@@ -2505,7 +2509,6 @@ func _exit_render_view_tool() -> void:
 	render_view_control._rect = Rect2()
 	render_view_control.draw_render_view = false
 	render_view_control.queue_redraw()
-	render_viewport_button.set_pressed_no_signal(false)
 	active_tool = null
 	_tools_option_button.select(0)
 	_tools_option_button.item_selected.emit(0)
@@ -2617,21 +2620,11 @@ func _compose_final_image_worker_for_region(layer_data: Array[Dictionary], regio
 	return output_image
 
 
-func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
-	if not toggled_on:
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
-		_tools_option_button.grab_focus()
-		render_view_control.draw_render_view = false
-		render_view_control._rect = Rect2()
-		render_view_control.queue_redraw()
-		render_viewport_button.hide()
-		return
-
+## Activate the export region tool (called from Editor.gd ExportAreaButton)
+func activate_export_region_tool() -> void:
 	active_tool = render_view_tool
-	render_viewport_button.release_focus()
 	render_view_control.draw_render_view = true
-	render_viewport_button.show()
+	render_view_control._rect = Rect2()
 	render_view_control.queue_redraw()
 
 #region Gen AI Prompt History

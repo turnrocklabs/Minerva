@@ -87,7 +87,6 @@ func _cancel_and_exit() -> void:
 	editor.render_view_control._rect = Rect2()
 	editor.render_view_control.draw_render_view = false
 	editor.render_view_control.queue_redraw()
-	editor.render_viewport_button.set_pressed_no_signal(false)
 	editor.set_custom_cursor(null, Input.CURSOR_ARROW)
 	# Return to default tool
 	editor._tools_option_button.select(0)
