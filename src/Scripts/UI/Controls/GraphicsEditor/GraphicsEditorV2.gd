@@ -48,6 +48,8 @@ signal selection_changed()
 @onready var _speech_bubble_options: Control = %SpeechBubbleOptions
 @onready var _selection_options_container: Control = %SelectionOptions
 @onready var _text_options_container: Control = %TextOptions
+@onready var _rectangle_options_container: Control = %RectangleOptions
+@onready var _ellipse_options_container: Control = %EllipseOptions
 @onready var selection_indicator_button: MenuButton = %SelectionIndicatorButton
 @onready var selection_mode_label: Label = %SelectionModeLabel
 
@@ -66,6 +68,8 @@ signal selection_changed()
 @onready var pose_editor_tool = %PoseEditorTool  # PoseEditorTool type - avoid circular ref
 @onready var text_tool = %TextTool  # TextTool type - avoid circular ref
 @onready var select_tool = %SelectTool  # SelectTool type - avoid circular ref
+@onready var rectangle_tool = %RectangleTool  # RectangleTool type - avoid circular ref
+@onready var ellipse_tool = %EllipseTool  # EllipseTool type - avoid circular ref
 
 
 @onready var tool_options_mapping: = {
@@ -79,6 +83,8 @@ signal selection_changed()
 	rectangle_select_tool: _selection_options_container,
 	lasso_select_tool: _selection_options_container,
 	text_tool: _text_options_container,
+	rectangle_tool: _rectangle_options_container,
+	ellipse_tool: _ellipse_options_container,
 }
 
 @onready var image_gen_window: Window = %ImageGenWindow
@@ -1547,6 +1553,8 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		9: active_tool = pose_editor_tool; return
 		12: active_tool = text_tool; return
 		13: active_tool = select_tool; return
+		14: active_tool = rectangle_tool; return
+		15: active_tool = ellipse_tool; return
 		_: pass
 	
 
