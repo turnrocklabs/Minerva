@@ -55,6 +55,7 @@
 [ext_resource type="Script" uid="uid://dkjxy1m1lu3jf" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PoseEditorTool.gd" id="40_posetool"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="47_hu8v1"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TextTool.gd" id="48_texttool"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SelectTool.gd" id="49_selecttool"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
 offsets = PackedFloat32Array(0.609626, 1)
@@ -228,6 +229,11 @@ stroke_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/To
 stroke_width_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox/StrokeWidthSlider")
 editor = NodePath("../..")
 
+[node name="SelectTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+unique_name_in_owner = true
+script = ExtResource("49_selecttool")
+editor = NodePath("../..")
+
 [node name="h" type="HBoxContainer" parent="."]
 clip_contents = true
 layout_mode = 2
@@ -266,43 +272,45 @@ layout_mode = 2
 size_flags_vertical = 4
 button_group = ExtResource("2_ymijy")
 allow_reselect = true
-item_count = 13
-popup/item_0/text = "Brush"
-popup/item_0/icon = ExtResource("10_vnb8d")
-popup/item_0/id = 0
-popup/item_1/text = "Eraser"
-popup/item_1/icon = ExtResource("11_m2a1o")
-popup/item_1/id = 1
-popup/item_2/text = "Smudge"
-popup/item_2/icon = ExtResource("13_nl4xv")
-popup/item_2/id = 2
-popup/item_3/text = "Color Tools"
-popup/item_3/id = 11
-popup/item_3/separator = true
-popup/item_4/text = "Bucket"
-popup/item_4/icon = ExtResource("12_u1itb")
-popup/item_4/id = 3
-popup/item_5/text = "Eyedropper"
-popup/item_5/icon = ExtResource("10_pipet")
-popup/item_5/id = 5
-popup/item_6/text = "Layer Selection"
-popup/item_6/id = 10
-popup/item_6/separator = true
-popup/item_7/text = "Magic Wand"
-popup/item_7/icon = ExtResource("29_mwand")
-popup/item_7/id = 6
-popup/item_8/text = "Rectangle Select"
-popup/item_8/icon = ExtResource("35_rectsel")
-popup/item_8/id = 7
-popup/item_9/text = "Lasso Select"
-popup/item_9/icon = ExtResource("37_lassoicon")
-popup/item_9/id = 8
-popup/item_10/text = "Pan Layer"
-popup/item_10/id = 9
-popup/item_11/text = "Insert Image..."
-popup/item_11/id = 4
-popup/item_12/text = "Text"
-popup/item_12/id = 12
+item_count = 14
+popup/item_0/text = "Select"
+popup/item_0/id = 13
+popup/item_1/text = "Brush"
+popup/item_1/icon = ExtResource("10_vnb8d")
+popup/item_1/id = 0
+popup/item_2/text = "Eraser"
+popup/item_2/icon = ExtResource("11_m2a1o")
+popup/item_2/id = 1
+popup/item_3/text = "Smudge"
+popup/item_3/icon = ExtResource("13_nl4xv")
+popup/item_3/id = 2
+popup/item_4/text = "Color Tools"
+popup/item_4/id = 11
+popup/item_4/separator = true
+popup/item_5/text = "Bucket"
+popup/item_5/icon = ExtResource("12_u1itb")
+popup/item_5/id = 3
+popup/item_6/text = "Eyedropper"
+popup/item_6/icon = ExtResource("10_pipet")
+popup/item_6/id = 5
+popup/item_7/text = "Layer Selection"
+popup/item_7/id = 10
+popup/item_7/separator = true
+popup/item_8/text = "Magic Wand"
+popup/item_8/icon = ExtResource("29_mwand")
+popup/item_8/id = 6
+popup/item_9/text = "Rectangle Select"
+popup/item_9/icon = ExtResource("35_rectsel")
+popup/item_9/id = 7
+popup/item_10/text = "Lasso Select"
+popup/item_10/icon = ExtResource("37_lassoicon")
+popup/item_10/id = 8
+popup/item_11/text = "Pan Layer"
+popup/item_11/id = 9
+popup/item_12/text = "Insert Image..."
+popup/item_12/id = 4
+popup/item_13/text = "Text"
+popup/item_13/id = 12
 
 [node name="SelectionIndicatorButton" type="MenuButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 unique_name_in_owner = true
@@ -580,6 +588,7 @@ text = "Font:"
 unique_name_in_owner = true
 layout_mode = 2
 item_count = 6
+selected = 0
 popup/item_0/text = "Architects Daughter"
 popup/item_0/id = 0
 popup/item_1/text = "Cascadia Code"
@@ -618,7 +627,7 @@ text = "Fill:"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
-color = Color(1, 1, 1, 1)
+color = Color(0, 0, 0, 1)
 
 [node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
 layout_mode = 2

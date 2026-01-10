@@ -239,8 +239,9 @@ func _create_text_layer(text: String) -> void:
 
 	# Calculate size BEFORE adding to tree
 	var padding = stroke_width + 4
+	var handle_space = 14.0  # Space for underline handle
 	var text_size = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-	var layer_size = text_size + Vector2(padding * 2, padding * 2)
+	var layer_size = text_size + Vector2(padding * 2, padding * 2 + handle_space)
 
 	# Add to editor first (this triggers _ready which sets anchors)
 	editor.add_layer(layer)

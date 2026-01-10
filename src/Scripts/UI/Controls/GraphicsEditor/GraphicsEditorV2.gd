@@ -65,6 +65,7 @@ signal selection_changed()
 @onready var lasso_select_tool: LassoSelectTool = %LassoSelectTool
 @onready var pose_editor_tool = %PoseEditorTool  # PoseEditorTool type - avoid circular ref
 @onready var text_tool = %TextTool  # TextTool type - avoid circular ref
+@onready var select_tool = %SelectTool  # SelectTool type - avoid circular ref
 
 
 @onready var tool_options_mapping: = {
@@ -398,8 +399,8 @@ func _ready() -> void:
 	progress_window.hide()
 	message_window.hide()
 	active_tool_changed.connect(_on_active_tool_changed)
-	_tools_option_button.select(0)
-	_tools_option_button.item_selected.emit(0)
+	# Select the Select tool by default (id 13)
+	_select_tool_by_id(13)
 	compose_progress_updated.connect(_on_compose_progress)
 	compose_finished.connect(_on_compose_complete)
 	active_layer_is_mask_layer.connect(_on_active_layer_mask_layer)
@@ -840,12 +841,12 @@ func _gui_input(event: InputEvent) -> void:
 	#endregion Move Canvas
 
 	# Handle active tool input
-	# PanTool should work even without visible layers (for panning the canvas)
+	# PanTool and SelectTool should work even without visible layers selected
 	# Other tools need visible layers to function
 	if active_tool:
 		var should_handle = false
-		if active_tool is PanTool:
-			# PanTool can work without layers
+		if active_tool is PanTool or active_tool is SelectTool:
+			# PanTool and SelectTool can work without selected layers
 			should_handle = true
 		elif selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_control_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
 			# Other tools need visible layers
@@ -969,19 +970,19 @@ func _on_pen_inverted_changed(is_inverted: bool) -> void:
 			_previous_tool_before_eraser = active_tool
 			eraser_tool.set_activated_by_pen(true)  # Mark that eraser was activated by pen
 			active_tool = eraser_tool
-			# Update the UI to show eraser is selected
-			_tools_option_button.select(1)  # Index 1 is eraser
+			# Update the UI to show eraser is selected (id 1)
+			_select_tool_by_id(1, false)
 	else:
 		# Switch back to previous tool when pen is normal
 		if active_tool == eraser_tool and _previous_tool_before_eraser:
 			active_tool = _previous_tool_before_eraser
 			# Update UI to show the previous tool
 			if _previous_tool_before_eraser == drawing_tool:
-				_tools_option_button.select(0)  # Brush
+				_select_tool_by_id(0, false)  # Brush
 			elif _previous_tool_before_eraser == bucket_tool:
-				_tools_option_button.select(2)  # Bucket
+				_select_tool_by_id(3, false)  # Bucket
 			elif _previous_tool_before_eraser == smudge_tool:
-				_tools_option_button.select(3)  # Smudge
+				_select_tool_by_id(2, false)  # Smudge
 			_previous_tool_before_eraser = null
 
 
@@ -991,11 +992,11 @@ func _on_pen_normal_detected() -> void:
 		active_tool = _previous_tool_before_eraser
 		# Update UI to show the previous tool
 		if _previous_tool_before_eraser == drawing_tool:
-			_tools_option_button.select(0)  # Brush
+			_select_tool_by_id(0, false)  # Brush
 		elif _previous_tool_before_eraser == bucket_tool:
-			_tools_option_button.select(2)  # Bucket
+			_select_tool_by_id(3, false)  # Bucket
 		elif _previous_tool_before_eraser == smudge_tool:
-			_tools_option_button.select(3)  # Smudge
+			_select_tool_by_id(2, false)  # Smudge
 		_previous_tool_before_eraser = null
 
 #region Selection System
@@ -1197,11 +1198,10 @@ func _on_bucket_tool_button_toggled(toggled_on:bool) -> void:
 
 func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
 	if not toggled_on:
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
+		_select_tool_by_id(13)  # Select tool
 		_tools_option_button.grab_focus()
 		return
-	
+
 	active_tool = pan_tool if toggled_on else null
 
 
@@ -1215,11 +1215,10 @@ func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 
 func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
 	if not toggled_on:
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
+		_select_tool_by_id(13)  # Select tool
 		_tools_option_button.grab_focus()
 		return
-	
+
 	active_tool = transform_tool if toggled_on else null
 
 
@@ -1254,9 +1253,8 @@ func _on_file_selected(fp: String) -> void:
 
 	add_layer(l)
 
-	# reselect the first tool
-	_tools_option_button.select(0)
-	_tools_option_button.item_selected.emit(0)
+	# reselect the Select tool
+	_select_tool_by_id(13)
 
 func _on_layers_container_mouse_exited() -> void:
 	_mouse_in_layers_container = false
@@ -1514,8 +1512,29 @@ func redo_command() -> void:
 #endregion
 
 
+## Selects a tool in the dropdown by its item ID (not position index)
+## If emit_signal is true, also triggers the item_selected signal
+func _select_tool_by_id(item_id: int, emit_signal: bool = true) -> void:
+	for i in range(_tools_option_button.item_count):
+		if _tools_option_button.get_item_id(i) == item_id:
+			_tools_option_button.select(i)
+			if emit_signal:
+				_tools_option_button.item_selected.emit(i)
+			return
+
+
+## Enables or disables a tool dropdown item by its ID
+func _set_tool_disabled_by_id(item_id: int, disabled: bool) -> void:
+	for i in range(_tools_option_button.item_count):
+		if _tools_option_button.get_item_id(i) == item_id:
+			_tools_option_button.set_item_disabled(i, disabled)
+			return
+
+
 func _on_tools_option_button_item_selected(index: int) -> void:
-	match index:
+	# Get the item's ID (not position index) to match against
+	var item_id = _tools_option_button.get_item_id(index)
+	match item_id:
 		0: _on_brush_tool_button_toggled(true); return
 		1: _on_eraser_tool_button_toggled(true); return
 		2: _on_smudge_tool_button_toggled(true); return
@@ -1527,6 +1546,7 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		8: active_tool = lasso_select_tool; return
 		9: active_tool = pose_editor_tool; return
 		12: active_tool = text_tool; return
+		13: active_tool = select_tool; return
 		_: pass
 	
 
@@ -2172,15 +2192,15 @@ func _on_active_layer_mask_layer(is_mask: bool) -> void:
 	color_picker_button.visible = not is_mask
 	mask_container.visible = is_mask
 	if is_mask:
-		_tools_option_button.select(0)
-		_tools_option_button.set_item_disabled(2, true)
-		_tools_option_button.set_item_disabled(3, true)
-		_tools_option_button.set_item_disabled(4, true)
+		_select_tool_by_id(0)  # Brush (id 0)
+		_set_tool_disabled_by_id(2, true)  # Smudge
+		_set_tool_disabled_by_id(3, true)  # Bucket
+		_set_tool_disabled_by_id(4, true)  # Insert Image
 		color_picker_button.color = active_layer.mask_color
 	else:
-		_tools_option_button.set_item_disabled(2, false)
-		_tools_option_button.set_item_disabled(3, false)
-		_tools_option_button.set_item_disabled(4, false)
+		_set_tool_disabled_by_id(2, false)  # Smudge
+		_set_tool_disabled_by_id(3, false)  # Bucket
+		_set_tool_disabled_by_id(4, false)  # Insert Image
 		color_picker_button.color = last_selected_color
 
 
@@ -2191,25 +2211,23 @@ func _on_active_layer_control_layer(is_control: bool) -> void:
 	if is_control:
 		# Check if it's a POSE control layer and auto-select pose tool
 		if active_layer and active_layer.control_type == LayerV2.ControlType.POSE:
-			_tools_option_button.select(9)  # Pose Editor
-			_tools_option_button.item_selected.emit(9)
+			_select_tool_by_id(9)  # Pose Editor
 		# Disable drawing tools that don't apply to control layers
-		_tools_option_button.set_item_disabled(0, true)  # Brush
-		_tools_option_button.set_item_disabled(1, true)  # Eraser
-		_tools_option_button.set_item_disabled(2, true)  # Bucket
-		_tools_option_button.set_item_disabled(3, true)  # Smudge
-		_tools_option_button.set_item_disabled(4, true)  # Add Image
+		_set_tool_disabled_by_id(0, true)  # Brush
+		_set_tool_disabled_by_id(1, true)  # Eraser
+		_set_tool_disabled_by_id(2, true)  # Smudge
+		_set_tool_disabled_by_id(3, true)  # Bucket
+		_set_tool_disabled_by_id(4, true)  # Insert Image
 	else:
 		# Re-enable tools when switching away from control layer
-		_tools_option_button.set_item_disabled(0, false)
-		_tools_option_button.set_item_disabled(1, false)
-		_tools_option_button.set_item_disabled(2, false)
-		_tools_option_button.set_item_disabled(3, false)
-		_tools_option_button.set_item_disabled(4, false)
-		# Only switch back to brush tool if we were previously on a control layer
+		_set_tool_disabled_by_id(0, false)  # Brush
+		_set_tool_disabled_by_id(1, false)  # Eraser
+		_set_tool_disabled_by_id(2, false)  # Smudge
+		_set_tool_disabled_by_id(3, false)  # Bucket
+		_set_tool_disabled_by_id(4, false)  # Insert Image
+		# Only switch back to Select tool if we were previously on a control layer
 		if was_control:
-			_tools_option_button.select(0)
-			_tools_option_button.item_selected.emit(0)
+			_select_tool_by_id(13)  # Select tool
 
 
 func _on_image_gen_window_close_requested() -> void:
@@ -2516,8 +2534,7 @@ func _exit_render_view_tool() -> void:
 	render_view_control.draw_render_view = false
 	render_view_control.queue_redraw()
 	active_tool = null
-	_tools_option_button.select(0)
-	_tools_option_button.item_selected.emit(0)
+	_select_tool_by_id(13)  # Select tool
 
 
 func compose_region_image(region: Rect2, show_dialog: = true) -> Image:

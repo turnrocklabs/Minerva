@@ -145,6 +145,14 @@ func _update_cursor(local_pos: Vector2) -> void:
 	# Debug logging for Bug 2 investigation
 	print("_update_cursor: local_pos=", local_pos, " detected_point=", point, " layer_size=", editor.active_layer.size)
 
+	# Special handling for TEXT layers - only show MOVE cursor on underline handle
+	if editor.active_layer.type == LayerV2.Type.TEXT:
+		if editor.active_layer.is_point_on_text_handle(local_pos):
+			editor.set_custom_cursor(null, Input.CURSOR_MOVE)
+		else:
+			editor.set_custom_cursor(null, Input.CURSOR_ARROW)
+		return
+
 	if point == LayerV2.TransformPoint.ROTATE:
 		# Use custom rotate cursor
 		if _rotate_cursor_image:
@@ -204,31 +212,49 @@ func _get_opposite_handle(handle_type: int) -> int:
 func _start_transform(event: InputEvent, editor_local_position: Vector2) -> void:
 	if not editor.active_layer:
 		return
-	
+
+	# Convert event to layer-local space for initial checks
+	var local_pos = event.position
+
+	# Special handling for TEXT layers - only allow dragging via underline handle
+	if editor.active_layer.type == LayerV2.Type.TEXT:
+		if not editor.active_layer.is_point_on_text_handle(local_pos):
+			# Click was not on underline handle - don't start transform
+			return
+		# TEXT layer clicked on handle - set up for MOVE only
+		_drag_start_global_pos = event.position
+		_layer_start_position = editor.active_layer.position
+		_layer_start_size = editor.active_layer.custom_minimum_size
+		_layer_start_rotation = editor.active_layer.rotation
+		_control_point_type = LayerV2.TransformPoint.MOVE
+		_current_operation = TransformMode.MOVE
+		_is_transforming = true
+		_initial_click_position = local_pos
+		_backup_original_state()
+		editor.set_custom_cursor(null, Input.CURSOR_MOVE)
+		print("TEXT layer: Starting MOVE via underline handle")
+		return
+
 	# Store initial global position (layer-local for other operations)
 	_drag_start_global_pos = event.position
 	_layer_start_position = editor.active_layer.position
 	_layer_start_size = editor.active_layer.custom_minimum_size
 	_layer_start_rotation = editor.active_layer.rotation
-	
+
 	# Store initial mouse position in editor-local space for rotation calculation
 	_last_mouse_position = editor_local_position
-	
+
 	# Calculate rotation center: layer's pivot point in editor's local coordinate space
 	# This matches the PanTool's approach for consistent rotation behavior
 	var layer_global_rect = editor.active_layer.get_global_rect()
 	# Convert layer's global center (pivot point) to the editor's local input area coordinates
 	_rotation_center = editor.get_global_transform().affine_inverse() * (layer_global_rect.position + editor.active_layer.pivot_offset)
-	
+
 	print("Transform started at position: ", _layer_start_position, " with rotation: ", _layer_start_rotation)
-	
+
 	# Cache global positions of all control handles
 	_handles_global_positions = _get_handle_global_positions()
-	
-	# Convert event to layer-local space
-	# var local_pos = editor.active_layer.get_global_transform().affine_inverse() * event.position
-	var local_pos = event.position
-	
+
 	# Try to get control point from mouse position
 	_control_point_type = editor.active_layer.get_rect_by_mouse_position(local_pos)
 	
