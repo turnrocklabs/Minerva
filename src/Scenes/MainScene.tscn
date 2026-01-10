@@ -1,4 +1,4 @@
-[gd_scene load_steps=70 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=71 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -7,7 +7,7 @@
 [ext_resource type="Script" uid="uid://tw56pjd3v28f" path="res://Scripts/UI/Controls/MainUI.gd" id="2_kohxl"]
 [ext_resource type="PackedScene" uid="uid://gux15c8l66u7" path="res://Scenes/Chat.tscn" id="2_nwqxj"]
 [ext_resource type="PackedScene" path="res://Scenes/windows/PreferencesPopup.tscn" id="3_3hcc1"]
-[ext_resource type="PackedScene" uid="uid://cj7k8m9p2qrs1" path="res://Scenes/windows/MCPServerInstallerPopup.tscn" id="3_mcpinst"]
+[ext_resource type="PackedScene" uid="uid://cj7k8nap2qrs1" path="res://Scenes/windows/MCPServerInstallerPopup.tscn" id="3_mcpinst"]
 [ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="3_w58y5"]
 [ext_resource type="Script" uid="uid://c2endsksj28na" path="res://Scripts/UI/Controls/vboxEditor.gd" id="3_welkk"]
 [ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="3_xdign"]
@@ -52,6 +52,7 @@
 [ext_resource type="Texture2D" uid="uid://bu8qmpvu3256b" path="res://assets/icons/backspace_icons/backspace_icon_48.png" id="33_u2ws1"]
 [ext_resource type="Texture2D" uid="uid://c4nsaahtb7v0k" path="res://assets/icons/backspace_icons/backspace_icon_68.png" id="34_eiycj"]
 [ext_resource type="Texture2D" uid="uid://bit2mc7dcdd4p" path="res://assets/icons/new_line_icons/new_line_icon_48.png" id="36_hfhsg"]
+[ext_resource type="Texture2D" uid="uid://cu670w2c46b66" path="res://assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_24.png" id="36_w0aut"]
 [ext_resource type="Texture2D" uid="uid://dbcxp7ty3bnc4" path="res://assets/icons/new_line_icons/new_line_icon_68.png" id="37_toq4t"]
 [ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="38_6qpnt"]
 [ext_resource type="Texture2D" uid="uid://djqrl07g4xxjo" path="res://assets/icons/paperclip_icons/paperclip_icon_48_no_bg.png" id="39_dp74p"]
@@ -64,7 +65,6 @@
 [ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
 [ext_resource type="Script" uid="uid://1fueuihora3v" path="res://Scenes/note/NotesContainer.gd" id="57_jnakw"]
 [ext_resource type="Script" uid="uid://b172wgd7hty1f" path="res://Scripts/Drawer/Drawer_manager.gd" id="58_a7b38"]
-[ext_resource type="Texture2D" uid="uid://nxkfyj987f6as" path="res://assets/icons/grid_layout.svg" id="59_ssicon"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -217,7 +217,6 @@ unresizable = false
 
 [node name="MCPServerInstallerPopup" parent="." instance=ExtResource("3_mcpinst")]
 unique_name_in_owner = true
-initial_position = 2
 visible = false
 
 [node name="NewThreadPopup" parent="." instance=ExtResource("5_gujhn")]
@@ -516,7 +515,7 @@ text = "A"
 layout_mode = 2
 size_flags_horizontal = 0
 tooltip_text = "Create new spreadsheet editor tab"
-icon = ExtResource("59_ssicon")
+icon = ExtResource("36_w0aut")
 
 [node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2

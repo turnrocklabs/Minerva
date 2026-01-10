@@ -142,21 +142,21 @@ func _build_toolbar() -> void:
 
 	# Alignment buttons
 	var align_left := Button.new()
-	align_left.text = "L"
+	align_left.icon = preload("uid://8pfda6vkqgcu")
 	align_left.tooltip_text = "Align Left"
 	align_left.custom_minimum_size = Vector2(30, 28)
 	align_left.pressed.connect(_on_align_left_pressed)
 	toolbar.add_child(align_left)
 
 	var align_center := Button.new()
-	align_center.text = "C"
+	align_center.icon = preload("uid://by4euhg5vcb2u")
 	align_center.tooltip_text = "Align Center"
 	align_center.custom_minimum_size = Vector2(30, 28)
 	align_center.pressed.connect(_on_align_center_pressed)
 	toolbar.add_child(align_center)
 
 	var align_right := Button.new()
-	align_right.text = "R"
+	align_right.icon = preload("uid://cn3cyqlwp73k3")
 	align_right.tooltip_text = "Align Right"
 	align_right.custom_minimum_size = Vector2(30, 28)
 	align_right.pressed.connect(_on_align_right_pressed)
