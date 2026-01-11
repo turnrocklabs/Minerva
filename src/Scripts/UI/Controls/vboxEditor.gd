@@ -109,6 +109,13 @@ func serialize() -> Array:
 							layer_data["connector_line_color_a"] = layer.connector_line_color.a
 							layer_data["connector_line_width"] = layer.connector_line_width
 							layer_data["connector_arrow_head"] = layer.connector_arrow_head
+							# Connector text properties
+							layer_data["connector_text_content"] = layer.connector_text_content
+							layer_data["connector_text_font_size"] = layer.connector_text_font_size
+							layer_data["connector_text_color_r"] = layer.connector_text_color.r
+							layer_data["connector_text_color_g"] = layer.connector_text_color.g
+							layer_data["connector_text_color_b"] = layer.connector_text_color.b
+							layer_data["connector_text_color_a"] = layer.connector_text_color.a
 
 						layers.append(layer_data)
 					
@@ -286,6 +293,16 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 							layer.connector_arrow_head = arrow_head
 							layer.connector_source_anchor = layer_data.get("connector_source_anchor", LayerV2.AnchorPoint.RIGHT)
 							layer.connector_target_anchor = layer_data.get("connector_target_anchor", LayerV2.AnchorPoint.LEFT)
+							# Restore connector text properties
+							layer.connector_text_content = layer_data.get("connector_text_content", "")
+							layer.connector_text_font_size = layer_data.get("connector_text_font_size", 12)
+							layer.connector_text_color = Color(
+								layer_data.get("connector_text_color_r", 0.0),
+								layer_data.get("connector_text_color_g", 0.0),
+								layer_data.get("connector_text_color_b", 0.0),
+								layer_data.get("connector_text_color_a", 1.0)
+							)
+							layer.connector_text_font = ThemeDB.get_fallback_font()
 
 							# Store connector data for second pass
 							connector_data_list.append({

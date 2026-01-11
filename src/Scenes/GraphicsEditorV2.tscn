@@ -275,12 +275,14 @@ underline_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOp
 strikethrough_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox/StrikethroughCheck")
 editor = NodePath("../..")
 
-[node name="ConnectorTool" type="Node" parent="Tools" node_paths=PackedStringArray("line_color_picker", "line_width_slider", "arrow_type_option", "editor")]
+[node name="ConnectorTool" type="Node" parent="Tools" node_paths=PackedStringArray("line_color_picker", "line_width_slider", "arrow_type_option", "text_size_spin_box", "text_color_picker", "editor")]
 unique_name_in_owner = true
 script = ExtResource("53_connectortool")
 line_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox/LineColorPicker")
 line_width_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/WidthVBox/LineWidthSlider")
 arrow_type_option = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ArrowVBox/ArrowTypeOption")
+text_size_spin_box = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox/ConnectorTextSizeSpinBox")
+text_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox/ConnectorTextColorPicker")
 editor = NodePath("../..")
 
 [node name="h" type="HBoxContainer" parent="."]
@@ -984,6 +986,26 @@ popup/item_1/text = "Single"
 popup/item_1/id = 1
 popup/item_2/text = "Double"
 popup/item_2/id = 2
+
+[node name="TextVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox"]
+layout_mode = 2
+text = "Text:"
+
+[node name="ConnectorTextSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 8.0
+max_value = 48.0
+value = 12.0
+
+[node name="ConnectorTextColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 30)
+layout_mode = 2
+color = Color(0, 0, 0, 1)
 
 [node name="VSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer"]
 layout_mode = 2

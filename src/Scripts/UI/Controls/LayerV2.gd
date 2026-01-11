@@ -160,6 +160,11 @@ var connector_line_width: int = 2
 var connector_arrow_head: ArrowHeadType = ArrowHeadType.SINGLE
 var _source_layer_ref: WeakRef = null
 var _target_layer_ref: WeakRef = null
+# Connector text properties
+var connector_text_content: String = ""
+var connector_text_font: Font = null
+var connector_text_font_size: int = 12
+var connector_text_color: Color = Color.BLACK
 
 signal shape_moved(layer: LayerV2)
 
@@ -308,6 +313,7 @@ static func create_diagram_connector(name_: String, source_layer: LayerV2,
 	layer.connector_arrow_head = arrow_head
 	layer._source_layer_ref = weakref(source_layer)
 	layer._target_layer_ref = weakref(target_layer)
+	layer.connector_text_font = ThemeDB.get_fallback_font()
 
 	# Subscribe to shape movements so connector updates when shapes move
 	source_layer.shape_moved.connect(layer._on_connected_shape_moved)
@@ -624,6 +630,10 @@ func _draw_diagram_connector() -> void:
 	if connector_arrow_head == ArrowHeadType.DOUBLE:
 		_draw_arrow_head(source_local, target_local)
 
+	# Draw text at midpoint
+	if not connector_text_content.is_empty() and connector_text_font:
+		_draw_connector_text(source_local, target_local)
+
 
 func _draw_arrow_head(tip: Vector2, from: Vector2) -> void:
 	var direction = (tip - from).normalized()
@@ -637,6 +647,33 @@ func _draw_arrow_head(tip: Vector2, from: Vector2) -> void:
 	var right = tip - direction.rotated(-arrow_angle) * arrow_size
 
 	draw_colored_polygon(PackedVector2Array([tip, left, right]), connector_line_color)
+
+
+func _draw_connector_text(source_local: Vector2, target_local: Vector2) -> void:
+	# Calculate midpoint
+	var midpoint = (source_local + target_local) / 2
+
+	# Get text size
+	var text_size = connector_text_font.get_string_size(
+		connector_text_content, HORIZONTAL_ALIGNMENT_CENTER, -1, connector_text_font_size
+	)
+
+	# Draw background for readability
+	var padding = Vector2(4, 2)
+	var bg_rect = Rect2(
+		midpoint - text_size / 2 - padding,
+		text_size + padding * 2
+	)
+	draw_rect(bg_rect, Color(1, 1, 1, 0.85))
+
+	# Position text centered at midpoint
+	var text_pos = Vector2(
+		midpoint.x - text_size.x / 2,
+		midpoint.y + connector_text_font.get_ascent(connector_text_font_size) / 2
+	)
+
+	draw_string(connector_text_font, text_pos, connector_text_content,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, connector_text_font_size, connector_text_color)
 
 
 ## Called when a connected shape moves - update connector
