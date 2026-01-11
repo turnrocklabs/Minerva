@@ -8,6 +8,27 @@ enum Type {
 	MASK,
 	CONTROL,
 	TEXT,
+	DIAGRAM_SHAPE,
+	DIAGRAM_CONNECTOR,
+}
+
+enum DiagramShapeType {
+	RECTANGLE,
+	ELLIPSE,
+	DIAMOND,
+}
+
+enum AnchorPoint {
+	TOP,
+	RIGHT,
+	BOTTOM,
+	LEFT,
+}
+
+enum ArrowHeadType {
+	NONE,
+	SINGLE,
+	DOUBLE,
 }
 
 enum ControlType {
@@ -115,6 +136,33 @@ var text_stroke_color: Color = Color.BLACK
 var text_stroke_width: int = 2
 var _text_underline_rect: Rect2 = Rect2()  # Stored for hit detection
 
+# Diagram shape properties
+var diagram_shape_type: DiagramShapeType = DiagramShapeType.RECTANGLE
+var diagram_stroke_color: Color = Color.BLACK
+var diagram_fill_color: Color = Color.TRANSPARENT
+var diagram_stroke_width: int = 2
+var diagram_text_content: String = ""
+var diagram_text_font: Font = null
+var diagram_text_font_size: int = 14
+var diagram_text_color: Color = Color.BLACK
+var diagram_text_bold: bool = false
+var diagram_text_italic: bool = false
+var diagram_text_underline: bool = false
+var diagram_text_strikethrough: bool = false
+
+# Diagram connector properties
+var connector_source_layer_id: int = 0
+var connector_source_anchor: AnchorPoint = AnchorPoint.RIGHT
+var connector_target_layer_id: int = 0
+var connector_target_anchor: AnchorPoint = AnchorPoint.LEFT
+var connector_line_color: Color = Color(0.53, 0.81, 0.92)  # Light blue
+var connector_line_width: int = 2
+var connector_arrow_head: ArrowHeadType = ArrowHeadType.SINGLE
+var _source_layer_ref: WeakRef = null
+var _target_layer_ref: WeakRef = null
+
+signal shape_moved(layer: LayerV2)
+
 
 
 func _ready() -> void:
@@ -215,6 +263,61 @@ static func create_text_layer(name_: String, text: String, font: Font,
 	return layer
 
 
+static func create_diagram_shape(name_: String, shape_type: DiagramShapeType,
+								  size_: Vector2, stroke_color: Color = Color.BLACK,
+								  fill_color: Color = Color.TRANSPARENT,
+								  stroke_width: int = 2) -> LayerV2:
+	var layer: LayerV2 = _scene.instantiate()
+
+	layer.name = name_
+	layer.type = Type.DIAGRAM_SHAPE
+	layer.diagram_shape_type = shape_type
+	layer.diagram_stroke_color = stroke_color
+	layer.diagram_fill_color = fill_color
+	layer.diagram_stroke_width = stroke_width
+	layer.size = size_
+	layer.custom_minimum_size = size_
+	layer.pivot_offset = size_ / 2
+
+	# Set default font for text rendering
+	layer.diagram_text_font = ThemeDB.get_fallback_font()
+
+	# Enable transform change notification for connector updates
+	layer.set_notify_transform(true)
+
+	return layer
+
+
+static func create_diagram_connector(name_: String, source_layer: LayerV2,
+									  source_anchor: AnchorPoint,
+									  target_layer: LayerV2,
+									  target_anchor: AnchorPoint,
+									  line_color: Color = Color(0.53, 0.81, 0.92),
+									  line_width: int = 2,
+									  arrow_head: ArrowHeadType = ArrowHeadType.SINGLE) -> LayerV2:
+	var layer: LayerV2 = _scene.instantiate()
+
+	layer.name = name_
+	layer.type = Type.DIAGRAM_CONNECTOR
+	layer.connector_source_layer_id = source_layer.get_instance_id()
+	layer.connector_target_layer_id = target_layer.get_instance_id()
+	layer.connector_source_anchor = source_anchor
+	layer.connector_target_anchor = target_anchor
+	layer.connector_line_color = line_color
+	layer.connector_line_width = line_width
+	layer.connector_arrow_head = arrow_head
+	layer._source_layer_ref = weakref(source_layer)
+	layer._target_layer_ref = weakref(target_layer)
+
+	# Subscribe to shape movements so connector updates when shapes move
+	source_layer.shape_moved.connect(layer._on_connected_shape_moved)
+	target_layer.shape_moved.connect(layer._on_connected_shape_moved)
+
+	# Note: _update_connector_bounds() should be called after the layer is added to the tree
+
+	return layer
+
+
 ## Return the [enum TransformPoint] type of the rect thats under the given [parameter mouse_position]
 func get_rect_by_mouse_position(mouse_position: Vector2) -> TransformPoint:
 	var _transform_rect_positions: = _get_transform_rect_positions()
@@ -236,6 +339,10 @@ func _draw() -> void:
 			_update_texture_from_image()
 		Type.TEXT:
 			_draw_text_layer()
+		Type.DIAGRAM_SHAPE:
+			_draw_diagram_shape()
+		Type.DIAGRAM_CONNECTOR:
+			_draw_diagram_connector()
 
 
 ## Update texture from image, reusing existing ImageTexture if possible
@@ -349,6 +456,225 @@ func set_text_properties(text: String, font: Font = null, font_size: int = -1,
 	queue_redraw()
 
 
+## Draw diagram shape layer
+func _draw_diagram_shape() -> void:
+	var rect = Rect2(Vector2.ZERO, size)
+
+	match diagram_shape_type:
+		DiagramShapeType.RECTANGLE:
+			_draw_diagram_rectangle(rect)
+		DiagramShapeType.ELLIPSE:
+			_draw_diagram_ellipse(rect)
+		DiagramShapeType.DIAMOND:
+			_draw_diagram_diamond(rect)
+
+	# Draw centered text if present
+	if not diagram_text_content.is_empty() and diagram_text_font:
+		_draw_diagram_centered_text(rect)
+
+	# Always draw anchor points on diagram shapes for connector tool
+	_draw_anchor_points()
+
+	# Draw transform handles when selected
+	if transform_rect_visible:
+		_draw_transform_handles()
+	elif outline_visible:
+		# Draw outline when not in transform mode
+		draw_rect(rect, outline_color, false)
+
+
+func _draw_diagram_rectangle(rect: Rect2) -> void:
+	# Inset by half stroke width so stroke stays inside bounds
+	var inset = diagram_stroke_width / 2.0
+	var draw_rect_ = rect.grow(-inset)
+
+	if diagram_fill_color.a > 0:
+		draw_rect(draw_rect_, diagram_fill_color, true)
+	if diagram_stroke_width > 0 and diagram_stroke_color.a > 0:
+		draw_rect(draw_rect_, diagram_stroke_color, false, diagram_stroke_width)
+
+
+func _draw_diagram_ellipse(rect: Rect2) -> void:
+	var center = rect.size / 2
+	var radius = rect.size / 2 - Vector2(diagram_stroke_width / 2.0, diagram_stroke_width / 2.0)
+
+	# Draw ellipse using polygon approximation
+	var points = PackedVector2Array()
+	var segments = 64  # More segments = smoother ellipse
+
+	for i in range(segments + 1):
+		var angle = i * TAU / segments
+		var point = center + Vector2(cos(angle) * radius.x, sin(angle) * radius.y)
+		points.append(point)
+
+	if diagram_fill_color.a > 0:
+		draw_colored_polygon(points, diagram_fill_color)
+	if diagram_stroke_width > 0 and diagram_stroke_color.a > 0:
+		draw_polyline(points, diagram_stroke_color, diagram_stroke_width)
+
+
+func _draw_diagram_diamond(rect: Rect2) -> void:
+	var inset = diagram_stroke_width / 2.0
+	var points = PackedVector2Array([
+		Vector2(rect.size.x / 2, inset),                    # Top
+		Vector2(rect.size.x - inset, rect.size.y / 2),      # Right
+		Vector2(rect.size.x / 2, rect.size.y - inset),      # Bottom
+		Vector2(inset, rect.size.y / 2),                    # Left
+	])
+
+	if diagram_fill_color.a > 0:
+		draw_colored_polygon(points, diagram_fill_color)
+	if diagram_stroke_width > 0 and diagram_stroke_color.a > 0:
+		# Close the polyline by adding the first point again
+		var closed_points = points.duplicate()
+		closed_points.append(points[0])
+		draw_polyline(closed_points, diagram_stroke_color, diagram_stroke_width)
+
+
+func _draw_diagram_centered_text(rect: Rect2) -> void:
+	if not diagram_text_font:
+		return
+
+	# Create a font variation for bold/italic if needed
+	var draw_font: Font = diagram_text_font
+	if diagram_text_bold or diagram_text_italic:
+		var font_var = FontVariation.new()
+		font_var.base_font = diagram_text_font
+		if diagram_text_bold:
+			font_var.variation_embolden = 0.5
+		if diagram_text_italic:
+			font_var.variation_transform = Transform2D(Vector2(1, 0.2), Vector2(0, 1), Vector2.ZERO)
+		draw_font = font_var
+
+	var text_size = draw_font.get_string_size(diagram_text_content, HORIZONTAL_ALIGNMENT_CENTER, -1, diagram_text_font_size)
+	var text_pos = Vector2(
+		(rect.size.x - text_size.x) / 2,
+		(rect.size.y + draw_font.get_ascent(diagram_text_font_size)) / 2
+	)
+
+	draw_string(draw_font, text_pos, diagram_text_content, HORIZONTAL_ALIGNMENT_LEFT,
+				-1, diagram_text_font_size, diagram_text_color)
+
+	# Draw underline
+	if diagram_text_underline:
+		var underline_y = text_pos.y + draw_font.get_descent(diagram_text_font_size) * 0.5
+		draw_line(Vector2(text_pos.x, underline_y), Vector2(text_pos.x + text_size.x, underline_y),
+				  diagram_text_color, 1.0)
+
+	# Draw strikethrough
+	if diagram_text_strikethrough:
+		var strike_y = text_pos.y - draw_font.get_ascent(diagram_text_font_size) * 0.3
+		draw_line(Vector2(text_pos.x, strike_y), Vector2(text_pos.x + text_size.x, strike_y),
+				  diagram_text_color, 1.0)
+
+
+## Get the local position of an anchor point
+func get_anchor_position(anchor: AnchorPoint) -> Vector2:
+	match anchor:
+		AnchorPoint.TOP:
+			return Vector2(size.x / 2, 0)
+		AnchorPoint.RIGHT:
+			return Vector2(size.x, size.y / 2)
+		AnchorPoint.BOTTOM:
+			return Vector2(size.x / 2, size.y)
+		AnchorPoint.LEFT:
+			return Vector2(0, size.y / 2)
+	return size / 2
+
+
+## Get the global position of an anchor point
+func get_anchor_global_position(anchor: AnchorPoint) -> Vector2:
+	return get_global_transform() * get_anchor_position(anchor)
+
+
+## Draw anchor points (for connector attachment)
+func _draw_anchor_points() -> void:
+	var anchor_radius = 6.0
+	var anchors = [AnchorPoint.TOP, AnchorPoint.RIGHT, AnchorPoint.BOTTOM, AnchorPoint.LEFT]
+
+	for anchor in anchors:
+		var pos = get_anchor_position(anchor)
+		# Blue filled circle with white outline
+		draw_circle(pos, anchor_radius, Color.DODGER_BLUE)
+		draw_arc(pos, anchor_radius, 0, TAU, 32, Color.WHITE, 2.0)
+
+
+## Draw diagram connector layer
+func _draw_diagram_connector() -> void:
+	var source = _source_layer_ref.get_ref() if _source_layer_ref else null
+	var target = _target_layer_ref.get_ref() if _target_layer_ref else null
+
+	if not source or not target:
+		return
+
+	# Get anchor positions in layers_container local space
+	var source_pos = source.position + source.get_anchor_position(connector_source_anchor)
+	var target_pos = target.position + target.get_anchor_position(connector_target_anchor)
+
+	# Convert to this layer's local space (subtract our position)
+	var source_local = source_pos - position
+	var target_local = target_pos - position
+
+	# Draw line
+	draw_line(source_local, target_local, connector_line_color, connector_line_width)
+
+	# Draw arrow head at target
+	if connector_arrow_head == ArrowHeadType.SINGLE or connector_arrow_head == ArrowHeadType.DOUBLE:
+		_draw_arrow_head(target_local, source_local)
+	if connector_arrow_head == ArrowHeadType.DOUBLE:
+		_draw_arrow_head(source_local, target_local)
+
+
+func _draw_arrow_head(tip: Vector2, from: Vector2) -> void:
+	var direction = (tip - from).normalized()
+	if direction.length_squared() < 0.001:
+		return
+
+	var arrow_size = 12.0
+	var arrow_angle = 0.5  # radians (~28 degrees)
+
+	var left = tip - direction.rotated(arrow_angle) * arrow_size
+	var right = tip - direction.rotated(-arrow_angle) * arrow_size
+
+	draw_colored_polygon(PackedVector2Array([tip, left, right]), connector_line_color)
+
+
+## Called when a connected shape moves - update connector
+func _on_connected_shape_moved(_layer: LayerV2) -> void:
+	_update_connector_bounds()
+	queue_redraw()
+
+
+## Update connector layer bounds to cover the line between shapes
+func _update_connector_bounds() -> void:
+	var source = _source_layer_ref.get_ref() if _source_layer_ref else null
+	var target = _target_layer_ref.get_ref() if _target_layer_ref else null
+
+	if not source or not target:
+		return
+
+	# Get anchor positions in layers_container local space
+	var source_pos = source.position + source.get_anchor_position(connector_source_anchor)
+	var target_pos = target.position + target.get_anchor_position(connector_target_anchor)
+
+	# Calculate bounding box with some padding for arrow heads
+	var padding = 20.0
+	var min_pos = Vector2(min(source_pos.x, target_pos.x), min(source_pos.y, target_pos.y)) - Vector2(padding, padding)
+	var max_pos = Vector2(max(source_pos.x, target_pos.x), max(source_pos.y, target_pos.y)) + Vector2(padding, padding)
+
+	# Set position and size to cover the connector
+	position = min_pos
+	size = max_pos - min_pos
+	custom_minimum_size = size
+	pivot_offset = size / 2
+
+
+## Handle transform notifications (for shape_moved signal)
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED and type == Type.DIAGRAM_SHAPE:
+		shape_moved.emit(self)
+
+
 ## Draw the transform handles (shared by image and text layers)
 func _draw_transform_handles() -> void:
 	
@@ -414,7 +740,7 @@ func localize_input(event: InputEvent):
 	var local_event = event.duplicate()
 
 	match type:
-		Type.IMAGE, Type.DRAWING, Type.MASK, Type.CONTROL, Type.TEXT:
+		Type.IMAGE, Type.DRAWING, Type.MASK, Type.CONTROL, Type.TEXT, Type.DIAGRAM_SHAPE, Type.DIAGRAM_CONNECTOR:
 			# Transform global mouse position to layer's local coordinate space
 			# Using affine_inverse() properly handles rotation, scale, and translation
 			# This ensures hit detection works correctly even when layer is rotated

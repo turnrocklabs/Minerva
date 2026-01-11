@@ -58,6 +58,8 @@
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SelectTool.gd" id="49_selecttool"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/RectangleTool.gd" id="50_recttool"]
 [ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/EllipseTool.gd" id="51_ellipsetool"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DiagramShapeTool.gd" id="52_diagramshapetool"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/tools/ConnectorTool.gd" id="53_connectortool"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
 offsets = PackedFloat32Array(0.609626, 1)
@@ -256,6 +258,31 @@ unique_name_in_owner = true
 script = ExtResource("49_selecttool")
 editor = NodePath("../..")
 
+[node name="DiagramShapeTool" type="Node" parent="Tools" node_paths=PackedStringArray("shape_type_option", "stroke_color_picker", "fill_color_picker", "stroke_width_slider", "stroke_enabled_check", "fill_enabled_check", "text_size_spin_box", "text_color_picker", "bold_check", "italic_check", "underline_check", "strikethrough_check", "editor")]
+unique_name_in_owner = true
+script = ExtResource("52_diagramshapetool")
+shape_type_option = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/ShapeVBox/ShapeTypeOption")
+stroke_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeVBox/StrokeColorPicker")
+fill_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/FillVBox/FillColorPicker")
+stroke_width_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeWidthVBox/StrokeWidthSlider")
+stroke_enabled_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeVBox/StrokeEnabledCheck")
+fill_enabled_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/FillVBox/FillEnabledCheck")
+text_size_spin_box = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox/TextSizeSpinBox")
+text_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox/TextColorPicker")
+bold_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox/BoldCheck")
+italic_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox/ItalicCheck")
+underline_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox/UnderlineCheck")
+strikethrough_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox/StrikethroughCheck")
+editor = NodePath("../..")
+
+[node name="ConnectorTool" type="Node" parent="Tools" node_paths=PackedStringArray("line_color_picker", "line_width_slider", "arrow_type_option", "editor")]
+unique_name_in_owner = true
+script = ExtResource("53_connectortool")
+line_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox/LineColorPicker")
+line_width_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/WidthVBox/LineWidthSlider")
+arrow_type_option = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ArrowVBox/ArrowTypeOption")
+editor = NodePath("../..")
+
 [node name="h" type="HBoxContainer" parent="."]
 clip_contents = true
 layout_mode = 2
@@ -294,7 +321,7 @@ layout_mode = 2
 size_flags_vertical = 4
 button_group = ExtResource("2_ymijy")
 allow_reselect = true
-item_count = 16
+item_count = 18
 popup/item_0/text = "Brush"
 popup/item_0/icon = ExtResource("10_vnb8d")
 popup/item_0/id = 0
@@ -308,35 +335,39 @@ popup/item_3/text = "Rectangle"
 popup/item_3/id = 14
 popup/item_4/text = "Ellipse"
 popup/item_4/id = 15
-popup/item_5/text = "Text"
-popup/item_5/id = 12
-popup/item_6/text = "Color Tools"
-popup/item_6/id = 11
-popup/item_6/separator = true
-popup/item_7/text = "Bucket"
-popup/item_7/icon = ExtResource("12_u1itb")
-popup/item_7/id = 3
-popup/item_8/text = "Eyedropper"
-popup/item_8/icon = ExtResource("10_pipet")
-popup/item_8/id = 5
-popup/item_9/text = "Layer Selection"
-popup/item_9/id = 10
-popup/item_9/separator = true
-popup/item_10/text = "Magic Wand"
-popup/item_10/icon = ExtResource("29_mwand")
-popup/item_10/id = 6
-popup/item_11/text = "Rectangle Select"
-popup/item_11/icon = ExtResource("35_rectsel")
-popup/item_11/id = 7
-popup/item_12/text = "Lasso Select"
-popup/item_12/icon = ExtResource("37_lassoicon")
-popup/item_12/id = 8
-popup/item_13/text = "Select"
-popup/item_13/id = 13
-popup/item_14/text = "Pan Layer"
-popup/item_14/id = 9
-popup/item_15/text = "Insert Image..."
-popup/item_15/id = 4
+popup/item_5/text = "Diagram Shape"
+popup/item_5/id = 16
+popup/item_6/text = "Connector"
+popup/item_6/id = 17
+popup/item_7/text = "Text"
+popup/item_7/id = 12
+popup/item_8/text = "Color Tools"
+popup/item_8/id = 11
+popup/item_8/separator = true
+popup/item_9/text = "Bucket"
+popup/item_9/icon = ExtResource("12_u1itb")
+popup/item_9/id = 3
+popup/item_10/text = "Eyedropper"
+popup/item_10/icon = ExtResource("10_pipet")
+popup/item_10/id = 5
+popup/item_11/text = "Layer Selection"
+popup/item_11/id = 10
+popup/item_11/separator = true
+popup/item_12/text = "Magic Wand"
+popup/item_12/icon = ExtResource("29_mwand")
+popup/item_12/id = 6
+popup/item_13/text = "Rectangle Select"
+popup/item_13/icon = ExtResource("35_rectsel")
+popup/item_13/id = 7
+popup/item_14/text = "Lasso Select"
+popup/item_14/icon = ExtResource("37_lassoicon")
+popup/item_14/id = 8
+popup/item_15/text = "Select"
+popup/item_15/id = 13
+popup/item_16/text = "Pan Layer"
+popup/item_16/id = 9
+popup/item_17/text = "Insert Image..."
+popup/item_17/id = 4
 
 [node name="SelectionIndicatorButton" type="MenuButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 unique_name_in_owner = true
@@ -782,6 +813,177 @@ layout_mode = 2
 min_value = 1.0
 max_value = 20.0
 value = 2.0
+
+[node name="DiagramShapeOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="ShapeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/ShapeVBox"]
+layout_mode = 2
+text = "Shape:"
+
+[node name="ShapeTypeOption" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/ShapeVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+item_count = 3
+popup/item_0/text = "Rectangle"
+popup/item_0/id = 0
+popup/item_1/text = "Ellipse"
+popup/item_1/id = 1
+popup/item_2/text = "Diamond"
+popup/item_2/id = 2
+
+[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+layout_mode = 2
+
+[node name="StrokeEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Stroke"
+
+[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+color = Color(0, 0, 0, 1)
+
+[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+layout_mode = 2
+
+[node name="FillEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/FillVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Fill"
+
+[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/FillVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+color = Color(1, 1, 1, 1)
+
+[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeWidthVBox"]
+layout_mode = 2
+text = "Width:"
+
+[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeWidthVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 10.0
+value = 2.0
+
+[node name="TextVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox"]
+layout_mode = 2
+text = "Text:"
+
+[node name="TextSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 8.0
+max_value = 72.0
+value = 14.0
+
+[node name="TextColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 30)
+layout_mode = 2
+color = Color(0, 0, 0, 1)
+
+[node name="StyleVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox"]
+layout_mode = 2
+text = "Style:"
+
+[node name="StyleHBox" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox"]
+layout_mode = 2
+
+[node name="BoldCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "B"
+
+[node name="ItalicCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "I"
+
+[node name="UnderlineCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "U"
+
+[node name="StrikethroughCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "S"
+
+[node name="ConnectorOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="ColorVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox"]
+layout_mode = 2
+text = "Color:"
+
+[node name="LineColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+color = Color(0.529412, 0.807843, 0.921569, 1)
+
+[node name="WidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/WidthVBox"]
+layout_mode = 2
+text = "Width:"
+
+[node name="LineWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/WidthVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 8.0
+value = 2.0
+
+[node name="ArrowVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ArrowVBox"]
+layout_mode = 2
+text = "Arrow:"
+
+[node name="ArrowTypeOption" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ArrowVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+selected = 1
+item_count = 3
+popup/item_0/text = "None"
+popup/item_0/id = 0
+popup/item_1/text = "Single"
+popup/item_1/id = 1
+popup/item_2/text = "Double"
+popup/item_2/id = 2
 
 [node name="VSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer"]
 layout_mode = 2
