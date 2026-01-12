@@ -47,6 +47,9 @@ signal selection_changed()
 @onready var _eraser_options_container: Control = %EraserOptions
 @onready var _speech_bubble_options: Control = %SpeechBubbleOptions
 @onready var _selection_options_container: Control = %SelectionOptions
+@onready var _text_options_container: Control = %TextOptions
+@onready var _rectangle_options_container: Control = %RectangleOptions
+@onready var _ellipse_options_container: Control = %EllipseOptions
 @onready var selection_indicator_button: MenuButton = %SelectionIndicatorButton
 @onready var selection_mode_label: Label = %SelectionModeLabel
 
@@ -63,6 +66,10 @@ signal selection_changed()
 @onready var rectangle_select_tool: RectangleSelectTool = %RectangleSelectTool
 @onready var lasso_select_tool: LassoSelectTool = %LassoSelectTool
 @onready var pose_editor_tool = %PoseEditorTool  # PoseEditorTool type - avoid circular ref
+@onready var text_tool = %TextTool  # TextTool type - avoid circular ref
+@onready var select_tool = %SelectTool  # SelectTool type - avoid circular ref
+@onready var rectangle_tool = %RectangleTool  # RectangleTool type - avoid circular ref
+@onready var ellipse_tool = %EllipseTool  # EllipseTool type - avoid circular ref
 
 
 @onready var tool_options_mapping: = {
@@ -75,6 +82,9 @@ signal selection_changed()
 	magic_wand_tool: _selection_options_container,
 	rectangle_select_tool: _selection_options_container,
 	lasso_select_tool: _selection_options_container,
+	text_tool: _text_options_container,
+	rectangle_tool: _rectangle_options_container,
+	ellipse_tool: _ellipse_options_container,
 }
 
 @onready var image_gen_window: Window = %ImageGenWindow
@@ -119,7 +129,6 @@ signal selection_changed()
 @onready var mini_map_control: Control = %MiniMapControl
 
 @onready var dock_split_container: VSplitContainer = %DockSplitContainer
-@onready var render_viewport_button: Button = %RenderViewportButton
 @onready var render_view_control: RenderViewRect = %RenderViewControl
 @onready var connection_label: Label = %ConnectionLabel
 @onready var drawing_area_sub_viewport: SubViewport = %DrawingAreaSubViewport
@@ -396,8 +405,8 @@ func _ready() -> void:
 	progress_window.hide()
 	message_window.hide()
 	active_tool_changed.connect(_on_active_tool_changed)
-	_tools_option_button.select(0)
-	_tools_option_button.item_selected.emit(0)
+	# Select the Brush tool by default (id 0)
+	_select_tool_by_id(0)
 	compose_progress_updated.connect(_on_compose_progress)
 	compose_finished.connect(_on_compose_complete)
 	active_layer_is_mask_layer.connect(_on_active_layer_mask_layer)
@@ -459,6 +468,9 @@ func _ready() -> void:
 
 	# Position drawing area at top-left of viewport on startup
 	call_deferred("_position_view_top_left")
+
+	# Clear custom cursor when mouse leaves the entire graphics editor panel
+	mouse_exited.connect(_on_graphics_editor_mouse_exited)
 
 
 func _process(delta: float) -> void:
@@ -757,21 +769,17 @@ func set_custom_cursor(image: Resource = null, shape: int = 0, hotspot: Vector2 
 	_custom_cursor_hotspot = hotspot
 
 	if image:
-		# Only apply cursor globally if mouse is inside the drawing area
-		if _mouse_in_layers_container:
-			Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
-		# Set the control's cursor to use the custom image
+		# Apply cursor globally - don't restrict to container bounds
+		# This prevents cursor flickering when pointer moves faster than rendered content
+		# (See: Felt Engineering blog on dynamic cursor rotation)
+		Input.set_custom_mouse_cursor(image, Input.CURSOR_ARROW, hotspot)
 		layers_container.mouse_default_cursor_shape = Control.CURSOR_ARROW
-		print("set_custom_cursor: Using custom image, mouse_in_container=", _mouse_in_layers_container)
 	else:
 		# Clear any custom cursor image
 		Input.set_custom_mouse_cursor(null)
 		# Set the control's default cursor shape directly
-		# This is the correct way to change cursor over Control nodes
-		# Cast int to CursorShape enum
 		var casted_shape = shape as Control.CursorShape
 		layers_container.mouse_default_cursor_shape = casted_shape
-		print("set_custom_cursor: shape=", shape, " casted=", casted_shape, " actual=", layers_container.mouse_default_cursor_shape)
 
 func reorder_layer(layer: LayerV2, index: int) -> void:
 	if not layer.has_meta("layer_card") or not layer.get_meta("layer_card") is LayerCard:
@@ -839,12 +847,12 @@ func _gui_input(event: InputEvent) -> void:
 	#endregion Move Canvas
 
 	# Handle active tool input
-	# PanTool should work even without visible layers (for panning the canvas)
+	# PanTool and SelectTool should work even without visible layers selected
 	# Other tools need visible layers to function
 	if active_tool:
 		var should_handle = false
-		if active_tool is PanTool:
-			# PanTool can work without layers
+		if active_tool is PanTool or active_tool is SelectTool:
+			# PanTool and SelectTool can work without selected layers
 			should_handle = true
 		elif selected_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_mask_layers.any(func(l: LayerV2): return l.is_visible_in_tree()) or selected_control_layers.any(func(l: LayerV2): return l.is_visible_in_tree()):
 			# Other tools need visible layers
@@ -968,19 +976,19 @@ func _on_pen_inverted_changed(is_inverted: bool) -> void:
 			_previous_tool_before_eraser = active_tool
 			eraser_tool.set_activated_by_pen(true)  # Mark that eraser was activated by pen
 			active_tool = eraser_tool
-			# Update the UI to show eraser is selected
-			_tools_option_button.select(1)  # Index 1 is eraser
+			# Update the UI to show eraser is selected (id 1)
+			_select_tool_by_id(1, false)
 	else:
 		# Switch back to previous tool when pen is normal
 		if active_tool == eraser_tool and _previous_tool_before_eraser:
 			active_tool = _previous_tool_before_eraser
 			# Update UI to show the previous tool
 			if _previous_tool_before_eraser == drawing_tool:
-				_tools_option_button.select(0)  # Brush
+				_select_tool_by_id(0, false)  # Brush
 			elif _previous_tool_before_eraser == bucket_tool:
-				_tools_option_button.select(2)  # Bucket
+				_select_tool_by_id(3, false)  # Bucket
 			elif _previous_tool_before_eraser == smudge_tool:
-				_tools_option_button.select(3)  # Smudge
+				_select_tool_by_id(2, false)  # Smudge
 			_previous_tool_before_eraser = null
 
 
@@ -990,11 +998,11 @@ func _on_pen_normal_detected() -> void:
 		active_tool = _previous_tool_before_eraser
 		# Update UI to show the previous tool
 		if _previous_tool_before_eraser == drawing_tool:
-			_tools_option_button.select(0)  # Brush
+			_select_tool_by_id(0, false)  # Brush
 		elif _previous_tool_before_eraser == bucket_tool:
-			_tools_option_button.select(2)  # Bucket
+			_select_tool_by_id(3, false)  # Bucket
 		elif _previous_tool_before_eraser == smudge_tool:
-			_tools_option_button.select(3)  # Smudge
+			_select_tool_by_id(2, false)  # Smudge
 		_previous_tool_before_eraser = null
 
 #region Selection System
@@ -1196,11 +1204,10 @@ func _on_bucket_tool_button_toggled(toggled_on:bool) -> void:
 
 func _on_pane_tool_button_toggled(toggled_on:bool) -> void:
 	if not toggled_on:
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
+		_select_tool_by_id(13)  # Select tool
 		_tools_option_button.grab_focus()
 		return
-	
+
 	active_tool = pan_tool if toggled_on else null
 
 
@@ -1214,11 +1221,10 @@ func _on_eraser_tool_button_toggled(toggled_on: bool) -> void:
 
 func _on_transform_tool_button_toggled(toggled_on: bool) -> void:
 	if not toggled_on:
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
+		_select_tool_by_id(13)  # Select tool
 		_tools_option_button.grab_focus()
 		return
-	
+
 	active_tool = transform_tool if toggled_on else null
 
 
@@ -1230,10 +1236,7 @@ func _on_smudge_tool_button_toggled(toggled_on: bool) -> void:
 
 func _on_layers_container_mouse_entered() -> void:
 	_mouse_in_layers_container = true
-	# Re-apply custom cursor image when entering the layers container
-	# The mouse_default_cursor_shape property handles the cursor shape automatically
-	if _custom_cursor:
-		Input.set_custom_mouse_cursor(_custom_cursor, Input.CURSOR_ARROW, _custom_cursor_hotspot)
+	# Cursor is now managed globally, no need to re-apply on container enter
 
 
 func _on_add_image_button_pressed() -> void:
@@ -1256,13 +1259,21 @@ func _on_file_selected(fp: String) -> void:
 
 	add_layer(l)
 
-	# reselect the first tool
-	_tools_option_button.select(0)
-	_tools_option_button.item_selected.emit(0)
+	# reselect the Select tool
+	_select_tool_by_id(13)
 
 func _on_layers_container_mouse_exited() -> void:
 	_mouse_in_layers_container = false
+	# Don't clear cursor on container exit - let tools manage cursor state globally
+	# This prevents cursor flickering when pointer moves outside container bounds
+	# but is still within the interactive area (e.g., transform handles outside layer)
+
+
+func _on_graphics_editor_mouse_exited() -> void:
+	# Clear custom cursor when leaving the entire graphics editor panel
+	# This restores normal cursor when moving to other UI elements
 	Input.set_custom_mouse_cursor(null)
+	layers_container.mouse_default_cursor_shape = Control.CURSOR_ARROW
 
 
 func merge_layers(to_merge: Array[LayerV2]) -> LayerV2:
@@ -1507,8 +1518,29 @@ func redo_command() -> void:
 #endregion
 
 
+## Selects a tool in the dropdown by its item ID (not position index)
+## If emit_signal is true, also triggers the item_selected signal
+func _select_tool_by_id(item_id: int, emit_signal: bool = true) -> void:
+	for i in range(_tools_option_button.item_count):
+		if _tools_option_button.get_item_id(i) == item_id:
+			_tools_option_button.select(i)
+			if emit_signal:
+				_tools_option_button.item_selected.emit(i)
+			return
+
+
+## Enables or disables a tool dropdown item by its ID
+func _set_tool_disabled_by_id(item_id: int, disabled: bool) -> void:
+	for i in range(_tools_option_button.item_count):
+		if _tools_option_button.get_item_id(i) == item_id:
+			_tools_option_button.set_item_disabled(i, disabled)
+			return
+
+
 func _on_tools_option_button_item_selected(index: int) -> void:
-	match index:
+	# Get the item's ID (not position index) to match against
+	var item_id = _tools_option_button.get_item_id(index)
+	match item_id:
 		0: _on_brush_tool_button_toggled(true); return
 		1: _on_eraser_tool_button_toggled(true); return
 		2: _on_smudge_tool_button_toggled(true); return
@@ -1519,6 +1551,10 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		7: active_tool = rectangle_select_tool; return
 		8: active_tool = lasso_select_tool; return
 		9: active_tool = pose_editor_tool; return
+		12: active_tool = text_tool; return
+		13: active_tool = select_tool; return
+		14: active_tool = rectangle_tool; return
+		15: active_tool = ellipse_tool; return
 		_: pass
 	
 
@@ -2164,42 +2200,42 @@ func _on_active_layer_mask_layer(is_mask: bool) -> void:
 	color_picker_button.visible = not is_mask
 	mask_container.visible = is_mask
 	if is_mask:
-		_tools_option_button.select(0)
-		_tools_option_button.set_item_disabled(2, true)
-		_tools_option_button.set_item_disabled(3, true)
-		_tools_option_button.set_item_disabled(4, true)
+		_select_tool_by_id(0)  # Brush (id 0)
+		_set_tool_disabled_by_id(2, true)  # Smudge
+		_set_tool_disabled_by_id(3, true)  # Bucket
+		_set_tool_disabled_by_id(4, true)  # Insert Image
 		color_picker_button.color = active_layer.mask_color
 	else:
-		_tools_option_button.set_item_disabled(2, false)
-		_tools_option_button.set_item_disabled(3, false)
-		_tools_option_button.set_item_disabled(4, false)
+		_set_tool_disabled_by_id(2, false)  # Smudge
+		_set_tool_disabled_by_id(3, false)  # Bucket
+		_set_tool_disabled_by_id(4, false)  # Insert Image
 		color_picker_button.color = last_selected_color
 
 
 func _on_active_layer_control_layer(is_control: bool) -> void:
+	var was_control = is_active_layer_control  # Track previous state
 	is_active_layer_control = is_control
 
 	if is_control:
 		# Check if it's a POSE control layer and auto-select pose tool
 		if active_layer and active_layer.control_type == LayerV2.ControlType.POSE:
-			_tools_option_button.select(9)  # Pose Editor
-			_tools_option_button.item_selected.emit(9)
+			_select_tool_by_id(9)  # Pose Editor
 		# Disable drawing tools that don't apply to control layers
-		_tools_option_button.set_item_disabled(0, true)  # Brush
-		_tools_option_button.set_item_disabled(1, true)  # Eraser
-		_tools_option_button.set_item_disabled(2, true)  # Bucket
-		_tools_option_button.set_item_disabled(3, true)  # Smudge
-		_tools_option_button.set_item_disabled(4, true)  # Add Image
+		_set_tool_disabled_by_id(0, true)  # Brush
+		_set_tool_disabled_by_id(1, true)  # Eraser
+		_set_tool_disabled_by_id(2, true)  # Smudge
+		_set_tool_disabled_by_id(3, true)  # Bucket
+		_set_tool_disabled_by_id(4, true)  # Insert Image
 	else:
 		# Re-enable tools when switching away from control layer
-		_tools_option_button.set_item_disabled(0, false)
-		_tools_option_button.set_item_disabled(1, false)
-		_tools_option_button.set_item_disabled(2, false)
-		_tools_option_button.set_item_disabled(3, false)
-		_tools_option_button.set_item_disabled(4, false)
-		# Switch back to brush tool
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
+		_set_tool_disabled_by_id(0, false)  # Brush
+		_set_tool_disabled_by_id(1, false)  # Eraser
+		_set_tool_disabled_by_id(2, false)  # Smudge
+		_set_tool_disabled_by_id(3, false)  # Bucket
+		_set_tool_disabled_by_id(4, false)  # Insert Image
+		# Only switch back to Select tool if we were previously on a control layer
+		if was_control:
+			_select_tool_by_id(13)  # Select tool
 
 
 func _on_image_gen_window_close_requested() -> void:
@@ -2235,67 +2271,39 @@ func _on_resized() -> void:
 			margin_con.position = Vector2.ZERO
 			margin_con.anchors_preset = Control.PRESET_FULL_RECT
 
-var floating_windows_active: = false
+var floating_windows_active: = true  # Always use floating windows mode
 func response_layout_toggle() -> void:
-	if collapsed_by_user:
-		return
-	
-	if size.x <= 860:
-		floating_windows_active = true
-		if full_size_ai_container.get_child_count() > 0:
-			full_size_ai_container.remove_child(image_gen_panel_container)
-			image_gen_window.size = image_gen_panel_container.size
-			image_gen_window.add_child(image_gen_panel_container)
-			image_gen_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
-			prompt_button.show()
-		if full_size_layers_container.get_child_count() > 0:
-			full_size_layers_container.remove_child(layer_cards_panel_container)
-			layer_cards_popup_panel.size = layer_cards_panel_container.size
-			layer_cards_popup_panel.add_child(layer_cards_panel_container)
-			layer_cards_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
-			layer_cards_toggle_button.show()
-		dock_panel_container.hide()
-	else:
-		floating_windows_active = false
-		if image_gen_window.get_child_count() > 0 and !image_gen_window.visible:
-			image_gen_window.remove_child(image_gen_panel_container)
-			full_size_ai_container.add_child(image_gen_panel_container)
-			prompt_button.hide()
-		if layer_cards_popup_panel.get_child_count() > 0 and !layer_cards_popup_panel.visible:
-			layer_cards_popup_panel.remove_child(layer_cards_panel_container)
-			full_size_layers_container.add_child(layer_cards_panel_container)
-			send_action_button.hide()
-			layer_cards_toggle_button.hide()
-		dock_panel_container.show()
-		dock_split_container.split_offset = 250
+	# Always use popup/floating window mode for Layers and AI panels
+	# Buttons are always visible, clicking them opens popup windows
+
+	if full_size_ai_container.get_child_count() > 0:
+		full_size_ai_container.remove_child(image_gen_panel_container)
+		image_gen_window.size = image_gen_panel_container.size
+		image_gen_window.add_child(image_gen_panel_container)
+		image_gen_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	prompt_button.show()
+
+	if full_size_layers_container.get_child_count() > 0:
+		full_size_layers_container.remove_child(layer_cards_panel_container)
+		layer_cards_popup_panel.size = layer_cards_panel_container.size
+		layer_cards_popup_panel.add_child(layer_cards_panel_container)
+		layer_cards_panel_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer_cards_toggle_button.show()
+
+	dock_panel_container.hide()
 
 
 static var _edit_img_base_tooltip: = "Edit selected Image (edits the currently selected layer with the current prompt)"
 static var _mask_edit_base_tooltip: = "Send mask edit request (needs a mask layer and a regular layer to be selected)"
 func check_ai_buttons_toggle() -> void:
-	if !floating_windows_active:
-		if selected_layers.size() > 0:
-			edit_img_button.disabled = false
-			edit_img_button.tooltip_text = "%s (%s) " % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
-			if selected_mask_layers.size() > 0:
-				send_mask_edit_button.tooltip_text = "%s (%s, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name, selected_mask_layers[0].name]
-				send_mask_edit_button.disabled = false
-			else:
-				send_mask_edit_button.tooltip_text = "%s (%s, no mask selected)" % [_mask_edit_base_tooltip.split("(")[0], selected_layers[0].name]
-				send_mask_edit_button.disabled = true
-		else:
-			edit_img_button.disabled = true
-			edit_img_button.tooltip_text = "No Layer Selected"
-			if selected_mask_layers.size() > 0:
-				send_mask_edit_button.tooltip_text = "%s (no layer selected, %s)" % [_mask_edit_base_tooltip.split("(")[0], selected_mask_layers[0].name]
+	# Always in floating windows mode - enable buttons based on connection status
+	if Core.connected:
+		edit_img_button.disabled = false
+		send_mask_edit_button.disabled = false
 	else:
-		if Core.connected:
-			edit_img_button.disabled = false
-			send_mask_edit_button.disabled = false
-		else:
-			edit_img_button.disabled = true
-			send_mask_edit_button.disabled = true
-		edit_img_button.tooltip_text = _edit_img_base_tooltip
+		edit_img_button.disabled = true
+		send_mask_edit_button.disabled = true
+	edit_img_button.tooltip_text = _edit_img_base_tooltip
 
 
 var draw_render_view: = false
@@ -2467,46 +2475,74 @@ func _on_fill_selection_color_changed(color: Color) -> void:
 
 #endregion
 
-func _on_get_texture_button_pressed() -> void:
+## Export region and exit the render view tool
+## Called automatically when user draws a valid selection rectangle
+func export_region_and_exit() -> void:
 	# Ensure the render view rectangle exists and has a valid size
-	if not render_view_control._rect.size.x > 0 or not render_view_control._rect.size.y > 0:
-		display_message("Error", "Render view rectangle is empty or invalid.")
+	var export_rect = render_view_control._rect
+	if not export_rect.size.x > 0 or not export_rect.size.y > 0:
+		display_message("Error", "Selection rectangle is empty or invalid.")
+		_exit_render_view_tool()
 		return
 
-	# Capture the image from the defined region
-	var image: Image = await compose_region_image(render_view_control._rect)
-	if not image.is_empty():
-		render_view_control._rect = Rect2() # Reset the rectangle
-		render_view_control.queue_redraw()
-		render_viewport_button.toggled.emit(false) # Untoggle the button
-		active_tool = null # Or go back to default tool (brush)
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
-		
-	var fd := FileDialog.new()
-	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-	fd.access = FileDialog.ACCESS_FILESYSTEM
-	fd.add_filter("*.png", "PNG Image")
-	add_child(fd)
-	fd.popup_centered(Vector2i(800, 600))
+	# Clear the selection rectangle immediately for better UX
+	_exit_render_view_tool()
 
-	var path = await fd.file_selected
-	fd.queue_free()
-
-	if path.is_empty():
+	# Show file dialog and wait for result
+	var selected_path = await _show_save_dialog()
+	if selected_path.is_empty():
 		return
 
 	# Ensure .png extension
-	if not path.ends_with(".png"):
-		path += ".png"
+	if not selected_path.ends_with(".png"):
+		selected_path += ".png"
+
+	# Capture the image from the saved rect
+	var image: Image = await compose_region_image(export_rect)
+	if image.is_empty():
+		display_message("Error", "Failed to capture region image.")
+		return
 
 	# Convert to RGBA8 if needed
 	if image.get_format() != Image.FORMAT_RGBA8:
 		image.convert(Image.FORMAT_RGBA8)
 
-	var error = image.save_png(path)
+	var error = image.save_png(selected_path)
 	if error != OK:
-		push_error("Failed to save layer: " + str(error))
+		push_error("Failed to save image: " + str(error))
+		display_message("Error", "Failed to save image to: " + selected_path)
+
+
+## Show save dialog and return selected path, or empty string if cancelled
+func _show_save_dialog() -> String:
+	var fd := FileDialog.new()
+	fd.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	fd.access = FileDialog.ACCESS_FILESYSTEM
+	fd.add_filter("*.png", "PNG Image")
+	fd.title = "Export Region as PNG"
+	add_child(fd)
+
+	var result: Array = []  # Use array to capture in closure (reference type)
+	fd.file_selected.connect(func(path: String): result.append(path))
+	fd.canceled.connect(func(): pass)
+
+	fd.popup_centered(Vector2i(800, 600))
+
+	# Wait for either signal to fire
+	while result.is_empty() and fd.visible:
+		await get_tree().process_frame
+
+	fd.queue_free()
+	return result[0] if result.size() > 0 else ""
+
+
+## Clean up and exit the render view tool, returning to default tool
+func _exit_render_view_tool() -> void:
+	render_view_control._rect = Rect2()
+	render_view_control.draw_render_view = false
+	render_view_control.queue_redraw()
+	active_tool = null
+	_select_tool_by_id(13)  # Select tool
 
 
 func compose_region_image(region: Rect2, show_dialog: = true) -> Image:
@@ -2615,21 +2651,11 @@ func _compose_final_image_worker_for_region(layer_data: Array[Dictionary], regio
 	return output_image
 
 
-func _on_render_viewport_button_toggled(toggled_on: bool) -> void:
-	if not toggled_on:
-		_tools_option_button.select(0)
-		_tools_option_button.item_selected.emit(0)
-		_tools_option_button.grab_focus()
-		render_view_control.draw_render_view = false
-		render_view_control.get_texture_button.hide()
-		render_view_control.queue_redraw()
-		render_viewport_button.hide()
-		return
-	
-	active_tool = render_view_tool 
-	render_viewport_button.release_focus()
+## Activate the export region tool (called from Editor.gd ExportAreaButton)
+func activate_export_region_tool() -> void:
+	active_tool = render_view_tool
 	render_view_control.draw_render_view = true
-	render_viewport_button.show()
+	render_view_control._rect = Rect2()
 	render_view_control.queue_redraw()
 
 #region Gen AI Prompt History
@@ -2748,34 +2774,12 @@ func _on_animation_frames_option_button_item_selected(index: int) -> void:
 	spritesheet_anim_is_active = spritesheet_settings_container.visible
 
 
-@export var MIN_DOCK_PANEL_WIDTH: = 500.0 # Define the minimum width for the docked panel in pixels before it collapses.
-var _is_dock_panel_collapsed_by_drag: bool = false # Tracks if the dock panel is currently collapsed due to user dragging.
-var _last_non_collapsed_split_offset: int = 0 # Stores the splitter's position before a drag-collapse, for restoration.
-var _drag_check_timer: Timer = null # Timer to check panel size after drag ends
 @onready var main_h_split_container: HSplitContainer = %MainHSplitContainer
 @onready var v: VBoxContainer = %v
 
-var collapsed_by_user: = false
-func _on_main_h_split_container_dragged(offset: int) -> void:
-	if floating_windows_active:
-		return
-	
-	var dock_panel_center: = dock_panel_container.get_global_rect().get_center().x - 100
-	
-	if get_global_mouse_position().x >= dock_panel_center and !_is_dock_panel_collapsed_by_drag:
-		
-		dock_split_container.hide()
-		_is_dock_panel_collapsed_by_drag = true
-		return
-	
-	var v_zone: = v.get_global_rect().end.x
-	
-	
-	if dock_panel_container.size.x > 100 and _is_dock_panel_collapsed_by_drag and (get_global_mouse_position().x <= v_zone - 10):
-		if dock_panel_container.size.x > 200:
-			dock_split_container.show()
-			_is_dock_panel_collapsed_by_drag = false
-		#return
+func _on_main_h_split_container_dragged(_offset: int) -> void:
+	# Dock panel dragging is disabled - always using floating windows mode
+	pass
 
 var dragging_split: = false
 func _on_main_h_split_container_drag_ended() -> void:
