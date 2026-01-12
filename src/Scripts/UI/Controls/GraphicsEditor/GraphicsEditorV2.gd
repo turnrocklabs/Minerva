@@ -50,6 +50,8 @@ signal selection_changed()
 @onready var _text_options_container: Control = %TextOptions
 @onready var _rectangle_options_container: Control = %RectangleOptions
 @onready var _ellipse_options_container: Control = %EllipseOptions
+@onready var _diagram_shape_options_container: Control = %DiagramShapeOptions
+@onready var _connector_options_container: Control = %ConnectorOptions
 @onready var selection_indicator_button: MenuButton = %SelectionIndicatorButton
 @onready var selection_mode_label: Label = %SelectionModeLabel
 
@@ -70,6 +72,8 @@ signal selection_changed()
 @onready var select_tool = %SelectTool  # SelectTool type - avoid circular ref
 @onready var rectangle_tool = %RectangleTool  # RectangleTool type - avoid circular ref
 @onready var ellipse_tool = %EllipseTool  # EllipseTool type - avoid circular ref
+@onready var diagram_shape_tool = %DiagramShapeTool  # DiagramShapeTool type - avoid circular ref
+@onready var connector_tool = %ConnectorTool  # ConnectorTool type - avoid circular ref
 
 
 @onready var tool_options_mapping: = {
@@ -85,6 +89,8 @@ signal selection_changed()
 	text_tool: _text_options_container,
 	rectangle_tool: _rectangle_options_container,
 	ellipse_tool: _ellipse_options_container,
+	diagram_shape_tool: _diagram_shape_options_container,
+	connector_tool: _connector_options_container,
 }
 
 @onready var image_gen_window: Window = %ImageGenWindow
@@ -1555,6 +1561,8 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		13: active_tool = select_tool; return
 		14: active_tool = rectangle_tool; return
 		15: active_tool = ellipse_tool; return
+		16: active_tool = diagram_shape_tool; return
+		17: active_tool = connector_tool; return
 		_: pass
 	
 

@@ -36,36 +36,94 @@ func serialize() -> Array:
 				if graphics_editor:
 					# Serialize layers in the correct order (from layers array)
 					for layer in graphics_editor.layers:
-						if layer and layer.image:
-							var layer_data = {
-								"name": layer.name,
-								"layer_img": Marshalls.raw_to_base64(layer.image.save_png_to_buffer()),
-								"position_x": layer.position.x,
-								"position_y": layer.position.y,
-								"size_x": layer.size.x,
-								"size_y": layer.size.y,
-								"rotation": layer.rotation,
-								"pivot_offset_x": layer.pivot_offset.x,
-								"pivot_offset_y": layer.pivot_offset.y,
-								"visible": layer.visible,
-								"locked": layer.locked,
-								"type": layer.type,
-								"outline_visible": layer.outline_visible,
-								"outline_color_r": layer.outline_color.r,
-								"outline_color_g": layer.outline_color.g,
-								"outline_color_b": layer.outline_color.b,
-								"outline_color_a": layer.outline_color.a
-							}
-							
-							# Save base_image if it exists (for image layers)
-							if layer.base_image:
-								layer_data["base_img"] = Marshalls.raw_to_base64(layer.base_image.save_png_to_buffer())
-							
-							# Save speech bubble data if it exists
-							if layer.type == LayerV2.Type.SPEECH_BUBBLE and layer.speech_bubble:
-								layer_data["speech_bubble_type"] = layer.speech_bubble.type
-							
-							layers.append(layer_data)
+						if not layer:
+							continue
+
+						# Base layer data (common to all types)
+						var layer_data = {
+							"name": layer.name,
+							"position_x": layer.position.x,
+							"position_y": layer.position.y,
+							"size_x": layer.size.x,
+							"size_y": layer.size.y,
+							"rotation": layer.rotation,
+							"pivot_offset_x": layer.pivot_offset.x,
+							"pivot_offset_y": layer.pivot_offset.y,
+							"visible": layer.visible,
+							"locked": layer.locked,
+							"type": layer.type,
+							"outline_visible": layer.outline_visible,
+							"outline_color_r": layer.outline_color.r,
+							"outline_color_g": layer.outline_color.g,
+							"outline_color_b": layer.outline_color.b,
+							"outline_color_a": layer.outline_color.a
+						}
+
+						# Save image data if layer has an image
+						if layer.image:
+							layer_data["layer_img"] = Marshalls.raw_to_base64(layer.image.save_png_to_buffer())
+
+						# Save base_image if it exists (for image layers)
+						if layer.base_image:
+							layer_data["base_img"] = Marshalls.raw_to_base64(layer.base_image.save_png_to_buffer())
+
+						# Save speech bubble data if it exists
+						if layer.type == LayerV2.Type.SPEECH_BUBBLE and layer.speech_bubble:
+							layer_data["speech_bubble_type"] = layer.speech_bubble.type
+
+						# Save DIAGRAM_SHAPE specific data
+						if layer.type == LayerV2.Type.DIAGRAM_SHAPE:
+							layer_data["diagram_shape_type"] = layer.diagram_shape_type
+							layer_data["diagram_stroke_color_r"] = layer.diagram_stroke_color.r
+							layer_data["diagram_stroke_color_g"] = layer.diagram_stroke_color.g
+							layer_data["diagram_stroke_color_b"] = layer.diagram_stroke_color.b
+							layer_data["diagram_stroke_color_a"] = layer.diagram_stroke_color.a
+							layer_data["diagram_fill_color_r"] = layer.diagram_fill_color.r
+							layer_data["diagram_fill_color_g"] = layer.diagram_fill_color.g
+							layer_data["diagram_fill_color_b"] = layer.diagram_fill_color.b
+							layer_data["diagram_fill_color_a"] = layer.diagram_fill_color.a
+							layer_data["diagram_stroke_width"] = layer.diagram_stroke_width
+							layer_data["diagram_text_content"] = layer.diagram_text_content
+							layer_data["diagram_text_font_size"] = layer.diagram_text_font_size
+							layer_data["diagram_text_color_r"] = layer.diagram_text_color.r
+							layer_data["diagram_text_color_g"] = layer.diagram_text_color.g
+							layer_data["diagram_text_color_b"] = layer.diagram_text_color.b
+							layer_data["diagram_text_color_a"] = layer.diagram_text_color.a
+							layer_data["diagram_text_bold"] = layer.diagram_text_bold
+							layer_data["diagram_text_italic"] = layer.diagram_text_italic
+							layer_data["diagram_text_underline"] = layer.diagram_text_underline
+							layer_data["diagram_text_strikethrough"] = layer.diagram_text_strikethrough
+
+						# Save DIAGRAM_CONNECTOR specific data
+						if layer.type == LayerV2.Type.DIAGRAM_CONNECTOR:
+							# Save source/target by layer name (will resolve during load)
+							var source = layer._source_layer_ref.get_ref() if layer._source_layer_ref else null
+							var target = layer._target_layer_ref.get_ref() if layer._target_layer_ref else null
+							layer_data["connector_source_layer_name"] = source.name if source else ""
+							layer_data["connector_target_layer_name"] = target.name if target else ""
+							layer_data["connector_source_anchor"] = layer.connector_source_anchor
+							layer_data["connector_target_anchor"] = layer.connector_target_anchor
+							layer_data["connector_line_color_r"] = layer.connector_line_color.r
+							layer_data["connector_line_color_g"] = layer.connector_line_color.g
+							layer_data["connector_line_color_b"] = layer.connector_line_color.b
+							layer_data["connector_line_color_a"] = layer.connector_line_color.a
+							layer_data["connector_line_width"] = layer.connector_line_width
+							layer_data["connector_arrow_head"] = layer.connector_arrow_head
+							layer_data["connector_routing"] = layer.connector_routing
+							# Manual waypoints
+							var waypoints_data = []
+							for wp in layer.connector_manual_waypoints:
+								waypoints_data.append({"x": wp.x, "y": wp.y})
+							layer_data["connector_manual_waypoints"] = waypoints_data
+							# Connector text properties
+							layer_data["connector_text_content"] = layer.connector_text_content
+							layer_data["connector_text_font_size"] = layer.connector_text_font_size
+							layer_data["connector_text_color_r"] = layer.connector_text_color.r
+							layer_data["connector_text_color_g"] = layer.connector_text_color.g
+							layer_data["connector_text_color_b"] = layer.connector_text_color.b
+							layer_data["connector_text_color_a"] = layer.connector_text_color.a
+
+						layers.append(layer_data)
 					
 					# Also save canvas size and selected layers
 					content = {
@@ -150,14 +208,20 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				var selected_layer_names = content.get("selected_layer_names", [])
 				var layers_data = content.get("layers", [])
 				
+				# First pass: create all layers
+				var created_layers: Array[LayerV2] = []
+				var connector_data_list: Array[Dictionary] = []
+
 				for layer_data in layers_data:
 					var layer: LayerV2
-					
-					# Restore the image
-					var buffer = Marshalls.base64_to_raw(layer_data.get("layer_img"))
-					var image = Image.new()
-					image.load_png_from_buffer(buffer)
-					
+
+					# Restore the image if it exists (raster layers)
+					var image: Image = null
+					if layer_data.has("layer_img"):
+						var buffer = Marshalls.base64_to_raw(layer_data.get("layer_img"))
+						image = Image.new()
+						image.load_png_from_buffer(buffer)
+
 					# Create layer based on type
 					var layer_type = layer_data.get("type", LayerV2.Type.DRAWING)
 					match layer_type:
@@ -169,27 +233,127 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 								var base_image = Image.new()
 								base_image.load_png_from_buffer(base_buffer)
 								layer.base_image = base_image
-								
+
 						LayerV2.Type.SPEECH_BUBBLE:
 							var bubble_type = layer_data.get("speech_bubble_type", CloudControl.Type.ELLIPSE)
 							layer = LayerV2.create_speech_bubble_layer(layer_data.get("name", "Speech Bubble"), bubble_type)
-							
-						_: # Default to DRAWING
-							layer = LayerV2.create_drawing_layer(
-								layer_data.get("name", "Layer"),
-								Vector2i(image.get_width(), image.get_height())
+
+						LayerV2.Type.DIAGRAM_SHAPE:
+							var shape_type = layer_data.get("diagram_shape_type", LayerV2.DiagramShapeType.RECTANGLE)
+							var stroke_color = Color(
+								layer_data.get("diagram_stroke_color_r", 0.0),
+								layer_data.get("diagram_stroke_color_g", 0.0),
+								layer_data.get("diagram_stroke_color_b", 0.0),
+								layer_data.get("diagram_stroke_color_a", 1.0)
 							)
-							layer.image = image
-					
+							var fill_color = Color(
+								layer_data.get("diagram_fill_color_r", 0.0),
+								layer_data.get("diagram_fill_color_g", 0.0),
+								layer_data.get("diagram_fill_color_b", 0.0),
+								layer_data.get("diagram_fill_color_a", 0.0)
+							)
+							var stroke_width = layer_data.get("diagram_stroke_width", 2)
+							var layer_size = Vector2(
+								layer_data.get("size_x", 100),
+								layer_data.get("size_y", 100)
+							)
+							layer = LayerV2.create_diagram_shape(
+								layer_data.get("name", "Diagram Shape"),
+								shape_type,
+								layer_size,
+								stroke_color,
+								fill_color,
+								stroke_width
+							)
+							# Restore text properties
+							layer.diagram_text_content = layer_data.get("diagram_text_content", "")
+							layer.diagram_text_font_size = layer_data.get("diagram_text_font_size", 14)
+							layer.diagram_text_color = Color(
+								layer_data.get("diagram_text_color_r", 0.0),
+								layer_data.get("diagram_text_color_g", 0.0),
+								layer_data.get("diagram_text_color_b", 0.0),
+								layer_data.get("diagram_text_color_a", 1.0)
+							)
+							layer.diagram_text_bold = layer_data.get("diagram_text_bold", false)
+							layer.diagram_text_italic = layer_data.get("diagram_text_italic", false)
+							layer.diagram_text_underline = layer_data.get("diagram_text_underline", false)
+							layer.diagram_text_strikethrough = layer_data.get("diagram_text_strikethrough", false)
+
+						LayerV2.Type.DIAGRAM_CONNECTOR:
+							# Create connector with placeholder - will resolve references after all layers are created
+							var line_color = Color(
+								layer_data.get("connector_line_color_r", 0.53),
+								layer_data.get("connector_line_color_g", 0.81),
+								layer_data.get("connector_line_color_b", 0.92),
+								layer_data.get("connector_line_color_a", 1.0)
+							)
+							var line_width = layer_data.get("connector_line_width", 2)
+							var arrow_head = layer_data.get("connector_arrow_head", LayerV2.ArrowHeadType.SINGLE)
+
+							# Create a placeholder connector layer (will set source/target after)
+							layer = LayerV2.new()
+							layer.name = layer_data.get("name", "Connector")
+							layer.type = LayerV2.Type.DIAGRAM_CONNECTOR
+							layer.connector_line_color = line_color
+							layer.connector_line_width = line_width
+							layer.connector_arrow_head = arrow_head
+							layer.connector_source_anchor = layer_data.get("connector_source_anchor", LayerV2.AnchorPoint.RIGHT)
+							layer.connector_target_anchor = layer_data.get("connector_target_anchor", LayerV2.AnchorPoint.LEFT)
+							layer.connector_routing = layer_data.get("connector_routing", LayerV2.ConnectorRouting.ORTHOGONAL)
+							# Restore manual waypoints
+							var waypoints_data = layer_data.get("connector_manual_waypoints", [])
+							var manual_waypoints: PackedVector2Array = []
+							for wp_data in waypoints_data:
+								manual_waypoints.append(Vector2(wp_data.get("x", 0), wp_data.get("y", 0)))
+							layer.connector_manual_waypoints = manual_waypoints
+							# Restore connector text properties
+							layer.connector_text_content = layer_data.get("connector_text_content", "")
+							layer.connector_text_font_size = layer_data.get("connector_text_font_size", 12)
+							layer.connector_text_color = Color(
+								layer_data.get("connector_text_color_r", 0.0),
+								layer_data.get("connector_text_color_g", 0.0),
+								layer_data.get("connector_text_color_b", 0.0),
+								layer_data.get("connector_text_color_a", 1.0)
+							)
+							layer.connector_text_font = ThemeDB.get_fallback_font()
+
+							# Store connector data for second pass
+							connector_data_list.append({
+								"layer": layer,
+								"source_name": layer_data.get("connector_source_layer_name", ""),
+								"target_name": layer_data.get("connector_target_layer_name", "")
+							})
+
+						_: # Default to DRAWING
+							if image:
+								layer = LayerV2.create_drawing_layer(
+									layer_data.get("name", "Layer"),
+									Vector2i(image.get_width(), image.get_height())
+								)
+								layer.image = image
+							else:
+								# Fallback for drawing layers without image
+								layer = LayerV2.create_drawing_layer(
+									layer_data.get("name", "Layer"),
+									Vector2i(int(layer_data.get("size_x", 100)), int(layer_data.get("size_y", 100)))
+								)
+
 					# Restore all layer properties
 					layer.position = Vector2(
 						layer_data.get("position_x", 0),
 						layer_data.get("position_y", 0)
 					)
-					layer.size = Vector2(
-						layer_data.get("size_x", image.get_width()),
-						layer_data.get("size_y", image.get_height())
-					)
+					# Size for vector layers was already set during creation; for raster layers use image size
+					if image and not (layer_type in [LayerV2.Type.DIAGRAM_SHAPE, LayerV2.Type.DIAGRAM_CONNECTOR]):
+						layer.size = Vector2(
+							layer_data.get("size_x", image.get_width()),
+							layer_data.get("size_y", image.get_height())
+						)
+					else:
+						layer.size = Vector2(
+							layer_data.get("size_x", layer.size.x),
+							layer_data.get("size_y", layer.size.y)
+						)
 					layer.rotation = layer_data.get("rotation", 0.0)
 					layer.pivot_offset = Vector2(
 						layer_data.get("pivot_offset_x", layer.size.x / 2),
@@ -204,10 +368,34 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 						layer_data.get("outline_color_b", 0.0),
 						layer_data.get("outline_color_a", 1.0)
 					)
-					
+
+					created_layers.append(layer)
+
 					# Add layer to graphics editor (this will create the layer card automatically)
 					var should_select = selected_layer_names.has(layer.name)
 					graphics_editor.add_layer.call_deferred(layer, should_select)
+
+				# Second pass: resolve connector references by layer name
+				await SingletonObject.editor_container.get_tree().process_frame
+				for conn_data in connector_data_list:
+					var connector_layer: LayerV2 = conn_data["layer"]
+					var source_name: String = conn_data["source_name"]
+					var target_name: String = conn_data["target_name"]
+
+					# Find source and target layers by name
+					for created_layer in created_layers:
+						if created_layer.name == source_name:
+							connector_layer._source_layer_ref = weakref(created_layer)
+							connector_layer.connector_source_layer_id = created_layer.get_instance_id()
+							# Connect to shape_moved signal
+							if not created_layer.shape_moved.is_connected(connector_layer._on_connected_shape_moved):
+								created_layer.shape_moved.connect(connector_layer._on_connected_shape_moved)
+						if created_layer.name == target_name:
+							connector_layer._target_layer_ref = weakref(created_layer)
+							connector_layer.connector_target_layer_id = created_layer.get_instance_id()
+							# Connect to shape_moved signal
+							if not created_layer.shape_moved.is_connected(connector_layer._on_connected_shape_moved):
+								created_layer.shape_moved.connect(connector_layer._on_connected_shape_moved)
 		
 		editor_instances.append(editor_inst)
 	
