@@ -31,6 +31,11 @@ enum ArrowHeadType {
 	DOUBLE,
 }
 
+enum ConnectorRouting {
+	STRAIGHT,
+	ORTHOGONAL,
+}
+
 enum ControlType {
 	POSE,
 	CANNY,
@@ -158,6 +163,8 @@ var connector_target_anchor: AnchorPoint = AnchorPoint.LEFT
 var connector_line_color: Color = Color(0.53, 0.81, 0.92)  # Light blue
 var connector_line_width: int = 2
 var connector_arrow_head: ArrowHeadType = ArrowHeadType.SINGLE
+var connector_routing: ConnectorRouting = ConnectorRouting.ORTHOGONAL  # Default to orthogonal
+var connector_manual_waypoints: PackedVector2Array = []  # User-adjusted waypoints (empty = auto)
 var _source_layer_ref: WeakRef = null
 var _target_layer_ref: WeakRef = null
 # Connector text properties
@@ -593,6 +600,142 @@ func get_anchor_global_position(anchor: AnchorPoint) -> Vector2:
 	return get_global_transform() * get_anchor_position(anchor)
 
 
+## Get the outward-facing direction of an anchor point
+static func get_anchor_direction(anchor: AnchorPoint) -> Vector2:
+	match anchor:
+		AnchorPoint.TOP:
+			return Vector2(0, -1)
+		AnchorPoint.RIGHT:
+			return Vector2(1, 0)
+		AnchorPoint.BOTTOM:
+			return Vector2(0, 1)
+		AnchorPoint.LEFT:
+			return Vector2(-1, 0)
+	return Vector2.ZERO
+
+
+## Calculate orthogonal path waypoints between source and target anchors
+func _calculate_orthogonal_path(source_pos: Vector2, source_anchor: AnchorPoint,
+								target_pos: Vector2, target_anchor: AnchorPoint) -> PackedVector2Array:
+	var path: PackedVector2Array = []
+
+	# Round positions to avoid floating point precision issues
+	var src = Vector2(round(source_pos.x), round(source_pos.y))
+	var tgt = Vector2(round(target_pos.x), round(target_pos.y))
+
+	path.append(src)
+
+	var source_dir = get_anchor_direction(source_anchor)
+	var target_dir = get_anchor_direction(target_anchor)
+
+	# Minimum offset from anchor before turning
+	var offset = 20.0
+
+	# Extend from source in its facing direction
+	var source_ext = Vector2(round(src.x + source_dir.x * offset), round(src.y + source_dir.y * offset))
+	# Extend from target in its facing direction (we approach from opposite)
+	var target_ext = Vector2(round(tgt.x + target_dir.x * offset), round(tgt.y + target_dir.y * offset))
+
+	# Determine routing based on anchor directions
+	var source_horizontal = source_anchor in [AnchorPoint.LEFT, AnchorPoint.RIGHT]
+	var target_horizontal = target_anchor in [AnchorPoint.LEFT, AnchorPoint.RIGHT]
+
+	if source_horizontal and target_horizontal:
+		# Both horizontal: route via vertical middle segment
+		var mid_x = round((source_ext.x + target_ext.x) / 2)
+		path.append(Vector2(source_ext.x, src.y))
+		path.append(Vector2(mid_x, src.y))
+		path.append(Vector2(mid_x, tgt.y))
+		path.append(Vector2(target_ext.x, tgt.y))
+	elif not source_horizontal and not target_horizontal:
+		# Both vertical: route via horizontal middle segment
+		var mid_y = round((source_ext.y + target_ext.y) / 2)
+		path.append(Vector2(src.x, source_ext.y))
+		path.append(Vector2(src.x, mid_y))
+		path.append(Vector2(tgt.x, mid_y))
+		path.append(Vector2(tgt.x, target_ext.y))
+	elif source_horizontal:
+		# Source horizontal, target vertical: L-shape or Z-shape
+		# Go horizontal from source, then vertical to target
+		path.append(source_ext)
+		if _needs_extra_segment(source_ext, target_ext, source_dir, target_dir):
+			# Z-shape: need intermediate point
+			path.append(Vector2(source_ext.x, target_ext.y))
+		else:
+			# L-shape: direct corner
+			path.append(Vector2(source_ext.x, tgt.y))
+		path.append(target_ext)
+	else:
+		# Source vertical, target horizontal: L-shape or Z-shape
+		# Go vertical from source, then horizontal to target
+		path.append(source_ext)
+		if _needs_extra_segment(source_ext, target_ext, source_dir, target_dir):
+			# Z-shape: need intermediate point
+			path.append(Vector2(target_ext.x, source_ext.y))
+		else:
+			# L-shape: direct corner
+			path.append(Vector2(tgt.x, source_ext.y))
+		path.append(target_ext)
+
+	path.append(tgt)
+
+	# Simplify path by removing collinear and duplicate points
+	return _simplify_path(path)
+
+
+## Check if we need an extra segment to avoid backtracking
+func _needs_extra_segment(source_ext: Vector2, target_ext: Vector2,
+						   source_dir: Vector2, target_dir: Vector2) -> bool:
+	# Check if direct L-shape would require backtracking
+	var delta = target_ext - source_ext
+	var source_progress = delta.dot(source_dir)
+	var target_progress = -delta.dot(target_dir)
+	return source_progress < 0 or target_progress < 0
+
+
+## Remove collinear and duplicate points from path
+func _simplify_path(path: PackedVector2Array) -> PackedVector2Array:
+	if path.size() <= 2:
+		return path
+
+	var simplified: PackedVector2Array = []
+	simplified.append(path[0])
+
+	for i in range(1, path.size() - 1):
+		var prev = simplified[simplified.size() - 1]  # Use last simplified point
+		var curr = path[i]
+		var next = path[i + 1]
+
+		# Skip if current point is too close to previous (duplicate/near-duplicate)
+		if curr.distance_to(prev) < 1.0:
+			continue
+
+		# Skip if current point is too close to next
+		if curr.distance_to(next) < 1.0:
+			continue
+
+		# Calculate directions (avoid NaN from zero-length vectors)
+		var vec1 = curr - prev
+		var vec2 = next - curr
+
+		if vec1.length() < 0.001 or vec2.length() < 0.001:
+			continue  # Skip degenerate segments
+
+		var dir1 = vec1.normalized()
+		var dir2 = vec2.normalized()
+
+		# If directions differ significantly, keep the point (it's a corner)
+		if dir1.distance_to(dir2) > 0.01:
+			simplified.append(curr)
+
+	# Add last point if it's not a duplicate
+	var last_point = path[path.size() - 1]
+	if simplified.size() == 0 or last_point.distance_to(simplified[simplified.size() - 1]) >= 1.0:
+		simplified.append(last_point)
+
+	return simplified
+
+
 ## Draw anchor points (for connector attachment)
 func _draw_anchor_points() -> void:
 	var anchor_radius = 6.0
@@ -621,18 +764,149 @@ func _draw_diagram_connector() -> void:
 	var source_local = source_pos - position
 	var target_local = target_pos - position
 
-	# Draw line
-	draw_line(source_local, target_local, connector_line_color, connector_line_width)
+	# Get the path to draw (manual waypoints or auto-calculated)
+	var path = get_connector_path()
 
-	# Draw arrow head at target
-	if connector_arrow_head == ArrowHeadType.SINGLE or connector_arrow_head == ArrowHeadType.DOUBLE:
-		_draw_arrow_head(target_local, source_local)
-	if connector_arrow_head == ArrowHeadType.DOUBLE:
-		_draw_arrow_head(source_local, target_local)
+	# Convert path to local space
+	var local_path: PackedVector2Array = []
+	for point in path:
+		local_path.append(point - position)
 
-	# Draw text at midpoint
-	if not connector_text_content.is_empty() and connector_text_font:
-		_draw_connector_text(source_local, target_local)
+	if local_path.size() >= 2:
+		# Draw polyline
+		draw_polyline(local_path, connector_line_color, connector_line_width)
+
+		# Draw arrow head at target (using last segment direction)
+		if connector_arrow_head == ArrowHeadType.SINGLE or connector_arrow_head == ArrowHeadType.DOUBLE:
+			var last_idx = local_path.size() - 1
+			_draw_arrow_head(local_path[last_idx], local_path[last_idx - 1])
+		if connector_arrow_head == ArrowHeadType.DOUBLE:
+			_draw_arrow_head(local_path[0], local_path[1])
+
+		# Draw text at path midpoint
+		if not connector_text_content.is_empty() and connector_text_font:
+			var mid_point = _get_path_midpoint(local_path)
+			_draw_connector_text_at(mid_point)
+
+		# Draw waypoint handles when selected
+		if transform_rect_visible:
+			_draw_waypoint_handles(local_path)
+	elif connector_routing == ConnectorRouting.STRAIGHT or local_path.size() < 2:
+		# Fallback to straight line
+		draw_line(source_local, target_local, connector_line_color, connector_line_width)
+
+		if connector_arrow_head == ArrowHeadType.SINGLE or connector_arrow_head == ArrowHeadType.DOUBLE:
+			_draw_arrow_head(target_local, source_local)
+		if connector_arrow_head == ArrowHeadType.DOUBLE:
+			_draw_arrow_head(source_local, target_local)
+
+		if not connector_text_content.is_empty() and connector_text_font:
+			_draw_connector_text(source_local, target_local)
+
+
+## Get the connector path (always auto-calculated based on anchors)
+func get_connector_path() -> PackedVector2Array:
+	var source = _source_layer_ref.get_ref() if _source_layer_ref else null
+	var target = _target_layer_ref.get_ref() if _target_layer_ref else null
+
+	if not source or not target:
+		return PackedVector2Array()
+
+	var source_pos = source.position + source.get_anchor_position(connector_source_anchor)
+	var target_pos = target.position + target.get_anchor_position(connector_target_anchor)
+
+	# If manual waypoints exist, use them (source + waypoints + target)
+	if connector_manual_waypoints.size() > 0:
+		var path: PackedVector2Array = []
+		path.append(source_pos)
+		for wp in connector_manual_waypoints:
+			path.append(wp)
+		path.append(target_pos)
+		return path
+
+	# Auto-calculate path based on routing mode
+	if connector_routing == ConnectorRouting.ORTHOGONAL:
+		return _calculate_orthogonal_path(source_pos, connector_source_anchor,
+										   target_pos, connector_target_anchor)
+	else:
+		var path: PackedVector2Array = []
+		path.append(source_pos)
+		path.append(target_pos)
+		return path
+
+
+## Draw handles for connector: blue endpoints and orange segment midpoints
+func _draw_waypoint_handles(local_path: PackedVector2Array) -> void:
+	var handle_radius = 6.0
+	var handle_outline = Color.WHITE
+	var endpoint_color = Color.DODGER_BLUE
+	var segment_color = Color.ORANGE
+
+	if local_path.size() < 2:
+		return
+
+	# Draw orange handles at segment midpoints (visual feedback for bends)
+	for i in range(local_path.size() - 1):
+		var start = local_path[i]
+		var end = local_path[i + 1]
+		var midpoint = (start + end) / 2
+		draw_circle(midpoint, handle_radius + 1, handle_outline)
+		draw_circle(midpoint, handle_radius, segment_color)
+
+	# Draw blue endpoint handles (source and target) for reconnection
+	draw_circle(local_path[0], handle_radius + 1, handle_outline)
+	draw_circle(local_path[0], handle_radius, endpoint_color)
+	draw_circle(local_path[local_path.size() - 1], handle_radius + 1, handle_outline)
+	draw_circle(local_path[local_path.size() - 1], handle_radius, endpoint_color)
+
+
+## Get the midpoint along a path (by total length)
+func _get_path_midpoint(path: PackedVector2Array) -> Vector2:
+	if path.size() < 2:
+		return path[0] if path.size() > 0 else Vector2.ZERO
+
+	# Calculate total path length
+	var total_length = 0.0
+	for i in range(1, path.size()):
+		total_length += path[i].distance_to(path[i - 1])
+
+	# Find point at half the total length
+	var target_length = total_length / 2
+	var current_length = 0.0
+
+	for i in range(1, path.size()):
+		var segment_length = path[i].distance_to(path[i - 1])
+		if current_length + segment_length >= target_length:
+			# Midpoint is on this segment
+			var t = (target_length - current_length) / segment_length
+			return path[i - 1].lerp(path[i], t)
+		current_length += segment_length
+
+	return path[path.size() - 1]
+
+
+## Draw connector text at a specific position
+func _draw_connector_text_at(midpoint: Vector2) -> void:
+	var text_size = connector_text_font.get_string_size(
+		connector_text_content, HORIZONTAL_ALIGNMENT_CENTER, -1, connector_text_font_size
+	)
+
+	# Draw background for readability
+	var padding = Vector2(4, 2)
+	var bg_rect = Rect2(
+		midpoint - text_size / 2 - padding,
+		text_size + padding * 2
+	)
+	draw_rect(bg_rect, Color(1, 1, 1, 0.85))
+
+	# Position text centered at midpoint
+	var text_pos = Vector2(
+		midpoint.x - text_size.x / 2,
+		midpoint.y + connector_text_font.get_ascent(connector_text_font_size) / 2
+	)
+
+	draw_string(connector_text_font, text_pos, connector_text_content,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, connector_text_font_size, connector_text_color)
 
 
 func _draw_arrow_head(tip: Vector2, from: Vector2) -> void:
@@ -684,26 +958,34 @@ func _on_connected_shape_moved(_layer: LayerV2) -> void:
 
 ## Update connector layer bounds to cover the line between shapes
 func _update_connector_bounds() -> void:
-	var source = _source_layer_ref.get_ref() if _source_layer_ref else null
-	var target = _target_layer_ref.get_ref() if _target_layer_ref else null
+	var path = get_connector_path()
 
-	if not source or not target:
+	if path.size() == 0:
 		return
 
-	# Get anchor positions in layers_container local space
-	var source_pos = source.position + source.get_anchor_position(connector_source_anchor)
-	var target_pos = target.position + target.get_anchor_position(connector_target_anchor)
-
-	# Calculate bounding box with some padding for arrow heads
+	var min_pos: Vector2 = path[0]
+	var max_pos: Vector2 = path[0]
 	var padding = 20.0
-	var min_pos = Vector2(min(source_pos.x, target_pos.x), min(source_pos.y, target_pos.y)) - Vector2(padding, padding)
-	var max_pos = Vector2(max(source_pos.x, target_pos.x), max(source_pos.y, target_pos.y)) + Vector2(padding, padding)
+
+	# Calculate bounds from full path (works for manual waypoints, orthogonal, or straight)
+	for point in path:
+		min_pos.x = min(min_pos.x, point.x)
+		min_pos.y = min(min_pos.y, point.y)
+		max_pos.x = max(max_pos.x, point.x)
+		max_pos.y = max(max_pos.y, point.y)
+
+	# Apply padding for arrow heads and handles
+	min_pos -= Vector2(padding, padding)
+	max_pos += Vector2(padding, padding)
 
 	# Set position and size to cover the connector
 	position = min_pos
 	size = max_pos - min_pos
 	custom_minimum_size = size
 	pivot_offset = size / 2
+
+	# Force redraw with new bounds
+	queue_redraw()
 
 
 ## Handle transform notifications (for shape_moved signal)

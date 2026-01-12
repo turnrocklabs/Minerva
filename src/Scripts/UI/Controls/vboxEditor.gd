@@ -109,6 +109,12 @@ func serialize() -> Array:
 							layer_data["connector_line_color_a"] = layer.connector_line_color.a
 							layer_data["connector_line_width"] = layer.connector_line_width
 							layer_data["connector_arrow_head"] = layer.connector_arrow_head
+							layer_data["connector_routing"] = layer.connector_routing
+							# Manual waypoints
+							var waypoints_data = []
+							for wp in layer.connector_manual_waypoints:
+								waypoints_data.append({"x": wp.x, "y": wp.y})
+							layer_data["connector_manual_waypoints"] = waypoints_data
 							# Connector text properties
 							layer_data["connector_text_content"] = layer.connector_text_content
 							layer_data["connector_text_font_size"] = layer.connector_text_font_size
@@ -293,6 +299,13 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 							layer.connector_arrow_head = arrow_head
 							layer.connector_source_anchor = layer_data.get("connector_source_anchor", LayerV2.AnchorPoint.RIGHT)
 							layer.connector_target_anchor = layer_data.get("connector_target_anchor", LayerV2.AnchorPoint.LEFT)
+							layer.connector_routing = layer_data.get("connector_routing", LayerV2.ConnectorRouting.ORTHOGONAL)
+							# Restore manual waypoints
+							var waypoints_data = layer_data.get("connector_manual_waypoints", [])
+							var manual_waypoints: PackedVector2Array = []
+							for wp_data in waypoints_data:
+								manual_waypoints.append(Vector2(wp_data.get("x", 0), wp_data.get("y", 0)))
+							layer.connector_manual_waypoints = manual_waypoints
 							# Restore connector text properties
 							layer.connector_text_content = layer_data.get("connector_text_content", "")
 							layer.connector_text_font_size = layer_data.get("connector_text_font_size", 12)

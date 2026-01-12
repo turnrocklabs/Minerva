@@ -12,6 +12,7 @@ extends BaseTool
 var _is_drawing: bool = false
 var _source_layer: LayerV2 = null
 var _source_anchor: LayerV2.AnchorPoint
+var _source_anchor_explicit: bool = false  # True if user clicked directly on anchor
 var _preview_line_start: Vector2 = Vector2.ZERO
 var _preview_line_end: Vector2 = Vector2.ZERO
 var _preview_line: Line2D = null
@@ -62,27 +63,30 @@ func _handle_mouse_down(event: InputEventMouseButton, pos: Vector2) -> bool:
 	if _editing_connector != null:
 		_commit_connector_text()
 
-	# Check if clicking on an anchor point
+	# First, check if clicking directly on an anchor point (precise mode)
 	var hit = _get_anchor_at_position(pos)
 	if hit.layer:
 		_is_drawing = true
 		_source_layer = hit.layer
 		_source_anchor = hit.anchor
+		_source_anchor_explicit = true  # User explicitly chose this anchor
 		_preview_line_start = hit.layer.position + hit.layer.get_anchor_position(hit.anchor)
 		_preview_line_end = pos
-
-		# Create preview line
-		var line_color = line_color_picker.color if line_color_picker else Color(0.53, 0.81, 0.92)
-		var line_width = int(line_width_slider.value) if line_width_slider else 2
-
-		_preview_line = Line2D.new()
-		_preview_line.width = line_width
-		_preview_line.default_color = line_color
-		_preview_line.add_point(_preview_line_start)
-		_preview_line.add_point(_preview_line_end)
-		editor.layers_container.add_child(_preview_line)
-
+		_create_preview_line()
 		return true
+
+	# Fall back: clicking anywhere on a shape uses nearest anchor
+	var shape = _get_shape_at_position(pos)
+	if shape:
+		_is_drawing = true
+		_source_layer = shape
+		_source_anchor = _get_nearest_anchor(shape, pos)
+		_source_anchor_explicit = false  # Auto-selected, can be overridden
+		_preview_line_start = shape.position + shape.get_anchor_position(_source_anchor)
+		_preview_line_end = pos
+		_create_preview_line()
+		return true
+
 	return false
 
 
@@ -97,9 +101,24 @@ func _handle_mouse_up(pos: Vector2) -> bool:
 		_preview_line.queue_free()
 		_preview_line = null
 
-	# Check if releasing on an anchor point
+	# First, check if releasing on an anchor point (precise mode)
 	var hit = _get_anchor_at_position(pos)
+	var target_layer: LayerV2 = null
+	var target_anchor: LayerV2.AnchorPoint
+
 	if hit.layer and hit.layer != _source_layer:
+		target_layer = hit.layer
+		target_anchor = hit.anchor
+	else:
+		# Fall back: releasing on a shape uses best anchor facing the source
+		var shape = _get_shape_at_position(pos)
+		if shape and shape != _source_layer:
+			target_layer = shape
+			# Use the anchor that faces toward the source shape
+			var source_center = _source_layer.position + _source_layer.size / 2
+			target_anchor = _get_best_anchor_for_connection(shape, source_center)
+
+	if target_layer:
 		# Get connector settings
 		var arrow_type = LayerV2.ArrowHeadType.SINGLE
 		if arrow_type_option:
@@ -108,13 +127,18 @@ func _handle_mouse_up(pos: Vector2) -> bool:
 		var line_color = line_color_picker.color if line_color_picker else Color(0.53, 0.81, 0.92)
 		var line_width = int(line_width_slider.value) if line_width_slider else 2
 
+		# Only use smart routing for source if user didn't explicitly select an anchor
+		if not _source_anchor_explicit:
+			var target_center = target_layer.position + target_layer.size / 2
+			_source_anchor = _get_best_anchor_for_connection(_source_layer, target_center)
+
 		# Create connector
 		var connector = LayerV2.create_diagram_connector(
 			"Connector",
 			_source_layer,
 			_source_anchor,
-			hit.layer,
-			hit.anchor,
+			target_layer,
+			target_anchor,
 			line_color,
 			line_width,
 			arrow_type
@@ -126,12 +150,25 @@ func _handle_mouse_up(pos: Vector2) -> bool:
 		_finalize_connector.call_deferred(connector)
 
 	_source_layer = null
+	_source_anchor_explicit = false
 	return true
 
 
 func _finalize_connector(connector: LayerV2) -> void:
 	connector._update_connector_bounds()
 	connector.queue_redraw()
+
+
+func _create_preview_line() -> void:
+	var line_color = line_color_picker.color if line_color_picker else Color(0.53, 0.81, 0.92)
+	var line_width = int(line_width_slider.value) if line_width_slider else 2
+
+	_preview_line = Line2D.new()
+	_preview_line.width = line_width
+	_preview_line.default_color = line_color
+	_preview_line.add_point(_preview_line_start)
+	_preview_line.add_point(_preview_line_end)
+	editor.layers_container.add_child(_preview_line)
 
 
 func _get_anchor_at_position(pos: Vector2) -> Dictionary:
@@ -147,17 +184,66 @@ func _get_anchor_at_position(pos: Vector2) -> Dictionary:
 	return {"layer": null, "anchor": null}
 
 
+func _get_shape_at_position(pos: Vector2) -> LayerV2:
+	## Returns a DIAGRAM_SHAPE layer if pos is within its bounds
+	var layers = editor.layers_container.get_children()
+	for i in range(layers.size() - 1, -1, -1):
+		var layer = layers[i]
+		if layer is LayerV2 and layer.type == LayerV2.Type.DIAGRAM_SHAPE and layer.visible:
+			var local_pos = layer.get_transform().affine_inverse() * pos
+			if Rect2(Vector2.ZERO, layer.size).has_point(local_pos):
+				return layer
+	return null
+
+
+func _get_nearest_anchor(shape: LayerV2, from_point: Vector2) -> LayerV2.AnchorPoint:
+	## Returns the anchor point on shape that is closest to from_point
+	var anchors = [LayerV2.AnchorPoint.TOP, LayerV2.AnchorPoint.RIGHT,
+				   LayerV2.AnchorPoint.BOTTOM, LayerV2.AnchorPoint.LEFT]
+	var nearest_anchor = anchors[0]
+	var nearest_distance = INF
+
+	for anchor in anchors:
+		var anchor_pos = shape.position + shape.get_anchor_position(anchor)
+		var dist = from_point.distance_to(anchor_pos)
+		if dist < nearest_distance:
+			nearest_distance = dist
+			nearest_anchor = anchor
+
+	return nearest_anchor
+
+
+func _get_best_anchor_for_connection(shape: LayerV2, other_shape_center: Vector2) -> LayerV2.AnchorPoint:
+	## Returns the anchor that faces toward the other shape's center
+	## This creates more intuitive connector routing
+	var shape_center = shape.position + shape.size / 2
+	var direction = other_shape_center - shape_center
+
+	# Pick anchor based on which direction is dominant
+	if abs(direction.x) > abs(direction.y):
+		# Horizontal connection
+		return LayerV2.AnchorPoint.RIGHT if direction.x > 0 else LayerV2.AnchorPoint.LEFT
+	else:
+		# Vertical connection
+		return LayerV2.AnchorPoint.BOTTOM if direction.y > 0 else LayerV2.AnchorPoint.TOP
+
+
 func _update_cursor_for_anchor(pos: Vector2) -> void:
 	var hit = _get_anchor_at_position(pos)
 	if hit.layer:
 		editor.set_custom_cursor(null, Input.CURSOR_POINTING_HAND)
 	else:
-		# Check if over a connector
-		var connector = _get_connector_at_position(pos)
-		if connector:
+		# Check if over a shape (for nearest anchor mode)
+		var shape = _get_shape_at_position(pos)
+		if shape:
 			editor.set_custom_cursor(null, Input.CURSOR_POINTING_HAND)
 		else:
-			editor.set_custom_cursor(null, Input.CURSOR_CROSS)
+			# Check if over a connector
+			var connector = _get_connector_at_position(pos)
+			if connector:
+				editor.set_custom_cursor(null, Input.CURSOR_POINTING_HAND)
+			else:
+				editor.set_custom_cursor(null, Input.CURSOR_CROSS)
 
 
 func _get_connector_at_position(pos: Vector2) -> LayerV2:
@@ -166,16 +252,19 @@ func _get_connector_at_position(pos: Vector2) -> LayerV2:
 	for i in range(layers.size() - 1, -1, -1):
 		var layer = layers[i]
 		if layer is LayerV2 and layer.type == LayerV2.Type.DIAGRAM_CONNECTOR and layer.visible:
-			# Check if point is near the connector line
-			var source = layer._source_layer_ref.get_ref() if layer._source_layer_ref else null
-			var target = layer._target_layer_ref.get_ref() if layer._target_layer_ref else null
-			if source and target:
-				var source_pos = source.position + source.get_anchor_position(layer.connector_source_anchor)
-				var target_pos = target.position + target.get_anchor_position(layer.connector_target_anchor)
-				# Check distance from point to line segment
-				if _point_near_line(pos, source_pos, target_pos, 10.0):
-					return layer
+			# Check if point is near the connector path (works with manual waypoints too)
+			var path = layer.get_connector_path()
+			if path.size() >= 2 and _point_near_path(pos, path, 10.0):
+				return layer
 	return null
+
+
+func _point_near_path(point: Vector2, path: PackedVector2Array, threshold: float) -> bool:
+	# Check if point is near any segment of the path
+	for i in range(1, path.size()):
+		if _point_near_line(point, path[i - 1], path[i], threshold):
+			return true
+	return false
 
 
 func _point_near_line(point: Vector2, line_start: Vector2, line_end: Vector2, threshold: float) -> bool:
