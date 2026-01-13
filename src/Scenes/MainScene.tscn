@@ -354,12 +354,14 @@ item_18/id = 9
 title = "Help"
 size = Vector2i(245, 100)
 hide_on_checkable_item_selection = false
-item_count = 2
+item_count = 3
 item_0/text = "About"
 item_0/icon = ExtResource("10_nl4h3")
 item_0/id = 0
 item_1/text = "License Agreement ..."
 item_1/id = 1
+item_2/text = "MCP Server Setup..."
+item_2/id = 2
 
 [node name="Control" type="Control" parent="VBoxRoot/HBoxContainer"]
 custom_minimum_size = Vector2(15, 0)

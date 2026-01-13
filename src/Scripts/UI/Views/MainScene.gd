@@ -206,15 +206,120 @@ func _on_help_id_pressed(id: int) -> void:
 			var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
 			var about_scene_inst: AboutPopup = about_scene.instantiate()
 			call_deferred("add_child", about_scene_inst)
-		1:# id for the license Agreement 
+		1:# id for the license Agreement
 			if !ResourceLoader.has_cached("res://Scenes/windows/license_agreement_panel.tscn"):
 				ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
-			
+
 			var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
 			var license_scene_inst: LicensePopup = license_scene.instantiate()
 			call_deferred("add_child", license_scene_inst)
+		2:# id for MCP Server Setup
+			_show_mcp_setup_dialog()
 
 #endregion help menu
+
+
+func _show_mcp_setup_dialog() -> void:
+	var dialog := Window.new()
+	dialog.title = "MCP Server Setup"
+	dialog.size = Vector2i(600, 480)
+	dialog.transient = true
+	dialog.exclusive = true
+	dialog.wrap_controls = true
+	dialog.content_scale_factor = get_tree().root.content_scale_factor
+
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dialog.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 15)
+	margin.add_child(vbox)
+
+	var title_label := Label.new()
+	title_label.text = "Using Minerva as an MCP Server"
+	title_label.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(title_label)
+
+	var step1 := RichTextLabel.new()
+	step1.bbcode_enabled = true
+	step1.fit_content = true
+	step1.scroll_active = false
+	step1.text = """[b]1. Start the HTTP Server[/b]
+Go to [b]Tools → Minerva (Self) → Start HTTP Server[/b]
+The server runs on port 9315 by default."""
+	vbox.add_child(step1)
+
+	var step2_label := Label.new()
+	step2_label.text = "2. Configure Claude Code"
+	step2_label.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(step2_label)
+
+	var config_hint := Label.new()
+	config_hint.text = "Add to ~/.claude/claude_code_config.json:"
+	vbox.add_child(config_hint)
+
+	var config_text := TextEdit.new()
+	config_text.custom_minimum_size = Vector2(0, 80)
+	config_text.text = """{
+  "mcpServers": {
+    "minerva": {
+      "type": "http",
+      "url": "http://localhost:9315/mcp"
+    }
+  }
+}"""
+	config_text.editable = false
+	vbox.add_child(config_text)
+
+	var copy_btn := Button.new()
+	copy_btn.text = "Copy Config"
+	copy_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	copy_btn.pressed.connect(func():
+		DisplayServer.clipboard_set(config_text.text)
+		copy_btn.text = "Copied!"
+		get_tree().create_timer(1.5).timeout.connect(func(): copy_btn.text = "Copy Config")
+	)
+	vbox.add_child(copy_btn)
+
+	var step3_4 := RichTextLabel.new()
+	step3_4.bbcode_enabled = true
+	step3_4.fit_content = true
+	step3_4.scroll_active = false
+	step3_4.text = """[b]3. Available Tools (37+)[/b]
+• [b]Chat:[/b] Create chats, send messages, set system prompts
+• [b]Notes:[/b] Create/manage notes for LLM context
+• [b]Editors:[/b] Create text, graphics, and spreadsheet editors
+• [b]Graphics AI:[/b] Generate images with AI models
+• [b]Spreadsheets:[/b] Full spreadsheet with formulas and charts
+
+[b]4. Example Usage[/b]
+Claude Code can then use commands like:
+"Create a spreadsheet in Minerva with my budget data"
+"Start a chat with Gemini and ask about my notes\""""
+	vbox.add_child(step3_4)
+
+	var button_hbox := HBoxContainer.new()
+	button_hbox.alignment = BoxContainer.ALIGNMENT_END
+	vbox.add_child(button_hbox)
+
+	var close_btn := Button.new()
+	close_btn.text = "Close"
+	close_btn.pressed.connect(func(): dialog.queue_free())
+	button_hbox.add_child(close_btn)
+
+	dialog.close_requested.connect(func(): dialog.queue_free())
+
+	add_child(dialog)
+	dialog.popup_centered()
 
 
 func _on_save_open_editor_tabs_button_pressed() -> void:
