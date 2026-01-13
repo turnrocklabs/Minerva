@@ -328,6 +328,30 @@ var mcp_manager: Node = null
 ## Co-Browser client for browser automation
 var cobrowser_client: RefCounted = null
 
+## MCP HTTP Server settings - allows external agents to connect to Minerva
+var mcp_http_server_port: int = 9315:
+	set(value):
+		mcp_http_server_port = clampi(value, 1024, 65535)
+		save_to_config_file("MCPServer", "http_port", mcp_http_server_port)
+	get:
+		if mcp_http_server_port <= 0:
+			var saved = get_config_file_value("MCPServer", "http_port")
+			mcp_http_server_port = saved if saved != null and saved > 0 else 9315
+		return mcp_http_server_port
+
+var mcp_http_server_auto_start: bool = false:
+	set(value):
+		mcp_http_server_auto_start = value
+		save_to_config_file("MCPServer", "auto_start", value)
+	get:
+		var saved = get_config_file_value("MCPServer", "auto_start")
+		if saved != null:
+			if saved is bool:
+				mcp_http_server_auto_start = saved
+			else:
+				mcp_http_server_auto_start = str(saved).to_lower() == "true"
+		return mcp_http_server_auto_start
+
 ## Initialize MCP manager (call from main scene _ready)
 func initialize_mcp() -> void:
 	if mcp_manager:
@@ -335,6 +359,14 @@ func initialize_mcp() -> void:
 	mcp_manager = MCPManagerScript.new()
 	add_child(mcp_manager)
 	await mcp_manager.initialize()
+
+	# Auto-start HTTP server if configured
+	if mcp_http_server_auto_start:
+		var err = mcp_manager.start_http_server(mcp_http_server_port)
+		if err == OK:
+			print("[MCP] HTTP server auto-started on port %d" % mcp_http_server_port)
+		else:
+			push_warning("[MCP] Failed to auto-start HTTP server: %s" % error_string(err))
 
 ## Initialize Co-Browser client (call when needed)
 func get_cobrowser_client() -> RefCounted:
@@ -354,6 +386,24 @@ func get_mcp_manager() -> Node:
 		mcp_manager = MCPManagerScript.new()
 		add_child(mcp_manager)
 	return mcp_manager
+
+
+## Start the MCP HTTP server for external agent access
+func start_mcp_http_server(port: int = -1) -> Error:
+	if port < 0:
+		port = mcp_http_server_port
+	return get_mcp_manager().start_http_server(port)
+
+
+## Stop the MCP HTTP server
+func stop_mcp_http_server() -> void:
+	if mcp_manager:
+		mcp_manager.stop_http_server()
+
+
+## Check if the MCP HTTP server is running
+func is_mcp_http_server_running() -> bool:
+	return mcp_manager != null and mcp_manager.is_http_server_running()
 
 #endregion MCP
 

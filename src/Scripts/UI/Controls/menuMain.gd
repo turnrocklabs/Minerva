@@ -637,6 +637,20 @@ func _refresh_minerva_submenu() -> void:
 	var status_text = "✓ Connected" if connected else "✗ Disconnected"
 	minerva_submenu.add_item(status_text, 0)
 
+	minerva_submenu.add_separator()
+
+	# HTTP Server status and toggle
+	var http_running = SingletonObject.is_mcp_http_server_running()
+	if http_running:
+		var port = mcp.get_http_server_port() if mcp else 9315
+		minerva_submenu.add_item("● HTTP Server (port %d)" % port, -1)
+		minerva_submenu.set_item_disabled(minerva_submenu.get_item_count() - 1, true)
+		minerva_submenu.add_item("Stop HTTP Server", 10)
+	else:
+		minerva_submenu.add_item("○ HTTP Server Stopped", -1)
+		minerva_submenu.set_item_disabled(minerva_submenu.get_item_count() - 1, true)
+		minerva_submenu.add_item("Start HTTP Server", 11)
+
 
 ## Refresh all tool submenus
 func _refresh_all_tool_submenus() -> void:
@@ -677,8 +691,10 @@ func _on_codetools_submenu_pressed(id: int) -> void:
 
 ## Handle Minerva submenu item pressed
 func _on_minerva_submenu_pressed(id: int) -> void:
-	if id == 0:
-		_toggle_minerva_server()
+	match id:
+		0: _toggle_minerva_server()
+		10: _stop_minerva_http_server()
+		11: _start_minerva_http_server()
 
 
 ## Toggle Nudge connection
@@ -761,6 +777,33 @@ func _toggle_minerva_server() -> void:
 			"Minerva: Connected (%d tools)" % tool_count,
 			ToastNotification.Type.SUCCESS
 		)
+	_refresh_all_tool_submenus()
+
+
+## Start the Minerva HTTP server for external agents
+func _start_minerva_http_server() -> void:
+	var port = SingletonObject.mcp_http_server_port
+	var err = SingletonObject.start_mcp_http_server(port)
+	if err == OK:
+		SingletonObject.create_toast_notification(
+			"HTTP Server started on port %d" % port,
+			ToastNotification.Type.SUCCESS
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"Failed to start HTTP Server: %s" % error_string(err),
+			ToastNotification.Type.ERROR
+		)
+	_refresh_all_tool_submenus()
+
+
+## Stop the Minerva HTTP server
+func _stop_minerva_http_server() -> void:
+	SingletonObject.stop_mcp_http_server()
+	SingletonObject.create_toast_notification(
+		"HTTP Server stopped",
+		ToastNotification.Type.SUCCESS
+	)
 	_refresh_all_tool_submenus()
 
 

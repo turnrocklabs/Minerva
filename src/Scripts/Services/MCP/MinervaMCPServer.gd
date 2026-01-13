@@ -27,6 +27,14 @@ var _session_attempts_reset_time: int = 0
 
 func _init(manager = null) -> void:
 	mcp_manager = manager
+	# Always register tools so they're available for HTTP server
+	# (internal LLM access is gated by server_enabled flag)
+	if mcp_manager:
+		_register_chat_tools()
+		_register_notes_tools()
+		_register_editor_tools()
+		_register_spreadsheet_tools()
+		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
 ## Register all minerva_* tools in the MCPManager's tool_registry
@@ -35,12 +43,8 @@ func register_tools() -> void:
 		push_error("[MinervaMCPServer] No MCPManager reference")
 		return
 
-	_register_chat_tools()
-	_register_notes_tools()
-	_register_editor_tools()
-	_register_spreadsheet_tools()
-
-	print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
+	# Tools are already registered in _init, this is a no-op now
+	pass
 
 
 ## Get the count of registered minerva tools
@@ -78,21 +82,30 @@ func connect_server() -> void:
 	print("[MinervaMCPServer] Connected")
 
 
-## Disconnect (disable) the minerva server - unregisters tools
+## Disconnect (disable) the minerva server - disables internal LLM access
+## (tools remain registered for HTTP server access)
 func disconnect_server() -> void:
 	if not server_enabled:
 		return
 
-	unregister_tools()
 	server_enabled = false
 	print("[MinervaMCPServer] Disconnected")
 
 
-## Execute a minerva_* tool
+## Execute a minerva_* tool (requires internal connection to be enabled)
 func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 	if not server_enabled:
 		return {"error": "Minerva server not connected", "success": false}
+	return await _execute_tool_impl(tool_name, arguments)
 
+
+## Execute a minerva_* tool for HTTP/external access (does not require internal connection)
+func execute_tool_for_http(tool_name: String, arguments: Dictionary) -> Dictionary:
+	return await _execute_tool_impl(tool_name, arguments)
+
+
+## Internal tool execution implementation
+func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	print("[MinervaMCPServer] Executing: %s" % tool_name)
 
 	match tool_name:
