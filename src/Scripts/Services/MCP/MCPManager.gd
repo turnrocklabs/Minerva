@@ -7,6 +7,7 @@ const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefi
 const MCPServerConnectionScript := preload("res://Scripts/Services/MCP/MCPServerConnection.gd")
 const MCPConfigScript := preload("res://Scripts/Services/MCP/MCPConfig.gd")
 const MinervaMCPServerScript := preload("res://Scripts/Services/MCP/MinervaMCPServer.gd")
+const MinervaMCPHttpServerScript := preload("res://Scripts/Services/MCP/MinervaMCPHttpServer.gd")
 
 signal server_connected(server_name: String)
 signal server_disconnected(server_name: String)
@@ -25,6 +26,9 @@ var config = null
 
 ## Internal Minerva MCP server for controlling Minerva features
 var minerva_server: MinervaMCPServerScript = null
+
+## HTTP server for exposing Minerva tools to external agents
+var http_server: MinervaMCPHttpServerScript = null
 
 
 func _ready() -> void:
@@ -153,6 +157,31 @@ func disconnect_minerva_server() -> void:
 ## Check if the Minerva server is connected
 func is_minerva_connected() -> bool:
 	return minerva_server != null and minerva_server.server_enabled
+
+
+## Start the HTTP server to expose Minerva tools to external agents
+func start_http_server(port: int = 9315) -> Error:
+	if http_server == null:
+		http_server = MinervaMCPHttpServerScript.new()
+		add_child(http_server)
+
+	return http_server.start_server(port)
+
+
+## Stop the HTTP server
+func stop_http_server() -> void:
+	if http_server:
+		http_server.stop_server()
+
+
+## Check if the HTTP server is running
+func is_http_server_running() -> bool:
+	return http_server != null and http_server.is_running()
+
+
+## Get the port the HTTP server is running on
+func get_http_server_port() -> int:
+	return http_server.get_port() if http_server else 0
 
 
 ## Execute a tool by name
