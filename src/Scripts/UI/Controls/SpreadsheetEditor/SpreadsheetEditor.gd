@@ -122,7 +122,7 @@ func _build_toolbar() -> void:
 
 	# Bold button
 	var bold_btn := Button.new()
-	bold_btn.text = "B"
+	bold_btn.icon = preload("uid://cfu0tc5nslwku")
 	bold_btn.tooltip_text = "Bold (Ctrl+B)"
 	bold_btn.custom_minimum_size = Vector2(30, 28)
 	bold_btn.pressed.connect(_on_bold_pressed)
@@ -130,7 +130,7 @@ func _build_toolbar() -> void:
 
 	# Italic button
 	var italic_btn := Button.new()
-	italic_btn.text = "I"
+	italic_btn.icon = preload("uid://c2x042or4icqh")
 	italic_btn.tooltip_text = "Italic (Ctrl+I)"
 	italic_btn.custom_minimum_size = Vector2(30, 28)
 	italic_btn.pressed.connect(_on_italic_pressed)
@@ -168,7 +168,7 @@ func _build_toolbar() -> void:
 
 	# Header row button
 	var header_btn := Button.new()
-	header_btn.text = "Header"
+	header_btn.icon = preload("uid://cgsv4ad8o0ond")
 	header_btn.tooltip_text = "Toggle Header Row"
 	header_btn.pressed.connect(_on_header_row_pressed)
 	toolbar.add_child(header_btn)
@@ -179,7 +179,7 @@ func _build_toolbar() -> void:
 
 	# Freeze pane button with dropdown
 	var freeze_btn := MenuButton.new()
-	freeze_btn.text = "Freeze"
+	freeze_btn.icon = preload("uid://bq6kasw1po25h")
 	freeze_btn.tooltip_text = "Freeze Rows/Columns"
 	var freeze_popup := freeze_btn.get_popup()
 	freeze_popup.add_item("No Freeze", 0)
@@ -198,14 +198,14 @@ func _build_toolbar() -> void:
 
 	# Import button
 	var import_btn := Button.new()
-	import_btn.text = "Import"
+	import_btn.icon = preload("uid://ccei0hhyfti1b")
 	import_btn.tooltip_text = "Import from CSV/TSV/Excel"
 	import_btn.pressed.connect(_on_import_pressed)
 	toolbar.add_child(import_btn)
 
 	# Export button
 	var export_btn := Button.new()
-	export_btn.text = "Export"
+	export_btn.icon = preload("uid://c4xecwxribs4s")
 	export_btn.tooltip_text = "Export to CSV/TSV/Excel"
 	export_btn.pressed.connect(_on_export_pressed)
 	toolbar.add_child(export_btn)
@@ -216,7 +216,7 @@ func _build_toolbar() -> void:
 
 	# Chart button
 	var chart_btn := Button.new()
-	chart_btn.text = "Chart"
+	chart_btn.icon = preload("uid://b62g6uuuv3ad1")
 	chart_btn.tooltip_text = "Create Chart from Selection"
 	chart_btn.pressed.connect(_on_chart_pressed)
 	toolbar.add_child(chart_btn)
