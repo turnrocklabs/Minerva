@@ -95,6 +95,26 @@ func record_range_clear(start_row: int, start_col: int, end_row: int, end_col: i
 	_push_action(action)
 
 
+## Record a row deletion
+func record_row_delete(row: int, row_data: Dictionary, row_height: float) -> void:
+	var action := HistoryAction.new(ActionType.ROW_DELETE, {
+		"row": row,
+		"row_data": row_data,  # Dictionary of col -> cell data
+		"row_height": row_height,
+	})
+	_push_action(action)
+
+
+## Record a column deletion
+func record_column_delete(col: int, col_data: Dictionary, col_width: float) -> void:
+	var action := HistoryAction.new(ActionType.COLUMN_DELETE, {
+		"col": col,
+		"col_data": col_data,  # Dictionary of row -> cell data
+		"col_width": col_width,
+	})
+	_push_action(action)
+
+
 ## Record a row resize
 func record_row_resize(row: int, old_height: float, new_height: float) -> void:
 	var action := HistoryAction.new(ActionType.ROW_RESIZE, {

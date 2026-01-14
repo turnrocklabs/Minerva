@@ -416,6 +416,9 @@ func insert_row(at_row: int) -> void:
 		cells[new_key] = cells[key]
 		cells.erase(key)
 
+	# Adjust formula references in all cells
+	_adjust_formulas_for_row_insertion(at_row)
+
 	# Insert row metadata
 	var new_meta := RowMeta.new()
 	row_meta.insert(at_row, new_meta)
@@ -444,6 +447,9 @@ func insert_column(at_col: int) -> void:
 		var new_key := cell_key(pos.y, pos.x + 1)
 		cells[new_key] = cells[key]
 		cells.erase(key)
+
+	# Adjust formula references in all cells
+	_adjust_formulas_for_column_insertion(at_col)
 
 	# Insert column metadata
 	var new_meta := ColumnMeta.new()
@@ -479,6 +485,9 @@ func delete_row(row: int) -> void:
 		cells[new_key] = cells[key]
 		cells.erase(key)
 
+	# Adjust formula references in all remaining cells
+	_adjust_formulas_for_row_deletion(row)
+
 	# Remove row metadata
 	if row < row_meta.size():
 		row_meta.remove_at(row)
@@ -513,6 +522,9 @@ func delete_column(col: int) -> void:
 		cells[new_key] = cells[key]
 		cells.erase(key)
 
+	# Adjust formula references in all remaining cells
+	_adjust_formulas_for_column_deletion(col)
+
 	# Remove column metadata
 	if col < column_meta.size():
 		column_meta.remove_at(col)
@@ -520,6 +532,199 @@ func delete_column(col: int) -> void:
 
 	structure_changed.emit()
 	data_changed.emit()
+
+
+## Adjust all formula references when a row is deleted.
+## Row references > deleted_row are decremented by 1.
+## References to the deleted row become #REF!.
+func _adjust_formulas_for_row_deletion(deleted_row: int) -> void:
+	var regex := RegEx.new()
+	# Match cell references: optional sheet prefix, optional $ for col, column letters, optional $ for row, row number
+	regex.compile("((?:'[^']+?'!|[A-Za-z_][A-Za-z0-9_]*!)?)(\\$?)([A-Za-z]+)(\\$?)([0-9]+)")
+
+	for key in cells:
+		var cell = cells[key]
+		if not cell.has_formula():
+			continue
+
+		var formula: String = cell.formula
+		var new_formula := ""
+		var last_end := 0
+		var has_ref_error := false
+
+		for match_result in regex.search_all(formula):
+			# Add text before this match
+			new_formula += formula.substr(last_end, match_result.get_start() - last_end)
+
+			var sheet_prefix: String = match_result.get_string(1)  # e.g., "Sheet1!" or "'My Sheet'!"
+			var col_absolute: String = match_result.get_string(2)  # "$" or ""
+			var col_letters: String = match_result.get_string(3)   # e.g., "A", "BC"
+			var row_absolute: String = match_result.get_string(4)  # "$" or ""
+			var row_num_str: String = match_result.get_string(5)   # e.g., "1", "25"
+
+			var row_num := row_num_str.to_int()
+			var ref_row := row_num - 1  # Convert to 0-based
+
+			if ref_row == deleted_row:
+				# Reference to deleted row - becomes #REF!
+				new_formula += "#REF!"
+				has_ref_error = true
+			elif ref_row > deleted_row and row_absolute.is_empty():
+				# Reference below deleted row (and not absolute) - decrement
+				var new_row_num := row_num - 1
+				new_formula += sheet_prefix + col_absolute + col_letters + row_absolute + str(new_row_num)
+			else:
+				# Reference above deleted row or absolute - keep as is
+				new_formula += match_result.get_string(0)
+
+			last_end = match_result.get_end()
+
+		# Add remaining text after last match
+		new_formula += formula.substr(last_end)
+
+		# Update the cell's formula if it changed
+		if new_formula != formula:
+			cell.formula = new_formula
+			if has_ref_error:
+				cell.set_computed_value(0, "#REF!")
+
+
+## Adjust all formula references when a column is deleted.
+## Column references > deleted_col are decremented by 1.
+## References to the deleted column become #REF!.
+func _adjust_formulas_for_column_deletion(deleted_col: int) -> void:
+	var regex := RegEx.new()
+	regex.compile("((?:'[^']+?'!|[A-Za-z_][A-Za-z0-9_]*!)?)(\\$?)([A-Za-z]+)(\\$?)([0-9]+)")
+
+	for key in cells:
+		var cell = cells[key]
+		if not cell.has_formula():
+			continue
+
+		var formula: String = cell.formula
+		var new_formula := ""
+		var last_end := 0
+		var has_ref_error := false
+
+		for match_result in regex.search_all(formula):
+			# Add text before this match
+			new_formula += formula.substr(last_end, match_result.get_start() - last_end)
+
+			var sheet_prefix: String = match_result.get_string(1)
+			var col_absolute: String = match_result.get_string(2)
+			var col_letters: String = match_result.get_string(3)
+			var row_absolute: String = match_result.get_string(4)
+			var row_num_str: String = match_result.get_string(5)
+
+			var col_index := parse_column_label(col_letters)
+
+			if col_index == deleted_col:
+				# Reference to deleted column - becomes #REF!
+				new_formula += "#REF!"
+				has_ref_error = true
+			elif col_index > deleted_col and col_absolute.is_empty():
+				# Reference to the right of deleted column (and not absolute) - decrement
+				var new_col_letters := get_column_label(col_index - 1)
+				new_formula += sheet_prefix + col_absolute + new_col_letters + row_absolute + row_num_str
+			else:
+				# Reference to the left of deleted column or absolute - keep as is
+				new_formula += match_result.get_string(0)
+
+			last_end = match_result.get_end()
+
+		# Add remaining text after last match
+		new_formula += formula.substr(last_end)
+
+		# Update the cell's formula if it changed
+		if new_formula != formula:
+			cell.formula = new_formula
+			if has_ref_error:
+				cell.set_computed_value(0, "#REF!")
+
+
+## Adjust all formula references when a row is inserted.
+## Row references >= inserted_row are incremented by 1.
+func _adjust_formulas_for_row_insertion(inserted_row: int) -> void:
+	var regex := RegEx.new()
+	regex.compile("((?:'[^']+?'!|[A-Za-z_][A-Za-z0-9_]*!)?)(\\$?)([A-Za-z]+)(\\$?)([0-9]+)")
+
+	for key in cells:
+		var cell = cells[key]
+		if not cell.has_formula():
+			continue
+
+		var formula: String = cell.formula
+		var new_formula := ""
+		var last_end := 0
+
+		for match_result in regex.search_all(formula):
+			new_formula += formula.substr(last_end, match_result.get_start() - last_end)
+
+			var sheet_prefix: String = match_result.get_string(1)
+			var col_absolute: String = match_result.get_string(2)
+			var col_letters: String = match_result.get_string(3)
+			var row_absolute: String = match_result.get_string(4)
+			var row_num_str: String = match_result.get_string(5)
+
+			var row_num := row_num_str.to_int()
+			var ref_row := row_num - 1  # Convert to 0-based
+
+			if ref_row >= inserted_row and row_absolute.is_empty():
+				# Reference at or below inserted row (and not absolute) - increment
+				var new_row_num := row_num + 1
+				new_formula += sheet_prefix + col_absolute + col_letters + row_absolute + str(new_row_num)
+			else:
+				# Reference above inserted row or absolute - keep as is
+				new_formula += match_result.get_string(0)
+
+			last_end = match_result.get_end()
+
+		new_formula += formula.substr(last_end)
+
+		if new_formula != formula:
+			cell.formula = new_formula
+
+
+## Adjust all formula references when a column is inserted.
+## Column references >= inserted_col are incremented by 1.
+func _adjust_formulas_for_column_insertion(inserted_col: int) -> void:
+	var regex := RegEx.new()
+	regex.compile("((?:'[^']+?'!|[A-Za-z_][A-Za-z0-9_]*!)?)(\\$?)([A-Za-z]+)(\\$?)([0-9]+)")
+
+	for key in cells:
+		var cell = cells[key]
+		if not cell.has_formula():
+			continue
+
+		var formula: String = cell.formula
+		var new_formula := ""
+		var last_end := 0
+
+		for match_result in regex.search_all(formula):
+			new_formula += formula.substr(last_end, match_result.get_start() - last_end)
+
+			var sheet_prefix: String = match_result.get_string(1)
+			var col_absolute: String = match_result.get_string(2)
+			var col_letters: String = match_result.get_string(3)
+			var row_absolute: String = match_result.get_string(4)
+			var row_num_str: String = match_result.get_string(5)
+
+			var col_index := parse_column_label(col_letters)
+
+			if col_index >= inserted_col and col_absolute.is_empty():
+				# Reference at or to the right of inserted column (and not absolute) - increment
+				var new_col_letters := get_column_label(col_index + 1)
+				new_formula += sheet_prefix + col_absolute + new_col_letters + row_absolute + row_num_str
+			else:
+				# Reference to the left of inserted column or absolute - keep as is
+				new_formula += match_result.get_string(0)
+
+			last_end = match_result.get_end()
+
+		new_formula += formula.substr(last_end)
+
+		if new_formula != formula:
+			cell.formula = new_formula
 
 
 ## Serialize to dictionary

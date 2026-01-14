@@ -155,6 +155,7 @@ func _format_http_response(status_code: int, headers: Dictionary, body: String) 
 func _get_status_text(code: int) -> String:
 	match code:
 		200: return "OK"
+		202: return "Accepted"
 		400: return "Bad Request"
 		404: return "Not Found"
 		405: return "Method Not Allowed"
