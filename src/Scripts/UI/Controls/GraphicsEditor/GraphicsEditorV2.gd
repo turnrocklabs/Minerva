@@ -1525,12 +1525,12 @@ func redo_command() -> void:
 
 
 ## Selects a tool in the dropdown by its item ID (not position index)
-## If emit_signal is true, also triggers the item_selected signal
-func _select_tool_by_id(item_id: int, emit_signal: bool = true) -> void:
+## If _emit_signal is true, also triggers the item_selected signal
+func _select_tool_by_id(item_id: int, _emit_signal: bool = true) -> void:
 	for i in range(_tools_option_button.item_count):
 		if _tools_option_button.get_item_id(i) == item_id:
 			_tools_option_button.select(i)
-			if emit_signal:
+			if _emit_signal:
 				_tools_option_button.item_selected.emit(i)
 			return
 
@@ -2302,7 +2302,7 @@ func response_layout_toggle() -> void:
 
 
 static var _edit_img_base_tooltip: = "Edit selected Image (edits the currently selected layer with the current prompt)"
-static var _mask_edit_base_tooltip: = "Send mask edit request (needs a mask layer and a regular layer to be selected)"
+#static var _mask_edit_base_tooltip: = "Send mask edit request (needs a mask layer and a regular layer to be selected)"
 func check_ai_buttons_toggle() -> void:
 	# Always in floating windows mode - enable buttons based on connection status
 	if Core.connected:

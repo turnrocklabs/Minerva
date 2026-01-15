@@ -1317,13 +1317,13 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 
 ## Begin a batch operation (groups multiple edits into one undo action)
 ## Returns a batch_id to pass to end_batch()
-func begin_batch(description: String = "") -> int:
+func begin_batch(_description: String = "") -> int:
 	# For now, just return a marker - batch support can be enhanced later
 	return history.get_undo_count()
 
 
 ## End a batch operation - all changes since begin_batch become one undo step
-func end_batch(batch_id: int) -> void:
+func end_batch(_batch_id: int) -> void:
 	# Future enhancement: merge actions since batch_id into one compound action
 	pass
 
@@ -1566,7 +1566,7 @@ func _create_chart_config_dialog() -> void:
 func _on_create_chart_confirmed() -> void:
 	var chart := SpreadsheetChartScript.new()
 	chart.title = _chart_title_edit.text
-	chart.type = _chart_type_option.get_selected_id()
+	chart.type = _chart_type_option.get_selected_id() as SpreadsheetChartScript.ChartType
 	chart.x_range = _chart_x_range_edit.text
 	chart.x_is_date = _chart_x_is_date_check.button_pressed
 	chart.first_row_is_header = _chart_header_row_check.button_pressed
@@ -1602,7 +1602,7 @@ func add_chart(chart: SpreadsheetChartScript) -> void:
 	chart_container.add_child(canvas)
 
 	# Create chart wrapper with controls
-	var wrapper := HBoxContainer.new()
+	#var wrapper := HBoxContainer.new()
 	chart_container.move_child(canvas, chart_container.get_child_count() - 1)
 
 	# Update chart with data
@@ -1700,11 +1700,11 @@ func update_chart_properties(index: int, properties: Dictionary) -> bool:
 				chart.add_series(series_range)
 			elif series_range is Dictionary:
 				var range_str: String = series_range.get("range", "")
-				var name: String = series_range.get("name", "")
+				var _name: String = series_range.get("name", "")
 				var color = series_range.get("color", Color.TRANSPARENT)
 				if color is String:
 					color = Color.from_string(color, Color.TRANSPARENT)
-				chart.add_series(range_str, name, color)
+				chart.add_series(range_str, _name, color)
 
 	# Refresh the chart display
 	_update_chart(index)
