@@ -142,11 +142,11 @@ func _resolve_sheet(sheet_name: String) -> RefCounted:
 		return null
 
 	# Load the Editor script to check type
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
+	#var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
 
 	# Search through open editors for a matching spreadsheet
 	for editor in editor_pane.get_open_editors():
-		if editor.tab_title == sheet_name and editor.type == EditorScript.Type.SPREADSHEET:
+		if editor.tab_title == sheet_name and editor.type == Editor.Type.SPREADSHEET:
 			if editor.spreadsheet_editor and editor.spreadsheet_editor.spreadsheet_data:
 				return editor.spreadsheet_editor.spreadsheet_data
 

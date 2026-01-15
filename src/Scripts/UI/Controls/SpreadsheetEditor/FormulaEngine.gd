@@ -1126,7 +1126,7 @@ func _func_sumifs(args: Array) -> EvalResult:
 		return EvalResult.err("SUMIFS requires criteria in pairs (range, criteria)")
 
 	var sum_values: Array = _flatten_args([args[0]])
-	var num_criteria := criteria_args_count / 2
+	var num_criteria : int = int(criteria_args_count / 2.0)
 
 	# Build list of criteria ranges and criteria values
 	var criteria_ranges: Array = []
@@ -1167,7 +1167,7 @@ func _func_countifs(args: Array) -> EvalResult:
 	if args.size() % 2 != 0:
 		return EvalResult.err("COUNTIFS requires criteria in pairs (range, criteria)")
 
-	var num_criteria := args.size() / 2
+	var num_criteria : int = int(args.size() / 2.0)
 
 	# Build list of criteria ranges and criteria values
 	var criteria_ranges: Array = []
@@ -1243,8 +1243,8 @@ func _func_vlookup(args: Array) -> EvalResult:
 	var num_cols := col_index  # Assume at least this many columns
 	if flat.size() < num_cols:
 		return EvalResult.err("#REF!")
-
-	var num_rows: int = flat.size() / num_cols
+	@warning_ignore("integer_division")
+	var num_rows: int = int(flat.size() / num_cols)
 
 	# Search first column for lookup_value
 	for row in range(int(num_rows)):
