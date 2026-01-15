@@ -17,7 +17,7 @@ var content: String:
 		else:
 			_content_backing = value
 		
-		note.changed.emit()
+		note.changed.emit(&"content")
 	get:
 		return _label.text if is_node_ready() else _content_backing
 
