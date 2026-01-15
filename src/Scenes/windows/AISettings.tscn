@@ -196,6 +196,13 @@ customizable and adaptable for various use cases."
 mouse_filter = 0
 text = "System Prompt:"
 
+[node name="SystemPromptEnabledCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+tooltip_text = "Enable or disable the system prompt for this chat"
+text = "Enabled"
+
 [node name="RecordSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -415,6 +422,13 @@ Leave empty to use the default agent prompt with tool usage guidelines."
 mouse_filter = 0
 text = "Agent System Prompt (empty = use default):"
 
+[node name="AgenticSystemPromptEnabledCheckButton" type="CheckButton" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+tooltip_text = "Enable or disable the agentic system prompt for this chat"
+text = "Enabled"
+
 [node name="RecordAgenticSystemPromptButton" type="Button" parent="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -454,6 +468,7 @@ text = "Close"
 [connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/TopPHBoxContainer/TopPHSlider" to="." method="_on_top_ph_slider_value_changed"]
 [connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/FrequencyBoxContainer/FreqHSlider" to="." method="_on_freq_h_slider_value_changed"]
 [connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/PresenceHBoxContainer/PresenceHSlider" to="." method="_on_presence_h_slider_value_changed"]
+[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer/SystemPromptEnabledCheckButton" to="." method="_on_system_prompt_enabled_check_button_toggled"]
 [connection signal="pressed" from="MarginContainer/MainVBox/TabContainer/Model/ModelVBox/SystemPromptVBoxContainer/HBoxContainer/RecordSystemPromptButton" to="." method="_on_record_system_prompt_button_pressed"]
 [connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/AcceptButton" to="." method="_on_accept_button_pressed"]
 [connection signal="pressed" from="MarginContainer/MainVBox/HFlowContainer/CancelButton" to="." method="_on_cancel_button_pressed"]
@@ -464,6 +479,7 @@ text = "Close"
 [connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextWarningHBox/ContextWarningSpinBox" to="." method="_on_context_warning_spin_box_value_changed"]
 [connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/ContextHardLimitHBox/ContextHardLimitSpinBox" to="." method="_on_context_hard_limit_spin_box_value_changed"]
 [connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/ContextLimitsVBox/SummarizeThresholdHBox/SummarizeThresholdSpinBox" to="." method="_on_summarize_threshold_spin_box_value_changed"]
+[connection signal="toggled" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer/AgenticSystemPromptEnabledCheckButton" to="." method="_on_agentic_system_prompt_enabled_check_button_toggled"]
 [connection signal="pressed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/HBoxContainer/RecordAgenticSystemPromptButton" to="." method="_on_record_agentic_system_prompt_button_pressed"]
 [connection signal="text_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/AgenticSystemPromptVBox/AgenticSystemPromptTextEdit" to="." method="_on_agentic_system_prompt_text_edit_text_changed"]
 [connection signal="value_changed" from="MarginContainer/MainVBox/TabContainer/Agentic/AgenticVBox/MaxImageIterationsHBox/MaxImageIterationsSpinBox" to="." method="_on_max_image_iterations_spin_box_value_changed"]

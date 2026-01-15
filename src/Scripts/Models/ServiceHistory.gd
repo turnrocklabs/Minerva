@@ -23,6 +23,11 @@ var HistoryItemList: Array[ChatHistoryItem]:
 var HasUsedSystemPrompt: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); HasUsedSystemPrompt = value
 
+## Whether the system prompt is enabled (sent to model). Separate from HasUsedSystemPrompt
+## so user can disable without deleting the prompt text.
+var SystemPromptEnabled: bool = true:
+	set(value): SingletonObject.call_deferred("save_state", false); SystemPromptEnabled = value
+
 var Temperature: float = 1:
 	set(value): SingletonObject.call_deferred("save_state", false); Temperature = value
 
@@ -52,6 +57,10 @@ var AllowedDirectories: Array[String] = []:
 var AgenticSystemPrompt: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); AgenticSystemPrompt = value
 
+## Whether the agentic system prompt is enabled
+var AgenticSystemPromptEnabled: bool = true:
+	set(value): SingletonObject.call_deferred("save_state", false); AgenticSystemPromptEnabled = value
+
 ## Agent context management settings (0 = use defaults from ChatPane)
 var AgentMaxToolResultLength: int = 0:
 	set(value): SingletonObject.call_deferred("save_state", false); AgentMaxToolResultLength = value
@@ -79,6 +88,7 @@ static var SERIALIZER_FIELDS = [
 	"Provider",
 	"ServiceType",
 	"HasUsedSystemPrompt",
+	"SystemPromptEnabled",
 	"Temperature",
 	"TopP",
 	"FrequencyPenalty",
@@ -88,6 +98,7 @@ static var SERIALIZER_FIELDS = [
 	"DisabledTools",
 	"AllowedDirectories",
 	"AgenticSystemPrompt",
+	"AgenticSystemPromptEnabled",
 	"AgentMaxToolResultLength",
 	"AgentContextWarningThreshold",
 	"AgentContextHardLimit",
@@ -195,6 +206,7 @@ func Serialize() -> Dictionary:
 		"ServiceType": service_type,
 		"HistoryItemList" : serialized_items,
 		"HasUsedSystemPrompt": HasUsedSystemPrompt,
+		"SystemPromptEnabled": SystemPromptEnabled,
 		"Temperature": Temperature,
 		"TopP": TopP,
 		"FrequencyPenalty": FrequencyPenalty,
@@ -204,6 +216,7 @@ func Serialize() -> Dictionary:
 		"DisabledTools": DisabledTools,
 		"AllowedDirectories": AllowedDirectories,
 		"AgenticSystemPrompt": AgenticSystemPrompt,
+		"AgenticSystemPromptEnabled": AgenticSystemPromptEnabled,
 		"AgentMaxToolResultLength": AgentMaxToolResultLength,
 		"AgentContextWarningThreshold": AgentContextWarningThreshold,
 		"AgentContextHardLimit": AgentContextHardLimit,
@@ -254,9 +267,11 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 	if data.get("PresencePenalty"):
 		history.PresencePenalty = data.get("PresencePenalty")
 
-	# System prompt flag
+	# System prompt flags
 	if data.has("HasUsedSystemPrompt"):
 		history.HasUsedSystemPrompt = data.get("HasUsedSystemPrompt", false)
+	if data.has("SystemPromptEnabled"):
+		history.SystemPromptEnabled = data.get("SystemPromptEnabled", true)
 
 	# Agentic settings (with defaults for backwards compatibility)
 	if data.has("MaxToolCallRounds"):
@@ -271,6 +286,8 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AllowedDirectories.assign(allowed)
 	if data.has("AgenticSystemPrompt"):
 		history.AgenticSystemPrompt = data.get("AgenticSystemPrompt", "")
+	if data.has("AgenticSystemPromptEnabled"):
+		history.AgenticSystemPromptEnabled = data.get("AgenticSystemPromptEnabled", true)
 	if data.has("AgentMaxToolResultLength"):
 		history.AgentMaxToolResultLength = int(data.get("AgentMaxToolResultLength", 0))
 	if data.has("AgentContextWarningThreshold"):

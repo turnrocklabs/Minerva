@@ -9,6 +9,9 @@ var topP: float = 1
 var FrequencyPenalty: float = 0
 var presencePenalty: float = 0
 
+## System prompt to send with the request (set by ChatPane)
+var system_prompt: String
+
 ## The OpenRouter model ID (e.g., "moonshotai/kimi-k2")
 var api_model_id: String = ""
 
@@ -89,9 +92,15 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
+	# Build messages array - prepend system prompt if set
+	var messages: Array = []
+	if not system_prompt.is_empty() and supports_system_prompt:
+		messages.append({"role": "system", "content": system_prompt})
+	messages.append_array(prompt)
+
 	var request_body = {
 		"model": api_model_id,
-		"messages": prompt,
+		"messages": messages,
 	}
 
 	# Add tools if enabled

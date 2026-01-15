@@ -687,11 +687,15 @@ const GoogleImageProviderScript = preload("res://Scripts/Services/Providers/Goog
 const AnthropicProviderScript = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
 const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
 const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
+const LocalProviderScript = preload("res://Scripts/Services/Providers/LocalProvider.gd")
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
 	HUMAN,
+	# Local/Ollama
+	NEMOTRON_NANO,
+	DEVSTRAL_SMALL,
 	# OpenAI Chat
 	GPT_NANO,
 	GPT_STANDARD,
@@ -721,6 +725,9 @@ enum API_MODEL_PROVIDERS {
 ## Dictionary of all model providers and scripts that implement their functionality
 var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
+	# Local/Ollama
+	API_MODEL_PROVIDERS.NEMOTRON_NANO: LocalProviderScript,
+	API_MODEL_PROVIDERS.DEVSTRAL_SMALL: LocalProviderScript.DevstralSmall2,
 	# OpenAI Chat - GPT-5.2 with different reasoning levels
 	API_MODEL_PROVIDERS.GPT_NANO: OpenAIProviderScript.Nano,
 	API_MODEL_PROVIDERS.GPT_STANDARD: OpenAIProviderScript.Standard,
@@ -750,6 +757,9 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 ## Maps each model to its parent provider (for enable/disable filtering)
 const MODEL_TO_PROVIDER: Dictionary = {
 	API_MODEL_PROVIDERS.HUMAN: API_PROVIDER.LOCAL,
+	# Local/Ollama
+	API_MODEL_PROVIDERS.NEMOTRON_NANO: API_PROVIDER.LOCAL,
+	API_MODEL_PROVIDERS.DEVSTRAL_SMALL: API_PROVIDER.LOCAL,
 	# OpenAI
 	API_MODEL_PROVIDERS.GPT_NANO: API_PROVIDER.OPENAI,
 	API_MODEL_PROVIDERS.GPT_STANDARD: API_PROVIDER.OPENAI,
