@@ -9,6 +9,9 @@ var topP: float = 1
 var FrequencyPenalty: float = 0
 var presencePenalty: float = 0
 
+## System prompt to send with the request (set by ChatPane)
+var system_prompt: String
+
 ## The OpenRouter model ID (e.g., "moonshotai/kimi-k2")
 var api_model_id: String = ""
 
@@ -89,9 +92,15 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
+	# Build messages array - prepend system prompt if set
+	var messages: Array = []
+	if not system_prompt.is_empty() and supports_system_prompt:
+		messages.append({"role": "system", "content": system_prompt})
+	messages.append_array(prompt)
+
 	var request_body = {
 		"model": api_model_id,
-		"messages": prompt,
+		"messages": messages,
 	}
 
 	# Add tools if enabled
@@ -376,3 +385,15 @@ class KimiK2 extends OpenRouterProvider:
 		short_name = "KK2"
 		input_token_cost = 0.30   # $0.30 per million input tokens
 		output_token_cost = 0.90   # $0.90 per million output tokens
+
+
+## Grok 4.1 Fast from xAI - Fast agentic model with 2M context
+class Grok41Fast extends OpenRouterProvider:
+	func _init():
+		super()
+		api_model_id = "x-ai/grok-4.1-fast"
+		model_name = "grok-4.1-fast"
+		display_name = "Grok 4.1 Fast"
+		short_name = "G41F"
+		input_token_cost = 0.20   # $0.20 per million input tokens
+		output_token_cost = 0.50   # $0.50 per million output tokens

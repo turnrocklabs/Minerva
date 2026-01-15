@@ -10,7 +10,7 @@ signal client_connected(session_id: String)
 signal tool_executed(tool_name: String, session_id: String)
 
 const DEFAULT_PORT = 9315
-const PROTOCOL_VERSION = "2025-06-18"
+const PROTOCOL_VERSION = "2024-11-05"
 const CONNECTION_TIMEOUT = 30.0  # seconds
 
 var _tcp_server: TCPServer = null
@@ -198,8 +198,8 @@ func _handle_jsonrpc(conn, request: Dictionary, session_id: String) -> void:
 		"initialize":
 			_handle_initialize(conn, params, request_id)
 		"notifications/initialized":
-			# Just acknowledge, no response needed for notifications
-			pass
+			# Notifications don't need a JSON-RPC response, but HTTP requires a response
+			conn.send_response(202, {}, "")
 		"tools/list":
 			_handle_tools_list(conn, params, request_id, session_id)
 		"tools/call":
@@ -283,7 +283,13 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 
 	# Execute the tool
 	if not _mcp_manager or not _mcp_manager.minerva_server:
-		_send_jsonrpc_error(conn, request_id, -32603, "Minerva server not available")
+		var has_manager := _mcp_manager != null
+		var has_server := false
+		if _mcp_manager:
+			has_server = _mcp_manager.minerva_server != null
+		var debug_msg := "Minerva server not available (_mcp_manager=%s, minerva_server=%s)" % [has_manager, has_server]
+		print("[MCP HTTP] " + debug_msg)
+		_send_jsonrpc_error(conn, request_id, -32603, debug_msg)
 		return
 
 	tool_executed.emit(tool_name, session_id)

@@ -17,6 +17,9 @@ enum GPT_params {
 
 var current_chat_tab_ref: ChatHistory = null
 
+## Flag to prevent saving when programmatically setting text fields
+var _loading_values: bool = false
+
 ## Returns the script of the provider thats selected.
 ## `get_selected_provider().new()` to instantiate it
 func get_selected_provider() -> GDScript:
@@ -26,12 +29,14 @@ func get_selected_provider() -> GDScript:
 ## Load all settings from the current chat tab (or defaults if no chat).
 ## Called by ChatPane before showing this window.
 func load_current_chat_settings() -> void:
+	_loading_values = true
 	%ToolAccessLabel.text = "Tool Access:"
 
 	if SingletonObject.ChatList.is_empty():
 		# No active chats - show defaults and still populate tools
 		current_chat_tab_ref = null
 		%SystemPromptTextEdit.text = ""
+		%SystemPromptEnabledCheckButton.button_pressed = true
 
 		# Reset sliders to defaults
 		%TempHSlider.value = 1.0
@@ -48,6 +53,7 @@ func load_current_chat_settings() -> void:
 		%AutoContinueCheckButton.button_pressed = true
 		%AllowedDirsTextEdit.text = ""
 		%AgenticSystemPromptTextEdit.text = ""
+		%AgenticSystemPromptEnabledCheckButton.button_pressed = true
 		# Context limits (0 = use defaults)
 		%MaxToolResultSpinBox.value = 0
 		%ContextWarningSpinBox.value = 0
@@ -64,15 +70,21 @@ func load_current_chat_settings() -> void:
 		var provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
 		if provider:
 			update_ui_for_provider(provider)
+		_loading_values = false
 		return
 
 	var current_tab: int = SingletonObject.Chats.current_tab
 	current_chat_tab_ref = SingletonObject.ChatList[current_tab]
 
-	# Load system prompt if used
+	# Load system prompt if used, otherwise clear it
 	if current_chat_tab_ref.HasUsedSystemPrompt:
 		var chat_item = SingletonObject.Chats.get_first_chat_item()
 		%SystemPromptTextEdit.text = chat_item.Message
+	else:
+		%SystemPromptTextEdit.text = ""
+
+	# Load system prompt enabled state
+	%SystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.SystemPromptEnabled
 
 	# Load slider values
 	%TempHSlider.value = current_chat_tab_ref.Temperature
@@ -95,8 +107,12 @@ func load_current_chat_settings() -> void:
 	var dirs_text = "\n".join(current_chat_tab_ref.AllowedDirectories)
 	%AllowedDirsTextEdit.text = dirs_text
 
-	# Load agentic system prompt
-	%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
+	# Load agentic system prompt - show effective prompt (custom or default)
+	if current_chat_tab_ref.AgenticSystemPrompt.is_empty():
+		%AgenticSystemPromptTextEdit.text = SingletonObject.Chats._build_agent_system_prompt()
+	else:
+		%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
+	%AgenticSystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.AgenticSystemPromptEnabled
 
 	# Load context limit settings
 	%MaxToolResultSpinBox.value = current_chat_tab_ref.AgentMaxToolResultLength
@@ -109,6 +125,7 @@ func load_current_chat_settings() -> void:
 
 	# Update UI visibility based on provider capabilities
 	update_ui_for_provider(current_chat_tab_ref.provider)
+	_loading_values = false
 
 
 ## Sync the provider dropdown to match ChatPane's current selection.
@@ -203,13 +220,19 @@ func _on_cancel_button_pressed() -> void:
 
 
 func _on_about_to_popup() -> void:
+	_loading_values = true
 	if SingletonObject.ChatList.size() > 0:
 		var current_tab: int = SingletonObject.Chats.current_tab
 		current_chat_tab_ref = SingletonObject.ChatList[current_tab]
 		if current_chat_tab_ref.HasUsedSystemPrompt:
 			var chat_item = SingletonObject.Chats.get_first_chat_item()
 			%SystemPromptTextEdit.text = chat_item.Message
-		
+		else:
+			%SystemPromptTextEdit.text = ""
+
+		# Load system prompt enabled state
+		%SystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.SystemPromptEnabled
+
 		# we get the current tab param values and update the UI sliders
 		%TempHSlider.value = current_chat_tab_ref.Temperature
 		%TempSliderValueLabel.text = str(current_chat_tab_ref.Temperature)
@@ -231,8 +254,12 @@ func _on_about_to_popup() -> void:
 		var dirs_text = "\n".join(current_chat_tab_ref.AllowedDirectories)
 		%AllowedDirsTextEdit.text = dirs_text
 
-		# Load agentic system prompt
-		%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
+		# Load agentic system prompt - show effective prompt (custom or default)
+		if current_chat_tab_ref.AgenticSystemPrompt.is_empty():
+			%AgenticSystemPromptTextEdit.text = SingletonObject.Chats._build_agent_system_prompt()
+		else:
+			%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
+		%AgenticSystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.AgenticSystemPromptEnabled
 
 		# Load context limit settings
 		%MaxToolResultSpinBox.value = current_chat_tab_ref.AgentMaxToolResultLength
@@ -248,6 +275,7 @@ func _on_about_to_popup() -> void:
 
 		# Update UI visibility based on provider capabilities
 		update_ui_for_provider(current_chat_tab_ref.provider)
+	_loading_values = false
 
 
 ## Populate tool checkboxes from MCP manager
@@ -475,6 +503,14 @@ func _on_record_system_prompt_button_pressed() -> void:
 	%RecordSystemPromptButton.modulate = Color(Color.LIME_GREEN)
 
 
+func _on_system_prompt_enabled_check_button_toggled(toggled_on: bool) -> void:
+	if current_chat_tab_ref:
+		current_chat_tab_ref.SystemPromptEnabled = toggled_on
+		print("SystemPromptEnabled: " + str(current_chat_tab_ref.SystemPromptEnabled))
+	else:
+		print("no chats are open right now")
+
+
 #region Slider functs
 
 func _on_temp_h_slider_value_changed(value: float) -> void:
@@ -538,6 +574,8 @@ func _on_auto_continue_check_button_toggled(toggled_on: bool) -> void:
 
 
 func _on_allowed_dirs_text_edit_text_changed() -> void:
+	if _loading_values:
+		return
 	if current_chat_tab_ref:
 		var text = %AllowedDirsTextEdit.text.strip_edges()
 		var dirs: Array[String] = []
@@ -553,9 +591,19 @@ func _on_allowed_dirs_text_edit_text_changed() -> void:
 
 
 func _on_agentic_system_prompt_text_edit_text_changed() -> void:
+	if _loading_values:
+		return  # Don't save when programmatically setting text
 	if current_chat_tab_ref:
 		current_chat_tab_ref.AgenticSystemPrompt = %AgenticSystemPromptTextEdit.text
 		print("AgenticSystemPrompt updated")
+	else:
+		print("no chats are open right now")
+
+
+func _on_agentic_system_prompt_enabled_check_button_toggled(toggled_on: bool) -> void:
+	if current_chat_tab_ref:
+		current_chat_tab_ref.AgenticSystemPromptEnabled = toggled_on
+		print("AgenticSystemPromptEnabled: " + str(current_chat_tab_ref.AgenticSystemPromptEnabled))
 	else:
 		print("no chats are open right now")
 

@@ -1,0 +1,312 @@
+[gd_scene load_steps=8 format=3 uid="uid://creqmetablock1"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/RequestMetadataBlock.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_expand"]
+[ext_resource type="Texture2D" uid="uid://clkd2ov8pr5av" path="res://assets/icons/clipboard_icons/content_copy.svg" id="3_copy"]
+[ext_resource type="Texture2D" uid="uid://dnnxmw21cvna4" path="res://assets/generated/pencil_icon_24_no_bg.png" id="4_notes"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_header"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.1, 0.15, 0.1, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_content"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.08, 0.12, 0.08, 1)
+corner_radius_bottom_left = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_indent"]
+content_margin_left = 20.0
+
+[node name="RequestMetadataBlock" type="PanelContainer"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 100.0
+grow_horizontal = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_header")
+script = ExtResource("1_script")
+expand_anim_duration = 0.5
+expand_transition_type = 5
+expand_icon_color = Color(0.16, 0.8, 0.4, 1.0)
+
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Header" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ExpandControl" type="Control" parent="VBox/Header"]
+custom_minimum_size = Vector2(24, 0)
+layout_mode = 2
+
+[node name="ExpandButton" type="Button" parent="VBox/Header/ExpandControl"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(12, 12)
+focus_mode = 0
+icon = ExtResource("2_expand")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="StatusLabel" type="Label" parent="VBox/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.8, 1.0, 0.8, 1)
+text = "[Request] model + N tools"
+
+[node name="ActionButtons" type="HBoxContainer" parent="VBox/Header"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="NotesButton" type="Button" parent="VBox/Header/ActionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Create a note from request metadata"
+icon = ExtResource("4_notes")
+flat = true
+
+[node name="CopyButton" type="Button" parent="VBox/Header/ActionButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Copy to clipboard"
+icon = ExtResource("3_copy")
+flat = true
+
+[node name="ContentContainer" type="PanelContainer" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_content")
+
+[node name="ContentVBox" type="VBoxContainer" parent="VBox/ContentContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SystemPromptSection" type="VBoxContainer" parent="VBox/ContentContainer/ContentVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SystemPromptHeader" type="HBoxContainer" parent="VBox/ContentContainer/ContentVBox/SystemPromptSection"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SystemPromptExpandControl" type="Control" parent="VBox/ContentContainer/ContentVBox/SystemPromptSection/SystemPromptHeader"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+
+[node name="SystemPromptExpandButton" type="Button" parent="VBox/ContentContainer/ContentVBox/SystemPromptSection/SystemPromptHeader/SystemPromptExpandControl"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(12, 12)
+rotation = -1.5708
+focus_mode = 0
+self_modulate = Color(1, 1, 1, 1)
+icon = ExtResource("2_expand")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="SystemPromptLabel" type="Label" parent="VBox/ContentContainer/ContentVBox/SystemPromptSection/SystemPromptHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.7, 0.9, 0.7, 1)
+text = "System Prompt"
+
+[node name="SystemPromptScrollContainer" type="ScrollContainer" parent="VBox/ContentContainer/ContentVBox/SystemPromptSection"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 80)
+custom_maximum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="SystemPromptContent" type="RichTextLabel" parent="VBox/ContentContainer/ContentVBox/SystemPromptSection/SystemPromptScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+theme_override_colors/default_color = Color(0.85, 0.85, 0.85, 1)
+theme_override_styles/normal = SubResource("StyleBoxEmpty_indent")
+bbcode_enabled = true
+text = ""
+fit_content = true
+scroll_active = false
+context_menu_enabled = true
+selection_enabled = true
+
+[node name="ToolsSection" type="VBoxContainer" parent="VBox/ContentContainer/ContentVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ToolsHeader" type="HBoxContainer" parent="VBox/ContentContainer/ContentVBox/ToolsSection"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ToolsExpandControl" type="Control" parent="VBox/ContentContainer/ContentVBox/ToolsSection/ToolsHeader"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+
+[node name="ToolsExpandButton" type="Button" parent="VBox/ContentContainer/ContentVBox/ToolsSection/ToolsHeader/ToolsExpandControl"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(12, 12)
+rotation = -1.5708
+focus_mode = 0
+self_modulate = Color(1, 1, 1, 1)
+icon = ExtResource("2_expand")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="ToolsLabel" type="Label" parent="VBox/ContentContainer/ContentVBox/ToolsSection/ToolsHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.7, 0.9, 0.7, 1)
+text = "Tools"
+
+[node name="ToolsScrollContainer" type="ScrollContainer" parent="VBox/ContentContainer/ContentVBox/ToolsSection"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 80)
+custom_maximum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ToolsContent" type="RichTextLabel" parent="VBox/ContentContainer/ContentVBox/ToolsSection/ToolsScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+theme_override_colors/default_color = Color(0.85, 0.85, 0.85, 1)
+theme_override_styles/normal = SubResource("StyleBoxEmpty_indent")
+bbcode_enabled = true
+text = ""
+fit_content = true
+scroll_active = false
+context_menu_enabled = true
+selection_enabled = true
+
+[node name="DetailsSection" type="VBoxContainer" parent="VBox/ContentContainer/ContentVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="DetailsHeader" type="HBoxContainer" parent="VBox/ContentContainer/ContentVBox/DetailsSection"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="DetailsExpandControl" type="Control" parent="VBox/ContentContainer/ContentVBox/DetailsSection/DetailsHeader"]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+
+[node name="DetailsExpandButton" type="Button" parent="VBox/ContentContainer/ContentVBox/DetailsSection/DetailsHeader/DetailsExpandControl"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(12, 12)
+rotation = -1.5708
+focus_mode = 0
+self_modulate = Color(1, 1, 1, 1)
+icon = ExtResource("2_expand")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="DetailsLabel" type="Label" parent="VBox/ContentContainer/ContentVBox/DetailsSection/DetailsHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.7, 0.9, 0.7, 1)
+text = "Request Details"
+
+[node name="DetailsScrollContainer" type="ScrollContainer" parent="VBox/ContentContainer/ContentVBox/DetailsSection"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 80)
+custom_maximum_size = Vector2(0, 150)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="DetailsContent" type="RichTextLabel" parent="VBox/ContentContainer/ContentVBox/DetailsSection/DetailsScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 1
+theme_override_colors/default_color = Color(0.85, 0.85, 0.85, 1)
+theme_override_styles/normal = SubResource("StyleBoxEmpty_indent")
+bbcode_enabled = true
+text = ""
+fit_content = true
+scroll_active = false
+context_menu_enabled = true
+selection_enabled = true
+
+[connection signal="pressed" from="VBox/Header/ExpandControl/ExpandButton" to="." method="_on_expand_button_pressed"]
+[connection signal="pressed" from="VBox/Header/ActionButtons/NotesButton" to="." method="_on_notes_button_pressed"]
+[connection signal="pressed" from="VBox/Header/ActionButtons/CopyButton" to="." method="_on_copy_button_pressed"]
+[connection signal="pressed" from="VBox/ContentContainer/ContentVBox/SystemPromptSection/SystemPromptHeader/SystemPromptExpandControl/SystemPromptExpandButton" to="." method="_on_system_prompt_expand_pressed"]
+[connection signal="pressed" from="VBox/ContentContainer/ContentVBox/ToolsSection/ToolsHeader/ToolsExpandControl/ToolsExpandButton" to="." method="_on_tools_expand_pressed"]
+[connection signal="pressed" from="VBox/ContentContainer/ContentVBox/DetailsSection/DetailsHeader/DetailsExpandControl/DetailsExpandButton" to="." method="_on_details_expand_pressed"]

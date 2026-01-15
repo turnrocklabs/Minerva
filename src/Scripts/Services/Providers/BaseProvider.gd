@@ -42,6 +42,12 @@ var supports_frequency_penalty: bool = false
 var supports_presence_penalty: bool = false
 var is_reasoning_model: bool = false
 
+## If true, inject a default system prompt when none is provided.
+## This is needed for models like Mistral/Devstral that have a built-in
+## "Le Chat" system prompt with date injection that we want to override.
+var requires_default_system_prompt: bool = false
+var default_system_prompt: String = "You are a helpful AI assistant."
+
 ## Temperature constraints
 var temperature_min: float = 0.0
 var temperature_max: float = 2.0
@@ -165,12 +171,8 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	call_deferred("add_child", http_request)
 	await http_request.ready
 	active_requests.append(http_request)
-	if len(API_KEY) != 0:
-		#add_child(http_request)
-		# if not http_request.request_completed.is_connected(_on_request_completed.bind(http_request, url)):
-		# 	http_request.request_completed.connect(_on_request_completed.bind(http_request, url))
-		pass
-	else:
+	# LOCAL provider doesn't need an API key (Ollama runs locally)
+	if len(API_KEY) == 0 and PROVIDER != SingletonObject.API_PROVIDER.LOCAL:
 		SingletonObject.ErrorDisplay("No API Access", "API Key is missing or rejected")
 		push_error("Invalid API key")
 		return RequestResults.from_error("API Key is missing or rejected")

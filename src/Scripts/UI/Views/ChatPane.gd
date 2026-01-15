@@ -466,11 +466,17 @@ func _on_new_chat():
 	var history: ChatHistory = ChatHistory.new(provider_obj)
 	history.HistoryName = tab_name
 	history.HistoryItemList = []
+	# Set system prompt enabled based on whether provider requires it
+	history.SystemPromptEnabled = provider_obj.requires_default_system_prompt
 	SingletonObject.ChatList.append(history)
 	render_history(history)
 
 	current_tab = get_tab_count()-1
-	
+
+	# Inject default system prompt if provider requires it
+	if provider_obj.requires_default_system_prompt:
+		add_new_system_prompt_item(provider_obj.default_system_prompt)
+
 	if get_tab_count() > 0:
 		buffer_control_chats.hide()
 
@@ -500,17 +506,21 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 		# Handle agentic system prompt: use it instead of regular system prompt when agent mode is on
 		var effective_system_prompt: String = ""
 		if history.AgentModeEnabled:
-			# In agent mode: use custom agentic prompt, or fall back to dynamically built agent prompt
-			if not history.AgenticSystemPrompt.is_empty():
-				effective_system_prompt = history.AgenticSystemPrompt
-			else:
-				effective_system_prompt = _build_agent_system_prompt()
-			# Append any existing regular system prompt to give additional context
-			if history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
+			# In agent mode: use custom agentic prompt if enabled, or fall back to dynamically built agent prompt
+			if history.AgenticSystemPromptEnabled:
+				if not history.AgenticSystemPrompt.is_empty():
+					effective_system_prompt = history.AgenticSystemPrompt
+				else:
+					effective_system_prompt = _build_agent_system_prompt()
+			# Append any existing regular system prompt to give additional context (if enabled)
+			if history.SystemPromptEnabled and history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
 				if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
-					effective_system_prompt += "\n\n## Additional Instructions\n" + history.HistoryItemList[0].Message
-		elif history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
-			# Not in agent mode: use regular system prompt if it's a system prompt
+					if effective_system_prompt.is_empty():
+						effective_system_prompt = history.HistoryItemList[0].Message
+					else:
+						effective_system_prompt += "\n\n## Additional Instructions\n" + history.HistoryItemList[0].Message
+		elif history.SystemPromptEnabled and history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
+			# Not in agent mode: use regular system prompt if it's a system prompt and enabled
 			if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
 				effective_system_prompt = history.HistoryItemList[0].Message
 
@@ -539,6 +549,34 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 		if item: history_list.append(item)
 
 	return history_list
+
+
+## Build request metadata dictionary for debugging display in user message expand block
+func _build_request_metadata(history: ChatHistory, history_list: Array[Variant]) -> Dictionary:
+	var metadata: Dictionary = {}
+
+	# Model info
+	metadata["model"] = history.provider.model_name if history.provider else "Unknown"
+	metadata["message_count"] = history_list.size()
+
+	# System prompt - get from provider if available
+	if "system_prompt" in history.provider and not history.provider.system_prompt.is_empty():
+		metadata["system_prompt"] = history.provider.system_prompt
+
+	# Agent mode and tools
+	metadata["agent_mode"] = history.AgentModeEnabled
+	if history.AgentModeEnabled and "available_tools" in history.provider:
+		metadata["tools"] = history.provider.available_tools
+		metadata["tool_count"] = history.provider.available_tools.size()
+	else:
+		metadata["tools"] = []
+		metadata["tool_count"] = 0
+
+	# Generation parameters (if available)
+	if history.Temperature > 0:
+		metadata["temperature"] = history.Temperature
+
+	return metadata
 
 
 ## Build history list with proper handling of system prompt based on provider capabilities.
@@ -887,6 +925,9 @@ func execute_regular_chat(text: String) -> void:
 	history.HistoryItemList.append(user_history_item)
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 
+	# Capture request metadata for debugging expandable block
+	user_history_item.RequestMetadata = _build_request_metadata(history, history_list)
+
 	# rerender the message since we changed the history item
 	var user_msg_node: = history.VBox.add_history_item(user_history_item)
 	user_msg_node.first_time_message = true
@@ -1208,7 +1249,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			model_chi.rendered_node.loading_append = false
 			model_chi.rendered_node.render()
 			await get_tree().process_frame
-			history.VBox.ensure_node_is_visible(model_chi.rendered_node)
+			# Use bottom scroll to follow the growing content (tool calls)
+			history.VBox.ensure_node_bottom_is_visible(model_chi.rendered_node)
 
 		# Check for cancellation before recursion
 		if SingletonObject.is_cancelled(history.HistoryId):
@@ -1237,7 +1279,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			model_chi.rendered_node.first_time_message = true
 			model_chi.rendered_node.render()
 			await get_tree().process_frame
-			history.VBox.ensure_node_is_visible(model_chi.rendered_node)
+			# Use bottom scroll to show the final response at the end
+			history.VBox.ensure_node_bottom_is_visible(model_chi.rendered_node)
 
 		finish_with_signal.call()
 
@@ -1990,6 +2033,12 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	if not provider_.is_inside_tree():
 		history.VBox.add_child(provider_)
 
+	# If provider requires a default system prompt and none is set, add it
+	# This makes it visible in the chat settings so the user can see/edit it
+	if provider_.requires_default_system_prompt and not history.HasUsedSystemPrompt:
+		add_new_system_prompt_item(provider_.default_system_prompt)
+		print("[Chat] Added default system prompt for %s" % provider_.model_name)
+
 	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.display_name])
 
 
@@ -2083,7 +2132,9 @@ func clone_chat(tab_idx: int) -> void:
 	new_chat_history.TopP = chat_to_clone.TopP
 	new_chat_history.PresencePenalty = chat_to_clone.PresencePenalty
 	new_chat_history.FrequencyPenalty = chat_to_clone.FrequencyPenalty
-	
+	new_chat_history.SystemPromptEnabled = chat_to_clone.SystemPromptEnabled
+	new_chat_history.AgenticSystemPromptEnabled = chat_to_clone.AgenticSystemPromptEnabled
+
 	# Deep clone history items
 	for item in chat_to_clone.HistoryItemList:
 		var serialized = item.Serialize()

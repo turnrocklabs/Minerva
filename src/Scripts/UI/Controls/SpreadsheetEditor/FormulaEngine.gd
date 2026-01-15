@@ -106,6 +106,12 @@ const FUNCTIONS := {
 	"YEAR": true,
 	"MONTH": true,
 	"DAY": true,
+	# Conditional aggregation functions
+	"SUMIF": true,
+	"SUMIFS": true,
+	"COUNTIF": true,
+	"COUNTIFS": true,
+	"VLOOKUP": true,
 }
 
 
@@ -126,6 +132,14 @@ var _formula: String = ""
 var _pos: int = 0
 var _tokens: Array = []
 var _token_index: int = 0
+
+## Sheet resolver for cross-sheet references
+## Callable that takes sheet name (String) and returns SpreadsheetData or null
+var sheet_resolver: Callable = Callable()
+
+
+func set_sheet_resolver(resolver: Callable) -> void:
+	sheet_resolver = resolver
 
 
 ## Tokenize a formula string
@@ -150,6 +164,11 @@ func tokenize(formula: String) -> Array:
 		# String literal
 		if ch == '"':
 			_tokens.append(_read_string())
+			continue
+
+		# Quoted sheet name (e.g., 'My Sheet'!A1)
+		if ch == "'":
+			_tokens.append(_read_quoted_sheet_reference())
 			continue
 
 		# Cell reference, range, or function
@@ -275,6 +294,21 @@ func _read_identifier() -> Token:
 
 	var full_ident := ("$" if has_dollar else "") + ident
 
+	# Check if followed by ! (sheet reference like Sheet1!A1)
+	if _pos < _formula.length() and _formula[_pos] == "!":
+		var sheet_name := full_ident
+		_pos += 1  # Skip !
+
+		# Read the cell reference after !
+		if _pos < _formula.length() and (_is_identifier_char(_formula[_pos]) or _formula[_pos] == "$"):
+			var cell_token := _read_identifier()
+			if cell_token.type == TokenType.CELL_REF:
+				# Return cell ref with sheet info as dictionary
+				return Token.new(TokenType.CELL_REF,
+					{"sheet": sheet_name, "ref": cell_token.value}, start)
+			return Token.new(TokenType.ERROR, "Expected cell reference after !", start)
+		return Token.new(TokenType.ERROR, "Expected cell reference after !", start)
+
 	# Check if it's a function
 	if ident.to_upper() in FUNCTIONS:
 		return Token.new(TokenType.FUNCTION, ident.to_upper(), start)
@@ -285,6 +319,35 @@ func _read_identifier() -> Token:
 
 	# Unknown identifier - treat as error
 	return Token.new(TokenType.ERROR, "Unknown identifier: " + full_ident, start)
+
+
+## Read a quoted sheet reference like 'My Sheet'!A1
+func _read_quoted_sheet_reference() -> Token:
+	var start := _pos
+	_pos += 1  # Skip opening '
+
+	var sheet_name := ""
+	while _pos < _formula.length() and _formula[_pos] != "'":
+		sheet_name += _formula[_pos]
+		_pos += 1
+
+	if _pos >= _formula.length():
+		return Token.new(TokenType.ERROR, "Unclosed quote in sheet name", start)
+	_pos += 1  # Skip closing '
+
+	if _pos >= _formula.length() or _formula[_pos] != "!":
+		return Token.new(TokenType.ERROR, "Expected ! after quoted sheet name", start)
+	_pos += 1  # Skip !
+
+	# Read the cell reference after !
+	if _pos < _formula.length() and (_is_identifier_char(_formula[_pos]) or _formula[_pos] == "$"):
+		var cell_token := _read_identifier()
+		if cell_token.type == TokenType.CELL_REF:
+			# Return cell ref with sheet info as dictionary
+			return Token.new(TokenType.CELL_REF,
+				{"sheet": sheet_name, "ref": cell_token.value}, start)
+		return Token.new(TokenType.ERROR, "Expected cell reference after !", start)
+	return Token.new(TokenType.ERROR, "Expected cell reference after !", start)
 
 
 func _is_identifier_char(ch: String) -> bool:
@@ -533,18 +596,37 @@ func evaluate(node: ASTNode, data: RefCounted, current_row: int = -1, current_co
 			return EvalResult.err("Unknown node type")
 
 
-func _eval_cell_ref(ref: String, data: RefCounted, _current_row: int, _current_col: int) -> EvalResult:
-	var parsed := parse_cell_reference(ref)
+func _eval_cell_ref(ref_data, data: RefCounted, _current_row: int, _current_col: int) -> EvalResult:
+	var sheet_name: String = ""
+	var cell_ref: String
+
+	# Handle both formats for backward compatibility
+	if ref_data is Dictionary:
+		sheet_name = ref_data.get("sheet", "")
+		cell_ref = ref_data.get("ref", "")
+	else:
+		cell_ref = str(ref_data)
+
+	# Resolve target sheet if cross-sheet reference
+	var target_data: RefCounted = data
+	if not sheet_name.is_empty():
+		if not sheet_resolver.is_valid():
+			return EvalResult.err("#REF!")
+		target_data = sheet_resolver.call(sheet_name)
+		if target_data == null:
+			return EvalResult.err("#REF!")
+
+	var parsed := parse_cell_reference(cell_ref)
 	if parsed.is_empty():
-		return EvalResult.err("Invalid cell reference: " + ref)
+		return EvalResult.err("Invalid cell reference: " + cell_ref)
 
 	var row: int = parsed["row"]
 	var col: int = parsed["col"]
 
-	if row < 0 or row >= data.row_count or col < 0 or col >= data.column_count:
-		return EvalResult.err("Cell out of range: " + ref)
+	if row < 0 or row >= target_data.row_count or col < 0 or col >= target_data.column_count:
+		return EvalResult.err("Cell out of range: " + cell_ref)
 
-	var cell = data.get_cell_if_exists(row, col)
+	var cell = target_data.get_cell_if_exists(row, col)
 	if cell == null or cell.is_empty():
 		return EvalResult.ok(0)  # Empty cells are treated as 0
 
@@ -555,12 +637,38 @@ func _eval_cell_ref(ref: String, data: RefCounted, _current_row: int, _current_c
 	return EvalResult.ok(cell.value)
 
 
-func _eval_range_ref(refs: Array, data: RefCounted) -> EvalResult:
-	if refs.size() != 2:
+func _eval_range_ref(refs, data: RefCounted) -> EvalResult:
+	var sheet_name: String = ""
+	var start_ref: String
+	var end_ref: String
+
+	# Handle new format with sheet info
+	if refs is Dictionary:
+		sheet_name = refs.get("sheet", "")
+		start_ref = refs.get("start", "")
+		end_ref = refs.get("end", "")
+	elif refs is Array and refs.size() == 2:
+		# Check if first element has sheet info (from cross-sheet range)
+		if refs[0] is Dictionary:
+			sheet_name = refs[0].get("sheet", "")
+			start_ref = refs[0].get("ref", "")
+		else:
+			start_ref = str(refs[0])
+		end_ref = str(refs[1])
+	else:
 		return EvalResult.err("Invalid range reference")
 
-	var start := parse_cell_reference(refs[0])
-	var end := parse_cell_reference(refs[1])
+	# Resolve target sheet if cross-sheet reference
+	var target_data: RefCounted = data
+	if not sheet_name.is_empty():
+		if not sheet_resolver.is_valid():
+			return EvalResult.err("#REF!")
+		target_data = sheet_resolver.call(sheet_name)
+		if target_data == null:
+			return EvalResult.err("#REF!")
+
+	var start := parse_cell_reference(start_ref)
+	var end := parse_cell_reference(end_ref)
 
 	if start.is_empty() or end.is_empty():
 		return EvalResult.err("Invalid range reference")
@@ -573,9 +681,11 @@ func _eval_range_ref(refs: Array, data: RefCounted) -> EvalResult:
 
 	for row in range(start_row, end_row + 1):
 		for col in range(start_col, end_col + 1):
-			var cell = data.get_cell_if_exists(row, col)
+			var cell = target_data.get_cell_if_exists(row, col)
 			if cell and not cell.is_empty():
 				values.append(cell.value)
+			else:
+				values.append(0)  # Include empty cells as 0 to maintain positional alignment
 
 	return EvalResult.ok(values)
 
@@ -711,6 +821,16 @@ func _eval_function(node: ASTNode, data: RefCounted, current_row: int, current_c
 			return _func_month(args)
 		"DAY":
 			return _func_day(args)
+		"SUMIF":
+			return _func_sumif(args)
+		"SUMIFS":
+			return _func_sumifs(args)
+		"COUNTIF":
+			return _func_countif(args)
+		"COUNTIFS":
+			return _func_countifs(args)
+		"VLOOKUP":
+			return _func_vlookup(args)
 		_:
 			return EvalResult.err("Unknown function: " + func_name)
 
@@ -956,6 +1076,274 @@ func _func_day(args: Array) -> EvalResult:
 	return EvalResult.err("#VALUE!")
 
 
+func _func_sumif(args: Array) -> EvalResult:
+	# SUMIF(criteria_range, criteria, [sum_range])
+	# If sum_range omitted, sum the criteria_range itself
+	if args.size() < 2:
+		return EvalResult.err("SUMIF requires at least 2 arguments")
+
+	var criteria_values: Array = _flatten_args([args[0]])
+	var criteria = args[1]
+	var sum_values: Array = criteria_values if args.size() < 3 else _flatten_args([args[2]])
+
+	if criteria_values.size() != sum_values.size():
+		return EvalResult.err("SUMIF ranges must be same size")
+
+	var total := 0.0
+	for i in range(criteria_values.size()):
+		if _matches_criteria(criteria_values[i], criteria):
+			total += _to_number(sum_values[i])
+
+	return EvalResult.ok(total)
+
+
+func _func_countif(args: Array) -> EvalResult:
+	# COUNTIF(range, criteria)
+	if args.size() < 2:
+		return EvalResult.err("COUNTIF requires 2 arguments")
+
+	var range_values: Array = _flatten_args([args[0]])
+	var criteria = args[1]
+
+	var count := 0
+	for val in range_values:
+		if _matches_criteria(val, criteria):
+			count += 1
+
+	return EvalResult.ok(count)
+
+
+func _func_sumifs(args: Array) -> EvalResult:
+	# SUMIFS(sum_range, criteria_range1, criteria1, criteria_range2, criteria2, ...)
+	# At minimum: sum_range, criteria_range1, criteria1 (3 args)
+	# Additional criteria come in pairs
+	if args.size() < 3:
+		return EvalResult.err("SUMIFS requires at least 3 arguments")
+
+	# Check for even number of criteria args (pairs of range, criteria)
+	var criteria_args_count := args.size() - 1  # Exclude sum_range
+	if criteria_args_count % 2 != 0:
+		return EvalResult.err("SUMIFS requires criteria in pairs (range, criteria)")
+
+	var sum_values: Array = _flatten_args([args[0]])
+	var num_criteria := criteria_args_count / 2
+
+	# Build list of criteria ranges and criteria values
+	var criteria_ranges: Array = []
+	var criteria_list: Array = []
+	for i in range(num_criteria):
+		var range_idx := 1 + (i * 2)
+		var criteria_idx := 2 + (i * 2)
+		criteria_ranges.append(_flatten_args([args[range_idx]]))
+		criteria_list.append(args[criteria_idx])
+
+	# Validate all ranges have same size
+	var range_size := sum_values.size()
+	for cr in criteria_ranges:
+		if cr.size() != range_size:
+			return EvalResult.err("SUMIFS ranges must be same size")
+
+	# Sum values where ALL criteria match
+	var total := 0.0
+	for i in range(range_size):
+		var all_match := true
+		for c in range(num_criteria):
+			if not _matches_criteria(criteria_ranges[c][i], criteria_list[c]):
+				all_match = false
+				break
+		if all_match:
+			total += _to_number(sum_values[i])
+
+	return EvalResult.ok(total)
+
+
+func _func_countifs(args: Array) -> EvalResult:
+	# COUNTIFS(criteria_range1, criteria1, criteria_range2, criteria2, ...)
+	# At minimum: criteria_range1, criteria1 (2 args)
+	# Additional criteria come in pairs
+	if args.size() < 2:
+		return EvalResult.err("COUNTIFS requires at least 2 arguments")
+
+	if args.size() % 2 != 0:
+		return EvalResult.err("COUNTIFS requires criteria in pairs (range, criteria)")
+
+	var num_criteria := args.size() / 2
+
+	# Build list of criteria ranges and criteria values
+	var criteria_ranges: Array = []
+	var criteria_list: Array = []
+	for i in range(num_criteria):
+		var range_idx := i * 2
+		var criteria_idx := (i * 2) + 1
+		criteria_ranges.append(_flatten_args([args[range_idx]]))
+		criteria_list.append(args[criteria_idx])
+
+	# Validate all ranges have same size
+	var range_size: int = criteria_ranges[0].size()
+	for cr in criteria_ranges:
+		if cr.size() != range_size:
+			return EvalResult.err("COUNTIFS ranges must be same size")
+
+	# Count rows where ALL criteria match
+	var count := 0
+	for i in range(range_size):
+		var all_match := true
+		for c in range(num_criteria):
+			if not _matches_criteria(criteria_ranges[c][i], criteria_list[c]):
+				all_match = false
+				break
+		if all_match:
+			count += 1
+
+	return EvalResult.ok(count)
+
+
+func _func_vlookup(args: Array) -> EvalResult:
+	# VLOOKUP(lookup_value, table_range, col_index, [exact_match])
+	# table_range is expected to be a 2D array where first column is searched
+	if args.size() < 3:
+		return EvalResult.err("VLOOKUP requires at least 3 arguments")
+
+	var lookup_value = args[0]
+	var table_range = args[1]  # This will be flattened array from range
+	var col_index: int = int(_to_number(args[2]))
+	var exact_match: bool = true
+	if args.size() >= 4:
+		# FALSE or 0 means exact match, TRUE or non-zero means approximate
+		var match_arg = args[3]
+		if match_arg is bool:
+			exact_match = not match_arg  # FALSE = exact, TRUE = approx
+		else:
+			exact_match = _to_number(match_arg) == 0
+
+	if col_index < 1:
+		return EvalResult.err("#VALUE!")
+
+	if not table_range is Array or table_range.is_empty():
+		return EvalResult.err("#VALUE!")
+
+	# The table_range comes flattened - we need to know the dimensions
+	# For now, we'll assume the caller provides proper range and we work with flattened data
+	# We need to determine columns from the original range
+	# Since we can't easily get dimensions, assume square root gives hint
+	# Better approach: require the range to have at least col_index columns worth of data
+
+	# Try to infer row structure - this is a limitation without range metadata
+	# For a proper implementation, we'd need to pass range dimensions
+	# Simplified: assume the range is n rows x col_index columns minimum
+	var flat: Array = []
+	if table_range is Array:
+		flat = table_range
+	else:
+		flat = [table_range]
+
+	# For VLOOKUP to work properly, we need to know the number of columns
+	# Let's estimate: if user asks for col_index=3, minimum columns is 3
+	# We'll search through in chunks of col_index
+	var num_cols := col_index  # Assume at least this many columns
+	if flat.size() < num_cols:
+		return EvalResult.err("#REF!")
+
+	var num_rows: int = flat.size() / num_cols
+
+	# Search first column for lookup_value
+	for row in range(int(num_rows)):
+		var first_col_idx := row * num_cols
+		var first_col_value = flat[first_col_idx]
+
+		if exact_match:
+			# Exact match comparison
+			if _values_equal(first_col_value, lookup_value):
+				var result_idx := first_col_idx + col_index - 1
+				if result_idx < flat.size():
+					return EvalResult.ok(flat[result_idx])
+				return EvalResult.err("#REF!")
+		else:
+			# Approximate match - find largest value <= lookup_value
+			# Data should be sorted ascending for approximate match
+			if _to_number(first_col_value) <= _to_number(lookup_value):
+				# Check if next row would exceed lookup_value
+				if row + 1 >= num_rows or _to_number(flat[(row + 1) * num_cols]) > _to_number(lookup_value):
+					var result_idx := first_col_idx + col_index - 1
+					if result_idx < flat.size():
+						return EvalResult.ok(flat[result_idx])
+					return EvalResult.err("#REF!")
+
+	return EvalResult.err("#N/A")
+
+
+func _matches_criteria(value, criteria) -> bool:
+	var criteria_str := str(criteria)
+
+	# Empty criteria matches empty cells
+	if criteria_str.is_empty():
+		return str(value).is_empty() or value == 0
+
+	# Wildcard matching (* and ?)
+	if "*" in criteria_str or "?" in criteria_str:
+		return _wildcard_match(str(value), criteria_str)
+
+	# Comparison operators
+	if criteria_str.begins_with(">="):
+		return _to_number(value) >= _to_number(criteria_str.substr(2))
+	if criteria_str.begins_with("<="):
+		return _to_number(value) <= _to_number(criteria_str.substr(2))
+	if criteria_str.begins_with("<>"):
+		return str(value) != criteria_str.substr(2)
+	if criteria_str.begins_with(">"):
+		return _to_number(value) > _to_number(criteria_str.substr(1))
+	if criteria_str.begins_with("<"):
+		return _to_number(value) < _to_number(criteria_str.substr(1))
+	if criteria_str.begins_with("="):
+		criteria_str = criteria_str.substr(1)
+
+	# Exact match (case-insensitive for strings)
+	if value is String and criteria is String:
+		return value.to_lower() == criteria_str.to_lower()
+
+	# Numeric comparison
+	if _is_numeric(value) and _is_numeric(criteria):
+		return _to_number(value) == _to_number(criteria)
+
+	return str(value).to_lower() == criteria_str.to_lower()
+
+
+func _wildcard_match(text: String, pattern: String) -> bool:
+	# Simple wildcard matching: * = any chars, ? = single char
+	# Case-insensitive: lowercase both pattern and text
+	var lower_pattern := pattern.to_lower()
+
+	# Escape regex special chars except * and ?
+	var escaped := ""
+	for ch in lower_pattern:
+		match ch:
+			"*":
+				escaped += ".*"
+			"?":
+				escaped += "."
+			".", "^", "$", "+", "{", "}", "[", "]", "|", "(", ")", "\\":
+				escaped += "\\" + ch
+			_:
+				escaped += ch
+
+	var regex_pattern := "^" + escaped + "$"
+	var regex := RegEx.new()
+	var err := regex.compile(regex_pattern)
+	if err != OK:
+		return false
+	return regex.search(text.to_lower()) != null
+
+
+func _values_equal(a, b) -> bool:
+	# Compare two values for equality (used by VLOOKUP)
+	# Case-insensitive for strings
+	if a is String and b is String:
+		return a.to_lower() == b.to_lower()
+	if _is_numeric(a) and _is_numeric(b):
+		return _to_number(a) == _to_number(b)
+	return str(a).to_lower() == str(b).to_lower()
+
+
 # ============================================================================
 # UTILITIES
 # ============================================================================
@@ -970,6 +1358,12 @@ func _to_number(value: Variant) -> float:
 			return float(value)
 		if value.is_valid_int():
 			return float(value)
+		# Try stripping currency formatting ($, commas)
+		var cleaned := _strip_currency_format(value)
+		if cleaned.is_valid_float():
+			return float(cleaned)
+		if cleaned.is_valid_int():
+			return float(cleaned)
 	return 0.0
 
 
@@ -977,8 +1371,25 @@ func _is_numeric(value: Variant) -> bool:
 	if value is float or value is int:
 		return true
 	if value is String:
-		return value.is_valid_float() or value.is_valid_int()
+		if value.is_valid_float() or value.is_valid_int():
+			return true
+		# Check if it's a currency-formatted number
+		var cleaned := _strip_currency_format(value)
+		return cleaned.is_valid_float() or cleaned.is_valid_int()
 	return false
+
+
+## Strip common currency formatting from a string
+func _strip_currency_format(text: String) -> String:
+	var result := text.strip_edges()
+	# Remove currency symbols
+	result = result.replace("$", "").replace("€", "").replace("£", "").replace("¥", "")
+	# Remove thousand separators (commas)
+	result = result.replace(",", "")
+	# Handle negative in parentheses: ($100) -> -100
+	if result.begins_with("(") and result.ends_with(")"):
+		result = "-" + result.substr(1, result.length() - 2)
+	return result.strip_edges()
 
 
 ## Parse a cell reference string (e.g., "A1", "$A$1") into row and column indices
@@ -1026,6 +1437,7 @@ func get_references(formula: String) -> Array:
 
 
 ## Get all cell references including those in ranges
+## Note: Cross-sheet references are skipped for local dependency tracking
 func get_all_references(formula: String) -> Array:
 	var refs: Array = []
 	var tokens := tokenize(formula)
@@ -1034,10 +1446,34 @@ func get_all_references(formula: String) -> Array:
 	while i < tokens.size():
 		var token = tokens[i]
 		if token.type == TokenType.CELL_REF:
+			# Extract the cell ref string (handle both old string format and new dict format)
+			var cell_ref_str: String
+			var is_cross_sheet := false
+			if token.value is Dictionary:
+				cell_ref_str = token.value.get("ref", "")
+				is_cross_sheet = not token.value.get("sheet", "").is_empty()
+			else:
+				cell_ref_str = str(token.value)
+
+			# Skip cross-sheet references for local dependency tracking
+			if is_cross_sheet:
+				# Still need to advance past range if present
+				if i + 2 < tokens.size() and tokens[i + 1].type == TokenType.COLON and tokens[i + 2].type == TokenType.CELL_REF:
+					i += 3
+				else:
+					i += 1
+				continue
+
 			# Check if it's a range
 			if i + 2 < tokens.size() and tokens[i + 1].type == TokenType.COLON and tokens[i + 2].type == TokenType.CELL_REF:
-				var start := parse_cell_reference(token.value)
-				var end := parse_cell_reference(tokens[i + 2].value)
+				var end_ref_str: String
+				if tokens[i + 2].value is Dictionary:
+					end_ref_str = tokens[i + 2].value.get("ref", "")
+				else:
+					end_ref_str = str(tokens[i + 2].value)
+
+				var start := parse_cell_reference(cell_ref_str)
+				var end := parse_cell_reference(end_ref_str)
 				if not start.is_empty() and not end.is_empty():
 					var start_row: int = mini(start["row"], end["row"])
 					var end_row: int = maxi(start["row"], end["row"])
@@ -1049,7 +1485,7 @@ func get_all_references(formula: String) -> Array:
 				i += 3
 				continue
 			else:
-				var parsed := parse_cell_reference(token.value)
+				var parsed := parse_cell_reference(cell_ref_str)
 				if not parsed.is_empty():
 					refs.append(Vector2i(parsed["col"], parsed["row"]))
 		i += 1

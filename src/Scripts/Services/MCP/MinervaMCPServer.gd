@@ -150,6 +150,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _save_editor(arguments)
 		"minerva_close_editor":
 			return _close_editor(arguments)
+		"minerva_list_editors":
+			return _list_editors(arguments)
+		"minerva_rename_editor":
+			return _rename_editor(arguments)
 
 		# Graphics editor AI tools
 		"minerva_graphics_get_capabilities":
@@ -170,6 +174,14 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _add_spreadsheet_row(arguments)
 		"minerva_add_spreadsheet_column":
 			return _add_spreadsheet_column(arguments)
+		"minerva_delete_spreadsheet_row":
+			return _delete_spreadsheet_row(arguments)
+		"minerva_delete_spreadsheet_column":
+			return _delete_spreadsheet_column(arguments)
+		"minerva_insert_spreadsheet_row":
+			return _insert_spreadsheet_row(arguments)
+		"minerva_insert_spreadsheet_column":
+			return _insert_spreadsheet_column(arguments)
 		"minerva_format_cells":
 			return _format_cells(arguments)
 		"minerva_set_cell_formula":
@@ -196,6 +208,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _redo_spreadsheet(arguments)
 		"minerva_get_spreadsheet_history":
 			return _get_spreadsheet_history(arguments)
+		"minerva_fill_down":
+			return _fill_down_spreadsheet(arguments)
+		"minerva_recalculate":
+			return _recalculate_spreadsheet(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -530,6 +546,33 @@ func _register_editor_tools() -> void:
 		}
 	)
 
+	_register_tool("minerva_list_editors",
+		"List all open editor tabs (text, graphics, and spreadsheet editors).",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	)
+
+	_register_tool("minerva_rename_editor",
+		"Rename an editor tab (text, graphics, or spreadsheet).",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Current name/title of the editor tab"
+				},
+				"new_name": {
+					"type": "string",
+					"description": "New name for the editor tab"
+				}
+			},
+			"required": ["editor_name", "new_name"]
+		}
+	)
+
 	# Graphics editor AI tools
 	_register_tool("minerva_graphics_get_capabilities",
 		"Get available AI models, actions, and parameters for a graphics editor. Call this before generating images to discover what's available.",
@@ -667,7 +710,7 @@ func _register_spreadsheet_tools() -> void:
 	)
 
 	_register_tool("minerva_get_spreadsheet_data",
-		"Get the data from a spreadsheet in various formats.",
+		"Get the data from a spreadsheet in various formats. Returns data_starts_at_row (1-based) to show where content begins.",
 		{
 			"type": "object",
 			"properties": {
@@ -683,6 +726,10 @@ func _register_spreadsheet_tools() -> void:
 				"range": {
 					"type": "string",
 					"description": "Optional cell range to get (e.g., 'A1:C10'). If not specified, returns all data."
+				},
+				"include_empty_rows": {
+					"type": "boolean",
+					"description": "If true, include leading empty rows in output. Default: false (only returns used data range)."
 				}
 			},
 			"required": ["editor_name"]
@@ -766,6 +813,78 @@ func _register_spreadsheet_tools() -> void:
 				}
 			},
 			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_delete_spreadsheet_row",
+		"Delete a row from the spreadsheet. All rows below shift up. This action can be undone.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"row": {
+					"type": "integer",
+					"description": "Row number to delete (1-based, like Excel). Row 1 is the first row."
+				}
+			},
+			"required": ["editor_name", "row"]
+		}
+	)
+
+	_register_tool("minerva_delete_spreadsheet_column",
+		"Delete a column from the spreadsheet. All columns to the right shift left. This action can be undone.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"column": {
+					"type": "integer",
+					"description": "Column number to delete (1-based). Column 1 is A, column 2 is B, etc."
+				}
+			},
+			"required": ["editor_name", "column"]
+		}
+	)
+
+	_register_tool("minerva_insert_spreadsheet_row",
+		"Insert an empty row at a specific position. All rows at and below shift down.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"at_row": {
+					"type": "integer",
+					"description": "Row index where the empty row will be inserted (0-based)."
+				}
+			},
+			"required": ["editor_name", "at_row"]
+		}
+	)
+
+	_register_tool("minerva_insert_spreadsheet_column",
+		"Insert an empty column at a specific position. All columns at and to the right shift right.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"at_column": {
+					"type": "integer",
+					"description": "Column index where the empty column will be inserted (0-based). 0 = A."
+				}
+			},
+			"required": ["editor_name", "at_column"]
 		}
 	)
 
@@ -1114,6 +1233,48 @@ func _register_spreadsheet_tools() -> void:
 
 	_register_tool("minerva_get_spreadsheet_history",
 		"Get the undo/redo history status of a spreadsheet editor.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_fill_down",
+		"Fill down formulas/values from a source row to target rows. Copies the content from the source row and adjusts relative cell references (e.g., A1 becomes A2, A3, etc.). Absolute references ($A$1) are preserved. This is equivalent to Excel's Ctrl+D fill down feature.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"source_row": {
+					"type": "integer",
+					"description": "The 1-based row number containing the formulas/values to copy (e.g., 2 for row 2)"
+				},
+				"target_rows": {
+					"type": "array",
+					"items": {"type": "integer"},
+					"description": "Array of 1-based row numbers to fill into (e.g., [3, 4, 5] to fill rows 3-5)"
+				},
+				"columns": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Array of column letters to fill (e.g., ['B', 'C', 'D'] or ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']). If omitted, fills all columns with data in the source row."
+				}
+			},
+			"required": ["editor_name", "source_row", "target_rows"]
+		}
+	)
+
+	_register_tool("minerva_recalculate",
+		"Recalculate all formulas in a spreadsheet. Use this after bulk operations or when cross-sheet references need refreshing.",
 		{
 			"type": "object",
 			"properties": {
@@ -1686,6 +1847,80 @@ func _close_editor(args: Dictionary) -> Dictionary:
 	return {"success": true, "message": "Editor closed"}
 
 
+func _list_editors(_args: Dictionary) -> Dictionary:
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return {"error": "Editor pane not available", "success": false}
+
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	var editors: Array[Dictionary] = []
+
+	for i in range(editor_pane.Tabs.get_tab_count()):
+		var editor = editor_pane.Tabs.get_tab_control(i)
+		var tab_title = editor_pane.Tabs.get_tab_title(i)
+
+		var editor_type: String = "unknown"
+		if editor.has_method("get") and "type" in editor:
+			match editor.type:
+				EditorGDScript.Type.TEXT:
+					editor_type = "text"
+				EditorGDScript.Type.GRAPHICS:
+					editor_type = "graphics"
+				EditorGDScript.Type.SPREADSHEET:
+					editor_type = "spreadsheet"
+
+		var editor_info: Dictionary = {
+			"name": tab_title,
+			"type": editor_type,
+			"index": i
+		}
+
+		# Add file path if available
+		if "file" in editor and editor.file:
+			editor_info["file_path"] = editor.file
+
+		# Add saved status if available
+		if editor.has_method("is_content_saved"):
+			editor_info["saved"] = editor.is_content_saved()
+
+		editors.append(editor_info)
+
+	return {
+		"success": true,
+		"count": editors.size(),
+		"editors": editors
+	}
+
+
+func _rename_editor(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var new_name: String = args.get("new_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if new_name.is_empty():
+		return {"error": "new_name is required", "success": false}
+
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return {"error": "Editor pane not available", "success": false}
+
+	# Find the editor by name
+	for i in range(editor_pane.Tabs.get_tab_count()):
+		var tab_title = editor_pane.Tabs.get_tab_title(i)
+		if tab_title == editor_name:
+			editor_pane.Tabs.set_tab_title(i, new_name)
+			return {
+				"success": true,
+				"old_name": editor_name,
+				"new_name": new_name,
+				"message": "Editor renamed from '%s' to '%s'" % [editor_name, new_name]
+			}
+
+	return {"error": "Editor not found: %s" % editor_name, "success": false}
+
+
 func _get_graphics_capabilities(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
@@ -1945,7 +2180,8 @@ func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
 func _get_spreadsheet_data(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 	var format_: String = args.get("format", "csv")
-	#var range_str: String = args.get("range", "")
+	var range_str: String = args.get("range", "")
+	var include_empty_rows: bool = args.get("include_empty_rows", false)
 
 	if editor_name.is_empty():
 		return {"error": "editor_name is required", "success": false}
@@ -1961,24 +2197,62 @@ func _get_spreadsheet_data(args: Dictionary) -> Dictionary:
 	if not data:
 		return {"error": "No spreadsheet data available", "success": false}
 
+	# Get the used range to determine where data starts
+	var used_range: Rect2i = data.get_used_range()
+	var data_starts_at_row: int = used_range.position.y + 1  # Convert to 1-based
+
 	var content: Variant
 	match format_:
 		"csv":
-			content = data.to_csv(",")
+			if include_empty_rows:
+				content = _to_csv_with_empty_rows(data)
+			else:
+				content = data.to_csv(",")
 		"json":
 			content = data.to_json_array()
 		"markdown":
 			content = data.to_markdown()
 		_:
-			content = data.to_csv(",")
+			if include_empty_rows:
+				content = _to_csv_with_empty_rows(data)
+			else:
+				content = data.to_csv(",")
 
 	return {
 		"success": true,
 		"format": format_,
 		"data": content,
 		"row_count": data.row_count,
-		"column_count": data.column_count
+		"column_count": data.column_count,
+		"data_starts_at_row": data_starts_at_row,
+		"has_leading_empty_rows": data_starts_at_row > 1
 	}
+
+
+## Helper to generate CSV including empty rows from row 0
+func _to_csv_with_empty_rows(data) -> String:
+	var used_range: Rect2i = data.get_used_range()
+	if used_range.size == Vector2i.ZERO:
+		return ""
+
+	var lines := PackedStringArray()
+	var delimiter := ","
+
+	# Start from row 0, not from used_range.position.y
+	for row in range(0, used_range.end.y):
+		var values := PackedStringArray()
+		for col in range(used_range.position.x, used_range.end.x):
+			var cell = data.get_cell_if_exists(row, col)
+			var val := ""
+			if cell and not cell.is_empty():
+				val = str(cell.value)
+				# Escape delimiter and quotes
+				if delimiter in val or '"' in val or '\n' in val:
+					val = '"' + val.replace('"', '""') + '"'
+			values.append(val)
+		lines.append(delimiter.join(values))
+
+	return "\n".join(lines)
 
 
 func _update_spreadsheet_data(args: Dictionary) -> Dictionary:
@@ -2110,6 +2384,160 @@ func _add_spreadsheet_column(args: Dictionary) -> Dictionary:
 		"column_index": col_idx,
 		"column_label": SpreadsheetDataScript.get_column_label(col_idx),
 		"message": "Column added at index %d" % col_idx
+	}
+
+
+func _delete_spreadsheet_row(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var row: int = args.get("row", -1)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if row < 1:
+		return {"error": "row number is required and must be >= 1 (1-based indexing)", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	# Convert from 1-based to 0-based indexing
+	var internal_row: int = row - 1
+
+	if internal_row >= data.row_count:
+		return {"error": "Row %d out of bounds (max row: %d)" % [row, data.row_count], "success": false}
+
+	# Delete the row with history support
+	var success = editor.spreadsheet_editor.delete_row_with_history(internal_row)
+	if not success:
+		return {"error": "Failed to delete row %d" % row, "success": false}
+
+	return {
+		"success": true,
+		"deleted_row": row,
+		"message": "Row %d deleted (can be undone with Ctrl+Z)" % row
+	}
+
+
+func _delete_spreadsheet_column(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var column: int = args.get("column", -1)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if column < 1:
+		return {"error": "column number is required and must be >= 1 (1-based indexing)", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	# Convert from 1-based to 0-based indexing
+	var internal_col: int = column - 1
+
+	if internal_col >= data.column_count:
+		return {"error": "Column %d out of bounds (max column: %d)" % [column, data.column_count], "success": false}
+
+	var col_label = SpreadsheetDataScript.get_column_label(internal_col)
+
+	# Delete the column with history support
+	var success = editor.spreadsheet_editor.delete_column_with_history(internal_col)
+	if not success:
+		return {"error": "Failed to delete column %d (%s)" % [column, col_label], "success": false}
+
+	return {
+		"success": true,
+		"deleted_column": column,
+		"deleted_column_label": col_label,
+		"message": "Column %s deleted (can be undone with Ctrl+Z)" % col_label
+	}
+
+
+func _insert_spreadsheet_row(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var at_row: int = args.get("at_row", -1)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if at_row < 0:
+		return {"error": "at_row is required and must be >= 0", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	# Insert empty row
+	data.insert_row(at_row)
+
+	# Trigger redraw
+	editor.spreadsheet_editor.row_headers.queue_redraw()
+	editor.spreadsheet_editor.queue_redraw()
+
+	return {
+		"success": true,
+		"inserted_at_row": at_row,
+		"message": "Empty row inserted at index %d" % at_row
+	}
+
+
+func _insert_spreadsheet_column(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var at_column: int = args.get("at_column", -1)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if at_column < 0:
+		return {"error": "at_column is required and must be >= 0", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	# Insert empty column
+	data.insert_column(at_column)
+
+	var col_label = SpreadsheetDataScript.get_column_label(at_column)
+
+	# Trigger redraw
+	editor.spreadsheet_editor.column_headers.queue_redraw()
+	editor.spreadsheet_editor.queue_redraw()
+
+	return {
+		"success": true,
+		"inserted_at_column": at_column,
+		"inserted_column_label": col_label,
+		"message": "Empty column inserted at %s (index %d)" % [col_label, at_column]
 	}
 
 
@@ -2876,6 +3304,140 @@ func _get_spreadsheet_history(args: Dictionary) -> Dictionary:
 		"can_redo": spreadsheet.can_redo(),
 		"undo_count": spreadsheet.get_undo_count(),
 		"redo_count": spreadsheet.get_redo_count()
+	}
+
+
+## Fill down formulas/values from source row to target rows
+func _fill_down_spreadsheet(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var source_row: int = args.get("source_row", 0)
+	var target_rows: Array = args.get("target_rows", [])
+	var columns: Array = args.get("columns", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if source_row < 1:
+		return {"error": "source_row must be >= 1 (1-based row number)", "success": false}
+
+	if target_rows.is_empty():
+		return {"error": "target_rows array is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var spreadsheet = editor.spreadsheet_editor
+	var data = spreadsheet.spreadsheet_data
+
+	# Convert 1-based to 0-based
+	var source_row_idx: int = source_row - 1
+
+	# Determine columns to fill
+	var col_indices: Array[int] = []
+	if columns.is_empty():
+		# Fill all columns that have data in source row
+		for col in range(data.column_count):
+			var cell = data.get_cell_if_exists(source_row_idx, col)
+			if cell and not cell.is_empty():
+				col_indices.append(col)
+	else:
+		# Parse column letters to indices
+		for col_letter in columns:
+			var col_idx: int = SpreadsheetDataScript.parse_column_label(str(col_letter).to_upper())
+			if col_idx >= 0:
+				col_indices.append(col_idx)
+
+	if col_indices.is_empty():
+		return {"error": "No columns to fill (source row is empty or columns not found)", "success": false}
+
+	# Capture old cells for history
+	var old_cells: Dictionary = {}
+	var new_cells: Dictionary = {}
+	var filled_count: int = 0
+
+	# Fill each target row
+	for target_row in target_rows:
+		var target_row_idx: int = int(target_row) - 1  # Convert to 0-based
+		if target_row_idx < 0 or target_row_idx == source_row_idx:
+			continue
+
+		var row_offset: int = target_row_idx - source_row_idx
+
+		for col in col_indices:
+			var source_cell = data.get_cell_if_exists(source_row_idx, col)
+			if not source_cell:
+				continue
+
+			var key := SpreadsheetDataScript.cell_key(target_row_idx, col)
+
+			# Capture old value
+			var old_cell = data.get_cell_if_exists(target_row_idx, col)
+			if old_cell:
+				old_cells[key] = old_cell.to_dict()
+			else:
+				old_cells[key] = {}
+
+			# Determine what to set
+			if source_cell.has_formula():
+				# Adjust the formula's row references
+				var adjusted_formula: String = spreadsheet._adjust_formula_row_refs(source_cell.formula, row_offset)
+				data.set_cell_value(target_row_idx, col, adjusted_formula)
+			else:
+				# Just copy the value (no adjustment needed)
+				data.set_cell_value(target_row_idx, col, source_cell.value)
+
+			# Capture new value
+			var new_cell = data.get_cell_if_exists(target_row_idx, col)
+			if new_cell:
+				new_cells[key] = new_cell.to_dict()
+			filled_count += 1
+
+	# Record in history
+	if not new_cells.is_empty():
+		spreadsheet.history.record_range_edit(source_row_idx + 1, col_indices[0], old_cells, new_cells)
+
+	spreadsheet.cells_canvas.queue_redraw()
+	spreadsheet.content_changed.emit()
+
+	# Build column letters for response
+	var col_letters: Array[String] = []
+	for col in col_indices:
+		col_letters.append(SpreadsheetDataScript.get_column_label(col))
+
+	return {
+		"success": true,
+		"filled_cells": filled_count,
+		"source_row": source_row,
+		"target_rows": target_rows,
+		"columns": col_letters,
+		"message": "Filled %d cells from row %d to rows %s in columns %s" % [filled_count, source_row, str(target_rows), ", ".join(col_letters)]
+	}
+
+
+## Recalculate all formulas in a spreadsheet
+func _recalculate_spreadsheet(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var spreadsheet = editor.spreadsheet_editor
+	spreadsheet._recalculate_all()
+
+	return {
+		"success": true,
+		"message": "Recalculated all formulas in %s" % editor_name
 	}
 
 #endregion

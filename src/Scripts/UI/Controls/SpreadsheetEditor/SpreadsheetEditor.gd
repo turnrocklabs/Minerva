@@ -69,20 +69,88 @@ var column_header_height: float = 24.0
 
 
 func _ready() -> void:
-	# Initialize data
-	spreadsheet_data = SpreadsheetDataScript.new()
+	print("[SpreadsheetEditor] _ready() called, spreadsheet_data=%s" % spreadsheet_data)
+	# Only initialize data if not already loaded by deserialize()
+	if spreadsheet_data == null:
+		spreadsheet_data = SpreadsheetDataScript.new()
 
-	# Initialize history
-	history = SpreadsheetHistoryScript.new()
+	# Set up cross-sheet reference resolver
+	_setup_sheet_resolver()
 
-	# Build UI
-	_build_ui()
+	# Only initialize history if not already done by deserialize()
+	if history == null:
+		history = SpreadsheetHistoryScript.new()
 
-	# Connect signals
-	_connect_signals()
+	# Only build UI if not already done by deserialize()
+	if cells_canvas == null:
+		_build_ui()
+		_connect_signals()
+	else:
+		# UI was built in deserialize, just need to update layout now that we have size
+		_update_layout()
+		cells_canvas.queue_redraw()
+		column_headers.queue_redraw()
+		row_headers.queue_redraw()
 
 	# Initial selection
 	_update_selection_display()
+
+
+## Set up the sheet resolver for cross-sheet formula references
+func _setup_sheet_resolver() -> void:
+	if spreadsheet_data and spreadsheet_data._formula_engine:
+		spreadsheet_data._formula_engine.set_sheet_resolver(_resolve_sheet)
+
+
+## Schedule a deferred recalculation to allow other sheets to load first
+## This is needed for cross-sheet references to work after project load
+func _schedule_deferred_recalculation() -> void:
+	# If not in tree yet, wait until we are
+	if not is_inside_tree():
+		# Connect to tree_entered to schedule once we're in the tree
+		if not tree_entered.is_connected(_schedule_deferred_recalculation):
+			tree_entered.connect(_schedule_deferred_recalculation, CONNECT_ONE_SHOT)
+		return
+
+	# Use a short timer to allow all editors to finish loading
+	var timer := get_tree().create_timer(0.5)  # 500ms delay
+	timer.timeout.connect(_on_deferred_recalculation)
+
+
+func _on_deferred_recalculation() -> void:
+	if spreadsheet_data:
+		print("[SpreadsheetEditor] Running deferred recalculation")
+		spreadsheet_data.recalculate_all()
+		cells_canvas.queue_redraw()
+
+
+## Manually recalculate all formulas (called by Recalc button or F9)
+func _recalculate_all() -> void:
+	if spreadsheet_data:
+		spreadsheet_data.recalculate_all()
+		cells_canvas.queue_redraw()
+		_update_selection_display()
+
+
+## Resolve a sheet name to its SpreadsheetData for cross-sheet references
+func _resolve_sheet(sheet_name: String) -> RefCounted:
+	if not SingletonObject.editor_container:
+		return null
+
+	var editor_pane = SingletonObject.editor_container.editor_pane
+	if not editor_pane:
+		return null
+
+	# Load the Editor script to check type
+	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
+
+	# Search through open editors for a matching spreadsheet
+	for editor in editor_pane.get_open_editors():
+		if editor.tab_title == sheet_name and editor.type == EditorScript.Type.SPREADSHEET:
+			if editor.spreadsheet_editor and editor.spreadsheet_editor.spreadsheet_data:
+				return editor.spreadsheet_editor.spreadsheet_data
+
+	return null
 
 
 func _build_ui() -> void:
@@ -213,6 +281,24 @@ func _build_toolbar() -> void:
 	# Separator
 	var sep5 := VSeparator.new()
 	toolbar.add_child(sep5)
+
+	# Fill Down button
+	var fill_down_btn := Button.new()
+	fill_down_btn.text = "Fill Down"
+	fill_down_btn.tooltip_text = "Fill Down (Ctrl+D) - Copy top row formulas to selected rows"
+	fill_down_btn.pressed.connect(_fill_down)
+	toolbar.add_child(fill_down_btn)
+
+	# Recalculate button
+	var recalc_btn := Button.new()
+	recalc_btn.text = "Recalc"
+	recalc_btn.tooltip_text = "Recalculate all formulas (F9)"
+	recalc_btn.pressed.connect(_recalculate_all)
+	toolbar.add_child(recalc_btn)
+
+	# Separator
+	var sep6 := VSeparator.new()
+	toolbar.add_child(sep6)
 
 	# Chart button
 	var chart_btn := Button.new()
@@ -385,8 +471,9 @@ func _connect_signals() -> void:
 	h_scrollbar.value_changed.connect(_on_h_scroll_changed)
 	v_scrollbar.value_changed.connect(_on_v_scroll_changed)
 
-	# Data signals
-	spreadsheet_data.data_changed.connect(_on_data_changed)
+	# Data signals (only if spreadsheet_data exists - may be connected later in deserialize)
+	if spreadsheet_data:
+		spreadsheet_data.data_changed.connect(_on_data_changed)
 
 
 func _on_grid_resized() -> void:
@@ -773,6 +860,9 @@ func _handle_key_input(event: InputEventKey) -> bool:
 			KEY_Y:
 				_perform_redo()
 				return true
+			KEY_D:
+				_fill_down()
+				return true
 
 	# Handle navigation
 	if is_editing:
@@ -805,6 +895,9 @@ func _handle_key_input(event: InputEventKey) -> bool:
 			return true
 		KEY_F2:
 			_start_inline_edit()
+			return true
+		KEY_F9:
+			_recalculate_all()
 			return true
 		KEY_DELETE:
 			_delete_selection()
@@ -889,6 +982,111 @@ func _copy_selection() -> void:
 		lines.append("\t".join(values))
 
 	DisplayServer.clipboard_set("\n".join(lines))
+
+
+## Fill Down - copy formulas/values from top row of selection to rows below
+## Adjusts relative cell references (row numbers) automatically
+func _fill_down() -> void:
+	var sel_rect: Rect2i = cells_canvas.get_selection_rect()
+	if sel_rect.size == Vector2i.ZERO:
+		return  # Nothing selected
+
+	# Need at least 2 rows to fill down
+	if sel_rect.size.y < 2:
+		return
+
+	var source_row: int = sel_rect.position.y
+	var start_col: int = sel_rect.position.x
+	var end_col: int = sel_rect.end.x
+
+	# Capture old cells for history
+	var old_cells: Dictionary = {}
+	var new_cells: Dictionary = {}
+
+	# For each column in the selection
+	for col in range(start_col, end_col):
+		# Get the source cell (top row of selection)
+		var source_cell = spreadsheet_data.get_cell_if_exists(source_row, col)
+		var source_formula: String = ""
+		var source_value: Variant = ""
+
+		if source_cell:
+			source_formula = source_cell.formula
+			source_value = source_cell.value
+
+		# Fill down to each row below the source
+		for target_row in range(source_row + 1, sel_rect.end.y):
+			var row_offset: int = target_row - source_row
+			var key := SpreadsheetDataScript.cell_key(target_row, col)
+
+			# Capture old value
+			var old_cell = spreadsheet_data.get_cell_if_exists(target_row, col)
+			if old_cell:
+				old_cells[key] = old_cell.to_dict()
+			else:
+				old_cells[key] = {}
+
+			# Determine what to set
+			if not source_formula.is_empty():
+				# Adjust the formula's row references
+				var adjusted_formula: String = _adjust_formula_row_refs(source_formula, row_offset)
+				spreadsheet_data.set_cell_value(target_row, col, adjusted_formula)
+			else:
+				# Just copy the value (no adjustment needed)
+				spreadsheet_data.set_cell_value(target_row, col, source_value)
+
+			# Capture new value
+			var new_cell = spreadsheet_data.get_cell_if_exists(target_row, col)
+			if new_cell:
+				new_cells[key] = new_cell.to_dict()
+
+	# Record in history
+	if not new_cells.is_empty():
+		history.record_range_edit(source_row + 1, start_col, old_cells, new_cells)
+
+	content_changed.emit()
+
+
+## Adjust row references in a formula by a given offset
+## Respects absolute references ($) - those are not adjusted
+func _adjust_formula_row_refs(formula: String, row_offset: int) -> String:
+	# Regex to match cell references including optional sheet prefix and $ markers
+	# Pattern: (optional 'SheetName'! or SheetName!) followed by ($?)([A-Z]+)($?)([0-9]+)
+	var regex := RegEx.new()
+	# Match: optional sheet prefix, then column (with optional $), then row number (with optional $)
+	regex.compile("((?:'[^']+?'!|[A-Za-z_][A-Za-z0-9_]*!)?)(\\$?)([A-Za-z]+)(\\$?)([0-9]+)")
+
+	var result := formula
+	var matches := regex.search_all(formula)
+
+	# Process matches in reverse order to preserve positions
+	for i in range(matches.size() - 1, -1, -1):
+		var m := matches[i]
+		var sheet_prefix: String = m.get_string(1)  # 'Sheet1'! or Sheet1! or empty
+		var col_abs: String = m.get_string(2)       # $ or empty
+		var col_letters: String = m.get_string(3)   # A, B, AA, etc.
+		var row_abs: String = m.get_string(4)       # $ or empty
+		var row_num_str: String = m.get_string(5)   # 1, 2, 100, etc.
+
+		# If row is absolute ($), don't adjust
+		if row_abs == "$":
+			continue
+
+		# Adjust the row number
+		var row_num: int = row_num_str.to_int()
+		var new_row_num: int = row_num + row_offset
+
+		# Don't allow negative or zero row numbers
+		if new_row_num < 1:
+			new_row_num = 1
+
+		# Rebuild the reference
+		var new_ref := sheet_prefix + col_abs + col_letters + row_abs + str(new_row_num)
+
+		# Replace in result
+		result = result.substr(0, m.get_start()) + new_ref + result.substr(m.get_end())
+
+	return result
 
 
 func _paste_selection() -> void:
@@ -1179,6 +1377,60 @@ func _apply_history_action(action, is_undo: bool) -> void:
 			spreadsheet_data.set_column_width(col, width)
 			column_headers.queue_redraw()
 
+		SpreadsheetHistoryScript.ActionType.ROW_DELETE:
+			var row: int = action.data["row"]
+			if is_undo:
+				# Re-insert the row and restore its data
+				spreadsheet_data.insert_row(row)
+				var row_data: Dictionary = action.data["row_data"]
+				var row_height: float = action.data["row_height"]
+				spreadsheet_data.set_row_height(row, row_height)
+				for col_idx in row_data:
+					var cell_data: Dictionary = row_data[col_idx]
+					var cell = spreadsheet_data.get_cell(row, int(col_idx))
+					cell.value = cell_data.get("value", "")
+					cell.formula = cell_data.get("formula", "")
+					cell.bold = cell_data.get("bold", false)
+					cell.italic = cell_data.get("italic", false)
+					cell.alignment = cell_data.get("alignment", 0)
+					cell.text_color = cell_data.get("text_color", Color.WHITE)
+					cell.bg_color = cell_data.get("bg_color", Color.TRANSPARENT)
+					cell.number_format = cell_data.get("number_format", "")
+					cell.refresh_display()
+				row_headers.queue_redraw()
+			else:
+				# Re-delete the row (redo)
+				spreadsheet_data.delete_row(row)
+				row_headers.queue_redraw()
+			_update_scrollbar_ranges()
+
+		SpreadsheetHistoryScript.ActionType.COLUMN_DELETE:
+			var col: int = action.data["col"]
+			if is_undo:
+				# Re-insert the column and restore its data
+				spreadsheet_data.insert_column(col)
+				var col_data: Dictionary = action.data["col_data"]
+				var col_width: float = action.data["col_width"]
+				spreadsheet_data.set_column_width(col, col_width)
+				for row_idx in col_data:
+					var cell_data: Dictionary = col_data[row_idx]
+					var cell = spreadsheet_data.get_cell(int(row_idx), col)
+					cell.value = cell_data.get("value", "")
+					cell.formula = cell_data.get("formula", "")
+					cell.bold = cell_data.get("bold", false)
+					cell.italic = cell_data.get("italic", false)
+					cell.alignment = cell_data.get("alignment", 0)
+					cell.text_color = cell_data.get("text_color", Color.WHITE)
+					cell.bg_color = cell_data.get("bg_color", Color.TRANSPARENT)
+					cell.number_format = cell_data.get("number_format", "")
+					cell.refresh_display()
+				column_headers.queue_redraw()
+			else:
+				# Re-delete the column (redo)
+				spreadsheet_data.delete_column(col)
+				column_headers.queue_redraw()
+			_update_scrollbar_ranges()
+
 	cells_canvas.queue_redraw()
 	_update_selection_display()
 	content_changed.emit()
@@ -1313,6 +1565,84 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 	# Trigger UI updates
 	cells_canvas.queue_redraw()
 	content_changed.emit()
+
+
+## Delete a row with history recording (for external callers like MCP)
+func delete_row_with_history(row: int) -> bool:
+	if row < 0 or row >= spreadsheet_data.row_count:
+		return false
+
+	# Capture the row data before deletion
+	var row_data: Dictionary = {}
+	for col in range(spreadsheet_data.column_count):
+		var cell = spreadsheet_data.get_cell_if_exists(row, col)
+		if cell and not cell.is_empty():
+			row_data[col] = {
+				"value": cell.value,
+				"formula": cell.formula,
+				"bold": cell.bold,
+				"italic": cell.italic,
+				"alignment": cell.alignment,
+				"text_color": cell.text_color,
+				"bg_color": cell.bg_color,
+				"number_format": cell.number_format,
+			}
+
+	# Get row height
+	var row_height: float = spreadsheet_data.get_row_height(row)
+
+	# Delete the row
+	spreadsheet_data.delete_row(row)
+
+	# Record in history
+	history.record_row_delete(row, row_data, row_height)
+
+	# Trigger UI updates
+	row_headers.queue_redraw()
+	cells_canvas.queue_redraw()
+	_update_scrollbar_ranges()
+	content_changed.emit()
+
+	return true
+
+
+## Delete a column with history recording (for external callers like MCP)
+func delete_column_with_history(col: int) -> bool:
+	if col < 0 or col >= spreadsheet_data.column_count:
+		return false
+
+	# Capture the column data before deletion
+	var col_data: Dictionary = {}
+	for row in range(spreadsheet_data.row_count):
+		var cell = spreadsheet_data.get_cell_if_exists(row, col)
+		if cell and not cell.is_empty():
+			col_data[row] = {
+				"value": cell.value,
+				"formula": cell.formula,
+				"bold": cell.bold,
+				"italic": cell.italic,
+				"alignment": cell.alignment,
+				"text_color": cell.text_color,
+				"bg_color": cell.bg_color,
+				"number_format": cell.number_format,
+			}
+
+	# Get column width
+	var col_width: float = spreadsheet_data.get_column_width(col)
+
+	# Delete the column
+	spreadsheet_data.delete_column(col)
+
+	# Record in history
+	history.record_column_delete(col, col_data, col_width)
+
+	# Trigger UI updates
+	column_headers.queue_redraw()
+	cells_canvas.queue_redraw()
+	_update_scrollbar_ranges()
+	content_changed.emit()
+
+	return true
 
 
 ## Begin a batch operation (groups multiple edits into one undo action)
@@ -1772,12 +2102,30 @@ func serialize() -> Dictionary:
 
 ## Override deserialize to restore charts
 func deserialize(data: Dictionary) -> void:
+	print("[SpreadsheetEditor] deserialize() called, cells_canvas=%s" % cells_canvas)
+	# Ensure UI is built before deserializing (in case _ready hasn't run yet)
+	if cells_canvas == null:
+		history = SpreadsheetHistoryScript.new()
+		_build_ui()
+		_connect_signals()
+
 	spreadsheet_data = SpreadsheetDataScript.new()
 	spreadsheet_data.load_from_dict(data)
+	print("[SpreadsheetEditor] Deserialized %d cells" % spreadsheet_data.cells.size())
+	_setup_sheet_resolver()  # Set up cross-sheet reference resolver
+	# Defer recalculation to allow other sheets to load first (for cross-sheet refs)
+	_schedule_deferred_recalculation()
+	print("[SpreadsheetEditor] Setting data on canvases, cells_canvas=%s" % cells_canvas)
 	cells_canvas.set_data(spreadsheet_data)
 	column_headers.set_data(spreadsheet_data)
 	row_headers.set_data(spreadsheet_data)
 	spreadsheet_data.data_changed.connect(_on_data_changed)
+	print("[SpreadsheetEditor] Canvas size: %s, data.row_count=%d, data.column_count=%d" % [cells_canvas.size, spreadsheet_data.row_count, spreadsheet_data.column_count])
+
+	# Force redraw after loading data
+	cells_canvas.queue_redraw()
+	column_headers.queue_redraw()
+	row_headers.queue_redraw()
 
 	# Restore charts
 	charts.clear()
