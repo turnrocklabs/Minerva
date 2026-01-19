@@ -284,14 +284,14 @@ func _build_toolbar() -> void:
 
 	# Fill Down button
 	var fill_down_btn := Button.new()
-	fill_down_btn.text = "Fill Down"
+	fill_down_btn.icon = preload("uid://gy2ltu20y33")
 	fill_down_btn.tooltip_text = "Fill Down (Ctrl+D) - Copy top row formulas to selected rows"
 	fill_down_btn.pressed.connect(_fill_down)
 	toolbar.add_child(fill_down_btn)
 
 	# Recalculate button
 	var recalc_btn := Button.new()
-	recalc_btn.text = "Recalc"
+	recalc_btn.icon = preload("uid://bdmixrtkjm1dv")
 	recalc_btn.tooltip_text = "Recalculate all formulas (F9)"
 	recalc_btn.pressed.connect(_recalculate_all)
 	toolbar.add_child(recalc_btn)

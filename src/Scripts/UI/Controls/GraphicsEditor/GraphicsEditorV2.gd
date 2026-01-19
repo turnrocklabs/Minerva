@@ -610,11 +610,12 @@ func add_layer(layer: LayerV2, select: = true) -> LayerV2:
 	layer_card.reorder.connect(_on_layer_card_reorder.bind(layer_card))
 	layer_card.layer_clicked.connect(_on_layer_card_clicked.bind(layer_card))
 
-	layer_cards_container.add_child(layer_card)
-	layer_cards_container.move_child(layer_card, 0)
+	if layer_cards_container:
+		layer_cards_container.add_child(layer_card)
+		layer_cards_container.move_child(layer_card, 0)
 	layer_card.selected = select
-
-	layers_container.add_child(layer, true)
+	if layers_container:
+		layers_container.add_child(layer, true)
 
 	layers.append(layer)
 	
@@ -2309,9 +2310,12 @@ func check_ai_buttons_toggle() -> void:
 		edit_img_button.disabled = false
 		send_mask_edit_button.disabled = false
 	else:
-		edit_img_button.disabled = true
-		send_mask_edit_button.disabled = true
-	edit_img_button.tooltip_text = _edit_img_base_tooltip
+		if edit_img_button:
+			edit_img_button.disabled = true
+			edit_img_button.tooltip_text = _edit_img_base_tooltip
+		if send_mask_edit_button:
+			send_mask_edit_button.disabled = true
+	
 
 
 var draw_render_view: = false
