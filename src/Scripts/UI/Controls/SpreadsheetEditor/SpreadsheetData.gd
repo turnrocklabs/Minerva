@@ -287,7 +287,7 @@ static func get_column_label(col: int) -> String:
 	while n > 0:
 		n -= 1
 		result = char(65 + (n % 26)) + result  # 65 = 'A'
-		n = n / 26
+		n = int(n / 26.0)
 
 	return result
 
@@ -1257,9 +1257,9 @@ func _parse_markdown_row(line: String) -> PackedStringArray:
 		line = line.substr(0, line.length() - 1)
 
 	# Split by pipe, handling escaped pipes
-	var cells := _split_markdown_cells(line)
+	var _cells := _split_markdown_cells(line)
 
-	for cell_text in cells:
+	for cell_text in _cells:
 		# Unescape pipes and trim
 		var value := cell_text.strip_edges().replace("\\|", "|")
 		result.append(value)

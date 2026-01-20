@@ -80,7 +80,7 @@ func _on_editor_button_pressed() -> void:
 
 	var content = _format_chat_for_editor()
 	var ep = SingletonObject.editor_pane
-	var tab = ep.add(0, null, chat_history.HistoryName, null)  # 0 = Editor.Type.TEXT
+	var tab = ep.add(Editor.Type.TEXT, null, chat_history.HistoryName, null)  # 0 = Editor.Type.TEXT
 	if tab and tab.code_edit:
 		tab.code_edit.text = content
 	ep.update_tabs_icon()

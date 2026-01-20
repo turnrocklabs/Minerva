@@ -128,8 +128,8 @@ func _handle_mouse_up(_event: InputEventMouseButton) -> bool:
 func _handle_drag(event: InputEventMouseMotion) -> bool:
 	# Handle segment dragging - move the segment orthogonally
 	if _dragging_segment and _segment_connector:
-		var delta = event.screen_relative * editor.PAN_FACTOR * (1.0 / editor.input_area_camera.zoom.x)
-		_move_segment(delta)
+		var _delta = event.screen_relative * editor.PAN_FACTOR * (1.0 / editor.input_area_camera.zoom.x)
+		_move_segment(_delta)
 		return true
 
 	# Handle endpoint dragging - update preview line
@@ -574,7 +574,7 @@ func _move_segment(delta: Vector2) -> void:
 		constrained_delta = Vector2(delta.x, 0)
 
 	var manual = _segment_connector.connector_manual_waypoints
-	var path = _segment_connector.get_connector_path()
+	#var path = _segment_connector.get_connector_path()
 
 	# Segment i connects path[i] to path[i+1]
 	# Manual waypoints are the middle points: path[1] to path[size-2]

@@ -1524,8 +1524,8 @@ func _create_note(args: Dictionary) -> Dictionary:
 		return {"error": "Notes container not available", "success": false}
 
 	# Create the note
-	var NoteScript = load("res://Scripts/UI/Controls/Note.gd")
-	var note = NoteScript.create_text_note(title, content)
+	var _NoteScript = load("res://Scripts/UI/Controls/Note.gd")
+	var note = _NoteScript.create_text_note(title, content)
 
 	# Find or create the tab
 	var tab_idx := -1
@@ -2180,7 +2180,7 @@ func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
 func _get_spreadsheet_data(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 	var format_: String = args.get("format", "csv")
-	var range_str: String = args.get("range", "")
+	#var range_str: String = args.get("range", "")
 	var include_empty_rows: bool = args.get("include_empty_rows", false)
 
 	if editor_name.is_empty():

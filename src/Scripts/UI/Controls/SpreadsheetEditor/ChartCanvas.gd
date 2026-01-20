@@ -109,7 +109,8 @@ func _draw_grid(plot_rect: Rect2) -> void:
 	# X-axis grid lines (vertical)
 	var num_x_ticks := mini(chart_data.x_labels.size(), 10)
 	if num_x_ticks > 0:
-		var step := maxi(1, chart_data.x_labels.size() / num_x_ticks)
+		@warning_ignore("integer_division")
+		var step := maxi(1, int(chart_data.x_labels.size() / num_x_ticks))
 		for i in range(0, chart_data.x_labels.size(), step):
 			var x := _index_to_x(i, plot_rect)
 			draw_line(
@@ -157,9 +158,10 @@ func _draw_axes(plot_rect: Rect2) -> void:
 		)
 
 	# X-axis labels
-	var num_x_labels := mini(chart_data.x_labels.size(), 10)
+	var num_x_labels : int = mini(chart_data.x_labels.size(), 10)
 	if num_x_labels > 0:
-		var step := maxi(1, chart_data.x_labels.size() / num_x_labels)
+		@warning_ignore("integer_division")
+		var step : = maxi(1, int(chart_data.x_labels.size() / num_x_labels))
 		for i in range(0, chart_data.x_labels.size(), step):
 			var x := _index_to_x(i, plot_rect)
 			var label := chart_data.x_labels[i]
@@ -272,8 +274,8 @@ func _draw_legend(plot_rect: Rect2) -> void:
 
 	# Calculate total legend width
 	for series in chart_data.series_data:
-		var name: String = series["name"]
-		var text_width := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		var _name: String = series["name"]
+		var text_width := font.get_string_size(_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 		total_width += swatch_size + 6 + text_width + item_spacing
 
 	# Center the legend
@@ -281,7 +283,7 @@ func _draw_legend(plot_rect: Rect2) -> void:
 
 	# Draw legend items
 	for series in chart_data.series_data:
-		var name: String = series["name"]
+		var _name: String = series["name"]
 		var color: Color = series["color"]
 
 		# Draw color swatch
@@ -291,9 +293,9 @@ func _draw_legend(plot_rect: Rect2) -> void:
 		var text_x := legend_x + swatch_size + 6
 		var text_y := legend_y + font.get_ascent(font_size) - 2
 
-		draw_string(font, Vector2(text_x, text_y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, chart.text_color)
+		draw_string(font, Vector2(text_x, text_y), _name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, chart.text_color)
 
-		var text_width := font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+		var text_width := font.get_string_size(_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 		legend_x += swatch_size + 6 + text_width + item_spacing
 
 
@@ -364,9 +366,9 @@ func update_from_spreadsheet(spreadsheet_data) -> void:
 func capture_to_image(width: int = 800, height: int = 400) -> Image:
 	if not chart or not chart_data or not chart_data.has_data:
 		# Return a placeholder image with "No chart data" message
-		var img := Image.create(width, height, false, Image.FORMAT_RGBA8)
-		img.fill(Color(0.15, 0.15, 0.18, 1.0))
-		return img
+		var placeholder_img := Image.create(width, height, false, Image.FORMAT_RGBA8)
+		placeholder_img.fill(Color(0.15, 0.15, 0.18, 1.0))
+		return placeholder_img
 
 	# Create a SubViewport to render the chart
 	var viewport := SubViewport.new()
@@ -392,7 +394,7 @@ func capture_to_image(width: int = 800, height: int = 400) -> Image:
 	await RenderingServer.frame_post_draw
 
 	# Get the rendered image
-	var img := viewport.get_texture().get_image()
+	var _img := viewport.get_texture().get_image()
 
 	# Clean up
 	viewport.remove_child(chart_copy)
@@ -400,14 +402,14 @@ func capture_to_image(width: int = 800, height: int = 400) -> Image:
 	remove_child(viewport)
 	viewport.queue_free()
 
-	return img
+	return _img
 
 
 ## Capture chart to base64-encoded PNG (for MCP tools)
 func capture_to_base64_png(width: int = 800, height: int = 400) -> String:
-	var img := await capture_to_image(width, height)
-	if img == null or img.is_empty():
+	var _img := await capture_to_image(width, height)
+	if _img == null or _img.is_empty():
 		return ""
 
-	var png_buffer := img.save_png_to_buffer()
+	var png_buffer := _img.save_png_to_buffer()
 	return Marshalls.raw_to_base64(png_buffer)

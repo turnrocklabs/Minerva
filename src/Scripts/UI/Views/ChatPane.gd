@@ -1709,7 +1709,7 @@ func _ready():
 
 	# Setup debounce timer for token estimation (300ms delay)
 	_token_estimation_timer = Timer.new()
-	_token_estimation_timer.one_shot = true
+	#_token_estimation_timer.one_shot = true
 	_token_estimation_timer.wait_time = 0.3
 	_token_estimation_timer.timeout.connect(_on_token_estimation_timer_timeout)
 	add_child(_token_estimation_timer)
@@ -1942,10 +1942,12 @@ func _on_agent_mode_toggled(_toggled_on: bool) -> void:
 func _on_txt_main_user_input_text_changed():
 	if %txtMainUserInput.text == "":
 		%EstimatedTokensLabel.text = "%s¢" % 0.00
-		_token_estimation_timer.stop()
+		if _token_estimation_timer != null:
+			_token_estimation_timer.stop()
 		return
 	# Restart debounce timer - actual estimation runs after 300ms of no typing
-	_token_estimation_timer.start()
+	if _token_estimation_timer != null:
+		_token_estimation_timer.start()
 
 func _on_txt_main_user_input_text_set():
 	# Direct call for programmatic text setting (not continuous typing)

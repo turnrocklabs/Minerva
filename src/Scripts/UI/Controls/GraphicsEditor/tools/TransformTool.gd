@@ -472,11 +472,11 @@ func _create_rotate_cursor(size: int) -> ImageTexture:
 		# Draw outline
 		for ox in range(-1, 2):
 			for oy in range(-1, 2):
-				var px = int(x + ox)
-				var py = int(y + oy)
-				if px >= 0 and px < size and py >= 0 and py < size:
-					if image.get_pixel(px, py).a < 0.5:
-						image.set_pixel(px, py, outline_color)
+				var _px = int(x + ox)
+				var _py = int(y + oy)
+				if _px >= 0 and _px < size and _py >= 0 and _py < size:
+					if image.get_pixel(_px, _py).a < 0.5:
+						image.set_pixel(_px, _py, outline_color)
 
 		# Draw main line
 		var px = int(x)

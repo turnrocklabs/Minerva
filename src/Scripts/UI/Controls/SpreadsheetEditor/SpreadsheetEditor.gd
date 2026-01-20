@@ -142,11 +142,11 @@ func _resolve_sheet(sheet_name: String) -> RefCounted:
 		return null
 
 	# Load the Editor script to check type
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
+	#var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
 
 	# Search through open editors for a matching spreadsheet
 	for editor in editor_pane.get_open_editors():
-		if editor.tab_title == sheet_name and editor.type == EditorScript.Type.SPREADSHEET:
+		if editor.tab_title == sheet_name and editor.type == Editor.Type.SPREADSHEET:
 			if editor.spreadsheet_editor and editor.spreadsheet_editor.spreadsheet_data:
 				return editor.spreadsheet_editor.spreadsheet_data
 
@@ -190,7 +190,7 @@ func _build_toolbar() -> void:
 
 	# Bold button
 	var bold_btn := Button.new()
-	bold_btn.text = "B"
+	bold_btn.icon = preload("uid://cfu0tc5nslwku")
 	bold_btn.tooltip_text = "Bold (Ctrl+B)"
 	bold_btn.custom_minimum_size = Vector2(30, 28)
 	bold_btn.pressed.connect(_on_bold_pressed)
@@ -198,7 +198,7 @@ func _build_toolbar() -> void:
 
 	# Italic button
 	var italic_btn := Button.new()
-	italic_btn.text = "I"
+	italic_btn.icon = preload("uid://c2x042or4icqh")
 	italic_btn.tooltip_text = "Italic (Ctrl+I)"
 	italic_btn.custom_minimum_size = Vector2(30, 28)
 	italic_btn.pressed.connect(_on_italic_pressed)
@@ -210,21 +210,21 @@ func _build_toolbar() -> void:
 
 	# Alignment buttons
 	var align_left := Button.new()
-	align_left.text = "L"
+	align_left.icon = preload("uid://8pfda6vkqgcu")
 	align_left.tooltip_text = "Align Left"
 	align_left.custom_minimum_size = Vector2(30, 28)
 	align_left.pressed.connect(_on_align_left_pressed)
 	toolbar.add_child(align_left)
 
 	var align_center := Button.new()
-	align_center.text = "C"
+	align_center.icon = preload("uid://by4euhg5vcb2u")
 	align_center.tooltip_text = "Align Center"
 	align_center.custom_minimum_size = Vector2(30, 28)
 	align_center.pressed.connect(_on_align_center_pressed)
 	toolbar.add_child(align_center)
 
 	var align_right := Button.new()
-	align_right.text = "R"
+	align_right.icon = preload("uid://cn3cyqlwp73k3")
 	align_right.tooltip_text = "Align Right"
 	align_right.custom_minimum_size = Vector2(30, 28)
 	align_right.pressed.connect(_on_align_right_pressed)
@@ -236,7 +236,7 @@ func _build_toolbar() -> void:
 
 	# Header row button
 	var header_btn := Button.new()
-	header_btn.text = "Header"
+	header_btn.icon = preload("uid://cgsv4ad8o0ond")
 	header_btn.tooltip_text = "Toggle Header Row"
 	header_btn.pressed.connect(_on_header_row_pressed)
 	toolbar.add_child(header_btn)
@@ -247,7 +247,7 @@ func _build_toolbar() -> void:
 
 	# Freeze pane button with dropdown
 	var freeze_btn := MenuButton.new()
-	freeze_btn.text = "Freeze"
+	freeze_btn.icon = preload("uid://bq6kasw1po25h")
 	freeze_btn.tooltip_text = "Freeze Rows/Columns"
 	var freeze_popup := freeze_btn.get_popup()
 	freeze_popup.add_item("No Freeze", 0)
@@ -266,14 +266,14 @@ func _build_toolbar() -> void:
 
 	# Import button
 	var import_btn := Button.new()
-	import_btn.text = "Import"
+	import_btn.icon = preload("uid://ccei0hhyfti1b")
 	import_btn.tooltip_text = "Import from CSV/TSV/Excel"
 	import_btn.pressed.connect(_on_import_pressed)
 	toolbar.add_child(import_btn)
 
 	# Export button
 	var export_btn := Button.new()
-	export_btn.text = "Export"
+	export_btn.icon = preload("uid://c4xecwxribs4s")
 	export_btn.tooltip_text = "Export to CSV/TSV/Excel"
 	export_btn.pressed.connect(_on_export_pressed)
 	toolbar.add_child(export_btn)
@@ -284,14 +284,14 @@ func _build_toolbar() -> void:
 
 	# Fill Down button
 	var fill_down_btn := Button.new()
-	fill_down_btn.text = "Fill Down"
+	fill_down_btn.icon = preload("uid://gy2ltu20y33")
 	fill_down_btn.tooltip_text = "Fill Down (Ctrl+D) - Copy top row formulas to selected rows"
 	fill_down_btn.pressed.connect(_fill_down)
 	toolbar.add_child(fill_down_btn)
 
 	# Recalculate button
 	var recalc_btn := Button.new()
-	recalc_btn.text = "Recalc"
+	recalc_btn.icon = preload("uid://bdmixrtkjm1dv")
 	recalc_btn.tooltip_text = "Recalculate all formulas (F9)"
 	recalc_btn.pressed.connect(_recalculate_all)
 	toolbar.add_child(recalc_btn)
@@ -302,7 +302,7 @@ func _build_toolbar() -> void:
 
 	# Chart button
 	var chart_btn := Button.new()
-	chart_btn.text = "Chart"
+	chart_btn.icon = preload("uid://b62g6uuuv3ad1")
 	chart_btn.tooltip_text = "Create Chart from Selection"
 	chart_btn.pressed.connect(_on_chart_pressed)
 	toolbar.add_child(chart_btn)
@@ -1647,13 +1647,13 @@ func delete_column_with_history(col: int) -> bool:
 
 ## Begin a batch operation (groups multiple edits into one undo action)
 ## Returns a batch_id to pass to end_batch()
-func begin_batch(description: String = "") -> int:
+func begin_batch(_description: String = "") -> int:
 	# For now, just return a marker - batch support can be enhanced later
 	return history.get_undo_count()
 
 
 ## End a batch operation - all changes since begin_batch become one undo step
-func end_batch(batch_id: int) -> void:
+func end_batch(_batch_id: int) -> void:
 	# Future enhancement: merge actions since batch_id into one compound action
 	pass
 
@@ -1896,7 +1896,7 @@ func _create_chart_config_dialog() -> void:
 func _on_create_chart_confirmed() -> void:
 	var chart := SpreadsheetChartScript.new()
 	chart.title = _chart_title_edit.text
-	chart.type = _chart_type_option.get_selected_id()
+	chart.type = _chart_type_option.get_selected_id() as SpreadsheetChartScript.ChartType
 	chart.x_range = _chart_x_range_edit.text
 	chart.x_is_date = _chart_x_is_date_check.button_pressed
 	chart.first_row_is_header = _chart_header_row_check.button_pressed
@@ -1932,7 +1932,7 @@ func add_chart(chart: SpreadsheetChartScript) -> void:
 	chart_container.add_child(canvas)
 
 	# Create chart wrapper with controls
-	var wrapper := HBoxContainer.new()
+	#var wrapper := HBoxContainer.new()
 	chart_container.move_child(canvas, chart_container.get_child_count() - 1)
 
 	# Update chart with data
@@ -2030,11 +2030,11 @@ func update_chart_properties(index: int, properties: Dictionary) -> bool:
 				chart.add_series(series_range)
 			elif series_range is Dictionary:
 				var range_str: String = series_range.get("range", "")
-				var name: String = series_range.get("name", "")
+				var _name: String = series_range.get("name", "")
 				var color = series_range.get("color", Color.TRANSPARENT)
 				if color is String:
 					color = Color.from_string(color, Color.TRANSPARENT)
-				chart.add_series(range_str, name, color)
+				chart.add_series(range_str, _name, color)
 
 	# Refresh the chart display
 	_update_chart(index)

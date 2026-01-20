@@ -974,7 +974,7 @@ func _on_export_area_button_pressed() -> void:
 		current_tab.graphics_editor.activate_export_region_tool()
 
 
-func _on_tab_connect(tab_idx: int) -> void:
+func _on_tab_connect(_tab_idx: int) -> void:
 	var current_tab = SingletonObject.editor_pane.Tabs.get_current_tab_control()
 
 	if current_tab is Editor and current_tab.type == Editor.Type.GRAPHICS:
