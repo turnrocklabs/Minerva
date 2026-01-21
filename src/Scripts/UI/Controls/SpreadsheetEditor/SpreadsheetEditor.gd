@@ -25,7 +25,7 @@ var history  # SpreadsheetHistory
 
 ## UI Components
 var main_container: VBoxContainer
-var toolbar: HBoxContainer
+var toolbar: HFlowContainer
 var formula_bar: HBoxContainer
 var cell_address_label: Label
 var formula_edit: LineEdit
@@ -184,7 +184,7 @@ func _build_ui() -> void:
 
 
 func _build_toolbar() -> void:
-	toolbar = HBoxContainer.new()
+	toolbar = HFlowContainer.new()
 	toolbar.add_theme_constant_override("separation", 4)
 	main_container.add_child(toolbar)
 

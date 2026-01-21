@@ -1,6 +1,6 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=2 format=3 uid="uid://dxo4vijotgs3b"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetEditor.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://cf3u0ggm8157d" path="res://Scripts/UI/Controls/SpreadsheetEditor/SpreadsheetEditor.gd" id="1_main"]
 
 [node name="SpreadsheetEditor" type="PanelContainer"]
 anchors_preset = 15
