@@ -1557,7 +1557,7 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 		6: active_tool = magic_wand_tool; return
 		7: active_tool = rectangle_select_tool; return
 		8: active_tool = lasso_select_tool; return
-		9: active_tool = pose_editor_tool; return
+		9: active_tool = pan_tool; return
 		12: active_tool = text_tool; return
 		13: active_tool = select_tool; return
 		14: active_tool = rectangle_tool; return
@@ -1857,6 +1857,50 @@ enum AI_REQUEST {
 }
 var ai_request_type: AI_REQUEST = AI_REQUEST.EDIT_IMAGE
 func _on_edit_button_pressed() -> void:
+	# Override behavior when pose controller is enabled - send pose texture immediately without layer selection
+	if d_pose_controlller_enabled and pose_editor_panel:
+		var pose_texture: Texture = pose_editor_panel.pose_texture
+		if pose_texture != null:
+			var pose_image: Image = pose_texture.get_image()
+			if pose_image != null and not pose_image.is_empty():
+				# Ensure image is in RGBA8 format
+				if pose_image.get_format() != Image.FORMAT_RGBA8:
+					pose_image.convert(Image.FORMAT_RGBA8)
+				
+				# Convert image to PNG buffer
+				var image_buffer: PackedByteArray = pose_image.save_png_to_buffer()
+				
+				if image_buffer.is_empty():
+					display_message("Error", "Failed to convert pose image to PNG buffer.")
+					return
+				
+				# Update button states
+				edit_img_button.modulate = Color.LIME_GREEN
+				edit_img_button.disabled = true
+				send_prompt_button.disabled = true
+				send_mask_edit_button.disabled = true
+				
+				var toast: = ToastNotification.create(ToastNotification.Type.INFO, "Sending pose image edit request...")
+				SingletonObject.main_scene.add_child(toast)
+				
+				var params: Dictionary = get_params_image_gen()
+				
+				if params.is_empty():
+					edit_img_button.modulate = Color.WHITE
+					edit_img_button.disabled = false
+					return
+				
+				if !seed_line_edit.text.is_empty():
+					params["seed"] = seed_line_edit.text
+				
+				ai_request_type = AI_REQUEST.EDIT_IMAGE
+				_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, "pose_control.png")
+				
+				image_gen_window.hide()
+				layer_cards_popup_panel.hide()
+				prompt_text_edit.text = ""
+				return
+	
 	edit_img_button.modulate = Color.LIME_GREEN
 	send_prompt_button.disabled = true
 	edit_img_button.disabled = true
@@ -1885,6 +1929,12 @@ func _on_edit_button_pressed() -> void:
 			%TopOfLayersContainer.hide()
 			send_action_button.disabled = true
 			send_action_button.hide()
+			
+			# Re-enable buttons when toggling popup closed
+			edit_img_button.modulate = Color.WHITE
+			edit_img_button.disabled = false
+			send_prompt_button.disabled = false
+			send_mask_edit_button.disabled = false
 	else:
 		ai_request_type = AI_REQUEST.EDIT_IMAGE
 		send_action_button.pressed.emit()
@@ -1893,11 +1943,21 @@ func _on_edit_button_pressed() -> void:
 func _on_edit_img_button_pressed() -> void:
 	if ai_request_type == AI_REQUEST.EDIT_IMAGE:
 		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
+			# Re-enable buttons if validation fails
+			edit_img_button.modulate = Color.WHITE
+			edit_img_button.disabled = false
+			send_prompt_button.disabled = false
+			send_mask_edit_button.disabled = false
 			return
 		
 		var layer_to_send: LayerV2 = selected_layers[0]
 		# Get the image from the active layer
 		if layer_to_send == null:
+			# Re-enable buttons if validation fails
+			edit_img_button.modulate = Color.WHITE
+			edit_img_button.disabled = false
+			send_prompt_button.disabled = false
+			send_mask_edit_button.disabled = false
 			return
 		var image_to_edit: Image = layer_to_send.image
 		var image_filename: String = layer_to_send.name + ".png" # Use layer name as filename
@@ -1912,6 +1972,11 @@ func _on_edit_img_button_pressed() -> void:
 		
 		if image_buffer.is_empty():
 			display_message("Error", "Failed to convert active layer image to PNG buffer.")
+			# Re-enable buttons
+			edit_img_button.modulate = Color.WHITE
+			edit_img_button.disabled = false
+			send_prompt_button.disabled = false
+			send_mask_edit_button.disabled = false
 			return
 		
 		var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
@@ -1920,6 +1985,11 @@ func _on_edit_img_button_pressed() -> void:
 		var params: Dictionary = get_params_image_gen()
 		
 		if params.is_empty():
+			# Re-enable buttons
+			edit_img_button.modulate = Color.WHITE
+			edit_img_button.disabled = false
+			send_prompt_button.disabled = false
+			send_mask_edit_button.disabled = false
 			return
 		
 		if !seed_line_edit.text.is_empty():
@@ -1929,6 +1999,7 @@ func _on_edit_img_button_pressed() -> void:
 		
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
+		prompt_text_edit.text = ""
 	elif  ai_request_type == AI_REQUEST.MASK_EDIT:
 		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
 			return
@@ -2025,7 +2096,7 @@ func _on_edit_img_button_pressed() -> void:
 		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(selective_editing_params, images_dir)
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
-	prompt_text_edit.text = ""
+		prompt_text_edit.text = ""
 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 	advanced_settings_container.visible = toggled_on
@@ -2037,7 +2108,7 @@ func get_params_image_gen() -> Dictionary:
 	
 	var idx: = image_width_option_button.selected
 	var image_res: int = image_width_option_button.get_item_text(idx).to_int()
-	return {
+	var params: Dictionary = {
 		"positive_prompt" = prompt_text_edit.text,
 		"negative_prompt" = negative_text_edit.text,
 		"width" = image_res,
@@ -2047,6 +2118,32 @@ func get_params_image_gen() -> Dictionary:
 		"denoise" = denoise_spin_box.value,
 		"topic" = WORKFLOW_TOPICS[current_workflow]
 	}
+	
+	# Add pose image from 3D pose editor if enabled
+	if d_pose_controlller_enabled and pose_editor_panel:
+		var pose_texture: Texture = pose_editor_panel.pose_texture
+		if pose_texture != null:
+			# Get the image from the viewport texture
+			var pose_image: Image = pose_texture.get_image()
+			if pose_image != null and not pose_image.is_empty():
+				# Ensure image is in RGBA8 format
+				if pose_image.get_format() != Image.FORMAT_RGBA8:
+					pose_image.convert(Image.FORMAT_RGBA8)
+				
+				# Convert image to PNG buffer
+				var image_buffer: PackedByteArray = pose_image.save_png_to_buffer()
+				# Base64 encode the image buffer
+				var base64_image_data: String = Marshalls.raw_to_base64(image_buffer)
+				
+				# Add to files array
+				params["files"] = [{
+					"filename": "pose_control.png",
+					"role": "control",
+					"data": base64_image_data,
+					"content_type": "image/png"
+				}]
+	
+	return params
 
 
 func selected_layers_has_mask() -> bool:
@@ -2100,6 +2197,12 @@ func _on_mask_edit_button_pressed() -> void:
 			%TopOfLayersContainer.hide()
 			send_action_button.disabled = true
 			send_action_button.hide()
+			
+			# Re-enable buttons when toggling popup closed
+			send_mask_edit_button.modulate = Color.WHITE
+			send_mask_edit_button.disabled = false
+			send_prompt_button.disabled = false
+			edit_img_button.disabled = false
 	else:
 		ai_request_type = AI_REQUEST.MASK_EDIT
 		send_action_button.pressed.emit()
@@ -2259,11 +2362,27 @@ func _on_color_picker_button_color_changed(color: Color) -> void:
 func _on_layer_cards_popup_panel_close_requested() -> void:
 	layer_cards_popup_panel.hide()
 	response_layout_toggle()
+	
+	# Re-enable buttons if user closes without sending
+	edit_img_button.modulate = Color.WHITE
+	edit_img_button.disabled = false
+	send_prompt_button.modulate = Color.WHITE
+	send_prompt_button.disabled = false
+	send_mask_edit_button.modulate = Color.WHITE
+	send_mask_edit_button.disabled = false
 
 
 func _on_back_button_pressed() -> void:
 	image_gen_window.show()
 	layer_cards_popup_panel.hide()
+	
+	# Re-enable buttons when going back without sending
+	edit_img_button.modulate = Color.WHITE
+	edit_img_button.disabled = false
+	send_prompt_button.modulate = Color.WHITE
+	send_prompt_button.disabled = false
+	send_mask_edit_button.modulate = Color.WHITE
+	send_mask_edit_button.disabled = false
 
 
 func _on_send_action_button_pressed() -> void:
@@ -2818,3 +2937,12 @@ func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 	toggle_enable_ai_fields(true)
 	if !toggled_on and pose_editor_window:
 		pose_editor_window.hide()
+	
+	# Reset button states when toggling off
+	if !toggled_on:
+		edit_img_button.modulate = Color.WHITE
+		edit_img_button.disabled = false
+		send_prompt_button.modulate = Color.WHITE
+		send_prompt_button.disabled = false
+		send_mask_edit_button.modulate = Color.WHITE
+		send_mask_edit_button.disabled = false
