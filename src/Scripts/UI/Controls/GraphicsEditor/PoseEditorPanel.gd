@@ -48,6 +48,14 @@ var camera_target: Vector3 = Vector3(0, 1.0, 0)  # Look at chest height
 ## Render output size
 var render_size: Vector2i = Vector2i(512, 512)
 
+var pose_texture: Texture:
+	get:
+		var _texture: = subviewport.get_texture()
+		if _texture == null:
+			return null
+		_texture.get_image().resize(512, 512)
+		return _texture
+
 
 func _ready() -> void:
 	# Configure main viewport

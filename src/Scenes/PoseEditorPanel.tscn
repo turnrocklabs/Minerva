@@ -1,6 +1,6 @@
 [gd_scene load_steps=5 format=3 uid="uid://bxwrp4qt6c8km"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Controls/GraphicsEditor/PoseEditorPanel.gd" id="1_panel"]
+[ext_resource type="Script" uid="uid://b3sqaku6rlvyj" path="res://Scripts/UI/Controls/GraphicsEditor/PoseEditorPanel.gd" id="1_panel"]
 [ext_resource type="PackedScene" uid="uid://c6wk3xyf5npwq" path="res://Scenes/PoseSkeleton3D.tscn" id="2_skeleton"]
 
 [sub_resource type="Environment" id="Environment_1"]
@@ -13,7 +13,6 @@ ambient_light_color = Color(0.6, 0.6, 0.65, 1)
 environment = SubResource("Environment_1")
 
 [node name="PoseEditorPanel" type="PanelContainer"]
-custom_minimum_size = Vector2(600, 500)
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -30,10 +29,11 @@ layout_mode = 2
 [node name="TitleLabel" type="Label" parent="VBoxContainer/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Pose Editor"
 theme_override_font_sizes/font_size = 16
+text = "Pose Editor"
 
 [node name="CloseButton" type="Button" parent="VBoxContainer/Header"]
+visible = false
 layout_mode = 2
 text = "X"
 flat = true
@@ -59,15 +59,14 @@ text = "Preset"
 [node name="PresetDropdown" type="OptionButton" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-selected = 0
 
 [node name="Sep1" type="HSeparator" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
 
 [node name="TorsoLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
-text = "TORSO"
 theme_override_font_sizes/font_size = 12
+text = "TORSO"
 
 [node name="TorsoLeanLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
@@ -96,8 +95,8 @@ layout_mode = 2
 
 [node name="LeftArmLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
-text = "LEFT ARM"
 theme_override_font_sizes/font_size = 12
+text = "LEFT ARM"
 
 [node name="LeftArmElevLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
@@ -136,8 +135,8 @@ layout_mode = 2
 
 [node name="RightArmLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
-text = "RIGHT ARM"
 theme_override_font_sizes/font_size = 12
+text = "RIGHT ARM"
 
 [node name="RightArmElevLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
@@ -176,8 +175,8 @@ layout_mode = 2
 
 [node name="LeftLegLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
-text = "LEFT LEG"
 theme_override_font_sizes/font_size = 12
+text = "LEFT LEG"
 
 [node name="LeftLegSwingLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
@@ -216,8 +215,8 @@ layout_mode = 2
 
 [node name="RightLegLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
-text = "RIGHT LEG"
 theme_override_font_sizes/font_size = 12
+text = "RIGHT LEG"
 
 [node name="RightLegSwingLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
@@ -253,6 +252,7 @@ step = 0.01
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="VBoxContainer/HSplitContainer"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(350, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 2.0
@@ -260,10 +260,12 @@ stretch = true
 
 [node name="SubViewport" type="SubViewport" parent="VBoxContainer/HSplitContainer/SubViewportContainer"]
 unique_name_in_owner = true
-handle_input_locally = false
-size = Vector2i(400, 400)
-render_target_update_mode = 3
 world_3d = SubResource("World3D_1")
+handle_input_locally = false
+size = Vector2i(1053, 978)
+size_2d_override = Vector2i(512, 512)
+size_2d_override_stretch = true
+render_target_update_mode = 4
 
 [node name="Camera3D" type="Camera3D" parent="VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport"]
 unique_name_in_owner = true
@@ -289,22 +291,24 @@ layout_mode = 2
 
 [node name="ResetButton" type="Button" parent="VBoxContainer/Toolbar"]
 layout_mode = 2
-text = "Reset"
 tooltip_text = "Reset to T-pose"
+text = "Reset"
 
 [node name="MirrorButton" type="Button" parent="VBoxContainer/Toolbar"]
 layout_mode = 2
-text = "Mirror"
 tooltip_text = "Mirror pose left-to-right"
+text = "Mirror"
 
 [node name="Spacer" type="Control" parent="VBoxContainer/Toolbar"]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="RenderButton" type="Button" parent="VBoxContainer/Toolbar"]
+visible = false
 layout_mode = 2
-text = "Render to Layer"
 tooltip_text = "Render pose to 2D OpenPose image"
+text = "Render to Layer"
 
 [node name="StatusLabel" type="Label" parent="VBoxContainer"]
 unique_name_in_owner = true

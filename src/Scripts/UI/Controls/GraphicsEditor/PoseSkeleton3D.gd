@@ -94,6 +94,7 @@ func _ready() -> void:
 	_setup_skeleton()
 	_create_bone_visuals()
 	_create_bone_lines()
+	skeleton.rotate_y(180.0)
 
 
 func _setup_skeleton() -> void:

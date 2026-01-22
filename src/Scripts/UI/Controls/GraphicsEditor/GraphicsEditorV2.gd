@@ -2800,3 +2800,18 @@ func _on_main_h_split_container_drag_ended() -> void:
 
 func _on_main_h_split_container_drag_started() -> void:
 	dragging_split = true
+
+
+func _on_button_pressed() -> void:
+	_on_open_pose_editor_button_pressed()
+
+var d_pose_controlller_enabled: = false
+var is_d_pose_first_time: = true
+func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
+	%"3DPoseViewport".visible = toggled_on
+	workflow_option_button.select(1)
+	workflow_option_button.disabled = toggled_on
+	d_pose_controlller_enabled = toggled_on
+	if is_d_pose_first_time:
+		is_d_pose_first_time = false
+		_on_open_pose_editor_button_pressed()
