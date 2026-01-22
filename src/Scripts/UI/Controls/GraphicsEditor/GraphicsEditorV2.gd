@@ -2341,21 +2341,21 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 
 
 func toggle_enable_ai_fields(enable: bool = true) -> void:
-	send_action_button.disabled = not enable
-	send_prompt_button.disabled = not enable
-	prompt_button.disabled = not enable
-	negative_prompt_mic_button.disabled = not enable
-	positive_prompt_mic_button.disabled = not enable
+	var is_wf0 = workflow_option_button.selected == 0
+	var disabled = !enable
+	
+	for btn in [prompt_button, workflow_option_button, negative_prompt_mic_button, 
+				positive_prompt_mic_button, advanced_settings_check_button, send_action_button]:
+		btn.disabled = disabled
+	
 	prompt_text_edit.editable = enable
 	negative_text_edit.editable = enable
-	advanced_settings_check_button.disabled = not enable
-	if workflow_option_button.selected == 0:
-		edit_img_button.disabled = true
-		send_mask_edit_button.disabled = true
-	else:
-		edit_img_button.disabled = not enable
-		send_mask_edit_button.disabled = not enable
-	workflow_option_button.disabled = not enable
+	
+	send_prompt_button.disabled = true if d_pose_controlller_enabled else disabled
+	edit_img_button.disabled = false if d_pose_controlller_enabled else (is_wf0 or disabled)
+	send_mask_edit_button.disabled = true if d_pose_controlller_enabled else (is_wf0 or disabled)
+	workflow_option_button.disabled = d_pose_controlller_enabled
+
 
 func disable_ai_features(error: int) -> void:
 	if error != 0:
@@ -2815,3 +2815,6 @@ func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 	if is_d_pose_first_time:
 		is_d_pose_first_time = false
 		_on_open_pose_editor_button_pressed()
+	toggle_enable_ai_fields(true)
+	if !toggled_on and pose_editor_window:
+		pose_editor_window.hide()

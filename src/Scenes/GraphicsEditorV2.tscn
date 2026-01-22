@@ -1074,19 +1074,19 @@ render_viewport = NodePath("RenderViewSubviewportContainer/RenderViewport")
 
 [node name="RenderViewSubviewportContainer" type="SubViewportContainer" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl"]
 z_index = 1000
-layout_mode = 0
-offset_left = 101.0
-offset_top = 149.0
-offset_right = 1760.0
-offset_bottom = 885.0
-stretch = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="RenderViewport" type="SubViewport" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl/RenderViewSubviewportContainer"]
 unique_name_in_owner = true
 transparent_bg = true
 handle_input_locally = false
 gui_disable_input = true
-size = Vector2i(1659, 736)
+size = Vector2i(1876, 979)
 render_target_update_mode = 4
 
 [node name="Control" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
@@ -1282,6 +1282,7 @@ unique_name_in_owner = true
 oversampling_override = 1.0
 position = Vector2i(666, 259)
 size = Vector2i(445, 300)
+visible = false
 always_on_top = true
 min_size = Vector2i(445, 300)
 
@@ -1621,32 +1622,32 @@ grow_horizontal = 0
 grow_vertical = 0
 icon = ExtResource("47_hu8v1")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer"]
+[node name="3DContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/VBoxContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/VBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2"]
 layout_mode = 2
 text = "Pose Controller: "
 
-[node name="3DPoseControllerButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/VBoxContainer/HBoxContainer2"]
+[node name="3DPoseControllerButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="3DPoseViewport" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/VBoxContainer"]
+[node name="3DPoseViewport" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="TextureRect" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/VBoxContainer/3DPoseViewport"]
+[node name="TextureRect" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewport"]
 custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
 texture = SubResource("ViewportTexture_ufom3")
 expand_mode = 3
 
-[node name="Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/VBoxContainer/3DPoseViewport"]
+[node name="Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewport"]
 layout_mode = 2
 size_flags_horizontal = 2
 size_flags_vertical = 4
@@ -1682,59 +1683,6 @@ text = "Spritesheet Generation:"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
-
-[node name="SpritesheetSettingsContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/SpritesheetSettingsContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/SpritesheetSettingsContainer/HBoxContainer3"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Animation:"
-
-[node name="AnimationOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/SpritesheetSettingsContainer/HBoxContainer3"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-selected = 0
-allow_reselect = true
-item_count = 5
-popup/item_0/text = "Walking"
-popup/item_0/id = 0
-popup/item_1/text = "Running"
-popup/item_1/id = 1
-popup/item_2/text = "Jumping"
-popup/item_2/id = 2
-popup/item_3/text = "Idle"
-popup/item_3/id = 3
-popup/item_4/text = "Attack"
-popup/item_4/id = 4
-
-[node name="HBoxContainer4" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/SpritesheetSettingsContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/SpritesheetSettingsContainer/HBoxContainer4"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Number of Frames:"
-
-[node name="AnimationFramesOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/SpritesheetSettingsContainer/HBoxContainer4"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-selected = 2
-item_count = 3
-popup/item_0/text = "2 Frames"
-popup/item_0/id = 0
-popup/item_1/text = "4 Frames"
-popup/item_1/id = 1
-popup/item_2/text = "8 Frames"
-popup/item_2/id = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
@@ -1913,22 +1861,6 @@ disabled = true
 text = "Mask"
 icon = ExtResource("28_oylf0")
 
-[node name="ShowLayersButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-size_flags_horizontal = 10
-text = "Add Mask..."
-
-[node name="MaskEditPanelButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-size_flags_horizontal = 10
-toggle_mode = true
-text = "Select Layers...
-"
-
 [connection signal="resized" from="." to="." method="_on_resized"]
 [connection signal="drag_ended" from="h/MainHSplitContainer" to="." method="_on_main_h_split_container_drag_ended"]
 [connection signal="drag_started" from="h/MainHSplitContainer" to="." method="_on_main_h_split_container_drag_started"]
@@ -1979,12 +1911,10 @@ text = "Select Layers...
 [connection signal="close_requested" from="ImageGenWindow" to="." method="_on_image_gen_window_close_requested"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit/PositivePromptMicButton" to="." method="_on_positive_prompt_mic_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit/PromptHistoryButton" to="." method="_on_prompt_history_button_pressed"]
-[connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/VBoxContainer/HBoxContainer2/3DPoseControllerButton" to="." method="_on_d_pose_controller_button_toggled"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/VBoxContainer/3DPoseViewport/Button" to="." method="_on_button_pressed"]
+[connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2/3DPoseControllerButton" to="." method="_on_d_pose_controller_button_toggled"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewport/Button" to="." method="_on_button_pressed"]
 [connection signal="item_selected" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/WorkflowContainer/WorkflowOptionButton" to="." method="_on_workflow_option_button_item_selected"]
 [connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer2/SpriteSheetCheckButton" to="." method="_on_sprite_sheet_check_button_toggled"]
-[connection signal="item_selected" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/SpritesheetSettingsContainer/HBoxContainer3/AnimationOptionButton" to="." method="_on_animation_option_button_item_selected"]
-[connection signal="item_selected" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/SpritesheetSettingsContainer/HBoxContainer4/AnimationFramesOptionButton" to="." method="_on_animation_frames_option_button_item_selected"]
 [connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit/NegativePromptMicButton" to="." method="_on_negative_prompt_mic_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
