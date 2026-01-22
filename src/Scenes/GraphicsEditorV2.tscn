@@ -1047,7 +1047,7 @@ stretch = true
 unique_name_in_owner = true
 transparent_bg = true
 handle_input_locally = false
-size = Vector2i(1876, 979)
+size = Vector2i(1888, 979)
 render_target_update_mode = 4
 
 [node name="InputAreaCamera" type="Camera2D" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
@@ -1186,6 +1186,7 @@ flat = true
 
 [node name="DockPanelContainer" type="MarginContainer" parent="h/MainHSplitContainer"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [node name="DockSplitContainer" type="VSplitContainer" parent="h/MainHSplitContainer/DockPanelContainer"]

@@ -96,7 +96,7 @@ layout_mode = 2
 [node name="LeftArmLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
-text = "LEFT ARM"
+text = "RIGHT ARM"
 
 [node name="LeftArmElevLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
@@ -136,7 +136,7 @@ layout_mode = 2
 [node name="RightArmLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
-text = "RIGHT ARM"
+text = "LEFT ARM"
 
 [node name="RightArmElevLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
@@ -176,7 +176,7 @@ layout_mode = 2
 [node name="LeftLegLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
-text = "LEFT LEG"
+text = "RIGHT LEG"
 
 [node name="LeftLegSwingLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
@@ -216,7 +216,7 @@ layout_mode = 2
 [node name="RightLegLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 12
-text = "RIGHT LEG"
+text = "LEFT LEG"
 
 [node name="RightLegSwingLabel" type="Label" parent="VBoxContainer/HSplitContainer/SliderPanel/SliderVBox"]
 layout_mode = 2
