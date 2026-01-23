@@ -808,7 +808,7 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 
 func send_media_selective_edit_request(editing_params: Dictionary, images_dir: Array) -> String:
 	var request_id: String = UUIDGen.v7()
-	
+
 	var message: Dictionary = {
 		"cmd": "request",
 		"topic": "media_gen/image_selective_editing", # Match Python's Test 3 topic
@@ -824,18 +824,75 @@ func send_media_selective_edit_request(editing_params: Dictionary, images_dir: A
 			"auth": Core._jwt_token
 		}
 	}
-	
+
 	# Merge the provided editing_params into the 'data' dictionary
 	var data_payload: Dictionary = (message["params"] as Dictionary)["data"] as Dictionary
 	data_payload = merge_dictionaries(data_payload, editing_params)
-	
+
 	# Attach both the base image and the mask image to the files array
 	data_payload["files"] = images_dir
 	(message["params"] as Dictionary)["data"] = data_payload
-	
+
 	_current_binary_request_id = request_id
 	send_message_to_core(message)
-	
+
+	return request_id
+
+
+## Send a media flex request for the qwen_2511_flex workflow.
+## This workflow uses boolean switches to control operation mode:
+## - create: all use_empty_* = true (generate from noise)
+## - edit: use_empty_latent=false, use_empty_image1=false (edit image1)
+## - compose_2: use_empty_latent=true, use_empty_image1/2=false (combine 2 images)
+## - compose_3: use_empty_latent=true, use_empty_image1/2/3=false (combine 3 images)
+func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
+	var request_id: String = UUIDGen.v7()
+
+	var message: Dictionary = {
+		"cmd": "request",
+		"topic": "media_gen/qwen_2511_flex",
+		"entity_type": "client",
+		"params": {
+			"client_id": Core._client_id,
+			"request_id": request_id,
+			"target_service_id": "media-gen",
+			"data": {
+				"workflow": "qwen_2511_flex"
+			},
+			"auth": Core._jwt_token
+		}
+	}
+
+	# Merge the provided params into the 'data' dictionary
+	var data_payload: Dictionary = (message["params"] as Dictionary)["data"] as Dictionary
+	data_payload = merge_dictionaries(data_payload, params)
+
+	# Build files array from images
+	# Each image should have: {buffer: PackedByteArray, role: String, filename: String}
+	if images.size() > 0:
+		var files_array: Array = []
+		for img in images:
+			var buffer: PackedByteArray = img.get("buffer", PackedByteArray())
+			var role: String = img.get("role", "image1")
+			var filename: String = img.get("filename", "image.png")
+
+			if buffer.size() > 0:
+				var base64_data: String = Marshalls.raw_to_base64(buffer)
+				files_array.append({
+					"filename": filename,
+					"role": role,
+					"data": base64_data,
+					"content_type": "image/png"
+				})
+
+		if files_array.size() > 0:
+			data_payload["files"] = files_array
+
+	(message["params"] as Dictionary)["data"] = data_payload
+
+	_current_binary_request_id = request_id
+	send_message_to_core(message)
+
 	return request_id
 
 

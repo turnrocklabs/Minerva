@@ -1,4 +1,4 @@
-[gd_scene load_steps=73 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=72 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -112,9 +112,6 @@ shader_parameter/color1 = Color(0.862745, 0.862745, 0.862745, 1)
 shader_parameter/color2 = Color(1, 1, 1, 1)
 
 [sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_t8fyw"]
-
-[sub_resource type="ViewportTexture" id="ViewportTexture_t8fyw"]
-viewport_path = NodePath("h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport")
 
 [sub_resource type="LabelSettings" id="LabelSettings_v238w"]
 font_size = 36
@@ -1127,8 +1124,8 @@ texture = SubResource("PlaceholderTexture2D_t8fyw")
 expand_mode = 1
 
 [node name="TextureRect" type="TextureRect" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl/MarginContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-texture = SubResource("ViewportTexture_t8fyw")
 expand_mode = 3
 stretch_mode = 4
 
@@ -1607,11 +1604,13 @@ size_flags_horizontal = 3
 selected = 0
 fit_to_longest_item = false
 allow_reselect = true
-item_count = 2
+item_count = 3
 popup/item_0/text = "Z-Turbo"
 popup/item_0/id = 0
 popup/item_1/text = "Qwen"
 popup/item_1/id = 1
+popup/item_2/text = "Qwen 2511 Flex"
+popup/item_2/id = 2
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
 visible = false
