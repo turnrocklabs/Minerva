@@ -57,6 +57,9 @@ var request_timeout: float = 0.0
 ## Whether this provider supports configuring context window size
 var supports_num_ctx: bool = false
 
+## Whether this provider supports configuring GPU layer count (for Ollama)
+var supports_num_gpu: bool = false
+
 ## Get effective timeout - checks per-model override first, then falls back to default
 func get_effective_timeout() -> float:
 	# Check per-model timeout override (keyed by model_name)
@@ -80,6 +83,18 @@ func get_effective_context() -> int:
 		return model_context
 	# Fall back to default
 	return default_context
+
+## Default GPU layers (-1 = use Ollama default, 0 = CPU only)
+var default_num_gpu: int = -1
+
+## Get effective num_gpu - checks per-model override first, then falls back to default
+func get_effective_num_gpu() -> int:
+	# Check per-model num_gpu override (keyed by model_name)
+	var model_num_gpu: int = SingletonObject.get_model_num_gpu(model_name)
+	if model_num_gpu >= 0:
+		return model_num_gpu
+	# Fall back to default
+	return default_num_gpu
 
 ## Temperature constraints
 var temperature_min: float = 0.0

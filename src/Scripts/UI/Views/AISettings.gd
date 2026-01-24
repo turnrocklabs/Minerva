@@ -521,16 +521,22 @@ func _update_model_chat_settings_visibility(should_show: bool, provider: BasePro
 
 	_model_chat_settings_container.visible = true
 
-	# Update value from per-model setting or provider default
-	var spin = _model_chat_settings_container.get_node("NumCtxHBox/NumCtxSpinBox") as SpinBox
-	if spin and provider:
+	# Update context value from per-model setting or provider default
+	var ctx_spin = _model_chat_settings_container.get_node("NumCtxHBox/NumCtxSpinBox") as SpinBox
+	if ctx_spin and provider:
 		var context = SingletonObject.get_model_context(provider.model_name)
 		if context > 0:
-			spin.value = context
+			ctx_spin.value = context
 		elif provider.default_context > 0:
-			spin.value = provider.default_context
+			ctx_spin.value = provider.default_context
 		else:
-			spin.value = 40000  # Fallback default
+			ctx_spin.value = 40000  # Fallback default
+
+	# Update num_gpu value from per-model setting or provider default
+	var gpu_spin = _model_chat_settings_container.get_node("NumGpuHBox/NumGpuSpinBox") as SpinBox
+	if gpu_spin and provider:
+		var num_gpu = SingletonObject.get_model_num_gpu(provider.model_name)
+		gpu_spin.value = num_gpu
 
 
 ## Create the Model-chat settings UI dynamically
@@ -566,6 +572,24 @@ func _create_model_chat_settings() -> void:
 	ctx_hbox.add_child(ctx_spin)
 	_model_chat_settings_container.add_child(ctx_hbox)
 
+	# GPU layers (num_gpu)
+	var gpu_hbox = HBoxContainer.new()
+	gpu_hbox.name = "NumGpuHBox"
+	var gpu_label = Label.new()
+	gpu_label.text = "GPU Layers (num_gpu):"
+	gpu_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gpu_label.tooltip_text = "GPU layer offloading. 0=CPU only, 999=full GPU, -1=default"
+	gpu_hbox.add_child(gpu_label)
+	var gpu_spin = SpinBox.new()
+	gpu_spin.name = "NumGpuSpinBox"
+	gpu_spin.min_value = -1
+	gpu_spin.max_value = 999
+	gpu_spin.step = 1
+	gpu_spin.value = -1
+	gpu_spin.value_changed.connect(_on_num_gpu_changed)
+	gpu_hbox.add_child(gpu_spin)
+	_model_chat_settings_container.add_child(gpu_hbox)
+
 	# Insert after NBP settings (or after PresenceHBoxContainer)
 	var model_vbox = %PresenceHBoxContainer.get_parent()
 	var insert_idx = %PresenceHBoxContainer.get_index() + 1
@@ -586,6 +610,19 @@ func _on_model_chat_num_ctx_changed(value: float) -> void:
 	if provider:
 		SingletonObject.set_model_context(provider.model_name, int(value))
 		print("Model context for '%s': %d" % [provider.model_name, int(value)])
+
+
+func _on_num_gpu_changed(value: float) -> void:
+	var provider: BaseProvider = null
+	if current_chat_tab_ref and current_chat_tab_ref.provider:
+		provider = current_chat_tab_ref.provider
+	else:
+		# No active chat - get provider from dropdown
+		provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
+
+	if provider:
+		SingletonObject.set_model_num_gpu(provider.model_name, int(value))
+		print("Model num_gpu for '%s': %d" % [provider.model_name, int(value)])
 
 
 ## Update or create timeout settings UI visibility

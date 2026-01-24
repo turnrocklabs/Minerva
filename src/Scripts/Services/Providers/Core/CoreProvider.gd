@@ -35,6 +35,9 @@ func _init(service_: Service = null, action_: Action = null):
 	if service and service.client_id == "model-chat":
 		supports_num_ctx = true
 		default_context = 40000  # Default context window for model-chat
+		# model-chat proxies to Ollama, so it supports GPU layer offloading
+		supports_num_gpu = true
+		default_num_gpu = -1  # -1 means use Ollama default (full GPU)
 
 
 ## Set available tools for agentic mode
@@ -116,16 +119,22 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	var msg_data: Dictionary
 
 	if _is_openai_compatible_service():
+		# Build Ollama options
+		var ollama_options: Dictionary = {
+			"num_ctx": additional_params.get("num_ctx", get_effective_context())
+		}
+		# Only include num_gpu if explicitly set (>= 0), otherwise let Ollama use its default
+		var effective_num_gpu = get_effective_num_gpu()
+		if effective_num_gpu >= 0:
+			ollama_options["num_gpu"] = effective_num_gpu
+
 		# OpenAI format: wrap messages in data object with parameters
 		msg_data = {
 			"messages": prompt,
 			"temperature": additional_params.get("temperature", 0.7),
 			"max_tokens": additional_params.get("max_tokens", 4000),
 			# Ollama options - backend will parse and forward these
-			# Use per-model context setting (falls back to default_context)
-			"options": {
-				"num_ctx": additional_params.get("num_ctx", get_effective_context())
-			}
+			"options": ollama_options
 		}
 		# Include any other additional params
 		for key in additional_params:

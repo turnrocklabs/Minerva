@@ -23,6 +23,10 @@ func _init():
 	supports_num_ctx = true
 	default_context = 8192
 
+	# Ollama supports GPU layer offloading
+	supports_num_gpu = true
+	default_num_gpu = -1  # -1 means use Ollama default (full GPU)
+
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 	# Build messages array - prepend system prompt if set
 	var messages: Array = []
@@ -30,13 +34,19 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		messages.append({"role": "system", "content": system_prompt})
 	messages.append_array(prompt)
 
+	# Build Ollama options
+	var ollama_options: Dictionary = {
+		"num_ctx": get_effective_context()
+	}
+	# Only include num_gpu if explicitly set (>= 0), otherwise let Ollama use its default
+	var effective_num_gpu = get_effective_num_gpu()
+	if effective_num_gpu >= 0:
+		ollama_options["num_gpu"] = effective_num_gpu
+
 	var request_body = {
 		"model": model_name,
 		"messages": messages,
-		# Ollama options - use per-model context setting
-		"options": {
-			"num_ctx": get_effective_context()
-		}
+		"options": ollama_options
 	}
 
 	# Add tools if enabled (inherited from OpenAIProvider)

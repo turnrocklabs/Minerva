@@ -511,6 +511,26 @@ func set_model_context(model_name: String, context: int) -> void:
 		_model_contexts[model_name] = context
 	save_to_config_file("Models", "Contexts", _model_contexts)
 
+## Per-model GPU layer overrides. -1 = use default, 0 = CPU only, N = N layers on GPU
+var _model_num_gpu: Dictionary = {}
+
+## Get the num_gpu override for a model (-1 means use default)
+func get_model_num_gpu(model_name: String) -> int:
+	# Load from config if not loaded yet
+	if _model_num_gpu.is_empty():
+		var saved = get_config_file_value("Models", "NumGpu")
+		if saved and saved is Dictionary:
+			_model_num_gpu = saved
+	return _model_num_gpu.get(model_name, -1)
+
+## Set the num_gpu override for a model
+func set_model_num_gpu(model_name: String, num_gpu: int) -> void:
+	if num_gpu < 0:
+		_model_num_gpu.erase(model_name)
+	else:
+		_model_num_gpu[model_name] = num_gpu
+	save_to_config_file("Models", "NumGpu", _model_num_gpu)
+
 #endregion Per-Model Settings
 
 #region Chats
