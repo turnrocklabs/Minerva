@@ -16,6 +16,13 @@ func _init():
 	input_token_cost = 0.0   # local model - free
 	output_token_cost = 0.0   # local model - free
 
+	# Request timeout - local hardware varies greatly
+	default_timeout = 300.0
+
+	# Ollama supports context window configuration
+	supports_num_ctx = true
+	default_context = 8192
+
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 	# Build messages array - prepend system prompt if set
 	var messages: Array = []
@@ -26,6 +33,10 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 	var request_body = {
 		"model": model_name,
 		"messages": messages,
+		# Ollama options - use per-model context setting
+		"options": {
+			"num_ctx": get_effective_context()
+		}
 	}
 
 	# Add tools if enabled (inherited from OpenAIProvider)

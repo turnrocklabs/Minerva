@@ -27,6 +27,9 @@ func _init():
 	input_token_cost = 3.00   # $3 per million input tokens
 	output_token_cost = 15.00  # $15 per million output tokens
 
+	# Request timeout - complex reasoning tasks can take time
+	default_timeout = 120.0
+
 	# Claude supports temperature (0-1) and top_p, but not both together
 	supports_temperature = true
 	supports_top_p = true

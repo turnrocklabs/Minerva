@@ -33,6 +33,9 @@ func _init():
 	input_token_cost = 5.00   # $5 per million input tokens
 	output_token_cost = 15.00  # $15 per million output tokens
 
+	# Request timeout - reasoning models can be slow
+	default_timeout = 120.0
+
 	# GPT-5 reasoning models don't support temperature/top_p
 	is_reasoning_model = true
 	supports_temperature = false

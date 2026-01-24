@@ -48,6 +48,39 @@ var is_reasoning_model: bool = false
 var requires_default_system_prompt: bool = false
 var default_system_prompt: String = "You are a helpful AI assistant."
 
+## Default request timeout in seconds. Override in subclasses.
+var default_timeout: float = 120.0
+
+## Current timeout for requests (0 = use default_timeout)
+var request_timeout: float = 0.0
+
+## Whether this provider supports configuring context window size
+var supports_num_ctx: bool = false
+
+## Get effective timeout - checks per-model override first, then falls back to default
+func get_effective_timeout() -> float:
+	# Check per-model timeout override (keyed by model_name)
+	var model_timeout: float = SingletonObject.get_model_timeout(model_name)
+	if model_timeout > 0:
+		return model_timeout
+	# Use per-instance override if set
+	if request_timeout > 0:
+		return request_timeout
+	# Fall back to default
+	return default_timeout
+
+## Default context window size (override in subclasses that support it)
+var default_context: int = 0
+
+## Get effective context window - checks per-model override first, then falls back to default
+func get_effective_context() -> int:
+	# Check per-model context override (keyed by model_name)
+	var model_context: int = SingletonObject.get_model_context(model_name)
+	if model_context > 0:
+		return model_context
+	# Fall back to default
+	return default_context
+
 ## Temperature constraints
 var temperature_min: float = 0.0
 var temperature_max: float = 2.0
@@ -163,7 +196,7 @@ class RequestResults extends RefCounted:
 		return "%s (%s) - (%s)" % [url, response_code, metadata]
 
 # Helper function to make HTTP requests
-## This function will return array of 
+## This function will return array of
 func make_request(url: String, method: int, body: Variant = "", headers: Array[String]= []) -> RequestResults:
 	# setup request object for the delta endpoint and append API key
 	var http_request: = HTTPRequest.new()
@@ -189,17 +222,33 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	else:
 		error = http_request.request(url, headers, method, str(body))
 
-	
+
 	if error != OK:
 		SingletonObject.call_deferred("ErrorDisplay", "Error", "An error occurred during the HTTP request: %s" % error)#ErrorDisplay("Error", "An error occurred during the HTTP request: %s" % error)
 		#push_error("An error occurred during the HTTP request: %s" % error)
 		return RequestResults.from_error("Unexpected error occurred")
-	
+
+	# Setup timeout timer
+	var timeout_seconds: float = get_effective_timeout()
+	var timed_out: bool = false
+	var timeout_timer: SceneTreeTimer = null
+
+	if timeout_seconds > 0 and is_inside_tree():
+		timeout_timer = get_tree().create_timer(timeout_seconds)
+		timeout_timer.timeout.connect(func():
+			timed_out = true
+			if is_instance_valid(http_request):
+				http_request.cancel_request()
+		)
 
 	# data returned from awaited signal is array of arguments that would
 	# be received by callback for that same signal
-	
+
 	var request_results: Array = await http_request.request_completed
+
+	# Check if we timed out
+	if timed_out:
+		return RequestResults.from_error("Request timed out after %d seconds" % int(timeout_seconds))
 
 	var results = RequestResults.from_request_response(request_results, http_request, url)
 

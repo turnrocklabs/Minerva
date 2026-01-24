@@ -23,6 +23,9 @@ func _init():
 	input_token_cost = 0.50   # $0.50 per million input tokens
 	output_token_cost = 3.00   # $3 per million output tokens
 
+	# Request timeout - Gemini is generally fast
+	default_timeout = 90.0
+
 	# Gemini 3 supports temperature/top_p but works best at default
 	supports_temperature = true
 	supports_top_p = true

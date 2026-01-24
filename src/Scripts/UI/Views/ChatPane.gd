@@ -345,8 +345,9 @@ func create_model_message_node(history: ChatHistory, dummy_item: ChatHistoryItem
 
 # Generate content from provider
 func generate_content_from_provider(history: ChatHistory, history_list: Array) -> Variant:
+	print("[ChatPane] generate_content_from_provider called, provider: %s" % history.provider.provider_name)
 	var bot_response
-	
+
 	# Append the optional parameters for OpenAI models, send request and wait for the response
 	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is OpenAIImageProviderScript:
 		var optional_params = {
@@ -356,9 +357,12 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 			"frequency_penalty": history.FrequencyPenalty,
 		}
 		bot_response = await history.provider.generate_content(history_list, optional_params)
+		print("[ChatPane] OpenAI generate_content returned")
 	else:
 		bot_response = await history.provider.generate_content(history_list)
-	
+		print("[ChatPane] Non-OpenAI generate_content returned")
+
+	print("[ChatPane] generate_content_from_provider returning bot_response (null=%s)" % (bot_response == null))
 	return bot_response
 
 # Process bot response into chat history item
@@ -723,6 +727,19 @@ func regenerate_response(chi: ChatHistoryItem):
 			history.HistoryItemList.find(item) < index,
 		]
 
+	# Setup agent mode tools if enabled for this chat (same as execute_regular_chat)
+	print("[regenerate] Checking agent mode: AgentModeEnabled=%s, has_set_tools=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools")])
+	if history.AgentModeEnabled and history.provider.has_method("set_tools"):
+		var mcp = SingletonObject.get_mcp_manager()
+		var mcp_tools = mcp.get_tools_for_anthropic()
+		var filtered_tools: Array[Dictionary] = []
+		for tool in mcp_tools:
+			if tool.get("name", "") not in history.DisabledTools:
+				filtered_tools.append(tool)
+		print("[regenerate] Setting up tools: %d available, %d after filtering" % [mcp_tools.size(), filtered_tools.size()])
+		history.provider.set_tools(filtered_tools)
+		print("[regenerate] Provider tools_enabled: %s" % history.provider.tools_enabled)
+
 	var history_list = await create_prompt(chi, false, null, predicate)
 
 	existing_response.rendered_node.loading = true
@@ -731,7 +748,7 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	# if there was an error with the request
 	if not bot_response: return
-	
+
 	if bot_response.id: existing_response.Id = bot_response.id
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
 	existing_response.Message = bot_response.text
@@ -742,21 +759,36 @@ func regenerate_response(chi: ChatHistoryItem):
 	if bot_response.image:
 		existing_response.Images = ([bot_response.image] as Array[Image])
 
-	existing_response.rendered_node.render()
+	# Handle tool calls if agent mode is enabled and response has tool calls
+	print("[regenerate] Tool call check: AgentModeEnabled=%s, has_tool_calls=%s" % [
+		history.AgentModeEnabled,
+		bot_response.has_tool_calls() if bot_response else false
+	])
+	if history.AgentModeEnabled and bot_response and bot_response.has_tool_calls():
+		print("[regenerate] Entering tool call handling branch")
+		existing_response.IsToolCall = true
+		existing_response.ToolCalls = bot_response.tool_calls
 
-	existing_response.rendered_node.loading = false
+		existing_response.rendered_node.render()
+		existing_response.rendered_node.loading = false
 
-	# Emit response_arrived signal to trigger notification sound
-	chi.response_arrived.emit(existing_response)
-	
-	for i in SingletonObject.notes_container.get_tab_count():
-		SingletonObject.notes_container.disable_notes(i)
+		# Reuse the same tool call handling as execute_regular_chat
+		await handle_tool_calls(history, bot_response.tool_calls, 0, existing_response, chi)
+	else:
+		existing_response.rendered_node.render()
+		existing_response.rendered_node.loading = false
 
-	for i in SingletonObject.drawer_notes_container.get_tab_count():
-		SingletonObject.drawer_notes_container.disable_notes(i)
-	
-	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
-	SingletonObject.detached_note_proxies.clear()
+		# Emit response_arrived signal to trigger notification sound
+		chi.response_arrived.emit(existing_response)
+
+		for i in SingletonObject.notes_container.get_tab_count():
+			SingletonObject.notes_container.disable_notes(i)
+
+		for i in SingletonObject.drawer_notes_container.get_tab_count():
+			SingletonObject.drawer_notes_container.disable_notes(i)
+
+		SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+		SingletonObject.detached_note_proxies.clear()
 
 
 func _on_chat_pressed():
@@ -870,6 +902,10 @@ func execute_hcp_chat():
 		model_msg_node.queue_free()
 
 func execute_regular_chat(text: String) -> void:
+	print("[ChatPane] execute_regular_chat called, text length: %d" % text.length())
+	var _history = SingletonObject.ChatList[current_tab]
+	print("[ChatPane] current_tab=%d, AgentModeEnabled=%s, provider=%s" % [current_tab, _history.AgentModeEnabled, _history.provider.provider_name if _history.provider else "null"])
+
 	# Check if it's a CoreProvider that requires HCP-style execution
 	if SingletonObject.ChatList[current_tab].provider is CoreProvider:
 		var core_provider := SingletonObject.ChatList[current_tab].provider as CoreProvider
@@ -910,9 +946,11 @@ func execute_regular_chat(text: String) -> void:
 		var mcp = SingletonObject.get_mcp_manager()
 		var mcp_tools = mcp.get_tools_for_anthropic()
 		# Filter out disabled tools for this chat
-		var filtered_tools = mcp_tools.filter(func(tool):
-			return tool.get("name", "") not in history.DisabledTools
-		)
+		# Note: .filter() returns untyped Array, must convert to Array[Dictionary] for set_tools()
+		var filtered_tools: Array[Dictionary] = []
+		for tool in mcp_tools:
+			if tool.get("name", "") not in history.DisabledTools:
+				filtered_tools.append(tool)
 		print("[Agent] Setting up tools: %d available, %d after filtering" % [mcp_tools.size(), filtered_tools.size()])
 		for t in filtered_tools:
 			print("[Agent]   - %s" % t.get("name", "?"))
@@ -941,13 +979,23 @@ func execute_regular_chat(text: String) -> void:
 	dummy_item.provider = history.provider
 
 	var model_msg_node = create_model_message_node(history, dummy_item)
+	print("[ChatPane] About to call generate_content_from_provider...")
 	var bot_response = await generate_content_from_provider(history, history_list)
+	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
 
 	# Create history item from bot response
+	print("[ChatPane] Calling process_bot_response...")
 	var chi = process_bot_response(bot_response, history.provider)
+	print("[ChatPane] process_bot_response returned, chi.Message length: %d" % chi.Message.length())
 
 	# Handle tool calls if agent mode is enabled for this chat and response has tool calls
+	print("[ChatPane] Tool call check: AgentModeEnabled=%s, bot_response=%s, has_tool_calls=%s" % [
+		history.AgentModeEnabled,
+		bot_response != null,
+		bot_response.has_tool_calls() if bot_response else false
+	])
 	if history.AgentModeEnabled and bot_response and bot_response.has_tool_calls():
+		print("[ChatPane] Entering tool call handling branch")
 		# Store tool calls in the chat history item
 		chi.IsToolCall = true
 		chi.ToolCalls = bot_response.tool_calls
@@ -960,6 +1008,7 @@ func execute_regular_chat(text: String) -> void:
 		# Pass the initial model CHI as accumulator and user_history_item for final signal
 		await handle_tool_calls(history, bot_response.tool_calls, 0, chi, user_history_item)
 	else:
+		print("[ChatPane] NOT entering tool call branch - skipping tool execution")
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 
 	_active_chat_requests -= 1
@@ -1172,11 +1221,13 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			print("[Agent] Context reduced to ~%d tokens" % new_size)
 
 	# Ensure tools are still enabled for continuation request (with filtering)
+	# Note: .filter() returns untyped Array, must convert to Array[Dictionary] for set_tools()
 	if history.provider.has_method("set_tools"):
 		var mcp_tools = mcp_manager.get_tools_for_anthropic()
-		var filtered_tools = mcp_tools.filter(func(tool):
-			return tool.get("name", "") not in history.DisabledTools
-		)
+		var filtered_tools: Array[Dictionary] = []
+		for tool in mcp_tools:
+			if tool.get("name", "") not in history.DisabledTools:
+				filtered_tools.append(tool)
 		history.provider.set_tools(filtered_tools)
 
 	# Check for cancellation before continuation
