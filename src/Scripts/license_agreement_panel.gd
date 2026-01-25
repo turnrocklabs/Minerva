@@ -3,8 +3,11 @@ class_name LicensePopup
 
 func _ready():
 	var file = FileAccess.open("res://LICENSE.md", FileAccess.READ)
-	%LicenseScriptMarkdownLabel._set_markdown_text(file.get_as_text())
-	%LicenseScriptMarkdownLabel.call_deferred("scroll_to_line", 0)
+	if file:
+		%LicenseScriptMarkdownLabel._set_markdown_text(file.get_as_text())
+		%LicenseScriptMarkdownLabel.call_deferred("scroll_to_line", 0)
+	else:
+		%LicenseScriptMarkdownLabel._set_markdown_text("# License\n\nLICENSE.md file not found.")
 
 
 func _on_close_requested() -> void:

@@ -3,8 +3,11 @@ class_name AboutPopup
 
 func _ready():
 	var file = FileAccess.open("res://README.md", FileAccess.READ)
-	%AboutScriptMarkdownLabel._set_markdown_text(file.get_as_text())
-	%AboutScriptMarkdownLabel.call_deferred("scroll_to_line", 0)
+	if file:
+		%AboutScriptMarkdownLabel._set_markdown_text(file.get_as_text())
+		%AboutScriptMarkdownLabel.call_deferred("scroll_to_line", 0)
+	else:
+		%AboutScriptMarkdownLabel._set_markdown_text("# About\n\nREADME.md file not found.")
 
 
 func _on_close_requested() -> void:

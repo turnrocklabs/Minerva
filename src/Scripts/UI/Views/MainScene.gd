@@ -199,21 +199,17 @@ func _on_disable_notes_button_pressed() -> void:
 
 func _on_help_id_pressed(id: int) -> void:
 	match id:
-		0:# id for the About option
-			if !ResourceLoader.has_cached("res://Scenes/windows/about_popup.tscn"):
-				ResourceLoader.load_threaded_request("res://Scenes/windows/about_popup.tscn")
-			
-			var about_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/about_popup.tscn")
+		0:  # id for the About option
+			var about_scene: PackedScene = load("res://Scenes/windows/about_popup.tscn")
 			var about_scene_inst: AboutPopup = about_scene.instantiate()
-			call_deferred("add_child", about_scene_inst)
-		1:# id for the license Agreement
-			if !ResourceLoader.has_cached("res://Scenes/windows/license_agreement_panel.tscn"):
-				ResourceLoader.load_threaded_request("res://Scenes/windows/license_agreement_panel.tscn")
-
-			var license_scene: = ResourceLoader.load_threaded_get("res://Scenes/windows/license_agreement_panel.tscn")
+			add_child(about_scene_inst)
+			about_scene_inst.popup_centered()
+		1:  # id for the License Agreement
+			var license_scene: PackedScene = load("res://Scenes/windows/license_agreement_panel.tscn")
 			var license_scene_inst: LicensePopup = license_scene.instantiate()
-			call_deferred("add_child", license_scene_inst)
-		2:# id for MCP Server Setup
+			add_child(license_scene_inst)
+			license_scene_inst.popup_centered()
+		2:  # id for MCP Server Setup
 			_show_mcp_setup_dialog()
 
 #endregion help menu
