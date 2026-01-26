@@ -256,7 +256,6 @@ custom_minimum_size = Vector2(350, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 2.0
-stretch = true
 
 [node name="SubViewport" type="SubViewport" parent="VBoxContainer/HSplitContainer/SubViewportContainer"]
 unique_name_in_owner = true
