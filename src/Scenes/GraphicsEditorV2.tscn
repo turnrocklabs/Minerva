@@ -1,4 +1,4 @@
-[gd_scene load_steps=82 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene load_steps=83 format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -25,7 +25,6 @@
 [ext_resource type="Texture2D" uid="uid://clwxau6kq0fot" path="res://assets/icons/graphics_editor/bucket.svg" id="12_u1itb"]
 [ext_resource type="Texture2D" uid="uid://bbgo8abr3t77d" path="res://assets/icons/graphics_editor/smudge.svg" id="13_nl4xv"]
 [ext_resource type="Texture2D" uid="uid://gs037uvjlaje" path="res://assets/icons/Hand.png" id="15_ow12a"]
-[ext_resource type="Texture2D" uid="uid://c4rbfgr3eg45t" path="res://assets/icons/graphics_editor/transform.svg" id="16_nin75"]
 [ext_resource type="Texture2D" uid="uid://cqj3j0kugb6ni" path="res://assets/icons/graphics_editor/center.svg" id="17_tml0f"]
 [ext_resource type="Texture2D" uid="uid://cb2683p2uo276" path="res://assets/icons/zoom_icons/zoom_less.svg" id="18_bdl26"]
 [ext_resource type="Texture2D" uid="uid://buf32vrsyqwj4" path="res://assets/icons/layers_icons/layers-24.png" id="18_tml0f"]
@@ -58,7 +57,9 @@
 [ext_resource type="Texture2D" uid="uid://cs57wo2b1qycy" path="res://assets/icons/lasso_select.svg" id="37_lassoicon"]
 [ext_resource type="Script" uid="uid://dk1ha137jdcrs" path="res://Scripts/UI/Controls/GraphicsEditor/SelectionOverlay.gd" id="38_selover"]
 [ext_resource type="Script" uid="uid://dkjxy1m1lu3jf" path="res://Scripts/UI/Controls/GraphicsEditor/tools/PoseEditorTool.gd" id="40_posetool"]
+[ext_resource type="Texture2D" uid="uid://dv5uo57icgooq" path="res://assets/icons/graphics_editor/move_layer_24.png" id="40_v7532"]
 [ext_resource type="PackedScene" uid="uid://bxwrp4qt6c8km" path="res://Scenes/PoseEditorPanel.tscn" id="41_posepanel"]
+[ext_resource type="Texture2D" uid="uid://cvhmu70ma8w1c" path="res://assets/icons/graphics_editor/center_view.png" id="44_4jqk7"]
 [ext_resource type="Texture2D" uid="uid://conu55ufnk0me" path="res://assets/icons/m_glass_icons/search_icon_24_no_bg.png" id="47_hu8v1"]
 [ext_resource type="Script" uid="uid://dorcqnmqkshtj" path="res://Scripts/UI/Controls/GraphicsEditor/tools/TextTool.gd" id="48_texttool"]
 [ext_resource type="Script" uid="uid://c8yf4fvyarfvw" path="res://Scripts/UI/Controls/GraphicsEditor/tools/SelectTool.gd" id="49_selecttool"]
@@ -413,7 +414,7 @@ size_flags_vertical = 4
 tooltip_text = "Transform tool for moving the layer"
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
-icon = ExtResource("16_nin75")
+icon = ExtResource("40_v7532")
 
 [node name="SpeechBubbleToolButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
 visible = false
@@ -479,7 +480,7 @@ flat = true
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Center view and reset zoom"
-icon = ExtResource("17_tml0f")
+icon = ExtResource("44_4jqk7")
 
 [node name="ToolOptionsContainer" type="MarginContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h"]
 unique_name_in_owner = true
