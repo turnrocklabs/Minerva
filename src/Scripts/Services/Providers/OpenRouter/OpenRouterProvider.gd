@@ -34,6 +34,9 @@ func _init():
 	input_token_cost = 0.30   # $0.30 per million input tokens
 	output_token_cost = 0.90   # $0.90 per million output tokens
 
+	# Request timeout - variable backends may need more time
+	default_timeout = 150.0
+
 	# OpenRouter passes through to underlying model - defaults work for most
 	supports_temperature = true
 	supports_top_p = true

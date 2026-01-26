@@ -142,7 +142,7 @@ func _add_default_servers() -> void:
 	nudge.auto_connect = false  # User must explicitly enable via Tools menu
 	servers.append(nudge)
 
-	# Co-Browser server (browser automation) - MCP JSON-RPC on port 8678
+	# Co-Browser MCP wrapper on port 8678 (connects to cobrowser_service on 8677)
 	var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8678")
 	cobrowser.auto_connect = false  # User must explicitly enable
 	servers.append(cobrowser)
@@ -291,9 +291,8 @@ func load_config() -> Error:
 		servers.append(nudge)
 
 	if not get_server("cobrowser"):
-		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
+		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8678")
 		cobrowser.auto_connect = false
-		cobrowser.skip_mcp_init = true
 		servers.append(cobrowser)
 
 	if not get_server("codetools"):
@@ -312,13 +311,13 @@ func load_config() -> Error:
 func _migrate_server_configs() -> void:
 	var needs_save := false
 
-	# Cobrowser MCP server runs on port 8678, not 8677
+	# Cobrowser MCP wrapper runs on port 8678 (cobrowser_service is on 8677)
 	var cobrowser := get_server("cobrowser")
 	if cobrowser:
 		if cobrowser.url == "http://localhost:8677":
 			cobrowser.url = "http://localhost:8678"
 			needs_save = true
-			print("[MCPConfig] Migrated cobrowser: port 8677 -> 8678")
+			print("[MCPConfig] Migrated cobrowser: port 8677 -> 8678 (MCP wrapper)")
 		if cobrowser.skip_mcp_init:
 			cobrowser.skip_mcp_init = false
 			cobrowser.mcp_endpoint = "/mcp"

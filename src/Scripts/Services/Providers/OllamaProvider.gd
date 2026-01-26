@@ -1,4 +1,4 @@
-class_name LocalProvider
+class_name OllamaProvider
 extends OpenAIProvider
 
 var max_tokens: int
@@ -16,17 +16,6 @@ func _init():
 	input_token_cost = 0.0   # local model - free
 	output_token_cost = 0.0   # local model - free
 
-	# Request timeout - local hardware varies greatly
-	default_timeout = 300.0
-
-	# Ollama supports context window configuration
-	supports_num_ctx = true
-	default_context = 8192
-
-	# Ollama supports GPU layer offloading
-	supports_num_gpu = true
-	default_num_gpu = -1  # -1 means use Ollama default (full GPU)
-
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) -> BotResponse:
 	# Build messages array - prepend system prompt if set
 	var messages: Array = []
@@ -34,19 +23,9 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}) 
 		messages.append({"role": "system", "content": system_prompt})
 	messages.append_array(prompt)
 
-	# Build Ollama options
-	var ollama_options: Dictionary = {
-		"num_ctx": get_effective_context()
-	}
-	# Only include num_gpu if explicitly set (>= 0), otherwise let Ollama use its default
-	var effective_num_gpu = get_effective_num_gpu()
-	if effective_num_gpu >= 0:
-		ollama_options["num_gpu"] = effective_num_gpu
-
 	var request_body = {
 		"model": model_name,
 		"messages": messages,
-		"options": ollama_options
 	}
 
 	# Add tools if enabled (inherited from OpenAIProvider)
@@ -241,7 +220,7 @@ func estimate_image_tokens_from_prompt(input: Array[Variant]) -> float:
 					image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
 	return image_tokens
 
-class Gemma3 extends LocalProvider:
+class Gemma3 extends OllamaProvider:
 	func _init():
 		super()
 		model_name = "gemma3:12b"
@@ -251,7 +230,7 @@ class Gemma3 extends LocalProvider:
 		output_token_cost = 0.0   # local model - free
 
 
-class DevstralSmall2 extends LocalProvider:
+class DevstralSmall2 extends OllamaProvider:
 	func _init():
 		super()
 		model_name = "devstral-small-2"

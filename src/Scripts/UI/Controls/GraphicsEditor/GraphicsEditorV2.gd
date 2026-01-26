@@ -133,6 +133,7 @@ signal selection_changed()
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
 @onready var dock_panel_container: MarginContainer = %DockPanelContainer
 @onready var mini_map_control: Control = %MiniMapControl
+@onready var mini_map_texture_rect: TextureRect = %TextureRect
 
 @onready var dock_split_container: VSplitContainer = %DockSplitContainer
 @onready var render_view_control: RenderViewRect = %RenderViewControl
@@ -146,14 +147,16 @@ const MAX_IMAGE_GEN_RES: int = 2048
 const MIN_IMAGE_RES: int = 64
 
 # Workflow selection for image generation
-enum Workflow { Z_TURBO, QWEN }
+enum Workflow { Z_TURBO, QWEN, QWEN_2511_FLEX }
 const WORKFLOW_TOPICS: Dictionary = {
 	Workflow.Z_TURBO: "media_gen/z_turbo_image_generate",
-	Workflow.QWEN: "media_gen/image_generation"
+	Workflow.QWEN: "media_gen/image_generation",
+	Workflow.QWEN_2511_FLEX: "media_gen/qwen_2511_flex"
 }
 const WORKFLOW_DEFAULT_STEPS: Dictionary = {
 	Workflow.Z_TURBO: 9,
-	Workflow.QWEN: 8
+	Workflow.QWEN: 8,
+	Workflow.QWEN_2511_FLEX: 4
 }
 var current_workflow: Workflow = Workflow.Z_TURBO
 
@@ -166,15 +169,31 @@ const MODEL_METADATA: Dictionary = {
 		"id": "z_turbo",
 		"name": "Z-Turbo",
 		"default_steps": 9,
+		"default_cfg": 1.0,
+		"default_denoise": 0.75,
 		"supports_edit": false,
-		"supports_mask": false
+		"supports_mask": false,
+		"supports_compose": false
 	},
 	"media_gen/image_generation": {
 		"id": "qwen",
 		"name": "Qwen",
 		"default_steps": 8,
+		"default_cfg": 1.0,
+		"default_denoise": 0.75,
 		"supports_edit": true,
-		"supports_mask": true
+		"supports_mask": true,
+		"supports_compose": false
+	},
+	"media_gen/qwen_2511_flex": {
+		"id": "qwen_2511_flex",
+		"name": "Qwen 2511 Flex",
+		"default_steps": 4,
+		"default_cfg": 1.0,
+		"default_denoise": 0.85,
+		"supports_edit": true,
+		"supports_mask": false,
+		"supports_compose": true
 	}
 }
 
@@ -186,7 +205,9 @@ var ai_models: Array[Dictionary] = []
 const AI_ACTIONS: Array[Dictionary] = [
 	{"id": "create", "name": "Create Image", "requires_layer": false, "requires_mask": false},
 	{"id": "edit", "name": "Edit Image", "requires_layer": true, "requires_mask": false},
-	{"id": "mask_edit", "name": "Mask Inpaint", "requires_layer": true, "requires_mask": true}
+	{"id": "mask_edit", "name": "Mask Inpaint", "requires_layer": true, "requires_mask": true},
+	{"id": "compose_2", "name": "Compose 2 Images", "requires_layers": 2, "requires_mask": false},
+	{"id": "compose_3", "name": "Compose 3 Images", "requires_layers": 3, "requires_mask": false}
 ]
 
 ## Initialize AI models from local metadata (called on _ready)
@@ -199,12 +220,17 @@ func _init_ai_models() -> void:
 			supports_actions.append("edit")
 		if meta.get("supports_mask", false):
 			supports_actions.append("mask_edit")
+		if meta.get("supports_compose", false):
+			supports_actions.append("compose_2")
+			supports_actions.append("compose_3")
 
 		ai_models.append({
 			"id": meta["id"],
 			"name": meta["name"],
 			"topic": topic,
 			"default_steps": meta["default_steps"],
+			"default_cfg": meta.get("default_cfg", 1.0),
+			"default_denoise": meta.get("default_denoise", 0.75),
 			"supports_actions": supports_actions
 		})
 
@@ -289,10 +315,14 @@ func execute_ai_action(params: Dictionary) -> Dictionary:
 		"width": params.get("width", DEFAULT_IMAGE_GEN_RES),
 		"height": params.get("height", DEFAULT_IMAGE_GEN_RES),
 		"steps": params.get("steps", model["default_steps"]),
-		"cfg": params.get("cfg", 7.0),
-		"denoise": params.get("denoise", 0.75),
+		"cfg": params.get("cfg", model.get("default_cfg", 1.0)),
+		"denoise": params.get("denoise", model.get("default_denoise", 0.75)),
 		"topic": model["topic"]
 	}
+
+	# Route to flex handler for qwen_2511_flex model
+	if model_id == "qwen_2511_flex":
+		return _execute_flex_action(action_id, gen_params, params)
 
 	# Route to appropriate handler based on action
 	match action_id:
@@ -341,6 +371,184 @@ func execute_ai_action(params: Dictionary) -> Dictionary:
 			return {"success": true, "request_id": _current_image_gen_request_id, "message": "Mask edit started"}
 
 	return {"error": "Unknown action: %s" % action_id, "success": false}
+
+
+## Build boolean switches for flex workflow based on action type
+## Returns dictionary with use_empty_latent, use_empty_image1, use_empty_image2, use_empty_image3
+func _build_flex_switches(action_id: String) -> Dictionary:
+	match action_id:
+		"create":  # All true = generate from noise
+			return {
+				"use_empty_latent": true,
+				"use_empty_image1": true,
+				"use_empty_image2": true,
+				"use_empty_image3": true
+			}
+		"edit":  # Edit image1 (use it as latent basis)
+			return {
+				"use_empty_latent": false,
+				"use_empty_image1": false,
+				"use_empty_image2": true,
+				"use_empty_image3": true
+			}
+		"compose_2":  # Combine 2 images
+			return {
+				"use_empty_latent": true,
+				"use_empty_image1": false,
+				"use_empty_image2": false,
+				"use_empty_image3": true
+			}
+		"compose_3":  # Combine 3 images
+			return {
+				"use_empty_latent": true,
+				"use_empty_image1": false,
+				"use_empty_image2": false,
+				"use_empty_image3": false
+			}
+	# Default to create mode
+	return {
+		"use_empty_latent": true,
+		"use_empty_image1": true,
+		"use_empty_image2": true,
+		"use_empty_image3": true
+	}
+
+
+## Execute a flex workflow action (qwen_2511_flex)
+func _execute_flex_action(action_id: String, gen_params: Dictionary, original_params: Dictionary) -> Dictionary:
+	# Build the boolean switches for the action
+	var switches: Dictionary = _build_flex_switches(action_id)
+
+	# Merge switches into gen_params
+	for key in switches:
+		gen_params[key] = switches[key]
+
+	# Build images array based on action
+	var images: Array = []
+
+	match action_id:
+		"create":
+			# No images needed for create
+			pass
+
+		"edit":
+			# Need image1 from source_layer
+			var source_layer_name: String = original_params.get("source_layer", "")
+			if source_layer_name.is_empty():
+				# Try image1_layer as fallback
+				source_layer_name = original_params.get("image1_layer", "")
+			var source_layer: LayerV2 = _find_layer_by_name(source_layer_name)
+			if not source_layer:
+				return {"error": "Source layer not found: %s" % source_layer_name, "success": false}
+			if source_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Source layer must be an image layer", "success": false}
+
+			images.append({
+				"buffer": source_layer.image.save_png_to_buffer(),
+				"role": "image1",
+				"filename": "image1.png"
+			})
+
+		"compose_2":
+			# Need image1 and image2
+			var image1_name: String = original_params.get("image1_layer", "")
+			var image2_name: String = original_params.get("image2_layer", "")
+
+			if image1_name.is_empty():
+				return {"error": "image1_layer is required for compose_2", "success": false}
+			if image2_name.is_empty():
+				return {"error": "image2_layer is required for compose_2", "success": false}
+
+			var image1_layer: LayerV2 = _find_layer_by_name(image1_name)
+			var image2_layer: LayerV2 = _find_layer_by_name(image2_name)
+
+			if not image1_layer:
+				return {"error": "Image 1 layer not found: %s" % image1_name, "success": false}
+			if image1_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Image 1 layer must be an image layer", "success": false}
+
+			if not image2_layer:
+				return {"error": "Image 2 layer not found: %s" % image2_name, "success": false}
+			if image2_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Image 2 layer must be an image layer", "success": false}
+
+			images.append({
+				"buffer": image1_layer.image.save_png_to_buffer(),
+				"role": "image1",
+				"filename": "image1.png"
+			})
+			images.append({
+				"buffer": image2_layer.image.save_png_to_buffer(),
+				"role": "image2",
+				"filename": "image2.png"
+			})
+
+		"compose_3":
+			# Need image1, image2, and image3
+			var image1_name: String = original_params.get("image1_layer", "")
+			var image2_name: String = original_params.get("image2_layer", "")
+			var image3_name: String = original_params.get("image3_layer", "")
+
+			if image1_name.is_empty():
+				return {"error": "image1_layer is required for compose_3", "success": false}
+			if image2_name.is_empty():
+				return {"error": "image2_layer is required for compose_3", "success": false}
+			if image3_name.is_empty():
+				return {"error": "image3_layer is required for compose_3", "success": false}
+
+			var image1_layer: LayerV2 = _find_layer_by_name(image1_name)
+			var image2_layer: LayerV2 = _find_layer_by_name(image2_name)
+			var image3_layer: LayerV2 = _find_layer_by_name(image3_name)
+
+			if not image1_layer:
+				return {"error": "Image 1 layer not found: %s" % image1_name, "success": false}
+			if image1_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Image 1 layer must be an image layer", "success": false}
+
+			if not image2_layer:
+				return {"error": "Image 2 layer not found: %s" % image2_name, "success": false}
+			if image2_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Image 2 layer must be an image layer", "success": false}
+
+			if not image3_layer:
+				return {"error": "Image 3 layer not found: %s" % image3_name, "success": false}
+			if image3_layer.type != LayerV2.Type.IMAGE:
+				return {"error": "Image 3 layer must be an image layer", "success": false}
+
+			images.append({
+				"buffer": image1_layer.image.save_png_to_buffer(),
+				"role": "image1",
+				"filename": "image1.png"
+			})
+			images.append({
+				"buffer": image2_layer.image.save_png_to_buffer(),
+				"role": "image2",
+				"filename": "image2.png"
+			})
+			images.append({
+				"buffer": image3_layer.image.save_png_to_buffer(),
+				"role": "image3",
+				"filename": "image3.png"
+			})
+
+		_:
+			return {"error": "Unknown flex action: %s" % action_id, "success": false}
+
+	# Send the flex request
+	_current_image_gen_request_id = MediaGen.send_media_flex_request(gen_params, images)
+
+	var action_messages: Dictionary = {
+		"create": "Flex image generation started",
+		"edit": "Flex image edit started",
+		"compose_2": "Flex 2-image composition started",
+		"compose_3": "Flex 3-image composition started"
+	}
+
+	return {
+		"success": true,
+		"request_id": _current_image_gen_request_id,
+		"message": action_messages.get(action_id, "Flex action started")
+	}
 
 #endregion
 
@@ -445,7 +653,12 @@ func _ready() -> void:
 	get_viewport().set_embedding_subwindows(false)
 	
 	mini_map_control.visible = false
-	
+
+	# Set up MiniMap ViewportTexture at runtime to avoid export errors
+	var viewport_texture := ViewportTexture.new()
+	viewport_texture.viewport_path = drawing_area_sub_viewport.get_path()
+	mini_map_texture_rect.texture = viewport_texture
+
 	if Core.connected:
 		enable_ai_features()
 	else:
@@ -2450,13 +2663,24 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 		0:  # Z-Turbo
 			current_workflow = Workflow.Z_TURBO
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.Z_TURBO]
+			cfg_spin_box.value = 1.0
+			denoise_spin_box.value = 1.0
 			edit_img_button.disabled = true
 			send_mask_edit_button.disabled = true
 		1:  # Qwen
 			current_workflow = Workflow.QWEN
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
+			cfg_spin_box.value = 1.0
+			denoise_spin_box.value = 1.0
 			edit_img_button.disabled = false
 			send_mask_edit_button.disabled = false
+		2:  # Qwen 2511 Flex
+			current_workflow = Workflow.QWEN_2511_FLEX
+			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN_2511_FLEX]
+			cfg_spin_box.value = 1.0
+			denoise_spin_box.value = 0.85
+			edit_img_button.disabled = false
+			send_mask_edit_button.disabled = true  # Flex doesn't use mask_edit, uses compose instead
 
 
 func toggle_enable_ai_fields(enable: bool = true) -> void:
@@ -2469,12 +2693,21 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 	
 	prompt_text_edit.editable = enable
 	negative_text_edit.editable = enable
-	
-	send_prompt_button.disabled = true if d_pose_controlller_enabled else disabled
-	edit_img_button.disabled = false if d_pose_controlller_enabled else (is_wf0 or disabled)
-	send_mask_edit_button.disabled = true if d_pose_controlller_enabled else (is_wf0 or disabled)
-	workflow_option_button.disabled = d_pose_controlller_enabled
-
+	advanced_settings_check_button.disabled = not enable
+	match workflow_option_button.selected:
+		0:  # Z-Turbo - no edit or mask
+			edit_img_button.disabled = true
+			send_mask_edit_button.disabled = true
+		1:  # Qwen - edit and mask
+			edit_img_button.disabled = not enable
+			send_mask_edit_button.disabled = not enable
+		2:  # Qwen 2511 Flex - edit but no mask (uses compose instead)
+			edit_img_button.disabled = not enable
+			send_mask_edit_button.disabled = true
+		_:  # Default fallback
+			edit_img_button.disabled = not enable
+			send_mask_edit_button.disabled = not enable
+	workflow_option_button.disabled = not enable
 
 func disable_ai_features(error: int) -> void:
 	if error != 0:
@@ -2864,20 +3097,29 @@ func _csv_escape(text: String) -> String:
 
 func save_prompt_to_history(positive_prompt: String, negative_prompt: String) -> void:
 	var file_path = SingletonObject.GEN_AI_HIST_FILE_PATH
-	
+
 	var current_time: = Time.get_datetime_string_from_system(true, true)
-	
+
 	var escaped_time: = _csv_escape(current_time)
 	var escaped_positive_prompt: = _csv_escape(positive_prompt.strip_edges())
 	var escaped_negative_prompt: = _csv_escape(negative_prompt.strip_edges())
-	
+
 	var history_entry: = "%s,%s,%s\n" % [escaped_time, escaped_positive_prompt, escaped_negative_prompt]
-	
-	var file: = FileAccess.open(file_path, FileAccess.READ_WRITE)
+
+	# Check if file exists to determine if we need to write headers
+	var file_exists: = FileAccess.file_exists(file_path)
+
+	# Use WRITE mode if file doesn't exist, READ_WRITE if it does
+	var file: FileAccess
+	if file_exists:
+		file = FileAccess.open(file_path, FileAccess.READ_WRITE)
+	else:
+		file = FileAccess.open(file_path, FileAccess.WRITE)
+
 	if file:
-		if file.get_length() == 0:
+		if not file_exists or file.get_length() == 0:
 			file.store_string(_csv_escape("Timestamp") + "," + _csv_escape("Positive Prompt") + "," + _csv_escape("Negative Prompt") + "\n")
-		
+
 		file.seek_end()
 		file.store_string(history_entry)
 		file.close()

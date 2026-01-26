@@ -599,11 +599,11 @@ func _register_editor_tools() -> void:
 				},
 				"model": {
 					"type": "string",
-					"description": "Model ID from capabilities (e.g., 'z_turbo', 'qwen')"
+					"description": "Model ID from capabilities (e.g., 'z_turbo', 'qwen', 'qwen_2511_flex')"
 				},
 				"action": {
 					"type": "string",
-					"description": "Action ID: 'create', 'edit', or 'mask_edit'"
+					"description": "Action ID: 'create', 'edit', 'mask_edit', 'compose_2', or 'compose_3'"
 				},
 				"prompt": {
 					"type": "string",
@@ -632,6 +632,18 @@ func _register_editor_tools() -> void:
 				"mask_layer": {
 					"type": "string",
 					"description": "Mask layer name for 'mask_edit' action"
+				},
+				"image1_layer": {
+					"type": "string",
+					"description": "First image layer name for 'edit' (qwen_2511_flex) or 'compose_2'/'compose_3' actions"
+				},
+				"image2_layer": {
+					"type": "string",
+					"description": "Second image layer name for 'compose_2' or 'compose_3' actions"
+				},
+				"image3_layer": {
+					"type": "string",
+					"description": "Third image layer name for 'compose_3' action"
 				}
 			},
 			"required": ["editor_name", "model", "action", "prompt"]
@@ -649,11 +661,11 @@ func _register_editor_tools() -> void:
 				},
 				"model": {
 					"type": "string",
-					"description": "Model ID from capabilities (e.g., 'z_turbo', 'qwen')"
+					"description": "Model ID from capabilities (e.g., 'z_turbo', 'qwen', 'qwen_2511_flex')"
 				},
 				"action": {
 					"type": "string",
-					"description": "Action ID: 'create', 'edit', or 'mask_edit'"
+					"description": "Action ID: 'create', 'edit', 'mask_edit', 'compose_2', or 'compose_3'"
 				},
 				"prompt": {
 					"type": "string",
@@ -678,6 +690,22 @@ func _register_editor_tools() -> void:
 				"criteria": {
 					"type": "string",
 					"description": "Success criteria to evaluate against (e.g., 'full front view of star-fighter')"
+				},
+				"source_layer": {
+					"type": "string",
+					"description": "Layer name for 'edit' and 'mask_edit' actions"
+				},
+				"image1_layer": {
+					"type": "string",
+					"description": "First image layer name for 'edit' (qwen_2511_flex) or 'compose_2'/'compose_3' actions"
+				},
+				"image2_layer": {
+					"type": "string",
+					"description": "Second image layer name for 'compose_2' or 'compose_3' actions"
+				},
+				"image3_layer": {
+					"type": "string",
+					"description": "Third image layer name for 'compose_3' action"
 				}
 			},
 			"required": ["editor_name", "model", "action", "prompt", "criteria"]

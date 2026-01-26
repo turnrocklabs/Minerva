@@ -454,7 +454,84 @@ var nbp_image_size: String = "1K":
 			nbp_image_size = saved
 		return nbp_image_size
 
+## Model-chat (Ollama) context window size
+var model_chat_num_ctx: int = 40000:
+	set(value):
+		model_chat_num_ctx = value
+		save_to_config_file("ModelChat", "num_ctx", value)
+	get:
+		var saved = get_config_file_value("ModelChat", "num_ctx")
+		if saved != null and saved is int and saved > 0:
+			model_chat_num_ctx = saved
+		return model_chat_num_ctx
+
 #endregion Image Generation Settings
+
+#region Per-Model Settings (Timeout & Context)
+
+## Per-model timeout overrides (seconds). 0 = use provider default.
+## Keys are model names (e.g., "gpt-5.2", "model-chat (glm-4.7-flash)")
+var _model_timeouts: Dictionary = {}
+
+## Per-model context window overrides. 0 = use default.
+## Keys are model names
+var _model_contexts: Dictionary = {}
+
+## Get the timeout override for a model (0 means use default)
+func get_model_timeout(model_name: String) -> float:
+	# Load from config if not loaded yet
+	if _model_timeouts.is_empty():
+		var saved = get_config_file_value("Models", "Timeouts")
+		if saved and saved is Dictionary:
+			_model_timeouts = saved
+	return _model_timeouts.get(model_name, 0.0)
+
+## Set the timeout override for a model
+func set_model_timeout(model_name: String, timeout: float) -> void:
+	if timeout <= 0:
+		_model_timeouts.erase(model_name)
+	else:
+		_model_timeouts[model_name] = timeout
+	save_to_config_file("Models", "Timeouts", _model_timeouts)
+
+## Get the context window override for a model (0 means use default)
+func get_model_context(model_name: String) -> int:
+	# Load from config if not loaded yet
+	if _model_contexts.is_empty():
+		var saved = get_config_file_value("Models", "Contexts")
+		if saved and saved is Dictionary:
+			_model_contexts = saved
+	return _model_contexts.get(model_name, 0)
+
+## Set the context window override for a model
+func set_model_context(model_name: String, context: int) -> void:
+	if context <= 0:
+		_model_contexts.erase(model_name)
+	else:
+		_model_contexts[model_name] = context
+	save_to_config_file("Models", "Contexts", _model_contexts)
+
+## Per-model GPU layer overrides. -1 = use default, 0 = CPU only, N = N layers on GPU
+var _model_num_gpu: Dictionary = {}
+
+## Get the num_gpu override for a model (-1 means use default)
+func get_model_num_gpu(model_name: String) -> int:
+	# Load from config if not loaded yet
+	if _model_num_gpu.is_empty():
+		var saved = get_config_file_value("Models", "NumGpu")
+		if saved and saved is Dictionary:
+			_model_num_gpu = saved
+	return _model_num_gpu.get(model_name, -1)
+
+## Set the num_gpu override for a model
+func set_model_num_gpu(model_name: String, num_gpu: int) -> void:
+	if num_gpu < 0:
+		_model_num_gpu.erase(model_name)
+	else:
+		_model_num_gpu[model_name] = num_gpu
+	save_to_config_file("Models", "NumGpu", _model_num_gpu)
+
+#endregion Per-Model Settings
 
 #region Chats
 @warning_ignore("unused_signal")
