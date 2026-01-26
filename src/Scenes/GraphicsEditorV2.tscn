@@ -1631,7 +1631,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2"]
 layout_mode = 2
-text = "Pose Controller: "
+text = "Open Pose Editor: "
 
 [node name="3DPoseControllerButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2"]
 unique_name_in_owner = true

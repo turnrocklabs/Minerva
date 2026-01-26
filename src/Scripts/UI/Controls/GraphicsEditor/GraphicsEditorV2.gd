@@ -39,7 +39,7 @@ signal selection_changed()
 @onready var input_area_camera: Camera2D = %InputAreaCamera
 
 @onready var _tools_option_button: OptionButton = %ToolsOptionButton
-
+@onready var ai_action_label: Label = %AIActionLabel
 #region tool options containers
 @onready var _brush_options_container: Control = %BrushOptions
 @onready var _smudge_options_container: Control = %SmudgeOptions
@@ -124,10 +124,7 @@ signal selection_changed()
 @onready var send_action_button: Button = %SendActionButton
 @onready var edit_img_button: Button = %EditImgButton
 @onready var send_mask_edit_button: Button = %SendMaskEditButton
-@onready var ai_action_label: Label = %AIActionLabel
-@onready var spritesheet_settings_container: VBoxContainer = %SpritesheetSettingsContainer
-@onready var animation_option_button: OptionButton = %AnimationOptionButton
-@onready var animation_frames_option_button: OptionButton = %AnimationFramesOptionButton
+
 
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
@@ -3128,23 +3125,6 @@ func save_prompt_to_history(positive_prompt: String, negative_prompt: String) ->
 		push_error("Failed to open prompt history file for writing: %s" % file_path)
 
 #endregion Gen AI Prompt History
-
-var sprite_anim_selected: = ""
-var spritesheet_frames: = ""
-var spritesheet_anim_is_active: = false
-func _on_sprite_sheet_check_button_toggled(toggled_on: bool) -> void:
-	spritesheet_settings_container.visible = toggled_on
-	spritesheet_anim_is_active = toggled_on
-
-
-func _on_animation_option_button_item_selected(index: int) -> void:
-	sprite_anim_selected =  animation_option_button.get_item_text(index)
-	spritesheet_anim_is_active = spritesheet_settings_container.visible
-
-
-func _on_animation_frames_option_button_item_selected(index: int) -> void:
-	spritesheet_frames = animation_frames_option_button.get_item_text(index)
-	spritesheet_anim_is_active = spritesheet_settings_container.visible
 
 
 @onready var main_h_split_container: HSplitContainer = %MainHSplitContainer
