@@ -3,10 +3,10 @@
 This License Agreement ("Agreement") is made effective as of March 30, 2024 by and between Turnrock LLC ("Licensor") and the end user ("Licensee"). By downloading, installing, or using any software obtained in any manner produced in whole or in part by Turnrock LLC, its members, or affiliates ("Software"), the Licensee agrees to be bound by the terms of this Agreement. If you do not agree to the terms of this Agreement, do not download, install, or use the Software or its source code.
 
 ## Grant of License
-### Free License for Personal Use###
+### Free License for Personal Use
 Licensor grants to Licensee a non-exclusive, non-transferable, personal license to use the Software solely on personal devices owned by the Licensee. This license is for personal use only.
 
-### Commercial use license ###
+### Commercial use license
 Purchased copies of the software obtained from the TurnRock LLC online store may be used for commercial use, provided all other provisions of the license are honored by the Licensee. In addition Licensee may install the software on any computers owned by the licensee or used exclusively by the Licensee. Shared computing resources must have access controls to ensure that only Licensee is able to use the software. Software can only be licensed to humans and to AI agents under direct, supervised control of the human, and not organizations. Software may be used by exactly one natural human per purchased license.
 
 ## Restrictions

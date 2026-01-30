@@ -669,25 +669,42 @@ func _ready():
 	initialize_mcp.call_deferred()
 
 
+## Recursively release all textures in a node tree to prevent RID leaks on exit
+func _release_textures_recursive(node: Node) -> void:
+	if not is_instance_valid(node):
+		return
+	# Release texture if this is a TextureRect
+	if node is TextureRect and node.texture:
+		node.texture = null
+	# Recurse into children
+	for child in node.get_children():
+		_release_textures_recursive(child)
+
+
 func _exit_tree() -> void:
 	# Ensure proper cleanup order during shutdown
 	print("[SingletonObject] Cleaning up...")
 
-	# Explicitly free all notes to release their textures before Godot cleanup
-	if notes_container:
-		print("[SingletonObject] Clearing notes container...")
-		for tab_idx in range(notes_container.get_tab_count()):
-			var vbox = notes_container.get_tab_control(tab_idx)
-			if vbox and vbox.has_method("get_notes"):
-				for note in vbox.get_notes():
-					if is_instance_valid(note):
-						note.queue_free()
+	# Release all textures in notes container before freeing nodes
+	if notes_container and is_instance_valid(notes_container):
+		print("[SingletonObject] Releasing textures in notes...")
+		_release_textures_recursive(notes_container)
 
-	# Clear registered objects (notes, etc.)
-	clear_registered_objects()
+	# Release all textures in chat pane before freeing nodes
+	if Chats and is_instance_valid(Chats):
+		print("[SingletonObject] Releasing textures in chats...")
+		_release_textures_recursive(Chats)
+
+	# Release all textures in editor container before freeing nodes
+	if editor_container and is_instance_valid(editor_container):
+		print("[SingletonObject] Releasing textures in editor...")
+		_release_textures_recursive(editor_container)
 
 	# Force RenderingServer to release pending resources
 	RenderingServer.force_sync()
+
+	# Clear registered objects (notes, etc.)
+	clear_registered_objects()
 
 	print("[SingletonObject] Cleanup complete")
 
@@ -793,7 +810,7 @@ enum API_MODEL_PROVIDERS {
 	# OpenRouter
 	OPENROUTER_GLM47,
 	OPENROUTER_MINIMAX_M21,
-	OPENROUTER_KIMI_K2,
+	OPENROUTER_KIMI_K25,
 	OPENROUTER_GROK41_FAST,
 	# Claude Code (Max/Pro)
 	CLAUDE_CODE_SONNET,
@@ -826,7 +843,7 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	# OpenRouter
 	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProviderScript.GLM47,
 	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProviderScript.MinimaxM21,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: OpenRouterProviderScript.KimiK2,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K25: OpenRouterProviderScript.KimiK25,
 	API_MODEL_PROVIDERS.OPENROUTER_GROK41_FAST: OpenRouterProviderScript.Grok41Fast,
 	# Claude Code (Max/Pro)
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
@@ -857,7 +874,7 @@ const MODEL_TO_PROVIDER: Dictionary = {
 	# OpenRouter
 	API_MODEL_PROVIDERS.OPENROUTER_GLM47: API_PROVIDER.OPENROUTER,
 	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: API_PROVIDER.OPENROUTER,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: API_PROVIDER.OPENROUTER,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K25: API_PROVIDER.OPENROUTER,
 	API_MODEL_PROVIDERS.OPENROUTER_GROK41_FAST: API_PROVIDER.OPENROUTER,
 	# Claude Code
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,

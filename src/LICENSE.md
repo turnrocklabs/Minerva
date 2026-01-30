@@ -3,12 +3,16 @@
 This License Agreement ("Agreement") is made effective as of March 30, 2024 by and between Turnrock LLC ("Licensor") and the end user ("Licensee"). By downloading, installing, or using any software obtained in any manner produced in whole or in part by Turnrock LLC, its members, or affiliates ("Software"), the Licensee agrees to be bound by the terms of this Agreement. If you do not agree to the terms of this Agreement, do not download, install, or use the Software or its source code.
 
 ## Grant of License
+### Free License for Personal Use
 Licensor grants to Licensee a non-exclusive, non-transferable, personal license to use the Software solely on personal devices owned by the Licensee. This license is for personal use only.
+
+### Commercial use license
+Purchased copies of the software obtained from the TurnRock LLC online store may be used for commercial use, provided all other provisions of the license are honored by the Licensee. In addition Licensee may install the software on any computers owned by the licensee or used exclusively by the Licensee. Shared computing resources must have access controls to ensure that only Licensee is able to use the software. Software can only be licensed to humans and to AI agents under direct, supervised control of the human, and not organizations. Software may be used by exactly one natural human per purchased license.
 
 ## Restrictions
 
 - The Software may not be used by organizations, entities, or any non-natural born humans.
-- The Software may not be used by any form of nonhuman or artificial intelligence.
+- The Software may not be used by any form of nonhuman or artificial intelligence unless under human control.
 - The Software may not be compiled, installed, or used on computing resources not owned personally by the Licensee.
 - The Software may not be installed on any computing resources located within remote data centers.
 - The Source code of the Software may not be forked, copied, or used on any non-personal device.
@@ -39,7 +43,7 @@ If this License Agreement is found to be completely unenforceable in a particula
 The Licensor reserves the right, at its sole discretion, to update, change, modify, add, or remove portions of this License Agreement at any time by posting the updated License on the Software's official website or through the Software itself. The continued use of the Software by the Licensee after any such changes indicates the Licensee's acceptance of the new terms. Furthermore, the Licensor may offer the Software under different terms or licenses in the future, which, upon acceptance by the Licensee, will supersede this Agreement.
 
 ## Succession in the Event of Licensor Termination
-In the event that Turnrock LLC, the Licensor, is dissolved, terminates operations, or otherwise ceases to exist, the rights and obligations of the Licensor under this License Agreement shall be passed to the members of the LLC or an assignee designated by the members at the time of such termination. This designation will be communicated to the Licensee in writing and shall serve to transfer the Licensor's rights and responsibilities under this Agreement to the designated successor(s) in interest, who shall thereafter be considered the Licensor for the purposes of this Agreement.
+In the event that Turnrock LLC, the Licensor, is dissolved, terminates operations, or otherwise ceases to exist, the rights and obligations of the Licensor under this License Agreement shall be passed to the members of the LLC or an assignee designated by the members at the time of such termination. This designation will be communicated to the Licensee in writing via an update to the license in github, and shall serve to transfer the Licensor's rights and responsibilities under this Agreement to the designated successor(s) in interest, who shall thereafter be considered the Licensor for the purposes of this Agreement.
 
 ## Rights of the Licensor
 Licensee agrees that the Licensor posesses these additional rights and may utilize them at Licensor's sole discretion:
