@@ -159,7 +159,50 @@ func remove_recent_project(project_name: String) -> void:
 
 	config_file.erase_section_key("OpenRecent", project_name)
 	config_file.save(_config_file_name)
-	
+
+
+#region Autocoder Session Source Directory Storage
+
+const AUTOCODER_SESSIONS_SECTION = "AutocoderSessions"
+
+## Save the source directory path associated with an autocoder session
+func save_session_source_dir(session_id: String, source_dir: String) -> void:
+	if session_id.is_empty():
+		return
+	save_to_config_file(AUTOCODER_SESSIONS_SECTION, session_id, source_dir)
+
+## Get the source directory path for an autocoder session
+func get_session_source_dir(session_id: String) -> String:
+	if session_id.is_empty():
+		return ""
+	if not has_session_source_dir(session_id):
+		return ""
+	var value = config_file.get_value(AUTOCODER_SESSIONS_SECTION, session_id, "")
+	return value if value is String else ""
+
+## Check if a session has a stored source directory
+func has_session_source_dir(session_id: String) -> bool:
+	if session_id.is_empty():
+		return false
+	return config_file.has_section_key(AUTOCODER_SESSIONS_SECTION, session_id)
+
+## Remove the source directory mapping for a session
+func remove_session_source_dir(session_id: String) -> void:
+	if session_id.is_empty():
+		return
+	if config_file.has_section_key(AUTOCODER_SESSIONS_SECTION, session_id):
+		config_file.erase_section_key(AUTOCODER_SESSIONS_SECTION, session_id)
+		config_file.save(_config_file_name)
+
+## Get all stored session source directories (returns Dictionary[session_id] = source_dir)
+func get_all_session_source_dirs() -> Dictionary:
+	var result: Dictionary = {}
+	if config_file.has_section(AUTOCODER_SESSIONS_SECTION):
+		for key in config_file.get_section_keys(AUTOCODER_SESSIONS_SECTION):
+			result[key] = config_file.get_value(AUTOCODER_SESSIONS_SECTION, key)
+	return result
+
+#endregion Autocoder Session Source Directory Storage
 
 #endregion Config File
 
@@ -669,25 +712,42 @@ func _ready():
 	initialize_mcp.call_deferred()
 
 
+## Recursively release all textures in a node tree to prevent RID leaks on exit
+func _release_textures_recursive(node: Node) -> void:
+	if not is_instance_valid(node):
+		return
+	# Release texture if this is a TextureRect
+	if node is TextureRect and node.texture:
+		node.texture = null
+	# Recurse into children
+	for child in node.get_children():
+		_release_textures_recursive(child)
+
+
 func _exit_tree() -> void:
 	# Ensure proper cleanup order during shutdown
 	print("[SingletonObject] Cleaning up...")
 
-	# Explicitly free all notes to release their textures before Godot cleanup
-	if notes_container:
-		print("[SingletonObject] Clearing notes container...")
-		for tab_idx in range(notes_container.get_tab_count()):
-			var vbox = notes_container.get_tab_control(tab_idx)
-			if vbox and vbox.has_method("get_notes"):
-				for note in vbox.get_notes():
-					if is_instance_valid(note):
-						note.queue_free()
+	# Release all textures in notes container before freeing nodes
+	if notes_container and is_instance_valid(notes_container):
+		print("[SingletonObject] Releasing textures in notes...")
+		_release_textures_recursive(notes_container)
 
-	# Clear registered objects (notes, etc.)
-	clear_registered_objects()
+	# Release all textures in chat pane before freeing nodes
+	if Chats and is_instance_valid(Chats):
+		print("[SingletonObject] Releasing textures in chats...")
+		_release_textures_recursive(Chats)
+
+	# Release all textures in editor container before freeing nodes
+	if editor_container and is_instance_valid(editor_container):
+		print("[SingletonObject] Releasing textures in editor...")
+		_release_textures_recursive(editor_container)
 
 	# Force RenderingServer to release pending resources
 	RenderingServer.force_sync()
+
+	# Clear registered objects (notes, etc.)
+	clear_registered_objects()
 
 	print("[SingletonObject] Cleanup complete")
 
@@ -793,7 +853,7 @@ enum API_MODEL_PROVIDERS {
 	# OpenRouter
 	OPENROUTER_GLM47,
 	OPENROUTER_MINIMAX_M21,
-	OPENROUTER_KIMI_K2,
+	OPENROUTER_KIMI_K25,
 	OPENROUTER_GROK41_FAST,
 	# Claude Code (Max/Pro)
 	CLAUDE_CODE_SONNET,
@@ -826,7 +886,7 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	# OpenRouter
 	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProviderScript.GLM47,
 	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProviderScript.MinimaxM21,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: OpenRouterProviderScript.KimiK2,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K25: OpenRouterProviderScript.KimiK25,
 	API_MODEL_PROVIDERS.OPENROUTER_GROK41_FAST: OpenRouterProviderScript.Grok41Fast,
 	# Claude Code (Max/Pro)
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
@@ -857,7 +917,7 @@ const MODEL_TO_PROVIDER: Dictionary = {
 	# OpenRouter
 	API_MODEL_PROVIDERS.OPENROUTER_GLM47: API_PROVIDER.OPENROUTER,
 	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: API_PROVIDER.OPENROUTER,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: API_PROVIDER.OPENROUTER,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K25: API_PROVIDER.OPENROUTER,
 	API_MODEL_PROVIDERS.OPENROUTER_GROK41_FAST: API_PROVIDER.OPENROUTER,
 	# Claude Code
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,

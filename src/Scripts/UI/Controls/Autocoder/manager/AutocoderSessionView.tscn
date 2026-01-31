@@ -1,6 +1,21 @@
-[gd_scene load_steps=2 format=3 uid="uid://e4srp1nnpl8g"]
+[gd_scene load_steps=3 format=3 uid="uid://e4srp1nnpl8g"]
 
 [ext_resource type="Script" uid="uid://cohs3ojnrte05" path="res://Scripts/UI/Controls/Autocoder/manager/SessionView.gd" id="1_63lhi"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(0.12, 0.12, 0.14, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.2, 0.2, 0.22, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0, 0, 0, 0.15)
+shadow_size = 4
+shadow_offset = Vector2(0, 2)
 
 [node name="AutocoderSessionView" type="VBoxContainer"]
 anchors_preset = 15
@@ -10,6 +25,55 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_63lhi")
 
-[node name="SessionsTree" type="Tree" parent="."]
+[node name="MainMargin" type="MarginContainer" parent="."]
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="SessionsCard" type="PanelContainer" parent="MainMargin"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="CardMargin" type="MarginContainer" parent="MainMargin/SessionsCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="CardContent" type="VBoxContainer" parent="MainMargin/SessionsCard/CardMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="MainMargin/SessionsCard/CardMargin/CardContent"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="MainMargin/SessionsCard/CardMargin/CardContent/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "📋"
+
+[node name="Title" type="Label" parent="MainMargin/SessionsCard/CardMargin/CardContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 16
+text = "Sessions"
+
+[node name="RefreshButton" type="Button" parent="MainMargin/SessionsCard/CardMargin/CardContent/Header"]
+layout_mode = 2
+text = "🔄 Refresh"
+
+[node name="DeleteAllButton" type="Button" parent="MainMargin/SessionsCard/CardMargin/CardContent/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.4, 0.4, 1)
+text = "🗑️ Delete All"
+
+[node name="SessionsTree" type="Tree" parent="MainMargin/SessionsCard/CardMargin/CardContent"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 13

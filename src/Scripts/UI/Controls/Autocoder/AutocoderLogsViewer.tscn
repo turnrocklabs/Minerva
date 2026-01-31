@@ -1,0 +1,444 @@
+[gd_scene load_steps=4 format=3 uid="uid://dtt1t2ufkclx4"]
+
+[ext_resource type="Script" uid="uid://d1vgcnau0fntq" path="res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.gd" id="1_8xlu0"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(0.12, 0.12, 0.14, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.2, 0.2, 0.22, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0, 0, 0, 0.15)
+shadow_size = 4
+shadow_offset = Vector2(0, 2)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card_accent"]
+bg_color = Color(0.14, 0.16, 0.2, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.25, 0.35, 0.5, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0, 0, 0, 0.15)
+shadow_size = 4
+shadow_offset = Vector2(0, 2)
+
+[node name="AutocoderLogsViewer" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_8xlu0")
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="MainMargin" type="MarginContainer" parent="ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="MainVBox" type="VBoxContainer" parent="ScrollContainer/MainMargin"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 16
+
+[node name="HeaderCard" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="CardMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "📋"
+
+[node name="SessionLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 15
+text = "Session: -"
+
+[node name="StatusLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.8, 0.6, 1)
+theme_override_font_sizes/font_size = 13
+text = "Idle"
+
+[node name="SpinnerLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+theme_override_colors/font_color = Color(0.4, 0.7, 1, 1)
+theme_override_font_sizes/font_size = 13
+text = "Running..."
+
+[node name="AdvancedToggle" type="CheckBox" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Advanced"
+
+[node name="SummaryPanel" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="SummaryMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="SummaryBox" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "📊"
+
+[node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Review Summary"
+
+[node name="ReviewStateLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
+theme_override_font_sizes/font_size = 13
+text = ""
+
+[node name="ReviewSummaryLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+autowrap_mode = 3
+text = ""
+
+[node name="ReviewPanel" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card_accent")
+
+[node name="ReviewMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="ReviewContent" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "⚡"
+
+[node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Actions Required"
+
+[node name="Subtitle" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.7, 0.8, 1)
+theme_override_font_sizes/font_size = 12
+text = "Review the generated code and choose an action"
+
+[node name="ButtonsRow" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="RequestReviewButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent/ButtonsRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(140, 36)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Request Review"
+
+[node name="ApproveButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent/ButtonsRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 36)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Approve"
+
+[node name="ArtifactsPanel" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="ArtifactsMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="ArtifactsBox" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "📦"
+
+[node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Generated Artifacts"
+
+[node name="PatchRow" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PatchLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/PatchRow"]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+text = "Patch:"
+
+[node name="PatchValueLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/PatchRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+text = "-"
+text_overrun_behavior = 3
+
+[node name="PatchCopyButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/PatchRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Copy"
+flat = true
+
+[node name="ArchiveRow" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ArchiveLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/ArchiveRow"]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 12
+text = "Archive:"
+
+[node name="ArchiveValueLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/ArchiveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 12
+text = "-"
+text_overrun_behavior = 3
+
+[node name="ArchiveCopyButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/ArchiveRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Copy"
+flat = true
+
+[node name="TimelineCard" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="TimelineMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="TimelineContent" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard/TimelineMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TimelineHeader" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard/TimelineMargin/TimelineContent"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard/TimelineMargin/TimelineContent/TimelineHeader"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "📜"
+
+[node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard/TimelineMargin/TimelineContent/TimelineHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Timeline"
+
+[node name="TimelineList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard/TimelineMargin/TimelineContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="IssuesCard" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="IssuesMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="IssuesContent" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard/IssuesMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="IssuesHeader" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard/IssuesMargin/IssuesContent"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard/IssuesMargin/IssuesContent/IssuesHeader"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "⚠️"
+
+[node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard/IssuesMargin/IssuesContent/IssuesHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Issues"
+
+[node name="IssuesList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard/IssuesMargin/IssuesContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="AdvancedSection" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="RawCard" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="RawMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="RawContent" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard/RawMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="RawHeader" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard/RawMargin/RawContent"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard/RawMargin/RawContent/RawHeader"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "📄"
+
+[node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard/RawMargin/RawContent/RawHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "Raw JSON"
+
+[node name="RawList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard/RawMargin/RawContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="LlmCard" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="LlmMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="LlmContent" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard/LlmMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="LlmHeader" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard/LlmMargin/LlmContent"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard/LlmMargin/LlmContent/LlmHeader"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "🤖"
+
+[node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard/LlmMargin/LlmContent/LlmHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 14
+text = "LLM Traffic"
+
+[node name="LlmList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard/LlmMargin/LlmContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8

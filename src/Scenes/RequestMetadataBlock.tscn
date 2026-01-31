@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://creqmetablock1"]
+[gd_scene load_steps=8 format=3 uid="uid://drhfk1q572v7"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/RequestMetadataBlock.gd" id="1_script"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_expand"]

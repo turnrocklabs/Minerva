@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://cj7k8m9p2qrs1"]
+[gd_scene load_steps=2 format=3 uid="uid://cj7k8nap2qrs1"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Views/MCPServerInstallerPopup.gd" id="1_script"]
 

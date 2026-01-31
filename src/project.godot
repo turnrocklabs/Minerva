@@ -55,7 +55,7 @@ project/assembly_name="AgentInator"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/jwt/plugin.cfg", "res://addons/markdownlabel/plugin.cfg")
+enabled=PackedStringArray("res://addons/filesync/plugin.cfg", "res://addons/jwt/plugin.cfg", "res://addons/markdownlabel/plugin.cfg")
 
 [file_customization]
 
