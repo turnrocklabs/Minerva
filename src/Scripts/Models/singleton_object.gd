@@ -159,7 +159,50 @@ func remove_recent_project(project_name: String) -> void:
 
 	config_file.erase_section_key("OpenRecent", project_name)
 	config_file.save(_config_file_name)
-	
+
+
+#region Autocoder Session Source Directory Storage
+
+const AUTOCODER_SESSIONS_SECTION = "AutocoderSessions"
+
+## Save the source directory path associated with an autocoder session
+func save_session_source_dir(session_id: String, source_dir: String) -> void:
+	if session_id.is_empty():
+		return
+	save_to_config_file(AUTOCODER_SESSIONS_SECTION, session_id, source_dir)
+
+## Get the source directory path for an autocoder session
+func get_session_source_dir(session_id: String) -> String:
+	if session_id.is_empty():
+		return ""
+	if not has_session_source_dir(session_id):
+		return ""
+	var value = config_file.get_value(AUTOCODER_SESSIONS_SECTION, session_id, "")
+	return value if value is String else ""
+
+## Check if a session has a stored source directory
+func has_session_source_dir(session_id: String) -> bool:
+	if session_id.is_empty():
+		return false
+	return config_file.has_section_key(AUTOCODER_SESSIONS_SECTION, session_id)
+
+## Remove the source directory mapping for a session
+func remove_session_source_dir(session_id: String) -> void:
+	if session_id.is_empty():
+		return
+	if config_file.has_section_key(AUTOCODER_SESSIONS_SECTION, session_id):
+		config_file.erase_section_key(AUTOCODER_SESSIONS_SECTION, session_id)
+		config_file.save(_config_file_name)
+
+## Get all stored session source directories (returns Dictionary[session_id] = source_dir)
+func get_all_session_source_dirs() -> Dictionary:
+	var result: Dictionary = {}
+	if config_file.has_section(AUTOCODER_SESSIONS_SECTION):
+		for key in config_file.get_section_keys(AUTOCODER_SESSIONS_SECTION):
+			result[key] = config_file.get_value(AUTOCODER_SESSIONS_SECTION, key)
+	return result
+
+#endregion Autocoder Session Source Directory Storage
 
 #endregion Config File
 

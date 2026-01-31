@@ -38,25 +38,106 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_vertical = 3
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
 
 [node name="VBoxContainer" type="VBoxContainer" parent="PackageMarginContainer"]
 layout_mode = 2
+theme_override_constants/separation = 8
 
-[node name="HBoxContainer" type="HBoxContainer" parent="PackageMarginContainer/VBoxContainer"]
+[node name="TopBar" type="HBoxContainer" parent="PackageMarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ChangeDirButton" type="Button" parent="PackageMarginContainer/VBoxContainer/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Change source directory"
+text = "Change Directory"
+
+[node name="VSeparator" type="VSeparator" parent="PackageMarginContainer/VBoxContainer/TopBar"]
 layout_mode = 2
 
-[node name="PackageButton" type="Button" parent="PackageMarginContainer/VBoxContainer/HBoxContainer"]
+[node name="FileCountLabel" type="Label" parent="PackageMarginContainer/VBoxContainer/TopBar"]
+unique_name_in_owner = true
 layout_mode = 2
-tooltip_text = "Uploads this file to the Artifact registry"
-text = "Upload"
+text = "Files: 0"
+
+[node name="VSeparator2" type="VSeparator" parent="PackageMarginContainer/VBoxContainer/TopBar"]
+layout_mode = 2
+
+[node name="TotalSizeLabel" type="Label" parent="PackageMarginContainer/VBoxContainer/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Size: 0 B"
+
+[node name="Spacer" type="Control" parent="PackageMarginContainer/VBoxContainer/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PackageButton" type="Button" parent="PackageMarginContainer/VBoxContainer/TopBar"]
+layout_mode = 2
+tooltip_text = "Upload this package to the Artifact registry"
+text = "Upload Package"
+
+[node name="FilterBox" type="VBoxContainer" parent="PackageMarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SearchLabel" type="Label" parent="PackageMarginContainer/VBoxContainer/FilterBox"]
+layout_mode = 2
+text = "Search (filters tree view):"
+
+[node name="SearchLineEdit" type="LineEdit" parent="PackageMarginContainer/VBoxContainer/FilterBox"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Search files and folders..."
+clear_button_enabled = true
+
+[node name="ExcludeLabel" type="Label" parent="PackageMarginContainer/VBoxContainer/FilterBox"]
+layout_mode = 2
+text = "Exclude Patterns (comma-separated):"
+
+[node name="ExcludeHBox" type="HBoxContainer" parent="PackageMarginContainer/VBoxContainer/FilterBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ExcludePatternsEdit" type="LineEdit" parent="PackageMarginContainer/VBoxContainer/FilterBox/ExcludeHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = ".git, node_modules, __pycache__, etc."
+clear_button_enabled = true
+
+[node name="ApplyExcludeButton" type="Button" parent="PackageMarginContainer/VBoxContainer/FilterBox/ExcludeHBox"]
+layout_mode = 2
+text = "Apply"
+
+[node name="ResetButton" type="Button" parent="PackageMarginContainer/VBoxContainer/FilterBox/ExcludeHBox"]
+layout_mode = 2
+text = "Reset"
+
+[node name="HSeparator" type="HSeparator" parent="PackageMarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="TreeLabel" type="Label" parent="PackageMarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Package Contents (click checkboxes to include/exclude):"
 
 [node name="DirTree" type="Tree" parent="PackageMarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+hide_root = false
 
 [connection signal="dir_selected" from="EntryFileDialog" to="." method="_on_entry_file_dialog_dir_selected"]
 [connection signal="pressed" from="EntryMarginContainer/CenterContainer/VBoxContainer/SelectEntryDirButton" to="." method="_on_select_entry_dir_button_pressed"]
-[connection signal="pressed" from="PackageMarginContainer/VBoxContainer/HBoxContainer/PackageButton" to="." method="_on_package_button_pressed"]
+[connection signal="pressed" from="PackageMarginContainer/VBoxContainer/TopBar/ChangeDirButton" to="." method="_on_change_dir_button_pressed"]
+[connection signal="pressed" from="PackageMarginContainer/VBoxContainer/TopBar/PackageButton" to="." method="_on_package_button_pressed"]
+[connection signal="text_changed" from="PackageMarginContainer/VBoxContainer/FilterBox/SearchLineEdit" to="." method="_on_search_text_changed"]
+[connection signal="pressed" from="PackageMarginContainer/VBoxContainer/FilterBox/ExcludeHBox/ApplyExcludeButton" to="." method="_on_apply_exclude_button_pressed"]
+[connection signal="pressed" from="PackageMarginContainer/VBoxContainer/FilterBox/ExcludeHBox/ResetButton" to="." method="_on_reset_button_pressed"]
 [connection signal="button_clicked" from="PackageMarginContainer/VBoxContainer/DirTree" to="." method="_on_dir_tree_button_clicked"]
 [connection signal="item_activated" from="PackageMarginContainer/VBoxContainer/DirTree" to="." method="_on_dir_tree_item_activated"]

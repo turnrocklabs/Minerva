@@ -33,6 +33,8 @@ var video_player: VideoPlayer:
 var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditorV2
 var package_editor: PackageEditor
+var logs_viewer: AutocoderLogsViewer
+var kanban_board: AutocoderKanbanBoard
 var spreadsheet_editor  # SpreadsheetEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
@@ -65,6 +67,8 @@ enum Type {
 	GRAPHICS,
 	VIDEO,
 	PACKAGE,
+	LOGS,
+	KANBAN,
 	SPREADSHEET,
 }
 
@@ -181,6 +185,20 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 
 			editor.package_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(editor.package_editor)
+		Editor.Type.LOGS:
+			var logs_widget: = AutocoderLogsViewer.create()
+			logs_widget.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(logs_widget)
+			editor.logs_viewer = logs_widget
+			logs_widget.entry_added.connect(editor._on_editor_changed)
+		
+		Editor.Type.KANBAN:
+			var kanban_scene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderKanbanBoard.tscn")
+			var kanban_widget: AutocoderKanbanBoard = kanban_scene.instantiate()
+			kanban_widget.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			kanban_widget.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(kanban_widget)
+			editor.kanban_board = kanban_widget
 
 		Editor.Type.SPREADSHEET:
 			var new_spreadsheet_editor = spreadsheet_editor_scene.instantiate()
@@ -221,7 +239,7 @@ func _ready():
 			Type.GRAPHICS: _load_graphics_file(file)
 			Type.VIDEO: video_player.video_path = file
 	
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.SPREADSHEET
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -240,6 +258,18 @@ func _ready():
 		autowrap_button.show()
 		export_area_button.hide()
 		toggle_autowrap()
+	elif self.type == Type.LOGS:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		$VBoxContainer/ButtonsHBoxContainer.hide()
+	elif self.type == Type.KANBAN:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		$VBoxContainer/ButtonsHBoxContainer.hide()
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
@@ -429,6 +459,9 @@ func get_saved_state() -> int:
 
 				else:
 					state |= ASSOCIATED_OBJECT_SAVED
+		Type.LOGS:
+			if logs_viewer and logs_viewer.is_saved():
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 		Type.SPREADSHEET:
 			# For now, spreadsheets are considered saved (no file association yet)
@@ -437,6 +470,7 @@ func get_saved_state() -> int:
 			else:
 				# TODO: Add proper save tracking for spreadsheet
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
 
 	return state
 
@@ -515,6 +549,18 @@ func save_file_to_disc(path: String) -> void:
 		Type.VIDEO:
 			# Handle video file saving if needed
 			push_warning("Video saving not implemented")
+		Type.LOGS:
+			if logs_viewer == null:
+				return
+			var serialized_text := logs_viewer.export_text()
+			var save_file = FileAccess.open(path, FileAccess.WRITE)
+			if save_file == null:
+				var error_log := error_string(FileAccess.get_open_error())
+				push_warning(error_log)
+				SingletonObject.ErrorDisplay("Couldn't save file", error_log)
+				return
+			save_file.store_string(serialized_text)
+			logs_viewer.mark_saved_snapshot()
 	
 	# Update editor state
 	_file_saved = true
@@ -780,7 +826,7 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 #endregion code editor action commands
 
 func _on_editor_changed(text: String = ""):
-	if text != "":
+	if code_edit and text != "":
 		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
 		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()
 		# SingletonObject.UpdateUnsavedTabIcon.emit()

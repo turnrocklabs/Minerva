@@ -10,16 +10,17 @@ func _init(service_: Service) -> void:
 
 func get_action(topic: String) -> Action:
 	if not service: return null
+	if not service.actions: return null
 
 	for action in service.actions:
-		if action.topic == topic:
+		if action and action.topic == topic:
 			return action
-	
+
 	return null
 
 
 func safe_extract(data: Dictionary, fields: Array[String], types: Array[int], default: Variant = null) -> Variant:
-	var current = data
+	var current = data if data else {}
 	for i in fields.size():
 		var field: = fields[i]
 		var type: int = types[i] if i < types.size() else -1

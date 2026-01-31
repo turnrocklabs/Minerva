@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://cj8mtoolblock1"]
+[gd_scene load_steps=9 format=3 uid="uid://xhfvj7abmtfq"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/ToolCallBlock.gd" id="1_script"]
 [ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_expand"]

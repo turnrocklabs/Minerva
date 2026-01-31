@@ -1,0 +1,38 @@
+[gd_scene load_steps=3 format=3 uid="uid://stream_msg_jkl012"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderStreamMessageCard.gd" id="1_msg"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_msg"]
+bg_color = Color(0.1, 0.1, 0.12, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+
+[node name="AutocoderStreamMessageCard" type="PanelContainer"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_msg")
+script = ExtResource("1_msg")
+
+[node name="Content" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="IconLabel" type="Label" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "🤖"
+
+[node name="ContentLabel" type="Label" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.75, 0.75, 0.8, 1)
+theme_override_font_sizes/font_size = 12
+text = "Message content goes here..."
+autowrap_mode = 2
