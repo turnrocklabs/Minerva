@@ -504,7 +504,7 @@ func send_heartbeat():
 		if SingletonObject.verbose_logging:
 			print("Heartbeat sent")
 
-#region Cuauh's code
+#region Cuauh's media gen code
 func _reset_binary_transfer_state() -> void:
 	_binary_files.clear()
 	_binary_filenames.clear()
@@ -805,7 +805,7 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 	send_message_to_core(message)
 	return request_id
 
-
+# This function is the one used for mask image editing
 func send_media_selective_edit_request(editing_params: Dictionary, images_dir: Array) -> String:
 	var request_id: String = UUIDGen.v7()
 
@@ -837,7 +837,7 @@ func send_media_selective_edit_request(editing_params: Dictionary, images_dir: A
 	send_message_to_core(message)
 
 	return request_id
-
+#endregion
 
 ## Send a media flex request for the qwen_2511_flex workflow.
 ## This workflow uses boolean switches to control operation mode:
@@ -940,4 +940,3 @@ func validate_message(message: Dictionary) -> bool: # Explicitly type parameter 
 			print("Error: Message missing required field: %s" % field) # Corrected string formatting
 			return false
 	return true
-#endregion Cuauh's code

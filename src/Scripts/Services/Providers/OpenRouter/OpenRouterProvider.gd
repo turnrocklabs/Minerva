@@ -93,9 +93,9 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 						# The actual useful error is often in metadata.raw
 						if metadata is Dictionary and metadata.has("raw"):
 							var raw_error: String = metadata.get("raw", "")
-							var provider_name: String = metadata.get("provider_name", "")
-							if provider_name:
-								bot_response.error = "[%s] %s" % [provider_name, raw_error]
+							var provider_name_: String = metadata.get("provider_name", "")
+							if provider_name_:
+								bot_response.error = "[%s] %s" % [provider_name_, raw_error]
 							else:
 								bot_response.error = raw_error
 						elif error_code:

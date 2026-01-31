@@ -43,10 +43,18 @@ var is_panning: bool = false
 var orbit_start_pos: Vector2 = Vector2.ZERO
 var camera_distance: float = 4.0
 var camera_rotation: Vector2 = Vector2(-0.3, 0.5)  # pitch, yaw
-var camera_target: Vector3 = Vector3(0, 1.0, 0)  # Look at chest height
+var camera_target: Vector3 = Vector3(0, 1.0, 0)  # Look at skeleton center (will be updated)
 
 ## Render output size
 var render_size: Vector2i = Vector2i(512, 512)
+
+var pose_texture: Texture:
+	get:
+		var _texture: = subviewport.get_texture()
+		if _texture == null:
+			return null
+		_texture.get_image().resize(512, 512)
+		return _texture
 
 
 func _ready() -> void:
@@ -55,6 +63,7 @@ func _ready() -> void:
 		subviewport.transparent_bg = false
 
 	_setup_presets()
+	_update_camera_target()
 	_update_camera_orbit()
 	_update_status("Adjust sliders or select a preset")
 
@@ -118,6 +127,7 @@ func _handle_mouse_button(event: InputEventMouseButton, local_pos: Vector2) -> v
 
 func _handle_mouse_motion(event: InputEventMouseMotion, _local_pos: Vector2) -> void:
 	if is_orbiting:
+		# Orbit around the skeleton center
 		var delta = event.relative * 0.01
 		camera_rotation.x = clamp(camera_rotation.x - delta.y, -PI/2 + 0.1, PI/2 - 0.1)
 		camera_rotation.y -= delta.x
@@ -132,18 +142,37 @@ func _handle_mouse_motion(event: InputEventMouseMotion, _local_pos: Vector2) -> 
 		_update_camera_orbit()
 
 
+## Update camera target to be at the skeleton's center
+func _update_camera_target() -> void:
+	if not pose_skeleton:
+		return
+	
+	# Get the skeleton's center position (Hips bone is at the center)
+	var hips_pos = pose_skeleton.get_bone_global_position("Hips")
+	if hips_pos != Vector3.ZERO:
+		camera_target = hips_pos
+	else:
+		# Fallback to skeleton's global position + offset
+		camera_target = pose_skeleton.global_transform.origin + Vector3(0, 1.0, 0)
+
+
 func _update_camera_orbit() -> void:
 	if not camera:
 		return
 
+	# Calculate camera position on a sphere around the target
+	# Using spherical coordinates: pitch (x) and yaw (y)
 	var offset = Vector3(
 		cos(camera_rotation.x) * sin(camera_rotation.y),
 		sin(camera_rotation.x),
 		cos(camera_rotation.x) * cos(camera_rotation.y)
 	) * camera_distance
 
+	# Set camera position relative to target
 	camera.position = camera_target + offset
-	camera.look_at(camera_target)
+	
+	# Always look at the target to maintain orbit
+	camera.look_at(camera_target, Vector3.UP)
 
 
 func _update_status(text: String) -> void:
@@ -269,6 +298,12 @@ func _on_reset_button_pressed() -> void:
 			if preset_dropdown.get_item_text(i) == "T-Pose":
 				preset_dropdown.select(i)
 				break
+
+	# Reset camera to initial position
+	camera_distance = 4.0
+	camera_rotation = Vector2(-0.3, 0.5)  # pitch, yaw
+	_update_camera_target()  # Reset target to skeleton center
+	_update_camera_orbit()
 
 	_update_status("Reset to T-pose")
 

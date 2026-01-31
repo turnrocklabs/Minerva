@@ -8,8 +8,9 @@ signal task_created_from_note(task: AutocoderTask, note: Note)
 const TASK_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderTaskCard.tscn")
 
 var task_store: AutocoderTaskStore
-
+@warning_ignore("unused_variable")
 @onready var _scroll_container: ScrollContainer = %ScrollContainer
+@warning_ignore("unused_variable")
 @onready var _columns_container: HBoxContainer = %ColumnsContainer
 @onready var _plan_column: VBoxContainer = %PlanColumn
 @onready var _plan_list: AutocoderKanbanDropZone = %PlanList
@@ -236,7 +237,7 @@ func _update_column_counts():
 	_update_column_count(_human_review_column, _human_review_list, "Human Review")
 	_update_column_count(_done_column, _done_list, "Done")
 
-func _update_column_count(column: VBoxContainer, list: Control, label_text: String):
+func _update_column_count(column: VBoxContainer, list: Control, _label_text: String):
 	if not column or not list:
 		return
 	
@@ -413,7 +414,7 @@ func _save_kanban_state():
 		return
 	
 	var save_path = _get_save_path()
-	var save_dir = save_path.get_base_dir()
+	#var save_dir = save_path.get_base_dir()
 	
 	# Ensure directory exists
 	var dir = DirAccess.open("user://")
