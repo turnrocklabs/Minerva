@@ -47,7 +47,7 @@ class GenerationOutput extends RefCounted:
 #     "topic": "autocoder/generate"
 # }
 
-func generate(prompt: String, session_id: String = "", input_archive_uri: String = "", require_permission: bool = false, model: String = "", review_agent_ids: Array = []) -> GenerationOutput:
+func generate(prompt: String, session_id: String = "", input_archive_uri: String = "", require_permission: bool = false, model: String = "", review_agent_ids: Array = [], use_plan_tasks: bool = false, plan_task_ids: Array = [], auto_review: bool = false) -> GenerationOutput:
 	if not Core.client._connected:
 		SingletonObject.create_toast_notification("Can't start autocoder. Core not connected")
 		return null
@@ -70,10 +70,22 @@ func generate(prompt: String, session_id: String = "", input_archive_uri: String
 
 	if not review_agent_ids.is_empty():
 		data["review_agent_ids"] = review_agent_ids
+	if auto_review:
+		data["auto_review"] = true
 	
-	var msg = await Core.send_message(service, action, data).receive()
+	if use_plan_tasks:
+		data["use_plan_tasks"] = true
+		if not plan_task_ids.is_empty():
+			data["plan_task_ids"] = plan_task_ids
+	
+	# Use longer timeout for code generation (can take several minutes)
+	var msg = await Core.send_message(service, action, data).with_timeout(600.0).receive()
 
-	if not msg or msg.get("cmd") == "error":
+	if not msg:
+		SingletonObject.ErrorDisplay("Autocoder Error", "No response from server - request may have timed out or connection lost")
+		return null
+	
+	if msg.get("cmd") == "error":
 		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to start a session")
 		SingletonObject.ErrorDisplay("Autocoder Error", error_msg)
 		return null
@@ -168,12 +180,14 @@ func list_sessions(status_filter: String = "") -> Array[Dictionary]:
 		return sessions
 
 	var action := get_action("autocoder/list-sessions")
+	print("[AutocoderAdapter] list_sessions: action = %s" % (action.name if action else "null"))
 
 	var data := {}
 	if not status_filter.is_empty():
 		data["status"] = status_filter
 
 	var msg = await Core.send_message(service, action, data).receive()
+	print("[AutocoderAdapter] list_sessions: received message, cmd = %s" % (msg.get("cmd") if msg else "null"))
 
 	if not msg:
 		# SingletonObject.ErrorDisplay("Autocoder Sessions Error", "No response from server")
@@ -185,12 +199,15 @@ func list_sessions(status_filter: String = "") -> Array[Dictionary]:
 		return []
 
 	var result_sessions = safe_extract(msg, ["params", "result", "sessions"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_ARRAY], [])
+	print("[AutocoderAdapter] list_sessions: extracted %d sessions from result" % result_sessions.size())
 
 	# Convert to Array[Dictionary]
 	for session_data in result_sessions:
 		if session_data is Dictionary:
+			print("[AutocoderAdapter] list_sessions: adding session %s" % session_data.get("session_id", "unknown"))
 			sessions.append(session_data)
 
+	print("[AutocoderAdapter] list_sessions: returning %d sessions" % sessions.size())
 	return sessions
 
 
@@ -296,16 +313,32 @@ func list_generation_models() -> Array[Dictionary]:
 	var models: Array[Dictionary] = []
 
 	if not Core.client._connected:
+		push_warning("Cannot list models - Core not connected")
 		return models
 
+	# Try to get action, with retry if service not discovered yet
 	var action := _get_generation_models_action()
 	if not action:
-		push_warning("List generation models action not found")
+		# Wait a bit for service discovery, then retry
+		await Engine.get_main_loop().process_frame
+		await Engine.get_main_loop().process_frame
+		action = _get_generation_models_action()
+	
+	if not action:
+		push_warning("List generation models action not found. Service may not be discovered yet.")
+		# Log available actions for debugging
+		if service and service.actions:
+			var available_topics = []
+			for a in service.actions:
+				if a:
+					available_topics.append(a.topic)
+			push_warning("Available autocoder actions: %s" % str(available_topics))
 		return models
 
 	var msg = await Core.send_message(service, action, {}).receive()
 
 	if not msg:
+		push_warning("No response when listing generation models")
 		return models
 
 	if msg.get("cmd") == "error":
@@ -313,38 +346,67 @@ func list_generation_models() -> Array[Dictionary]:
 		push_warning("List generation models error: %s" % error_msg)
 		return models
 
-	var result_models = safe_extract(msg, ["params", "result", "models"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_ARRAY], [])
+	# Extract models with more debugging
+	var params = msg.get("params", {})
+	if not params is Dictionary:
+		push_warning("List generation models: params is not a Dictionary")
+		return models
+	
+	var result = params.get("result", {})
+	if not result is Dictionary:
+		push_warning("List generation models: result is not a Dictionary")
+		return models
+	
+	var result_models = result.get("models", [])
+	if not result_models is Array:
+		push_warning("List generation models: models is not an Array, got: %s" % typeof(result_models))
+		return models
+
+	if result_models.is_empty():
+		push_warning("List generation models returned empty array")
+		return models
 
 	for model_data in result_models:
 		if model_data is Dictionary:
 			models.append(model_data)
 
+	print("[AutocoderAdapter] ✓ Loaded %d generation models" % models.size())
 	return models
 
 
 func _get_generation_models_action() -> Action:
-	var topics := PackedStringArray([
-		"autocoder/list-models",
-		"autocoder/list-generation-models",
-		"autocoder/get-models",
-		"autocoder/get-generation-models"
-	])
+	# Use the single, canonical topic exposed by the backend
+	var topic := "autocoder/list-generation-models"
+	var action = get_action(topic)
+	if action:
+		print("[AutocoderAdapter] ✓ Found action for topic: %s (name: %s)" % [topic, action.name])
+		return action
 
-	for topic in topics:
-		var action = get_action(topic)
-		if action:
-			return action
+	# Debug: Log all available actions to see what we have
+	if service:
+		if not service.actions:
+			print("[AutocoderAdapter] ✗ Service has no actions array - service may not be discovered yet")
+		else:
+			print("[AutocoderAdapter] Service has %d actions:" % service.actions.size())
+			for svc_action in service.actions:
+				if not svc_action:
+					continue
+				# Actions are always Action objects (not dictionaries)
+				var action_name = str(svc_action.name) if svc_action.name else "(no name)"
+				var action_topic = str(svc_action.topic) if svc_action.topic else "(no topic)"
+				print("    [%s] topic: %s" % [action_name, action_topic])
+				
+				# Try to find by topic match (case-insensitive fallback)
+				var topic_lower = action_topic.to_lower()
+				if not topic_lower.begins_with("autocoder/"):
+					continue
+				if "model" in topic_lower and "review" not in topic_lower:
+					print("[AutocoderAdapter] ✓ Found matching action via search: %s" % action_topic)
+					return svc_action
+	else:
+		print("[AutocoderAdapter] ✗ Service is null - adapter not initialized")
 
-	if service and service.actions:
-		for action in service.actions:
-			if not action:
-				continue
-			var topic = str(action.topic).to_lower()
-			if not topic.begins_with("autocoder/"):
-				continue
-			if "model" in topic and "review" not in topic:
-				return action
-
+	print("[AutocoderAdapter] ✗ No generation models action found")
 	return null
 
 
@@ -582,3 +644,307 @@ func delete_review_agent(agent_id: String) -> bool:
 		return false
 
 	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+
+
+## Generate a development plan from prompt (planning mode)
+## @param prompt: The planning prompt
+## @param session_id: Optional session ID to continue planning
+## @param input_archive_uri: Optional artifact URI of existing project to analyze
+## @param model: Optional model to use for planning
+## @param modify_request: Optional request to modify existing plan
+class PlanningOutput extends RefCounted:
+	var session_id: String
+	var tasks: Array[Dictionary]
+	var questions: Array[Dictionary]
+	var status: String
+	var message: String
+	var notification_topics: Array[String]
+	var user_id: String
+	var plan_hash: String
+
+	func _init(
+		sid: String,
+		output_tasks: Array[Dictionary],
+		output_questions: Array[Dictionary],
+		output_status: String,
+		output_message: String,
+		notif_topics: Array[String],
+		output_user_id: String,
+		output_plan_hash: String = ""
+	) -> void:
+		session_id = sid
+		tasks = output_tasks
+		questions = output_questions
+		status = output_status
+		message = output_message
+		notification_topics = notif_topics
+		user_id = output_user_id
+		plan_hash = output_plan_hash
+
+func plan(prompt: String, session_id: String = "", input_archive_uri: String = "", model: String = "", modify_request: String = "", kanban_state: Dictionary = {}, kanban_hash: String = "") -> PlanningOutput:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't start planning. Core not connected")
+		return null
+
+	var action: = get_action("autocoder/plan")
+	if not action:
+		SingletonObject.ErrorDisplay("Planning Error", "Planning action not available")
+		return null
+
+	var data: = {
+		"prompt": prompt,
+	}
+
+	if not session_id.is_empty():
+		data["session_id"] = session_id
+
+	if not input_archive_uri.is_empty():
+		data["input_archive_uri"] = input_archive_uri
+
+	if not model.is_empty():
+		data["model"] = model
+
+	if not modify_request.is_empty():
+		data["modify_request"] = modify_request
+	
+	if not kanban_state.is_empty():
+		data["kanban_state"] = kanban_state
+	
+	if not kanban_hash.is_empty():
+		data["kanban_hash"] = kanban_hash
+	
+	# Use longer timeout for planning (can take several minutes with complex prompts)
+	var msg = await Core.send_message(service, action, data).with_timeout(300.0).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Planning Error", "No response from server - request may have timed out or connection lost")
+		return null
+	
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to start planning")
+		SingletonObject.ErrorDisplay("Planning Error", error_msg)
+		return null
+
+	var result = safe_extract(msg, ["params", "result"], [TYPE_DICTIONARY, TYPE_DICTIONARY], {})
+	var sid = safe_extract(result, ["session_id"], [TYPE_STRING], "")
+	var tasks = safe_extract(result, ["tasks"], [TYPE_ARRAY], [])
+	var questions = safe_extract(result, ["questions"], [TYPE_ARRAY], [])
+	var status = safe_extract(result, ["status"], [TYPE_STRING], "planning")
+	var message = safe_extract(result, ["message"], [TYPE_STRING], "")
+	var plan_hash = safe_extract(result, ["plan_hash"], [TYPE_STRING], "")
+	
+	var notification_topics: Array[String]
+	notification_topics.assign(safe_extract(result, ["notification_topics"], [TYPE_ARRAY], []))
+
+	var user_id = safe_extract(result, ["user_id"], [TYPE_STRING], Core.client.client_id)
+
+	# If status is "planning", this is just the ACK - actual results will come via notifications
+	if status == "planning":
+		print("[AutocoderAdapter] Received planning ACK - tasks will arrive via notification topic")
+		# Return with empty tasks - they'll be populated from notification
+		return PlanningOutput.new(
+			sid,
+			[],  # Empty tasks array - will be filled by notification
+			[],  # Empty questions array - will be filled by notification
+			status,
+			message,
+			notification_topics,
+			user_id,
+			plan_hash
+		)
+
+	# Convert tasks and questions to Array[Dictionary]
+	var tasks_array: Array[Dictionary] = []
+	for task_data in tasks:
+		if task_data is Dictionary:
+			tasks_array.append(task_data)
+
+	var questions_array: Array[Dictionary] = []
+	for question_data in questions:
+		if question_data is Dictionary:
+			questions_array.append(question_data)
+
+	return PlanningOutput.new(
+		sid,
+		tasks_array,
+		questions_array,
+		status,
+		message,
+		notification_topics,
+		user_id,
+		plan_hash
+	)
+
+## Answer a question from the autocoder (planning mode clarification)
+## @param session_id: The session ID the question belongs to
+## @param question_id: The question ID to answer
+## @param answer: The user's answer (empty string means "skip - let autocoder decide")
+func answer_question(session_id: String, question_id: String, answer: String) -> bool:
+	print("[AutocoderAdapter] ========== ANSWER_QUESTION CALLED ==========")
+	print("[AutocoderAdapter] Session: %s" % session_id)
+	print("[AutocoderAdapter] Question ID: %s" % question_id)
+	print("[AutocoderAdapter] Answer: %s" % answer)
+	print("[AutocoderAdapter] Core connected: %s" % Core.client._connected)
+	
+	if not Core.client._connected:
+		push_warning("Can't answer question - Core not connected")
+		return false
+
+	var action := get_action("autocoder/answer-question")
+	print("[AutocoderAdapter] Action found: %s" % (action != null))
+	if action:
+		print("[AutocoderAdapter] Action topic: %s" % action.topic)
+	
+	if not action:
+		push_warning("[AutocoderAdapter] answer-question action not available")
+		return false
+
+	var data := {
+		"session_id": session_id,
+		"question_id": question_id,
+		"answer": answer,
+		"skipped": answer.is_empty()
+	}
+
+	# Use longer timeout - answering questions can trigger planning continuation
+	var msg = await Core.send_message(service, action, data).with_timeout(120.0).receive()
+
+	if not msg:
+		push_warning("No response when answering question - may have timed out")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to answer question")
+		push_warning("Answer question error: %s" % error_msg)
+		var lowered = error_msg.to_lower()
+		if lowered.find("not found") != -1 or lowered.find("already") != -1:
+			return true
+		return false
+
+	return true
+
+
+func get_session_info(session_id: String) -> Dictionary:
+	"""Get session metadata including prompt, plan, questions, and name"""
+	if not Core.client._connected:
+		return {}
+	
+	var action = get_action("autocoder/get-session-info")
+	if not action:
+		push_warning("[AutocoderAdapter] get-session-info action not available")
+		return {}
+	
+	var data = {"session_id": session_id}
+	var msg = await Core.send_message(service, action, data).receive()
+	
+	if not msg:
+		return {}
+	
+	if msg.get("cmd") == "error":
+		return {}
+	
+	var result = safe_extract(msg, ["params", "result"], [TYPE_DICTIONARY, TYPE_DICTIONARY], {})
+	return result
+
+
+func delete_session(session_id: String) -> Dictionary:
+	"""Delete a session and all its artifacts
+	
+	Returns:
+		Dictionary with keys:
+			- success: bool
+			- message: String
+			- deleted_artifacts: Array[String] (list of deleted artifact URIs)
+	"""
+	if not Core.client._connected:
+		return {"success": false, "message": "Not connected"}
+	
+	var action = get_action("autocoder/delete-session")
+	if not action:
+		push_warning("[AutocoderAdapter] delete-session action not available")
+		return {"success": false, "message": "Delete action not available"}
+	
+	var data = {"session_id": session_id}
+	var msg = await Core.send_message(service, action, data).receive()
+	
+	if not msg:
+		return {"success": false, "message": "No response from server"}
+	
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to delete session")
+		return {"success": false, "message": error_msg}
+	
+	var result = safe_extract(msg, ["params", "result"], [TYPE_DICTIONARY, TYPE_DICTIONARY], {})
+	
+	# Also delete local Kanban file if it exists
+	_delete_local_kanban_file(session_id)
+	
+	return result
+
+
+func delete_all_sessions() -> Dictionary:
+	"""Delete ALL sessions for the current user using backend endpoint
+	
+	Returns:
+		Dictionary with keys:
+			- success: bool
+			- deleted_count: int
+			- message: String
+	"""
+	if not Core.client._connected:
+		return {"success": false, "deleted_count": 0, "message": "Not connected"}
+	
+	var action = get_action("autocoder/delete-all-sessions")
+	if not action:
+		push_warning("[AutocoderAdapter] delete-all-sessions action not available")
+		return {"success": false, "deleted_count": 0, "message": "Delete all action not available"}
+	
+	print("[AutocoderAdapter] Deleting all sessions via backend...")
+	var msg = await Core.send_message(service, action, {}).receive()
+	
+	if not msg:
+		return {"success": false, "deleted_count": 0, "message": "No response from server"}
+	
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to delete all sessions")
+		return {"success": false, "deleted_count": 0, "message": error_msg}
+	
+	var result = safe_extract(msg, ["params", "result"], [TYPE_DICTIONARY, TYPE_DICTIONARY], {})
+	var success = result.get("success", false)
+	var deleted_count = result.get("deleted_count", 0)
+	var message = result.get("message", "")
+	
+	# Also clear ALL local Kanban files
+	_delete_all_local_kanban_files()
+	
+	return {
+		"success": success,
+		"deleted_count": deleted_count,
+		"message": message
+	}
+
+
+func _delete_local_kanban_file(session_id: String) -> void:
+	"""Delete local Kanban save file for a session"""
+	var save_path = "user://autocoder_kanban/%s.json" % session_id
+	if FileAccess.file_exists(save_path):
+		DirAccess.remove_absolute(save_path)
+		print("[AutocoderAdapter] Deleted local Kanban file: %s" % save_path)
+
+
+func _delete_all_local_kanban_files() -> void:
+	"""Delete ALL local Kanban save files"""
+	var kanban_dir = "user://autocoder_kanban"
+	if DirAccess.dir_exists_absolute(kanban_dir):
+		var dir = DirAccess.open(kanban_dir)
+		if dir:
+			dir.list_dir_begin()
+			var file_name = dir.get_next()
+			while file_name != "":
+				if not dir.current_is_dir() and file_name.ends_with(".json"):
+					var full_path = kanban_dir + "/" + file_name
+					DirAccess.remove_absolute(full_path)
+					print("[AutocoderAdapter] Deleted local Kanban file: %s" % file_name)
+				file_name = dir.get_next()
+			dir.list_dir_end()
+		print("[AutocoderAdapter] Cleared all local Kanban files")

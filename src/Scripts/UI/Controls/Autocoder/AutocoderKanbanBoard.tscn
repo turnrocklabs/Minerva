@@ -31,12 +31,13 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 horizontal_scroll_mode = 2
-vertical_scroll_mode = 0
+vertical_scroll_mode = 1
 
 [node name="ColumnsContainer" type="HBoxContainer" parent="ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
+size_flags_vertical = 3
 theme_override_constants/separation = 16
 
 [node name="PlanColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
@@ -82,10 +83,17 @@ theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
 theme_override_font_sizes/font_size = 12
 text = "(0)"
 
-[node name="PlanList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+[node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 160)
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 1
+
+[node name="PlanList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent/ListScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 script = ExtResource("2_dropzone")
 target_status = 0
@@ -133,10 +141,17 @@ theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
 theme_override_font_sizes/font_size = 12
 text = "(0)"
 
-[node name="InProgressList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+[node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 160)
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 1
+
+[node name="InProgressList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent/ListScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 script = ExtResource("2_dropzone")
 target_status = 1
@@ -184,10 +199,17 @@ theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
 theme_override_font_sizes/font_size = 12
 text = "(0)"
 
-[node name="AIReviewList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+[node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 160)
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 1
+
+[node name="AIReviewList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/ListScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 script = ExtResource("2_dropzone")
 target_status = 2
@@ -235,10 +257,17 @@ theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
 theme_override_font_sizes/font_size = 12
 text = "(0)"
 
-[node name="HumanReviewList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+[node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 160)
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 1
+
+[node name="HumanReviewList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/ListScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 script = ExtResource("2_dropzone")
 target_status = 3
@@ -286,10 +315,17 @@ theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
 theme_override_font_sizes/font_size = 12
 text = "(0)"
 
-[node name="DoneList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+[node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 160)
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 1
+
+[node name="DoneList" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent/ListScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 script = ExtResource("2_dropzone")
 target_status = 4

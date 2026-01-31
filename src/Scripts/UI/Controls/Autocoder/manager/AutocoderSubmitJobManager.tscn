@@ -1,14 +1,11 @@
-[gd_scene load_steps=11 format=3 uid="uid://dhvyes0wg8qlw"]
+[gd_scene load_steps=10 format=3 uid="uid://dhvyes0wg8qlw"]
 
 [ext_resource type="Script" uid="uid://dyi3dgpcrkx28" path="res://Scripts/UI/Controls/Autocoder/manager/SubmitJob.gd" id="1_85ws8"]
 [ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="2_0n6lh"]
 [ext_resource type="PackedScene" uid="uid://5g51ocdi12p0" path="res://Scripts/UI/Controls/Autocoder/manager/ArtifactBrowser.tscn" id="3_dt4tt"]
 [ext_resource type="Texture2D" uid="uid://d255rlap2uelj" path="res://assets/icons/line_edit_clear.svg" id="4_k0ru8"]
 [ext_resource type="Texture2D" uid="uid://b4mldxp8undi7" path="res://assets/icons/MgGlass.png" id="5_k0ru8"]
-[ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="6_e2mdv"]
-[ext_resource type="PackedScene" uid="uid://action_stream_def456" path="res://Scripts/UI/Controls/Autocoder/AutocoderActionStream.tscn" id="7_stream"]
-
-[sub_resource type="ButtonGroup" id="ButtonGroup_k0ru8"]
+[ext_resource type="PackedScene" path="res://Scripts/UI/Controls/Autocoder/AutocoderActionStream.tscn" id="7_stream"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
 bg_color = Color(0.12, 0.12, 0.14, 1)
@@ -26,6 +23,10 @@ shadow_size = 4
 shadow_offset = Vector2(0, 2)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_input"]
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
 bg_color = Color(0.08, 0.08, 0.1, 1)
 border_width_left = 1
 border_width_top = 1
@@ -36,10 +37,8 @@ corner_radius_top_left = 8
 corner_radius_top_right = 8
 corner_radius_bottom_right = 8
 corner_radius_bottom_left = 8
-content_margin_left = 12.0
-content_margin_top = 10.0
-content_margin_right = 12.0
-content_margin_bottom = 10.0
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_k0ru8"]
 
 [node name="SubmitJob" type="VBoxContainer"]
 anchors_preset = 15
@@ -62,14 +61,13 @@ unique_name_in_owner = true
 [node name="VSplitContainer" type="VSplitContainer" parent="."]
 layout_mode = 2
 size_flags_vertical = 3
-split_offset = 0
 
 [node name="TopSection" type="Control" parent="VSplitContainer"]
 layout_mode = 2
 size_flags_vertical = 3
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VSplitContainer/TopSection"]
-anchors_preset = 15
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
@@ -136,8 +134,8 @@ theme_override_constants/separation = 12
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 11
 tooltip_text = "Select generation model"
+theme_override_font_sizes/font_size = 11
 
 [node name="AutoReviewCheckBox" type="CheckBox" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/OptionsRow"]
 unique_name_in_owner = true
@@ -160,6 +158,41 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 11
 text = "Add Files"
 icon = ExtResource("5_k0ru8")
+flat = true
+
+[node name="AttachFolderButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Attach Folder"
+flat = true
+
+[node name="SetSourceFolderButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Set Source Folder"
+flat = true
+
+[node name="DownloadLatestButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Download Latest"
+flat = true
+
+[node name="ExtractLatestButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Extract to Source"
+flat = true
+
+[node name="DownloadPatchButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Download Patch"
 flat = true
 
 [node name="SelectedArtifactNameLabel" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
@@ -308,24 +341,24 @@ theme_override_constants/separation = 16
 [node name="NewSessionCheckBox" type="CheckBox" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/SessionTypeRow"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_font_sizes/font_size = 11
 button_pressed = true
 button_group = SubResource("ButtonGroup_k0ru8")
-theme_override_font_sizes/font_size = 11
 text = "New"
 
 [node name="ContinueSessionCheckBox" type="CheckBox" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/SessionTypeRow"]
 unique_name_in_owner = true
 layout_mode = 2
-button_group = SubResource("ButtonGroup_k0ru8")
 theme_override_font_sizes/font_size = 11
+button_group = SubResource("ButtonGroup_k0ru8")
 text = "Continue"
 
 [node name="SessionOptionButton" type="OptionButton" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/SessionTypeRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-disabled = true
 theme_override_font_sizes/font_size = 11
+disabled = true
 
 [node name="BottomSection" type="Control" parent="VSplitContainer"]
 layout_mode = 2
@@ -333,11 +366,7 @@ size_flags_vertical = 3
 
 [node name="ActionStream" parent="VSplitContainer/BottomSection" instance=ExtResource("7_stream")]
 unique_name_in_owner = true
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+anchors_preset = 0
 
 [node name="InputResourcesCard" type="PanelContainer" parent="."]
 unique_name_in_owner = true

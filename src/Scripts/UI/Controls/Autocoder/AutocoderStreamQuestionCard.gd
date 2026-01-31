@@ -1,7 +1,7 @@
 class_name AutocoderStreamQuestionCard
 extends PanelContainer
 
-signal answer_submitted(question_id: String, answer: String)
+signal answer_submitted(question_id: String, answer: String, session_id: String)
 
 @onready var _question_label: Label = %QuestionLabel
 @onready var _options_container: VBoxContainer = %OptionsContainer
@@ -10,6 +10,7 @@ signal answer_submitted(question_id: String, answer: String)
 
 var _question_id: String = ""
 var _options: Array = []
+var _session_id: String = ""
 
 func _ready():
 	if _submit_button:
@@ -17,9 +18,10 @@ func _ready():
 	if _text_input:
 		_text_input.text_submitted.connect(func(_t): _on_submit_pressed())
 
-func setup(question_id: String, question_text: String, options: Array = []):
+func setup(question_id: String, question_text: String, options: Array = [], session_id: String = ""):
 	_question_id = question_id
 	_options = options
+	_session_id = session_id
 	
 	if _question_label:
 		_question_label.text = question_text
@@ -62,4 +64,11 @@ func _on_submit_pressed():
 		_submit_answer(_text_input.text.strip_edges())
 
 func _submit_answer(answer: String):
-	answer_submitted.emit(_question_id, answer)
+	if has_meta("submitted"):
+		return
+	set_meta("submitted", true)
+	if _submit_button:
+		_submit_button.disabled = true
+	if _text_input:
+		_text_input.editable = false
+	answer_submitted.emit(_question_id, answer, _session_id)

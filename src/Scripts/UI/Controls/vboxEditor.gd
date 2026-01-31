@@ -22,9 +22,15 @@ func serialize() -> Array:
 	for editor in editor_pane.get_open_editors():
 		var content
 		match editor.type:
-			editor.Type.TEXT:
+			Editor.Type.TEXT:
 				content = editor.code_edit.text
-			editor.Type.GRAPHICS:
+			Editor.Type.KANBAN:
+				# Serialize kanban board
+				if editor.kanban_board and editor.kanban_board.task_store:
+					content = editor.kanban_board.task_store.serialize()
+				else:
+					content = {"session_id": "", "version": 1, "next_id": 1, "tasks": []}
+			Editor.Type.GRAPHICS:
 				var layers: Array[Dictionary] = []
 				# Get the GraphicsEditorV2 instance
 				var graphics_editor = editor.graphics_editor
@@ -102,6 +108,13 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 
 		if editor_inst.type == Editor.Type.TEXT:
 			editor_inst.code_edit.text = editor_ser.get("content")
+		
+		elif editor_inst.type == Editor.Type.KANBAN:
+			# Deserialize kanban board
+			var content = editor_ser.get("content")
+			if content and editor_inst.kanban_board:
+				var task_store = AutocoderTaskStore.deserialize(content)
+				editor_inst.kanban_board.set_task_store(task_store)
 			
 		elif editor_inst.type == Editor.Type.GRAPHICS:
 			var graphics_editor: GraphicsEditorV2 = editor_inst.graphics_editor

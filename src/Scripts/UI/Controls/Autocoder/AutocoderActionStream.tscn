@@ -51,12 +51,6 @@ theme_override_colors/font_color = Color(0.8, 0.8, 0.85, 1)
 theme_override_font_sizes/font_size = 13
 text = "Activity Stream"
 
-[node name="ClearButton" type="Button" parent="MainPanel/MainMargin/MainContent/Header"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-text = "Clear"
-flat = true
-
 [node name="ScrollContainer" type="ScrollContainer" parent="MainPanel/MainMargin/MainContent"]
 unique_name_in_owner = true
 layout_mode = 2

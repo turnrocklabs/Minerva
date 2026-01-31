@@ -550,10 +550,11 @@ func _show_upload_success_dialog(artifact: Artifact) -> void:
 	var view_button := Button.new()
 	view_button.text = "📦 View in Artifact Browser"
 	view_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var autocoder_mgr = SingletonObject.autocoder_manager  # Capture for lambda
 	view_button.pressed.connect(func():
 		dialog.hide()
-		if SingletonObject.autocoder_manager and SingletonObject.autocoder_manager.submit_job_manager:
-			SingletonObject.autocoder_manager.submit_job_manager.open_artifact_browser_with_selection(artifact.artifact_uri)
+		if autocoder_mgr and autocoder_mgr.submit_job_manager:
+			autocoder_mgr.submit_job_manager.open_artifact_browser_with_selection(artifact.artifact_uri)
 		else:
 			SingletonObject.ErrorDisplay("Can't open browser", "Autocoder manager not available")
 	)

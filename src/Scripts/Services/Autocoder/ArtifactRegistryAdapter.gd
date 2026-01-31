@@ -28,7 +28,11 @@ func search(query: String = "", framework: String = "", visibility: String = "pu
 
 	var msg = await Core.send_message(service, action, search_params).receive()
 
-	if not msg or msg.get("cmd") == "error":
+	if not msg:
+		SingletonObject.ErrorDisplay("Artifact Search Error", "No response from server")
+		return []
+	
+	if msg.get("cmd") == "error":
 		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to search artifacts")
 		SingletonObject.ErrorDisplay("Artifact Search Error", error_msg)
 		return []
@@ -60,7 +64,11 @@ func upload(artifact: Artifact) -> Artifact:
 
 	var msg = await Core.send_message(service, action, upload_data).receive()
 
-	if not msg or msg.get("cmd") == "error":
+	if not msg:
+		SingletonObject.ErrorDisplay("Artifact Upload Error", "No response from server")
+		return null
+	
+	if msg.get("cmd") == "error":
 		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to upload artifact")
 		SingletonObject.ErrorDisplay("Artifact Upload Error", error_msg)
 		return null
@@ -80,16 +88,13 @@ func upload(artifact: Artifact) -> Artifact:
 	return artifact
 
 
-## Download an artifact by URI and save it to disk
-## Opens a file dialog for the user to choose save location
-## Returns true on success, false on failure
-func download(artifact_uri: String, transfer_mode: String = "base64") -> bool:
+## Download artifact content and return payload (filename/content/size)
+func _download_payload(artifact_uri: String, transfer_mode: String = "base64") -> Dictionary:
 	if not Core.client._connected:
 		SingletonObject.create_toast_notification("Can't download artifact. Core not connected")
-		return false
+		return {}
 
 	var action := get_action("artifact/download")
-
 	var download_data := {
 		"uri": artifact_uri,
 		"transfer_mode": transfer_mode
@@ -98,19 +103,41 @@ func download(artifact_uri: String, transfer_mode: String = "base64") -> bool:
 	SingletonObject.create_toast_notification("Downloading artifact...", ToastNotification.Type.INFO)
 
 	var msg = await Core.send_message(service, action, download_data).receive()
-
-	if not msg or msg.get("cmd") == "error":
+	
+	if not msg:
+		SingletonObject.ErrorDisplay("Artifact Download Error", "No response from server")
+		return {}
+	
+	if msg.get("cmd") == "error":
 		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to download artifact")
 		SingletonObject.ErrorDisplay("Artifact Download Error", error_msg)
-		return false
+		return {}
 
 	var filename = safe_extract(msg, ["params", "result", "filename"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
 	var content_base64 = safe_extract(msg, ["params", "result", "content"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
 	var size = safe_extract(msg, ["params", "result", "size"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_FLOAT], 0.0)
-
 	if filename.is_empty() or content_base64.is_empty():
 		SingletonObject.ErrorDisplay("Artifact Download Error", "Invalid download response")
+		return {}
+
+	return {
+		"filename": filename,
+		"content": content_base64,
+		"size": size
+	}
+
+
+## Download an artifact by URI and save it to disk
+## Opens a file dialog for the user to choose save location
+## Returns true on success, false on failure
+func download(artifact_uri: String, transfer_mode: String = "base64") -> bool:
+	var payload = await _download_payload(artifact_uri, transfer_mode)
+	if payload.is_empty():
 		return false
+
+	var filename = str(payload.get("filename", ""))
+	var content_base64 = str(payload.get("content", ""))
+	var size = float(payload.get("size", 0.0))
 
 	# Decode base64 to bytes
 	var bytes := Marshalls.base64_to_raw(content_base64)
@@ -181,6 +208,70 @@ func download(artifact_uri: String, transfer_mode: String = "base64") -> bool:
 	return true
 
 
+## Download an artifact and extract it into a destination directory
+## Returns true on success, false on failure
+func download_and_extract(artifact_uri: String, destination_dir: String, transfer_mode: String = "base64") -> bool:
+	if destination_dir.is_empty():
+		SingletonObject.ErrorDisplay("Extract Error", "Missing destination directory")
+		return false
+
+	var payload = await _download_payload(artifact_uri, transfer_mode)
+	if payload.is_empty():
+		return false
+
+	var filename = str(payload.get("filename", ""))
+	var content_base64 = str(payload.get("content", ""))
+	var size = float(payload.get("size", 0.0))
+
+	var bytes := Marshalls.base64_to_raw(content_base64)
+	if bytes.is_empty():
+		SingletonObject.ErrorDisplay("Extract Error", "Failed to decode artifact data")
+		return false
+
+	var artifacts_dir = "user://autocoder_artifacts"
+	var dir = DirAccess.open("user://")
+	if not dir:
+		SingletonObject.ErrorDisplay("Extract Error", "Failed to open user:// directory")
+		return false
+	if not dir.dir_exists("autocoder_artifacts"):
+		dir.make_dir_recursive("autocoder_artifacts")
+
+	var temp_path = "%s/%s" % [artifacts_dir, filename]
+	var file := FileAccess.open(temp_path, FileAccess.WRITE)
+	if not file:
+		var err := FileAccess.get_open_error()
+		SingletonObject.ErrorDisplay("Extract Error", "Failed to write archive: %s" % error_string(err))
+		return false
+	file.store_buffer(bytes)
+	file.close()
+
+	var global_dest = ProjectSettings.globalize_path(destination_dir)
+	DirAccess.make_dir_recursive_absolute(global_dest)
+	var global_archive = ProjectSettings.globalize_path(temp_path)
+
+	var args: PackedStringArray = []
+	if filename.ends_with(".tar.gz"):
+		args = PackedStringArray(["-xzf", global_archive, "-C", global_dest])
+	elif filename.ends_with(".zip"):
+		args = PackedStringArray(["-xf", global_archive, "-C", global_dest])
+	else:
+		SingletonObject.ErrorDisplay("Extract Error", "Unsupported archive format: %s" % filename)
+		return false
+
+	var output: Array[String] = []
+	var exit_code = OS.execute("tar", args, output, true)
+	if exit_code != 0:
+		var output_text = "\n".join(output)
+		SingletonObject.ErrorDisplay("Extract Error", "Failed to extract archive:\n%s" % output_text)
+		return false
+
+	SingletonObject.create_toast_notification(
+		"Artifact extracted (%s)" % _format_size(size),
+		ToastNotification.Type.SUCCESS
+	)
+	return true
+
+
 ## Helper to format file size
 func _format_size(bytes: float) -> String:
 	var units := ["B", "kB", "MB", "GB"]
@@ -202,7 +293,11 @@ func delete(artifact_uri: String) -> bool:
 
 	var msg = await Core.send_message(service, action, {"artifact_uri": artifact_uri}).receive()
 
-	if not msg or msg.get("cmd") == "error":
+	if not msg:
+		SingletonObject.ErrorDisplay("Artifact Delete Error", "No response from server")
+		return false
+	
+	if msg.get("cmd") == "error":
 		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to delete artifact")
 		SingletonObject.ErrorDisplay("Artifact Delete Error", error_msg)
 		return false
@@ -225,7 +320,11 @@ func list_mine() -> Array[Artifact]:
 
 	var msg = await Core.send_message(service, action, {}).receive()
 
-	if not msg or msg.get("cmd") == "error":
+	if not msg:
+		SingletonObject.ErrorDisplay("Artifact List Error", "No response from server")
+		return []
+	
+	if msg.get("cmd") == "error":
 		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to list user artifacts")
 		SingletonObject.ErrorDisplay("Artifact List Error", error_msg)
 		return []
@@ -278,7 +377,11 @@ func add_metadata(
 
 	var msg = await Core.send_message(service, action, metadata_params).receive()
 
-	if not msg or msg.get("cmd") == "error":
+	if not msg:
+		SingletonObject.ErrorDisplay("Artifact Metadata Error", "No response from server")
+		return false
+	
+	if msg.get("cmd") == "error":
 		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to add metadata")
 		SingletonObject.ErrorDisplay("Artifact Metadata Error", error_msg)
 		return false

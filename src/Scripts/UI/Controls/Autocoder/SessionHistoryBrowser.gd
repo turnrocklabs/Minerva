@@ -71,17 +71,20 @@ func _build_ui() -> void:
 
 
 func set_sessions(sessions: Array[Dictionary]) -> void:
+	print("[SessionHistoryBrowser] set_sessions called with %d sessions" % sessions.size())
 	_sessions = sessions.duplicate()
 	_refresh_display()
 
 
 func _refresh_display() -> void:
+	print("[SessionHistoryBrowser] _refresh_display called with %d sessions" % _sessions.size())
 	# Clear existing session cards (keep loading and empty labels)
 	for child in _session_list_container.get_children():
 		if child != _loading_label and child != _empty_label:
 			child.queue_free()
 
 	if _sessions.is_empty():
+		print("[SessionHistoryBrowser] No sessions to display, showing empty label")
 		_empty_label.visible = true
 		_loading_label.visible = false
 		return
@@ -93,15 +96,47 @@ func _refresh_display() -> void:
 	var sorted_sessions = _sessions.duplicate()
 	sorted_sessions.sort_custom(func(a, b): return a.get("created_at", "") > b.get("created_at", ""))
 
+	print("[SessionHistoryBrowser] Building cards for %d sessions" % _sessions.size())
 	# Create cards for each session
 	for session in sorted_sessions:
 		var card = _build_session_card(session)
-		_session_list_container.add_child(card)
+		if card:
+			print("[SessionHistoryBrowser] Added session card for: %s" % session.get("session_id", "unknown"))
+			_session_list_container.add_child(card)
+		else:
+			print("[SessionHistoryBrowser] Failed to build card for session: %s" % session.get("session_id", "unknown"))
 
 
 func _build_session_card(session: Dictionary) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	
+	# Enable double-click handling
+	var session_id = str(session.get("session_id", ""))
+	var click_count = [0]  # Use array to capture in closures
+	var click_timer = Timer.new()
+	click_timer.one_shot = true
+	click_timer.wait_time = 0.3
+	panel.add_child(click_timer)
+	
+	panel.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			click_count[0] += 1
+			if click_count[0] == 1:
+				# Start timer for single click
+				click_timer.start()
+			elif click_count[0] == 2:
+				# Double-click detected
+				click_timer.stop()
+				click_count[0] = 0
+				_on_session_double_clicked(session)
+	)
+	
+	click_timer.timeout.connect(func():
+		# Single click timeout - reset
+		click_count[0] = 0
+	)
 
 	var status = str(session.get("status", "unknown")).to_lower()
 	var status_color = _get_status_color(status)
@@ -129,7 +164,6 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 	header_row.add_theme_constant_override("separation", 10)
 	vbox.add_child(header_row)
 
-	var session_id = str(session.get("session_id", "unknown"))
 	var short_id = session_id.substr(0, 18) if session_id.length() > 18 else session_id
 
 	var id_label := Label.new()
@@ -255,6 +289,14 @@ func _on_session_view_clicked(session: Dictionary) -> void:
 func _on_session_resume_clicked(session: Dictionary) -> void:
 	var session_id = str(session.get("session_id", ""))
 	if not session_id.is_empty():
+		session_resume_requested.emit(session_id)
+
+
+func _on_session_double_clicked(session: Dictionary) -> void:
+	"""Handle double-click on a session card - same as resume"""
+	var session_id = str(session.get("session_id", ""))
+	if not session_id.is_empty():
+		print("[SessionHistoryBrowser] Double-click detected for session: %s" % session_id)
 		session_resume_requested.emit(session_id)
 
 
