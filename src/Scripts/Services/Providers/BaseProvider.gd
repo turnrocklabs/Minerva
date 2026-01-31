@@ -212,6 +212,7 @@ class RequestResults extends RefCounted:
 
 # Helper function to make HTTP requests
 ## This function will return array of
+var timed_out: bool = false
 func make_request(url: String, method: int, body: Variant = "", headers: Array[String]= []) -> RequestResults:
 	# setup request object for the delta endpoint and append API key
 	var http_request: = HTTPRequest.new()
@@ -245,7 +246,7 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 
 	# Setup timeout timer
 	var timeout_seconds: float = get_effective_timeout()
-	var timed_out: bool = false
+	
 	var timeout_timer: SceneTreeTimer = null
 
 	if timeout_seconds > 0 and is_inside_tree():

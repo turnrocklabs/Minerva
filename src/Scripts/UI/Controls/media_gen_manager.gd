@@ -4,12 +4,40 @@ var client: CoreClient = null
 
 signal  pass_image_to_editor(filename: String, request_id: String, image: PackedByteArray)
 signal lock_media_gen_ui(lock: bool)
+signal media_gen_request_timeout(request_id: String)
+
+const MEDIA_GEN_REQUEST_TIMEOUT_SEC: float = 120.0
+
+var _media_gen_timeout_timer: Timer
+var _pending_request_id: String = ""
 
 func _ready() -> void:
 	# Connect Core.client signals to our handlers
 	client = Core.client
 	#client.binary_file_saved.connect(_on_binary_file_saved_received)
 	client.image_received.connect(_on_image_response_received)
+	_media_gen_timeout_timer = Timer.new()
+	_media_gen_timeout_timer.one_shot = true
+	_media_gen_timeout_timer.timeout.connect(_on_media_gen_timeout)
+	add_child(_media_gen_timeout_timer)
+
+
+func _start_request_timeout(request_id: String) -> void:
+	_pending_request_id = request_id
+	_media_gen_timeout_timer.start(MEDIA_GEN_REQUEST_TIMEOUT_SEC)
+
+
+func _clear_request_timeout() -> void:
+	if _media_gen_timeout_timer.time_left > 0:
+		_media_gen_timeout_timer.stop()
+	_pending_request_id = ""
+
+
+func _on_media_gen_timeout() -> void:
+	var timed_out_id: String = _pending_request_id
+	_pending_request_id = ""
+	lock_media_gen_ui.emit(false)
+	media_gen_request_timeout.emit(timed_out_id)
 
 
 func send_media_gen_request(params: Dictionary) -> String:
@@ -19,10 +47,14 @@ func send_media_gen_request(params: Dictionary) -> String:
 	var topic: String = params.get("topic", "media_gen/image_generation")
 	params.erase("topic")  # Remove from params so it's not sent in data payload
 	lock_media_gen_ui.emit(true)
-	return client.send_media_gen_request(params, topic)
+	var request_id: String = client.send_media_gen_request(params, topic)
+	if request_id != "":
+		_start_request_timeout(request_id)
+	return request_id
 
 
 func _on_image_response_received(fname: String, request_id: String, buffer: PackedByteArray) -> void:
+	_clear_request_timeout()
 	lock_media_gen_ui.emit(false)
 	pass_image_to_editor.emit(fname, request_id, buffer)
 
@@ -31,7 +63,10 @@ func send_media_edit_request(editing_params: Dictionary, \
 							image_buffer: PackedByteArray, \
 							image_filename: String = "input_image.png") -> String:
 	lock_media_gen_ui.emit(true)
-	return client.send_media_edit_request(editing_params, image_buffer, image_filename)
+	var request_id: String = client.send_media_edit_request(editing_params, image_buffer, image_filename)
+	if request_id != "":
+		_start_request_timeout(request_id)
+	return request_id
 
 
 # NEW: Method to generate a circular grayscale mask as a PackedByteArray (PNG format)
@@ -107,11 +142,17 @@ func generate_mask_bytes(mask_layer_image: Image, _mask_color: Color, _channel: 
 
 func send_media_selective_edit_request(params: Dictionary, images_dir: Array) -> String:
 	lock_media_gen_ui.emit(true)
-	return client.send_media_selective_edit_request(params, images_dir)
+	var request_id: String = client.send_media_selective_edit_request(params, images_dir)
+	if request_id != "":
+		_start_request_timeout(request_id)
+	return request_id
 
 
 ## Send a flex request for the qwen_2511_flex workflow.
 ## images should be an array of dictionaries with: {buffer: PackedByteArray, role: String, filename: String}
 func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
 	lock_media_gen_ui.emit(true)
-	return client.send_media_flex_request(params, images)
+	var request_id: String = client.send_media_flex_request(params, images)
+	if request_id != "":
+		_start_request_timeout(request_id)
+	return request_id

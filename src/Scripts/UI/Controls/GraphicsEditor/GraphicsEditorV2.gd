@@ -631,6 +631,7 @@ func _ready() -> void:
 	# Connect media generation signal to receive generated images
 	MediaGen.pass_image_to_editor.connect(_on_image_received)
 	MediaGen.lock_media_gen_ui.connect(_on_lock_media_gen_ui)
+	MediaGen.media_gen_request_timeout.connect(_on_media_gen_request_timeout)
 	
 	var temp_res: = MIN_IMAGE_RES
 	var id_to_select: = 0
@@ -1944,6 +1945,9 @@ func _exit_tree():
 	if MediaGen.lock_media_gen_ui.is_connected(_on_lock_media_gen_ui):
 		MediaGen.lock_media_gen_ui.disconnect(_on_lock_media_gen_ui)
 	
+	if MediaGen.media_gen_request_timeout.is_connected(_on_media_gen_request_timeout):
+		MediaGen.media_gen_request_timeout.disconnect(_on_media_gen_request_timeout)
+	
 	if Core.client.connection_established.is_connected(enable_ai_features):
 		Core.client.connection_established.disconnect(enable_ai_features)
 	
@@ -2029,6 +2033,22 @@ func _on_send_prompt_button_pressed() -> void:
 	SingletonObject.main_scene.add_child(toast)
 	save_prompt_to_history(params["positive_prompt"], params["negative_prompt"])
 	prompt_text_edit.text = ""
+
+
+func _on_media_gen_request_timeout(request_id: String) -> void:
+	if request_id != _current_image_gen_request_id:
+		return
+	send_prompt_button.modulate = Color.WHITE
+	send_prompt_button.disabled = false
+	edit_img_button.modulate = Color.WHITE
+	edit_img_button.disabled = false
+	send_mask_edit_button.modulate = Color.WHITE
+	send_mask_edit_button.disabled = false
+	if progress_window.visible:
+		progress_window.hide()
+	_current_image_gen_request_id = ""
+	var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.WARNING, "Image generation timed out. The backend may be unavailable.")
+	SingletonObject.main_scene.add_child(toast)
 
 
 func _on_image_received(filename:String, request_id: String, buffer: PackedByteArray) -> void:
@@ -2681,7 +2701,7 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 
 
 func toggle_enable_ai_fields(enable: bool = true) -> void:
-	var is_wf0 = workflow_option_button.selected == 0
+	#var is_wf0 = workflow_option_button.selected == 0
 	var disabled = !enable
 	
 	for btn in [prompt_button, workflow_option_button, negative_prompt_mic_button, 
