@@ -9,7 +9,10 @@ var topP: float = 1
 var FrequencyPenalty: float = 0
 var presencePenalty: float = 0
 
-## The OpenRouter model ID (e.g., "moonshotai/kimi-k2")
+## System prompt to send with the request (set by ChatPane)
+var system_prompt: String
+
+## The OpenRouter model ID (e.g., "moonshotai/kimi-k2.5")
 var api_model_id: String = ""
 
 ## Available tools for agentic mode (set by ChatPane when agent mode is enabled)
@@ -25,11 +28,14 @@ func _init():
 	PROVIDER = SingletonObject.API_PROVIDER.OPENROUTER
 
 	# Default model - subclasses override these
-	model_name = "kimi-k2"
-	api_model_id = "moonshotai/kimi-k2"
-	short_name = "KK2"
-	input_token_cost = 0.30   # $0.30 per million input tokens
-	output_token_cost = 0.90   # $0.90 per million output tokens
+	model_name = "kimi-k2.5"
+	api_model_id = "moonshotai/kimi-k2.5"
+	short_name = "KK25"
+	input_token_cost = 0.50   # $0.50 per million input tokens
+	output_token_cost = 2.80   # $2.80 per million output tokens
+
+	# Request timeout - variable backends may need more time
+	default_timeout = 150.0
 
 	# OpenRouter passes through to underlying model - defaults work for most
 	supports_temperature = true
@@ -73,9 +79,31 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 		if response.response_code >= 200 and response.response_code <= 299:
 			bot_response = to_bot_response(data)
 		else:
+			if SingletonObject.verbose_logging:
+				print("[OpenRouter] Error response (code %s): %s" % [response.response_code, data])
 			if "error" in data or "message" in data:
 				if "error" in data:
-					bot_response.error = data["error"]["message"]
+					var error_data = data["error"]
+					if error_data is Dictionary:
+						# Extract detailed error info from OpenRouter's metadata
+						var error_msg: String = error_data.get("message", "Unknown error")
+						var error_code = error_data.get("code", "")
+						var metadata = error_data.get("metadata", {})
+
+						# The actual useful error is often in metadata.raw
+						if metadata is Dictionary and metadata.has("raw"):
+							var raw_error: String = metadata.get("raw", "")
+							var provider_name: String = metadata.get("provider_name", "")
+							if provider_name:
+								bot_response.error = "[%s] %s" % [provider_name, raw_error]
+							else:
+								bot_response.error = raw_error
+						elif error_code:
+							bot_response.error = "[Error %s] %s" % [error_code, error_msg]
+						else:
+							bot_response.error = error_msg
+					else:
+						bot_response.error = str(error_data)
 				else:
 					bot_response.error = data["message"]
 			else:
@@ -89,20 +117,41 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
+	# Build messages array - prepend system prompt if set
+	var messages: Array = []
+	if not system_prompt.is_empty() and supports_system_prompt:
+		messages.append({"role": "system", "content": system_prompt})
+	messages.append_array(prompt)
+
 	var request_body = {
 		"model": api_model_id,
-		"messages": prompt,
+		"messages": messages,
+		"provider": {
+			"allow_fallbacks": false
+		}
 	}
 
+	if SingletonObject.verbose_logging:
+		print("[OpenRouter] Requesting model: %s" % api_model_id)
+
 	# Add tools if enabled
-	print("[OpenRouter] generate_content: tools_enabled=%s, available_tools.size=%d" % [tools_enabled, available_tools.size()])
+	if SingletonObject.verbose_logging:
+		print("[OpenRouter] generate_content: tools_enabled=%s, available_tools.size=%d" % [tools_enabled, available_tools.size()])
 	if tools_enabled and not available_tools.is_empty():
 		request_body["tools"] = format_tools_for_request()
-		print("[OpenRouter] Added %d tools to request" % request_body["tools"].size())
+		if SingletonObject.verbose_logging:
+			print("[OpenRouter] Added %d tools to request" % request_body["tools"].size())
 
 	request_body.merge(additional_params)
 
 	var body_stringified: String = JSON.stringify(request_body)
+
+	# Debug: print request body (truncated for readability)
+	if SingletonObject.verbose_logging:
+		var debug_body = body_stringified
+		if debug_body.length() > 2000:
+			debug_body = debug_body.substr(0, 2000) + "... [truncated]"
+		print("[OpenRouter] Request body: %s" % debug_body)
 
 	var response: RequestResults = await make_request(
 		"%s/chat/completions" % BASE_URL,
@@ -366,13 +415,25 @@ class MinimaxM21 extends OpenRouterProvider:
 		output_token_cost = 0.40   # $0.40 per million output tokens
 
 
-## Kimi K2 from Moonshot AI - Large MoE model for long-context
-class KimiK2 extends OpenRouterProvider:
+## Kimi K2.5 from Moonshot AI - Large MoE model for long-context
+class KimiK25 extends OpenRouterProvider:
 	func _init():
 		super()
-		api_model_id = "moonshotai/kimi-k2"
-		model_name = "kimi-k2"
-		display_name = "Kimi K2"
-		short_name = "KK2"
-		input_token_cost = 0.30   # $0.30 per million input tokens
-		output_token_cost = 0.90   # $0.90 per million output tokens
+		api_model_id = "moonshotai/kimi-k2.5"
+		model_name = "kimi-k2.5"
+		display_name = "Kimi K2.5"
+		short_name = "KK25"
+		input_token_cost = 0.50   # $0.50 per million input tokens
+		output_token_cost = 2.80   # $2.80 per million output tokens
+
+
+## Grok 4.1 Fast from xAI - Fast agentic model with 2M context
+class Grok41Fast extends OpenRouterProvider:
+	func _init():
+		super()
+		api_model_id = "x-ai/grok-4.1-fast"
+		model_name = "grok-4.1-fast"
+		display_name = "Grok 4.1 Fast"
+		short_name = "G41F"
+		input_token_cost = 0.20   # $0.20 per million input tokens
+		output_token_cost = 0.50   # $0.50 per million output tokens

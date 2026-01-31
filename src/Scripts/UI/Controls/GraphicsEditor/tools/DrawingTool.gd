@@ -171,19 +171,19 @@ func _start_stroke(event: InputEvent) -> void:
 	_use_pressure = true
 	
 	# Handle layer expansion first (if needed)
-	#var max_radius = get_actual_brush_radius(1.0)
-	#var bounds_point = get_bounds_point_for_expansion(event.position, max_radius)
-	#var offset = editor.active_layer.expand_to_point(bounds_point)
-	#
-	#if offset != Vector2.ZERO:
-		## Create resize command for layer expansion
-		#var resize_command = GraphicsEditorUndo.ResizeCommand.new(
-			#editor.active_layer, 
-			#editor.active_layer.position - offset
-		#)
-		#resize_command.set_new_image(editor.active_layer.image)  # After expansion
-		#editor.execute_command(resize_command)
-		#editor.active_layer.position -= offset
+	var max_radius = get_actual_brush_radius(1.0)
+	var bounds_point = get_bounds_point_for_expansion(event.position, max_radius)
+	var offset = editor.active_layer.expand_to_point(bounds_point)
+	
+	if offset != Vector2.ZERO:
+		# Create resize command for layer expansion
+		var resize_command = GraphicsEditorUndo.ResizeCommand.new(
+			editor.active_layer, 
+			editor.active_layer.position - offset
+		)
+		resize_command.set_new_image(editor.active_layer.image)  # After expansion
+		editor.execute_command(resize_command)
+		editor.active_layer.position -= offset
 	
 	# Update event after potential layer changes
 	event = editor.active_layer.localize_input(event)
@@ -191,7 +191,7 @@ func _start_stroke(event: InputEvent) -> void:
 	
 	# this needs to be calculated after the stroke has been finished
 	# Create drawing command - captures "before" state
-	# var stroke_bounds = _calculate_stroke_bounds(event.position)
+	#var stroke_bounds = _calculate_stroke_bounds(event.position)
 
 	current_stroke_command = GraphicsEditorUndo.DrawStrokeCommand.new(editor.active_layer)
 
@@ -204,6 +204,30 @@ func _start_stroke(event: InputEvent) -> void:
 	_stroke_dirty_rect = Rect2i()  # Reset dirty rect for new stroke
 	_last_preview_msec = 0  # Reset throttle timer
 
+func _update_stroke_buffer_for_expansion(offset: Vector2) -> void:
+	# Called when layer expands during a stroke to resize stroke buffer and update backup
+	if not _stroke_buffer or not _layer_backup:
+		return
+	
+	var layer_size = editor.active_layer.image.get_size()
+	var buffer_size = _stroke_buffer.get_size()
+	var backup_size = _layer_backup.get_size()
+	
+	# Only update if layer size increased
+	if layer_size.x > buffer_size.x or layer_size.y > buffer_size.y:
+		# Create new stroke buffer with new size
+		var old_buffer = _stroke_buffer
+		_stroke_buffer = Image.create(layer_size.x, layer_size.y, false, Image.FORMAT_RGBA8)
+		_stroke_buffer.fill(Color.TRANSPARENT)
+		
+		# Copy old stroke buffer contents to new buffer at offset position (matching layer content position)
+		_stroke_buffer.blit_rect(old_buffer, Rect2i(Vector2i.ZERO, buffer_size), Vector2i(int(offset.x), int(offset.y)))
+		
+		# Expand layer backup to match new layer size
+		var expanded_backup = Image.create(layer_size.x, layer_size.y, false, _layer_backup.get_format())
+		expanded_backup.fill(Color.TRANSPARENT)
+		expanded_backup.blit_rect(_layer_backup, Rect2i(Vector2i.ZERO, backup_size), Vector2i(int(offset.x), int(offset.y)))
+		_layer_backup = expanded_backup
 
 func _add_stroke_point(event: InputEvent) -> void:
 	var pos: Vector2 = event.position
@@ -224,12 +248,12 @@ func _add_stroke_point(event: InputEvent) -> void:
 		_last_pressure = p
 		
 		# Expand & localize before optional "touchdown" stamp
-		#var _radius := get_actual_brush_radius(_smoothed_pressure)
-		#var _bounds_point := get_bounds_point_for_expansion(pos, _radius)
-		#var _offset := editor.active_layer.expand_to_point(_bounds_point)
-		#editor.active_layer.position -= _offset
-		#event = editor.active_layer.localize_input(event)
-		#pos = event.position
+		var _radius := get_actual_brush_radius(_smoothed_pressure)
+		var _bounds_point := get_bounds_point_for_expansion(pos, _radius)
+		var _offset := editor.active_layer.expand_to_point(_bounds_point)
+		editor.active_layer.position -= _offset
+		event = editor.active_layer.localize_input(event)
+		pos = event.position
 		
 		# Optional: stamp once at touchdown using the true first pressure
 		_draw_brush_stamp(
@@ -254,12 +278,14 @@ func _add_stroke_point(event: InputEvent) -> void:
 		_smoothed_pressure = 1.0
 	
 	# Expand layer if needed
-	#var radius = get_actual_brush_radius(_smoothed_pressure)
-	#var bounds_point = get_bounds_point_for_expansion(pos, radius)
-	#var offset = editor.active_layer.expand_to_point(bounds_point)
-	#editor.active_layer.position -= offset
-	#event = editor.active_layer.localize_input(event)
-	#pos = event.position
+	var radius = get_actual_brush_radius(_smoothed_pressure)
+	var bounds_point = get_bounds_point_for_expansion(pos, radius)
+	var offset = editor.active_layer.expand_to_point(bounds_point)
+	if offset != Vector2.ZERO:
+		_update_stroke_buffer_for_expansion(offset)
+	editor.active_layer.position -= offset
+	event = editor.active_layer.localize_input(event)
+	pos = event.position
 	
 	# Draw continuous line between last and current position
 	_draw_continuous_line(

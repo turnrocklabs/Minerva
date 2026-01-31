@@ -32,7 +32,8 @@ static var SERIALIZER_FIELDS = [
 	"ToolName",
 	"ToolCalls",
 	"IsToolCall",
-	"ToolExecutions"
+	"ToolExecutions",
+	"RequestMetadata"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -151,6 +152,11 @@ var IsToolCall: bool = false:
 var ToolExecutions: Array[Dictionary] = []:
 	set(value): SingletonObject.call_deferred("save_state", false); ToolExecutions = value
 
+## Request metadata for debugging - stored on USER messages to show what was sent
+## Structure: {system_prompt: String, tools: Array, tool_count: int, message_count: int, model: String}
+var RequestMetadata: Dictionary = {}:
+	set(value): SingletonObject.call_deferred("save_state", false); RequestMetadata = value
+
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
 
@@ -256,7 +262,9 @@ func Serialize() -> Dictionary:
 		"ToolCallId": ToolCallId,
 		"ToolName": ToolName,
 		"ToolCalls": ToolCalls,
-		"IsToolCall": IsToolCall
+		"IsToolCall": IsToolCall,
+		# Request metadata for debugging
+		"RequestMetadata": RequestMetadata
 	}
 	return save_dict
 

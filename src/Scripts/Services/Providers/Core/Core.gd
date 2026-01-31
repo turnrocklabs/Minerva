@@ -28,7 +28,7 @@ var http_request: HTTPRequest = HTTPRequest.new()
 var services: Array[Service]
 
 ## How long the chached services list is valid
-var _services_cache_timeout: float = 15
+var _services_cache_timeout: float = 150
 ## Last time the services were fetched
 var _services_last_fetch: float = -1
 
@@ -502,7 +502,7 @@ class AwaitMessage extends RefCounted:
 	var topic: String
 	var cmd: String
 	var request_id: String
-	var timeout: float = 15.0 # Default timeout in seconds
+	var timeout: float = 150.0 # Default timeout in seconds
 
 	var client: CoreClient # Reference to the WebSocket client
 

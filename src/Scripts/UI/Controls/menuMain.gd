@@ -7,9 +7,9 @@ const MCPServerRunnerScript := preload("res://Scripts/Services/MCP/MCPServerRunn
 
 var _server_runner = null
 
-@onready var view = $View as PopupMenu
+@onready var view: = $View as PopupMenu
 @onready var project: PopupMenu = $Project
-@onready var edit: PopupMenu = %File
+
 
 var popUpRecent
 var recentList
@@ -67,6 +67,10 @@ func handle_new_graphics():
 	SingletonObject.is_graph = true
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)
 
+# Handle new spreadsheet creation
+func handle_new_spreadsheet():
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.SPREADSHEET)
+
 func _on_file_submenu_index_pressed(index):
 	match index:
 		0:
@@ -74,6 +78,8 @@ func _on_file_submenu_index_pressed(index):
 		1:
 			SingletonObject.is_picture = false
 			handle_new_graphics()
+		2:
+			handle_new_spreadsheet()
 			
 
 
@@ -130,6 +136,7 @@ func _ready():
 	file_submenu.name = "file_submenu"
 	file_submenu.add_item("New File")
 	file_submenu.add_item("New Graphics")
+	file_submenu.add_item("New Spreadsheet")
 	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
 	# Add the "New" submenu to the top of the "File" menu
 	%File.add_child(file_submenu)
@@ -630,6 +637,20 @@ func _refresh_minerva_submenu() -> void:
 	var status_text = "✓ Connected" if connected else "✗ Disconnected"
 	minerva_submenu.add_item(status_text, 0)
 
+	minerva_submenu.add_separator()
+
+	# HTTP Server status and toggle
+	var http_running = SingletonObject.is_mcp_http_server_running()
+	if http_running:
+		var port = mcp.get_http_server_port() if mcp else 9315
+		minerva_submenu.add_item("● HTTP Server (port %d)" % port, -1)
+		minerva_submenu.set_item_disabled(minerva_submenu.get_item_count() - 1, true)
+		minerva_submenu.add_item("Stop HTTP Server", 10)
+	else:
+		minerva_submenu.add_item("○ HTTP Server Stopped", -1)
+		minerva_submenu.set_item_disabled(minerva_submenu.get_item_count() - 1, true)
+		minerva_submenu.add_item("Start HTTP Server", 11)
+
 
 ## Refresh all tool submenus
 func _refresh_all_tool_submenus() -> void:
@@ -670,8 +691,10 @@ func _on_codetools_submenu_pressed(id: int) -> void:
 
 ## Handle Minerva submenu item pressed
 func _on_minerva_submenu_pressed(id: int) -> void:
-	if id == 0:
-		_toggle_minerva_server()
+	match id:
+		0: _toggle_minerva_server()
+		10: _stop_minerva_http_server()
+		11: _start_minerva_http_server()
 
 
 ## Toggle Nudge connection
@@ -754,6 +777,33 @@ func _toggle_minerva_server() -> void:
 			"Minerva: Connected (%d tools)" % tool_count,
 			ToastNotification.Type.SUCCESS
 		)
+	_refresh_all_tool_submenus()
+
+
+## Start the Minerva HTTP server for external agents
+func _start_minerva_http_server() -> void:
+	var port = SingletonObject.mcp_http_server_port
+	var err = SingletonObject.start_mcp_http_server(port)
+	if err == OK:
+		SingletonObject.create_toast_notification(
+			"HTTP Server started on port %d" % port,
+			ToastNotification.Type.SUCCESS
+		)
+	else:
+		SingletonObject.create_toast_notification(
+			"Failed to start HTTP Server: %s" % error_string(err),
+			ToastNotification.Type.ERROR
+		)
+	_refresh_all_tool_submenus()
+
+
+## Stop the Minerva HTTP server
+func _stop_minerva_http_server() -> void:
+	SingletonObject.stop_mcp_http_server()
+	SingletonObject.create_toast_notification(
+		"HTTP Server stopped",
+		ToastNotification.Type.SUCCESS
+	)
 	_refresh_all_tool_submenus()
 
 
@@ -1064,25 +1114,21 @@ func _nudge_delete_current_tab() -> void:
 func _on_project_index_pressed(index):
 	match index:
 		0:
-			## Create a new blank project
+			# Create a new blank project
 			SingletonObject.NewProject.emit()
-			pass
 		1:
-			## Open a project
+			# Open a project
 			SingletonObject.OpenProject.emit()
-			pass
 		2:
-			## Save a project
+			# Save a project
 			SingletonObject.SaveProject.emit() 
-			pass
 		3:
-			## Save as a project
+			# Save as a project
 			SingletonObject.SaveProjectAs.emit()
-			pass
 		5:
 			popUpRecent.visible = true
 			load_recent_projects()
-			#pass
+
 
 func _on_view_id_pressed(id: int):
 	# if zoom items are selected
@@ -1156,6 +1202,11 @@ func _on_project_about_to_popup() -> void:
 	else:
 		%Project.set_item_disabled(2, true)
 		%Project.set_item_disabled(3, true)
+		
+	if SingletonObject.is_graphics_editor_open():
+		%Project.set_item_disabled(4, false)
+	else:
+		%Project.set_item_disabled(4, true)
 
 #this function gets call when the mouse ers over the MenuBar
 #it has a timer so it doesn't execute all the time

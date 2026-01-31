@@ -108,3 +108,10 @@ func generate_mask_bytes(mask_layer_image: Image, _mask_color: Color, _channel: 
 func send_media_selective_edit_request(params: Dictionary, images_dir: Array) -> String:
 	lock_media_gen_ui.emit(true)
 	return client.send_media_selective_edit_request(params, images_dir)
+
+
+## Send a flex request for the qwen_2511_flex workflow.
+## images should be an array of dictionaries with: {buffer: PackedByteArray, role: String, filename: String}
+func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
+	lock_media_gen_ui.emit(true)
+	return client.send_media_flex_request(params, images)

@@ -9,6 +9,9 @@ var topP: float = 1
 var FrequencyPenalty: float = 0
 var presencePenalty: float = 0
 
+## System prompt to send with the request (set by ChatPane)
+var system_prompt: String
+
 ## Available tools for agentic mode (set by ChatPane when agent mode is enabled)
 var available_tools: Array[Dictionary] = []
 
@@ -29,6 +32,9 @@ func _init():
 	short_name = "G5"
 	input_token_cost = 5.00   # $5 per million input tokens
 	output_token_cost = 15.00  # $15 per million output tokens
+
+	# Request timeout - reasoning models can be slow
+	default_timeout = 120.0
 
 	# GPT-5 reasoning models don't support temperature/top_p
 	is_reasoning_model = true
@@ -92,9 +98,15 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 # https://platform.openai.com/docs/guides/text-generation/chat-completions-api
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}) -> BotResponse:
+	# Build messages array - prepend system prompt if set
+	var messages: Array = []
+	if not system_prompt.is_empty() and supports_system_prompt:
+		messages.append({"role": "system", "content": system_prompt})
+	messages.append_array(prompt)
+
 	var request_body = {
 		"model": model_name,
-		"messages": prompt,
+		"messages": messages,
 	}
 
 	# Add reasoning effort for models that support it

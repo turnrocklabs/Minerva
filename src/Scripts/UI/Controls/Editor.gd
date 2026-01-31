@@ -8,6 +8,7 @@ extends Control
 
 static var editor_scene = preload("res://Scenes/Editor.tscn")
 static var graphics_editor_scene = preload("res://Scenes/GraphicsEditorV2.tscn")
+static var spreadsheet_editor_scene = preload("res://Scenes/SpreadsheetEditor.tscn")
 
 
 signal content_changed()
@@ -34,6 +35,7 @@ var graphics_editor: GraphicsEditorV2
 var package_editor: PackageEditor
 var logs_viewer: AutocoderLogsViewer
 var kanban_board: AutocoderKanbanBoard
+var spreadsheet_editor  # SpreadsheetEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -41,6 +43,7 @@ var kanban_board: AutocoderKanbanBoard
 @onready var code_syntax_button: IconsButton = $VBoxContainer/ButtonsHBoxContainer/CodeSyntaxButton
 @onready var find_button: IconsButton = %FindButton
 @onready var reload_button: IconsButton = %reloadButton
+@onready var export_area_button: IconsButton = %ExportAreaButton
 
 #this are control noes for the Ctrl+F UI
 @onready var find_string_container: HBoxContainer = %FindStringContainer
@@ -66,6 +69,7 @@ enum Type {
 	PACKAGE,
 	LOGS,
 	KANBAN,
+	SPREADSHEET,
 }
 
 
@@ -178,7 +182,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 		
 		Editor.Type.PACKAGE:
 			editor.package_editor = PackageEditor.create()
-			
+
 			editor.package_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(editor.package_editor)
 		Editor.Type.LOGS:
@@ -195,7 +199,18 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			kanban_widget.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(kanban_widget)
 			editor.kanban_board = kanban_widget
-			
+
+		Editor.Type.SPREADSHEET:
+			var new_spreadsheet_editor = spreadsheet_editor_scene.instantiate()
+			new_spreadsheet_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+
+			if initial_setup:
+				new_spreadsheet_editor.ready.connect(new_spreadsheet_editor.setup)
+				new_spreadsheet_editor.content_changed.connect(editor._on_spreadsheet_editor_changed)
+
+			vbox_container.add_child(new_spreadsheet_editor)
+			editor.spreadsheet_editor = new_spreadsheet_editor
+
 	return editor
 
 func toggle(on: bool) -> void:
@@ -224,7 +239,7 @@ func _ready():
 			Type.GRAPHICS: _load_graphics_file(file)
 			Type.VIDEO: video_player.video_path = file
 	
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -241,6 +256,7 @@ func _ready():
 	if self.type == Type.TEXT:
 		mic_button.show()
 		autowrap_button.show()
+		export_area_button.hide()
 		toggle_autowrap()
 	elif self.type == Type.LOGS:
 		mic_button.hide()
@@ -261,6 +277,7 @@ func _ready():
 		find_button.hide()
 		%btnApplyDiff.hide()
 		reload_button.hide()
+		export_area_button.show()
 		
 		mic_button.queue_free()
 		autowrap_button.queue_free()
@@ -270,6 +287,9 @@ func _ready():
 		jump_to_line_panel.queue_free()
 		%btnApplyDiff.queue_free()
 		reload_button.queue_free()
+		
+		if export_area_button:
+			SingletonObject.editor_pane.Tabs.tab_changed.connect(_on_tab_connect)
 	
 	if type == Type.TEXT:
 		text_is_smaller.pressed.connect(_on_close_warrning.bind(text_is_smaller))
@@ -432,16 +452,25 @@ func get_saved_state() -> int:
 
 			if file and graphics_editor.saved:
 				state |= FILE_SAVED
-			
+
 			elif associated_object and graphics_editor.saved:
 				if associated_object is Note:
 					state |= ASSOCIATED_OBJECT_SAVED
-				
+
 				else:
 					state |= ASSOCIATED_OBJECT_SAVED
 		Type.LOGS:
 			if logs_viewer and logs_viewer.is_saved():
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+		Type.SPREADSHEET:
+			# For now, spreadsheets are considered saved (no file association yet)
+			if not spreadsheet_editor:
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+			else:
+				# TODO: Add proper save tracking for spreadsheet
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
 
 	return state
 
@@ -573,6 +602,9 @@ func _on_create_note_button_pressed() -> void:
 			new_note = Note.create_text_note(tab_title, code_edit.text)
 		Type.GRAPHICS:
 			new_note = Note.create_image_note(tab_title, await graphics_editor.compose_final_image())
+		Type.SPREADSHEET:
+			var markdown_content: String = spreadsheet_editor.spreadsheet_data.to_markdown()
+			new_note = Note.create_spreadsheet_note(tab_title, tab_title, markdown_content)
 		_:
 			new_note = Note.create_error_note(tab_title, "Can't create a note for the specified Editor type (%s)" % type)
 
@@ -850,7 +882,7 @@ func _on_mic_button_pressed() -> void:
 
 ## Returns whether or not this editor instance can be turned into a [class Note] objects
 func _supports_note():
-	return type in [Type.TEXT, Type.GRAPHICS]
+	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET]
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
@@ -878,6 +910,11 @@ func _create_note() -> Note:
 				push_error("[Editor] compose_final_image() returned null!")
 			note = Note.create_image_note("Editor Note", image)
 			print("[Editor] Image note created: %s" % note)
+		Type.SPREADSHEET:
+			print("[Editor] Creating SPREADSHEET note...")
+			var csv_content = spreadsheet_editor.get_content()
+			note = Note.create_text_note("Spreadsheet Note", csv_content)
+			print("[Editor] Spreadsheet note created: %s" % note)
 
 	note.enabled = true
 	print("[Editor] _create_note() returning note: %s" % note)
@@ -888,10 +925,14 @@ func _update_note(note: Note) -> void:
 	if type == Type.TEXT:
 		var controls_container = note.get_controls_container() as NoteTextControls
 		controls_container.content = code_edit.text
-	
+
 	elif type == Type.GRAPHICS:
 		var controls_container = note.get_controls_container() as NoteImageControls
 		controls_container.image = await graphics_editor.compose_final_image()
+
+	elif type == Type.SPREADSHEET:
+		var controls_container = note.get_controls_container() as NoteTextControls
+		controls_container.content = spreadsheet_editor.spreadsheet_data.to_markdown()
 
 
 var _proxy_note: Note.Proxy
@@ -966,3 +1007,27 @@ func _on_code_syntax_button_toggled(toggled_on: bool) -> void:
 
 func _on_graphics_editor_changed() -> void:
 	content_changed.emit()
+
+
+func _on_spreadsheet_editor_changed() -> void:
+	content_changed.emit()
+
+
+func _on_export_area_button_pressed() -> void:
+	var current_tab = SingletonObject.editor_pane.Tabs.get_current_tab_control()
+
+	if current_tab is Editor and current_tab.type == Editor.Type.GRAPHICS:
+		current_tab.graphics_editor.activate_export_region_tool()
+
+
+func _on_tab_connect(_tab_idx: int) -> void:
+	var current_tab = SingletonObject.editor_pane.Tabs.get_current_tab_control()
+
+	if current_tab is Editor and current_tab.type == Editor.Type.GRAPHICS:
+		if export_area_button:
+			export_area_button.disabled = false
+			export_area_button.show()
+	else:
+		if export_area_button:
+			export_area_button.disabled = true
+			export_area_button.hide()

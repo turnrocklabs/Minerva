@@ -371,6 +371,30 @@ var mcp_manager: Node = null
 ## Co-Browser client for browser automation
 var cobrowser_client: RefCounted = null
 
+## MCP HTTP Server settings - allows external agents to connect to Minerva
+var mcp_http_server_port: int = 9315:
+	set(value):
+		mcp_http_server_port = clampi(value, 1024, 65535)
+		save_to_config_file("MCPServer", "http_port", mcp_http_server_port)
+	get:
+		if mcp_http_server_port <= 0:
+			var saved = get_config_file_value("MCPServer", "http_port")
+			mcp_http_server_port = saved if saved != null and saved > 0 else 9315
+		return mcp_http_server_port
+
+var mcp_http_server_auto_start: bool = false:
+	set(value):
+		mcp_http_server_auto_start = value
+		save_to_config_file("MCPServer", "auto_start", value)
+	get:
+		var saved = get_config_file_value("MCPServer", "auto_start")
+		if saved != null:
+			if saved is bool:
+				mcp_http_server_auto_start = saved
+			else:
+				mcp_http_server_auto_start = str(saved).to_lower() == "true"
+		return mcp_http_server_auto_start
+
 ## Initialize MCP manager (call from main scene _ready)
 func initialize_mcp() -> void:
 	if mcp_manager:
@@ -378,6 +402,14 @@ func initialize_mcp() -> void:
 	mcp_manager = MCPManagerScript.new()
 	add_child(mcp_manager)
 	await mcp_manager.initialize()
+
+	# Auto-start HTTP server if configured
+	if mcp_http_server_auto_start:
+		var err = mcp_manager.start_http_server(mcp_http_server_port)
+		if err == OK:
+			print("[MCP] HTTP server auto-started on port %d" % mcp_http_server_port)
+		else:
+			push_warning("[MCP] Failed to auto-start HTTP server: %s" % error_string(err))
 
 ## Initialize Co-Browser client (call when needed)
 func get_cobrowser_client() -> RefCounted:
@@ -397,6 +429,24 @@ func get_mcp_manager() -> Node:
 		mcp_manager = MCPManagerScript.new()
 		add_child(mcp_manager)
 	return mcp_manager
+
+
+## Start the MCP HTTP server for external agent access
+func start_mcp_http_server(port: int = -1) -> Error:
+	if port < 0:
+		port = mcp_http_server_port
+	return get_mcp_manager().start_http_server(port)
+
+
+## Stop the MCP HTTP server
+func stop_mcp_http_server() -> void:
+	if mcp_manager:
+		mcp_manager.stop_http_server()
+
+
+## Check if the MCP HTTP server is running
+func is_mcp_http_server_running() -> bool:
+	return mcp_manager != null and mcp_manager.is_http_server_running()
 
 #endregion MCP
 
@@ -447,7 +497,84 @@ var nbp_image_size: String = "1K":
 			nbp_image_size = saved
 		return nbp_image_size
 
+## Model-chat (Ollama) context window size
+var model_chat_num_ctx: int = 40000:
+	set(value):
+		model_chat_num_ctx = value
+		save_to_config_file("ModelChat", "num_ctx", value)
+	get:
+		var saved = get_config_file_value("ModelChat", "num_ctx")
+		if saved != null and saved is int and saved > 0:
+			model_chat_num_ctx = saved
+		return model_chat_num_ctx
+
 #endregion Image Generation Settings
+
+#region Per-Model Settings (Timeout & Context)
+
+## Per-model timeout overrides (seconds). 0 = use provider default.
+## Keys are model names (e.g., "gpt-5.2", "model-chat (glm-4.7-flash)")
+var _model_timeouts: Dictionary = {}
+
+## Per-model context window overrides. 0 = use default.
+## Keys are model names
+var _model_contexts: Dictionary = {}
+
+## Get the timeout override for a model (0 means use default)
+func get_model_timeout(model_name: String) -> float:
+	# Load from config if not loaded yet
+	if _model_timeouts.is_empty():
+		var saved = get_config_file_value("Models", "Timeouts")
+		if saved and saved is Dictionary:
+			_model_timeouts = saved
+	return _model_timeouts.get(model_name, 0.0)
+
+## Set the timeout override for a model
+func set_model_timeout(model_name: String, timeout: float) -> void:
+	if timeout <= 0:
+		_model_timeouts.erase(model_name)
+	else:
+		_model_timeouts[model_name] = timeout
+	save_to_config_file("Models", "Timeouts", _model_timeouts)
+
+## Get the context window override for a model (0 means use default)
+func get_model_context(model_name: String) -> int:
+	# Load from config if not loaded yet
+	if _model_contexts.is_empty():
+		var saved = get_config_file_value("Models", "Contexts")
+		if saved and saved is Dictionary:
+			_model_contexts = saved
+	return _model_contexts.get(model_name, 0)
+
+## Set the context window override for a model
+func set_model_context(model_name: String, context: int) -> void:
+	if context <= 0:
+		_model_contexts.erase(model_name)
+	else:
+		_model_contexts[model_name] = context
+	save_to_config_file("Models", "Contexts", _model_contexts)
+
+## Per-model GPU layer overrides. -1 = use default, 0 = CPU only, N = N layers on GPU
+var _model_num_gpu: Dictionary = {}
+
+## Get the num_gpu override for a model (-1 means use default)
+func get_model_num_gpu(model_name: String) -> int:
+	# Load from config if not loaded yet
+	if _model_num_gpu.is_empty():
+		var saved = get_config_file_value("Models", "NumGpu")
+		if saved and saved is Dictionary:
+			_model_num_gpu = saved
+	return _model_num_gpu.get(model_name, -1)
+
+## Set the num_gpu override for a model
+func set_model_num_gpu(model_name: String, num_gpu: int) -> void:
+	if num_gpu < 0:
+		_model_num_gpu.erase(model_name)
+	else:
+		_model_num_gpu[model_name] = num_gpu
+	save_to_config_file("Models", "NumGpu", _model_num_gpu)
+
+#endregion Per-Model Settings
 
 #region Chats
 @warning_ignore("unused_signal")
@@ -585,25 +712,42 @@ func _ready():
 	initialize_mcp.call_deferred()
 
 
+## Recursively release all textures in a node tree to prevent RID leaks on exit
+func _release_textures_recursive(node: Node) -> void:
+	if not is_instance_valid(node):
+		return
+	# Release texture if this is a TextureRect
+	if node is TextureRect and node.texture:
+		node.texture = null
+	# Recurse into children
+	for child in node.get_children():
+		_release_textures_recursive(child)
+
+
 func _exit_tree() -> void:
 	# Ensure proper cleanup order during shutdown
 	print("[SingletonObject] Cleaning up...")
 
-	# Explicitly free all notes to release their textures before Godot cleanup
-	if notes_container:
-		print("[SingletonObject] Clearing notes container...")
-		for tab_idx in range(notes_container.get_tab_count()):
-			var vbox = notes_container.get_tab_control(tab_idx)
-			if vbox and vbox.has_method("get_notes"):
-				for note in vbox.get_notes():
-					if is_instance_valid(note):
-						note.queue_free()
+	# Release all textures in notes container before freeing nodes
+	if notes_container and is_instance_valid(notes_container):
+		print("[SingletonObject] Releasing textures in notes...")
+		_release_textures_recursive(notes_container)
 
-	# Clear registered objects (notes, etc.)
-	clear_registered_objects()
+	# Release all textures in chat pane before freeing nodes
+	if Chats and is_instance_valid(Chats):
+		print("[SingletonObject] Releasing textures in chats...")
+		_release_textures_recursive(Chats)
+
+	# Release all textures in editor container before freeing nodes
+	if editor_container and is_instance_valid(editor_container):
+		print("[SingletonObject] Releasing textures in editor...")
+		_release_textures_recursive(editor_container)
 
 	# Force RenderingServer to release pending resources
 	RenderingServer.force_sync()
+
+	# Clear registered objects (notes, etc.)
+	clear_registered_objects()
 
 	print("[SingletonObject] Cleanup complete")
 
@@ -680,11 +824,15 @@ const GoogleImageProviderScript = preload("res://Scripts/Services/Providers/Goog
 const AnthropicProviderScript = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
 const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
 const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
+const LocalProviderScript = preload("res://Scripts/Services/Providers/LocalProvider.gd")
 
 # changing the order here will probably result in having wrong provider selected
 # in AISettings, as it relies on this enum to load the provider script, but not a big deal
 enum API_MODEL_PROVIDERS {
 	HUMAN,
+	# Local/Ollama
+	NEMOTRON_NANO,
+	DEVSTRAL_SMALL,
 	# OpenAI Chat
 	GPT_NANO,
 	GPT_STANDARD,
@@ -705,7 +853,8 @@ enum API_MODEL_PROVIDERS {
 	# OpenRouter
 	OPENROUTER_GLM47,
 	OPENROUTER_MINIMAX_M21,
-	OPENROUTER_KIMI_K2,
+	OPENROUTER_KIMI_K25,
+	OPENROUTER_GROK41_FAST,
 	# Claude Code (Max/Pro)
 	CLAUDE_CODE_SONNET,
 	CLAUDE_CODE_OPUS,
@@ -714,6 +863,9 @@ enum API_MODEL_PROVIDERS {
 ## Dictionary of all model providers and scripts that implement their functionality
 var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.HUMAN: HumanProvider,
+	# Local/Ollama
+	API_MODEL_PROVIDERS.NEMOTRON_NANO: LocalProviderScript,
+	API_MODEL_PROVIDERS.DEVSTRAL_SMALL: LocalProviderScript.DevstralSmall2,
 	# OpenAI Chat - GPT-5.2 with different reasoning levels
 	API_MODEL_PROVIDERS.GPT_NANO: OpenAIProviderScript.Nano,
 	API_MODEL_PROVIDERS.GPT_STANDARD: OpenAIProviderScript.Standard,
@@ -734,7 +886,8 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	# OpenRouter
 	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProviderScript.GLM47,
 	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProviderScript.MinimaxM21,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: OpenRouterProviderScript.KimiK2,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K25: OpenRouterProviderScript.KimiK25,
+	API_MODEL_PROVIDERS.OPENROUTER_GROK41_FAST: OpenRouterProviderScript.Grok41Fast,
 	# Claude Code (Max/Pro)
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProviderScript.Opus,
@@ -743,6 +896,9 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 ## Maps each model to its parent provider (for enable/disable filtering)
 const MODEL_TO_PROVIDER: Dictionary = {
 	API_MODEL_PROVIDERS.HUMAN: API_PROVIDER.LOCAL,
+	# Local/Ollama
+	API_MODEL_PROVIDERS.NEMOTRON_NANO: API_PROVIDER.LOCAL,
+	API_MODEL_PROVIDERS.DEVSTRAL_SMALL: API_PROVIDER.LOCAL,
 	# OpenAI
 	API_MODEL_PROVIDERS.GPT_NANO: API_PROVIDER.OPENAI,
 	API_MODEL_PROVIDERS.GPT_STANDARD: API_PROVIDER.OPENAI,
@@ -761,7 +917,8 @@ const MODEL_TO_PROVIDER: Dictionary = {
 	# OpenRouter
 	API_MODEL_PROVIDERS.OPENROUTER_GLM47: API_PROVIDER.OPENROUTER,
 	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: API_PROVIDER.OPENROUTER,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K2: API_PROVIDER.OPENROUTER,
+	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K25: API_PROVIDER.OPENROUTER,
+	API_MODEL_PROVIDERS.OPENROUTER_GROK41_FAST: API_PROVIDER.OPENROUTER,
 	# Claude Code
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: API_PROVIDER.CLAUDE_CODE,
@@ -911,7 +1068,14 @@ func save_state(state: bool):
 
 #checks if the editor pane has a current tab
 func is_editor_file_open() -> bool:
-	if editor_container.editor_pane.Tabs.get_current_tab_control():
+	var editor: Editor = editor_container.editor_pane.Tabs.get_current_tab_control()
+	if editor is Editor and editor.type == Editor.Type.TEXT:
+		return true
+	return false
+
+func is_graphics_editor_open() -> bool:
+	var editor: Editor = editor_container.editor_pane.Tabs.get_current_tab_control()
+	if editor is Editor and editor.type == Editor.Type.GRAPHICS:
 		return true
 	return false
 
@@ -935,7 +1099,7 @@ func any_project_features_open() -> bool:
 
 #checks if ALL project features are open
 func all_project_features_open() -> bool:
-	if is_chat_open() and is_notes_open() and is_editor_file_open():
+	if is_chat_open() and is_notes_open() and (is_editor_file_open() or is_graphics_editor_open()):
 		return true
 	return false
 

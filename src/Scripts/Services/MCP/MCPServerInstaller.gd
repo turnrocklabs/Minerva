@@ -15,7 +15,7 @@ const REPOS := {
 
 const PORTS := {
 	"nudge": 8765,
-	"cobrowser": 8678,
+	"cobrowser": 8678,  # MCP wrapper (mcp_tools.py) - connects to cobrowser_service on 8677
 	"codetools": 8700
 }
 

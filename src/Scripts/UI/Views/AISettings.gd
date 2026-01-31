@@ -7,6 +7,12 @@ signal create_system_prompt_message(message)
 # Nano Banana Pro settings container (created dynamically)
 var _nbp_settings_container: VBoxContainer = null
 
+# Model-chat settings container (created dynamically)
+var _model_chat_settings_container: VBoxContainer = null
+
+# Timeout settings container (created dynamically)
+var _timeout_settings_container: VBoxContainer = null
+
 
 enum GPT_params {
 	temp,
@@ -17,6 +23,9 @@ enum GPT_params {
 
 var current_chat_tab_ref: ChatHistory = null
 
+## Flag to prevent saving when programmatically setting text fields
+var _loading_values: bool = false
+
 ## Returns the script of the provider thats selected.
 ## `get_selected_provider().new()` to instantiate it
 func get_selected_provider() -> GDScript:
@@ -26,12 +35,14 @@ func get_selected_provider() -> GDScript:
 ## Load all settings from the current chat tab (or defaults if no chat).
 ## Called by ChatPane before showing this window.
 func load_current_chat_settings() -> void:
+	_loading_values = true
 	%ToolAccessLabel.text = "Tool Access:"
 
 	if SingletonObject.ChatList.is_empty():
 		# No active chats - show defaults and still populate tools
 		current_chat_tab_ref = null
 		%SystemPromptTextEdit.text = ""
+		%SystemPromptEnabledCheckButton.button_pressed = true
 
 		# Reset sliders to defaults
 		%TempHSlider.value = 1.0
@@ -48,6 +59,7 @@ func load_current_chat_settings() -> void:
 		%AutoContinueCheckButton.button_pressed = true
 		%AllowedDirsTextEdit.text = ""
 		%AgenticSystemPromptTextEdit.text = ""
+		%AgenticSystemPromptEnabledCheckButton.button_pressed = true
 		# Context limits (0 = use defaults)
 		%MaxToolResultSpinBox.value = 0
 		%ContextWarningSpinBox.value = 0
@@ -64,15 +76,21 @@ func load_current_chat_settings() -> void:
 		var provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
 		if provider:
 			update_ui_for_provider(provider)
+		_loading_values = false
 		return
 
 	var current_tab: int = SingletonObject.Chats.current_tab
 	current_chat_tab_ref = SingletonObject.ChatList[current_tab]
 
-	# Load system prompt if used
+	# Load system prompt if used, otherwise clear it
 	if current_chat_tab_ref.HasUsedSystemPrompt:
 		var chat_item = SingletonObject.Chats.get_first_chat_item()
 		%SystemPromptTextEdit.text = chat_item.Message
+	else:
+		%SystemPromptTextEdit.text = ""
+
+	# Load system prompt enabled state
+	%SystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.SystemPromptEnabled
 
 	# Load slider values
 	%TempHSlider.value = current_chat_tab_ref.Temperature
@@ -95,8 +113,12 @@ func load_current_chat_settings() -> void:
 	var dirs_text = "\n".join(current_chat_tab_ref.AllowedDirectories)
 	%AllowedDirsTextEdit.text = dirs_text
 
-	# Load agentic system prompt
-	%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
+	# Load agentic system prompt - show effective prompt (custom or default)
+	if current_chat_tab_ref.AgenticSystemPrompt.is_empty():
+		%AgenticSystemPromptTextEdit.text = SingletonObject.Chats._build_agent_system_prompt()
+	else:
+		%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
+	%AgenticSystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.AgenticSystemPromptEnabled
 
 	# Load context limit settings
 	%MaxToolResultSpinBox.value = current_chat_tab_ref.AgentMaxToolResultLength
@@ -109,6 +131,7 @@ func load_current_chat_settings() -> void:
 
 	# Update UI visibility based on provider capabilities
 	update_ui_for_provider(current_chat_tab_ref.provider)
+	_loading_values = false
 
 
 ## Sync the provider dropdown to match ChatPane's current selection.
@@ -203,13 +226,19 @@ func _on_cancel_button_pressed() -> void:
 
 
 func _on_about_to_popup() -> void:
+	_loading_values = true
 	if SingletonObject.ChatList.size() > 0:
 		var current_tab: int = SingletonObject.Chats.current_tab
 		current_chat_tab_ref = SingletonObject.ChatList[current_tab]
 		if current_chat_tab_ref.HasUsedSystemPrompt:
 			var chat_item = SingletonObject.Chats.get_first_chat_item()
 			%SystemPromptTextEdit.text = chat_item.Message
-		
+		else:
+			%SystemPromptTextEdit.text = ""
+
+		# Load system prompt enabled state
+		%SystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.SystemPromptEnabled
+
 		# we get the current tab param values and update the UI sliders
 		%TempHSlider.value = current_chat_tab_ref.Temperature
 		%TempSliderValueLabel.text = str(current_chat_tab_ref.Temperature)
@@ -231,8 +260,12 @@ func _on_about_to_popup() -> void:
 		var dirs_text = "\n".join(current_chat_tab_ref.AllowedDirectories)
 		%AllowedDirsTextEdit.text = dirs_text
 
-		# Load agentic system prompt
-		%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
+		# Load agentic system prompt - show effective prompt (custom or default)
+		if current_chat_tab_ref.AgenticSystemPrompt.is_empty():
+			%AgenticSystemPromptTextEdit.text = SingletonObject.Chats._build_agent_system_prompt()
+		else:
+			%AgenticSystemPromptTextEdit.text = current_chat_tab_ref.AgenticSystemPrompt
+		%AgenticSystemPromptEnabledCheckButton.button_pressed = current_chat_tab_ref.AgenticSystemPromptEnabled
 
 		# Load context limit settings
 		%MaxToolResultSpinBox.value = current_chat_tab_ref.AgentMaxToolResultLength
@@ -248,6 +281,7 @@ func _on_about_to_popup() -> void:
 
 		# Update UI visibility based on provider capabilities
 		update_ui_for_provider(current_chat_tab_ref.provider)
+	_loading_values = false
 
 
 ## Populate tool checkboxes from MCP manager
@@ -346,6 +380,13 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	# Nano Banana Pro settings
 	var is_nbp: bool = provider.get("is_nano_banana_pro") == true
 	_update_nbp_settings_visibility(is_nbp)
+
+	# Model-chat settings (context window)
+	var is_model_chat: bool = provider.get("supports_num_ctx") == true
+	_update_model_chat_settings_visibility(is_model_chat, provider)
+
+	# Timeout settings - always visible for all providers
+	_update_timeout_settings_visibility(provider)
 
 
 ## Create or update Nano Banana Pro settings UI
@@ -467,12 +508,206 @@ func _on_nbp_image_size_selected(index: int) -> void:
 	print("NBP Image Size: %s" % SingletonObject.nbp_image_size)
 
 
+## Create or update Model-chat settings UI visibility
+func _update_model_chat_settings_visibility(should_show: bool, provider: BaseProvider = null) -> void:
+	if not should_show:
+		if _model_chat_settings_container:
+			_model_chat_settings_container.visible = false
+		return
+
+	# Create model-chat settings if they don't exist
+	if _model_chat_settings_container == null:
+		_create_model_chat_settings()
+
+	_model_chat_settings_container.visible = true
+
+	# Update context value from per-model setting or provider default
+	var ctx_spin = _model_chat_settings_container.get_node("NumCtxHBox/NumCtxSpinBox") as SpinBox
+	if ctx_spin and provider:
+		var context = SingletonObject.get_model_context(provider.model_name)
+		if context > 0:
+			ctx_spin.value = context
+		elif provider.default_context > 0:
+			ctx_spin.value = provider.default_context
+		else:
+			ctx_spin.value = 40000  # Fallback default
+
+	# Update num_gpu value from per-model setting or provider default
+	var gpu_spin = _model_chat_settings_container.get_node("NumGpuHBox/NumGpuSpinBox") as SpinBox
+	if gpu_spin and provider:
+		var num_gpu = SingletonObject.get_model_num_gpu(provider.model_name)
+		gpu_spin.value = num_gpu
+
+
+## Create the Model-chat settings UI dynamically
+func _create_model_chat_settings() -> void:
+	_model_chat_settings_container = VBoxContainer.new()
+	_model_chat_settings_container.name = "ModelChatSettingsContainer"
+
+	# Add separator
+	var sep = HSeparator.new()
+	_model_chat_settings_container.add_child(sep)
+
+	# Add header label
+	var header = Label.new()
+	header.text = "Model-Chat Settings:"
+	header.add_theme_font_size_override("font_size", 14)
+	_model_chat_settings_container.add_child(header)
+
+	# Context window size
+	var ctx_hbox = HBoxContainer.new()
+	ctx_hbox.name = "NumCtxHBox"
+	var ctx_label = Label.new()
+	ctx_label.text = "Context Window (num_ctx):"
+	ctx_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ctx_label.tooltip_text = "Context window size in tokens. Higher = more memory but slower."
+	ctx_hbox.add_child(ctx_label)
+	var ctx_spin = SpinBox.new()
+	ctx_spin.name = "NumCtxSpinBox"
+	ctx_spin.min_value = 2048
+	ctx_spin.max_value = 131072
+	ctx_spin.step = 1024
+	ctx_spin.value = SingletonObject.model_chat_num_ctx
+	ctx_spin.value_changed.connect(_on_model_chat_num_ctx_changed)
+	ctx_hbox.add_child(ctx_spin)
+	_model_chat_settings_container.add_child(ctx_hbox)
+
+	# GPU layers (num_gpu)
+	var gpu_hbox = HBoxContainer.new()
+	gpu_hbox.name = "NumGpuHBox"
+	var gpu_label = Label.new()
+	gpu_label.text = "GPU Layers (num_gpu):"
+	gpu_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gpu_label.tooltip_text = "GPU layer offloading. 0=CPU only, 999=full GPU, -1=default"
+	gpu_hbox.add_child(gpu_label)
+	var gpu_spin = SpinBox.new()
+	gpu_spin.name = "NumGpuSpinBox"
+	gpu_spin.min_value = -1
+	gpu_spin.max_value = 999
+	gpu_spin.step = 1
+	gpu_spin.value = -1
+	gpu_spin.value_changed.connect(_on_num_gpu_changed)
+	gpu_hbox.add_child(gpu_spin)
+	_model_chat_settings_container.add_child(gpu_hbox)
+
+	# Insert after NBP settings (or after PresenceHBoxContainer)
+	var model_vbox = %PresenceHBoxContainer.get_parent()
+	var insert_idx = %PresenceHBoxContainer.get_index() + 1
+	if _nbp_settings_container:
+		insert_idx = _nbp_settings_container.get_index() + 1
+	model_vbox.add_child(_model_chat_settings_container)
+	model_vbox.move_child(_model_chat_settings_container, insert_idx)
+
+
+func _on_model_chat_num_ctx_changed(value: float) -> void:
+	var provider: BaseProvider = null
+	if current_chat_tab_ref and current_chat_tab_ref.provider:
+		provider = current_chat_tab_ref.provider
+	else:
+		# No active chat - get provider from dropdown
+		provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
+
+	if provider:
+		SingletonObject.set_model_context(provider.model_name, int(value))
+		print("Model context for '%s': %d" % [provider.model_name, int(value)])
+
+
+func _on_num_gpu_changed(value: float) -> void:
+	var provider: BaseProvider = null
+	if current_chat_tab_ref and current_chat_tab_ref.provider:
+		provider = current_chat_tab_ref.provider
+	else:
+		# No active chat - get provider from dropdown
+		provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
+
+	if provider:
+		SingletonObject.set_model_num_gpu(provider.model_name, int(value))
+		print("Model num_gpu for '%s': %d" % [provider.model_name, int(value)])
+
+
+## Update or create timeout settings UI visibility
+func _update_timeout_settings_visibility(provider: BaseProvider) -> void:
+	if _timeout_settings_container == null:
+		_create_timeout_settings()
+
+	_timeout_settings_container.visible = true
+
+	# Update value from singleton or provider default (keyed by model_name)
+	var spin = _timeout_settings_container.get_node("TimeoutHBox/TimeoutSpinBox") as SpinBox
+	if spin:
+		var timeout = SingletonObject.get_model_timeout(provider.model_name)
+		if timeout > 0:
+			spin.value = timeout
+		else:
+			spin.value = provider.default_timeout
+
+
+## Create the timeout settings UI dynamically
+func _create_timeout_settings() -> void:
+	_timeout_settings_container = VBoxContainer.new()
+	_timeout_settings_container.name = "TimeoutSettingsContainer"
+
+	# Add separator
+	var sep = HSeparator.new()
+	_timeout_settings_container.add_child(sep)
+
+	# Request timeout setting
+	var timeout_hbox = HBoxContainer.new()
+	timeout_hbox.name = "TimeoutHBox"
+	var timeout_label = Label.new()
+	timeout_label.text = "Request Timeout:"
+	timeout_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	timeout_label.tooltip_text = "Maximum seconds to wait for AI response. Set per-provider."
+	timeout_hbox.add_child(timeout_label)
+
+	var timeout_spin = SpinBox.new()
+	timeout_spin.name = "TimeoutSpinBox"
+	timeout_spin.min_value = 10
+	timeout_spin.max_value = 600
+	timeout_spin.step = 10
+	timeout_spin.suffix = "s"
+	timeout_spin.value_changed.connect(_on_timeout_changed)
+	timeout_hbox.add_child(timeout_spin)
+	_timeout_settings_container.add_child(timeout_hbox)
+
+	# Insert after model-chat settings (or NBP settings, or PresenceHBoxContainer)
+	var model_vbox = %PresenceHBoxContainer.get_parent()
+	var insert_idx = %PresenceHBoxContainer.get_index() + 1
+	if _nbp_settings_container:
+		insert_idx = _nbp_settings_container.get_index() + 1
+	if _model_chat_settings_container:
+		insert_idx = _model_chat_settings_container.get_index() + 1
+	model_vbox.add_child(_timeout_settings_container)
+	model_vbox.move_child(_timeout_settings_container, insert_idx)
+
+
+func _on_timeout_changed(value: float) -> void:
+	var provider: BaseProvider = null
+	if current_chat_tab_ref and current_chat_tab_ref.provider:
+		provider = current_chat_tab_ref.provider
+	else:
+		# No active chat - get provider from dropdown
+		provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
+
+	if provider:
+		SingletonObject.set_model_timeout(provider.model_name, value)
+		print("Model timeout for '%s': %ds" % [provider.model_name, int(value)])
+
+
 func _on_record_system_prompt_button_pressed() -> void:
 	%SystemPromptTextEdit.text = ""
 	SingletonObject.AtT.FieldForFilling = %SystemPromptTextEdit
 	if SingletonObject.AtT._StartConverting() != OK: return
 	SingletonObject.AtT.btn = %RecordSystemPromptButton
 	%RecordSystemPromptButton.modulate = Color(Color.LIME_GREEN)
+
+
+func _on_system_prompt_enabled_check_button_toggled(toggled_on: bool) -> void:
+	if current_chat_tab_ref:
+		current_chat_tab_ref.SystemPromptEnabled = toggled_on
+		print("SystemPromptEnabled: " + str(current_chat_tab_ref.SystemPromptEnabled))
+	else:
+		print("no chats are open right now")
 
 
 #region Slider functs
@@ -538,6 +773,8 @@ func _on_auto_continue_check_button_toggled(toggled_on: bool) -> void:
 
 
 func _on_allowed_dirs_text_edit_text_changed() -> void:
+	if _loading_values:
+		return
 	if current_chat_tab_ref:
 		var text = %AllowedDirsTextEdit.text.strip_edges()
 		var dirs: Array[String] = []
@@ -553,9 +790,19 @@ func _on_allowed_dirs_text_edit_text_changed() -> void:
 
 
 func _on_agentic_system_prompt_text_edit_text_changed() -> void:
+	if _loading_values:
+		return  # Don't save when programmatically setting text
 	if current_chat_tab_ref:
 		current_chat_tab_ref.AgenticSystemPrompt = %AgenticSystemPromptTextEdit.text
 		print("AgenticSystemPrompt updated")
+	else:
+		print("no chats are open right now")
+
+
+func _on_agentic_system_prompt_enabled_check_button_toggled(toggled_on: bool) -> void:
+	if current_chat_tab_ref:
+		current_chat_tab_ref.AgenticSystemPromptEnabled = toggled_on
+		print("AgenticSystemPromptEnabled: " + str(current_chat_tab_ref.AgenticSystemPromptEnabled))
 	else:
 		print("no chats are open right now")
 

@@ -38,7 +38,8 @@ var selected: = false:
 				layer.outline_visible = false
 				layer.transform_rect_visible = false
 				layer_deselected.emit()
-				name_line_edit.release_focus()
+				if name_line_edit:
+					name_line_edit.release_focus()
 		if layer:
 			layer.queue_redraw()
 		

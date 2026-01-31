@@ -129,6 +129,35 @@ func ensure_node_is_visible(node: Control) -> void:
 		scroll_tween.tween_property(scroll_container, "scroll_vertical", clamp(center_position, 0, max_scroll), scroll_time)
 
 
+## Scrolls to make the BOTTOM of a node visible (for following growing content like tool calls)
+func ensure_node_bottom_is_visible(node: Control) -> void:
+	# Wait for the scroll bar to update
+	await scroll_container.get_v_scroll_bar().changed
+	# Wait for the next frame to ensure layout is updated
+	await get_tree().process_frame
+
+	var node_top: int = 0
+	# Calculate the total height of all nodes above the target node
+	for i in get_children():
+		if node == i:
+			break
+		else:
+			if i is Control:
+				node_top += i.size.y
+
+	var visible_height = scroll_container.size.y
+	var node_height = node.size.y
+	var node_bottom = node_top + node_height
+
+	kill_scroll_tween()
+	scroll_tween = create_tween().set_ease(Tween.EASE_IN)
+
+	# Scroll so the bottom of the node is at the bottom of the visible area
+	var scroll_to = node_bottom - visible_height
+	var max_scroll = scroll_container.get_v_scroll_bar().max_value
+	scroll_tween.tween_property(scroll_container, "scroll_vertical", clamp(scroll_to, 0, max_scroll), scroll_time)
+
+
 ## Creates new `MessageMarkdown` and adds it to the hierarchy. Doesn't alter the history list
 ## Returns null for hidden items (e.g., TOOL results that are shown in parent message)
 func add_history_item(item: ChatHistoryItem, add_as_child: bool = true) -> MessageMarkdown:

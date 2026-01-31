@@ -29,7 +29,7 @@ var image: Image:
 		else:
 			_image_backing = value
 
-		note.changed.emit()
+		note.changed.emit(&"image")
 	get:
 		# Return cached image instead of expensive GPU->CPU texture extraction
 		# Note: Returns reference to cached image - callers should duplicate if they need to modify

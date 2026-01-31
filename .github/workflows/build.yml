@@ -29,7 +29,7 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 2
       - id: check
@@ -50,7 +50,7 @@ jobs:
     if: (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
@@ -77,7 +77,7 @@ jobs:
           ${{ runner.os }}-godot-cpp-
         
     - name: Setup Python and SCons
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: '3.x'
     - run: pip install scons
@@ -86,6 +86,7 @@ jobs:
       run: |
         cd src
         scons platform=windows target=template_release
+        scons platform=windows target=template_debug
         
     - name: Upload Extension
       uses: actions/upload-artifact@v4
@@ -98,7 +99,7 @@ jobs:
     if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
         lfs: true
@@ -125,7 +126,7 @@ jobs:
           ${{ runner.os }}-godot-cpp-
     
     - name: Setup Python and SCons
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: '3.x'
     - run: pip install scons
@@ -139,6 +140,7 @@ jobs:
       run: |
         cd src
         scons platform=linux target=template_release
+        scons platform=linux target=template_debug
         
     - name: Upload Extension
       uses: actions/upload-artifact@v4
@@ -151,7 +153,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:  
           submodules: 'true'
       
@@ -176,7 +178,7 @@ jobs:
         
       - name: Install Godot
         run: |
-          GODOT_VERSION="4.4"
+          GODOT_VERSION="4.5.1"
           RELEASE="stable"
           curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64.zip"
           unzip ./godot.zip
@@ -184,7 +186,7 @@ jobs:
 
       - name: Install Godot Export Templates
         run: |
-          GODOT_VERSION="4.4"
+          GODOT_VERSION="4.5.1"
           RELEASE="stable"
           TEMPLATE_DIR="$HOME/.local/share/godot/export_templates"
           curl -L -o ./godot-templates.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_export_templates.tpz"
@@ -198,36 +200,59 @@ jobs:
           mkdir -p .godot/editor
           chmod -R 777 .godot
           
-      - name: Export Project  
+      - name: Export Project
         working-directory: src
         run: |
           mkdir -p build
 
           timeout 20s godot --headless --import || true
-          
+
           # Determine which platforms to build
           PLATFORM="${{ github.event.inputs.platform }}"
-          
+
           # For push events, build all platforms
           if [ "${{ github.event_name }}" = "push" ]; then
             PLATFORM="all"
           fi
-          
+
+          # Check if this is the development branch
+          IS_DEV_BRANCH="${{ github.ref == 'refs/heads/development' }}"
+
           if [ "$PLATFORM" = "windows" ]; then
             mkdir -p build/windows
             godot --headless --export-release "Windows Release" build/windows/Minerva.exe
-          
+
+            # Build debug version for development branch
+            if [ "$IS_DEV_BRANCH" = "true" ]; then
+              mkdir -p build/windows-debug
+              godot --headless --export-debug "Windows Debug" build/windows-debug/Minerva.exe
+            fi
+
           elif [ "$PLATFORM" = "linux" ]; then
             mkdir -p build/linux
             godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64
-          
-          else  
+
+            # Build debug version for development branch
+            if [ "$IS_DEV_BRANCH" = "true" ]; then
+              mkdir -p build/linux-debug
+              godot --headless --export-debug "Linux Debug" build/linux-debug/Minerva.x86_64
+            fi
+
+          else
             mkdir -p build/windows
             mkdir -p build/linux
 
             # For 'all' option or push events, export both
             godot --headless --export-release "Windows Release" build/windows/Minerva.exe
-            godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64 
+            godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64
+
+            # Build debug versions for development branch
+            if [ "$IS_DEV_BRANCH" = "true" ]; then
+              mkdir -p build/windows-debug
+              mkdir -p build/linux-debug
+              godot --headless --export-debug "Windows Debug" build/windows-debug/Minerva.exe
+              godot --headless --export-debug "Linux Debug" build/linux-debug/Minerva.x86_64
+            fi
           fi
 
       - name: Upload Windows Build
@@ -242,13 +267,37 @@ jobs:
           
       - name: Upload Linux Build
         if: |
-          github.event_name == 'push' || 
-          github.event.inputs.platform == 'linux' || 
+          github.event_name == 'push' ||
+          github.event.inputs.platform == 'linux' ||
           github.event.inputs.platform == 'all'
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Linux-Build
           path: src/build/linux/*
+
+      - name: Upload Windows Debug Build
+        if: |
+          github.ref == 'refs/heads/development' && (
+            github.event_name == 'push' ||
+            github.event.inputs.platform == 'windows' ||
+            github.event.inputs.platform == 'all'
+          )
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minerva-Windows-Debug-Build
+          path: src/build/windows-debug/*
+
+      - name: Upload Linux Debug Build
+        if: |
+          github.ref == 'refs/heads/development' && (
+            github.event_name == 'push' ||
+            github.event.inputs.platform == 'linux' ||
+            github.event.inputs.platform == 'all'
+          )
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minerva-Linux-Debug-Build
+          path: src/build/linux-debug/*
 
   create-release:
     needs: [build-godot]
@@ -257,7 +306,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -268,7 +317,7 @@ jobs:
       - name: Create Release Archives
         run: |
           mkdir -p release-assets
-          
+
           # Create Windows ZIP if files exist
           if [ -d "downloads/Minerva-Windows-Build" ]; then
             cd downloads/Minerva-Windows-Build
@@ -277,8 +326,8 @@ jobs:
             echo "Created Windows archive"
             ls -lh release-assets/Minerva-Windows.zip
           fi
-          
-          # Create Linux archive if files exist  
+
+          # Create Linux archive if files exist
           if [ -d "downloads/Minerva-Linux-Build" ]; then
             cd downloads/Minerva-Linux-Build
             tar -czf ../../release-assets/Minerva-Linux.tar.gz *
@@ -286,7 +335,25 @@ jobs:
             echo "Created Linux archive"
             ls -lh release-assets/Minerva-Linux.tar.gz
           fi
-          
+
+          # Create Windows Debug ZIP if files exist (development branch only)
+          if [ -d "downloads/Minerva-Windows-Debug-Build" ]; then
+            cd downloads/Minerva-Windows-Debug-Build
+            zip -r ../../release-assets/Minerva-Windows-Debug.zip *
+            cd ../..
+            echo "Created Windows Debug archive"
+            ls -lh release-assets/Minerva-Windows-Debug.zip
+          fi
+
+          # Create Linux Debug archive if files exist (development branch only)
+          if [ -d "downloads/Minerva-Linux-Debug-Build" ]; then
+            cd downloads/Minerva-Linux-Debug-Build
+            tar -czf ../../release-assets/Minerva-Linux-Debug.tar.gz *
+            cd ../..
+            echo "Created Linux Debug archive"
+            ls -lh release-assets/Minerva-Linux-Debug.tar.gz
+          fi
+
           echo "Final release assets:"
           ls -la release-assets/
           
@@ -308,19 +375,25 @@ jobs:
           name: "Minerva Development Build ${{ steps.tag.outputs.tag }}"
           body: |
             ## Minerva Development Build
-            
+
             ⚠️ **This is a development build** - expect bugs and incomplete features!
-            
+
             **Build Information:**
             - Platform: ${{ github.event.inputs.platform || 'all' }}
             - Trigger: ${{ github.event_name }}
             - Commit: ${{ github.sha }}
             - Branch: ${{ github.ref_name }}
-            
+
             **Download Instructions:**
+
+            **Release Builds (Optimized):**
             - **Windows**: Download `Minerva-Windows.zip`, extract and run `Minerva.exe`
             - **Linux**: Download `Minerva-Linux.tar.gz`, extract and run `./Minerva.x86_64`
-            
+
+            **Debug Builds (For Development - includes console output and debug symbols):**
+            - **Windows Debug**: Download `Minerva-Windows-Debug.zip`, extract and run `Minerva.exe`
+            - **Linux Debug**: Download `Minerva-Linux-Debug.tar.gz`, extract and run `./Minerva.x86_64`
+
             Built automatically from the development branch.
           files: release-assets/*
           draft: false

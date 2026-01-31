@@ -2,6 +2,7 @@ class_name MessageMarkdown
 extends HBoxContainer
 
 const ToolCallBlockScript = preload("res://Scripts/UI/Controls/ToolCallBlock.gd")
+const RequestMetadataBlockScript = preload("res://Scripts/UI/Controls/RequestMetadataBlock.gd")
 
 # Exported variables for UI components and colors
 @export var left_control: Control
@@ -222,9 +223,11 @@ func render() -> void:
 	# Clear tool blocks dictionary before recreating labels
 	# (because _create_code_labels clears message_labels_container children)
 	_tool_blocks.clear()
+	_request_metadata_block = null
 
 	_create_code_labels()
 	_create_tool_blocks()
+	_create_request_metadata_block()
 	
 
 
@@ -906,3 +909,29 @@ func update_tool_execution(tool_id: String, result: String, is_error: bool = fal
 
 	await get_tree().process_frame
 	_update_sizes()
+
+
+# ============================================================================
+# Request Metadata Block Rendering (for USER messages)
+# ============================================================================
+
+## The request metadata block (only one per user message)
+var _request_metadata_block: RequestMetadataBlockScript = null
+
+
+## Create request metadata block from the history item's RequestMetadata
+func _create_request_metadata_block() -> void:
+	# Only for USER messages with metadata
+	if history_item.Role != ChatHistoryItem.ChatRole.USER:
+		return
+
+	if history_item.RequestMetadata.is_empty():
+		return
+
+	# Don't recreate if already exists
+	if _request_metadata_block != null:
+		return
+
+	_request_metadata_block = RequestMetadataBlockScript.create(history_item.RequestMetadata)
+	message_labels_container.add_child(_request_metadata_block)
+	# Block is added at the end, so it appears after the message

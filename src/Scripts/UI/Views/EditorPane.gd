@@ -166,12 +166,17 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 				editor_node.code_edit.grab_focus()
-				
+
 			Editor.Type.GRAPHICS:
 				var tab_name = "graphics " + str(Tabs.get_tab_count() )
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
-	
+
+			Editor.Type.SPREADSHEET:
+				var tab_name = "spreadsheet " + str(Tabs.get_tab_count() )
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+
 	return editor_node
 
 

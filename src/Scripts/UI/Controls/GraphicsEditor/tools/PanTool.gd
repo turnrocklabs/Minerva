@@ -36,7 +36,7 @@ func handle_input_event(event: InputEvent) -> bool:
 			var relative = event.position - last_mouse_position
 			_pan_canvas(relative)
 			last_mouse_position = event.position
-	
+
 	return false
 
 func _pan_canvas(relative: Vector2) -> void:
@@ -55,13 +55,13 @@ func _check_canvas_bounds() -> void:
 	# Check if we need to expand the canvas
 	var min_pos = Vector2(INF, INF)
 	var max_pos = Vector2(-INF, -INF)
-	
+
 	for layer in editor.layers:
 		min_pos.x = min(min_pos.x, layer.position.x)
 		min_pos.y = min(min_pos.y, layer.position.y)
 		max_pos.x = max(max_pos.x, layer.position.x + layer.size.x)
 		max_pos.y = max(max_pos.y, layer.position.y + layer.size.y)
-	
+
 	# Expand canvas bounds if needed
 	if min_pos.x < canvas_min_bounds.x:
 		canvas_min_bounds.x = min_pos.x - 1000  # Add extra space
@@ -71,4 +71,3 @@ func _check_canvas_bounds() -> void:
 		canvas_max_bounds.x = max_pos.x + 1000
 	if max_pos.y > canvas_max_bounds.y:
 		canvas_max_bounds.y = max_pos.y + 1000
-	
