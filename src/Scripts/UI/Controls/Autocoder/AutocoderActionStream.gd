@@ -234,7 +234,7 @@ func _scroll_to_bottom():
 	
 	# Wait for the next frame to ensure layout is updated
 	await get_tree().process_frame
-	_scroll_container.scroll_vertical = _scroll_container.get_v_scroll_bar().max_value
+	_scroll_container.scroll_vertical = int(_scroll_container.get_v_scroll_bar().max_value)
 
 func _on_question_answered(question_id: String, answer: String, session_id: String):
 	# Remove the question card IMMEDIATELY before emitting signal

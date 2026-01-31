@@ -4,6 +4,7 @@ extends VBoxContainer
 @onready var _artifact_browser_popup: PersistentWindow = %ArtifactBrowserPopup
 @onready var _artifact_browser: ArtifactBrowser = %ArtifactBrowser
 
+@warning_ignore("unused_variable")
 @onready var _input_resources_container: Container = %InputResourcesCard
 @onready var _clear_resources_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ClearInputResourcesButton
 @onready var _attach_folder_button: Button = %AttachFolderButton
@@ -129,7 +130,7 @@ func _ready() -> void:
 		_download_patch_button.disabled = true
 	
 	# Allow refreshing models by opening the dropdown when it only has "Auto (server default)"
-	_model_option_button.item_selected.connect(func(index):
+	_model_option_button.item_selected.connect(func(_index):
 		# If user clicks on dropdown and only sees "Auto", try refreshing
 		if _model_option_button.item_count == 1:
 			print("[SubmitJob] Only default model available, attempting refresh...")
@@ -265,11 +266,11 @@ func _populate_review_agents(agents: Array[Dictionary]) -> void:
 		var agent_id = str(agent.get("agent_id", ""))
 		if agent_id.is_empty():
 			continue
-		var name = str(agent.get("name", "Unnamed Agent"))
+		var name_ = str(agent.get("name", "Unnamed Agent"))
 		var model = str(agent.get("model", ""))
 		var tools_enabled = bool(agent.get("tools_enabled", false))
 		var tools_tag = " 🛠" if tools_enabled else ""
-		var label = "🔍 %s%s" % [name, tools_tag]
+		var label = "🔍 %s%s" % [name_, tools_tag]
 		if not model.is_empty():
 			label = "%s (%s)" % [label, model]
 
@@ -565,7 +566,7 @@ func _load_session_history_to_action_stream(session_id: String) -> void:
 				var answered = question_data.get("answered", false)
 				var answer = question_data.get("answer", "")
 				var options = question_data.get("options", [])
-				var required = question_data.get("required", false)
+				var _required = question_data.get("required", false)
 				
 				print("[SubmitJob]   Question %s: answered=%s, answer='%s', options=%s" % [question_id, str(answered), answer, str(options)])
 				
@@ -1167,7 +1168,7 @@ func add_message(content: String, role: String = "assistant") -> void:
 		_action_stream.add_message(content, role)
 
 
-func add_iteration_message(session_id: String, payload: Dictionary) -> void:
+func add_iteration_message(_session_id: String, payload: Dictionary) -> void:
 	if not _action_stream:
 		return
 	var status = str(payload.get("status", "unknown")).to_lower()
@@ -1197,25 +1198,25 @@ func add_llm_progress(content: String) -> void:
 	add_llm_traffic("", content)
 
 
-func add_llm_traffic(session_id: String, content: String) -> void:
+func add_llm_traffic(_session_id: String, content: String) -> void:
 	if not _action_stream or content.is_empty():
 		return
 	_action_stream.add_llm_progress(content)
 
-func add_llm_delta(session_id: String, delta: String) -> void:
+func add_llm_delta(_session_id: String, delta: String) -> void:
 	"""Add LLM content delta (streaming chunk) - accumulates into existing card"""
 	if not _action_stream or delta.is_empty():
 		return
 	_action_stream.add_llm_delta(delta)
 
-func add_llm_traffic_with_full_content(session_id: String, preview_content: String, full_content: String) -> void:
+func add_llm_traffic_with_full_content(_session_id: String, preview_content: String, full_content: String) -> void:
 	"""Add LLM traffic with preview and full content option"""
 	if not _action_stream or preview_content.is_empty():
 		return
 	_action_stream.add_llm_progress_with_full_content(preview_content, full_content)
 
 
-func add_llm_request(session_id: String, preview_content: String, full_content: String) -> void:
+func add_llm_request(_session_id: String, preview_content: String, full_content: String) -> void:
 	"""Add LLM request event to action stream (for OpenCode/OpenRouter requests)"""
 	if not _action_stream or preview_content.is_empty():
 		return

@@ -214,10 +214,10 @@ func _on_refresh_pressed() -> void:
 
 
 func _on_save_pressed() -> void:
-	var name = _name_line_edit.text.strip_edges()
+	var name_ = _name_line_edit.text.strip_edges()
 	var prompt = _prompt_text_edit.text.strip_edges()
 
-	if name.is_empty() or prompt.is_empty():
+	if name_.is_empty() or prompt.is_empty():
 		SingletonObject.ErrorDisplay("Missing Fields", "Name and prompt are required.")
 		return
 

@@ -1,6 +1,7 @@
 class_name SessionHistoryBrowser
 extends VBoxContainer
 
+@warning_ignore("unused_signal")
 signal session_selected(session_data: Dictionary)
 signal session_resume_requested(session_id: String)
 signal session_view_requested(session_id: String)

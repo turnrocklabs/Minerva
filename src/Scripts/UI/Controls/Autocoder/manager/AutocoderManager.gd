@@ -32,7 +32,7 @@ var _active_permission_request: Dictionary = {}
 # var _log_file: FileAccess = null
 # const LOG_FILE_PATH = "user://autocoder_traffic.log"
 
-func _log_traffic(category: String, data: Variant = null) -> void:
+func _log_traffic(_category: String, _data: Variant = null) -> void:
 	# Local file logging disabled - all data is saved on server
 	# LLM traffic, session history, and all conversation data is persisted server-side
 	# This allows users to continue sessions across devices
@@ -587,7 +587,7 @@ func _record_artifact_ready(session_id: String, payload: Dictionary) -> void:
 
 
 ## Handle LLM notification for a specific session
-func _handle_llm_notification(pub_session_id: String, topic: String, payload: Variant) -> void:
+func _handle_llm_notification(pub_session_id: String, _topic: String, payload: Variant) -> void:
 	# Route to SubmitJob action stream for planning sessions
 	var manager_ref = submit_job_manager
 	if not manager_ref:
@@ -814,7 +814,7 @@ func _handle_action_notification(session_id: String, topic: String, payload: Dic
 	var description = payload.get("summary", payload.get("description", ""))
 	var status = payload.get("status", "")
 	var output = payload.get("output", "")
-	var details = payload.get("details", {})
+	#var details = payload.get("details", {})
 	
 	print("[AutocoderManager] Action notification: type=%s, id=%s, status=%s, desc=%s" % [action_type, action_id, status, description])
 
