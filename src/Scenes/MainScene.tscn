@@ -642,7 +642,6 @@ flat = true
 layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "Creates a new note in current active tab"
-text = "Drawer"
 icon = ExtResource("47_dn1w2")
 
 [node name="btnAddAttachement" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]

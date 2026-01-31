@@ -733,6 +733,7 @@ func _ready() -> void:
 	input_area_camera.offset = Vector2.ZERO
 	
 	workflow_option_button.select(0)
+	_on_workflow_option_button_item_selected(0)  # Initialize current_workflow to match the selection
 
 	response_layout_toggle()
 
@@ -2186,11 +2187,14 @@ func _on_edit_button_pressed() -> void:
 func _on_edit_img_button_pressed() -> void:
 	if ai_request_type == AI_REQUEST.EDIT_IMAGE:
 		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
-			# Re-enable buttons if validation fails
 			edit_img_button.modulate = Color.WHITE
 			edit_img_button.disabled = false
 			send_prompt_button.disabled = false
 			send_mask_edit_button.disabled = false
+			if current_workflow == Workflow.Z_TURBO:
+				display_message("Workflow", "Edit is not available for Z-Turbo. Use Qwen or Qwen 2511 Flex.")
+			else:
+				display_message("Selection", "Select at least one image layer in the layer list, then click Send.")
 			return
 		
 		# Flex + pose + 2 layers (image+image or image+mask) -> compose_3_with_pose
@@ -2212,6 +2216,7 @@ func _on_edit_img_button_pressed() -> void:
 							edit_img_button.disabled = false
 							send_prompt_button.disabled = false
 							send_mask_edit_button.disabled = false
+							display_message("Prompt", "Enter a positive prompt for image generation.")
 							return
 						if !seed_line_edit.text.is_empty():
 							gen_params["seed"] = seed_line_edit.text
@@ -2237,11 +2242,11 @@ func _on_edit_img_button_pressed() -> void:
 		var layer_to_send: LayerV2 = selected_layers[0]
 		# Get the image from the active layer
 		if layer_to_send == null:
-			# Re-enable buttons if validation fails
 			edit_img_button.modulate = Color.WHITE
 			edit_img_button.disabled = false
 			send_prompt_button.disabled = false
 			send_mask_edit_button.disabled = false
+			display_message("Error", "Selected layer is invalid.")
 			return
 		var image_to_edit: Image = layer_to_send.image
 		var image_filename: String = layer_to_send.name + ".png" # Use layer name as filename
@@ -2263,18 +2268,17 @@ func _on_edit_img_button_pressed() -> void:
 			send_mask_edit_button.disabled = false
 			return
 		
-		var toast : =ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
-		SingletonObject.main_scene.add_child(toast)
-		
 		var params: Dictionary = get_params_image_gen()
-		
 		if params.is_empty():
-			# Re-enable buttons
 			edit_img_button.modulate = Color.WHITE
 			edit_img_button.disabled = false
 			send_prompt_button.disabled = false
 			send_mask_edit_button.disabled = false
+			display_message("Prompt", "Enter a positive prompt for image generation.")
 			return
+		
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
+		SingletonObject.main_scene.add_child(toast)
 		
 		if !seed_line_edit.text.is_empty():
 			params["seed"] = seed_line_edit.text
@@ -2284,8 +2288,12 @@ func _on_edit_img_button_pressed() -> void:
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
 		prompt_text_edit.text = ""
-	elif  ai_request_type == AI_REQUEST.MASK_EDIT:
+	elif ai_request_type == AI_REQUEST.MASK_EDIT:
 		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
+			if current_workflow == Workflow.Z_TURBO:
+				display_message("Workflow", "Mask edit is not available for Z-Turbo.")
+			else:
+				display_message("Selection", "Select an image layer to edit.")
 			return
 		if !selected_layers[0].has_meta("linked_mask_layer") and selected_mask_layers.size() < 1:
 			display_message("Mask Required", "Select a mask layer for masked editing.")
@@ -3225,6 +3233,7 @@ var is_d_pose_first_time: = true
 func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 	%"3DPoseViewportContainer".visible = toggled_on
 	workflow_option_button.select(1)
+	_on_workflow_option_button_item_selected(1)  # Update current_workflow to Qwen when pose is enabled
 	workflow_option_button.disabled = toggled_on
 	d_pose_controlller_enabled = toggled_on
 	if is_d_pose_first_time:
