@@ -83,11 +83,11 @@ public:
         SEQUENCE = TerminalCommand::SEQUENCE
     };
 
-    bool start(int width = 100, int height = 100);
-    bool resize(int width, int height);
-    void stop();
-    bool write_input(const String &input);
-    bool is_running() const { return _running; }
+    bool start(int width = 100, int height = 100) override;
+    bool resize(int width, int height) override;
+    void stop() override;
+    bool write_input(const String &input) override;
+    bool is_running() const override { return _running; }
 };
 
 }

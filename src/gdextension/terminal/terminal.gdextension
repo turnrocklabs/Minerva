@@ -6,9 +6,17 @@ reloadable = true
 
 [libraries]
 
-windows.debug.x86_64 = "res://bin/libterminal.windows.template_debug.x86_64.dll"
-windows.release.x86_64 = "res://bin/libterminal.windows.template_release.x86_64.dll"
-linux.debug.x86_64 = "res://bin/libterminal.linux.template_debug.x86_64.so"
-linux.release.x86_64 = "res://bin/libterminal.linux.template_release.x86_64.so"
-macos.debug = "res://bin/libterminal.macos.template_debug.framework"
-macos.release = "res://bin/libterminal.macos.template_release.framework"
+; Windows
+windows.template_debug.x86_64 = "res://bin/libterminal.windows.template_debug.x86_64.dll"
+windows.template_release.x86_64 = "res://bin/libterminal.windows.template_release.x86_64.dll"
+windows.editor.x86_64 = "res://bin/libterminal.windows.template_debug.x86_64.dll"
+
+; Linux
+linux.template_debug.x86_64 = "res://bin/libterminal.linux.template_debug.x86_64.so"
+linux.template_release.x86_64 = "res://bin/libterminal.linux.template_release.x86_64.so"
+linux.editor.x86_64 = "res://bin/libterminal.linux.template_debug.x86_64.so"
+
+; macOS (universal binary - works for both x86_64 and arm64)
+macos.template_debug = "res://bin/libterminal.macos.template_debug.framework"
+macos.template_release = "res://bin/libterminal.macos.template_release.framework"
+macos.editor = "res://bin/libterminal.macos.template_debug.framework"

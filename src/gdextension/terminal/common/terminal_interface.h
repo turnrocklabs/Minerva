@@ -5,12 +5,8 @@
 
 namespace godot {
 
+// Pure C++ interface - no GDCLASS registration needed for abstract base
 class TerminalInterface : public Node {
-    GDCLASS(TerminalInterface, Node)
-
-protected:
-    static void _bind_methods() {}
-
 public:
     virtual bool start(int width = 100, int height = 100) = 0;
     virtual bool resize(int width, int height) = 0;

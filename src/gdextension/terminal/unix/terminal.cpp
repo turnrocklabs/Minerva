@@ -11,6 +11,7 @@
 #include <sys/ioctl.h>
 #include <signal.h>
 #include <errno.h>
+#include <cstring>
 
 // Platform-specific PTY headers
 #if defined(__APPLE__)
@@ -595,28 +596,49 @@ bool Terminal::start(int width, int height)
     };
 
     // Open pseudoterminal
+    UtilityFunctions::print("[Terminal C++] Calling forkpty...");
     _child_pid = forkpty(&_master_fd, nullptr, nullptr, &ws);
-    
+
     if (_child_pid == -1) {
         // Fork failed
+        UtilityFunctions::push_error("[Terminal C++] forkpty failed with errno: ", errno);
         return false;
     }
-    
+
     if (_child_pid == 0) {
         // Child process
         putenv((char*)"TERM=xterm-256color");
-        putenv((char*)"PS1=\\033[888z\\033[01;32m:\\u@\\h\\033[00m:\\033[01;34m\\w\\033[00m\\$ \\033[999z");
         putenv((char*)"BASH_ENV=");
         putenv((char*)"ENV=");
 
         const char* shell = getenv("SHELL");
-        if (!shell) shell = "/bin/bash";
-        
-        execlp(shell, shell, "--norc", "--noprofile", nullptr);
+        if (!shell) {
+            #if defined(__APPLE__)
+                shell = "/bin/zsh";
+            #else
+                shell = "/bin/bash";
+            #endif
+        }
+
+        // Detect shell type and use appropriate flags to disable startup files
+        // zsh uses -f, bash uses --norc --noprofile
+        if (strstr(shell, "zsh") != nullptr) {
+            // zsh: -f disables startup files (.zshrc, .zprofile, etc.)
+            execlp(shell, shell, "-f", nullptr);
+        } else if (strstr(shell, "fish") != nullptr) {
+            // fish: --no-config disables config files
+            execlp(shell, shell, "--no-config", nullptr);
+        } else {
+            // bash and others: --norc --noprofile
+            execlp(shell, shell, "--norc", "--noprofile", nullptr);
+        }
+        // If we get here, execlp failed
         _exit(1);
     }
 
     // Parent process
+    UtilityFunctions::print("[Terminal C++] forkpty succeeded, child PID: ", _child_pid, ", master_fd: ", _master_fd);
+
     struct termios term_settings;
     tcgetattr(_master_fd, &term_settings);
     

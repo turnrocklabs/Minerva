@@ -127,8 +127,15 @@ func _ready():
 
 	await get_tree().process_frame
 
-	terminal.start(int(size.x / char_width), int(size.y / line_height))
-	
+	var cols = int(size.x / char_width)
+	var rows = int(size.y / line_height)
+	print("[Terminal] Starting with size: %d cols x %d rows" % [cols, rows])
+	var started = terminal.start(cols, rows)
+	if not started:
+		push_error("[Terminal] Failed to start terminal - forkpty may have failed")
+	else:
+		print("[Terminal] Terminal started successfully")
+
 	resized.connect(
 		func():
 			terminal.resize(int(size.x / char_width), int(size.y / line_height))
@@ -309,18 +316,25 @@ func _reset_graphics() -> void:
 # endregion
 
 func _shortcut_input(event: InputEvent) -> void:
+	# Guard: exit if terminal not ready
+	if not _terminal_available or text_layer == null:
+		return
+
 	if event is InputEventKey:
 		if not event.is_pressed(): return
 
 		if event.ctrl_pressed and event.keycode == KEY_C:
 			DisplayServer.clipboard_set(text_layer.get_selected_text())
-			
+
 		if event.ctrl_pressed and event.keycode == KEY_V:
 			terminal.write_input(DisplayServer.clipboard_get())
 			
 
 func _gui_input(event: InputEvent) -> void:
-	
+	# Guard: exit if terminal not ready
+	if not _terminal_available or text_layer == null:
+		return
+
 	# if there's selected text ignore the event
 	if text_layer.selection_active:
 		if event is InputEventKey:
