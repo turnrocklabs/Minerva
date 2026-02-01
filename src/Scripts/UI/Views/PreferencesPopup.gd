@@ -58,6 +58,16 @@ const AUTH_PRESET_CUSTOM_IDX = 2 # Index of the "Custom" option in the OptionBut
 @onready var theme_option_button: OptionButton = %ThemeOptionButton
 @onready var microphones: OptionButton = %Microphones
 
+# Provider checkbuttons mapped to API_PROVIDER enum values
+@onready var _provider_checkbuttons: Dictionary = {
+	SingletonObject.API_PROVIDER.GOOGLE: %GoogleCheckButton,
+	SingletonObject.API_PROVIDER.OPENAI: %OpenAICheckButton,
+	SingletonObject.API_PROVIDER.ANTHROPIC: %AnthropicCheckButton,
+	SingletonObject.API_PROVIDER.LOCAL: %LocalCheckButton,
+	SingletonObject.API_PROVIDER.TURNROCK: %TurnRockCheckButton,
+	SingletonObject.API_PROVIDER.OPENROUTER: %OpenRouterCheckButton,
+	SingletonObject.API_PROVIDER.CLAUDE_CODE: %ClaudeCodeCheckButton,
+}
 
 var config_file = ConfigFile.new()
 
@@ -223,6 +233,15 @@ func _on_about_to_popup():
 	theme_option_button.selected = SingletonObject.get_theme_enum()
 	set_microphone_option_menu(SingletonObject.get_microphone())
 	populate_output_devices_button()
+	_sync_provider_checkboxes()
+
+
+## Sync provider checkbox states with SingletonObject enabled state
+func _sync_provider_checkboxes() -> void:
+	for provider in _provider_checkbuttons:
+		var checkbox: CheckButton = _provider_checkbuttons[provider]
+		if checkbox:
+			checkbox.set_pressed_no_signal(SingletonObject.is_provider_enabled(provider))
 
 func get_api_key(provider: SingletonObject.API_PROVIDER) -> String:
 	if provider == SingletonObject.API_PROVIDER.LOCAL:
@@ -296,7 +315,8 @@ func _on_microphones_item_selected(index: int) -> void:
 
 
 func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
-	#Experimental Features are stored as "Experimental" in config file
+	# Save experimental features setting to config
+	SingletonObject.save_to_config_file("Experimental", "enabled", toggled_on)
 	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
 	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
 	SingletonObject.toggle_experimental.emit(toggled_on)
@@ -389,3 +409,35 @@ func _on_password_checkbox_toggled(toggled_on:bool) -> void:
 
 func _on_hcp_logs_button_pressed() -> void:
 	logs_window.popup_centered()
+
+
+#region Provider toggles
+
+func _on_google_provider_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.GOOGLE, toggled_on)
+
+
+func _on_openai_provider_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.OPENAI, toggled_on)
+
+
+func _on_anthropic_provider_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.ANTHROPIC, toggled_on)
+
+
+func _on_local_provider_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.LOCAL, toggled_on)
+
+
+func _on_turnrock_provider_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.TURNROCK, toggled_on)
+
+
+func _on_openrouter_provider_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.OPENROUTER, toggled_on)
+
+
+func _on_claudecode_provider_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.CLAUDE_CODE, toggled_on)
+
+#endregion Provider toggles

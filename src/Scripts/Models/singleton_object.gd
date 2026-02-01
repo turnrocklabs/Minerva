@@ -107,9 +107,9 @@ func config_has_saved_section(section: String) -> bool:
 
 
 func get_config_file_value(section: String, field: String) -> Variant:
-	if config_has_saved_section(section):
-		return config_file.get_value(section, field, null)
-	return ""
+	if config_has_saved_section(section) and config_file.has_section_key(section, field):
+		return config_file.get_value(section, field)
+	return null
 
 
 func config_clear_section(section: String)-> void:
@@ -647,9 +647,6 @@ func _load_ui_scale() -> void:
 #endregion UI Scaling
 
 func _ready():
-	# Initialize enabled providers from config
-	_init_enabled_providers()
-
 	SingletonObject.notes_draw_state_changed.connect(
 		func(state: int):
 			notes_draw_state = state
@@ -680,6 +677,9 @@ func _ready():
 	var err = config_file.load(_config_file_name)
 	if err != OK:
 		return null
+
+	# Initialize enabled providers from config (must be after config_file.load)
+	_init_enabled_providers()
 
 	# Load UI scale from config
 	_load_ui_scale()

@@ -492,11 +492,85 @@ secret = true
 layout_mode = 2
 theme_type_variation = &"visibilityCheckButton"
 
-[node name="Services" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+[node name="Providers" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 10
 metadata/_tab_index = 3
+
+[node name="MarginContainer" type="MarginContainer" parent="MarginContainer/VBoxContainer/TabContainer/Providers"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="ProvidersLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+bbcode_enabled = true
+text = "[b]Enabled Providers[/b]"
+fit_content = true
+shortcut_keys_enabled = false
+
+[node name="DescriptionLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+text = "Select which AI providers are available in the model dropdown."
+autowrap_mode = 2
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="GoogleCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Google"
+
+[node name="OpenAICheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "OpenAI"
+
+[node name="AnthropicCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Anthropic"
+
+[node name="LocalCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Local"
+
+[node name="TurnRockCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "TurnRock"
+
+[node name="OpenRouterCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "OpenRouter"
+
+[node name="ClaudeCodeCheckButton" type="CheckButton" parent="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Claude Code"
+
+[node name="Services" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 10
+metadata/_tab_index = 4
 
 [node name="MarginContainer" type="MarginContainer" parent="MarginContainer/VBoxContainer/TabContainer/Services"]
 layout_mode = 2
@@ -560,4 +634,11 @@ visible = false
 [connection signal="service_deselected" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_service_deselected"]
 [connection signal="service_selected" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_service_selected"]
 [connection signal="visibility_changed" from="MarginContainer/VBoxContainer/TabContainer/Services/MarginContainer/VBoxContainer/ServiceSelection" to="." method="_on_service_selection_visibility_changed"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/GoogleCheckButton" to="." method="_on_google_provider_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/OpenAICheckButton" to="." method="_on_openai_provider_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/AnthropicCheckButton" to="." method="_on_anthropic_provider_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/LocalCheckButton" to="." method="_on_local_provider_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/TurnRockCheckButton" to="." method="_on_turnrock_provider_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/OpenRouterCheckButton" to="." method="_on_openrouter_provider_toggled"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/TabContainer/Providers/MarginContainer/ScrollContainer/VBoxContainer/ClaudeCodeCheckButton" to="." method="_on_claudecode_provider_toggled"]
 [connection signal="pressed" from="MarginContainer/VBoxContainer/HBoxContainer/btnSavePrefs" to="." method="_on_btn_save_prefs_pressed"]
