@@ -2309,7 +2309,7 @@ func _register_kanban_tools() -> void:
 
 #region Kanban Tool Implementations
 
-func _find_kanban_board_by_name(name_: String) -> AutocoderKanbanBoard:
+func _find_kanban_board_by_name(name_: String):  # Returns AutocoderKanbanBoard or null
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
 		return null
@@ -2357,20 +2357,21 @@ func _get_all_kanban_boards() -> Array[Dictionary]:
 	return boards
 
 
-func _status_string_to_enum(status_str: String) -> AutocoderTask.TaskStatus:
+func _status_string_to_enum(status_str: String) -> int:  # Returns AutocoderTask.TaskStatus
+	var AutocoderTaskClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTask.gd")
 	match status_str.to_lower():
 		"plan":
-			return AutocoderTask.TaskStatus.PLAN
+			return AutocoderTaskClass.TaskStatus.PLAN
 		"in_progress":
-			return AutocoderTask.TaskStatus.IN_PROGRESS
+			return AutocoderTaskClass.TaskStatus.IN_PROGRESS
 		"ai_review":
-			return AutocoderTask.TaskStatus.AI_REVIEW
+			return AutocoderTaskClass.TaskStatus.AI_REVIEW
 		"human_review":
-			return AutocoderTask.TaskStatus.HUMAN_REVIEW
+			return AutocoderTaskClass.TaskStatus.HUMAN_REVIEW
 		"done":
-			return AutocoderTask.TaskStatus.DONE
+			return AutocoderTaskClass.TaskStatus.DONE
 		_:
-			return AutocoderTask.TaskStatus.PLAN
+			return AutocoderTaskClass.TaskStatus.PLAN
 
 
 func _kanban_create_task(args: Dictionary) -> Dictionary:
@@ -2401,13 +2402,14 @@ func _kanban_create_task(args: Dictionary) -> Dictionary:
 		var current_chat = SingletonObject.ChatList[chat_pane.current_tab]
 		source_context = "Agent: %s" % current_chat.HistoryName
 
+	var AutocoderTaskClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTask.gd")
 	var task = board.task_store.create_task(
 		title,
 		description,
 		status,
 		"",  # model
 		priority,
-		AutocoderTask.SourceType.AGENT_TOOL,
+		AutocoderTaskClass.SourceType.AGENT_TOOL,
 		"",  # source_uuid - could track chat ID here
 		source_context
 	)
@@ -2445,7 +2447,7 @@ func _kanban_get_tasks(args: Dictionary) -> Dictionary:
 	if not board.task_store:
 		return {"error": "Kanban board has no task store", "success": false}
 
-	var tasks: Array[AutocoderTask]
+	var tasks: Array  # Array of AutocoderTask
 	if status_filter.is_empty():
 		tasks = board.task_store.get_all_tasks()
 	else:

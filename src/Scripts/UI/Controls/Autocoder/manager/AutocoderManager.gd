@@ -953,11 +953,13 @@ func _handle_planning_notification(session_id: String, topic: String, payload: D
 
 		info("Updated kanban board for planning session %s (status: %s, %d tasks)" % [session_id, status, tasks.size()])
 
-func _update_kanban_from_planning_tasks(tasks: Array, task_store: AutocoderTaskStore) -> void:
+func _update_kanban_from_planning_tasks(tasks: Array, task_store) -> void:  # task_store: AutocoderTaskStore
 	"""Update kanban board with tasks from planning"""
 	if not task_store:
 		print("[AutocoderManager] ERROR: No task_store provided")
 		return
+
+	var AutocoderTaskClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTask.gd")
 
 	print("[AutocoderManager] _update_kanban_from_planning_tasks: Processing %d tasks" % tasks.size())
 
@@ -969,7 +971,7 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store: AutocoderTaskS
 		if plan_task_id.is_empty():
 			plan_task_id = task.id
 		existing_tasks[plan_task_id] = task
-	
+
 	print("[AutocoderManager] Found %d existing tasks in store" % existing_tasks.size())
 
 	# Add new tasks
@@ -990,15 +992,15 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store: AutocoderTaskS
 		var complexity = task_data.get("estimated_complexity", "medium")
 		var status_key = str(task_data.get("status", "plan")).to_lower()
 		var status_map = {
-			"plan": AutocoderTask.TaskStatus.PLAN,
-			"in_progress": AutocoderTask.TaskStatus.IN_PROGRESS,
-			"review": AutocoderTask.TaskStatus.HUMAN_REVIEW,
-			"ai_review": AutocoderTask.TaskStatus.AI_REVIEW,
-			"human_review": AutocoderTask.TaskStatus.HUMAN_REVIEW,
-			"done": AutocoderTask.TaskStatus.DONE,
-			"complete": AutocoderTask.TaskStatus.DONE
+			"plan": AutocoderTaskClass.TaskStatus.PLAN,
+			"in_progress": AutocoderTaskClass.TaskStatus.IN_PROGRESS,
+			"review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"ai_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
+			"human_review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"done": AutocoderTaskClass.TaskStatus.DONE,
+			"complete": AutocoderTaskClass.TaskStatus.DONE
 		}
-		var mapped_status = status_map.get(status_key, AutocoderTask.TaskStatus.PLAN)
+		var mapped_status = status_map.get(status_key, AutocoderTaskClass.TaskStatus.PLAN)
 		var metadata = {
 			"dependencies": dependencies,
 			"estimated_complexity": complexity,
@@ -1028,7 +1030,7 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store: AutocoderTaskS
 			mapped_status,
 			"",  # model
 			priority,
-			AutocoderTask.SourceType.AUTOCODER,
+			AutocoderTaskClass.SourceType.AUTOCODER,
 			"",  # source_uuid
 			"Planning: %s" % category
 		)
@@ -1082,7 +1084,7 @@ func monitor_session(user_id: String, session_id: String, _notification_topics: 
 	else:
 		info("Found existing kanban board for session %s" % session_id)
 
-	var kanban: AutocoderKanbanBoard = kanban_editor.kanban_board if kanban_editor else null
+	var kanban = kanban_editor.kanban_board if kanban_editor else null  # AutocoderKanbanBoard
 	if not kanban:
 		SingletonObject.ErrorDisplay("Can't open kanban", "Kanban board unavailable")
 		return
@@ -1106,7 +1108,7 @@ func monitor_session(user_id: String, session_id: String, _notification_topics: 
 	info("Kanban board opened for session %s (subscribed to session-specific topics)" % session_id)
 
 
-func open_logs_viewer(user_id: String, session_id: String) -> AutocoderLogsViewer:
+func open_logs_viewer(user_id: String, session_id: String):  # Returns AutocoderLogsViewer
 	"""
 	Open a log viewer for a session (for debugging/advanced view).
 	"""
@@ -1117,7 +1119,7 @@ func open_logs_viewer(user_id: String, session_id: String) -> AutocoderLogsViewe
 		"Logs %s" % session_id.substr(0, 12)
 	)
 
-	var log_viewer: AutocoderLogsViewer = log_editor.logs_viewer
+	var log_viewer = log_editor.logs_viewer  # AutocoderLogsViewer
 	if not log_viewer:
 		SingletonObject.ErrorDisplay("Can't open logs", "Log viewer unavailable")
 		return null
@@ -1134,7 +1136,7 @@ func open_logs_viewer(user_id: String, session_id: String) -> AutocoderLogsViewe
 	return log_viewer
 
 
-func _find_logs_viewer(session_id: String) -> AutocoderLogsViewer:
+func _find_logs_viewer(session_id: String):  # Returns AutocoderLogsViewer or null
 	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
 		return null
 	for tab in SingletonObject.editor_pane.Tabs.get_children():
@@ -1259,13 +1261,14 @@ func _sync_kanban_from_backend(session_id: String, kanban) -> void:
 		task_store.delete_task(task.id)
 	
 	# Add backend tasks
+	var AutocoderTaskClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTask.gd")
 	for task_data in backend_tasks:
-		var task = AutocoderTask.new()
+		var task = AutocoderTaskClass.new()
 		task.id = task_data.get("id", "")
 		task.title = task_data.get("title", "")
 		task.description = task_data.get("description", "")
-		task.status = AutocoderTask.TaskStatus.PLAN  # All synced tasks start in PLAN
-		task.source_type = AutocoderTask.SourceType.AGENT_TOOL
+		task.status = AutocoderTaskClass.TaskStatus.PLAN  # All synced tasks start in PLAN
+		task.source_type = AutocoderTaskClass.SourceType.AGENT_TOOL
 		task.metadata["plan_task_id"] = task.id
 		task_store.add_task(task)
 	

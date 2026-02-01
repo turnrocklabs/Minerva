@@ -21,7 +21,7 @@ const QUESTION_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/Autocod
 var _tool_cards: Dictionary = {}  # action_id -> card
 var _question_cards: Dictionary = {}  # question_id -> card
 var _auto_scroll: bool = true
-var _llm_card: AutocoderStreamMessageCard = null
+var _llm_card = null  # AutocoderStreamMessageCard - type removed to avoid load order issues
 var _llm_buffer: String = ""
 # Removed LLM_MAX_CHARS - show ALL content, no truncation
 

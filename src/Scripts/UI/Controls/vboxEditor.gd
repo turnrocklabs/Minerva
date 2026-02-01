@@ -176,7 +176,8 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 			# Deserialize kanban board
 			var content = editor_ser.get("content")
 			if content and editor_inst.kanban_board:
-				var task_store = AutocoderTaskStore.deserialize(content)
+				var AutocoderTaskStoreClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTaskStore.gd")
+				var task_store = AutocoderTaskStoreClass.deserialize(content)
 				editor_inst.kanban_board.set_task_store(task_store)
 
 		elif editor_inst.type == Editor.Type.SPREADSHEET:

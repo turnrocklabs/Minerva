@@ -33,8 +33,8 @@ var video_player: VideoPlayer:
 var code_edit: EditorCodeEdit
 var graphics_editor: GraphicsEditorV2
 var package_editor: PackageEditor
-var logs_viewer: AutocoderLogsViewer
-var kanban_board: AutocoderKanbanBoard
+var logs_viewer  # AutocoderLogsViewer - type annotation removed to avoid circular dependency
+var kanban_board  # AutocoderKanbanBoard - type annotation removed to avoid circular dependency
 var spreadsheet_editor  # SpreadsheetEditor
 @onready var _note_check_button: CheckButton = %CheckButton
 
@@ -186,15 +186,16 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.package_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(editor.package_editor)
 		Editor.Type.LOGS:
-			var logs_widget: = AutocoderLogsViewer.create()
+			var AutocoderLogsViewerClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.gd")
+			var logs_widget = AutocoderLogsViewerClass.create()
 			logs_widget.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(logs_widget)
 			editor.logs_viewer = logs_widget
 			logs_widget.entry_added.connect(editor._on_editor_changed)
-		
+
 		Editor.Type.KANBAN:
 			var kanban_scene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderKanbanBoard.tscn")
-			var kanban_widget: AutocoderKanbanBoard = kanban_scene.instantiate()
+			var kanban_widget = kanban_scene.instantiate()
 			kanban_widget.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			kanban_widget.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(kanban_widget)
@@ -552,7 +553,7 @@ func save_file_to_disc(path: String) -> void:
 		Type.LOGS:
 			if logs_viewer == null:
 				return
-			var serialized_text := logs_viewer.export_text()
+			var serialized_text: String = logs_viewer.export_text()
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			if save_file == null:
 				var error_log := error_string(FileAccess.get_open_error())

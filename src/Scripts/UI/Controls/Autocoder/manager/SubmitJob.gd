@@ -43,9 +43,9 @@ var current_mode: AutocoderMode = AutocoderMode.CODER
 
 @onready var _session_history_container: Container = %SessionHistoryContainer
 
-@onready var _action_stream: AutocoderActionStream = %ActionStream
+@onready var _action_stream = %ActionStream  # AutocoderActionStream - type removed for load order
 
-var _session_history_browser: SessionHistoryBrowser
+var _session_history_browser  # SessionHistoryBrowser - type removed for load order
 
 ## Track sessions currently processing to prevent concurrent requests
 var _processing_sessions: Dictionary = {}  # session_id -> bool
@@ -81,7 +81,8 @@ var _submitted_questions: Dictionary = {}  # question_id -> true
 func _ready() -> void:
 	SingletonObject.load_config_file()
 	# Create and setup session history browser
-	_session_history_browser = SessionHistoryBrowser.new()
+	var SessionHistoryBrowserClass = load("res://Scripts/UI/Controls/Autocoder/SessionHistoryBrowser.gd")
+	_session_history_browser = SessionHistoryBrowserClass.new()
 	_session_history_browser.session_view_requested.connect(_on_session_view_requested)
 	_session_history_browser.session_resume_requested.connect(_on_session_resume_requested)
 
@@ -1434,10 +1435,12 @@ func _get_or_create_kanban_board(session_id: String) -> Editor:
 	
 	return kanban_editor
 
-func _populate_kanban_from_plan(tasks: Array, task_store: AutocoderTaskStore) -> void:
+func _populate_kanban_from_plan(tasks: Array, task_store) -> void:  # task_store: AutocoderTaskStore
 	"""Populate kanban board with tasks from planning"""
 	if not task_store:
 		return
+
+	var AutocoderTaskClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTask.gd")
 
 	var existing_tasks: Dictionary = {}
 	for task in task_store.get_all_tasks():
@@ -1451,7 +1454,7 @@ func _populate_kanban_from_plan(tasks: Array, task_store: AutocoderTaskStore) ->
 	for task_data in tasks:
 		if not task_data is Dictionary:
 			continue
-		
+
 		var title = task_data.get("title", "Untitled Task")
 		var description = task_data.get("description", "")
 		var priority = int(task_data.get("priority", 2))
@@ -1460,15 +1463,15 @@ func _populate_kanban_from_plan(tasks: Array, task_store: AutocoderTaskStore) ->
 		var complexity = task_data.get("estimated_complexity", "medium")
 		var status_key = str(task_data.get("status", "plan")).to_lower()
 		var status_map = {
-			"plan": AutocoderTask.TaskStatus.PLAN,
-			"in_progress": AutocoderTask.TaskStatus.IN_PROGRESS,
-			"review": AutocoderTask.TaskStatus.HUMAN_REVIEW,
-			"ai_review": AutocoderTask.TaskStatus.AI_REVIEW,
-			"human_review": AutocoderTask.TaskStatus.HUMAN_REVIEW,
-			"done": AutocoderTask.TaskStatus.DONE,
-			"complete": AutocoderTask.TaskStatus.DONE
+			"plan": AutocoderTaskClass.TaskStatus.PLAN,
+			"in_progress": AutocoderTaskClass.TaskStatus.IN_PROGRESS,
+			"review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"ai_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
+			"human_review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"done": AutocoderTaskClass.TaskStatus.DONE,
+			"complete": AutocoderTaskClass.TaskStatus.DONE
 		}
-		var mapped_status = status_map.get(status_key, AutocoderTask.TaskStatus.PLAN)
+		var mapped_status = status_map.get(status_key, AutocoderTaskClass.TaskStatus.PLAN)
 		var plan_task_id = str(task_data.get("id", ""))
 		var metadata = {
 			"plan_task_id": plan_task_id,
@@ -1476,7 +1479,7 @@ func _populate_kanban_from_plan(tasks: Array, task_store: AutocoderTaskStore) ->
 			"estimated_complexity": complexity,
 			"category": category
 		}
-		
+
 		if existing_tasks.has(plan_task_id):
 			var existing_task = existing_tasks[plan_task_id]
 			task_store.update_task(existing_task.id, {
@@ -1488,7 +1491,7 @@ func _populate_kanban_from_plan(tasks: Array, task_store: AutocoderTaskStore) ->
 				"source_context": "Planning: %s" % category
 			})
 			continue
-		
+
 		# Create task in mapped status
 		var task = task_store.create_task(
 			title,
@@ -1496,7 +1499,7 @@ func _populate_kanban_from_plan(tasks: Array, task_store: AutocoderTaskStore) ->
 			mapped_status,
 			"",  # model
 			priority,
-			AutocoderTask.SourceType.AUTOCODER,
+			AutocoderTaskClass.SourceType.AUTOCODER,
 			"",  # source_uuid
 			"Planning: %s" % category
 		)

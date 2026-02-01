@@ -114,10 +114,11 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	# Clear previous token
 	_jwt_token = ""
 
-	SingletonObject.preferences_popup.logs_window.add_log_line(
-		"Attempting authentication to %s" % auth_endpoint,
-		HcpLogs.LOG_TYPE.INFO
-	)
+	if SingletonObject.preferences_popup and SingletonObject.preferences_popup.logs_window:
+		SingletonObject.preferences_popup.logs_window.add_log_line(
+			"Attempting authentication to %s" % auth_endpoint,
+			HcpLogs.LOG_TYPE.INFO
+		)
 
 	print("Attempting authentication to: ", auth_endpoint)
 	print("core: starting auth request")
