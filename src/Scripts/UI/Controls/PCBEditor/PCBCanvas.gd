@@ -119,12 +119,12 @@ func _draw() -> void:
 	if show_traces:
 		_draw_traces()
 
-	# Draw ratsnest (unrouted connections)
-	if show_ratsnest:
-		_draw_ratsnest()
-
 	# Draw components
 	_draw_components()
+
+	# Draw ratsnest (unrouted connections) - drawn AFTER components so lines are visible on top
+	if show_ratsnest:
+		_draw_ratsnest()
 
 	# Draw suggestion ghosts
 	_draw_suggestion_ghosts()
@@ -212,24 +212,33 @@ func _draw_ratsnest() -> void:
 		if net.pins.size() < 2:
 			continue
 
-		# Get pin positions
-		var pin_positions: Array[Vector2] = []
+		# Get pin positions with component info for better visualization
+		var pin_data: Array = []  # [{pos: Vector2, comp_id: String, pin_name: String}]
 		for pin in net.pins:
 			var comp_id: String = pin.get("component_id", "")
 			var pin_name: String = pin.get("pin_name", "")
 			var comp := data.get_component(comp_id)
 			if comp:
-				pin_positions.append(comp.get_pin_world_position(pin_name))
+				pin_data.append({
+					"pos": comp.get_pin_world_position(pin_name),
+					"comp_id": comp_id,
+					"pin_name": pin_name
+				})
 
-		# Draw connections (simple star pattern from first pin)
-		if pin_positions.size() >= 2:
+		# Draw connections between consecutive pins (chain topology)
+		# This shows clearer pin-to-pin connections than star topology
+		if pin_data.size() >= 2:
 			var net_color = net.color
-			net_color.a = 0.4
+			net_color.a = 0.6
 
-			for i in range(1, pin_positions.size()):
-				var p1 := world_to_screen(pin_positions[0])
-				var p2 := world_to_screen(pin_positions[i])
-				_draw_dashed_line(p1, p2, net_color, 1.0, 4.0)
+			for i in range(pin_data.size() - 1):
+				var p1 := world_to_screen(pin_data[i]["pos"])
+				var p2 := world_to_screen(pin_data[i + 1]["pos"])
+				_draw_dashed_line(p1, p2, net_color, 1.5, 5.0)
+
+				# Draw small circles at pin endpoints for visibility
+				draw_circle(p1, 3.0, net_color)
+				draw_circle(p2, 3.0, net_color)
 
 
 ## Draw all components
@@ -398,14 +407,13 @@ func _draw_fallback_pins(comp: PCBComponentScript, xform: Transform2D) -> void:
 		var pad_radius := (pad_diameter * zoom) / 2.0
 		var drill_radius := (drill_diameter * zoom) / 2.0
 
-		var pin_idx := 0
 		for pin_name in comp.pins:
 			var local_pin_pos: Vector2 = comp.pins[pin_name]
 			var world_pin_pos: Vector2 = comp.position + (xform * local_pin_pos)
 			var pin_screen := world_to_screen(world_pin_pos)
 
-			# Pin 1 gets square pad, others get round
-			if pin_idx == 0:
+			# Pin 1 gets square pad, others get round (check actual pin name, not iteration order)
+			if pin_name == "1":
 				# Square pad for pin 1
 				var pad_size := Vector2(pad_diameter, pad_diameter) * zoom
 				_draw_rect_pad(pin_screen, pad_size, -comp.rotation, pad_copper_color)
@@ -416,8 +424,6 @@ func _draw_fallback_pins(comp: PCBComponentScript, xform: Transform2D) -> void:
 			# Draw drill hole on top
 			draw_circle(pin_screen, maxf(drill_radius, 1.0), drill_hole_color)
 			draw_arc(pin_screen, maxf(drill_radius, 1.0), 0, TAU, 16, Color(0.4, 0.4, 0.4, 0.6), 1.0)
-
-			pin_idx += 1
 
 	else:
 		# SMD or unknown - draw simple pad markers

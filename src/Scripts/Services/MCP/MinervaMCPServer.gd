@@ -4361,7 +4361,7 @@ func _register_pcb_tools() -> void:
 	)
 
 	_register_tool("minerva_pcb_import_footprint_geometry",
-		"Import detailed pad geometry from pcb-architect footprint-geometry output. Updates component pads with accurate shapes, sizes, and drill holes for rendering.",
+		"Import detailed pad geometry from pcb-architect footprint-geometry output. Updates component pads with accurate shapes, sizes, and drill holes for rendering. Can also correct component positions if YAML used different coordinate conventions.",
 		{
 			"type": "object",
 			"properties": {
@@ -4401,6 +4401,14 @@ func _register_pcb_tools() -> void:
 							}
 						}
 					}
+				},
+				"position_is_center": {
+					"type": "boolean",
+					"description": "If true, current component positions are geometric centers (not footprint origins). Will adjust positions by subtracting bounding_box center offset. Default: false"
+				},
+				"invert_y": {
+					"type": "boolean",
+					"description": "If true, Y coordinates are inverted (Y=0 at bottom instead of top). Will flip Y relative to board height. Default: false"
 				}
 			},
 			"required": ["editor_name", "geometry"]
@@ -5050,6 +5058,8 @@ func _pcb_import_csv(args: Dictionary) -> Dictionary:
 func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 	var geometry_data: Dictionary = args.get("geometry", {})
+	var position_is_center: bool = args.get("position_is_center", false)
+	var invert_y: bool = args.get("invert_y", false)
 
 	if editor_name.is_empty():
 		return {"error": "editor_name is required", "success": false}
@@ -5066,6 +5076,7 @@ func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
 
 	var components_data: Dictionary = geometry_data.get("components", {})
 	var updated_count := 0
+	var position_adjusted_count := 0
 	var missing: Array = []
 
 	for comp_id in components_data:
@@ -5076,19 +5087,50 @@ func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
 
 		var comp_geometry: Dictionary = components_data[comp_id]
 		if comp_geometry.get("footprint_found", false):
+			# First load the pad geometry (this sets bbox_center_offset)
 			comp.load_pad_geometry(comp_geometry)
 			updated_count += 1
+
+			# Then apply position corrections if requested
+			if position_is_center or invert_y:
+				var new_pos: Vector2 = comp.position
+
+				# Order matters: first invert Y, then convert from center to origin
+
+				# If Y is inverted (Y=0 at bottom), flip relative to board height
+				if invert_y:
+					new_pos.y = data.board_height - new_pos.y
+
+				# If positions are geometric centers, convert to footprint origin
+				# by subtracting the center offset (accounting for rotation)
+				if position_is_center:
+					var xform: Transform2D = comp.get_transform()
+					var center_offset: Vector2 = xform * comp.bbox_center_offset
+					new_pos -= center_offset
+
+				comp.position = new_pos
+				position_adjusted_count += 1
 		else:
 			missing.append(comp_id)
 
 	# Trigger redraw
 	data.data_changed.emit()
 
-	return {
+	var result := {
 		"success": true,
 		"updated_count": updated_count,
 		"missing_footprints": missing,
 		"board_name": geometry_data.get("board_name", "")
 	}
+
+	if position_is_center or invert_y:
+		result["position_adjusted_count"] = position_adjusted_count
+		result["position_corrections_applied"] = {
+			"position_is_center": position_is_center,
+			"invert_y": invert_y,
+			"board_height": data.board_height
+		}
+
+	return result
 
 #endregion
