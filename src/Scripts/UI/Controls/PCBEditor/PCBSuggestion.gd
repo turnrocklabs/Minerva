@@ -13,7 +13,8 @@ enum SuggestionType {
 	ROUTE,      # Route a trace
 	SWAP,       # Swap two components
 	ALIGN,      # Align multiple components
-	GROUP_MOVE  # Move multiple components together
+	GROUP_MOVE, # Move multiple components together
+	PIN_REMAP   # Remap a net connection from one pin to another
 }
 
 ## Unique identifier for this suggestion
@@ -149,16 +150,49 @@ static func create_delete_suggestion(
 static func create_route_suggestion(
 	net_name: String,
 	waypoints: Array,
+	layer: String = "top",
+	width: float = 0.25,
 	reason_text: String = ""
 ):
 	var suggestion := _Self.new()
 	suggestion.id = _generate_id()
 	suggestion.type = SuggestionType.ROUTE
-	suggestion.description = "Route net %s with %d waypoints" % [net_name, waypoints.size()]
+	suggestion.description = "Route net %s with %d waypoints on %s layer (%.2fmm)" % [net_name, waypoints.size(), layer, width]
 	suggestion.original_state = {}
 	suggestion.proposed_state = {
 		"net_name": net_name,
-		"waypoints": waypoints
+		"waypoints": waypoints,
+		"layer": layer,
+		"width": width
+	}
+	suggestion.reason = reason_text
+	suggestion.created_at = Time.get_unix_time_from_system()
+	return suggestion
+
+
+## Create a pin remap suggestion (move a net connection from one pin to another)
+static func create_pin_remap_suggestion(
+	net_name: String,
+	old_component: String,
+	old_pin: String,
+	new_component: String,
+	new_pin: String,
+	reason_text: String = ""
+):
+	var suggestion := _Self.new()
+	suggestion.id = _generate_id()
+	suggestion.type = SuggestionType.PIN_REMAP
+	suggestion.target_component = old_component  # Primary component involved
+	suggestion.description = "Remap %s from %s.%s to %s.%s" % [net_name, old_component, old_pin, new_component, new_pin]
+	suggestion.original_state = {
+		"net_name": net_name,
+		"component": old_component,
+		"pin": old_pin
+	}
+	suggestion.proposed_state = {
+		"net_name": net_name,
+		"component": new_component,
+		"pin": new_pin
 	}
 	suggestion.reason = reason_text
 	suggestion.created_at = Time.get_unix_time_from_system()
@@ -191,6 +225,62 @@ func get_proposed_rotation() -> float:
 	if type != SuggestionType.ROTATE:
 		return 0.0
 	return proposed_state.get("rotation", 0.0)
+
+
+## Get route waypoints as Vector2 array (for ROUTE suggestions)
+func get_route_waypoints() -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	if type != SuggestionType.ROUTE:
+		return result
+
+	var waypoints: Array = proposed_state.get("waypoints", [])
+	for wp in waypoints:
+		if wp is Dictionary:
+			result.append(Vector2(wp.get("x", 0), wp.get("y", 0)))
+		elif wp is Vector2:
+			result.append(wp)
+	return result
+
+
+## Get route layer (for ROUTE suggestions)
+func get_route_layer() -> String:
+	if type != SuggestionType.ROUTE:
+		return "top"
+	return proposed_state.get("layer", "top")
+
+
+## Get route width (for ROUTE suggestions)
+func get_route_width() -> float:
+	if type != SuggestionType.ROUTE:
+		return 0.25
+	return proposed_state.get("width", 0.25)
+
+
+## Get the net name (for ROUTE and PIN_REMAP suggestions)
+func get_net_name() -> String:
+	if type == SuggestionType.ROUTE or type == SuggestionType.PIN_REMAP:
+		return proposed_state.get("net_name", "")
+	return ""
+
+
+## Get old pin info (for PIN_REMAP suggestions)
+func get_old_pin() -> Dictionary:
+	if type != SuggestionType.PIN_REMAP:
+		return {}
+	return {
+		"component": original_state.get("component", ""),
+		"pin": original_state.get("pin", "")
+	}
+
+
+## Get new pin info (for PIN_REMAP suggestions)
+func get_new_pin() -> Dictionary:
+	if type != SuggestionType.PIN_REMAP:
+		return {}
+	return {
+		"component": proposed_state.get("component", ""),
+		"pin": proposed_state.get("pin", "")
+	}
 
 
 ## Mark as accepted

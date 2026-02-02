@@ -6,6 +6,7 @@ const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBSpatialIndexScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSpatialIndex.gd")
 const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
+const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 
 ## Signals
 signal component_selected(component_id: String)
@@ -54,6 +55,24 @@ var is_box_selecting: bool = false
 var box_select_start: Vector2 = Vector2.ZERO
 var box_select_end: Vector2 = Vector2.ZERO
 
+## Annotation drawing mode
+enum AnnotationMode { NONE, SELECT, ARROW, TEXT, REGION, POLYLINE }
+var annotation_mode: AnnotationMode = AnnotationMode.NONE
+var is_drawing_annotation: bool = false
+var annotation_points: Array[Vector2] = []  # World coordinates
+var annotation_preview_point: Vector2 = Vector2.ZERO  # Current mouse position for preview
+
+## Annotation selection state
+var selected_annotation_id: String = ""
+var is_dragging_annotation: bool = false
+var annotation_drag_start: Vector2 = Vector2.ZERO
+var annotation_drag_offset: Vector2 = Vector2.ZERO
+
+## Signal for annotation mode changes and text input requests
+signal annotation_mode_changed(mode: AnnotationMode)
+signal annotation_text_requested(position: Vector2)  # Emitted when text annotation needs input
+signal annotation_created(annotation_id: String)
+
 ## Ghost layer for suggestion preview
 var active_suggestion_id: String = ""
 
@@ -83,10 +102,30 @@ var mounting_hole_color: Color = Color(0.2, 0.2, 0.2, 1.0)  # Non-plated holes
 ## Display option for pad rendering
 var show_pads: bool = true
 
+## Display option for annotations
+var show_annotations: bool = true
+
+## Annotation colors (by author)
+var annotation_human_color: Color = Color(0.9, 0.7, 0.2)  # Yellow for human
+var annotation_ai_color: Color = Color(0.3, 0.7, 0.9)     # Cyan for AI
+
+## Pin remap suggestion colors
+var pin_remap_old_color: Color = Color(0.9, 0.3, 0.3, 0.7)  # Red for old pin
+var pin_remap_new_color: Color = Color(0.3, 0.9, 0.3, 0.7)  # Green for new pin
+
+## Route suggestion colors
+var route_ghost_color: Color = Color(0.5, 0.8, 1.0, 0.6)  # Light blue for route ghost
+
 ## Font
 var font: Font
 var font_size: int = 12
 
+
+## Context menu
+var context_menu: PopupMenu = null
+var context_menu_world_pos: Vector2 = Vector2.ZERO
+var right_click_start_pos: Vector2 = Vector2.ZERO
+const RIGHT_CLICK_THRESHOLD := 5.0  # Pixels - if moved less than this, show context menu
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -98,6 +137,116 @@ func _ready() -> void:
 
 	# Initialize spatial index
 	spatial_index = PCBSpatialIndexScript.new()
+
+	# Create context menu
+	_create_context_menu()
+
+
+## Create the right-click context menu
+func _create_context_menu() -> void:
+	context_menu = PopupMenu.new()
+	context_menu.name = "ContextMenu"
+	add_child(context_menu)
+
+	# Add annotation submenu
+	var annotation_menu := PopupMenu.new()
+	annotation_menu.name = "AnnotationMenu"
+	annotation_menu.add_item("Select (S)", 0)
+	annotation_menu.add_item("Arrow (A)", 1)
+	annotation_menu.add_item("Text (T)", 2)
+	annotation_menu.add_item("Region (R)", 3)
+	annotation_menu.add_item("Polyline (P)", 4)
+	annotation_menu.id_pressed.connect(_on_annotation_menu_pressed)
+
+	context_menu.add_child(annotation_menu)
+	context_menu.add_submenu_item("Add Annotation", "AnnotationMenu")
+	context_menu.add_separator()
+	context_menu.add_item("Clear My Annotations", 100)
+	context_menu.add_item("Clear AI Annotations", 101)
+	context_menu.add_item("Clear All Annotations", 102)
+	context_menu.id_pressed.connect(_on_context_menu_pressed)
+
+
+## Update context menu based on current selection
+func _update_context_menu_for_selection() -> void:
+	# Remove old annotation action items (IDs 200-205)
+	var indices_to_remove: Array[int] = []
+	for i in range(context_menu.item_count):
+		var id := context_menu.get_item_id(i)
+		if id >= 200 and id <= 210:
+			indices_to_remove.append(i)
+
+	# Remove in reverse order to avoid index shifting
+	for i in range(indices_to_remove.size() - 1, -1, -1):
+		context_menu.remove_item(indices_to_remove[i])
+
+	# Add annotation transform items if an annotation is selected
+	if not selected_annotation_id.is_empty():
+		var annotation := data.get_annotation(selected_annotation_id)
+		if annotation:
+			# Find position after separator
+			var sep_index := 1  # After "Add Annotation" submenu
+			for i in range(context_menu.item_count):
+				if context_menu.is_item_separator(i):
+					sep_index = i
+					break
+
+			context_menu.add_separator("", 200)
+			context_menu.add_item("Rotate Annotation (R)", 201)
+			context_menu.add_item("Scale Up (+)", 202)
+			context_menu.add_item("Scale Down (-)", 203)
+			context_menu.add_item("Delete Annotation (Del)", 204)
+
+			if annotation.type == PCBAnnotationScript.AnnotationType.ARROW:
+				context_menu.add_item("Invert Arrow (I)", 205)
+
+
+## Handle annotation submenu selection
+func _on_annotation_menu_pressed(id: int) -> void:
+	match id:
+		0: set_annotation_mode(AnnotationMode.SELECT)
+		1: set_annotation_mode(AnnotationMode.ARROW)
+		2: set_annotation_mode(AnnotationMode.TEXT)
+		3: set_annotation_mode(AnnotationMode.REGION)
+		4: set_annotation_mode(AnnotationMode.POLYLINE)
+
+
+## Handle main context menu selection
+func _on_context_menu_pressed(id: int) -> void:
+	if not data:
+		return
+
+	match id:
+		100:  # Clear my annotations
+			data.clear_annotations("human")
+		101:  # Clear AI annotations
+			data.clear_annotations("ai")
+		102:  # Clear all annotations
+			data.clear_annotations("")
+		201:  # Rotate annotation
+			_rotate_selected_annotation()
+		202:  # Scale up
+			_scale_selected_annotation(1.2)
+		203:  # Scale down
+			_scale_selected_annotation(0.8)
+		204:  # Delete annotation
+			_delete_selected_annotation()
+		205:  # Invert arrow
+			_invert_selected_arrow()
+
+
+## Show the context menu at the given screen position
+func _show_context_menu(screen_pos: Vector2) -> void:
+	if not context_menu:
+		return
+
+	# Update menu items based on current selection
+	_update_context_menu_for_selection()
+
+	# Convert to global position for the popup
+	var global_pos := get_global_transform() * screen_pos
+	context_menu.position = Vector2i(global_pos)
+	context_menu.popup()
 
 
 func _draw() -> void:
@@ -129,9 +278,17 @@ func _draw() -> void:
 	# Draw suggestion ghosts
 	_draw_suggestion_ghosts()
 
+	# Draw annotations (on top of everything except selection)
+	if show_annotations:
+		_draw_annotations()
+
 	# Draw selection box
 	if is_box_selecting:
 		_draw_selection_box()
+
+	# Draw annotation preview while drawing
+	if is_drawing_annotation or annotation_mode != AnnotationMode.NONE:
+		_draw_annotation_preview()
 
 	# Draw active suggestion arrow
 	_draw_suggestion_arrow()
@@ -529,6 +686,10 @@ func _draw_suggestion_ghosts() -> void:
 				_draw_move_ghost(suggestion)
 			PCBSuggestionScript.SuggestionType.ADD:
 				_draw_add_ghost(suggestion)
+			PCBSuggestionScript.SuggestionType.PIN_REMAP:
+				_draw_pin_remap_ghost(suggestion)
+			PCBSuggestionScript.SuggestionType.ROUTE:
+				_draw_route_ghost(suggestion)
 
 
 ## Draw ghost for move suggestion
@@ -567,6 +728,326 @@ func _draw_add_ghost(suggestion: PCBSuggestionScript) -> void:
 	var rect := Rect2(screen_pos - placeholder_size / 2, placeholder_size)
 	draw_rect(rect, ghost_color)
 	draw_rect(rect, ghost_color.lightened(0.3), false, 2.0)
+
+
+## Draw ghost for pin remap suggestion
+func _draw_pin_remap_ghost(suggestion: PCBSuggestionScript) -> void:
+	var old_pin := suggestion.get_old_pin()
+	var new_pin := suggestion.get_new_pin()
+
+	var old_comp := data.get_component(old_pin.get("component", ""))
+	var new_comp := data.get_component(new_pin.get("component", ""))
+
+	if not old_comp or not new_comp:
+		return
+
+	var old_pin_name: String = old_pin.get("pin", "")
+	var new_pin_name: String = new_pin.get("pin", "")
+
+	var old_pos := old_comp.get_pin_world_position(old_pin_name)
+	var new_pos := new_comp.get_pin_world_position(new_pin_name)
+
+	var old_screen := world_to_screen(old_pos)
+	var new_screen := world_to_screen(new_pos)
+
+	# Draw dimmed old pin with X (red)
+	var marker_size := 6.0
+	draw_circle(old_screen, marker_size, pin_remap_old_color)
+	# Draw X over old pin
+	var x_size := 4.0
+	draw_line(old_screen - Vector2(x_size, x_size), old_screen + Vector2(x_size, x_size), Color.RED, 2.0)
+	draw_line(old_screen - Vector2(x_size, -x_size), old_screen + Vector2(x_size, -x_size), Color.RED, 2.0)
+
+	# Draw highlighted new pin (green)
+	draw_circle(new_screen, marker_size, pin_remap_new_color)
+	# Draw checkmark-like indicator
+	draw_circle(new_screen, marker_size - 2, Color(0.2, 0.8, 0.2, 1.0))
+
+	# Draw arrow from old to new
+	_draw_arrow(old_screen, new_screen, Color(0.8, 0.8, 0.3, 0.8), 2.0)
+
+	# Draw net name label at midpoint
+	var midpoint := (old_screen + new_screen) / 2.0
+	var net_name := suggestion.get_net_name()
+	if not net_name.is_empty():
+		draw_string(font, midpoint + Vector2(5, -5), net_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
+
+
+## Draw ghost for route suggestion
+func _draw_route_ghost(suggestion: PCBSuggestionScript) -> void:
+	var waypoints := suggestion.get_route_waypoints()
+	if waypoints.size() < 2:
+		return
+
+	var net_name := suggestion.get_net_name()
+	var width := suggestion.get_route_width()
+
+	# Get net color if available, otherwise use default
+	var color := route_ghost_color
+	var net = data.get_net(net_name)
+	if net:
+		color = net.color
+		color.a = 0.6
+
+	# Convert waypoints to screen coordinates
+	var screen_points: PackedVector2Array = []
+	for wp in waypoints:
+		screen_points.append(world_to_screen(wp))
+
+	# Draw dashed polyline for the route
+	var trace_width := maxf(width * zoom, 2.0)
+	for i in range(screen_points.size() - 1):
+		_draw_dashed_line(screen_points[i], screen_points[i + 1], color, trace_width, 8.0)
+
+	# Draw waypoint markers
+	var endpoint_radius := 5.0
+	var midpoint_radius := 3.0
+
+	for i in range(screen_points.size()):
+		var is_endpoint := (i == 0 or i == screen_points.size() - 1)
+		var radius := endpoint_radius if is_endpoint else midpoint_radius
+		draw_circle(screen_points[i], radius, color.lightened(0.2))
+		draw_arc(screen_points[i], radius, 0, TAU, 16, color.darkened(0.2), 1.5)
+
+	# Draw net name label near first waypoint
+	if not net_name.is_empty() and screen_points.size() > 0:
+		draw_string(font, screen_points[0] + Vector2(8, -8), net_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color.lightened(0.3))
+
+
+## Draw all annotations
+func _draw_annotations() -> void:
+	for ann_id in data.annotations:
+		var annotation: PCBAnnotationScript = data.annotations[ann_id]
+		_draw_annotation(annotation)
+
+
+## Draw a single annotation
+func _draw_annotation(annotation: PCBAnnotationScript) -> void:
+	var is_selected := annotation.id == selected_annotation_id
+
+	match annotation.type:
+		PCBAnnotationScript.AnnotationType.ARROW:
+			_draw_arrow_annotation(annotation)
+		PCBAnnotationScript.AnnotationType.TEXT:
+			_draw_text_annotation(annotation)
+		PCBAnnotationScript.AnnotationType.REGION:
+			_draw_region_annotation(annotation)
+		PCBAnnotationScript.AnnotationType.POLYLINE:
+			_draw_polyline_annotation(annotation)
+
+	# Draw selection highlight if selected
+	if is_selected:
+		_draw_annotation_selection(annotation)
+
+
+## Draw an arrow annotation
+func _draw_arrow_annotation(annotation: PCBAnnotationScript) -> void:
+	if annotation.positions.size() < 2:
+		return
+
+	var start := world_to_screen(annotation.positions[0])
+	var end := world_to_screen(annotation.positions[1])
+
+	_draw_arrow(start, end, annotation.color, 2.5)
+
+	# Draw label at midpoint if provided
+	if not annotation.text.is_empty():
+		var midpoint := (start + end) / 2.0
+		var offset := Vector2(8, -8)
+		draw_string(font, midpoint + offset, annotation.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, annotation.color)
+
+
+## Draw a text annotation
+func _draw_text_annotation(annotation: PCBAnnotationScript) -> void:
+	if annotation.positions.is_empty() or annotation.text.is_empty():
+		return
+
+	var screen_pos := world_to_screen(annotation.positions[0])
+
+	# Draw background rectangle for readability
+	var text_size := font.get_string_size(annotation.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	var padding := Vector2(6, 4)
+	var bg_rect := Rect2(screen_pos - padding, text_size + padding * 2)
+
+	var bg_color := annotation.color
+	bg_color.a = 0.3
+	draw_rect(bg_rect, bg_color)
+	draw_rect(bg_rect, annotation.color, false, 1.5)
+
+	# Draw text
+	draw_string(font, screen_pos + Vector2(0, text_size.y - 2), annotation.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, annotation.color)
+
+
+## Draw a region highlight annotation
+func _draw_region_annotation(annotation: PCBAnnotationScript) -> void:
+	if annotation.positions.size() < 2:
+		return
+
+	var corner1 := world_to_screen(annotation.positions[0])
+	var corner2 := world_to_screen(annotation.positions[1])
+
+	var rect := Rect2(
+		corner1.min(corner2),
+		(corner1 - corner2).abs()
+	)
+
+	# Draw semi-transparent fill
+	var fill_color := annotation.color
+	fill_color.a = 0.15
+	draw_rect(rect, fill_color)
+
+	# Draw border (dashed)
+	var border_color := annotation.color
+	border_color.a = 0.8
+	_draw_dashed_rect(rect, border_color, 2.0, 6.0)
+
+	# Draw label if provided
+	if not annotation.text.is_empty():
+		var label_pos := rect.position + Vector2(4, font_size + 2)
+		draw_string(font, label_pos, annotation.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, annotation.color)
+
+
+## Draw a polyline annotation
+func _draw_polyline_annotation(annotation: PCBAnnotationScript) -> void:
+	if annotation.positions.size() < 2:
+		return
+
+	var screen_points: PackedVector2Array = []
+	for pos in annotation.positions:
+		screen_points.append(world_to_screen(pos))
+
+	# Draw polyline
+	draw_polyline(screen_points, annotation.color, 2.5)
+
+	# Draw small circles at each point
+	for point in screen_points:
+		draw_circle(point, 3.0, annotation.color)
+
+	# Draw label near first point if provided
+	if not annotation.text.is_empty() and screen_points.size() > 0:
+		draw_string(font, screen_points[0] + Vector2(6, -6), annotation.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, annotation.color)
+
+
+## Draw selection highlight for an annotation
+func _draw_annotation_selection(annotation: PCBAnnotationScript) -> void:
+	var bounding := annotation.get_bounding_rect()
+	var screen_min := world_to_screen(bounding.position)
+	var screen_max := world_to_screen(bounding.position + bounding.size)
+
+	# Expand the bounding rect for visibility
+	var padding := 6.0
+	var rect := Rect2(
+		screen_min - Vector2(padding, padding),
+		screen_max - screen_min + Vector2(padding * 2, padding * 2)
+	)
+
+	# Draw selection border (dashed)
+	var select_color := Color.WHITE
+	select_color.a = 0.8
+	_draw_dashed_rect(rect, select_color, 1.5, 4.0)
+
+	# Draw corner handles
+	var handle_size := 5.0
+	var corners := [
+		rect.position,
+		rect.position + Vector2(rect.size.x, 0),
+		rect.position + rect.size,
+		rect.position + Vector2(0, rect.size.y)
+	]
+
+	for corner in corners:
+		var handle_rect := Rect2(corner - Vector2(handle_size, handle_size), Vector2(handle_size * 2, handle_size * 2))
+		draw_rect(handle_rect, Color.WHITE)
+		draw_rect(handle_rect, Color.BLACK, false, 1.0)
+
+	# Draw rotation indicator (small arc at top)
+	var top_center := rect.position + Vector2(rect.size.x / 2, -15)
+	draw_arc(top_center, 8.0, deg_to_rad(-135), deg_to_rad(-45), 8, Color.WHITE, 2.0)
+	# Draw arrow tip
+	var arrow_tip := top_center + Vector2(6, 0).rotated(deg_to_rad(-45))
+	draw_line(arrow_tip, arrow_tip + Vector2(-4, -2), Color.WHITE, 2.0)
+	draw_line(arrow_tip, arrow_tip + Vector2(-2, 4), Color.WHITE, 2.0)
+
+	# For arrows, show invert hint
+	if annotation.type == PCBAnnotationScript.AnnotationType.ARROW:
+		var center := (screen_min + screen_max) / 2.0
+		draw_string(font, center + Vector2(0, rect.size.y / 2 + 15), "I=invert", HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, Color(0.8, 0.8, 0.8))
+
+
+## Draw a dashed rectangle
+func _draw_dashed_rect(rect: Rect2, color: Color, width: float, dash_length: float) -> void:
+	var corners := [
+		rect.position,
+		rect.position + Vector2(rect.size.x, 0),
+		rect.position + rect.size,
+		rect.position + Vector2(0, rect.size.y)
+	]
+
+	for i in range(4):
+		_draw_dashed_line(corners[i], corners[(i + 1) % 4], color, width, dash_length)
+
+
+## Draw annotation preview while user is drawing
+func _draw_annotation_preview() -> void:
+	var preview_color := annotation_human_color
+	preview_color.a = 0.7
+
+	# Draw mode indicator cursor crosshair
+	if annotation_mode != AnnotationMode.NONE and not is_drawing_annotation:
+		var cursor_pos := get_local_mouse_position()
+		var crosshair_size := 10.0
+		draw_line(cursor_pos - Vector2(crosshair_size, 0), cursor_pos + Vector2(crosshair_size, 0), preview_color, 1.5)
+		draw_line(cursor_pos - Vector2(0, crosshair_size), cursor_pos + Vector2(0, crosshair_size), preview_color, 1.5)
+
+		# Draw mode label
+		var mode_name: String = AnnotationMode.keys()[annotation_mode]
+		draw_string(font, cursor_pos + Vector2(12, -5), mode_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, preview_color)
+
+	if not is_drawing_annotation:
+		return
+
+	var screen_points: PackedVector2Array = []
+	for p in annotation_points:
+		screen_points.append(world_to_screen(p))
+
+	var preview_screen := world_to_screen(annotation_preview_point)
+
+	match annotation_mode:
+		AnnotationMode.ARROW:
+			if screen_points.size() >= 1:
+				_draw_arrow(screen_points[0], preview_screen, preview_color, 2.0)
+
+		AnnotationMode.TEXT:
+			# Draw a text placeholder cursor
+			draw_circle(preview_screen, 5.0, preview_color)
+			draw_string(font, preview_screen + Vector2(8, 4), "Click to place text", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, preview_color)
+
+		AnnotationMode.REGION:
+			if screen_points.size() >= 1:
+				var rect := Rect2(
+					screen_points[0].min(preview_screen),
+					(screen_points[0] - preview_screen).abs()
+				)
+				var fill := preview_color
+				fill.a = 0.15
+				draw_rect(rect, fill)
+				_draw_dashed_rect(rect, preview_color, 2.0, 6.0)
+
+		AnnotationMode.POLYLINE:
+			# Draw existing points and lines
+			if screen_points.size() >= 1:
+				for i in range(screen_points.size() - 1):
+					draw_line(screen_points[i], screen_points[i + 1], preview_color, 2.0)
+
+				# Draw line to current mouse position
+				draw_line(screen_points[screen_points.size() - 1], preview_screen, preview_color, 2.0)
+
+				# Draw point markers
+				for p in screen_points:
+					draw_circle(p, 4.0, preview_color)
+
+			# Draw current preview point
+			draw_circle(preview_screen, 4.0, preview_color.lightened(0.3))
 
 
 ## Draw arrow showing suggested move
@@ -667,6 +1148,13 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	if event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			grab_focus()
+
+			# Handle annotation mode first
+			if annotation_mode != AnnotationMode.NONE:
+				_handle_annotation_click(world_pos, event.double_click)
+				queue_redraw()
+				return
+
 			var hit_component := data.get_component_at(world_pos)
 
 			if event.double_click and not hit_component.is_empty():
@@ -702,6 +1190,12 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 			selection_changed.emit()
 			queue_redraw()
 		else:
+			# Mouse released - end annotation dragging if active
+			if is_dragging_annotation:
+				is_dragging_annotation = false
+				queue_redraw()
+				return
+
 			# End drag or box select
 			if is_dragging_component:
 				is_dragging_component = false
@@ -724,8 +1218,13 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 			is_panning = true
 			pan_start_mouse = event.position
 			pan_start_offset = pan_offset
+			right_click_start_pos = event.position
+			context_menu_world_pos = world_pos
 		else:
 			is_panning = false
+			# Check if this was a tap (no significant movement) - show context menu
+			if event.position.distance_to(right_click_start_pos) < RIGHT_CLICK_THRESHOLD:
+				_show_context_menu(event.position)
 
 	elif event.button_index == MOUSE_BUTTON_MIDDLE:
 		if event.pressed:
@@ -745,6 +1244,22 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 
 func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 	var world_pos := screen_to_world(event.position)
+
+	# Update annotation preview point
+	if annotation_mode != AnnotationMode.NONE:
+		annotation_preview_point = world_pos
+		queue_redraw()
+
+	# Handle annotation dragging in SELECT mode
+	if is_dragging_annotation and not selected_annotation_id.is_empty():
+		var annotation := data.get_annotation(selected_annotation_id)
+		if annotation:
+			var offset := world_pos - annotation_drag_start
+			annotation.translate(offset)
+			annotation_drag_start = world_pos
+			data.data_changed.emit()
+		queue_redraw()
+		return
 
 	# Update hover
 	var new_hover := data.get_component_at(world_pos)
@@ -779,13 +1294,34 @@ func _handle_key_input(event: InputEventKey) -> void:
 
 	match event.keycode:
 		KEY_DELETE, KEY_BACKSPACE:
-			_delete_selected()
+			# Delete selected annotation first, otherwise delete selected components
+			if not selected_annotation_id.is_empty():
+				_delete_selected_annotation()
+			else:
+				_delete_selected()
 		KEY_ESCAPE:
-			_clear_selection()
-			active_suggestion_id = ""
+			# Cancel annotation first, then clear annotation selection, then component selection
+			if is_drawing_annotation:
+				cancel_annotation()
+			elif annotation_mode != AnnotationMode.NONE:
+				clear_annotation_mode()
+				selected_annotation_id = ""
+			else:
+				_clear_selection()
+				active_suggestion_id = ""
 			queue_redraw()
 		KEY_R:
-			_rotate_selected()
+			# Rotate selected annotation, or rotate selected components, or enter region mode
+			if not selected_annotation_id.is_empty():
+				_rotate_selected_annotation()
+			elif annotation_mode == AnnotationMode.NONE:
+				_rotate_selected()
+			else:
+				set_annotation_mode(AnnotationMode.REGION)
+		KEY_I:
+			# Invert arrow direction
+			if not selected_annotation_id.is_empty():
+				_invert_selected_arrow()
 		KEY_G:
 			show_grid = not show_grid
 			queue_redraw()
@@ -798,9 +1334,39 @@ func _handle_key_input(event: InputEventKey) -> void:
 		KEY_HOME:
 			_center_view()
 		KEY_PLUS, KEY_KP_ADD:
-			_zoom_at(size / 2, 1.2)
+			# Scale up selected annotation, or zoom in
+			if not selected_annotation_id.is_empty():
+				_scale_selected_annotation(1.2)
+			else:
+				_zoom_at(size / 2, 1.2)
 		KEY_MINUS, KEY_KP_SUBTRACT:
-			_zoom_at(size / 2, 0.8)
+			# Scale down selected annotation, or zoom out
+			if not selected_annotation_id.is_empty():
+				_scale_selected_annotation(0.8)
+			else:
+				_zoom_at(size / 2, 0.8)
+		# Annotation mode shortcuts
+		KEY_S:
+			# Select mode for annotations
+			if annotation_mode == AnnotationMode.SELECT:
+				clear_annotation_mode()
+			else:
+				set_annotation_mode(AnnotationMode.SELECT)
+		KEY_A:
+			if annotation_mode == AnnotationMode.ARROW:
+				clear_annotation_mode()
+			else:
+				set_annotation_mode(AnnotationMode.ARROW)
+		KEY_T:
+			if annotation_mode == AnnotationMode.TEXT:
+				clear_annotation_mode()
+			else:
+				set_annotation_mode(AnnotationMode.TEXT)
+		KEY_P:
+			if annotation_mode == AnnotationMode.POLYLINE:
+				clear_annotation_mode()
+			else:
+				set_annotation_mode(AnnotationMode.POLYLINE)
 
 
 func _zoom_at(screen_pos: Vector2, factor: float) -> void:
@@ -869,6 +1435,195 @@ func _rotate_selected() -> void:
 			data.component_changed.emit(comp_id)
 
 	queue_redraw()
+
+
+## Delete selected annotation
+func _delete_selected_annotation() -> void:
+	if selected_annotation_id.is_empty():
+		return
+
+	data.remove_annotation(selected_annotation_id)
+	selected_annotation_id = ""
+	queue_redraw()
+
+
+## Rotate selected annotation by 45 degrees
+func _rotate_selected_annotation() -> void:
+	if selected_annotation_id.is_empty():
+		return
+
+	var annotation := data.get_annotation(selected_annotation_id)
+	if annotation:
+		annotation.rotate_around_center(deg_to_rad(45.0))
+		data.data_changed.emit()
+		queue_redraw()
+
+
+## Scale selected annotation
+func _scale_selected_annotation(factor: float) -> void:
+	if selected_annotation_id.is_empty():
+		return
+
+	var annotation := data.get_annotation(selected_annotation_id)
+	if annotation:
+		annotation.scale_from_center(factor)
+		data.data_changed.emit()
+		queue_redraw()
+
+
+## Invert selected arrow direction (swap head/tail)
+func _invert_selected_arrow() -> void:
+	if selected_annotation_id.is_empty():
+		return
+
+	var annotation := data.get_annotation(selected_annotation_id)
+	if annotation and annotation.type == PCBAnnotationScript.AnnotationType.ARROW:
+		annotation.invert_direction()
+		data.data_changed.emit()
+		queue_redraw()
+
+
+## Handle annotation click based on current mode
+func _handle_annotation_click(world_pos: Vector2, is_double_click: bool) -> void:
+	match annotation_mode:
+		AnnotationMode.SELECT:
+			_handle_select_click(world_pos)
+		AnnotationMode.ARROW:
+			_handle_arrow_click(world_pos)
+		AnnotationMode.TEXT:
+			_handle_text_click(world_pos)
+		AnnotationMode.REGION:
+			_handle_region_click(world_pos)
+		AnnotationMode.POLYLINE:
+			_handle_polyline_click(world_pos, is_double_click)
+
+
+## Handle select mode click - select annotation for transforms
+func _handle_select_click(world_pos: Vector2) -> void:
+	# Try to find an annotation at click position
+	var hit_ann_id := data.get_annotation_at(world_pos, 3.0 / zoom)  # Threshold in world units
+
+	if not hit_ann_id.is_empty():
+		# Select the annotation and start dragging
+		selected_annotation_id = hit_ann_id
+		is_dragging_annotation = true
+		annotation_drag_start = world_pos
+		var annotation := data.get_annotation(hit_ann_id)
+		if annotation:
+			annotation_drag_offset = annotation.get_center() - world_pos
+	else:
+		# Clicked on empty space - deselect
+		selected_annotation_id = ""
+		is_dragging_annotation = false
+
+
+## Handle arrow annotation click
+func _handle_arrow_click(world_pos: Vector2) -> void:
+	if not is_drawing_annotation:
+		# First click - start arrow
+		is_drawing_annotation = true
+		annotation_points.clear()
+		annotation_points.append(world_pos)
+	else:
+		# Second click - finish arrow
+		_create_arrow_annotation(annotation_points[0], world_pos)
+		_finish_annotation_drawing()
+
+
+## Handle text annotation click
+func _handle_text_click(world_pos: Vector2) -> void:
+	# Single click places text - emit signal for text input
+	annotation_text_requested.emit(world_pos)
+	# Don't finish mode yet - wait for text input
+
+
+## Handle region annotation click
+func _handle_region_click(world_pos: Vector2) -> void:
+	if not is_drawing_annotation:
+		# First click - start region
+		is_drawing_annotation = true
+		annotation_points.clear()
+		annotation_points.append(world_pos)
+	else:
+		# Second click - finish region
+		_create_region_annotation(annotation_points[0], world_pos)
+		_finish_annotation_drawing()
+
+
+## Handle polyline annotation click
+func _handle_polyline_click(world_pos: Vector2, is_double_click: bool) -> void:
+	if not is_drawing_annotation:
+		# First click - start polyline
+		is_drawing_annotation = true
+		annotation_points.clear()
+		annotation_points.append(world_pos)
+	elif is_double_click:
+		# Double click - finish polyline
+		if annotation_points.size() >= 2:
+			_create_polyline_annotation(annotation_points)
+		_finish_annotation_drawing()
+	else:
+		# Single click - add point
+		annotation_points.append(world_pos)
+
+
+## Create arrow annotation
+func _create_arrow_annotation(start: Vector2, end: Vector2) -> void:
+	var annotation := PCBAnnotationScript.create_arrow(start, end, "", "human")
+	data.add_annotation(annotation)
+	annotation_created.emit(annotation.id)
+
+
+## Create text annotation (called externally after text input)
+func create_text_annotation(position: Vector2, text_content: String) -> void:
+	if text_content.is_empty():
+		return
+	var annotation := PCBAnnotationScript.create_text(position, text_content, "human")
+	data.add_annotation(annotation)
+	annotation_created.emit(annotation.id)
+	queue_redraw()
+
+
+## Create region annotation
+func _create_region_annotation(corner1: Vector2, corner2: Vector2) -> void:
+	var annotation := PCBAnnotationScript.create_region(corner1, corner2, "", "human")
+	data.add_annotation(annotation)
+	annotation_created.emit(annotation.id)
+
+
+## Create polyline annotation
+func _create_polyline_annotation(points: Array[Vector2]) -> void:
+	var annotation := PCBAnnotationScript.create_polyline(points, "", "human")
+	data.add_annotation(annotation)
+	annotation_created.emit(annotation.id)
+
+
+## Finish annotation drawing (reset state but keep mode)
+func _finish_annotation_drawing() -> void:
+	is_drawing_annotation = false
+	annotation_points.clear()
+	queue_redraw()
+
+
+## Cancel current annotation drawing
+func cancel_annotation() -> void:
+	is_drawing_annotation = false
+	annotation_points.clear()
+	queue_redraw()
+
+
+## Set annotation mode
+func set_annotation_mode(mode: AnnotationMode) -> void:
+	if annotation_mode != mode:
+		cancel_annotation()
+		annotation_mode = mode
+		annotation_mode_changed.emit(mode)
+		queue_redraw()
+
+
+## Clear annotation mode (return to normal)
+func clear_annotation_mode() -> void:
+	set_annotation_mode(AnnotationMode.NONE)
 
 #endregion
 

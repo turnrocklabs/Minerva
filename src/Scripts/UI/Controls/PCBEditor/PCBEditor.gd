@@ -7,6 +7,7 @@ const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComp
 const PCBCanvasScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBCanvas.gd")
 const PCBSpatialIndexScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSpatialIndex.gd")
 const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
+const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 
 ## Signals
 signal data_changed()
@@ -35,6 +36,15 @@ var suggestion_bar: HBoxContainer = null
 var suggestion_label: Label = null
 var accept_button: Button = null
 var reject_button: Button = null
+
+## Annotation toolbar elements
+var annotation_buttons: Dictionary = {}  # mode -> Button
+var annotation_mode_label: Label = null
+
+## Text input dialog for annotations
+var text_input_dialog: AcceptDialog = null
+var text_input_line: LineEdit = null
+var pending_text_position: Vector2 = Vector2.ZERO
 
 ## Properties panel elements
 var prop_id_label: Label = null
@@ -181,6 +191,59 @@ func _create_toolbar() -> HBoxContainer:
 	labels_check.button_pressed = true
 	labels_check.toggled.connect(func(pressed): canvas.show_labels = pressed; canvas.queue_redraw())
 	tb.add_child(labels_check)
+
+	tb.add_child(VSeparator.new())
+
+	# Annotation mode buttons
+	var ann_label := Label.new()
+	ann_label.text = "Annotate:"
+	tb.add_child(ann_label)
+
+	var select_btn := Button.new()
+	select_btn.text = "Select"
+	select_btn.tooltip_text = "Select annotation to transform (S)"
+	select_btn.toggle_mode = true
+	select_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.SELECT))
+	tb.add_child(select_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.SELECT] = select_btn
+
+	var arrow_btn := Button.new()
+	arrow_btn.text = "Arrow"
+	arrow_btn.tooltip_text = "Draw arrow annotation (A)"
+	arrow_btn.toggle_mode = true
+	arrow_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.ARROW))
+	tb.add_child(arrow_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.ARROW] = arrow_btn
+
+	var text_btn := Button.new()
+	text_btn.text = "Text"
+	text_btn.tooltip_text = "Add text annotation (T)"
+	text_btn.toggle_mode = true
+	text_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.TEXT))
+	tb.add_child(text_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.TEXT] = text_btn
+
+	var region_btn := Button.new()
+	region_btn.text = "Region"
+	region_btn.tooltip_text = "Highlight region annotation (Shift+R)"
+	region_btn.toggle_mode = true
+	region_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.REGION))
+	tb.add_child(region_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.REGION] = region_btn
+
+	var polyline_btn := Button.new()
+	polyline_btn.text = "Polyline"
+	polyline_btn.tooltip_text = "Draw polyline annotation (P)"
+	polyline_btn.toggle_mode = true
+	polyline_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.POLYLINE))
+	tb.add_child(polyline_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.POLYLINE] = polyline_btn
+
+	# Annotation mode label
+	annotation_mode_label = Label.new()
+	annotation_mode_label.text = ""
+	annotation_mode_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+	tb.add_child(annotation_mode_label)
 
 	# Spacer
 	var spacer := Control.new()
@@ -338,6 +401,11 @@ func _connect_signals() -> void:
 	canvas.suggestion_rejected.connect(_on_suggestion_rejected)
 	canvas.selection_changed.connect(_on_selection_changed)
 
+	# Annotation signals
+	canvas.annotation_mode_changed.connect(_on_annotation_mode_changed)
+	canvas.annotation_text_requested.connect(_on_annotation_text_requested)
+	canvas.annotation_created.connect(_on_annotation_created)
+
 	# Data signals
 	data.data_changed.connect(_on_data_changed)
 	data.suggestion_added.connect(_on_suggestion_added)
@@ -345,6 +413,9 @@ func _connect_signals() -> void:
 
 	# Set data to canvas
 	canvas.set_data(data)
+
+	# Create text input dialog
+	_create_text_input_dialog()
 
 
 func _add_demo_components() -> void:
@@ -499,6 +570,82 @@ func _on_accept_suggestion() -> void:
 
 func _on_reject_suggestion() -> void:
 	canvas.reject_active_suggestion()
+
+
+## Toggle annotation mode from toolbar button
+func _toggle_annotation_mode(mode: int) -> void:
+	var canvas_mode: PCBCanvasScript.AnnotationMode = mode as PCBCanvasScript.AnnotationMode
+	if canvas.annotation_mode == canvas_mode:
+		canvas.clear_annotation_mode()
+	else:
+		canvas.set_annotation_mode(canvas_mode)
+
+
+## Handle annotation mode change from canvas
+func _on_annotation_mode_changed(mode: int) -> void:
+	# Update button states
+	for btn_mode in annotation_buttons:
+		var btn: Button = annotation_buttons[btn_mode]
+		btn.button_pressed = (btn_mode == mode)
+
+	# Update mode label
+	if mode == PCBCanvasScript.AnnotationMode.NONE:
+		annotation_mode_label.text = ""
+	else:
+		var mode_names := ["", "Select", "Arrow", "Text", "Region", "Polyline"]
+		annotation_mode_label.text = "Mode: " + mode_names[mode]
+
+
+## Handle request for text input (when placing text annotation)
+func _on_annotation_text_requested(position: Vector2) -> void:
+	pending_text_position = position
+	text_input_line.text = ""
+	text_input_dialog.popup_centered()
+	text_input_line.grab_focus()
+
+
+## Handle annotation created
+func _on_annotation_created(annotation_id: String) -> void:
+	# Could show a brief notification or update stats
+	pass
+
+
+## Create text input dialog for text annotations
+func _create_text_input_dialog() -> void:
+	text_input_dialog = AcceptDialog.new()
+	text_input_dialog.title = "Add Text Annotation"
+	text_input_dialog.size = Vector2i(300, 100)
+	add_child(text_input_dialog)
+
+	var vbox := VBoxContainer.new()
+	text_input_dialog.add_child(vbox)
+
+	var label := Label.new()
+	label.text = "Enter annotation text:"
+	vbox.add_child(label)
+
+	text_input_line = LineEdit.new()
+	text_input_line.placeholder_text = "Type your annotation..."
+	text_input_line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(text_input_line)
+
+	# Connect signals
+	text_input_dialog.confirmed.connect(_on_text_input_confirmed)
+	text_input_dialog.canceled.connect(_on_text_input_canceled)
+	text_input_line.text_submitted.connect(func(_text): text_input_dialog.hide(); _on_text_input_confirmed())
+
+
+## Handle text input confirmed
+func _on_text_input_confirmed() -> void:
+	var text_content := text_input_line.text.strip_edges()
+	if not text_content.is_empty():
+		canvas.create_text_annotation(pending_text_position, text_content)
+
+
+## Handle text input canceled
+func _on_text_input_canceled() -> void:
+	# Just close, don't create annotation
+	pass
 
 #endregion
 

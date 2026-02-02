@@ -6,6 +6,7 @@ const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComp
 const PCBNetScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBNet.gd")
 const PCBTraceScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBTrace.gd")
 const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
+const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 
 ## Signals for reactive UI updates
 signal data_changed()
@@ -16,6 +17,8 @@ signal net_changed(net_name: String)
 signal trace_changed(trace_id: String)
 signal suggestion_added(suggestion_id: String)
 signal suggestion_resolved(suggestion_id: String, accepted: bool)
+signal annotation_added(annotation_id: String)
+signal annotation_removed(annotation_id: String)
 signal structure_changed()
 
 ## Board properties
@@ -34,6 +37,9 @@ var traces: Dictionary = {}       # trace_id -> PCBTrace
 
 ## AI suggestions (pending proposals)
 var suggestions: Dictionary = {}  # suggestion_id -> PCBSuggestion
+
+## Annotations (collaborative overlays)
+var annotations: Dictionary = {}  # annotation_id -> PCBAnnotation
 
 ## Undo/redo history
 var history: Array[Dictionary] = []
@@ -309,6 +315,24 @@ func accept_suggestion(suggestion_id: String) -> bool:
 		PCBSuggestionScript.SuggestionType.DELETE:
 			remove_component(suggestion.target_component)
 
+		PCBSuggestionScript.SuggestionType.PIN_REMAP:
+			var net_name := suggestion.get_net_name()
+			var old_pin := suggestion.get_old_pin()
+			var new_pin := suggestion.get_new_pin()
+			# Disconnect old pin and connect new pin
+			disconnect_pin_from_net(net_name, old_pin.get("component", ""), old_pin.get("pin", ""))
+			connect_pin_to_net(net_name, new_pin.get("component", ""), new_pin.get("pin", ""))
+
+		PCBSuggestionScript.SuggestionType.ROUTE:
+			var trace := PCBTraceScript.new()
+			trace.net_name = suggestion.get_net_name()
+			trace.layer = suggestion.get_route_layer()
+			trace.width = suggestion.get_route_width()
+			var waypoints := suggestion.get_route_waypoints()
+			for wp in waypoints:
+				trace.waypoints.append(wp)
+			add_trace(trace)
+
 	suggestion.accept()
 	suggestion_resolved.emit(suggestion_id, true)
 	data_changed.emit()
@@ -343,6 +367,95 @@ func clear_resolved_suggestions() -> void:
 
 	if to_remove.size() > 0:
 		data_changed.emit()
+
+#endregion
+
+
+#region Annotation Management
+
+## Add an annotation
+func add_annotation(annotation: PCBAnnotationScript) -> void:
+	if annotation.id.is_empty():
+		push_error("[PCBData] Annotation must have an ID")
+		return
+
+	annotations[annotation.id] = annotation
+	annotation_added.emit(annotation.id)
+	data_changed.emit()
+
+
+## Get an annotation by ID
+func get_annotation(annotation_id: String) -> PCBAnnotationScript:
+	return annotations.get(annotation_id, null)
+
+
+## Remove an annotation
+func remove_annotation(annotation_id: String) -> void:
+	if annotations.has(annotation_id):
+		annotations.erase(annotation_id)
+		annotation_removed.emit(annotation_id)
+		data_changed.emit()
+
+
+## Get all annotations by a specific author
+func get_annotations_by_author(author: String) -> Array[PCBAnnotationScript]:
+	var result: Array[PCBAnnotationScript] = []
+	for ann_id in annotations:
+		if annotations[ann_id].author == author:
+			result.append(annotations[ann_id])
+	return result
+
+
+## Get all annotations
+func get_all_annotations() -> Array[PCBAnnotationScript]:
+	var result: Array[PCBAnnotationScript] = []
+	for ann_id in annotations:
+		result.append(annotations[ann_id])
+	return result
+
+
+## Get annotation at a position (for hit testing)
+## When multiple annotations overlap, returns the one with smallest bounding area (most specific)
+func get_annotation_at(position: Vector2, threshold: float = 2.0) -> String:
+	var best_id: String = ""
+	var best_area: float = INF
+
+	for ann_id in annotations:
+		var annotation: PCBAnnotationScript = annotations[ann_id]
+		if annotation.contains_point(position, threshold):
+			var bounds := annotation.get_bounding_rect()
+			var area := bounds.get_area()
+			# For point-like annotations (TEXT with single position), use a small default area
+			if area < 0.001:
+				area = 1.0  # 1 square mm default for point annotations
+			if area < best_area:
+				best_area = area
+				best_id = ann_id
+
+	return best_id
+
+
+## Clear annotations (optionally filter by author)
+func clear_annotations(author: String = "") -> void:
+	if author.is_empty():
+		# Clear all
+		var ids: Array[String] = []
+		for ann_id in annotations:
+			ids.append(ann_id)
+		for ann_id in ids:
+			annotation_removed.emit(ann_id)
+		annotations.clear()
+	else:
+		# Clear by author
+		var to_remove: Array[String] = []
+		for ann_id in annotations:
+			if annotations[ann_id].author == author:
+				to_remove.append(ann_id)
+		for ann_id in to_remove:
+			annotations.erase(ann_id)
+			annotation_removed.emit(ann_id)
+
+	data_changed.emit()
 
 #endregion
 
@@ -476,6 +589,10 @@ func to_dict() -> Dictionary:
 	for id in suggestions:
 		sug_dict[id] = suggestions[id].to_dict()
 
+	var ann_dict := {}
+	for id in annotations:
+		ann_dict[id] = annotations[id].to_dict()
+
 	return {
 		"version": 1,
 		"board_name": board_name,
@@ -486,7 +603,8 @@ func to_dict() -> Dictionary:
 		"components": comp_dict,
 		"nets": net_dict,
 		"traces": trace_dict,
-		"suggestions": sug_dict
+		"suggestions": sug_dict,
+		"annotations": ann_dict
 	}
 
 
@@ -529,6 +647,13 @@ func load_from_dict(data: Dictionary) -> void:
 	for id in sug_data:
 		var suggestion = PCBSuggestionScript.from_dict(sug_data[id])
 		suggestions[id] = suggestion
+
+	# Load annotations
+	annotations.clear()
+	var ann_data: Dictionary = data.get("annotations", {})
+	for id in ann_data:
+		var annotation = PCBAnnotationScript.from_dict(ann_data[id])
+		annotations[id] = annotation
 
 	structure_changed.emit()
 	data_changed.emit()
@@ -651,6 +776,7 @@ func clear() -> void:
 	nets.clear()
 	traces.clear()
 	suggestions.clear()
+	annotations.clear()
 	history.clear()
 	history_index = -1
 	structure_changed.emit()

@@ -270,6 +270,18 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _pcb_import_csv(arguments)
 		"minerva_pcb_import_footprint_geometry":
 			return _pcb_import_footprint_geometry(arguments)
+		"minerva_pcb_add_annotation":
+			return _pcb_add_annotation(arguments)
+		"minerva_pcb_list_annotations":
+			return _pcb_list_annotations(arguments)
+		"minerva_pcb_remove_annotation":
+			return _pcb_remove_annotation(arguments)
+		"minerva_pcb_clear_annotations":
+			return _pcb_clear_annotations(arguments)
+		"minerva_pcb_suggest_pin_remap":
+			return _pcb_suggest_pin_remap(arguments)
+		"minerva_pcb_suggest_route":
+			return _pcb_suggest_route(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -3943,6 +3955,7 @@ const PCBEditorScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBEditor.
 const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
+const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 
 func _register_pcb_tools() -> void:
 	_register_tool("minerva_create_pcb_editor",
@@ -4170,7 +4183,7 @@ func _register_pcb_tools() -> void:
 	)
 
 	_register_tool("minerva_pcb_rotate_component",
-		"Rotate a component.",
+		"Rotate a component. Positive degrees rotate counter-clockwise (CCW), negative rotate clockwise (CW).",
 		{
 			"type": "object",
 			"properties": {
@@ -4184,7 +4197,7 @@ func _register_pcb_tools() -> void:
 				},
 				"degrees": {
 					"type": "number",
-					"description": "Rotation in degrees (0, 90, 180, 270) or relative: 'clockwise', 'counterclockwise'"
+					"description": "Rotation angle. Positive = counter-clockwise (CCW), negative = clockwise (CW). Common values: 90 (CCW), -90 (CW), 180."
 				}
 			},
 			"required": ["editor_name", "component_id", "degrees"]
@@ -4412,6 +4425,187 @@ func _register_pcb_tools() -> void:
 				}
 			},
 			"required": ["editor_name", "geometry"]
+		}
+	)
+
+	# Annotation tools
+	_register_tool("minerva_pcb_add_annotation",
+		"Add an annotation to the PCB (arrow, text, region, or polyline). Annotations are visual overlays for collaboration between human and AI.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"type": {
+					"type": "string",
+					"description": "Annotation type: 'arrow', 'text', 'region', or 'polyline'",
+					"enum": ["arrow", "text", "region", "polyline"]
+				},
+				"positions": {
+					"type": "array",
+					"description": "Array of positions: arrow=[start,end], text=[position], region=[corner1,corner2], polyline=[point1,...,pointN]",
+					"items": {
+						"type": "object",
+						"properties": {
+							"x": {"type": "number"},
+							"y": {"type": "number"}
+						}
+					}
+				},
+				"text": {
+					"type": "string",
+					"description": "Text content for text annotations, or label for other types"
+				},
+				"color": {
+					"type": "string",
+					"description": "Optional color as hex (e.g., '#FF0000'). Defaults to AI color (cyan)"
+				},
+				"associated_component": {
+					"type": "string",
+					"description": "Optional: component ID this annotation relates to"
+				},
+				"associated_net": {
+					"type": "string",
+					"description": "Optional: net name this annotation relates to"
+				}
+			},
+			"required": ["editor_name", "type", "positions"]
+		}
+	)
+
+	_register_tool("minerva_pcb_list_annotations",
+		"List all annotations on a PCB, optionally filtered by author.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"author": {
+					"type": "string",
+					"description": "Optional filter by author: 'human', 'ai', or omit for all"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_remove_annotation",
+		"Remove a specific annotation by ID.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"annotation_id": {
+					"type": "string",
+					"description": "ID of the annotation to remove"
+				}
+			},
+			"required": ["editor_name", "annotation_id"]
+		}
+	)
+
+	_register_tool("minerva_pcb_clear_annotations",
+		"Clear annotations from the PCB, optionally filtered by author.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"author": {
+					"type": "string",
+					"description": "Optional: clear only annotations by 'human' or 'ai'. Omit to clear all."
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	# New suggestion tools
+	_register_tool("minerva_pcb_suggest_pin_remap",
+		"Suggest remapping a net connection from one pin to another. Creates a visual preview showing the old pin (red X) and new pin (green) for user approval.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"net_name": {
+					"type": "string",
+					"description": "Name of the net to remap (e.g., 'I2C_SDA', 'VCC')"
+				},
+				"old_component": {
+					"type": "string",
+					"description": "Component ID of the current pin connection (e.g., 'U1')"
+				},
+				"old_pin": {
+					"type": "string",
+					"description": "Current pin name/number (e.g., '12', 'SDA')"
+				},
+				"new_component": {
+					"type": "string",
+					"description": "Component ID for the new pin connection (can be same as old_component)"
+				},
+				"new_pin": {
+					"type": "string",
+					"description": "New pin name/number to connect to (e.g., '8', 'GPIO5')"
+				},
+				"reason": {
+					"type": "string",
+					"description": "Reason for the suggestion (shown to user)"
+				}
+			},
+			"required": ["editor_name", "net_name", "old_component", "old_pin", "new_component", "new_pin"]
+		}
+	)
+
+	_register_tool("minerva_pcb_suggest_route",
+		"Suggest a routing path for a net. Creates a dashed polyline preview showing the proposed trace for user approval.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"net_name": {
+					"type": "string",
+					"description": "Name of the net to route (e.g., 'VCC', 'GND', 'SDA')"
+				},
+				"waypoints": {
+					"type": "array",
+					"description": "Array of waypoints defining the route path [{x, y}, ...]",
+					"items": {
+						"type": "object",
+						"properties": {
+							"x": {"type": "number"},
+							"y": {"type": "number"}
+						}
+					}
+				},
+				"layer": {
+					"type": "string",
+					"description": "PCB layer for the trace: 'top' or 'bottom'. Default: 'top'"
+				},
+				"width": {
+					"type": "number",
+					"description": "Trace width in mm. Common values: 0.15, 0.2, 0.25, 0.3, 0.5, 1.0. Default: 0.25"
+				},
+				"reason": {
+					"type": "string",
+					"description": "Reason for the suggestion (shown to user)"
+				}
+			},
+			"required": ["editor_name", "net_name", "waypoints"]
 		}
 	)
 
@@ -5132,5 +5326,290 @@ func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
 		}
 
 	return result
+
+
+## Add annotation
+func _pcb_add_annotation(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var type_str: String = args.get("type", "")
+	var positions_arr: Array = args.get("positions", [])
+	var text_content: String = args.get("text", "")
+	var color_str: String = args.get("color", "")
+	var associated_comp: String = args.get("associated_component", "")
+	var associated_net: String = args.get("associated_net", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if type_str.is_empty():
+		return {"error": "type is required (arrow, text, region, polyline)", "success": false}
+	if positions_arr.is_empty():
+		return {"error": "positions array is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Convert positions
+	var positions: Array[Vector2] = []
+	for pos_data in positions_arr:
+		if pos_data is Dictionary:
+			positions.append(Vector2(pos_data.get("x", 0), pos_data.get("y", 0)))
+
+	# Create annotation based on type
+	var annotation: PCBAnnotationScript = null
+	match type_str.to_lower():
+		"arrow":
+			if positions.size() < 2:
+				return {"error": "arrow requires 2 positions (start, end)", "success": false}
+			annotation = PCBAnnotationScript.create_arrow(positions[0], positions[1], text_content, "ai")
+		"text":
+			if positions.size() < 1:
+				return {"error": "text requires 1 position", "success": false}
+			if text_content.is_empty():
+				return {"error": "text annotation requires text content", "success": false}
+			annotation = PCBAnnotationScript.create_text(positions[0], text_content, "ai")
+		"region":
+			if positions.size() < 2:
+				return {"error": "region requires 2 positions (corners)", "success": false}
+			annotation = PCBAnnotationScript.create_region(positions[0], positions[1], text_content, "ai")
+		"polyline":
+			if positions.size() < 2:
+				return {"error": "polyline requires at least 2 positions", "success": false}
+			annotation = PCBAnnotationScript.create_polyline(positions, text_content, "ai")
+		_:
+			return {"error": "Unknown annotation type: %s" % type_str, "success": false}
+
+	# Apply optional settings
+	if not color_str.is_empty():
+		annotation.color = Color.from_string(color_str, annotation.color)
+	if not associated_comp.is_empty():
+		annotation.associated_component = associated_comp
+	if not associated_net.is_empty():
+		annotation.associated_net = associated_net
+
+	data.add_annotation(annotation)
+
+	return {
+		"success": true,
+		"annotation_id": annotation.id,
+		"type": type_str,
+		"description": annotation.get_description()
+	}
+
+
+## List annotations
+func _pcb_list_annotations(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var author_filter: String = args.get("author", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var annotations_list: Array = []
+	var all_annotations: Array
+
+	if author_filter.is_empty():
+		all_annotations = data.get_all_annotations()
+	else:
+		all_annotations = data.get_annotations_by_author(author_filter)
+
+	for ann in all_annotations:
+		# Convert positions to serializable format
+		var positions_arr: Array = []
+		for pos in ann.positions:
+			positions_arr.append({"x": pos.x, "y": pos.y})
+
+		var ann_data := {
+			"id": ann.id,
+			"type": PCBAnnotationScript.AnnotationType.keys()[ann.type],
+			"positions": positions_arr,
+			"text": ann.text,
+			"author": ann.author,
+			"color": ann.color.to_html()
+		}
+		if not ann.associated_component.is_empty():
+			ann_data["associated_component"] = ann.associated_component
+		if not ann.associated_net.is_empty():
+			ann_data["associated_net"] = ann.associated_net
+		annotations_list.append(ann_data)
+
+	return {
+		"success": true,
+		"count": annotations_list.size(),
+		"annotations": annotations_list
+	}
+
+
+## Remove annotation
+func _pcb_remove_annotation(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var annotation_id: String = args.get("annotation_id", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if annotation_id.is_empty():
+		return {"error": "annotation_id is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	if not data.get_annotation(annotation_id):
+		return {"error": "Annotation not found: %s" % annotation_id, "success": false}
+
+	data.remove_annotation(annotation_id)
+
+	return {
+		"success": true,
+		"removed": annotation_id
+	}
+
+
+## Clear annotations
+func _pcb_clear_annotations(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var author_filter: String = args.get("author", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Count before clearing
+	var count_before := 0
+	if author_filter.is_empty():
+		count_before = data.get_all_annotations().size()
+	else:
+		count_before = data.get_annotations_by_author(author_filter).size()
+
+	data.clear_annotations(author_filter)
+
+	return {
+		"success": true,
+		"cleared_count": count_before,
+		"filter": author_filter if not author_filter.is_empty() else "all"
+	}
+
+
+## Suggest pin remap
+func _pcb_suggest_pin_remap(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var net_name: String = args.get("net_name", "")
+	var old_component: String = args.get("old_component", "")
+	var old_pin: String = args.get("old_pin", "")
+	var new_component: String = args.get("new_component", "")
+	var new_pin: String = args.get("new_pin", "")
+	var reason: String = args.get("reason", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if net_name.is_empty():
+		return {"error": "net_name is required", "success": false}
+	if old_component.is_empty():
+		return {"error": "old_component is required", "success": false}
+	if old_pin.is_empty():
+		return {"error": "old_pin is required", "success": false}
+	if new_component.is_empty():
+		return {"error": "new_component is required", "success": false}
+	if new_pin.is_empty():
+		return {"error": "new_pin is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Validate components exist
+	if not data.has_component(old_component):
+		return {"error": "Component not found: %s" % old_component, "success": false}
+	if not data.has_component(new_component):
+		return {"error": "Component not found: %s" % new_component, "success": false}
+
+	# Create suggestion
+	var suggestion: PCBSuggestionScript = PCBSuggestionScript.create_pin_remap_suggestion(
+		net_name, old_component, old_pin, new_component, new_pin, reason
+	)
+
+	data.add_suggestion(suggestion)
+
+	return {
+		"success": true,
+		"suggestion_id": suggestion.id,
+		"description": suggestion.description,
+		"message": "Pin remap suggestion created. User will see old pin (red X) and new pin (green) for approval."
+	}
+
+
+## Suggest route
+func _pcb_suggest_route(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var net_name: String = args.get("net_name", "")
+	var waypoints_arr: Array = args.get("waypoints", [])
+	var layer: String = args.get("layer", "top")
+	var width: float = args.get("width", 0.25)
+	var reason: String = args.get("reason", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if net_name.is_empty():
+		return {"error": "net_name is required", "success": false}
+	if waypoints_arr.size() < 2:
+		return {"error": "waypoints requires at least 2 points", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Convert waypoints to the format expected by suggestion
+	var waypoints: Array = []
+	for wp_data in waypoints_arr:
+		if wp_data is Dictionary:
+			waypoints.append({"x": wp_data.get("x", 0), "y": wp_data.get("y", 0)})
+
+	# Create suggestion
+	var suggestion: PCBSuggestionScript = PCBSuggestionScript.create_route_suggestion(
+		net_name, waypoints, layer, width, reason
+	)
+
+	data.add_suggestion(suggestion)
+
+	return {
+		"success": true,
+		"suggestion_id": suggestion.id,
+		"description": suggestion.description,
+		"waypoint_count": waypoints.size(),
+		"layer": layer,
+		"width_mm": width,
+		"message": "Route suggestion created. User will see a dashed line preview for approval."
+	}
 
 #endregion
