@@ -516,7 +516,8 @@ func _get_col_at_x(x: float) -> int:
 			return col
 		current_x += width
 
-	return -1
+	# Return last column for coordinates beyond data bounds (enables scrolling past last column)
+	return data.column_count - 1 if data.column_count > 0 else -1
 
 
 func _get_row_at_y(y: float) -> int:
@@ -528,7 +529,8 @@ func _get_row_at_y(y: float) -> int:
 			return row
 		current_y += height
 
-	return -1
+	# Return last row for coordinates beyond data bounds (enables scrolling past last row)
+	return data.row_count - 1 if data.row_count > 0 else -1
 
 
 func _get_col_x(col: int) -> float:
@@ -564,14 +566,20 @@ func _get_max_scroll_x() -> float:
 	var total_width := 0.0
 	for col in range(data.column_count):
 		total_width += data.get_column_width(col)
-	return maxf(0, total_width - size.x)
+	# Allow scrolling until the last column reaches the left of the viewport
+	# (keeping one column width visible so it's not completely empty)
+	var min_visible := data.get_column_width(data.column_count - 1) if data.column_count > 0 else 0.0
+	return maxf(0, total_width - min_visible)
 
 
 func _get_max_scroll_y() -> float:
 	var total_height := 0.0
 	for row in range(data.row_count):
 		total_height += data.get_row_height(row)
-	return maxf(0, total_height - size.y)
+	# Allow scrolling until the last row reaches the top of the viewport
+	# (keeping one row height visible so it's not completely empty)
+	var min_visible := data.get_row_height(data.row_count - 1) if data.row_count > 0 else 0.0
+	return maxf(0, total_height - min_visible)
 
 
 func get_selection_rect() -> Rect2i:

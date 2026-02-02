@@ -142,8 +142,8 @@ func _add_default_servers() -> void:
 	nudge.auto_connect = false  # User must explicitly enable via Tools menu
 	servers.append(nudge)
 
-	# Co-Browser MCP wrapper on port 8678 (connects to cobrowser_service on 8677)
-	var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8678")
+	# Co-Browser service on port 8677 (consolidated MCP + WebSocket service)
+	var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
 	cobrowser.auto_connect = false  # User must explicitly enable
 	servers.append(cobrowser)
 
@@ -291,7 +291,7 @@ func load_config() -> Error:
 		servers.append(nudge)
 
 	if not get_server("cobrowser"):
-		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8678")
+		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
 		cobrowser.auto_connect = false
 		servers.append(cobrowser)
 
@@ -311,13 +311,14 @@ func load_config() -> Error:
 func _migrate_server_configs() -> void:
 	var needs_save := false
 
-	# Cobrowser MCP wrapper runs on port 8678 (cobrowser_service is on 8677)
+	# Cobrowser consolidated service runs on port 8677 (MCP + WebSocket in one)
 	var cobrowser := get_server("cobrowser")
 	if cobrowser:
-		if cobrowser.url == "http://localhost:8677":
-			cobrowser.url = "http://localhost:8678"
+		# Migrate old 8678 port to consolidated 8677
+		if cobrowser.url == "http://localhost:8678":
+			cobrowser.url = "http://localhost:8677"
 			needs_save = true
-			print("[MCPConfig] Migrated cobrowser: port 8677 -> 8678 (MCP wrapper)")
+			print("[MCPConfig] Migrated cobrowser: port 8678 -> 8677 (consolidated service)")
 		if cobrowser.skip_mcp_init:
 			cobrowser.skip_mcp_init = false
 			cobrowser.mcp_endpoint = "/mcp"

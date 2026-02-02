@@ -36,6 +36,7 @@ var package_editor: PackageEditor
 var logs_viewer  # AutocoderLogsViewer - type annotation removed to avoid circular dependency
 var kanban_board  # AutocoderKanbanBoard - type annotation removed to avoid circular dependency
 var spreadsheet_editor  # SpreadsheetEditor
+var pcb_editor  # PCBEditor - type annotation removed to avoid circular dependency
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -70,6 +71,7 @@ enum Type {
 	LOGS,
 	KANBAN,
 	SPREADSHEET,
+	PCB,
 }
 
 
@@ -211,6 +213,14 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 
 			vbox_container.add_child(new_spreadsheet_editor)
 			editor.spreadsheet_editor = new_spreadsheet_editor
+
+		Editor.Type.PCB:
+			var pcb_editor_scene = load("res://Scenes/PCBEditor.tscn")
+			var new_pcb_editor = pcb_editor_scene.instantiate()
+			new_pcb_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_pcb_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(new_pcb_editor)
+			editor.pcb_editor = new_pcb_editor
 
 	return editor
 

@@ -222,7 +222,8 @@ func _get_col_at_x(x: float) -> int:
 			return col
 		current_x += width
 
-	return -1
+	# Return last column for coordinates beyond data bounds
+	return data.column_count - 1 if data.column_count > 0 else -1
 
 
 func _get_col_x(col: int) -> float:

@@ -534,5 +534,9 @@ func _on_add_spreadsheet_editor_pressed() -> void:
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.SPREADSHEET)
 
 
+func _on_add_pcb_editor_pressed() -> void:
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.PCB)
+
+
 func _on_add_many_new_files_editor_pressed() -> void:
 	%ManyNewFilesDialogWindow.popup()

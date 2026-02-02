@@ -23,6 +23,7 @@ signal selection_changed()
 @onready var selection_overlay: Control = %SelectionOverlay  # SelectionOverlay type causes circular dependency
 @onready var pose_editor_window: Window = %PoseEditorWindow
 @onready var pose_editor_panel: Control = %PoseEditorPanel  # PoseEditorPanel type - avoid circular ref
+@onready var pose_texture_rect: TextureRect = %PoseTexture  # TextureRect displaying pose viewport
 @onready var layer_cards_container: Control = %LayerCardsContainer
 @onready var tool_options_container: Control = %ToolOptionsContainer
 @onready var layer_cards_popup_panel: Window = %LayerCardsPopupPanel
@@ -709,6 +710,12 @@ func _ready() -> void:
 	var viewport_texture := ViewportTexture.new()
 	viewport_texture.viewport_path = drawing_area_sub_viewport.get_path()
 	mini_map_texture_rect.texture = viewport_texture
+
+	# Set up PoseTexture ViewportTexture at runtime to avoid export errors
+	if pose_editor_panel and pose_editor_panel.subviewport and pose_texture_rect:
+		var pose_viewport_texture := ViewportTexture.new()
+		pose_viewport_texture.viewport_path = pose_editor_panel.subviewport.get_path()
+		pose_texture_rect.texture = pose_viewport_texture
 
 	if Core.connected:
 		enable_ai_features()

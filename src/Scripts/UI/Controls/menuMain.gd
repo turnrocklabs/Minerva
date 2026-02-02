@@ -68,6 +68,10 @@ func handle_new_graphics():
 func handle_new_spreadsheet():
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.SPREADSHEET)
 
+# Handle new PCB editor creation
+func handle_new_pcb():
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.PCB)
+
 func _on_file_submenu_index_pressed(index):
 	match index:
 		0:
@@ -77,6 +81,8 @@ func _on_file_submenu_index_pressed(index):
 			handle_new_graphics()
 		2:
 			handle_new_spreadsheet()
+		3:
+			handle_new_pcb()
 			
 
 
@@ -134,6 +140,7 @@ func _ready():
 	file_submenu.add_item("New File")
 	file_submenu.add_item("New Graphics")
 	file_submenu.add_item("New Spreadsheet")
+	file_submenu.add_item("New PCB")
 	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
 	# Add the "New" submenu to the top of the "File" menu
 	%File.add_child(file_submenu)

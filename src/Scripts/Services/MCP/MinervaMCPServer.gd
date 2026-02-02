@@ -35,6 +35,7 @@ func _init(manager = null) -> void:
 		_register_editor_tools()
 		_register_spreadsheet_tools()
 		_register_kanban_tools()
+		_register_pcb_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -227,6 +228,48 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _fill_down_spreadsheet(arguments)
 		"minerva_recalculate":
 			return _recalculate_spreadsheet(arguments)
+
+		# PCB Editor tools
+		"minerva_create_pcb_editor":
+			return _create_pcb_editor(arguments)
+		"minerva_pcb_set_board_size":
+			return _pcb_set_board_size(arguments)
+		"minerva_pcb_get_components":
+			return _pcb_get_components(arguments)
+		"minerva_pcb_describe_component":
+			return _pcb_describe_component(arguments)
+		"minerva_pcb_spatial_query":
+			return _pcb_spatial_query(arguments)
+		"minerva_pcb_get_nets":
+			return _pcb_get_nets(arguments)
+		"minerva_pcb_add_component":
+			return _pcb_add_component(arguments)
+		"minerva_pcb_move_component":
+			return _pcb_move_component(arguments)
+		"minerva_pcb_move_relative":
+			return _pcb_move_relative(arguments)
+		"minerva_pcb_rotate_component":
+			return _pcb_rotate_component(arguments)
+		"minerva_pcb_delete_component":
+			return _pcb_delete_component(arguments)
+		"minerva_pcb_suggest_move":
+			return _pcb_suggest_move(arguments)
+		"minerva_pcb_get_suggestions":
+			return _pcb_get_suggestions(arguments)
+		"minerva_pcb_accept_suggestion":
+			return _pcb_accept_suggestion(arguments)
+		"minerva_pcb_reject_suggestion":
+			return _pcb_reject_suggestion(arguments)
+		"minerva_pcb_connect_net":
+			return _pcb_connect_net(arguments)
+		"minerva_pcb_export_csv":
+			return _pcb_export_csv(arguments)
+		"minerva_pcb_export_yaml":
+			return _pcb_export_yaml(arguments)
+		"minerva_pcb_import_csv":
+			return _pcb_import_csv(arguments)
+		"minerva_pcb_import_footprint_geometry":
+			return _pcb_import_footprint_geometry(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -1911,6 +1954,8 @@ func _list_editors(_args: Dictionary) -> Dictionary:
 					editor_type = "graphics"
 				EditorGDScript.Type.SPREADSHEET:
 					editor_type = "spreadsheet"
+				EditorGDScript.Type.PCB:
+					editor_type = "pcb"
 
 		var editor_info: Dictionary = {
 			"name": tab_title,
@@ -1954,6 +1999,10 @@ func _rename_editor(args: Dictionary) -> Dictionary:
 		var tab_title = editor_pane.Tabs.get_tab_title(i)
 		if tab_title == editor_name:
 			editor_pane.Tabs.set_tab_title(i, new_name)
+			# Also update the editor's tab_title property
+			var editor_control = editor_pane.Tabs.get_tab_control(i)
+			if editor_control and editor_control is Editor:
+				editor_control.tab_title = new_name
 			return {
 				"success": true,
 				"old_name": editor_name,
@@ -3883,6 +3932,1163 @@ func _recalculate_spreadsheet(args: Dictionary) -> Dictionary:
 	return {
 		"success": true,
 		"message": "Recalculated all formulas in %s" % editor_name
+	}
+
+#endregion
+
+
+#region PCB Editor Tool Registration
+
+const PCBEditorScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBEditor.gd")
+const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
+const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
+const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
+
+func _register_pcb_tools() -> void:
+	_register_tool("minerva_create_pcb_editor",
+		"Create a new PCB Editor tab for designing printed circuit board layouts.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the PCB editor tab"
+				},
+				"board_width": {
+					"type": "number",
+					"description": "Board width in mm. Default: 100"
+				},
+				"board_height": {
+					"type": "number",
+					"description": "Board height in mm. Default: 100"
+				}
+			},
+			"required": ["name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_get_components",
+		"Get all components from a PCB editor with their positions and connections.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_set_board_size",
+		"Set the PCB board dimensions.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"width": {
+					"type": "number",
+					"description": "Board width in mm"
+				},
+				"height": {
+					"type": "number",
+					"description": "Board height in mm"
+				}
+			},
+			"required": ["editor_name", "width", "height"]
+		}
+	)
+
+	_register_tool("minerva_pcb_describe_component",
+		"Get detailed spatial context for a component including nearby components, connections, and region.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"component_id": {
+					"type": "string",
+					"description": "Component ID (e.g., 'SW1', 'U3')"
+				}
+			},
+			"required": ["editor_name", "component_id"]
+		}
+	)
+
+	_register_tool("minerva_pcb_spatial_query",
+		"Query components based on spatial relationships (e.g., 'what components are near U3?').",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"query": {
+					"type": "string",
+					"description": "Natural language spatial query"
+				},
+				"reference_component": {
+					"type": "string",
+					"description": "Component ID to query relative to"
+				},
+				"radius_mm": {
+					"type": "number",
+					"description": "Search radius in mm. Default: 20"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_get_nets",
+		"Get all electrical nets (connections) from a PCB.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_add_component",
+		"Add a new component to the PCB.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"id": {
+					"type": "string",
+					"description": "Component ID (e.g., 'R15', 'U3'). Auto-generated if not specified."
+				},
+				"footprint": {
+					"type": "string",
+					"description": "Footprint type: RESISTOR, CAPACITOR, IC_DIP, IC_QFP, SWITCH, CONNECTOR, LED, DIODE, TRANSISTOR, HEADER, MOUNTING_HOLE, MODULE",
+					"enum": ["RESISTOR", "CAPACITOR", "IC_DIP", "IC_QFP", "SWITCH", "CONNECTOR", "LED", "DIODE", "TRANSISTOR", "HEADER", "MOUNTING_HOLE", "MODULE"]
+				},
+				"x": {
+					"type": "number",
+					"description": "X position in mm"
+				},
+				"y": {
+					"type": "number",
+					"description": "Y position in mm"
+				},
+				"rotation": {
+					"type": "number",
+					"description": "Rotation in degrees (0, 90, 180, 270). Default: 0"
+				},
+				"value": {
+					"type": "string",
+					"description": "Component value (e.g., '10K', '100nF')"
+				},
+				"pin_count": {
+					"type": "integer",
+					"description": "Number of pins for HEADER/CONNECTOR (single row) or IC_DIP/MODULE (dual row, must be even)"
+				},
+				"width": {
+					"type": "number",
+					"description": "Custom width in mm (overrides default)"
+				},
+				"height": {
+					"type": "number",
+					"description": "Custom height in mm (overrides default)"
+				},
+				"pin_names": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Custom pin names (e.g., ['GND', 'VCC', 'SDA', 'SCL'] for a 4-pin header)"
+				},
+				"snap_to_grid": {
+					"type": "boolean",
+					"description": "Whether to snap position to grid (default: true). Set to false for exact positioning."
+				}
+			},
+			"required": ["editor_name", "footprint", "x", "y"]
+		}
+	)
+
+	_register_tool("minerva_pcb_move_component",
+		"Move a component to an absolute position.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"component_id": {
+					"type": "string",
+					"description": "Component ID to move"
+				},
+				"x": {
+					"type": "number",
+					"description": "New X position in mm"
+				},
+				"y": {
+					"type": "number",
+					"description": "New Y position in mm"
+				}
+			},
+			"required": ["editor_name", "component_id", "x", "y"]
+		}
+	)
+
+	_register_tool("minerva_pcb_move_relative",
+		"Move a component using natural language direction (e.g., 'down a bit', 'closer to U3').",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"component_id": {
+					"type": "string",
+					"description": "Component ID to move"
+				},
+				"direction": {
+					"type": "string",
+					"description": "Natural language direction: 'up', 'down', 'left', 'right', 'closer to X', 'away from X', 'toward center', etc."
+				}
+			},
+			"required": ["editor_name", "component_id", "direction"]
+		}
+	)
+
+	_register_tool("minerva_pcb_rotate_component",
+		"Rotate a component.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"component_id": {
+					"type": "string",
+					"description": "Component ID to rotate"
+				},
+				"degrees": {
+					"type": "number",
+					"description": "Rotation in degrees (0, 90, 180, 270) or relative: 'clockwise', 'counterclockwise'"
+				}
+			},
+			"required": ["editor_name", "component_id", "degrees"]
+		}
+	)
+
+	_register_tool("minerva_pcb_delete_component",
+		"Delete a component from the PCB.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"component_id": {
+					"type": "string",
+					"description": "Component ID to delete"
+				}
+			},
+			"required": ["editor_name", "component_id"]
+		}
+	)
+
+	_register_tool("minerva_pcb_suggest_move",
+		"Propose a component move as a suggestion (creates ghost preview for user approval).",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"component_id": {
+					"type": "string",
+					"description": "Component ID to suggest moving"
+				},
+				"direction": {
+					"type": "string",
+					"description": "Natural language direction or absolute: 'closer to U2', 'down a bit', or '25.4,12.7' for absolute"
+				},
+				"reason": {
+					"type": "string",
+					"description": "Reason for the suggestion (shown to user)"
+				}
+			},
+			"required": ["editor_name", "component_id", "direction"]
+		}
+	)
+
+	_register_tool("minerva_pcb_get_suggestions",
+		"Get all pending AI suggestions for a PCB.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_accept_suggestion",
+		"Accept a pending suggestion.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"suggestion_id": {
+					"type": "string",
+					"description": "Suggestion ID to accept"
+				}
+			},
+			"required": ["editor_name", "suggestion_id"]
+		}
+	)
+
+	_register_tool("minerva_pcb_reject_suggestion",
+		"Reject a pending suggestion.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"suggestion_id": {
+					"type": "string",
+					"description": "Suggestion ID to reject"
+				}
+			},
+			"required": ["editor_name", "suggestion_id"]
+		}
+	)
+
+	_register_tool("minerva_pcb_connect_net",
+		"Connect component pins to a net (creates net if it doesn't exist).",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"net_name": {
+					"type": "string",
+					"description": "Net name (e.g., 'VCC', 'GND', 'SDA')"
+				},
+				"pins": {
+					"type": "array",
+					"description": "Array of pin connections: [{\"component\": \"U1\", \"pin\": \"8\"}, ...]",
+					"items": {
+						"type": "object",
+						"properties": {
+							"component": {"type": "string"},
+							"pin": {"type": "string"}
+						}
+					}
+				}
+			},
+			"required": ["editor_name", "net_name", "pins"]
+		}
+	)
+
+	_register_tool("minerva_pcb_export_csv",
+		"Export PCB component placement as CSV.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_export_yaml",
+		"Export PCB as YAML (compatible with pcb-architect).",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_import_csv",
+		"Import component placement from CSV.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"csv_content": {
+					"type": "string",
+					"description": "CSV content with columns: id,footprint,x,y,rotation,layer,value"
+				}
+			},
+			"required": ["editor_name", "csv_content"]
+		}
+	)
+
+	_register_tool("minerva_pcb_import_footprint_geometry",
+		"Import detailed pad geometry from pcb-architect footprint-geometry output. Updates component pads with accurate shapes, sizes, and drill holes for rendering.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"geometry": {
+					"type": "object",
+					"description": "Footprint geometry JSON from pcb-architect footprint-geometry command. Contains board_name and components with pad arrays.",
+					"properties": {
+						"board_name": {"type": "string"},
+						"components": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "object",
+								"properties": {
+									"footprint_id": {"type": "string"},
+									"footprint_found": {"type": "boolean"},
+									"bounding_box": {"type": "object"},
+									"pads": {
+										"type": "array",
+										"items": {
+											"type": "object",
+											"properties": {
+												"number": {"type": "string"},
+												"type": {"type": "string", "enum": ["smd", "thru_hole", "np_thru_hole"]},
+												"shape": {"type": "string", "enum": ["rect", "circle", "oval", "roundrect", "custom"]},
+												"position": {"type": "object"},
+												"size": {"type": "object"},
+												"drill": {"type": "number"},
+												"layers": {"type": "array"}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"required": ["editor_name", "geometry"]
+		}
+	)
+
+#endregion
+
+
+#region PCB Editor Tool Implementations
+
+## Find a PCB editor by name
+func _find_pcb_editor(name_: String):  # Returns PCBEditor or null
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return null
+
+	var clean_name = name_.strip_edges()
+
+	# Look for PCB editor type
+	for editor in editor_pane.get_open_editors():
+		if editor.type == Editor.Type.PCB and editor.tab_title == clean_name:
+			return editor.pcb_editor
+
+	# Case-insensitive match
+	var lower_name = clean_name.to_lower()
+	for editor in editor_pane.get_open_editors():
+		if editor.type == Editor.Type.PCB and editor.tab_title.to_lower() == lower_name:
+			return editor.pcb_editor
+
+	return null
+
+
+## Create a new PCB editor
+func _create_pcb_editor(args: Dictionary) -> Dictionary:
+	var name_: String = args.get("name", "")
+	var board_width: float = args.get("board_width", 100.0)
+	var board_height: float = args.get("board_height", 100.0)
+
+	if name_.is_empty():
+		return {"error": "name is required", "success": false}
+
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return {"error": "Editor pane not available", "success": false}
+
+	# Create new PCB editor tab
+	var editor = editor_pane.add_pcb_editor(name_)
+	if not editor or not editor.pcb_editor:
+		return {"error": "Failed to create PCB editor", "success": false}
+
+	# Set board size
+	var data = editor.pcb_editor.get_data()
+	if data:
+		data.board_width = board_width
+		data.board_height = board_height
+		data.board_name = name_
+
+	return {
+		"success": true,
+		"editor_name": name_,
+		"board_width": board_width,
+		"board_height": board_height
+	}
+
+
+## Set board dimensions
+func _pcb_set_board_size(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var width: float = args.get("width", 100.0)
+	var height: float = args.get("height", 100.0)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	data.board_width = width
+	data.board_height = height
+	data.data_changed.emit()
+
+	return {
+		"success": true,
+		"board_width": width,
+		"board_height": height
+	}
+
+
+## Get all components from a PCB
+func _pcb_get_components(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var components: Array = []
+	for comp_id in data.components:
+		var comp = data.components[comp_id]
+		var comp_info := {
+			"id": comp.id,
+			"footprint": PCBComponentScript.FootprintType.keys()[comp.footprint],
+			"x": comp.position.x,
+			"y": comp.position.y,
+			"rotation": comp.rotation,
+			"layer": comp.layer,
+			"pins": comp.pins.keys()
+		}
+		if comp.properties.has("value"):
+			comp_info["value"] = comp.properties["value"]
+		components.append(comp_info)
+
+	return {
+		"success": true,
+		"component_count": components.size(),
+		"components": components
+	}
+
+
+## Describe component context
+func _pcb_describe_component(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var component_id: String = args.get("component_id", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if component_id.is_empty():
+		return {"error": "component_id is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var context = pcb_editor.describe_component(component_id)
+	if context.is_empty():
+		return {"error": "Component not found: %s" % component_id, "success": false}
+
+	context["success"] = true
+	return context
+
+
+## Spatial query
+func _pcb_spatial_query(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var reference_component: String = args.get("reference_component", "")
+	var radius: float = args.get("radius_mm", 20.0)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	if reference_component.is_empty():
+		# Return all components if no reference
+		return _pcb_get_components(args)
+
+	var nearby = pcb_editor.get_nearby_components(reference_component, radius)
+	var results: Array = []
+
+	var spatial_index = pcb_editor.get_spatial_index()
+	for comp_id in nearby:
+		var desc = spatial_index.describe_relative_position(reference_component, comp_id)
+		results.append({
+			"id": comp_id,
+			"relationship": desc
+		})
+
+	return {
+		"success": true,
+		"reference": reference_component,
+		"radius_mm": radius,
+		"nearby_count": results.size(),
+		"nearby": results
+	}
+
+
+## Get all nets
+func _pcb_get_nets(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var nets_arr: Array = []
+	for net_name in data.nets:
+		var net = data.nets[net_name]
+		var pins_arr: Array = []
+		for pin in net.pins:
+			pins_arr.append("%s.%s" % [pin.get("component_id", ""), pin.get("pin_name", "")])
+
+		nets_arr.append({
+			"name": net.name,
+			"pins": pins_arr,
+			"is_power": net.is_power_net
+		})
+
+	return {
+		"success": true,
+		"net_count": nets_arr.size(),
+		"nets": nets_arr
+	}
+
+
+## Add a component
+func _pcb_add_component(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var footprint_str: String = args.get("footprint", "")
+	var x: float = args.get("x", 50.0)
+	var y: float = args.get("y", 50.0)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if footprint_str.is_empty():
+		return {"error": "footprint is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Parse footprint type
+	var footprint_idx := PCBComponentScript.FootprintType.keys().find(footprint_str.to_upper())
+	if footprint_idx < 0:
+		return {"error": "Invalid footprint type: %s" % footprint_str, "success": false}
+
+	# Create component
+	var component_id: String = args.get("id", "")
+	if component_id.is_empty():
+		var prefix = footprint_str[0] if footprint_str.length() > 0 else "U"
+		component_id = data.generate_component_id(prefix)
+
+	var comp = PCBComponentScript.new()
+	comp.id = component_id
+	comp.footprint = footprint_idx
+	# Use exact position if snap_to_grid is false, otherwise snap
+	var snap: bool = args.get("snap_to_grid", true)
+	if snap:
+		comp.position = data.snap_to_grid(Vector2(x, y))
+	else:
+		comp.position = Vector2(x, y)
+	comp.rotation = args.get("rotation", 0.0)
+
+	# Setup pins based on footprint type and optional pin_count
+	var pin_count: int = args.get("pin_count", 0)
+	var pin_names: Array = args.get("pin_names", [])
+
+	if pin_count > 0:
+		# Custom pin count specified
+		match footprint_idx:
+			PCBComponentScript.FootprintType.HEADER, PCBComponentScript.FootprintType.CONNECTOR:
+				comp.setup_header_pins(pin_count, pin_names)
+			PCBComponentScript.FootprintType.IC_DIP, PCBComponentScript.FootprintType.MODULE:
+				comp.setup_dip_pins(pin_count)
+			_:
+				comp.setup_standard_pins()
+	else:
+		comp.setup_standard_pins()
+
+	# Apply custom size if specified (use set_size to update local_bounds too)
+	var custom_width: float = args.get("width", comp.width)
+	var custom_height: float = args.get("height", comp.height)
+	if args.has("width") or args.has("height"):
+		comp.set_size(custom_width, custom_height)
+
+	if args.has("value"):
+		comp.properties["value"] = args.get("value")
+
+	data.save_to_history("Add " + component_id)
+	data.add_component(comp)
+
+	return {
+		"success": true,
+		"component_id": component_id,
+		"x": comp.position.x,
+		"y": comp.position.y,
+		"pin_count": comp.pins.size()
+	}
+
+
+## Move component absolute
+func _pcb_move_component(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var component_id: String = args.get("component_id", "")
+	var x: float = args.get("x", 0.0)
+	var y: float = args.get("y", 0.0)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if component_id.is_empty():
+		return {"error": "component_id is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	if not data.has_component(component_id):
+		return {"error": "Component not found: %s" % component_id, "success": false}
+
+	var new_pos = data.snap_to_grid(Vector2(x, y))
+	data.save_to_history("Move " + component_id)
+	data.move_component(component_id, new_pos)
+
+	return {
+		"success": true,
+		"component_id": component_id,
+		"x": new_pos.x,
+		"y": new_pos.y
+	}
+
+
+## Move component relative
+func _pcb_move_relative(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var component_id: String = args.get("component_id", "")
+	var direction: String = args.get("direction", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if component_id.is_empty():
+		return {"error": "component_id is required", "success": false}
+	if direction.is_empty():
+		return {"error": "direction is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var new_pos = pcb_editor.move_component_relative(component_id, direction)
+
+	return {
+		"success": true,
+		"component_id": component_id,
+		"new_x": new_pos.x,
+		"new_y": new_pos.y,
+		"interpreted_direction": direction
+	}
+
+
+## Rotate component
+func _pcb_rotate_component(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var component_id: String = args.get("component_id", "")
+	var degrees = args.get("degrees", 90)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if component_id.is_empty():
+		return {"error": "component_id is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var comp = data.get_component(component_id)
+	if not comp:
+		return {"error": "Component not found: %s" % component_id, "success": false}
+
+	var new_rotation: float = comp.rotation
+	if degrees is String:
+		if degrees.to_lower() == "clockwise":
+			new_rotation = fmod(comp.rotation + 90.0, 360.0)
+		elif degrees.to_lower() == "counterclockwise":
+			new_rotation = fmod(comp.rotation - 90.0 + 360.0, 360.0)
+	else:
+		new_rotation = float(degrees)
+
+	data.save_to_history("Rotate " + component_id)
+	data.rotate_component(component_id, new_rotation)
+
+	return {
+		"success": true,
+		"component_id": component_id,
+		"rotation": new_rotation
+	}
+
+
+## Delete component
+func _pcb_delete_component(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var component_id: String = args.get("component_id", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if component_id.is_empty():
+		return {"error": "component_id is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	if not data.has_component(component_id):
+		return {"error": "Component not found: %s" % component_id, "success": false}
+
+	data.save_to_history("Delete " + component_id)
+	data.remove_component(component_id)
+
+	return {
+		"success": true,
+		"deleted": component_id
+	}
+
+
+## Suggest move
+func _pcb_suggest_move(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var component_id: String = args.get("component_id", "")
+	var direction: String = args.get("direction", "")
+	var reason: String = args.get("reason", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if component_id.is_empty():
+		return {"error": "component_id is required", "success": false}
+	if direction.is_empty():
+		return {"error": "direction is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var suggestion_id = pcb_editor.suggest_move(component_id, direction, reason)
+	if suggestion_id.is_empty():
+		return {"error": "Failed to create suggestion", "success": false}
+
+	return {
+		"success": true,
+		"suggestion_id": suggestion_id,
+		"message": "Suggestion created. User will see a ghost preview and can accept or reject."
+	}
+
+
+## Get pending suggestions
+func _pcb_get_suggestions(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var pending = data.get_pending_suggestions()
+	var suggestions: Array = []
+
+	for sug in pending:
+		suggestions.append({
+			"id": sug.id,
+			"type": PCBSuggestionScript.SuggestionType.keys()[sug.type],
+			"description": sug.description,
+			"target": sug.target_component,
+			"reason": sug.reason
+		})
+
+	return {
+		"success": true,
+		"pending_count": suggestions.size(),
+		"suggestions": suggestions
+	}
+
+
+## Accept suggestion
+func _pcb_accept_suggestion(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var suggestion_id: String = args.get("suggestion_id", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if suggestion_id.is_empty():
+		return {"error": "suggestion_id is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	if data.accept_suggestion(suggestion_id):
+		return {"success": true, "accepted": suggestion_id}
+	else:
+		return {"error": "Failed to accept suggestion: %s" % suggestion_id, "success": false}
+
+
+## Reject suggestion
+func _pcb_reject_suggestion(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var suggestion_id: String = args.get("suggestion_id", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if suggestion_id.is_empty():
+		return {"error": "suggestion_id is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	data.reject_suggestion(suggestion_id)
+	return {"success": true, "rejected": suggestion_id}
+
+
+## Connect pins to net
+func _pcb_connect_net(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var net_name: String = args.get("net_name", "")
+	var pins: Array = args.get("pins", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if net_name.is_empty():
+		return {"error": "net_name is required", "success": false}
+	if pins.is_empty():
+		return {"error": "pins array is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var connected: Array = []
+	for pin_info in pins:
+		if pin_info is Dictionary:
+			var comp_id: String = pin_info.get("component", "")
+			var pin_name: String = pin_info.get("pin", "")
+			if not comp_id.is_empty() and not pin_name.is_empty():
+				data.connect_pin_to_net(net_name, comp_id, pin_name)
+				connected.append("%s.%s" % [comp_id, pin_name])
+
+	return {
+		"success": true,
+		"net_name": net_name,
+		"connected_pins": connected
+	}
+
+
+## Export CSV
+func _pcb_export_csv(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var csv = pcb_editor.export_csv()
+	return {
+		"success": true,
+		"csv": csv
+	}
+
+
+## Export YAML
+func _pcb_export_yaml(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var yaml = pcb_editor.export_yaml()
+	return {
+		"success": true,
+		"yaml": yaml
+	}
+
+
+## Import CSV
+func _pcb_import_csv(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var csv_content: String = args.get("csv_content", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if csv_content.is_empty():
+		return {"error": "csv_content is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	pcb_editor.import_csv(csv_content)
+
+	var data = pcb_editor.get_data()
+	return {
+		"success": true,
+		"component_count": data.get_component_count() if data else 0
+	}
+
+
+## Import footprint geometry from pcb-architect
+func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var geometry_data: Dictionary = args.get("geometry", {})
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if geometry_data.is_empty():
+		return {"error": "geometry data is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var components_data: Dictionary = geometry_data.get("components", {})
+	var updated_count := 0
+	var missing: Array = []
+
+	for comp_id in components_data:
+		var comp = data.get_component(comp_id)
+		if not comp:
+			missing.append(comp_id)
+			continue
+
+		var comp_geometry: Dictionary = components_data[comp_id]
+		if comp_geometry.get("footprint_found", false):
+			comp.load_pad_geometry(comp_geometry)
+			updated_count += 1
+		else:
+			missing.append(comp_id)
+
+	# Trigger redraw
+	data.data_changed.emit()
+
+	return {
+		"success": true,
+		"updated_count": updated_count,
+		"missing_footprints": missing,
+		"board_name": geometry_data.get("board_name", "")
 	}
 
 #endregion

@@ -212,7 +212,8 @@ func _get_row_at_y(y: float) -> int:
 			return row
 		current_y += height
 
-	return -1
+	# Return last row for coordinates beyond data bounds
+	return data.row_count - 1 if data.row_count > 0 else -1
 
 
 func _get_row_y(row: int) -> float:

@@ -102,7 +102,8 @@ func _ready():
 	theme_option_button.selected = SingletonObject.get_theme_enum()
 
 	SingletonObject.mic_changed.connect(set_microphone_option_menu)
-	set_microphone_option_menu(SingletonObject.get_microphone())
+	# Defer to next frame to avoid AudioServer race condition crash
+	call_deferred("set_microphone_option_menu", SingletonObject.get_microphone())
 
 	if SingletonObject.config_has_saved_section("Experimental"):
 		var enable_exp: bool = SingletonObject.config_file.get_value("Experimental", "enabled")
@@ -114,7 +115,8 @@ func _ready():
 		var enable_verbose: bool = SingletonObject.config_file.get_value("Logging", "verbose", false)
 		%VerboseLoggingCheckButton.button_pressed = enable_verbose
 
-	populate_output_devices_button()
+	# Defer to next frame to avoid AudioServer race condition crash
+	call_deferred("populate_output_devices_button")
 
 	# core tab stuff - these signals relate to the WebSocket connection status
 	Core.client.connection_established.connect(

@@ -8,18 +8,22 @@
 
 config_version=5
 
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
+
 [application]
 
 config/name="Minerva"
 config/tags=PackedStringArray("desktop")
 run/main_scene="res://Scenes/MainScene.tscn"
 run/enable_alt_space_menu=true
-config/features=PackedStringArray("4.5", "Forward Plus")
+config/features=PackedStringArray("4.6", "Forward Plus")
 run/max_fps=60
 run/low_processor_mode=true
 run/low_processor_mode_sleep_usec=4000
 boot_splash/bg_color=Color(0.0784314, 0.0784314, 0.0784314, 1)
-boot_splash/fullsize=false
+boot_splash/stretch_mode=0
 boot_splash/image="res://handshake_logo_green.png"
 config/icon="res://handshake_logo_green.png"
 config/windows_native_icon="res://icon.ico"

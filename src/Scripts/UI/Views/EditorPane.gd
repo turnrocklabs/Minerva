@@ -177,7 +177,17 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 
+			Editor.Type.PCB:
+				var tab_name = "pcb " + str(Tabs.get_tab_count() )
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+
 	return editor_node
+
+
+## Convenience function to add a PCB editor
+func add_pcb_editor(name_: String = "") -> Editor:
+	return add(Editor.Type.PCB, null, name_ if not name_.is_empty() else null, null, true)
 
 
 func get_open_editors() -> Array[Editor]:

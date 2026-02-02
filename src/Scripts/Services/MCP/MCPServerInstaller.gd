@@ -15,7 +15,7 @@ const REPOS := {
 
 const PORTS := {
 	"nudge": 8765,
-	"cobrowser": 8678,  # MCP wrapper (mcp_tools.py) - connects to cobrowser_service on 8677
+	"cobrowser": 8677,  # Consolidated cobrowser service (MCP + WebSocket)
 	"codetools": 8700
 }
 
@@ -396,7 +396,7 @@ func get_startup_command(server: String, install_path: String) -> Dictionary:
 		"cobrowser":
 			return {
 				"command": python,
-				"args": ["-m", "uvicorn", "src.Library.mcp_tools:app",
+				"args": ["-m", "uvicorn", "src.Library.cobrowser_service:app",
 						"--host", "0.0.0.0", "--port", str(PORTS.cobrowser)],
 				"cwd": install_path,
 				"port": PORTS.cobrowser

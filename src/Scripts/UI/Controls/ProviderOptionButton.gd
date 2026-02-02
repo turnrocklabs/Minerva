@@ -44,8 +44,9 @@ func _ready():
 
 ## Handle provider enable/disable changes
 func _on_provider_enabled_changed(_provider: SingletonObject.API_PROVIDER, _enabled: bool) -> void:
-	# Rebuild the default set and always refresh dropdown
+	# Rebuild the default set and invalidate cached combined sets
 	_setup_default_provider_set()
+	clear_combined_provider_sets()  # Force combined sets to rebuild with fresh data
 	_rebuild_dropdown()
 
 
