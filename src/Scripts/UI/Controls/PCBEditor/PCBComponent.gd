@@ -29,7 +29,7 @@ var id: String = ""
 ## Component footprint type
 var footprint: FootprintType = FootprintType.CUSTOM
 
-## Center position in mm
+## Origin/anchor position in mm (typically pin 1, following KiCAD convention)
 var position: Vector2 = Vector2.ZERO
 
 ## Rotation in degrees (0, 90, 180, 270)
@@ -39,9 +39,9 @@ var rotation: float = 0.0
 var width: float = 5.0
 var height: float = 2.5
 
-## The bounding box relative to the footprint Anchor (0,0)
-## e.g. Rect2(-2, -5, 4, 10) means the body starts -2mm left and -5mm up from anchor
-var local_bounds: Rect2 = Rect2(-2.5, -1.25, 5.0, 2.5)
+## The bounding box relative to the footprint origin/pin 1 (0,0)
+## e.g. Rect2(-1.27, -1.27, 10, 5) means body starts 1.27mm before origin, extends right/down
+var local_bounds: Rect2 = Rect2(-1.27, -1.27, 5.0, 2.5)
 
 ## Pin definitions: pin_name -> relative Vector2 offset from anchor (origin)
 var pins: Dictionary = {}
@@ -248,85 +248,112 @@ func rotate_counterclockwise() -> void:
 
 
 ## Initialize standard pin layout for common footprints
-## For legacy footprints, anchor is at body center, so local_bounds is centered at (0,0)
+## KiCAD convention: Pin 1 at origin (0,0), body extends from there
 func setup_standard_pins() -> void:
 	pins.clear()
 
 	match footprint:
 		FootprintType.RESISTOR, FootprintType.CAPACITOR, FootprintType.DIODE, FootprintType.LED:
-			# Two-terminal component
+			# Two-terminal component, horizontal, pin 1 at origin
 			width = 3.0
 			height = 1.5
-			pins["1"] = Vector2(-1.27, 0)
-			pins["2"] = Vector2(1.27, 0)
+			pins["1"] = Vector2(0, 0)
+			pins["2"] = Vector2(2.54, 0)
+			local_bounds = Rect2(-0.5, -height / 2.0, width, height)
+			bbox_center_offset = Vector2(1.27, 0)
 
 		FootprintType.TRANSISTOR:
-			# Three-terminal (TO-92 style)
+			# Three-terminal (TO-92 style), pin 1 at origin
 			width = 3.0
 			height = 2.0
-			pins["B"] = Vector2(-1.27, 0)
-			pins["C"] = Vector2(0, 0)
-			pins["E"] = Vector2(1.27, 0)
+			pins["B"] = Vector2(0, 0)
+			pins["C"] = Vector2(1.27, 0)
+			pins["E"] = Vector2(2.54, 0)
+			local_bounds = Rect2(-0.5, -height / 2.0, width, height)
+			bbox_center_offset = Vector2(1.27, 0)
 
 		FootprintType.IC_DIP:
-			# 8-pin DIP as default
-			width = 9.0
-			height = 6.0
-			for i in range(4):
-				pins[str(i + 1)] = Vector2(-3.81 + i * 2.54, -2.54)
-				pins[str(8 - i)] = Vector2(-3.81 + i * 2.54, 2.54)
+			# 8-pin DIP as default, pin 1 at origin (top-left)
+			var row_spacing := 7.62
+			var pins_per_side := 4
+			var total_height := (pins_per_side - 1) * 2.54
+			width = row_spacing + 2.54
+			height = total_height + 2.54
+			for i in range(pins_per_side):
+				pins[str(i + 1)] = Vector2(0, i * 2.54)
+				pins[str(8 - i)] = Vector2(row_spacing, i * 2.54)
+			local_bounds = Rect2(-1.27, -1.27, width, height)
+			bbox_center_offset = Vector2(row_spacing / 2.0, total_height / 2.0)
 
 		FootprintType.SWITCH:
-			# Simple push button
+			# Simple push button, pin 1 at origin (top-left)
 			width = 6.0
 			height = 6.0
-			pins["1"] = Vector2(-2.54, -2.54)
-			pins["2"] = Vector2(2.54, -2.54)
-			pins["3"] = Vector2(-2.54, 2.54)
-			pins["4"] = Vector2(2.54, 2.54)
+			pins["1"] = Vector2(0, 0)
+			pins["2"] = Vector2(5.08, 0)
+			pins["3"] = Vector2(0, 5.08)
+			pins["4"] = Vector2(5.08, 5.08)
+			local_bounds = Rect2(-0.5, -0.5, width, height)
+			bbox_center_offset = Vector2(2.54, 2.54)
 
 		FootprintType.CONNECTOR, FootprintType.HEADER:
-			# 2-pin header as default (use setup_header_pins for custom count)
-			width = 5.08
-			height = 2.54
-			pins["1"] = Vector2(-1.27, 0)
-			pins["2"] = Vector2(1.27, 0)
+			# 2-pin header as default, vertical, pin 1 at origin
+			width = 2.54
+			height = 2.54 + 2.54
+			pins["1"] = Vector2(0, 0)
+			pins["2"] = Vector2(0, 2.54)
+			local_bounds = Rect2(-width / 2.0, -1.27, width, height)
+			bbox_center_offset = Vector2(0, 1.27)
 
 		FootprintType.MOUNTING_HOLE:
-			# Mounting hole - single pin at center for rendering
+			# Mounting hole - single pin at origin
 			width = 3.2
 			height = 3.2
-			# Add single pin at (0,0) so canvas draws a circle at component center
 			pins["1"] = Vector2(0, 0)
+			local_bounds = Rect2(-width / 2.0, -height / 2.0, width, height)
+			bbox_center_offset = Vector2.ZERO
 
 		FootprintType.MODULE:
 			# Large module (like ESP32 dev board) - default 2x20 pins
-			width = 25.4
-			height = 51.0
-			# Setup dual row of pins
-			for i in range(20):
-				pins[str(i + 1)] = Vector2(-11.43, -24.13 + i * 2.54)
-				pins[str(40 - i)] = Vector2(11.43, -24.13 + i * 2.54)
+			# Pin 1 at origin (top-left), left side going down, right side going up
+			var row_spacing := 22.86  # ~0.9" for dev boards
+			var pins_per_side := 20
+			var total_height := (pins_per_side - 1) * 2.54
+			width = row_spacing + 2.54
+			height = total_height + 2.54
+			for i in range(pins_per_side):
+				pins[str(i + 1)] = Vector2(0, i * 2.54)
+				pins[str(40 - i)] = Vector2(row_spacing, i * 2.54)
+			local_bounds = Rect2(-1.27, -1.27, width, height)
+			bbox_center_offset = Vector2(row_spacing / 2.0, total_height / 2.0)
 
 		FootprintType.CRYSTAL:
-			# Crystal oscillator
+			# Crystal oscillator, pin 1 at origin
 			width = 5.0
 			height = 2.0
-			pins["1"] = Vector2(-2.0, 0)
-			pins["2"] = Vector2(2.0, 0)
+			pins["1"] = Vector2(0, 0)
+			pins["2"] = Vector2(4.0, 0)
+			local_bounds = Rect2(-0.5, -height / 2.0, width, height)
+			bbox_center_offset = Vector2(2.0, 0)
 
-	# Set local_bounds centered at anchor (0,0) for legacy footprints
-	local_bounds = Rect2(-width / 2.0, -height / 2.0, width, height)
-	bbox_center_offset = Vector2.ZERO
+		_:
+			# Default fallback
+			width = 5.0
+			height = 2.5
+			pins["1"] = Vector2(0, 0)
+			local_bounds = Rect2(-1.0, -height / 2.0, width, height)
+			bbox_center_offset = Vector2(width / 2.0 - 1.0, 0)
 
 
 ## Setup a single-row header/connector with custom pin count
+## KiCAD convention: Vertical orientation, pin 1 at origin (0,0), pins going down (+Y)
 func setup_header_pins(pin_count: int, pin_names: Array = []) -> void:
 	pins.clear()
 	var spacing := 2.54  # Standard 0.1" spacing
-	var total_width := (pin_count - 1) * spacing
-	width = total_width + 2.54
-	height = 2.54
+	var total_length := (pin_count - 1) * spacing
+	# Vertical orientation: width is narrow, height is long
+	width = 2.54
+	height = total_length + 2.54
 
 	for i in range(pin_count):
 		var pin_name: String
@@ -334,14 +361,17 @@ func setup_header_pins(pin_count: int, pin_names: Array = []) -> void:
 			pin_name = str(pin_names[i])
 		else:
 			pin_name = str(i + 1)
-		pins[pin_name] = Vector2(-total_width / 2.0 + i * spacing, 0)
+		# Pin 1 at origin (0, 0), subsequent pins going down (+Y)
+		pins[pin_name] = Vector2(0, i * spacing)
 
-	# Set local_bounds centered at anchor (0,0)
-	local_bounds = Rect2(-width / 2.0, -height / 2.0, width, height)
-	bbox_center_offset = Vector2.ZERO
+	# local_bounds relative to pin 1 origin: body centered on X, extends down from pin 1
+	local_bounds = Rect2(-width / 2.0, -1.27, width, height)
+	# Calculate center offset from origin for compatibility
+	bbox_center_offset = Vector2(0, total_length / 2.0)
 
 
 ## Setup a dual-row DIP/module with custom pin count (must be even)
+## KiCAD convention: Pin 1 at origin (0,0) top-left, left side going down, right side going up
 func setup_dip_pins(pin_count: int, row_spacing: float = 7.62) -> void:
 	pins.clear()
 	var pins_per_side := pin_count / 2
@@ -351,22 +381,29 @@ func setup_dip_pins(pin_count: int, row_spacing: float = 7.62) -> void:
 	height = total_height + 2.54
 
 	for i in range(pins_per_side):
-		# Left side: 1, 2, 3... going down
-		pins[str(i + 1)] = Vector2(-row_spacing / 2.0, -total_height / 2.0 + i * spacing)
-		# Right side: N, N-1, N-2... going up
-		pins[str(pin_count - i)] = Vector2(row_spacing / 2.0, -total_height / 2.0 + i * spacing)
+		# Left side: 1, 2, 3... going down from origin
+		# Pin 1 at (0, 0), Pin 2 at (0, 2.54), etc.
+		pins[str(i + 1)] = Vector2(0, i * spacing)
+		# Right side: N, N-1, N-2... going up from bottom-right
+		# Pin N at (row_spacing, 0), Pin N-1 at (row_spacing, 2.54), etc.
+		pins[str(pin_count - i)] = Vector2(row_spacing, i * spacing)
 
-	# Set local_bounds centered at anchor (0,0)
-	local_bounds = Rect2(-width / 2.0, -height / 2.0, width, height)
-	bbox_center_offset = Vector2.ZERO
+	# local_bounds relative to pin 1 origin: extends right and down from origin
+	local_bounds = Rect2(-1.27, -1.27, width, height)
+	# Calculate center offset from origin
+	bbox_center_offset = Vector2(row_spacing / 2.0, total_height / 2.0)
 
 
 ## Setup custom size without changing pins
+## Maintains origin-based positioning (body extends from near origin)
 func set_size(new_width: float, new_height: float) -> void:
 	width = new_width
 	height = new_height
-	# Update local_bounds to match
-	local_bounds = Rect2(-width / 2.0, -height / 2.0, width, height)
+	# Update local_bounds - body starts slightly before origin, extends right/down
+	# Use small margin (-1.27mm) to allow pin 1 to be inside the body
+	local_bounds = Rect2(-1.27, -1.27, width, height)
+	# Update center offset
+	bbox_center_offset = Vector2(width / 2.0 - 1.27, height / 2.0 - 1.27)
 
 
 ## Create a deep copy of this component
