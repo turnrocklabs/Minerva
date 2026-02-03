@@ -636,6 +636,10 @@ theme_override_font_sizes/font_size = 24
 text = "Notes"
 vertical_alignment = 2
 
+[node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+custom_minimum_size = Vector2(66, 0)
+layout_mode = 2
+
 [node name="DisableNotesButton" type="CheckButton" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer" groups=["ToggleTabs"]]
 unique_name_in_owner = true
 layout_mode = 2

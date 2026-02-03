@@ -20,3 +20,4 @@ bin/
 *.obj
 *.os
 *.dbliteMinerva.dmg
+.sconsign.dblite
