@@ -140,7 +140,12 @@ func serialize() -> Array:
 					}
 				else:
 					content = {"layers": [], "canvas_size_x": 1000, "canvas_size_y": 1000, "selected_layer_names": []}
-		
+			Editor.Type.PCB:
+				if editor.pcb_editor:
+					content = editor.pcb_editor.to_dict()
+				else:
+					content = {}
+
 		var editor_data = {
 			"name": editor_pane.Tabs.get_tab_title(tab_idx),
 			"file": editor.file,
@@ -410,7 +415,13 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 							# Connect to shape_moved signal
 							if not created_layer.shape_moved.is_connected(connector_layer._on_connected_shape_moved):
 								created_layer.shape_moved.connect(connector_layer._on_connected_shape_moved)
-		
+
+		elif editor_inst.type == Editor.Type.PCB:
+			if editor_inst.pcb_editor:
+				var content = editor_ser.get("content")
+				if content and content is Dictionary:
+					editor_inst.pcb_editor.load_from_dict(content)
+
 		editor_instances.append(editor_inst)
 	
 	return editor_instances

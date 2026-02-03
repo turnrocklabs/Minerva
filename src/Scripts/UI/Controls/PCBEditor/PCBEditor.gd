@@ -41,6 +41,10 @@ var reject_button: Button = null
 var annotation_buttons: Dictionary = {}  # mode -> Button
 var annotation_mode_label: Label = null
 
+## Route hint toolbar elements
+var route_hint_buttons: Dictionary = {}  # mode -> Button
+var route_hint_mode_label: Label = null
+
 ## Text input dialog for annotations
 var text_input_dialog: AcceptDialog = null
 var text_input_line: LineEdit = null
@@ -57,9 +61,10 @@ func _ready() -> void:
 	# Generate unique ID
 	editor_id = str(randi() % 1000000).pad_zeros(6)
 
-	# Initialize data
-	data = PCBDataScript.new()
-	spatial_index = PCBSpatialIndexScript.new(data)
+	# Initialize data (only if not already loaded via load_from_dict)
+	if not data:
+		data = PCBDataScript.new()
+		spatial_index = PCBSpatialIndexScript.new(data)
 
 	# Build UI
 	_build_ui()
@@ -245,6 +250,43 @@ func _create_toolbar() -> HBoxContainer:
 	annotation_mode_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 	tb.add_child(annotation_mode_label)
 
+	tb.add_child(VSeparator.new())
+
+	# Route hint mode buttons
+	var rhint_label := Label.new()
+	rhint_label.text = "Route Hint:"
+	tb.add_child(rhint_label)
+
+	var waypoint_btn := Button.new()
+	waypoint_btn.text = "Waypoint"
+	waypoint_btn.tooltip_text = "Add waypoint-only hint (W)"
+	waypoint_btn.toggle_mode = true
+	waypoint_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.WAYPOINT))
+	tb.add_child(waypoint_btn)
+	route_hint_buttons[PCBCanvasScript.RouteHintMode.WAYPOINT] = waypoint_btn
+
+	var trace_btn := Button.new()
+	trace_btn.text = "Trace"
+	trace_btn.tooltip_text = "Add single trace hint - click pins or waypoints"
+	trace_btn.toggle_mode = true
+	trace_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.SINGLE_TRACE))
+	tb.add_child(trace_btn)
+	route_hint_buttons[PCBCanvasScript.RouteHintMode.SINGLE_TRACE] = trace_btn
+
+	var bus_btn := Button.new()
+	bus_btn.text = "Bus"
+	bus_btn.tooltip_text = "Add bus hint - click pin groups for parallel routing"
+	bus_btn.toggle_mode = true
+	bus_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.BUS))
+	tb.add_child(bus_btn)
+	route_hint_buttons[PCBCanvasScript.RouteHintMode.BUS] = bus_btn
+
+	# Route hint mode label
+	route_hint_mode_label = Label.new()
+	route_hint_mode_label.text = ""
+	route_hint_mode_label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.6))
+	tb.add_child(route_hint_mode_label)
+
 	# Spacer
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -405,6 +447,10 @@ func _connect_signals() -> void:
 	canvas.annotation_mode_changed.connect(_on_annotation_mode_changed)
 	canvas.annotation_text_requested.connect(_on_annotation_text_requested)
 	canvas.annotation_created.connect(_on_annotation_created)
+
+	# Route hint signals
+	canvas.route_hint_mode_changed.connect(_on_route_hint_mode_changed)
+	canvas.route_hint_created.connect(_on_route_hint_created)
 
 	# Data signals
 	data.data_changed.connect(_on_data_changed)
@@ -610,6 +656,36 @@ func _on_annotation_created(annotation_id: String) -> void:
 	pass
 
 
+## Toggle route hint mode from toolbar button
+func _toggle_route_hint_mode(mode: int) -> void:
+	var canvas_mode: PCBCanvasScript.RouteHintMode = mode as PCBCanvasScript.RouteHintMode
+	if canvas.route_hint_mode == canvas_mode:
+		canvas.clear_route_hint_mode()
+	else:
+		canvas.set_route_hint_mode(canvas_mode)
+
+
+## Handle route hint mode change from canvas
+func _on_route_hint_mode_changed(mode: int) -> void:
+	# Update button states
+	for btn_mode in route_hint_buttons:
+		var btn: Button = route_hint_buttons[btn_mode]
+		btn.button_pressed = (btn_mode == mode)
+
+	# Update mode label
+	if mode == PCBCanvasScript.RouteHintMode.NONE:
+		route_hint_mode_label.text = ""
+	else:
+		var mode_names := ["", "Waypoint", "Trace", "Bus"]
+		route_hint_mode_label.text = "Hint: " + mode_names[mode]
+
+
+## Handle route hint created
+func _on_route_hint_created(hint_id: String) -> void:
+	# Could show a brief notification
+	pass
+
+
 ## Create text input dialog for text annotations
 func _create_text_input_dialog() -> void:
 	text_input_dialog = AcceptDialog.new()
@@ -709,9 +785,21 @@ func get_spatial_index() -> PCBSpatialIndexScript:
 
 ## Load data from dictionary
 func load_from_dict(dict_data: Dictionary) -> void:
+	# Ensure data exists (may be called before _ready)
+	if not data:
+		data = PCBDataScript.new()
+		spatial_index = PCBSpatialIndexScript.new(data)
 	data.load_from_dict(dict_data)
 	is_modified = false
-	canvas.zoom_to_fit()
+	# Schedule canvas update after _ready completes
+	call_deferred("_post_load_update")
+
+
+## Called after load_from_dict to update canvas once _ready has run
+func _post_load_update() -> void:
+	if canvas:
+		canvas.queue_redraw()
+		canvas.zoom_to_fit()
 
 
 ## Get data as dictionary

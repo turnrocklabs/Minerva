@@ -7,6 +7,7 @@ const PCBNetScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBNet.gd")
 const PCBTraceScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBTrace.gd")
 const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
+const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
 
 ## Signals for reactive UI updates
 signal data_changed()
@@ -19,6 +20,8 @@ signal suggestion_added(suggestion_id: String)
 signal suggestion_resolved(suggestion_id: String, accepted: bool)
 signal annotation_added(annotation_id: String)
 signal annotation_removed(annotation_id: String)
+signal route_hint_added(hint_id: String)
+signal route_hint_removed(hint_id: String)
 signal structure_changed()
 
 ## Board properties
@@ -40,6 +43,9 @@ var suggestions: Dictionary = {}  # suggestion_id -> PCBSuggestion
 
 ## Annotations (collaborative overlays)
 var annotations: Dictionary = {}  # annotation_id -> PCBAnnotation
+
+## Route hints (routing suggestions from human or AI)
+var route_hints: Dictionary = {}  # hint_id -> PCBRouteHint
 
 ## Undo/redo history
 var history: Array[Dictionary] = []
@@ -115,6 +121,14 @@ func get_component_ids() -> Array[String]:
 	var result: Array[String] = []
 	for id in components:
 		result.append(id)
+	return result
+
+
+## Get all components as an array
+func get_all_components() -> Array[PCBComponentScript]:
+	var result: Array[PCBComponentScript] = []
+	for comp in components.values():
+		result.append(comp)
 	return result
 
 
@@ -460,6 +474,90 @@ func clear_annotations(author: String = "") -> void:
 #endregion
 
 
+#region Route Hint Management
+
+## Add a route hint
+func add_route_hint(hint: PCBRouteHintScript) -> void:
+	if hint.id.is_empty():
+		push_error("[PCBData] Route hint must have an ID")
+		return
+
+	route_hints[hint.id] = hint
+	route_hint_added.emit(hint.id)
+	data_changed.emit()
+
+
+## Get a route hint by ID
+func get_route_hint(hint_id: String) -> PCBRouteHintScript:
+	return route_hints.get(hint_id, null)
+
+
+## Remove a route hint
+func remove_route_hint(hint_id: String) -> void:
+	if route_hints.has(hint_id):
+		route_hints.erase(hint_id)
+		route_hint_removed.emit(hint_id)
+		data_changed.emit()
+
+
+## Get all route hints
+func get_all_route_hints() -> Array[PCBRouteHintScript]:
+	var result: Array[PCBRouteHintScript] = []
+	for hint_id in route_hints:
+		result.append(route_hints[hint_id])
+	return result
+
+
+## Get route hints by author
+func get_route_hints_by_author(author: String) -> Array[PCBRouteHintScript]:
+	var result: Array[PCBRouteHintScript] = []
+	for hint_id in route_hints:
+		if route_hints[hint_id].author == author:
+			result.append(route_hints[hint_id])
+	return result
+
+
+## Get route hint at a position (for hit testing)
+func get_route_hint_at(position: Vector2, threshold: float = 3.0) -> String:
+	var best_id: String = ""
+	var best_dist: float = INF
+
+	for hint_id in route_hints:
+		var hint: PCBRouteHintScript = route_hints[hint_id]
+		if hint.contains_point(position, threshold):
+			# Prefer hints with waypoints closer to click
+			var center := hint.get_center()
+			var dist := position.distance_to(center)
+			if dist < best_dist:
+				best_dist = dist
+				best_id = hint_id
+
+	return best_id
+
+
+## Clear route hints (optionally filter by author)
+func clear_route_hints(author: String = "") -> void:
+	if author.is_empty():
+		var ids: Array[String] = []
+		for hint_id in route_hints:
+			ids.append(hint_id)
+		for hint_id in ids:
+			route_hint_removed.emit(hint_id)
+		route_hints.clear()
+	else:
+		var to_remove: Array[String] = []
+		for hint_id in route_hints:
+			if route_hints[hint_id].author == author:
+				to_remove.append(hint_id)
+		for hint_id in to_remove:
+			route_hints.erase(hint_id)
+			route_hint_removed.emit(hint_id)
+
+	data_changed.emit()
+
+#endregion
+
+
 #region Undo/Redo Support
 
 ## Save current state to history
@@ -593,6 +691,10 @@ func to_dict() -> Dictionary:
 	for id in annotations:
 		ann_dict[id] = annotations[id].to_dict()
 
+	var hint_dict := {}
+	for id in route_hints:
+		hint_dict[id] = route_hints[id].to_dict()
+
 	return {
 		"version": 1,
 		"board_name": board_name,
@@ -604,7 +706,8 @@ func to_dict() -> Dictionary:
 		"nets": net_dict,
 		"traces": trace_dict,
 		"suggestions": sug_dict,
-		"annotations": ann_dict
+		"annotations": ann_dict,
+		"route_hints": hint_dict
 	}
 
 
@@ -654,6 +757,13 @@ func load_from_dict(data: Dictionary) -> void:
 	for id in ann_data:
 		var annotation = PCBAnnotationScript.from_dict(ann_data[id])
 		annotations[id] = annotation
+
+	# Load route hints
+	route_hints.clear()
+	var hint_data: Dictionary = data.get("route_hints", {})
+	for id in hint_data:
+		var hint = PCBRouteHintScript.from_dict(hint_data[id])
+		route_hints[id] = hint
 
 	structure_changed.emit()
 	data_changed.emit()
@@ -777,6 +887,7 @@ func clear() -> void:
 	traces.clear()
 	suggestions.clear()
 	annotations.clear()
+	route_hints.clear()
 	history.clear()
 	history_index = -1
 	structure_changed.emit()

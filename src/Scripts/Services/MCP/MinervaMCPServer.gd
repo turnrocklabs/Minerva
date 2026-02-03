@@ -278,6 +278,16 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _pcb_remove_annotation(arguments)
 		"minerva_pcb_clear_annotations":
 			return _pcb_clear_annotations(arguments)
+		"minerva_pcb_add_route_hint":
+			return _pcb_add_route_hint(arguments)
+		"minerva_pcb_list_route_hints":
+			return _pcb_list_route_hints(arguments)
+		"minerva_pcb_remove_route_hint":
+			return _pcb_remove_route_hint(arguments)
+		"minerva_pcb_clear_route_hints":
+			return _pcb_clear_route_hints(arguments)
+		"minerva_pcb_interpret_route_hints":
+			return _pcb_interpret_route_hints(arguments)
 		"minerva_pcb_suggest_pin_remap":
 			return _pcb_suggest_pin_remap(arguments)
 		"minerva_pcb_suggest_route":
@@ -3956,6 +3966,7 @@ const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
+const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
 
 func _register_pcb_tools() -> void:
 	_register_tool("minerva_create_pcb_editor",
@@ -4523,6 +4534,125 @@ func _register_pcb_tools() -> void:
 				"author": {
 					"type": "string",
 					"description": "Optional: clear only annotations by 'human' or 'ai'. Omit to clear all."
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	# Route hint tools
+	_register_tool("minerva_pcb_add_route_hint",
+		"Add a routing hint to suggest trace paths. Supports waypoint-only hints, single trace hints, and bus hints with varying levels of detail.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"hint_type": {
+					"type": "string",
+					"enum": ["waypoint", "single_trace", "bus"],
+					"description": "Type of hint: 'waypoint' (just bend points), 'single_trace' (one net), 'bus' (parallel traces)"
+				},
+				"source_pins": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Source pin(s) in format 'Component.Pin' (e.g., ['U1.15'] or ['U1.15', 'U1.16', 'U1.17'])"
+				},
+				"dest_pins": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Destination pin(s) in format 'Component.Pin'"
+				},
+				"waypoints": {
+					"type": "array",
+					"items": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}},
+					"description": "Waypoints/bend points for the route path"
+				},
+				"layer": {
+					"type": "string",
+					"description": "Target layer (e.g., 'F.Cu', 'B.Cu'). Empty = unspecified."
+				},
+				"width": {
+					"type": "number",
+					"description": "Trace width in mm. 0 = use default."
+				},
+				"bus_spacing": {
+					"type": "number",
+					"description": "Spacing between bus traces in mm (for bus hints). 0 = use default."
+				},
+				"text": {
+					"type": "string",
+					"description": "Additional notes or description"
+				}
+			},
+			"required": ["editor_name", "hint_type"]
+		}
+	)
+
+	_register_tool("minerva_pcb_list_route_hints",
+		"List all routing hints on a PCB, optionally filtered by author.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"author": {
+					"type": "string",
+					"description": "Optional: filter by 'human' or 'ai'"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_remove_route_hint",
+		"Remove a specific routing hint by ID.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"hint_id": {
+					"type": "string",
+					"description": "ID of the route hint to remove"
+				}
+			},
+			"required": ["editor_name", "hint_id"]
+		}
+	)
+
+	_register_tool("minerva_pcb_clear_route_hints",
+		"Clear routing hints from the PCB, optionally filtered by author.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"author": {
+					"type": "string",
+					"description": "Optional: clear only hints by 'human' or 'ai'. Omit to clear all."
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_interpret_route_hints",
+		"Interpret freeform annotations (arrows, polylines, text) as routing hints. Returns structured route hints inferred from annotation positions and text patterns.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
 				}
 			},
 			"required": ["editor_name"]
@@ -5611,5 +5741,368 @@ func _pcb_suggest_route(args: Dictionary) -> Dictionary:
 		"width_mm": width,
 		"message": "Route suggestion created. User will see a dashed line preview for approval."
 	}
+
+
+## Add a routing hint
+func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var hint_type_str: String = args.get("hint_type", "")
+	var source_pins_arr: Array = args.get("source_pins", [])
+	var dest_pins_arr: Array = args.get("dest_pins", [])
+	var waypoints_arr: Array = args.get("waypoints", [])
+	var layer: String = args.get("layer", "")
+	var width: float = args.get("width", 0.0)
+	var bus_spacing: float = args.get("bus_spacing", 0.0)
+	var text: String = args.get("text", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if hint_type_str.is_empty():
+		return {"error": "hint_type is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Convert waypoints to Vector2 array
+	var waypoints: Array[Vector2] = []
+	for wp_data in waypoints_arr:
+		if wp_data is Dictionary:
+			waypoints.append(Vector2(wp_data.get("x", 0), wp_data.get("y", 0)))
+
+	# Convert pin arrays to typed arrays
+	var source_pins: Array[String] = []
+	for pin in source_pins_arr:
+		source_pins.append(str(pin))
+	var dest_pins: Array[String] = []
+	for pin in dest_pins_arr:
+		dest_pins.append(str(pin))
+
+	# Create hint based on type
+	var hint: PCBRouteHintScript
+	match hint_type_str.to_lower():
+		"waypoint":
+			hint = PCBRouteHintScript.create_waypoint_hint(waypoints, text, "ai")
+		"single_trace":
+			if source_pins.is_empty() or dest_pins.is_empty():
+				return {"error": "single_trace hint requires source_pins and dest_pins", "success": false}
+			hint = PCBRouteHintScript.create_single_trace_hint(
+				source_pins[0], dest_pins[0], waypoints, layer, width, text, "ai"
+			)
+		"bus":
+			if source_pins.is_empty() or dest_pins.is_empty():
+				return {"error": "bus hint requires source_pins and dest_pins", "success": false}
+			if source_pins.size() != dest_pins.size():
+				return {"error": "bus hint requires equal number of source and dest pins", "success": false}
+			hint = PCBRouteHintScript.create_bus_hint(
+				source_pins, dest_pins, waypoints, layer, width, bus_spacing, text, "ai"
+			)
+		_:
+			return {"error": "Invalid hint_type: %s. Must be 'waypoint', 'single_trace', or 'bus'" % hint_type_str, "success": false}
+
+	# Set layer if specified
+	if not layer.is_empty():
+		hint.layer = layer
+
+	data.add_route_hint(hint)
+
+	return {
+		"success": true,
+		"hint_id": hint.id,
+		"hint_type": hint_type_str,
+		"detail_level": PCBRouteHintScript.DetailLevel.keys()[hint.detail_level],
+		"waypoint_count": waypoints.size(),
+		"description": hint.get_description()
+	}
+
+
+## List route hints
+func _pcb_list_route_hints(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var author_filter: String = args.get("author", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# First, just return count and IDs to test
+	var hint_ids: Array = []
+	for hint_id in data.route_hints:
+		hint_ids.append(str(hint_id))
+
+	if hint_ids.is_empty():
+		return {"success": true, "count": 0, "hints": []}
+
+	var hints_arr: Array = []
+	for hint_id in data.route_hints:
+		var hint = data.route_hints[hint_id]
+		if not author_filter.is_empty() and hint.author != author_filter:
+			continue
+
+		# Convert typed arrays to regular arrays for JSON serialization
+		var src_pins: Array = []
+		for pin in hint.source_pins:
+			src_pins.append(str(pin))
+		var dst_pins: Array = []
+		for pin in hint.dest_pins:
+			dst_pins.append(str(pin))
+
+		# Convert waypoints
+		var waypoints_data: Array = []
+		for wp in hint.waypoints:
+			waypoints_data.append({"x": float(wp.x), "y": float(wp.y)})
+
+		var hint_dict: Dictionary = {
+			"id": str(hint.id),
+			"hint_type": str(PCBRouteHintScript.HintType.keys()[hint.hint_type]),
+			"detail_level": str(PCBRouteHintScript.DetailLevel.keys()[hint.detail_level]),
+			"author": str(hint.author),
+			"layer": str(hint.layer),
+			"width": float(hint.width),
+			"source_pins": src_pins,
+			"dest_pins": dst_pins,
+			"text": str(hint.text),
+			"waypoints": waypoints_data
+		}
+
+		if hint.hint_type == PCBRouteHintScript.HintType.BUS:
+			hint_dict["bus_spacing"] = float(hint.bus_spacing)
+
+		hints_arr.append(hint_dict)
+
+	return {
+		"success": true,
+		"count": hints_arr.size(),
+		"hints": hints_arr
+	}
+
+
+## Remove a route hint
+func _pcb_remove_route_hint(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var hint_id: String = args.get("hint_id", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if hint_id.is_empty():
+		return {"error": "hint_id is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	if not data.get_route_hint(hint_id):
+		return {"error": "Route hint not found: %s" % hint_id, "success": false}
+
+	data.remove_route_hint(hint_id)
+
+	return {
+		"success": true,
+		"removed": hint_id
+	}
+
+
+## Clear route hints
+func _pcb_clear_route_hints(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var author_filter: String = args.get("author", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Count before clearing
+	var count_before := 0
+	if author_filter.is_empty():
+		count_before = data.get_all_route_hints().size()
+	else:
+		count_before = data.get_route_hints_by_author(author_filter).size()
+
+	data.clear_route_hints(author_filter)
+
+	return {
+		"success": true,
+		"cleared_count": count_before,
+		"filter": author_filter if not author_filter.is_empty() else "all"
+	}
+
+
+## Interpret freeform annotations as route hints
+func _pcb_interpret_route_hints(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Get all annotations
+	var annotations = data.get_all_annotations()
+	var components = data.get_all_components()
+
+	# Build component lookup by position for proximity matching
+	var component_positions: Dictionary = {}  # component_id -> center position
+	for comp in components:
+		var center_x: float = comp.x + comp.width / 2.0
+		var center_y: float = comp.y + comp.height / 2.0
+		component_positions[comp.id] = Vector2(center_x, center_y)
+
+	# Analyze annotations for routing hints
+	var interpreted_hints: Array = []
+
+	for annotation in annotations:
+		var hint_info: Dictionary = {
+			"annotation_id": annotation.id,
+			"annotation_type": PCBAnnotationScript.AnnotationType.keys()[annotation.type],
+			"author": annotation.author,
+			"text": annotation.text,
+			"interpretation": {}
+		}
+
+		match annotation.type:
+			PCBAnnotationScript.AnnotationType.ARROW:
+				# Arrow might indicate routing direction between components
+				if annotation.positions.size() >= 2:
+					var start: Vector2 = annotation.positions[0]
+					var end: Vector2 = annotation.positions[1]
+					hint_info["interpretation"]["start"] = {"x": start.x, "y": start.y}
+					hint_info["interpretation"]["end"] = {"x": end.x, "y": end.y}
+					hint_info["interpretation"]["direction_vector"] = {
+						"x": end.x - start.x,
+						"y": end.y - start.y
+					}
+
+					# Find nearest components to start and end
+					var nearest_start := _find_nearest_component(start, component_positions)
+					var nearest_end := _find_nearest_component(end, component_positions)
+					if not nearest_start.is_empty():
+						hint_info["interpretation"]["near_start_component"] = nearest_start
+					if not nearest_end.is_empty():
+						hint_info["interpretation"]["near_end_component"] = nearest_end
+
+					hint_info["interpretation"]["suggested_use"] = "routing_direction"
+
+			PCBAnnotationScript.AnnotationType.POLYLINE:
+				# Polyline might be a trace path suggestion
+				if annotation.positions.size() >= 2:
+					var waypoints_data: Array = []
+					for pos in annotation.positions:
+						waypoints_data.append({"x": pos.x, "y": pos.y})
+					hint_info["interpretation"]["waypoints"] = waypoints_data
+					hint_info["interpretation"]["waypoint_count"] = annotation.positions.size()
+
+					# Find components near start and end
+					var start: Vector2 = annotation.positions[0]
+					var end: Vector2 = annotation.positions[annotation.positions.size() - 1]
+					var nearest_start := _find_nearest_component(start, component_positions)
+					var nearest_end := _find_nearest_component(end, component_positions)
+					if not nearest_start.is_empty():
+						hint_info["interpretation"]["near_start_component"] = nearest_start
+					if not nearest_end.is_empty():
+						hint_info["interpretation"]["near_end_component"] = nearest_end
+
+					hint_info["interpretation"]["suggested_use"] = "trace_path"
+
+			PCBAnnotationScript.AnnotationType.TEXT:
+				# Text might contain routing instructions
+				hint_info["interpretation"]["position"] = {
+					"x": annotation.positions[0].x if annotation.positions.size() > 0 else 0,
+					"y": annotation.positions[0].y if annotation.positions.size() > 0 else 0
+				}
+
+				# Check for common routing keywords
+				var text_lower: String = annotation.text.to_lower()
+				var keywords: Array = []
+				if "route" in text_lower:
+					keywords.append("route")
+				if "trace" in text_lower:
+					keywords.append("trace")
+				if "bus" in text_lower:
+					keywords.append("bus")
+				if "layer" in text_lower or "f.cu" in text_lower or "b.cu" in text_lower:
+					keywords.append("layer")
+				if "via" in text_lower:
+					keywords.append("via")
+				if not keywords.is_empty():
+					hint_info["interpretation"]["routing_keywords"] = keywords
+
+				# Find nearest component
+				if annotation.positions.size() > 0:
+					var nearest := _find_nearest_component(annotation.positions[0], component_positions)
+					if not nearest.is_empty():
+						hint_info["interpretation"]["near_component"] = nearest
+
+				hint_info["interpretation"]["suggested_use"] = "instruction"
+
+			PCBAnnotationScript.AnnotationType.REGION:
+				# Region might highlight an area for routing consideration
+				if annotation.positions.size() >= 2:
+					hint_info["interpretation"]["bounds"] = {
+						"min": {"x": annotation.positions[0].x, "y": annotation.positions[0].y},
+						"max": {"x": annotation.positions[1].x, "y": annotation.positions[1].y}
+					}
+
+					# Find components within region
+					var rect: Rect2 = annotation.get_bounding_rect()
+					var components_in_region: Array = []
+					for comp_id in component_positions:
+						if rect.has_point(component_positions[comp_id]):
+							components_in_region.append(comp_id)
+					if not components_in_region.is_empty():
+						hint_info["interpretation"]["components_in_region"] = components_in_region
+
+					hint_info["interpretation"]["suggested_use"] = "routing_region"
+
+		interpreted_hints.append(hint_info)
+
+	return {
+		"success": true,
+		"annotation_count": annotations.size(),
+		"interpretations": interpreted_hints,
+		"note": "These are suggested interpretations. Use minerva_pcb_add_route_hint to create structured hints based on this analysis."
+	}
+
+
+## Helper: find nearest component to a position
+func _find_nearest_component(pos: Vector2, component_positions: Dictionary, max_distance: float = 20.0) -> String:
+	var nearest_id := ""
+	var nearest_dist := max_distance
+
+	for comp_id in component_positions:
+		var comp_pos: Vector2 = component_positions[comp_id]
+		var dist := pos.distance_to(comp_pos)
+		if dist < nearest_dist:
+			nearest_dist = dist
+			nearest_id = comp_id
+
+	return nearest_id
 
 #endregion

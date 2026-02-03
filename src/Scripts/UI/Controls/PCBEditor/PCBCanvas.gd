@@ -7,6 +7,7 @@ const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComp
 const PCBSpatialIndexScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSpatialIndex.gd")
 const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
+const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
 
 ## Signals
 signal component_selected(component_id: String)
@@ -73,6 +74,31 @@ signal annotation_mode_changed(mode: AnnotationMode)
 signal annotation_text_requested(position: Vector2)  # Emitted when text annotation needs input
 signal annotation_created(annotation_id: String)
 
+## Route hint drawing mode
+enum RouteHintMode { NONE, WAYPOINT, SINGLE_TRACE, BUS }
+var route_hint_mode: RouteHintMode = RouteHintMode.NONE
+var is_drawing_route_hint: bool = false
+var route_hint_points: Array[Vector2] = []  # World coordinates for waypoints
+var route_hint_preview_point: Vector2 = Vector2.ZERO  # Current mouse position for preview
+var route_hint_source_pin: String = ""  # "Component.Pin" format for single_trace
+var route_hint_dest_pin: String = ""  # Set when completing the hint
+var route_hint_layer: String = ""  # Layer specification (e.g., "F.Cu")
+
+## Bus hint multi-phase state
+enum BusPhase { NONE, SOURCE_PINS, WAYPOINTS, DEST_PINS }
+var bus_phase: BusPhase = BusPhase.NONE
+var bus_source_pins: Array[Dictionary] = []  # [{component, pin, position}, ...]
+var bus_dest_pins: Array[Dictionary] = []    # [{component, pin, position}, ...]
+var bus_waypoints: Array[Vector2] = []       # Shared corridor waypoints
+
+## Route hint selection state
+var selected_route_hint_id: String = ""
+
+## Signal for route hint mode changes
+signal route_hint_mode_changed(mode: RouteHintMode)
+signal route_hint_created(hint_id: String)
+signal route_hint_pin_requested(position: Vector2)  # Emitted when user needs to select a pin
+
 ## Ghost layer for suggestion preview
 var active_suggestion_id: String = ""
 
@@ -105,9 +131,16 @@ var show_pads: bool = true
 ## Display option for annotations
 var show_annotations: bool = true
 
+## Display option for route hints
+var show_route_hints: bool = true
+
 ## Annotation colors (by author)
 var annotation_human_color: Color = Color(0.9, 0.7, 0.2)  # Yellow for human
 var annotation_ai_color: Color = Color(0.3, 0.7, 0.9)     # Cyan for AI
+
+## Route hint colors (by author)
+var route_hint_human_color: Color = Color(0.2, 0.8, 0.6, 0.8)  # Teal for human
+var route_hint_ai_color: Color = Color(0.6, 0.4, 0.9, 0.8)     # Purple for AI
 
 ## Pin remap suggestion colors
 var pin_remap_old_color: Color = Color(0.9, 0.3, 0.3, 0.7)  # Red for old pin
@@ -160,37 +193,57 @@ func _create_context_menu() -> void:
 
 	context_menu.add_child(annotation_menu)
 	context_menu.add_submenu_item("Add Annotation", "AnnotationMenu")
+
+	# Add route hint submenu
+	var route_hint_menu := PopupMenu.new()
+	route_hint_menu.name = "RouteHintMenu"
+	route_hint_menu.add_item("Waypoint Hint (W)", 10)
+	route_hint_menu.add_item("Single Trace Hint", 11)
+	route_hint_menu.add_item("Bus Hint", 12)
+	route_hint_menu.id_pressed.connect(_on_route_hint_menu_pressed)
+
+	context_menu.add_child(route_hint_menu)
+	context_menu.add_submenu_item("Add Route Hint", "RouteHintMenu")
+
 	context_menu.add_separator()
 	context_menu.add_item("Clear My Annotations", 100)
 	context_menu.add_item("Clear AI Annotations", 101)
 	context_menu.add_item("Clear All Annotations", 102)
+	context_menu.add_separator()
+	context_menu.add_item("Clear My Route Hints", 110)
+	context_menu.add_item("Clear AI Route Hints", 111)
+	context_menu.add_item("Clear All Route Hints", 112)
 	context_menu.id_pressed.connect(_on_context_menu_pressed)
 
 
 ## Update context menu based on current selection
 func _update_context_menu_for_selection() -> void:
-	# Remove old annotation action items (IDs 200-205)
+	# Remove old dynamic items (IDs 200-399)
 	var indices_to_remove: Array[int] = []
 	for i in range(context_menu.item_count):
 		var id := context_menu.get_item_id(i)
-		if id >= 200 and id <= 210:
+		if id >= 200 and id <= 399:
 			indices_to_remove.append(i)
 
 	# Remove in reverse order to avoid index shifting
 	for i in range(indices_to_remove.size() - 1, -1, -1):
 		context_menu.remove_item(indices_to_remove[i])
 
+	# Check if we clicked near a pin - add pin-specific options
+	var pin_info := _get_pin_at_position(context_menu_world_pos, 5.0)
+	if not pin_info.is_empty():
+		context_menu.add_separator("", 300)
+		context_menu.add_item("Start Route Hint from %s.%s" % [pin_info.component, pin_info.pin], 301)
+
+	# Add route hint items if a route hint is selected
+	if not selected_route_hint_id.is_empty():
+		context_menu.add_separator("", 350)
+		context_menu.add_item("Delete Route Hint", 302)
+
 	# Add annotation transform items if an annotation is selected
 	if not selected_annotation_id.is_empty():
 		var annotation := data.get_annotation(selected_annotation_id)
 		if annotation:
-			# Find position after separator
-			var sep_index := 1  # After "Add Annotation" submenu
-			for i in range(context_menu.item_count):
-				if context_menu.is_item_separator(i):
-					sep_index = i
-					break
-
 			context_menu.add_separator("", 200)
 			context_menu.add_item("Rotate Annotation (R)", 201)
 			context_menu.add_item("Scale Up (+)", 202)
@@ -211,6 +264,14 @@ func _on_annotation_menu_pressed(id: int) -> void:
 		4: set_annotation_mode(AnnotationMode.POLYLINE)
 
 
+## Handle route hint submenu selection
+func _on_route_hint_menu_pressed(id: int) -> void:
+	match id:
+		10: set_route_hint_mode(RouteHintMode.WAYPOINT)
+		11: _start_route_hint_from_pin(RouteHintMode.SINGLE_TRACE)
+		12: _start_route_hint_from_pin(RouteHintMode.BUS)
+
+
 ## Handle main context menu selection
 func _on_context_menu_pressed(id: int) -> void:
 	if not data:
@@ -223,6 +284,12 @@ func _on_context_menu_pressed(id: int) -> void:
 			data.clear_annotations("ai")
 		102:  # Clear all annotations
 			data.clear_annotations("")
+		110:  # Clear my route hints
+			data.clear_route_hints("human")
+		111:  # Clear AI route hints
+			data.clear_route_hints("ai")
+		112:  # Clear all route hints
+			data.clear_route_hints("")
 		201:  # Rotate annotation
 			_rotate_selected_annotation()
 		202:  # Scale up
@@ -233,6 +300,10 @@ func _on_context_menu_pressed(id: int) -> void:
 			_delete_selected_annotation()
 		205:  # Invert arrow
 			_invert_selected_arrow()
+		301:  # Start route hint from this pin
+			_start_route_hint_from_context_pin()
+		302:  # Delete selected route hint
+			_delete_selected_route_hint()
 
 
 ## Show the context menu at the given screen position
@@ -282,6 +353,10 @@ func _draw() -> void:
 	if show_annotations:
 		_draw_annotations()
 
+	# Draw route hints
+	if show_route_hints:
+		_draw_route_hints()
+
 	# Draw selection box
 	if is_box_selecting:
 		_draw_selection_box()
@@ -289,6 +364,10 @@ func _draw() -> void:
 	# Draw annotation preview while drawing
 	if is_drawing_annotation or annotation_mode != AnnotationMode.NONE:
 		_draw_annotation_preview()
+
+	# Draw route hint preview while drawing
+	if is_drawing_route_hint or route_hint_mode != RouteHintMode.NONE:
+		_draw_route_hint_preview()
 
 	# Draw active suggestion arrow
 	_draw_suggestion_arrow()
@@ -987,6 +1066,189 @@ func _draw_dashed_rect(rect: Rect2, color: Color, width: float, dash_length: flo
 		_draw_dashed_line(corners[i], corners[(i + 1) % 4], color, width, dash_length)
 
 
+## Draw all route hints
+func _draw_route_hints() -> void:
+	for hint_id in data.route_hints:
+		var hint: PCBRouteHintScript = data.route_hints[hint_id]
+		_draw_route_hint(hint)
+
+
+## Draw a single route hint
+func _draw_route_hint(hint: PCBRouteHintScript) -> void:
+	if hint.waypoints.is_empty():
+		return
+
+	var color := hint.color
+	var is_selected := (hint.id == selected_route_hint_id)
+
+	# Highlight selected hint
+	if is_selected:
+		color = Color.WHITE
+		# Draw selection glow
+		var screen_points_glow: PackedVector2Array = []
+		for wp in hint.waypoints:
+			screen_points_glow.append(world_to_screen(wp))
+		if screen_points_glow.size() >= 2:
+			var glow_color := Color(1, 1, 1, 0.3)
+			for i in range(screen_points_glow.size() - 1):
+				draw_line(screen_points_glow[i], screen_points_glow[i + 1], glow_color, 8.0)
+
+	# Convert waypoints to screen coordinates
+	var screen_points: PackedVector2Array = []
+	for wp in hint.waypoints:
+		screen_points.append(world_to_screen(wp))
+
+	# Draw based on hint type and detail level
+	match hint.hint_type:
+		PCBRouteHintScript.HintType.WAYPOINT:
+			_draw_waypoint_hint(hint, screen_points, color)
+		PCBRouteHintScript.HintType.SINGLE_TRACE:
+			_draw_single_trace_hint(hint, screen_points, color)
+		PCBRouteHintScript.HintType.BUS:
+			_draw_bus_hint(hint, screen_points, color)
+
+	# Draw "SELECTED" label for selected hint
+	if is_selected and screen_points.size() > 0:
+		draw_string(font, screen_points[0] + Vector2(-20, -15), "[SELECTED]", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, Color.WHITE)
+
+
+## Draw a waypoint-only hint (just bend points)
+func _draw_waypoint_hint(hint: PCBRouteHintScript, screen_points: PackedVector2Array, color: Color) -> void:
+	# Draw waypoint markers as diamonds
+	for point in screen_points:
+		_draw_diamond(point, 8.0, color)
+
+	# Draw dashed lines connecting waypoints
+	if screen_points.size() >= 2:
+		for i in range(screen_points.size() - 1):
+			_draw_dashed_line(screen_points[i], screen_points[i + 1], color, 2.0, 6.0)
+
+	# Draw label if provided
+	if not hint.text.is_empty() and screen_points.size() > 0:
+		draw_string(font, screen_points[0] + Vector2(10, -10), hint.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+
+
+## Draw a single trace hint
+func _draw_single_trace_hint(hint: PCBRouteHintScript, screen_points: PackedVector2Array, color: Color) -> void:
+	# Draw the path based on detail level
+	var line_width := 2.5 if hint.width <= 0 else hint.width * zoom
+
+	if hint.detail_level == PCBRouteHintScript.DetailLevel.DETAILED:
+		# Solid line for detailed hints
+		if screen_points.size() >= 2:
+			draw_polyline(screen_points, color, line_width)
+	else:
+		# Dashed line for sparse/guided hints
+		if screen_points.size() >= 2:
+			for i in range(screen_points.size() - 1):
+				_draw_dashed_line(screen_points[i], screen_points[i + 1], color, line_width, 8.0)
+
+	# Draw waypoint markers
+	for i in range(screen_points.size()):
+		var is_endpoint := (i == 0 or i == screen_points.size() - 1)
+		var marker_size := 6.0 if is_endpoint else 4.0
+		draw_circle(screen_points[i], marker_size, color)
+
+	# Draw pin labels at endpoints
+	if not hint.source_pins.is_empty() and screen_points.size() > 0:
+		draw_string(font, screen_points[0] + Vector2(-40, -8), hint.source_pins[0], HORIZONTAL_ALIGNMENT_RIGHT, -1, font_size - 2, color)
+	if not hint.dest_pins.is_empty() and screen_points.size() > 0:
+		var last_idx := screen_points.size() - 1
+		draw_string(font, screen_points[last_idx] + Vector2(8, -8), hint.dest_pins[0], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, color)
+
+	# Draw layer indicator
+	if not hint.layer.is_empty():
+		var mid_idx := screen_points.size() / 2
+		if mid_idx < screen_points.size():
+			draw_string(font, screen_points[mid_idx] + Vector2(0, 15), hint.layer, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, color.lightened(0.2))
+
+
+## Draw a bus routing hint
+func _draw_bus_hint(hint: PCBRouteHintScript, screen_points: PackedVector2Array, color: Color) -> void:
+	var source_color := Color(0.2, 0.8, 0.4, 0.8)  # Green for source
+	var dest_color := Color(0.4, 0.6, 1.0, 0.8)    # Blue for dest
+	var bus_width := 4.0
+
+	# Draw corridor between waypoints
+	if screen_points.size() >= 2:
+		# Draw outer corridor lines
+		for i in range(screen_points.size() - 1):
+			var p1 := screen_points[i]
+			var p2 := screen_points[i + 1]
+			var direction := (p2 - p1).normalized()
+			var perpendicular := Vector2(-direction.y, direction.x) * bus_width
+
+			# Draw parallel dashed lines to show bus corridor
+			_draw_dashed_line(p1 + perpendicular, p2 + perpendicular, color, 1.5, 6.0)
+			_draw_dashed_line(p1 - perpendicular, p2 - perpendicular, color, 1.5, 6.0)
+
+		# Draw center guide line
+		for i in range(screen_points.size() - 1):
+			_draw_dashed_line(screen_points[i], screen_points[i + 1], color, 2.0, 10.0)
+
+	# Draw waypoint markers as rectangles for bus
+	for point in screen_points:
+		var rect := Rect2(point - Vector2(5, 5), Vector2(10, 10))
+		draw_rect(rect, color, false, 2.0)
+
+	# Determine entry/exit points for pin connections
+	var entry_point: Vector2 = screen_points[0] if screen_points.size() > 0 else Vector2.ZERO
+	var exit_point: Vector2 = screen_points[screen_points.size() - 1] if screen_points.size() > 0 else Vector2.ZERO
+
+	# Draw source pins connecting to corridor entry
+	if not hint.source_pins.is_empty() and data:
+		for i in range(hint.source_pins.size()):
+			var pin_ref: String = hint.source_pins[i]
+			var parsed := PCBRouteHintScript.parse_pin_ref(pin_ref)
+			var comp := data.get_component(parsed.component)
+			if comp:
+				var pin_world := comp.get_pin_world_position(parsed.pin)
+				var pin_screen := world_to_screen(pin_world)
+				_draw_dashed_line(pin_screen, entry_point, source_color, 1.5, 5.0)
+				# Draw numbered marker
+				_draw_numbered_circle(pin_screen, i + 1, source_color)
+
+	# Draw dest pins connecting from corridor exit
+	if not hint.dest_pins.is_empty() and data:
+		for i in range(hint.dest_pins.size()):
+			var pin_ref: String = hint.dest_pins[i]
+			var parsed := PCBRouteHintScript.parse_pin_ref(pin_ref)
+			var comp := data.get_component(parsed.component)
+			if comp:
+				var pin_world := comp.get_pin_world_position(parsed.pin)
+				var pin_screen := world_to_screen(pin_world)
+				_draw_dashed_line(exit_point, pin_screen, dest_color, 1.5, 5.0)
+				# Draw numbered marker
+				_draw_numbered_circle(pin_screen, i + 1, dest_color)
+
+	# Draw bus label with pin count
+	if screen_points.size() > 0:
+		var bus_label := "BUS"
+		if not hint.source_pins.is_empty():
+			bus_label += " [%d]" % hint.source_pins.size()
+		draw_string(font, screen_points[0] + Vector2(0, -15), bus_label, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, color)
+
+	# Draw layer indicator
+	if not hint.layer.is_empty():
+		var mid_idx := screen_points.size() / 2
+		if mid_idx < screen_points.size():
+			draw_string(font, screen_points[mid_idx] + Vector2(0, 20), hint.layer, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, color.lightened(0.2))
+
+
+## Draw a diamond shape marker
+func _draw_diamond(center: Vector2, size: float, color: Color) -> void:
+	var half := size / 2.0
+	var points: PackedVector2Array = [
+		center + Vector2(0, -half),
+		center + Vector2(half, 0),
+		center + Vector2(0, half),
+		center + Vector2(-half, 0)
+	]
+	draw_colored_polygon(points, color)
+	points.append(points[0])
+	draw_polyline(points, color.darkened(0.3), 1.5)
+
+
 ## Draw annotation preview while user is drawing
 func _draw_annotation_preview() -> void:
 	var preview_color := annotation_human_color
@@ -1048,6 +1310,187 @@ func _draw_annotation_preview() -> void:
 
 			# Draw current preview point
 			draw_circle(preview_screen, 4.0, preview_color.lightened(0.3))
+
+
+## Draw route hint preview while user is drawing
+func _draw_route_hint_preview() -> void:
+	if route_hint_mode == RouteHintMode.NONE:
+		return
+
+	var preview_color := route_hint_human_color
+	preview_color.a = 0.7
+
+	var cursor_pos := get_local_mouse_position()
+
+	# Handle BUS mode with multi-phase UI
+	if route_hint_mode == RouteHintMode.BUS:
+		_draw_bus_hint_preview(cursor_pos, preview_color)
+		return
+
+	# Draw mode indicator cursor crosshair
+	if not is_drawing_route_hint:
+		var crosshair_size := 10.0
+		draw_line(cursor_pos - Vector2(crosshair_size, 0), cursor_pos + Vector2(crosshair_size, 0), preview_color, 1.5)
+		draw_line(cursor_pos - Vector2(0, crosshair_size), cursor_pos + Vector2(0, crosshair_size), preview_color, 1.5)
+
+		# Draw mode label
+		var mode_name: String = RouteHintMode.keys()[route_hint_mode]
+		draw_string(font, cursor_pos + Vector2(12, -5), "Route: " + mode_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, preview_color)
+
+		# Hint for completing
+		if route_hint_mode == RouteHintMode.WAYPOINT:
+			draw_string(font, cursor_pos + Vector2(12, 10), "Click to add points, Enter/double-click to finish", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, preview_color)
+		else:
+			draw_string(font, cursor_pos + Vector2(12, 10), "Click pins or waypoints, Enter/double-click to finish", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, preview_color)
+		return
+
+	var screen_points: PackedVector2Array = []
+	for p in route_hint_points:
+		screen_points.append(world_to_screen(p))
+
+	var preview_screen := world_to_screen(route_hint_preview_point)
+
+	# Draw the path so far
+	if screen_points.size() >= 1:
+		# Draw lines between points
+		for i in range(screen_points.size() - 1):
+			_draw_dashed_line(screen_points[i], screen_points[i + 1], preview_color, 2.0, 8.0)
+
+		# Draw line to current mouse position
+		_draw_dashed_line(screen_points[screen_points.size() - 1], preview_screen, preview_color, 2.0, 8.0)
+
+		# Draw waypoint markers (diamonds)
+		for i in range(screen_points.size()):
+			var marker_size := 6.0 if i == 0 else 4.0  # Larger for start point
+			_draw_diamond(screen_points[i], marker_size, preview_color)
+
+	# Draw current preview point
+	_draw_diamond(preview_screen, 4.0, preview_color.lightened(0.3))
+
+	# Draw source pin indicator if set
+	if not route_hint_source_pin.is_empty() and screen_points.size() >= 1:
+		draw_string(font, screen_points[0] + Vector2(8, -8), route_hint_source_pin, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, preview_color)
+
+	# Highlight pins near cursor for trace/bus modes
+	if route_hint_mode != RouteHintMode.WAYPOINT:
+		var world_pos := screen_to_world(get_local_mouse_position())
+		var pin_info := _get_pin_at_position(world_pos, 5.0)
+		if not pin_info.is_empty():
+			var pin_screen := world_to_screen(pin_info.position)
+			draw_circle(pin_screen, 8.0, Color.GREEN.lightened(0.3))
+			draw_string(font, pin_screen + Vector2(10, 4), "%s.%s" % [pin_info.component, pin_info.pin], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, Color.GREEN)
+
+
+## Draw bus hint preview with multi-phase UI
+func _draw_bus_hint_preview(cursor_pos: Vector2, preview_color: Color) -> void:
+	var source_color := Color(0.2, 0.8, 0.4)  # Green for source
+	var waypoint_color := Color(0.8, 0.8, 0.2)  # Yellow for waypoints
+	var dest_color := Color(0.4, 0.6, 1.0)  # Blue for destination
+
+	# Draw phase indicator at cursor
+	var phase_text := ""
+	var phase_hint := ""
+	var active_color := preview_color
+
+	match bus_phase:
+		BusPhase.NONE, BusPhase.SOURCE_PINS:
+			phase_text = "BUS: Select SOURCE pins"
+			phase_hint = "Click pins to add (%d selected), Enter to continue" % bus_source_pins.size()
+			active_color = source_color
+		BusPhase.WAYPOINTS:
+			phase_text = "BUS: Add WAYPOINTS"
+			phase_hint = "Click to add bend points (%d added), Enter to continue" % bus_waypoints.size()
+			active_color = waypoint_color
+		BusPhase.DEST_PINS:
+			phase_text = "BUS: Select DEST pins"
+			phase_hint = "Click pins to add (%d selected), Enter to finish" % bus_dest_pins.size()
+			active_color = dest_color
+
+	# Draw crosshair
+	var crosshair_size := 10.0
+	draw_line(cursor_pos - Vector2(crosshair_size, 0), cursor_pos + Vector2(crosshair_size, 0), active_color, 1.5)
+	draw_line(cursor_pos - Vector2(0, crosshair_size), cursor_pos + Vector2(0, crosshair_size), active_color, 1.5)
+
+	# Draw phase text
+	draw_string(font, cursor_pos + Vector2(12, -5), phase_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, active_color)
+	draw_string(font, cursor_pos + Vector2(12, 10), phase_hint, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, active_color)
+
+	# Draw source pins with numbers
+	for i in range(bus_source_pins.size()):
+		var pin_data: Dictionary = bus_source_pins[i]
+		var screen_pos := world_to_screen(pin_data.position)
+		_draw_numbered_circle(screen_pos, i + 1, source_color)
+		draw_string(font, screen_pos + Vector2(12, 4), "%s.%s" % [pin_data.component, pin_data.pin], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, source_color)
+
+	# Draw waypoints
+	for i in range(bus_waypoints.size()):
+		var screen_pos := world_to_screen(bus_waypoints[i])
+		_draw_diamond(screen_pos, 6.0, waypoint_color)
+
+	# Draw corridor from waypoints only (user-defined path)
+	var corridor_screen_points: PackedVector2Array = []
+	for wp in bus_waypoints:
+		corridor_screen_points.append(world_to_screen(wp))
+
+	# Draw corridor lines between waypoints
+	if corridor_screen_points.size() >= 2:
+		for i in range(corridor_screen_points.size() - 1):
+			_draw_dashed_line(corridor_screen_points[i], corridor_screen_points[i + 1], preview_color, 3.0, 10.0)
+
+	# Determine the "entry point" - first waypoint or cursor in waypoint phase
+	var entry_point: Vector2 = cursor_pos
+	if not bus_waypoints.is_empty():
+		entry_point = world_to_screen(bus_waypoints[0])
+
+	# Draw lines from source pins to entry point
+	if not bus_source_pins.is_empty():
+		for pin_data in bus_source_pins:
+			var pin_screen := world_to_screen(pin_data.position)
+			_draw_dashed_line(pin_screen, entry_point, source_color, 1.5, 5.0)
+
+	# Determine the "exit point" - last waypoint or cursor
+	var exit_point: Vector2 = cursor_pos
+	if not bus_waypoints.is_empty():
+		exit_point = world_to_screen(bus_waypoints[bus_waypoints.size() - 1])
+
+	# Draw lines from exit point to dest pins
+	if not bus_dest_pins.is_empty():
+		for pin_data in bus_dest_pins:
+			var pin_screen := world_to_screen(pin_data.position)
+			_draw_dashed_line(exit_point, pin_screen, dest_color, 1.5, 5.0)
+
+	# Draw line from last waypoint to cursor in waypoint phase
+	if bus_phase == BusPhase.WAYPOINTS:
+		if corridor_screen_points.is_empty():
+			# No waypoints yet - show where corridor will start
+			pass  # Lines from source pins to cursor already drawn above
+		else:
+			# Draw from last waypoint to cursor
+			_draw_dashed_line(corridor_screen_points[corridor_screen_points.size() - 1], cursor_pos, waypoint_color, 2.0, 6.0)
+
+	# Draw dest pins with numbers
+	for i in range(bus_dest_pins.size()):
+		var pin_data: Dictionary = bus_dest_pins[i]
+		var screen_pos := world_to_screen(pin_data.position)
+		_draw_numbered_circle(screen_pos, i + 1, dest_color)
+		draw_string(font, screen_pos + Vector2(12, 4), "%s.%s" % [pin_data.component, pin_data.pin], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, dest_color)
+
+	# Highlight pins near cursor
+	var world_pos := screen_to_world(cursor_pos)
+	var pin_info := _get_pin_at_position(world_pos, 5.0)
+	if not pin_info.is_empty():
+		var pin_screen := world_to_screen(pin_info.position)
+		draw_circle(pin_screen, 10.0, Color(1, 1, 1, 0.5))
+		draw_string(font, pin_screen + Vector2(12, -10), "%s.%s" % [pin_info.component, pin_info.pin], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
+
+
+## Draw a numbered circle for bus pin markers
+func _draw_numbered_circle(center: Vector2, number: int, color: Color) -> void:
+	draw_circle(center, 12.0, color)
+	draw_circle(center, 10.0, Color(0.1, 0.1, 0.1))
+	var num_str := str(number)
+	var text_offset := Vector2(-3 if number < 10 else -6, 4)
+	draw_string(font, center + text_offset, num_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 
 
 ## Draw arrow showing suggested move
@@ -1155,6 +1598,12 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 				queue_redraw()
 				return
 
+			# Handle route hint mode
+			if route_hint_mode != RouteHintMode.NONE:
+				_handle_route_hint_click(world_pos, event.double_click)
+				queue_redraw()
+				return
+
 			var hit_component := data.get_component_at(world_pos)
 
 			if event.double_click and not hit_component.is_empty():
@@ -1250,6 +1699,11 @@ func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 		annotation_preview_point = world_pos
 		queue_redraw()
 
+	# Update route hint preview point
+	if route_hint_mode != RouteHintMode.NONE:
+		route_hint_preview_point = world_pos
+		queue_redraw()
+
 	# Handle annotation dragging in SELECT mode
 	if is_dragging_annotation and not selected_annotation_id.is_empty():
 		var annotation := data.get_annotation(selected_annotation_id)
@@ -1294,20 +1748,29 @@ func _handle_key_input(event: InputEventKey) -> void:
 
 	match event.keycode:
 		KEY_DELETE, KEY_BACKSPACE:
-			# Delete selected annotation first, otherwise delete selected components
+			# Delete selected annotation or route hint first, otherwise delete selected components
 			if not selected_annotation_id.is_empty():
 				_delete_selected_annotation()
+			elif not selected_route_hint_id.is_empty():
+				_delete_selected_route_hint()
 			else:
 				_delete_selected()
 		KEY_ESCAPE:
-			# Cancel annotation first, then clear annotation selection, then component selection
+			# Cancel drawing first, then clear modes/selection
 			if is_drawing_annotation:
 				cancel_annotation()
+			elif is_drawing_route_hint:
+				cancel_route_hint()
 			elif annotation_mode != AnnotationMode.NONE:
 				clear_annotation_mode()
 				selected_annotation_id = ""
+			elif route_hint_mode != RouteHintMode.NONE:
+				clear_route_hint_mode()
+				selected_route_hint_id = ""
 			else:
 				_clear_selection()
+				selected_annotation_id = ""
+				selected_route_hint_id = ""
 				active_suggestion_id = ""
 			queue_redraw()
 		KEY_R:
@@ -1367,6 +1830,19 @@ func _handle_key_input(event: InputEventKey) -> void:
 				clear_annotation_mode()
 			else:
 				set_annotation_mode(AnnotationMode.POLYLINE)
+		# Route hint mode shortcuts
+		KEY_W:
+			if route_hint_mode == RouteHintMode.WAYPOINT:
+				clear_route_hint_mode()
+			else:
+				set_route_hint_mode(RouteHintMode.WAYPOINT)
+		KEY_ENTER, KEY_KP_ENTER:
+			# Advance bus phase or finalize other route hints
+			if bus_phase != BusPhase.NONE:
+				_advance_bus_phase()
+				queue_redraw()
+			elif is_drawing_route_hint and route_hint_mode != RouteHintMode.NONE:
+				_finalize_route_hint()
 
 
 func _zoom_at(screen_pos: Vector2, factor: float) -> void:
@@ -1498,23 +1974,39 @@ func _handle_annotation_click(world_pos: Vector2, is_double_click: bool) -> void
 			_handle_polyline_click(world_pos, is_double_click)
 
 
-## Handle select mode click - select annotation for transforms
+## Handle select mode click - select annotation or route hint for transforms
 func _handle_select_click(world_pos: Vector2) -> void:
+	var threshold := 3.0 / zoom  # Threshold in world units
+
 	# Try to find an annotation at click position
-	var hit_ann_id := data.get_annotation_at(world_pos, 3.0 / zoom)  # Threshold in world units
+	var hit_ann_id := data.get_annotation_at(world_pos, threshold)
 
 	if not hit_ann_id.is_empty():
 		# Select the annotation and start dragging
 		selected_annotation_id = hit_ann_id
+		selected_route_hint_id = ""  # Deselect any route hint
 		is_dragging_annotation = true
 		annotation_drag_start = world_pos
 		var annotation := data.get_annotation(hit_ann_id)
 		if annotation:
 			annotation_drag_offset = annotation.get_center() - world_pos
-	else:
-		# Clicked on empty space - deselect
-		selected_annotation_id = ""
+		return
+
+	# Try to find a route hint at click position
+	var hit_hint_id := data.get_route_hint_at(world_pos, threshold)
+
+	if not hit_hint_id.is_empty():
+		# Select the route hint
+		selected_route_hint_id = hit_hint_id
+		selected_annotation_id = ""  # Deselect any annotation
 		is_dragging_annotation = false
+		queue_redraw()
+		return
+
+	# Clicked on empty space - deselect all
+	selected_annotation_id = ""
+	selected_route_hint_id = ""
+	is_dragging_annotation = false
 
 
 ## Handle arrow annotation click
@@ -1598,6 +2090,166 @@ func _create_polyline_annotation(points: Array[Vector2]) -> void:
 	annotation_created.emit(annotation.id)
 
 
+## Handle route hint click based on current mode
+func _handle_route_hint_click(world_pos: Vector2, is_double_click: bool) -> void:
+	match route_hint_mode:
+		RouteHintMode.WAYPOINT:
+			_handle_waypoint_hint_click(world_pos, is_double_click)
+		RouteHintMode.SINGLE_TRACE:
+			_handle_trace_hint_click(world_pos, is_double_click)
+		RouteHintMode.BUS:
+			_handle_bus_hint_click(world_pos, is_double_click)
+
+
+## Handle waypoint hint click - just placing bend points
+func _handle_waypoint_hint_click(world_pos: Vector2, is_double_click: bool) -> void:
+	if not is_drawing_route_hint:
+		# First click - start waypoint hint
+		is_drawing_route_hint = true
+		route_hint_points.clear()
+		route_hint_points.append(world_pos)
+	elif is_double_click:
+		# Double click - finish waypoint hint
+		if route_hint_points.size() >= 1:
+			_finalize_route_hint()
+		else:
+			cancel_route_hint()
+	else:
+		# Single click - add waypoint
+		route_hint_points.append(world_pos)
+
+
+## Handle single trace hint click
+func _handle_trace_hint_click(world_pos: Vector2, is_double_click: bool) -> void:
+	# Check if clicked on a pin (use larger threshold for easier clicking)
+	var pin_info := _get_pin_at_position(world_pos, 5.0)
+
+	if not is_drawing_route_hint:
+		# First click - try to start from a pin
+		if not pin_info.is_empty():
+			route_hint_source_pin = "%s.%s" % [pin_info.component, pin_info.pin]
+			route_hint_points.append(pin_info.position)
+		else:
+			route_hint_points.append(world_pos)
+		is_drawing_route_hint = true
+	elif is_double_click or not pin_info.is_empty():
+		# Double click or click on pin - finish the trace
+		if not pin_info.is_empty():
+			route_hint_dest_pin = "%s.%s" % [pin_info.component, pin_info.pin]
+			route_hint_points.append(pin_info.position)
+		else:
+			route_hint_points.append(world_pos)
+		_finalize_route_hint()
+	else:
+		# Single click - add waypoint
+		route_hint_points.append(world_pos)
+
+
+## Handle bus hint click - multi-phase approach
+func _handle_bus_hint_click(world_pos: Vector2, is_double_click: bool) -> void:
+	# Initialize bus phase if not started
+	if bus_phase == BusPhase.NONE:
+		bus_phase = BusPhase.SOURCE_PINS
+		bus_source_pins.clear()
+		bus_dest_pins.clear()
+		bus_waypoints.clear()
+		is_drawing_route_hint = true
+
+	var pin_info := _get_pin_at_position(world_pos, 5.0)
+
+	match bus_phase:
+		BusPhase.SOURCE_PINS:
+			if not pin_info.is_empty():
+				# Check if pin already added
+				var already_added := false
+				for existing in bus_source_pins:
+					if existing.component == pin_info.component and existing.pin == pin_info.pin:
+						already_added = true
+						break
+				if not already_added:
+					bus_source_pins.append(pin_info)
+			# Double-click or Enter advances to waypoint phase (handled in key input)
+
+		BusPhase.WAYPOINTS:
+			if not is_double_click:
+				bus_waypoints.append(world_pos)
+			# Double-click advances to dest phase (handled below)
+
+		BusPhase.DEST_PINS:
+			if not pin_info.is_empty():
+				# Check if pin already added
+				var already_added := false
+				for existing in bus_dest_pins:
+					if existing.component == pin_info.component and existing.pin == pin_info.pin:
+						already_added = true
+						break
+				if not already_added:
+					bus_dest_pins.append(pin_info)
+
+	# Double-click advances phase or finalizes
+	if is_double_click:
+		_advance_bus_phase()
+
+	queue_redraw()
+
+
+## Advance to next bus phase
+func _advance_bus_phase() -> void:
+	match bus_phase:
+		BusPhase.SOURCE_PINS:
+			if bus_source_pins.is_empty():
+				# Need at least one source pin
+				return
+			bus_phase = BusPhase.WAYPOINTS
+		BusPhase.WAYPOINTS:
+			bus_phase = BusPhase.DEST_PINS
+		BusPhase.DEST_PINS:
+			_finalize_bus_hint()
+
+
+## Finalize the bus hint with all collected data
+func _finalize_bus_hint() -> void:
+	if bus_source_pins.is_empty():
+		cancel_route_hint()
+		return
+
+	# Build source and dest pin arrays
+	var src_pins: Array[String] = []
+	for pin_data in bus_source_pins:
+		src_pins.append("%s.%s" % [pin_data.component, pin_data.pin])
+
+	var dst_pins: Array[String] = []
+	for pin_data in bus_dest_pins:
+		dst_pins.append("%s.%s" % [pin_data.component, pin_data.pin])
+
+	# Waypoints are ONLY the corridor - pin positions are stored separately in source_pins/dest_pins
+	var corridor_waypoints: Array[Vector2] = []
+	for wp in bus_waypoints:
+		corridor_waypoints.append(wp)
+
+	# Create the bus hint
+	var hint := PCBRouteHintScript.create_bus_hint(
+		src_pins, dst_pins, corridor_waypoints,
+		route_hint_layer, 0.0, 0.0, "", "human"
+	)
+
+	data.add_route_hint(hint)
+	route_hint_created.emit(hint.id)
+
+	# Reset bus state
+	_reset_bus_state()
+	clear_route_hint_mode()
+
+
+## Reset bus phase state
+func _reset_bus_state() -> void:
+	bus_phase = BusPhase.NONE
+	bus_source_pins.clear()
+	bus_dest_pins.clear()
+	bus_waypoints.clear()
+	is_drawing_route_hint = false
+
+
 ## Finish annotation drawing (reset state but keep mode)
 func _finish_annotation_drawing() -> void:
 	is_drawing_annotation = false
@@ -1624,6 +2276,158 @@ func set_annotation_mode(mode: AnnotationMode) -> void:
 ## Clear annotation mode (return to normal)
 func clear_annotation_mode() -> void:
 	set_annotation_mode(AnnotationMode.NONE)
+
+
+## Set route hint mode
+func set_route_hint_mode(mode: RouteHintMode) -> void:
+	if route_hint_mode != mode:
+		cancel_route_hint()
+		# Clear annotation mode when entering route hint mode
+		if mode != RouteHintMode.NONE and annotation_mode != AnnotationMode.NONE:
+			cancel_annotation()
+			annotation_mode = AnnotationMode.NONE
+			annotation_mode_changed.emit(AnnotationMode.NONE)
+		route_hint_mode = mode
+		route_hint_mode_changed.emit(mode)
+		queue_redraw()
+
+
+## Clear route hint mode (return to normal)
+func clear_route_hint_mode() -> void:
+	set_route_hint_mode(RouteHintMode.NONE)
+
+
+## Cancel current route hint drawing
+func cancel_route_hint() -> void:
+	is_drawing_route_hint = false
+	route_hint_points.clear()
+	route_hint_preview_point = Vector2.ZERO
+	route_hint_source_pin = ""
+	route_hint_dest_pin = ""
+	# Reset bus state
+	_reset_bus_state()
+	queue_redraw()
+
+
+## Start route hint from a specific pin (for single trace or bus)
+func _start_route_hint_from_pin(mode: RouteHintMode) -> void:
+	# Check if we clicked on a pin
+	var pin_info := _get_pin_at_position(context_menu_world_pos)
+	if pin_info.is_empty():
+		# No pin at click position - start waypoint mode instead
+		set_route_hint_mode(RouteHintMode.WAYPOINT)
+		return
+
+	route_hint_source_pin = "%s.%s" % [pin_info.component, pin_info.pin]
+	set_route_hint_mode(mode)
+	# Add the pin position as first waypoint
+	route_hint_points.append(pin_info.position)
+	is_drawing_route_hint = true
+
+
+## Start route hint from context menu pin
+func _start_route_hint_from_context_pin() -> void:
+	var pin_info := _get_pin_at_position(context_menu_world_pos)
+	if pin_info.is_empty():
+		return
+
+	route_hint_source_pin = "%s.%s" % [pin_info.component, pin_info.pin]
+	set_route_hint_mode(RouteHintMode.SINGLE_TRACE)
+	route_hint_points.append(pin_info.position)
+	is_drawing_route_hint = true
+
+
+## Delete selected route hint
+func _delete_selected_route_hint() -> void:
+	if selected_route_hint_id.is_empty() or not data:
+		return
+	data.remove_route_hint(selected_route_hint_id)
+	selected_route_hint_id = ""
+	queue_redraw()
+
+
+## Get pin at a world position (threshold in mm, world space)
+## Returns the CLOSEST pin within threshold, not just the first match
+func _get_pin_at_position(world_pos: Vector2, threshold: float = 5.0) -> Dictionary:
+	if not data:
+		return {}
+
+	var best_match: Dictionary = {}
+	var best_distance: float = threshold + 1.0
+
+	for comp in data.get_all_components():
+		# Check if within component bounds first (optimization)
+		var comp_rect := comp.get_bounding_rect().grow(threshold)
+		if not comp_rect.has_point(world_pos):
+			continue
+
+		# Check each pin and find closest
+		for pin_name in comp.pins:
+			var pin_pos: Vector2 = comp.get_pin_world_position(pin_name)
+			var dist := world_pos.distance_to(pin_pos)
+			if dist <= threshold and dist < best_distance:
+				best_distance = dist
+				best_match = {
+					"component": comp.id,
+					"pin": pin_name,
+					"position": pin_pos
+				}
+
+	return best_match
+
+
+## Finalize the current route hint
+func _finalize_route_hint() -> void:
+	if not data or route_hint_points.is_empty():
+		cancel_route_hint()
+		return
+
+	var hint: PCBRouteHintScript
+
+	match route_hint_mode:
+		RouteHintMode.WAYPOINT:
+			hint = PCBRouteHintScript.create_waypoint_hint(
+				route_hint_points, "", "human"
+			)
+		RouteHintMode.SINGLE_TRACE:
+			if route_hint_source_pin.is_empty():
+				# No source pin, treat as waypoint
+				hint = PCBRouteHintScript.create_waypoint_hint(
+					route_hint_points, "", "human"
+				)
+			else:
+				hint = PCBRouteHintScript.create_single_trace_hint(
+					route_hint_source_pin,
+					route_hint_dest_pin if not route_hint_dest_pin.is_empty() else "",
+					route_hint_points,
+					route_hint_layer,
+					0.0,  # Default width
+					"",   # No note
+					"human"
+				)
+		RouteHintMode.BUS:
+			if route_hint_source_pin.is_empty():
+				hint = PCBRouteHintScript.create_waypoint_hint(
+					route_hint_points, "", "human"
+				)
+			else:
+				# For bus, we need arrays - for now just single pin
+				var src_pins: Array[String] = [route_hint_source_pin]
+				var dst_pins: Array[String] = []
+				if not route_hint_dest_pin.is_empty():
+					dst_pins.append(route_hint_dest_pin)
+				hint = PCBRouteHintScript.create_bus_hint(
+					src_pins, dst_pins, route_hint_points,
+					route_hint_layer, 0.0, 0.0, "", "human"
+				)
+		_:
+			cancel_route_hint()
+			return
+
+	data.add_route_hint(hint)
+	route_hint_created.emit(hint.id)
+	cancel_route_hint()
+	clear_route_hint_mode()
 
 #endregion
 
