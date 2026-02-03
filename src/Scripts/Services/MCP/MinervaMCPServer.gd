@@ -4086,7 +4086,7 @@ func _register_pcb_tools() -> void:
 	)
 
 	_register_tool("minerva_pcb_add_component",
-		"Add a new component to the PCB.",
+		"Add a new component to the PCB. NOTE: Component dimensions are estimated defaults based on footprint type. For accurate sizing from KiCAD libraries, run pcb-architect's footprint-geometry command and then call minerva_pcb_import_footprint_geometry to update components with real dimensions.",
 		{
 			"type": "object",
 			"properties": {
@@ -4385,7 +4385,7 @@ func _register_pcb_tools() -> void:
 	)
 
 	_register_tool("minerva_pcb_import_footprint_geometry",
-		"Import detailed pad geometry from pcb-architect footprint-geometry output. Updates component pads with accurate shapes, sizes, and drill holes for rendering. Can also correct component positions if YAML used different coordinate conventions.",
+		"IMPORTANT: Call this after adding components to get accurate dimensions from KiCAD footprint libraries. Without this, components use estimated sizes that may not match actual footprints. Run 'pcb-architect footprint-geometry board.yaml -o geometry.json' to generate the input data. Updates component pads with accurate shapes, sizes, drill holes, and body dimensions. Can also correct positions if YAML used different coordinate conventions (use position_is_center and/or invert_y flags).",
 		{
 			"type": "object",
 			"properties": {
@@ -5010,8 +5010,11 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 		match footprint_idx:
 			PCBComponentScript.FootprintType.HEADER, PCBComponentScript.FootprintType.CONNECTOR:
 				comp.setup_header_pins(pin_count, pin_names)
-			PCBComponentScript.FootprintType.IC_DIP, PCBComponentScript.FootprintType.MODULE:
+			PCBComponentScript.FootprintType.IC_DIP:
 				comp.setup_dip_pins(pin_count)
+			PCBComponentScript.FootprintType.MODULE:
+				# MODULE uses wider row spacing and body extends beyond pins
+				comp.setup_module_pins(pin_count)
 			_:
 				comp.setup_standard_pins()
 	else:

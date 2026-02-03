@@ -315,17 +315,18 @@ func setup_standard_pins() -> void:
 
 		FootprintType.MODULE:
 			# Large module (like ESP32 dev board) - default 2x20 pins
-			# Pin 1 at origin (top-left), left side going down, right side going up
+			# Pin 1 at origin (top-left), body extends beyond pin rows
 			var row_spacing := 22.86  # ~0.9" for dev boards
 			var pins_per_side := 20
-			var total_height := (pins_per_side - 1) * 2.54
+			var body_extension := 9.0  # Body extends beyond pins on each end
+			var total_pin_height := (pins_per_side - 1) * 2.54
 			width = row_spacing + 2.54
-			height = total_height + 2.54
+			height = total_pin_height + (body_extension * 2)
 			for i in range(pins_per_side):
 				pins[str(i + 1)] = Vector2(0, i * 2.54)
 				pins[str(40 - i)] = Vector2(row_spacing, i * 2.54)
-			local_bounds = Rect2(-1.27, -1.27, width, height)
-			bbox_center_offset = Vector2(row_spacing / 2.0, total_height / 2.0)
+			local_bounds = Rect2(-1.27, -body_extension, width, height)
+			bbox_center_offset = Vector2(row_spacing / 2.0, total_pin_height / 2.0)
 
 		FootprintType.CRYSTAL:
 			# Crystal oscillator, pin 1 at origin
@@ -370,15 +371,15 @@ func setup_header_pins(pin_count: int, pin_names: Array = []) -> void:
 	bbox_center_offset = Vector2(0, total_length / 2.0)
 
 
-## Setup a dual-row DIP/module with custom pin count (must be even)
+## Setup a dual-row DIP with custom pin count (must be even)
 ## KiCAD convention: Pin 1 at origin (0,0) top-left, left side going down, right side going up
 func setup_dip_pins(pin_count: int, row_spacing: float = 7.62) -> void:
 	pins.clear()
 	var pins_per_side := pin_count / 2
 	var spacing := 2.54
-	var total_height := (pins_per_side - 1) * spacing
+	var total_pin_height := (pins_per_side - 1) * spacing
 	width = row_spacing + 2.54
-	height = total_height + 2.54
+	height = total_pin_height + 2.54
 
 	for i in range(pins_per_side):
 		# Left side: 1, 2, 3... going down from origin
@@ -391,7 +392,35 @@ func setup_dip_pins(pin_count: int, row_spacing: float = 7.62) -> void:
 	# local_bounds relative to pin 1 origin: extends right and down from origin
 	local_bounds = Rect2(-1.27, -1.27, width, height)
 	# Calculate center offset from origin
-	bbox_center_offset = Vector2(row_spacing / 2.0, total_height / 2.0)
+	bbox_center_offset = Vector2(row_spacing / 2.0, total_pin_height / 2.0)
+
+
+## Setup a large module (ESP32 dev boards, etc.) with custom pin count
+## KiCAD convention: Pin 1 at origin (0,0), body extends beyond pin rows
+## row_spacing: distance between pin rows (default ~22.86mm for dev boards)
+## body_extension: how much the body extends beyond pin rows on each end
+func setup_module_pins(pin_count: int, row_spacing: float = 22.86, body_extension: float = 9.0) -> void:
+	pins.clear()
+	var pins_per_side := pin_count / 2
+	var spacing := 2.54
+	var total_pin_height := (pins_per_side - 1) * spacing
+
+	# Body dimensions - wider than DIP, extends beyond pins
+	width = row_spacing + 2.54
+	# Height: pin area + extension on both ends
+	height = total_pin_height + (body_extension * 2)
+
+	for i in range(pins_per_side):
+		# Left side: 1, 2, 3... going down from origin
+		pins[str(i + 1)] = Vector2(0, i * spacing)
+		# Right side: N, N-1, N-2... going up from bottom-right
+		pins[str(pin_count - i)] = Vector2(row_spacing, i * spacing)
+
+	# local_bounds: body extends beyond pins
+	# Top edge at -body_extension (above pin 1), bottom at total_pin_height + body_extension
+	local_bounds = Rect2(-1.27, -body_extension, width, height)
+	# Center offset from pin 1 origin
+	bbox_center_offset = Vector2(row_spacing / 2.0, total_pin_height / 2.0)
 
 
 ## Setup custom size without changing pins
