@@ -85,6 +85,18 @@ func get_pin_world_position(pin_name: String) -> Vector2:
 	return position + (xform * local_pos)
 
 
+## Get the symbolic name for a pin number (from geometry import)
+## Returns empty string if no name is defined
+func get_pin_name(pin_number: String) -> String:
+	for pad in pads:
+		if str(pad.get("number", "")) == pin_number:
+			var name = pad.get("name", "")
+			if name != null and not str(name).is_empty():
+				return str(name)
+			break
+	return ""
+
+
 ## Get the Transform2D for this component (rotation around anchor/origin)
 func get_transform() -> Transform2D:
 	# KiCAD uses CCW positive, Godot uses CW positive
@@ -148,6 +160,7 @@ func load_pad_geometry(geometry: Dictionary) -> void:
 
 		var pad := {
 			"number": pad_data.get("number", ""),
+			"name": pad_data.get("name", ""),  # Symbolic pin name from YAML
 			"type": pad_data.get("type", "smd"),
 			"shape": pad_data.get("shape", "rect"),
 			"position": Vector2(pos_dict.get("x", 0), pos_dict.get("y", 0)),

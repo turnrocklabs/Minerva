@@ -270,6 +270,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _pcb_import_csv(arguments)
 		"minerva_pcb_import_footprint_geometry":
 			return _pcb_import_footprint_geometry(arguments)
+		"minerva_pcb_import_trace_geometry":
+			return _pcb_import_trace_geometry(arguments)
 		"minerva_pcb_add_annotation":
 			return _pcb_add_annotation(arguments)
 		"minerva_pcb_list_annotations":
@@ -292,6 +294,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _pcb_suggest_pin_remap(arguments)
 		"minerva_pcb_suggest_route":
 			return _pcb_suggest_route(arguments)
+		"minerva_pcb_get_image":
+			return await _pcb_get_image(arguments)
+		"minerva_pcb_create_note":
+			return await _pcb_create_note(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -3964,6 +3970,7 @@ func _recalculate_spreadsheet(args: Dictionary) -> Dictionary:
 const PCBEditorScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBEditor.gd")
 const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
+const PCBTraceScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBTrace.gd")
 const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
@@ -4439,6 +4446,54 @@ func _register_pcb_tools() -> void:
 		}
 	)
 
+	_register_tool("minerva_pcb_import_trace_geometry",
+		"Import routed traces and vias from pcb-architect's trace-geometry command output. Clears existing traces and imports new ones. Trace segments are automatically connected into polylines.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"trace_data": {
+					"type": "object",
+					"description": "Trace geometry JSON from pcb-architect trace-geometry command",
+					"properties": {
+						"traces": {
+							"type": "array",
+							"description": "Array of trace segments",
+							"items": {
+								"type": "object",
+								"properties": {
+									"start": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}},
+									"end": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}},
+									"width": {"type": "number"},
+									"layer": {"type": "string"},
+									"net_name": {"type": "string"}
+								}
+							}
+						},
+						"vias": {
+							"type": "array",
+							"description": "Array of vias",
+							"items": {
+								"type": "object",
+								"properties": {
+									"position": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}},
+									"size": {"type": "number"},
+									"drill": {"type": "number"},
+									"net_name": {"type": "string"},
+									"layers": {"type": "array", "items": {"type": "string"}}
+								}
+							}
+						}
+					}
+				}
+			},
+			"required": ["editor_name", "trace_data"]
+		}
+	)
+
 	# Annotation tools
 	_register_tool("minerva_pcb_add_annotation",
 		"Add an annotation to the PCB (arrow, text, region, or polyline). Annotations are visual overlays for collaboration between human and AI.",
@@ -4736,6 +4791,66 @@ func _register_pcb_tools() -> void:
 				}
 			},
 			"required": ["editor_name", "net_name", "waypoints"]
+		}
+	)
+
+	_register_tool("minerva_pcb_get_image",
+		"Export a PCB view as a base64-encoded PNG image for LLM viewing.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"width": {
+					"type": "integer",
+					"description": "Image width in pixels. Default: 800"
+				},
+				"height": {
+					"type": "integer",
+					"description": "Image height in pixels. Default: 600"
+				},
+				"show_grid": {
+					"type": "boolean",
+					"description": "Show alignment grid. Default: current setting"
+				},
+				"show_ratsnest": {
+					"type": "boolean",
+					"description": "Show unrouted connections. Default: current setting"
+				},
+				"show_annotations": {
+					"type": "boolean",
+					"description": "Show annotations. Default: current setting"
+				},
+				"show_route_hints": {
+					"type": "boolean",
+					"description": "Show route hints. Default: current setting"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_create_note",
+		"Create a note from a PCB editor. The note displays the PCB as an image preview. Clicking Edit restores the full PCB state (components, nets, annotations, route hints).",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"note_title": {
+					"type": "string",
+					"description": "Title for the new note. Defaults to editor name if not provided"
+				},
+				"thread_name": {
+					"type": "string",
+					"description": "Name of the notes thread/tab to add the note to. Defaults to 'PCB Boards'"
+				}
+			},
+			"required": ["editor_name"]
 		}
 	)
 
@@ -5461,6 +5576,148 @@ func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
 	return result
 
 
+## Import trace geometry from pcb-architect
+func _pcb_import_trace_geometry(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var trace_data: Dictionary = args.get("trace_data", {})
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if trace_data.is_empty():
+		return {"error": "trace_data is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Clear existing traces
+	data.clear_traces()
+
+	# Group trace segments by net and layer into polylines
+	var traces_input: Array = trace_data.get("traces", [])
+	var trace_groups: Dictionary = {}  # "net_layer" -> {net_name, layer, width, segments}
+
+	for seg in traces_input:
+		var net_name: String = seg.get("net_name", "")
+		var layer: String = seg.get("layer", "F.Cu")
+		var key := "%s_%s" % [net_name, layer]
+
+		if not trace_groups.has(key):
+			trace_groups[key] = {
+				"net_name": net_name,
+				"layer": "top" if layer == "F.Cu" else "bottom",
+				"width": seg.get("width", 0.3),
+				"segments": []
+			}
+
+		var start = seg.get("start", {})
+		var end_pt = seg.get("end", {})
+		trace_groups[key].segments.append({
+			"start": Vector2(start.get("x", 0), start.get("y", 0)),
+			"end": Vector2(end_pt.get("x", 0), end_pt.get("y", 0))
+		})
+
+	# Convert segment groups to PCBTrace objects with connected waypoints
+	var trace_count := 0
+	for key in trace_groups:
+		var group = trace_groups[key]
+		var segments: Array = group.segments
+
+		# Build connected polylines from segments
+		var polylines := _build_polylines_from_segments(segments)
+
+		for polyline in polylines:
+			if polyline.size() < 2:
+				continue
+
+			var trace := PCBTraceScript.new()
+			trace.id = "trace_%d" % trace_count
+			trace.net_name = group.net_name
+			trace.layer = group.layer
+			trace.width = group.width
+
+			for point in polyline:
+				trace.waypoints.append(point)
+
+			data.add_trace(trace)
+			trace_count += 1
+
+	# Import vias
+	var vias_input: Array = trace_data.get("vias", [])
+	for via_data in vias_input:
+		var pos = via_data.get("position", {})
+		data.add_via({
+			"position": Vector2(pos.get("x", 0), pos.get("y", 0)),
+			"size": via_data.get("size", 0.8),
+			"drill": via_data.get("drill", 0.4),
+			"net_name": via_data.get("net_name", ""),
+			"layers": via_data.get("layers", ["F.Cu", "B.Cu"])
+		})
+
+	if pcb_editor.canvas:
+		pcb_editor.canvas.queue_redraw()
+
+	return {
+		"success": true,
+		"trace_count": trace_count,
+		"via_count": vias_input.size()
+	}
+
+
+## Helper function to connect segments into polylines
+func _build_polylines_from_segments(segments: Array) -> Array:
+	if segments.is_empty():
+		return []
+
+	var result: Array = []
+	var used: Array = []
+	used.resize(segments.size())
+	used.fill(false)
+
+	for i in range(segments.size()):
+		if used[i]:
+			continue
+
+		var polyline: Array[Vector2] = [segments[i].start, segments[i].end]
+		used[i] = true
+
+		# Try to extend the polyline by finding connected segments
+		var changed := true
+		while changed:
+			changed = false
+			for j in range(segments.size()):
+				if used[j]:
+					continue
+
+				var seg = segments[j]
+				# Check if segment connects to end of polyline
+				if seg.start.distance_to(polyline[polyline.size() - 1]) < 0.01:
+					polyline.append(seg.end)
+					used[j] = true
+					changed = true
+				elif seg.end.distance_to(polyline[polyline.size() - 1]) < 0.01:
+					polyline.append(seg.start)
+					used[j] = true
+					changed = true
+				# Check if segment connects to start of polyline
+				elif seg.end.distance_to(polyline[0]) < 0.01:
+					polyline.insert(0, seg.start)
+					used[j] = true
+					changed = true
+				elif seg.start.distance_to(polyline[0]) < 0.01:
+					polyline.insert(0, seg.end)
+					used[j] = true
+					changed = true
+
+		result.append(polyline)
+
+	return result
+
+
 ## Add annotation
 func _pcb_add_annotation(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
@@ -6107,5 +6364,121 @@ func _find_nearest_component(pos: Vector2, component_positions: Dictionary, max_
 			nearest_id = comp_id
 
 	return nearest_id
+
+
+## Export PCB view as base64-encoded PNG image
+func _pcb_get_image(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var width: int = args.get("width", 800)
+	var height: int = args.get("height", 600)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	if not pcb_editor.canvas:
+		return {"error": "PCB canvas not available", "success": false}
+
+	var canvas = pcb_editor.canvas
+	var data = pcb_editor.get_data()
+
+	# Store original display settings to restore after capture
+	var orig_show_grid: bool = canvas.show_grid
+	var orig_show_ratsnest: bool = canvas.show_ratsnest
+	var orig_show_annotations: bool = canvas.show_annotations
+	var orig_show_route_hints: bool = canvas.show_route_hints
+
+	# Apply temporary overrides if specified
+	if args.has("show_grid"):
+		canvas.show_grid = args.get("show_grid")
+	if args.has("show_ratsnest"):
+		canvas.show_ratsnest = args.get("show_ratsnest")
+	if args.has("show_annotations"):
+		canvas.show_annotations = args.get("show_annotations")
+	if args.has("show_route_hints"):
+		canvas.show_route_hints = args.get("show_route_hints")
+
+	# Capture the image
+	var base64_png: String = await canvas.capture_to_base64_png(width, height)
+
+	# Restore original settings
+	canvas.show_grid = orig_show_grid
+	canvas.show_ratsnest = orig_show_ratsnest
+	canvas.show_annotations = orig_show_annotations
+	canvas.show_route_hints = orig_show_route_hints
+
+	if base64_png.is_empty():
+		return {"error": "Failed to capture PCB image", "success": false}
+
+	# Gather metadata about the board
+	var metadata := {}
+	if data:
+		metadata["board_width_mm"] = data.board_width
+		metadata["board_height_mm"] = data.board_height
+		metadata["component_count"] = data.components.size()
+		metadata["net_count"] = data.nets.size()
+		if data.annotations:
+			metadata["annotation_count"] = data.annotations.size()
+		if data.route_hints:
+			metadata["route_hint_count"] = data.route_hints.size()
+
+	return {
+		"success": true,
+		"image_data": base64_png,
+		"format": "png",
+		"encoding": "base64",
+		"width": width,
+		"height": height,
+		"metadata": metadata
+	}
+
+
+## Create a PCB note with full state restoration
+func _pcb_create_note(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var note_title: String = args.get("note_title", "")
+	var thread_name: String = args.get("thread_name", "PCB Boards")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	if not pcb_editor.canvas:
+		return {"error": "PCB canvas not available", "success": false}
+
+	# Use editor name as note title if not provided
+	if note_title.is_empty():
+		note_title = editor_name
+
+	# Capture image and get PCB data
+	var pcb_image: Image = await pcb_editor.canvas.capture_to_image(800, 600)
+	var pcb_data: Dictionary = pcb_editor.data.to_dict()
+
+	# Create the PCB note with full state
+	var note = NoteScript.create_pcb_note(note_title, pcb_image, pcb_data)
+
+	# Find or create the notes thread
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return {"error": "Notes container not available", "success": false}
+
+	var thread_vbox = notes_container.find_or_create_tab(thread_name)
+	thread_vbox.add_note(note)
+
+	return {
+		"success": true,
+		"note_uuid": note.uuid,
+		"note_title": note_title,
+		"thread_name": thread_name,
+		"component_count": pcb_data.get("components", {}).size(),
+		"net_count": pcb_data.get("nets", {}).size(),
+		"message": "Created PCB note '%s' in thread '%s'. Edit button restores full state." % [note_title, thread_name]
+	}
 
 #endregion

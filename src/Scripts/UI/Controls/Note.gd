@@ -117,6 +117,10 @@ var file: String
 ## The Edit button will open/focus the spreadsheet editor instead of a text editor.
 var linked_spreadsheet: String = ""
 
+## Linked PCB data as JSON string. When set, the Edit button opens a PCB editor
+## and restores the full PCB state instead of creating a graphics editor.
+var linked_pcb_data: String = ""
+
 var expanded_height: float = 150
 
 var _error: = false:
@@ -276,6 +280,32 @@ static func create_image_note(note_title: String, image: Image, caption: String 
 	)
 
 	return note_scene
+
+## Create a note from a PCB editor with full state restoration.
+static func create_pcb_note(note_title: String, pcb_image: Image, pcb_data: Dictionary, note_uuid: String = "", register: = true) -> Note:
+	var image_controls: NoteImageControls = _image_controls_scene.instantiate()
+	var note_scene: Note = _scene.instantiate()
+
+	note_scene._backing_note_controls.append(image_controls)
+	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
+
+	if register:
+		SingletonObject.register_object(note_scene, &"uuid")
+
+	image_controls.setup(note_scene, pcb_image, "PCB Layout")
+
+	note_scene.title = note_title
+	note_scene.type = Type.IMAGE
+	note_scene.linked_pcb_data = JSON.stringify(pcb_data)
+
+	note_scene.ready.connect(
+		func():
+			note_scene._set_controls_container(image_controls)
+			note_scene.initialized.emit()
+	)
+
+	return note_scene
+
 
 static func create_audio_note(note_title: String, audio: AudioStream, note_uuid: String = "", register: = true) -> Note:
 	var audio_controls: NoteAudioControls = _audio_controls_scene.instantiate()
@@ -510,6 +540,11 @@ func _on_edit_button_pressed() -> void:
 
 	var editor_pane: EditorPane = SingletonObject.editor_container.editor_pane
 
+	# Handle linked PCB notes - create/open PCB editor with full state
+	if not linked_pcb_data.is_empty():
+		_open_linked_pcb(editor_pane)
+		return
+
 	# Handle linked spreadsheet notes - find/create the spreadsheet editor
 	if not linked_spreadsheet.is_empty():
 		_open_linked_spreadsheet(editor_pane)
@@ -557,6 +592,32 @@ func _open_linked_spreadsheet(editor_pane: EditorPane) -> void:
 			editor.spreadsheet_editor.spreadsheet_data.from_markdown(controls.content)
 			editor.spreadsheet_editor.sync_charts_from_data()
 			editor.spreadsheet_editor.cells_canvas.queue_redraw()
+
+
+## Open a PCB editor and restore the full PCB state from linked_pcb_data
+func _open_linked_pcb(editor_pane: EditorPane) -> void:
+	# Show the editor if it's hidden
+	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+	# Look for existing PCB editor with this note as associated_object
+	for editor in editor_pane.get_open_editors():
+		if editor.associated_object == self and editor.type == Editor.Type.PCB:
+			var curr_idx: = editor_pane.Tabs.get_tab_idx_from_control(editor)
+			editor_pane.Tabs.current_tab = curr_idx
+			return
+
+	# Create new PCB editor and load the state
+	var editor = editor_pane.add(Editor.Type.PCB, null, title, self)
+
+	# Parse and load the PCB data
+	if editor.pcb_editor:
+		var json = JSON.new()
+		var parse_result = json.parse(linked_pcb_data)
+		if parse_result == OK:
+			var pcb_dict: Dictionary = json.get_data()
+			editor.pcb_editor.load_from_dict(pcb_dict)
+		else:
+			push_error("[Note] Failed to parse linked_pcb_data: %s" % json.get_error_message())
 
 
 func _on_hide_button_pressed() -> void:
@@ -801,6 +862,10 @@ func serialize() -> Dictionary:
 	if not linked_spreadsheet.is_empty():
 		note_data["LinkedSpreadsheet"] = linked_spreadsheet
 
+	# Add linked PCB data if set
+	if not linked_pcb_data.is_empty():
+		note_data["LinkedPCBData"] = linked_pcb_data
+
 	# Merge the controls data
 	note_data.merge(_serialize_controls_data())
 
@@ -958,6 +1023,7 @@ static func deserialize(note_data: Dictionary, register = true) -> Note:
 			note.expanded = note_data.get("Expanded", true)
 			note.visible = note_data.get("Visible", true)
 			note.linked_spreadsheet = note_data.get("LinkedSpreadsheet", "")
+			note.linked_pcb_data = note_data.get("LinkedPCBData", "")
 	)
 
 	return note

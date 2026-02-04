@@ -1,6 +1,7 @@
 class_name PCBEditor
 extends PanelContainer
-## Main PCB Editor control with toolbar, canvas, and panels.
+## PCB Viewer for displaying boards loaded from pcb-architect.
+## Provides viewing, annotation, and AI suggestion capabilities.
 
 const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
@@ -28,7 +29,6 @@ var is_modified: bool = false
 ## UI References (set in _ready or via scene)
 var canvas: PCBCanvasScript = null
 var toolbar: HBoxContainer = null
-var component_library: ItemList = null
 var properties_panel: VBoxContainer = null
 var suggestion_bar: HBoxContainer = null
 
@@ -36,6 +36,10 @@ var suggestion_bar: HBoxContainer = null
 var suggestion_label: Label = null
 var accept_button: Button = null
 var reject_button: Button = null
+
+## Tool mode buttons (Select, Translate, Rotate)
+var tool_buttons: Dictionary = {}  # mode -> Button
+var tool_mode_label: Label = null
 
 ## Annotation toolbar elements
 var annotation_buttons: Dictionary = {}  # mode -> Button
@@ -55,6 +59,11 @@ var prop_id_label: Label = null
 var prop_position_label: Label = null
 var prop_rotation_label: Label = null
 var prop_footprint_label: Label = null
+
+## Pin properties elements (for INSPECT_PIN mode)
+var prop_pin_section: VBoxContainer = null
+var prop_pin_label: Label = null
+var prop_pin_name_label: Label = null
 
 
 func _ready() -> void:
@@ -77,28 +86,34 @@ func _build_ui() -> void:
 	# Main vertical layout
 	var main_vbox := VBoxContainer.new()
 	main_vbox.name = "MainVBox"
+	main_vbox.clip_contents = true
 	main_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	main_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_child(main_vbox)
 
-	# Toolbar
-	toolbar = _create_toolbar()
-	main_vbox.add_child(toolbar)
+	# Toolbar in a scroll container for overflow handling
+	var toolbar_scroll := ScrollContainer.new()
+	toolbar_scroll.name = "ToolbarScroll"
+	toolbar_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	toolbar_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	toolbar_scroll.custom_minimum_size.y = 36
+	main_vbox.add_child(toolbar_scroll)
 
-	# Content area (sidebar + canvas + properties)
+	toolbar = _create_toolbar()
+	toolbar_scroll.add_child(toolbar)
+
+	# Content area (canvas + properties)
 	var content_hbox := HBoxContainer.new()
 	content_hbox.name = "ContentHBox"
+	content_hbox.clip_contents = true
 	content_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content_hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	main_vbox.add_child(content_hbox)
 
-	# Left sidebar - component library
-	var sidebar := _create_component_library()
-	content_hbox.add_child(sidebar)
-
-	# Canvas (main editing area)
+	# Canvas (main viewing area)
 	var canvas_container := PanelContainer.new()
 	canvas_container.name = "CanvasContainer"
+	canvas_container.clip_contents = true
 	canvas_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	canvas_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content_hbox.add_child(canvas_container)
@@ -109,9 +124,22 @@ func _build_ui() -> void:
 	canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	canvas_container.add_child(canvas)
 
-	# Right sidebar - properties panel
+	# Right sidebar - tools + properties
+	var right_sidebar := VBoxContainer.new()
+	right_sidebar.name = "RightSidebar"
+	right_sidebar.custom_minimum_size.x = 100
+	content_hbox.add_child(right_sidebar)
+
+	# Tools panel (annotations + route hints)
+	var tools_panel := _create_tools_panel()
+	right_sidebar.add_child(tools_panel)
+
+	right_sidebar.add_child(HSeparator.new())
+
+	# Properties panel
 	properties_panel = _create_properties_panel()
-	content_hbox.add_child(properties_panel)
+	properties_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_sidebar.add_child(properties_panel)
 
 	# Bottom - suggestion bar
 	suggestion_bar = _create_suggestion_bar()
@@ -123,26 +151,6 @@ func _create_toolbar() -> HBoxContainer:
 	var tb := HBoxContainer.new()
 	tb.name = "Toolbar"
 	tb.custom_minimum_size.y = 32
-
-	# New button
-	var new_btn := Button.new()
-	new_btn.text = "New"
-	new_btn.pressed.connect(_on_new_pressed)
-	tb.add_child(new_btn)
-
-	# Import button
-	var import_btn := Button.new()
-	import_btn.text = "Import"
-	import_btn.pressed.connect(_on_import_pressed)
-	tb.add_child(import_btn)
-
-	# Export button
-	var export_btn := Button.new()
-	export_btn.text = "Export"
-	export_btn.pressed.connect(_on_export_pressed)
-	tb.add_child(export_btn)
-
-	tb.add_child(VSeparator.new())
 
 	# Undo button
 	var undo_btn := Button.new()
@@ -197,95 +205,11 @@ func _create_toolbar() -> HBoxContainer:
 	labels_check.toggled.connect(func(pressed): canvas.show_labels = pressed; canvas.queue_redraw())
 	tb.add_child(labels_check)
 
-	tb.add_child(VSeparator.new())
-
-	# Annotation mode buttons
-	var ann_label := Label.new()
-	ann_label.text = "Annotate:"
-	tb.add_child(ann_label)
-
-	var select_btn := Button.new()
-	select_btn.text = "Select"
-	select_btn.tooltip_text = "Select annotation to transform (S)"
-	select_btn.toggle_mode = true
-	select_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.SELECT))
-	tb.add_child(select_btn)
-	annotation_buttons[PCBCanvasScript.AnnotationMode.SELECT] = select_btn
-
-	var arrow_btn := Button.new()
-	arrow_btn.text = "Arrow"
-	arrow_btn.tooltip_text = "Draw arrow annotation (A)"
-	arrow_btn.toggle_mode = true
-	arrow_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.ARROW))
-	tb.add_child(arrow_btn)
-	annotation_buttons[PCBCanvasScript.AnnotationMode.ARROW] = arrow_btn
-
-	var text_btn := Button.new()
-	text_btn.text = "Text"
-	text_btn.tooltip_text = "Add text annotation (T)"
-	text_btn.toggle_mode = true
-	text_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.TEXT))
-	tb.add_child(text_btn)
-	annotation_buttons[PCBCanvasScript.AnnotationMode.TEXT] = text_btn
-
-	var region_btn := Button.new()
-	region_btn.text = "Region"
-	region_btn.tooltip_text = "Highlight region annotation (Shift+R)"
-	region_btn.toggle_mode = true
-	region_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.REGION))
-	tb.add_child(region_btn)
-	annotation_buttons[PCBCanvasScript.AnnotationMode.REGION] = region_btn
-
-	var polyline_btn := Button.new()
-	polyline_btn.text = "Polyline"
-	polyline_btn.tooltip_text = "Draw polyline annotation (P)"
-	polyline_btn.toggle_mode = true
-	polyline_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.POLYLINE))
-	tb.add_child(polyline_btn)
-	annotation_buttons[PCBCanvasScript.AnnotationMode.POLYLINE] = polyline_btn
-
-	# Annotation mode label
-	annotation_mode_label = Label.new()
-	annotation_mode_label.text = ""
-	annotation_mode_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
-	tb.add_child(annotation_mode_label)
-
-	tb.add_child(VSeparator.new())
-
-	# Route hint mode buttons
-	var rhint_label := Label.new()
-	rhint_label.text = "Route Hint:"
-	tb.add_child(rhint_label)
-
-	var waypoint_btn := Button.new()
-	waypoint_btn.text = "Waypoint"
-	waypoint_btn.tooltip_text = "Add waypoint-only hint (W)"
-	waypoint_btn.toggle_mode = true
-	waypoint_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.WAYPOINT))
-	tb.add_child(waypoint_btn)
-	route_hint_buttons[PCBCanvasScript.RouteHintMode.WAYPOINT] = waypoint_btn
-
-	var trace_btn := Button.new()
-	trace_btn.text = "Trace"
-	trace_btn.tooltip_text = "Add single trace hint - click pins or waypoints"
-	trace_btn.toggle_mode = true
-	trace_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.SINGLE_TRACE))
-	tb.add_child(trace_btn)
-	route_hint_buttons[PCBCanvasScript.RouteHintMode.SINGLE_TRACE] = trace_btn
-
-	var bus_btn := Button.new()
-	bus_btn.text = "Bus"
-	bus_btn.tooltip_text = "Add bus hint - click pin groups for parallel routing"
-	bus_btn.toggle_mode = true
-	bus_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.BUS))
-	tb.add_child(bus_btn)
-	route_hint_buttons[PCBCanvasScript.RouteHintMode.BUS] = bus_btn
-
-	# Route hint mode label
-	route_hint_mode_label = Label.new()
-	route_hint_mode_label.text = ""
-	route_hint_mode_label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.6))
-	tb.add_child(route_hint_mode_label)
+	var traces_check := CheckButton.new()
+	traces_check.text = "Traces"
+	traces_check.button_pressed = true
+	traces_check.toggled.connect(func(pressed): canvas.show_traces = pressed; canvas.queue_redraw())
+	tb.add_child(traces_check)
 
 	# Spacer
 	var spacer := Control.new()
@@ -300,34 +224,144 @@ func _create_toolbar() -> HBoxContainer:
 	return tb
 
 
-func _create_component_library() -> VBoxContainer:
-	var sidebar := VBoxContainer.new()
-	sidebar.name = "ComponentLibrary"
-	sidebar.custom_minimum_size.x = 150
+func _create_tools_panel() -> VBoxContainer:
+	var panel := VBoxContainer.new()
+	panel.name = "ToolsPanel"
 
-	var header := Label.new()
-	header.text = "Components"
-	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sidebar.add_child(header)
+	# Tools section (works on components and annotations)
+	var tools_header := Label.new()
+	tools_header.text = "Tools"
+	tools_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(tools_header)
 
-	component_library = ItemList.new()
-	component_library.name = "LibraryList"
-	component_library.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	component_library.item_activated.connect(_on_library_item_activated)
-	sidebar.add_child(component_library)
+	var select_btn := Button.new()
+	select_btn.text = "Select"
+	select_btn.tooltip_text = "Select components or annotations (S)"
+	select_btn.toggle_mode = true
+	select_btn.pressed.connect(func(): _toggle_tool_mode(PCBCanvasScript.ToolMode.SELECT))
+	panel.add_child(select_btn)
+	tool_buttons[PCBCanvasScript.ToolMode.SELECT] = select_btn
 
-	# Add component types
-	var types := ["Resistor", "Capacitor", "IC DIP", "IC QFP", "Switch", "Connector", "LED", "Diode", "Transistor", "Header"]
-	for type_name in types:
-		component_library.add_item(type_name)
+	var translate_btn := Button.new()
+	translate_btn.text = "Translate"
+	translate_btn.tooltip_text = "Move selected items"
+	translate_btn.toggle_mode = true
+	translate_btn.pressed.connect(func(): _toggle_tool_mode(PCBCanvasScript.ToolMode.TRANSLATE))
+	panel.add_child(translate_btn)
+	tool_buttons[PCBCanvasScript.ToolMode.TRANSLATE] = translate_btn
 
-	return sidebar
+	var rotate_btn := Button.new()
+	rotate_btn.text = "Rotate"
+	rotate_btn.tooltip_text = "Rotate selected items (R)"
+	rotate_btn.toggle_mode = true
+	rotate_btn.pressed.connect(func(): _toggle_tool_mode(PCBCanvasScript.ToolMode.ROTATE))
+	panel.add_child(rotate_btn)
+	tool_buttons[PCBCanvasScript.ToolMode.ROTATE] = rotate_btn
+
+	# Tool mode label
+	tool_mode_label = Label.new()
+	tool_mode_label.text = ""
+	tool_mode_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
+	panel.add_child(tool_mode_label)
+
+	panel.add_child(HSeparator.new())
+
+	# Annotation section
+	var ann_header := Label.new()
+	ann_header.text = "Annotate"
+	ann_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(ann_header)
+
+	var arrow_btn := Button.new()
+	arrow_btn.text = "Arrow"
+	arrow_btn.tooltip_text = "Draw arrow annotation (A)"
+	arrow_btn.toggle_mode = true
+	arrow_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.ARROW))
+	panel.add_child(arrow_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.ARROW] = arrow_btn
+
+	var text_btn := Button.new()
+	text_btn.text = "Text"
+	text_btn.tooltip_text = "Add text annotation (T)"
+	text_btn.toggle_mode = true
+	text_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.TEXT))
+	panel.add_child(text_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.TEXT] = text_btn
+
+	var region_btn := Button.new()
+	region_btn.text = "Region"
+	region_btn.tooltip_text = "Highlight region annotation (Shift+R)"
+	region_btn.toggle_mode = true
+	region_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.REGION))
+	panel.add_child(region_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.REGION] = region_btn
+
+	var polyline_btn := Button.new()
+	polyline_btn.text = "Polyline"
+	polyline_btn.tooltip_text = "Draw polyline annotation (P)"
+	polyline_btn.toggle_mode = true
+	polyline_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.POLYLINE))
+	panel.add_child(polyline_btn)
+	annotation_buttons[PCBCanvasScript.AnnotationMode.POLYLINE] = polyline_btn
+
+	# Annotation mode label
+	annotation_mode_label = Label.new()
+	annotation_mode_label.text = ""
+	annotation_mode_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+	panel.add_child(annotation_mode_label)
+
+	panel.add_child(HSeparator.new())
+
+	# Route hint section
+	var rhint_header := Label.new()
+	rhint_header.text = "Route Hints"
+	rhint_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(rhint_header)
+
+	var waypoint_btn := Button.new()
+	waypoint_btn.text = "Waypoint"
+	waypoint_btn.tooltip_text = "Add waypoint-only hint (W)"
+	waypoint_btn.toggle_mode = true
+	waypoint_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.WAYPOINT))
+	panel.add_child(waypoint_btn)
+	route_hint_buttons[PCBCanvasScript.RouteHintMode.WAYPOINT] = waypoint_btn
+
+	var trace_btn := Button.new()
+	trace_btn.text = "Trace"
+	trace_btn.tooltip_text = "Add single trace hint - click pins or waypoints"
+	trace_btn.toggle_mode = true
+	trace_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.SINGLE_TRACE))
+	panel.add_child(trace_btn)
+	route_hint_buttons[PCBCanvasScript.RouteHintMode.SINGLE_TRACE] = trace_btn
+
+	var bus_btn := Button.new()
+	bus_btn.text = "Bus"
+	bus_btn.tooltip_text = "Add bus hint - click pin groups for parallel routing"
+	bus_btn.toggle_mode = true
+	bus_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.BUS))
+	panel.add_child(bus_btn)
+	route_hint_buttons[PCBCanvasScript.RouteHintMode.BUS] = bus_btn
+
+	var inspect_pin_btn := Button.new()
+	inspect_pin_btn.text = "Inspect Pin"
+	inspect_pin_btn.tooltip_text = "Click on a pin to see its info (Shift+P)"
+	inspect_pin_btn.toggle_mode = true
+	inspect_pin_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.INSPECT_PIN))
+	panel.add_child(inspect_pin_btn)
+	route_hint_buttons[PCBCanvasScript.RouteHintMode.INSPECT_PIN] = inspect_pin_btn
+
+	# Route hint mode label
+	route_hint_mode_label = Label.new()
+	route_hint_mode_label.text = ""
+	route_hint_mode_label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.6))
+	panel.add_child(route_hint_mode_label)
+
+	return panel
 
 
 func _create_properties_panel() -> VBoxContainer:
 	var panel := VBoxContainer.new()
 	panel.name = "PropertiesPanel"
-	panel.custom_minimum_size.x = 200
 
 	var header := Label.new()
 	header.text = "Properties"
@@ -380,18 +414,42 @@ func _create_properties_panel() -> VBoxContainer:
 	fp_row.add_child(prop_footprint_label)
 	panel.add_child(fp_row)
 
+	# Pin section (shown when pin selected in INSPECT_PIN mode)
 	panel.add_child(HSeparator.new())
 
-	# Actions
-	var rotate_btn := Button.new()
-	rotate_btn.text = "Rotate 90"
-	rotate_btn.pressed.connect(_on_rotate_pressed)
-	panel.add_child(rotate_btn)
+	prop_pin_section = VBoxContainer.new()
+	prop_pin_section.name = "PinSection"
+	prop_pin_section.visible = false  # Hidden until pin selected
+	panel.add_child(prop_pin_section)
 
-	var delete_btn := Button.new()
-	delete_btn.text = "Delete"
-	delete_btn.pressed.connect(_on_delete_pressed)
-	panel.add_child(delete_btn)
+	var pin_header := Label.new()
+	pin_header.text = "Pin Info"
+	pin_header.add_theme_font_size_override("font_size", 11)
+	pin_header.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	prop_pin_section.add_child(pin_header)
+
+	var pin_row := HBoxContainer.new()
+	var pin_lbl := Label.new()
+	pin_lbl.text = "Pin:"
+	pin_lbl.custom_minimum_size.x = 60
+	pin_row.add_child(pin_lbl)
+	prop_pin_label = Label.new()
+	prop_pin_label.text = "-"
+	prop_pin_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pin_row.add_child(prop_pin_label)
+	prop_pin_section.add_child(pin_row)
+
+	var name_row := HBoxContainer.new()
+	var name_lbl := Label.new()
+	name_lbl.text = "Name:"
+	name_lbl.custom_minimum_size.x = 60
+	name_row.add_child(name_lbl)
+	prop_pin_name_label = Label.new()
+	prop_pin_name_label.text = "-"
+	prop_pin_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	prop_pin_name_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	name_row.add_child(prop_pin_name_label)
+	prop_pin_section.add_child(name_row)
 
 	# Spacer
 	var spacer := Control.new()
@@ -443,6 +501,9 @@ func _connect_signals() -> void:
 	canvas.suggestion_rejected.connect(_on_suggestion_rejected)
 	canvas.selection_changed.connect(_on_selection_changed)
 
+	# Tool mode signals
+	canvas.tool_mode_changed.connect(_on_tool_mode_changed)
+
 	# Annotation signals
 	canvas.annotation_mode_changed.connect(_on_annotation_mode_changed)
 	canvas.annotation_text_requested.connect(_on_annotation_text_requested)
@@ -451,6 +512,7 @@ func _connect_signals() -> void:
 	# Route hint signals
 	canvas.route_hint_mode_changed.connect(_on_route_hint_mode_changed)
 	canvas.route_hint_created.connect(_on_route_hint_created)
+	canvas.pin_selected.connect(_on_pin_selected)
 
 	# Data signals
 	data.data_changed.connect(_on_data_changed)
@@ -464,67 +526,7 @@ func _connect_signals() -> void:
 	_create_text_input_dialog()
 
 
-func _add_demo_components() -> void:
-	# Add some example components
-	var sw1 := PCBComponentScript.new()
-	sw1.id = "SW1"
-	sw1.footprint = PCBComponentScript.FootprintType.SWITCH
-	sw1.position = Vector2(30, 30)
-	sw1.setup_standard_pins()
-	data.add_component(sw1)
-
-	var u1 := PCBComponentScript.new()
-	u1.id = "U1"
-	u1.footprint = PCBComponentScript.FootprintType.IC_DIP
-	u1.position = Vector2(50, 50)
-	u1.setup_standard_pins()
-	data.add_component(u1)
-
-	var r1 := PCBComponentScript.new()
-	r1.id = "R1"
-	r1.footprint = PCBComponentScript.FootprintType.RESISTOR
-	r1.position = Vector2(70, 30)
-	r1.properties["value"] = "10K"
-	r1.setup_standard_pins()
-	data.add_component(r1)
-
-	var c1 := PCBComponentScript.new()
-	c1.id = "C1"
-	c1.footprint = PCBComponentScript.FootprintType.CAPACITOR
-	c1.position = Vector2(70, 50)
-	c1.properties["value"] = "100nF"
-	c1.setup_standard_pins()
-	data.add_component(c1)
-
-	# Add some nets
-	data.connect_pin_to_net("VCC", "U1", "8")
-	data.connect_pin_to_net("VCC", "R1", "1")
-	data.connect_pin_to_net("GND", "U1", "4")
-	data.connect_pin_to_net("GND", "C1", "2")
-	data.connect_pin_to_net("SW_OUT", "SW1", "2")
-	data.connect_pin_to_net("SW_OUT", "U1", "1")
-
-	# Save initial state
-	data.save_to_history("Initial state")
-
-
 #region Event Handlers
-
-func _on_new_pressed() -> void:
-	data.clear()
-	is_modified = false
-	file_path = ""
-
-
-func _on_import_pressed() -> void:
-	# TODO: Implement file dialog
-	print("[PCBEditor] Import not yet implemented")
-
-
-func _on_export_pressed() -> void:
-	# TODO: Implement file dialog
-	print("[PCBEditor] Export not yet implemented")
-
 
 func _on_undo_pressed() -> void:
 	if data.undo():
@@ -534,34 +536,6 @@ func _on_undo_pressed() -> void:
 func _on_redo_pressed() -> void:
 	if data.redo():
 		canvas.queue_redraw()
-
-
-func _on_rotate_pressed() -> void:
-	canvas._rotate_selected()
-
-
-func _on_delete_pressed() -> void:
-	canvas._delete_selected()
-
-
-func _on_library_item_activated(index: int) -> void:
-	var type_names := ["RESISTOR", "CAPACITOR", "IC_DIP", "IC_QFP", "SWITCH", "CONNECTOR", "LED", "DIODE", "TRANSISTOR", "HEADER"]
-	if index >= type_names.size():
-		return
-
-	# Create new component
-	var prefix: String = type_names[index][0]  # First letter
-	var comp := PCBComponentScript.new()
-	comp.id = data.generate_component_id(prefix)
-	comp.footprint = index as PCBComponentScript.FootprintType
-	comp.position = Vector2(data.board_width / 2, data.board_height / 2)
-	comp.setup_standard_pins()
-
-	data.save_to_history("Add " + comp.id)
-	data.add_component(comp)
-
-	# Select the new component
-	canvas.select_component(comp.id)
 
 
 func _on_component_selected(component_id: String) -> void:
@@ -618,7 +592,31 @@ func _on_reject_suggestion() -> void:
 	canvas.reject_active_suggestion()
 
 
-## Toggle annotation mode from toolbar button
+## Toggle tool mode from sidebar button
+func _toggle_tool_mode(mode: int) -> void:
+	var canvas_mode: PCBCanvasScript.ToolMode = mode as PCBCanvasScript.ToolMode
+	if canvas.tool_mode == canvas_mode:
+		canvas.clear_tool_mode()
+	else:
+		canvas.set_tool_mode(canvas_mode)
+
+
+## Handle tool mode change from canvas
+func _on_tool_mode_changed(mode: int) -> void:
+	# Update button states
+	for btn_mode in tool_buttons:
+		var btn: Button = tool_buttons[btn_mode]
+		btn.button_pressed = (btn_mode == mode)
+
+	# Update mode label
+	if mode == PCBCanvasScript.ToolMode.NONE:
+		tool_mode_label.text = ""
+	else:
+		var mode_names := ["", "Select", "Translate", "Rotate"]
+		tool_mode_label.text = mode_names[mode]
+
+
+## Toggle annotation mode from sidebar button
 func _toggle_annotation_mode(mode: int) -> void:
 	var canvas_mode: PCBCanvasScript.AnnotationMode = mode as PCBCanvasScript.AnnotationMode
 	if canvas.annotation_mode == canvas_mode:
@@ -638,8 +636,8 @@ func _on_annotation_mode_changed(mode: int) -> void:
 	if mode == PCBCanvasScript.AnnotationMode.NONE:
 		annotation_mode_label.text = ""
 	else:
-		var mode_names := ["", "Select", "Arrow", "Text", "Region", "Polyline"]
-		annotation_mode_label.text = "Mode: " + mode_names[mode]
+		var mode_names := ["", "Arrow", "Text", "Region", "Polyline"]
+		annotation_mode_label.text = mode_names[mode]
 
 
 ## Handle request for text input (when placing text annotation)
@@ -676,14 +674,51 @@ func _on_route_hint_mode_changed(mode: int) -> void:
 	if mode == PCBCanvasScript.RouteHintMode.NONE:
 		route_hint_mode_label.text = ""
 	else:
-		var mode_names := ["", "Waypoint", "Trace", "Bus"]
-		route_hint_mode_label.text = "Hint: " + mode_names[mode]
+		var mode_names := ["", "Waypoint", "Trace", "Bus", "Inspect Pin"]
+		route_hint_mode_label.text = mode_names[mode]
 
 
 ## Handle route hint created
 func _on_route_hint_created(hint_id: String) -> void:
 	# Could show a brief notification
 	pass
+
+
+## Handle pin selected (from INSPECT_PIN mode)
+func _on_pin_selected(pin_info: Dictionary) -> void:
+	if pin_info.is_empty():
+		prop_pin_section.visible = false
+		prop_pin_label.text = "-"
+		prop_pin_name_label.text = "-"
+		return
+
+	# Show the pin section
+	prop_pin_section.visible = true
+
+	# Update pin label with Component.Pin format
+	prop_pin_label.text = "%s.%s" % [pin_info.component, pin_info.pin]
+
+	# Look up pin name from component geometry (e.g., "3V3", "GND")
+	var pin_name := ""
+	var comp = data.get_component(pin_info.component)
+	if comp:
+		pin_name = comp.get_pin_name(pin_info.pin)
+
+	# If no geometry name, fall back to net name
+	if pin_name.is_empty():
+		for net_name in data.nets:
+			var net = data.nets[net_name]  # PCBNet object
+			for pin in net.pins:
+				if pin.get("component_id", "") == pin_info.component and pin.get("pin_name", "") == pin_info.pin:
+					pin_name = net_name
+					break
+			if not pin_name.is_empty():
+				break
+
+	if pin_name.is_empty():
+		prop_pin_name_label.text = "(unconnected)"
+	else:
+		prop_pin_name_label.text = pin_name
 
 
 ## Create text input dialog for text annotations

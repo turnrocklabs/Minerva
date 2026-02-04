@@ -65,18 +65,19 @@ func _on_close_tab(tab: int, container: TabContainer):
 		if not (control.is_content_saved() or control.is_content_saved(false)): # if its not saved in file nor a note
 			var should_close = await control.prompt_close()
 			if should_close:
-				container.remove_child(control)
+				# Use call_deferred to avoid removing during input processing
+				container.call_deferred("remove_child", control)
 				SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
 		else:
-			container.remove_child(control)
+			container.call_deferred("remove_child", control)
 			SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
 
 	else:
-		container.remove_child(control)
+		container.call_deferred("remove_child", control)
 		SingletonObject.undo.store_deleted_tab_mid(tab,control,"middle")
-	
+
 	if Tabs.get_tab_count() < 1:
-		buffer_control_editor.show()
+		buffer_control_editor.call_deferred("show")
 
 func restore_deleted_tab(tab_name: String):
 	if tab_name in SingletonObject.undo.deleted_tabs:

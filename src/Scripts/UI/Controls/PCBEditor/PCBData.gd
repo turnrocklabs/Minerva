@@ -37,6 +37,7 @@ var layers: Array[String] = ["top", "bottom"]
 var components: Dictionary = {}   # component_id -> PCBComponent
 var nets: Dictionary = {}         # net_name -> PCBNet
 var traces: Dictionary = {}       # trace_id -> PCBTrace
+var vias: Array[Dictionary] = []  # [{position, size, drill, net_name, layers}]
 
 ## AI suggestions (pending proposals)
 var suggestions: Dictionary = {}  # suggestion_id -> PCBSuggestion
@@ -274,6 +275,19 @@ func get_trace_ids() -> Array[String]:
 	for id in traces:
 		result.append(id)
 	return result
+
+
+## Clear all traces and vias
+func clear_traces() -> void:
+	traces.clear()
+	vias.clear()
+	_next_trace_id = 1
+	data_changed.emit()
+
+
+## Add a via
+func add_via(via_data: Dictionary) -> void:
+	vias.append(via_data)
 
 #endregion
 
@@ -695,6 +709,11 @@ func to_dict() -> Dictionary:
 	for id in route_hints:
 		hint_dict[id] = route_hints[id].to_dict()
 
+	# Serialize vias
+	var vias_arr: Array = []
+	for via in vias:
+		vias_arr.append(via.duplicate())
+
 	return {
 		"version": 1,
 		"board_name": board_name,
@@ -705,6 +724,7 @@ func to_dict() -> Dictionary:
 		"components": comp_dict,
 		"nets": net_dict,
 		"traces": trace_dict,
+		"vias": vias_arr,
 		"suggestions": sug_dict,
 		"annotations": ann_dict,
 		"route_hints": hint_dict
@@ -743,6 +763,20 @@ func load_from_dict(data: Dictionary) -> void:
 	for id in trace_data:
 		var trace = PCBTraceScript.from_dict(trace_data[id])
 		traces[id] = trace
+
+	# Load vias
+	vias.clear()
+	var vias_data: Array = data.get("vias", [])
+	for via_data in vias_data:
+		if via_data is Dictionary:
+			# Convert position to Vector2 if needed
+			var via_entry: Dictionary = via_data.duplicate()
+			if via_data.has("position") and via_data["position"] is Dictionary:
+				via_entry["position"] = Vector2(
+					via_data["position"].get("x", 0),
+					via_data["position"].get("y", 0)
+				)
+			vias.append(via_entry)
 
 	# Load suggestions
 	suggestions.clear()
@@ -885,11 +919,13 @@ func clear() -> void:
 	components.clear()
 	nets.clear()
 	traces.clear()
+	vias.clear()
 	suggestions.clear()
 	annotations.clear()
 	route_hints.clear()
 	history.clear()
 	history_index = -1
+	_next_trace_id = 1
 	structure_changed.emit()
 	data_changed.emit()
 
