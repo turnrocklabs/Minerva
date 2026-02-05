@@ -143,6 +143,9 @@ corner_radius_bottom_right = 20
 corner_radius_bottom_left = 20
 anti_aliasing = false
 
+[sub_resource type="ViewportTexture" id="ViewportTexture_v7532"]
+viewport_path = NodePath("PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport")
+
 [node name="GraphicsEditorV2" type="PanelContainer" unique_id=1919594253]
 clip_contents = true
 anchors_preset = 15
@@ -1271,10 +1274,7 @@ min_size = Vector2i(400, 500)
 [node name="PoseEditorPanel" parent="PoseEditorWindow" unique_id=2058091983 instance=ExtResource("41_posepanel")]
 unique_name_in_owner = true
 
-[node name="HSplitContainer" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer" index="1"]
-split_offsets = PackedInt32Array(200)
-
-[node name="SubViewport" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer" index="0"]
+[node name="SubViewport" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer" parent_id_path=PackedInt32Array(2058091983, 1633829300) index="0" unique_id=1768477175]
 size = Vector2i(350, 2)
 render_target_update_mode = 0
 
@@ -1648,6 +1648,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
 size_flags_horizontal = 4
+texture = SubResource("ViewportTexture_v7532")
 expand_mode = 2
 
 [node name="UpdateButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewportContainer" unique_id=1365150857]

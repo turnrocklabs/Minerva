@@ -95,7 +95,8 @@ func _ready() -> void:
 	_create_bone_visuals()
 	_create_bone_lines()
 	skeleton.rotate_y(180.0)
-
+	await get_tree().process_frame
+	set_process(false)
 
 func _setup_skeleton() -> void:
 	if not skeleton:
