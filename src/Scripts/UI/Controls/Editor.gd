@@ -482,6 +482,12 @@ func get_saved_state() -> int:
 				# TODO: Add proper save tracking for spreadsheet
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
+		Type.PCB:
+			# PCB editors don't have file-based save tracking yet
+			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+		Type.KANBAN:
+			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 	return state
 
@@ -878,6 +884,30 @@ func undo_action():
 		Type.GRAPHICS:
 			if graphics_editor:
 				graphics_editor.undo_command()
+		Type.PCB:
+			if pcb_editor:
+				if pcb_editor.data.undo():
+					pcb_editor.canvas.queue_redraw()
+		Type.SPREADSHEET:
+			if spreadsheet_editor:
+				spreadsheet_editor._perform_undo()
+
+
+func redo_action():
+	match type:
+		Type.TEXT:
+			code_edit.redo()
+			code_edit.grab_focus()
+		Type.GRAPHICS:
+			if graphics_editor:
+				graphics_editor.redo_command()
+		Type.PCB:
+			if pcb_editor:
+				if pcb_editor.data.redo():
+					pcb_editor.canvas.queue_redraw()
+		Type.SPREADSHEET:
+			if spreadsheet_editor:
+				spreadsheet_editor._perform_redo()
 
 func clear_text():
 	if Type.TEXT != type:

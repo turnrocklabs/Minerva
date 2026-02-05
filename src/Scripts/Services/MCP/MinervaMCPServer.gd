@@ -5555,8 +5555,10 @@ func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
 		else:
 			missing.append(comp_id)
 
-	# Trigger redraw
+	# Trigger redraw and zoom to fit the updated layout
 	data.data_changed.emit()
+	if pcb_editor.canvas:
+		pcb_editor.canvas.zoom_to_fit()
 
 	var result := {
 		"success": true,
@@ -5660,6 +5662,7 @@ func _pcb_import_trace_geometry(args: Dictionary) -> Dictionary:
 
 	if pcb_editor.canvas:
 		pcb_editor.canvas.queue_redraw()
+		pcb_editor.canvas.zoom_to_fit()
 
 	return {
 		"success": true,

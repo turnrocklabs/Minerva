@@ -799,6 +799,11 @@ func load_from_dict(data: Dictionary) -> void:
 		var hint = PCBRouteHintScript.from_dict(hint_data[id])
 		route_hints[id] = hint
 
+	# Save baseline snapshot so the first action can be undone
+	history.clear()
+	history_index = -1
+	save_to_history("Load")
+
 	structure_changed.emit()
 	data_changed.emit()
 

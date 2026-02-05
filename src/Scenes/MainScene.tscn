@@ -1,4 +1,4 @@
-[gd_scene load_steps=71 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=74 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -65,6 +65,9 @@
 [ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
 [ext_resource type="Script" uid="uid://1fueuihora3v" path="res://Scenes/note/NotesContainer.gd" id="57_jnakw"]
 [ext_resource type="Script" uid="uid://b172wgd7hty1f" path="res://Scripts/Drawer/Drawer_manager.gd" id="58_a7b38"]
+[ext_resource type="Texture2D" path="res://assets/icons/undo_icons/redo_arrow.png" id="68_redo1"]
+[ext_resource type="Texture2D" path="res://assets/icons/undo_icons/redo_arrow_48.png" id="69_redo2"]
+[ext_resource type="Texture2D" path="res://assets/icons/undo_icons/redo_arrow_64.png" id="70_redo3"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -543,7 +546,7 @@ tooltip_text = "clears all the text in the current tab"
 icon = ExtResource("21_akf3o")
 script = ExtResource("21_rnx1y")
 
-[node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
+[node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 tooltip_text = "Undo (Returns Editor to previous state)"
 icon = ExtResource("11_srtkx")
@@ -551,6 +554,15 @@ script = ExtResource("21_rnx1y")
 icon_24 = ExtResource("11_srtkx")
 icon_48 = ExtResource("29_rqudt")
 icon_68 = ExtResource("30_i8mta")
+
+[node name="RedoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+tooltip_text = "Redo (Restores previously undone action)"
+icon = ExtResource("68_redo1")
+script = ExtResource("21_rnx1y")
+icon_24 = ExtResource("68_redo1")
+icon_48 = ExtResource("69_redo2")
+icon_68 = ExtResource("70_redo3")
 
 [node name="BackSpaceButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
 layout_mode = 2
@@ -862,6 +874,7 @@ visible = false
 [connection signal="toggled" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/ToggleAllButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain/EditorPane" method="_on_toggle_all_button_toggled"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/ClearButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_clear_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/UndoButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_undo_button_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/RedoButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_redo_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/BackSpaceButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_back_space_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/NewLineButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_new_line_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/HButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_h_button_pressed"]

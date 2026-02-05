@@ -49,6 +49,9 @@ var annotation_mode_label: Label = null
 var route_hint_buttons: Dictionary = {}  # mode -> Button
 var route_hint_mode_label: Label = null
 
+## Board size label in toolbar
+var board_size_label: Label = null
+
 ## Text input dialog for annotations
 var text_input_dialog: AcceptDialog = null
 var text_input_line: LineEdit = null
@@ -152,20 +155,6 @@ func _create_toolbar() -> HBoxContainer:
 	tb.name = "Toolbar"
 	tb.custom_minimum_size.y = 32
 
-	# Undo button
-	var undo_btn := Button.new()
-	undo_btn.text = "Undo"
-	undo_btn.pressed.connect(_on_undo_pressed)
-	tb.add_child(undo_btn)
-
-	# Redo button
-	var redo_btn := Button.new()
-	redo_btn.text = "Redo"
-	redo_btn.pressed.connect(_on_redo_pressed)
-	tb.add_child(redo_btn)
-
-	tb.add_child(VSeparator.new())
-
 	# Zoom controls
 	var zoom_out_btn := Button.new()
 	zoom_out_btn.text = "-"
@@ -217,9 +206,9 @@ func _create_toolbar() -> HBoxContainer:
 	tb.add_child(spacer)
 
 	# Board size
-	var size_label := Label.new()
-	size_label.text = "Board: 100x100mm"
-	tb.add_child(size_label)
+	board_size_label = Label.new()
+	board_size_label.text = "Board: 100x100mm"
+	tb.add_child(board_size_label)
 
 	return tb
 
@@ -528,15 +517,6 @@ func _connect_signals() -> void:
 
 #region Event Handlers
 
-func _on_undo_pressed() -> void:
-	if data.undo():
-		canvas.queue_redraw()
-
-
-func _on_redo_pressed() -> void:
-	if data.redo():
-		canvas.queue_redraw()
-
 
 func _on_component_selected(component_id: String) -> void:
 	_update_properties_panel(component_id)
@@ -572,7 +552,13 @@ func _on_selection_changed() -> void:
 
 func _on_data_changed() -> void:
 	is_modified = true
+	_update_board_size_label()
 	data_changed.emit()
+
+
+func _update_board_size_label() -> void:
+	if board_size_label and data:
+		board_size_label.text = "Board: %sx%smm" % [data.board_width, data.board_height]
 
 
 func _on_suggestion_added(suggestion_id: String) -> void:
@@ -832,9 +818,15 @@ func load_from_dict(dict_data: Dictionary) -> void:
 
 ## Called after load_from_dict to update canvas once _ready has run
 func _post_load_update() -> void:
+	_update_board_size_label()
 	if canvas:
 		canvas.queue_redraw()
-		canvas.zoom_to_fit()
+		# Canvas may not have a valid size yet during project load.
+		# Wait for it to be laid out before zooming.
+		if canvas.size.x > 0 and canvas.size.y > 0:
+			canvas.zoom_to_fit()
+		else:
+			canvas.resized.connect(canvas.zoom_to_fit, CONNECT_ONE_SHOT)
 
 
 ## Get data as dictionary
