@@ -18,6 +18,7 @@ var _connections: Array = []  # Array of MinervaMCPHttpConnection
 var _sessions: Dictionary = {}  # session_id -> {created_at, last_activity}
 var _is_running: bool = false
 var _port: int = DEFAULT_PORT
+var _processing_connections: bool = false
 
 # Reference to the MCP manager and minerva server
 var _mcp_manager = null
@@ -102,6 +103,13 @@ func _accept_new_connections() -> void:
 
 
 func _process_connections() -> void:
+	# Guard against re-entrancy: async tool calls (e.g. pcb_get_image) use await,
+	# which yields to the event loop. _process() runs again during the yield and
+	# would re-enter this function, processing/removing the same connection twice.
+	if _processing_connections:
+		return
+	_processing_connections = true
+
 	var to_remove: Array[int] = []
 
 	for i in range(_connections.size()):
@@ -132,6 +140,8 @@ func _process_connections() -> void:
 	# Remove processed connections (in reverse to maintain indices)
 	for i in range(to_remove.size() - 1, -1, -1):
 		_connections.remove_at(to_remove[i])
+
+	_processing_connections = false
 
 
 func _cleanup_stale_sessions() -> void:

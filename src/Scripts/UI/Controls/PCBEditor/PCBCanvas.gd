@@ -99,6 +99,9 @@ var bus_waypoints: Array[Vector2] = []       # Shared corridor waypoints
 ## Route hint selection state
 var selected_route_hint_id: String = ""
 
+## Trace selection state
+var selected_trace_id: String = ""
+
 ## Signal for route hint mode changes
 signal route_hint_mode_changed(mode: RouteHintMode)
 signal route_hint_created(hint_id: String)
@@ -124,6 +127,7 @@ var label_color: Color = Color.WHITE
 var trace_color: Color = Color(0.8, 0.2, 0.2, 1.0)
 var trace_top_color: Color = Color(0.9, 0.3, 0.3, 1.0)  # Red for top layer (F.Cu)
 var trace_bottom_color: Color = Color(0.3, 0.5, 0.9, 1.0)  # Blue for bottom layer (B.Cu)
+var trace_selected_color: Color = Color(1.0, 1.0, 0.3, 1.0)
 var ratsnest_color: Color = Color(0.5, 0.5, 0.8, 0.5)
 var selection_box_color: Color = Color(0.3, 0.5, 0.8, 0.3)
 var selection_border_color: Color = Color(0.4, 0.6, 0.9, 1.0)
@@ -468,8 +472,10 @@ func _draw_traces() -> void:
 		var pos: Vector2
 		if pos_data is Vector2:
 			pos = world_to_screen(pos_data)
-		else:
+		elif pos_data is Dictionary:
 			pos = world_to_screen(Vector2(pos_data.get("x", 0), pos_data.get("y", 0)))
+		else:
+			continue  # Skip malformed via data
 
 		var outer_radius: float = (via.get("size", 0.8) / 2.0) * zoom
 		var inner_radius: float = (via.get("drill", 0.4) / 2.0) * zoom
@@ -492,6 +498,10 @@ func _draw_single_trace(trace, is_bottom_layer: bool) -> void:
 
 	# Use pure layer colors for clear distinction
 	var color := trace_bottom_color if is_bottom_layer else trace_top_color
+	var is_selected: bool = (trace.id == selected_trace_id) and not selected_trace_id.is_empty()
+
+	if is_selected:
+		color = trace_selected_color
 
 	var points: PackedVector2Array = []
 	for wp in trace.waypoints:
@@ -499,7 +509,18 @@ func _draw_single_trace(trace, is_bottom_layer: bool) -> void:
 
 	if points.size() >= 2:
 		var trace_width = trace.width * zoom
+
+		# Draw glow behind selected trace
+		if is_selected:
+			var glow_color := Color(trace_selected_color, 0.25)
+			draw_polyline(points, glow_color, maxf(trace_width + 6.0, 4.0))
+
 		draw_polyline(points, color, maxf(trace_width, 1.0))
+
+		# Draw waypoint markers on selected trace
+		if is_selected:
+			for pt in points:
+				draw_circle(pt, 3.0, trace_selected_color)
 
 
 ## Draw ratsnest (unrouted net connections)
@@ -1799,6 +1820,11 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 					var comp := data.get_component(drag_component_id)
 					if comp and comp.position != drag_start_component_pos:
 						data.save_to_history("Move " + drag_component_id)
+						data.record_change("move_component", {
+							"component_id": drag_component_id,
+							"old_position": {"x": drag_start_component_pos.x, "y": drag_start_component_pos.y},
+							"new_position": {"x": comp.position.x, "y": comp.position.y}
+						})
 						component_moved.emit(drag_component_id, comp.position)
 				drag_component_id = ""
 
@@ -1895,11 +1921,13 @@ func _handle_key_input(event: InputEventKey) -> void:
 
 	match event.keycode:
 		KEY_DELETE, KEY_BACKSPACE:
-			# Delete selected annotation or route hint first, otherwise delete selected components
+			# Delete selected annotation, route hint, or trace first, otherwise delete selected components
 			if not selected_annotation_id.is_empty():
 				_delete_selected_annotation()
 			elif not selected_route_hint_id.is_empty():
 				_delete_selected_route_hint()
+			elif not selected_trace_id.is_empty():
+				_delete_selected_trace()
 			else:
 				_delete_selected()
 		KEY_ESCAPE:
@@ -1918,6 +1946,7 @@ func _handle_key_input(event: InputEventKey) -> void:
 				_clear_selection()
 				selected_annotation_id = ""
 				selected_route_hint_id = ""
+				selected_trace_id = ""
 				active_suggestion_id = ""
 			queue_redraw()
 		KEY_R:
@@ -2062,7 +2091,13 @@ func _rotate_selected() -> void:
 	for comp_id in selected_components:
 		var comp := data.get_component(comp_id)
 		if comp:
+			var old_rotation := comp.rotation
 			comp.rotate_clockwise()
+			data.record_change("rotate_component", {
+				"component_id": comp_id,
+				"old_rotation": old_rotation,
+				"new_rotation": comp.rotation
+			})
 			data.component_changed.emit(comp_id)
 
 	queue_redraw()
@@ -2144,6 +2179,7 @@ func _handle_tool_click(world_pos: Vector2, event: InputEventMouseButton) -> boo
 					_clear_selection()
 					selected_annotation_id = ""
 					selected_route_hint_id = ""
+					selected_trace_id = ""
 				if hit_component not in selected_components:
 					selected_components.append(hit_component)
 					component_selected.emit(hit_component)
@@ -2165,6 +2201,7 @@ func _handle_tool_click(world_pos: Vector2, event: InputEventMouseButton) -> boo
 			if not hit_ann_id.is_empty():
 				selected_annotation_id = hit_ann_id
 				selected_route_hint_id = ""
+				selected_trace_id = ""
 				_clear_selection()  # Deselect components
 
 				# Start drag if in translate mode
@@ -2182,6 +2219,17 @@ func _handle_tool_click(world_pos: Vector2, event: InputEventMouseButton) -> boo
 			if not hit_hint_id.is_empty():
 				selected_route_hint_id = hit_hint_id
 				selected_annotation_id = ""
+				selected_trace_id = ""
+				_clear_selection()  # Deselect components
+				queue_redraw()
+				return true
+
+			# Try to find a trace at click position
+			var hit_trace_id := data.get_trace_at(world_pos, threshold)
+			if not hit_trace_id.is_empty():
+				selected_trace_id = hit_trace_id
+				selected_annotation_id = ""
+				selected_route_hint_id = ""
 				_clear_selection()  # Deselect components
 				queue_redraw()
 				return true
@@ -2190,6 +2238,7 @@ func _handle_tool_click(world_pos: Vector2, event: InputEventMouseButton) -> boo
 			_clear_selection()
 			selected_annotation_id = ""
 			selected_route_hint_id = ""
+			selected_trace_id = ""
 			selection_changed.emit()
 			queue_redraw()
 			return true
@@ -2201,7 +2250,13 @@ func _handle_tool_click(world_pos: Vector2, event: InputEventMouseButton) -> boo
 				for comp_id in selected_components:
 					var comp := data.get_component(comp_id)
 					if comp:
+						var old_rotation := comp.rotation
 						comp.rotate_clockwise()
+						data.record_change("rotate_component", {
+							"component_id": comp_id,
+							"old_rotation": old_rotation,
+							"new_rotation": comp.rotation
+						})
 				queue_redraw()
 				return true
 
@@ -2355,7 +2410,11 @@ func _handle_trace_hint_click(world_pos: Vector2, is_double_click: bool) -> void
 	elif is_double_click or not pin_info.is_empty():
 		# Double click or click on pin - finish the trace
 		if not pin_info.is_empty():
-			route_hint_dest_pin = "%s.%s" % [pin_info.component, pin_info.pin]
+			var candidate_dest := "%s.%s" % [pin_info.component, pin_info.pin]
+			if candidate_dest == route_hint_source_pin and not route_hint_source_pin.is_empty():
+				cancel_route_hint()  # Self-reference — cancel
+				return
+			route_hint_dest_pin = candidate_dest
 			route_hint_points.append(pin_info.position)
 		else:
 			route_hint_points.append(world_pos)
@@ -2488,6 +2547,10 @@ func cancel_annotation() -> void:
 func set_annotation_mode(mode: AnnotationMode) -> void:
 	if annotation_mode != mode:
 		cancel_annotation()
+		# Clear tool mode when entering annotation mode (mutual exclusion)
+		if mode != AnnotationMode.NONE and tool_mode != ToolMode.NONE:
+			tool_mode = ToolMode.NONE
+			tool_mode_changed.emit(ToolMode.NONE)
 		annotation_mode = mode
 		annotation_mode_changed.emit(mode)
 		queue_redraw()
@@ -2529,11 +2592,16 @@ func set_route_hint_mode(mode: RouteHintMode) -> void:
 		if not selected_pin_info.is_empty():
 			selected_pin_info = {}
 			pin_selected.emit({})
-		# Clear annotation mode when entering route hint mode
-		if mode != RouteHintMode.NONE and annotation_mode != AnnotationMode.NONE:
-			cancel_annotation()
-			annotation_mode = AnnotationMode.NONE
-			annotation_mode_changed.emit(AnnotationMode.NONE)
+		if mode != RouteHintMode.NONE:
+			# Clear tool mode when entering route hint mode (mutual exclusion)
+			if tool_mode != ToolMode.NONE:
+				tool_mode = ToolMode.NONE
+				tool_mode_changed.emit(ToolMode.NONE)
+			# Clear annotation mode when entering route hint mode
+			if annotation_mode != AnnotationMode.NONE:
+				cancel_annotation()
+				annotation_mode = AnnotationMode.NONE
+				annotation_mode_changed.emit(AnnotationMode.NONE)
 		route_hint_mode = mode
 		route_hint_mode_changed.emit(mode)
 		queue_redraw()
@@ -2590,6 +2658,16 @@ func _delete_selected_route_hint() -> void:
 		return
 	data.remove_route_hint(selected_route_hint_id)
 	selected_route_hint_id = ""
+	queue_redraw()
+
+
+## Delete selected trace
+func _delete_selected_trace() -> void:
+	if selected_trace_id.is_empty() or not data:
+		return
+	data.save_to_history("Delete trace")
+	data.remove_trace(selected_trace_id)
+	selected_trace_id = ""
 	queue_redraw()
 
 

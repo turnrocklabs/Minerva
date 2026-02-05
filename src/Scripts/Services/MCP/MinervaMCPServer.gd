@@ -290,6 +290,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _pcb_clear_route_hints(arguments)
 		"minerva_pcb_interpret_route_hints":
 			return _pcb_interpret_route_hints(arguments)
+		"minerva_pcb_get_change_journal":
+			return _pcb_get_change_journal(arguments)
 		"minerva_pcb_suggest_pin_remap":
 			return _pcb_suggest_pin_remap(arguments)
 		"minerva_pcb_suggest_route":
@@ -4854,6 +4856,28 @@ func _register_pcb_tools() -> void:
 		}
 	)
 
+	_register_tool("minerva_pcb_get_change_journal",
+		"Get the change journal for a PCB editor. Returns an append-only log of forward actions (moves, rotations, deletions, etc.) with timestamps.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"since_timestamp": {
+					"type": "number",
+					"description": "Optional Unix timestamp to filter entries from. Only entries at or after this time are returned."
+				},
+				"limit": {
+					"type": "integer",
+					"description": "Maximum number of entries to return (most recent). Default: 50"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
 #endregion
 
 
@@ -5555,6 +5579,9 @@ func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
 		else:
 			missing.append(comp_id)
 
+	# Save history so this operation can be undone
+	data.save_to_history("Import footprint geometry")
+
 	# Trigger redraw and zoom to fit the updated layout
 	data.data_changed.emit()
 	if pcb_editor.canvas:
@@ -5659,6 +5686,9 @@ func _pcb_import_trace_geometry(args: Dictionary) -> Dictionary:
 			"net_name": via_data.get("net_name", ""),
 			"layers": via_data.get("layers", ["F.Cu", "B.Cu"])
 		})
+
+	# Save history so this operation can be undone/redone
+	data.save_to_history("Import traces")
 
 	if pcb_editor.canvas:
 		pcb_editor.canvas.queue_redraw()
@@ -6053,6 +6083,8 @@ func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
 		"single_trace":
 			if source_pins.is_empty() or dest_pins.is_empty():
 				return {"error": "single_trace hint requires source_pins and dest_pins", "success": false}
+			if source_pins[0] == dest_pins[0]:
+				return {"error": "single_trace hint cannot have the same source and destination pin: %s" % source_pins[0], "success": false}
 			hint = PCBRouteHintScript.create_single_trace_hint(
 				source_pins[0], dest_pins[0], waypoints, layer, width, text, "ai"
 			)
@@ -6351,6 +6383,37 @@ func _pcb_interpret_route_hints(args: Dictionary) -> Dictionary:
 		"annotation_count": annotations.size(),
 		"interpretations": interpreted_hints,
 		"note": "These are suggested interpretations. Use minerva_pcb_add_route_hint to create structured hints based on this analysis."
+	}
+
+
+## Get PCB change journal
+func _pcb_get_change_journal(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var since_timestamp: float = args.get("since_timestamp", 0.0)
+	var limit: int = args.get("limit", 50)
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var entries: Array = data.get_change_journal(since_timestamp)
+
+	# Slice to limit (most recent entries)
+	if limit > 0 and entries.size() > limit:
+		entries = entries.slice(entries.size() - limit)
+
+	return {
+		"success": true,
+		"total_entries": data.change_journal.size(),
+		"returned_entries": entries.size(),
+		"entries": entries
 	}
 
 

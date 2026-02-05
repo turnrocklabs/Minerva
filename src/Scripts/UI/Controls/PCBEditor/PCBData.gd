@@ -53,6 +53,11 @@ var history: Array[Dictionary] = []
 var history_index: int = -1
 const MAX_HISTORY_SIZE := 50
 
+## Change journal — append-only log of forward actions (not undo/redo)
+var change_journal: Array[Dictionary] = []
+const MAX_JOURNAL_SIZE := 200
+signal journal_entry_added(entry: Dictionary)
+
 ## Next trace ID counter
 var _next_trace_id: int = 1
 
@@ -90,6 +95,8 @@ func remove_component(component_id: String) -> void:
 	if not components.has(component_id):
 		return
 
+	record_change("remove_component", {"component_id": component_id})
+
 	# Remove from all nets
 	for net_name in nets:
 		nets[net_name].remove_component_pins(component_id)
@@ -103,7 +110,13 @@ func remove_component(component_id: String) -> void:
 func move_component(component_id: String, new_position: Vector2) -> void:
 	var component := get_component(component_id)
 	if component:
+		var old_position := component.position
 		component.position = new_position
+		record_change("move_component", {
+			"component_id": component_id,
+			"old_position": {"x": old_position.x, "y": old_position.y},
+			"new_position": {"x": new_position.x, "y": new_position.y}
+		})
 		component_changed.emit(component_id)
 		data_changed.emit()
 
@@ -112,7 +125,13 @@ func move_component(component_id: String, new_position: Vector2) -> void:
 func rotate_component(component_id: String, degrees: float) -> void:
 	var component := get_component(component_id)
 	if component:
+		var old_rotation := component.rotation
 		component.set_rotation(degrees)
+		record_change("rotate_component", {
+			"component_id": component_id,
+			"old_rotation": old_rotation,
+			"new_rotation": degrees
+		})
 		component_changed.emit(component_id)
 		data_changed.emit()
 
@@ -255,6 +274,13 @@ func get_trace(trace_id: String) -> PCBTraceScript:
 ## Remove a trace
 func remove_trace(trace_id: String) -> void:
 	if traces.has(trace_id):
+		var trace = traces[trace_id]
+		record_change("remove_trace", {
+			"trace_id": trace_id,
+			"net_name": trace.net_name,
+			"layer": trace.layer,
+			"segment_count": maxi(0, trace.waypoints.size() - 1)
+		})
 		traces.erase(trace_id)
 		trace_changed.emit(trace_id)
 		data_changed.emit()
@@ -275,6 +301,23 @@ func get_trace_ids() -> Array[String]:
 	for id in traces:
 		result.append(id)
 	return result
+
+
+## Get trace at a position (for hit testing)
+## Returns the closest trace ID, preferring shorter traces when multiple match
+func get_trace_at(position: Vector2, threshold: float = 1.0) -> String:
+	var best_id: String = ""
+	var best_length: float = INF
+
+	for trace_id in traces:
+		var trace: PCBTraceScript = traces[trace_id]
+		if trace.is_point_near(position, threshold):
+			var trace_length: float = trace.get_length()
+			if trace_length < best_length:
+				best_length = trace_length
+				best_id = trace_id
+
+	return best_id
 
 
 ## Clear all traces and vias
@@ -496,7 +539,29 @@ func add_route_hint(hint: PCBRouteHintScript) -> void:
 		push_error("[PCBData] Route hint must have an ID")
 		return
 
+	# Reject self-referencing hints
+	if hint.hint_type == PCBRouteHintScript.HintType.SINGLE_TRACE:
+		if not hint.source_pins.is_empty() and not hint.dest_pins.is_empty():
+			if hint.source_pins[0] == hint.dest_pins[0]:
+				push_warning("[PCBData] Rejected self-referencing single_trace hint: %s" % hint.source_pins[0])
+				return
+	elif hint.hint_type == PCBRouteHintScript.HintType.BUS:
+		if not hint.source_pins.is_empty() and hint.source_pins.size() == hint.dest_pins.size():
+			var all_same := true
+			for i in range(hint.source_pins.size()):
+				if hint.source_pins[i] != hint.dest_pins[i]:
+					all_same = false
+					break
+			if all_same:
+				push_warning("[PCBData] Rejected self-referencing bus hint: all sources match destinations")
+				return
+
 	route_hints[hint.id] = hint
+	record_change("add_route_hint", {
+		"hint_id": hint.id,
+		"hint_type": PCBRouteHintScript.HintType.keys()[hint.hint_type],
+		"author": hint.author
+	})
 	route_hint_added.emit(hint.id)
 	data_changed.emit()
 
@@ -681,6 +746,43 @@ func _restore_state(state: Dictionary) -> void:
 #endregion
 
 
+#region Change Journal
+
+## Record a change to the journal
+func record_change(action: String, details: Dictionary) -> void:
+	var entry := {
+		"timestamp": Time.get_unix_time_from_system(),
+		"action": action,
+		"details": details
+	}
+	change_journal.append(entry)
+
+	# Enforce max size — drop oldest entries
+	while change_journal.size() > MAX_JOURNAL_SIZE:
+		change_journal.remove_at(0)
+
+	journal_entry_added.emit(entry)
+
+
+## Get journal entries, optionally filtered by timestamp
+func get_change_journal(since_timestamp: float = 0.0) -> Array[Dictionary]:
+	if since_timestamp <= 0.0:
+		return change_journal.duplicate()
+
+	var result: Array[Dictionary] = []
+	for entry in change_journal:
+		if entry.get("timestamp", 0.0) >= since_timestamp:
+			result.append(entry)
+	return result
+
+
+## Clear all journal entries
+func clear_change_journal() -> void:
+	change_journal.clear()
+
+#endregion
+
+
 #region Serialization
 
 ## Serialize the entire PCB data
@@ -709,10 +811,14 @@ func to_dict() -> Dictionary:
 	for id in route_hints:
 		hint_dict[id] = route_hints[id].to_dict()
 
-	# Serialize vias
+	# Serialize vias (convert Vector2 positions to Dictionary for JSON safety)
 	var vias_arr: Array = []
 	for via in vias:
-		vias_arr.append(via.duplicate())
+		var via_copy = via.duplicate()
+		if via_copy.has("position") and via_copy["position"] is Vector2:
+			var p: Vector2 = via_copy["position"]
+			via_copy["position"] = {"x": p.x, "y": p.y}
+		vias_arr.append(via_copy)
 
 	return {
 		"version": 1,
@@ -769,13 +875,24 @@ func load_from_dict(data: Dictionary) -> void:
 	var vias_data: Array = data.get("vias", [])
 	for via_data in vias_data:
 		if via_data is Dictionary:
-			# Convert position to Vector2 if needed
 			var via_entry: Dictionary = via_data.duplicate()
-			if via_data.has("position") and via_data["position"] is Dictionary:
-				via_entry["position"] = Vector2(
-					via_data["position"].get("x", 0),
-					via_data["position"].get("y", 0)
-				)
+			if via_data.has("position"):
+				var pos = via_data["position"]
+				if pos is Vector2:
+					via_entry["position"] = pos
+				elif pos is Dictionary:
+					via_entry["position"] = Vector2(
+						pos.get("x", 0), pos.get("y", 0))
+				elif pos is String:
+					# Handle "(x, y)" from JSON round-trip of Vector2
+					var s: String = str(pos).replace("(", "").replace(")", "").strip_edges()
+					var parts: PackedStringArray = s.split(",")
+					if parts.size() >= 2:
+						via_entry["position"] = Vector2(
+							float(parts[0].strip_edges()),
+							float(parts[1].strip_edges()))
+					else:
+						via_entry["position"] = Vector2.ZERO
 			vias.append(via_entry)
 
 	# Load suggestions
@@ -931,6 +1048,7 @@ func clear() -> void:
 	history.clear()
 	history_index = -1
 	_next_trace_id = 1
+	change_journal.clear()
 	structure_changed.emit()
 	data_changed.emit()
 

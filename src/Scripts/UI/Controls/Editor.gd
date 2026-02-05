@@ -221,6 +221,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_pcb_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(new_pcb_editor)
 			editor.pcb_editor = new_pcb_editor
+			new_pcb_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
 
 	return editor
 
@@ -483,8 +484,8 @@ func get_saved_state() -> int:
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 		Type.PCB:
-			# PCB editors don't have file-based save tracking yet
-			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+			if not pcb_editor or not pcb_editor.is_modified:
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 		Type.KANBAN:
 			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
