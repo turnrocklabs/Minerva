@@ -119,9 +119,9 @@ func display_text(display_text: String) -> void:
 
 #region Private methods:
 func _update() -> void:
-	if markdown_text and markdown_text is String and markdown_text.length() > 0:
+	if markdown_text and markdown_text.length() > 0:
 		var temp_text: String = _convert_markdown(markdown_text)
-		if temp_text.length() > 0 and _indent_level > 0:
+		if temp_text.length() > 0:
 			if get_parent() != null:
 				text = temp_text
 

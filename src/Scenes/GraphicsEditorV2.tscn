@@ -1,4 +1,4 @@
-[gd_scene load_steps=82 format=3 uid="uid://drcf5pucshg1x"]
+[gd_scene format=3 uid="uid://drcf5pucshg1x"]
 
 [ext_resource type="Script" uid="uid://d026y6714ufnr" path="res://Scripts/UI/Controls/GraphicsEditor/GraphicsEditorV2.gd" id="1_yogh5"]
 [ext_resource type="Texture2D" uid="uid://dcxu8ptygpngs" path="res://assets/icons/plus_icons/add.svg" id="2_dcy55"]
@@ -143,7 +143,7 @@ corner_radius_bottom_right = 20
 corner_radius_bottom_left = 20
 anti_aliasing = false
 
-[node name="GraphicsEditorV2" type="PanelContainer"]
+[node name="GraphicsEditorV2" type="PanelContainer" unique_id=1919594253]
 clip_contents = true
 anchors_preset = 15
 anchor_right = 1.0
@@ -153,81 +153,81 @@ grow_vertical = 2
 script = ExtResource("1_yogh5")
 PAN_FACTOR = 1.07
 
-[node name="Tools" type="Node" parent="."]
+[node name="Tools" type="Node" parent="." unique_id=813850112]
 
-[node name="DrawingTool" type="Node" parent="Tools" node_paths=PackedStringArray("_color_picker_button", "_brush_size_slider", "editor")]
+[node name="DrawingTool" type="Node" parent="Tools" unique_id=1160475472 node_paths=PackedStringArray("_color_picker_button", "_brush_size_slider", "editor")]
 unique_name_in_owner = true
 script = ExtResource("2_yti2r")
 _color_picker_button = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer/ColorPickerButton")
 _brush_size_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer2/ToolSizeVSlider")
 editor = NodePath("../..")
 
-[node name="EraserTool" type="Node" parent="Tools" node_paths=PackedStringArray("_brush_size_slider", "editor")]
+[node name="EraserTool" type="Node" parent="Tools" unique_id=1768616343 node_paths=PackedStringArray("_brush_size_slider", "editor")]
 unique_name_in_owner = true
 script = ExtResource("4_146eo")
 _brush_size_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EraserOptions/VBoxContainer/VSlider")
 editor = NodePath("../..")
 
-[node name="TransformTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="TransformTool" type="Node" parent="Tools" unique_id=934406288 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("5_sc07q")
 editor = NodePath("../..")
 
-[node name="PanTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="PanTool" type="Node" parent="Tools" unique_id=1105818709 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("8_oylf0")
 editor = NodePath("../..")
 
-[node name="SpeechBubbleTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="SpeechBubbleTool" type="Node" parent="Tools" unique_id=1827094085 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("6_g8cav")
 editor = NodePath("../..")
 
-[node name="BucketTool" type="Node" parent="Tools" node_paths=PackedStringArray("_color_picker_button", "editor")]
+[node name="BucketTool" type="Node" parent="Tools" unique_id=381855934 node_paths=PackedStringArray("_color_picker_button", "editor")]
 unique_name_in_owner = true
 script = ExtResource("7_g4vm0")
 _color_picker_button = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BucketOptions/VBoxContainer/ColorPickerButton")
 editor = NodePath("../..")
 
-[node name="SmudgeTool" type="Node" parent="Tools" node_paths=PackedStringArray("_strength_slider", "_brush_size_slider", "editor")]
+[node name="SmudgeTool" type="Node" parent="Tools" unique_id=736813365 node_paths=PackedStringArray("_strength_slider", "_brush_size_slider", "editor")]
 unique_name_in_owner = true
 script = ExtResource("8_3hqvt")
 _strength_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2/StrengthVSlider")
 _brush_size_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer/SizeVSlider")
 editor = NodePath("../..")
 
-[node name="RenderViewTool" type="Node" parent="Tools" node_paths=PackedStringArray("control", "editor")]
+[node name="RenderViewTool" type="Node" parent="Tools" unique_id=1712547090 node_paths=PackedStringArray("control", "editor")]
 unique_name_in_owner = true
 script = ExtResource("9_vtsnj")
 control = NodePath("../../h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control")
 editor = NodePath("../..")
 
-[node name="EyedropperTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="EyedropperTool" type="Node" parent="Tools" unique_id=1589090956 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("9_eyedr")
 editor = NodePath("../..")
 
-[node name="MagicWandTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="MagicWandTool" type="Node" parent="Tools" unique_id=888759841 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("9_mwand")
 editor = NodePath("../..")
 
-[node name="RectangleSelectTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="RectangleSelectTool" type="Node" parent="Tools" unique_id=52688553 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("9_rectsel")
 editor = NodePath("../..")
 
-[node name="LassoSelectTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="LassoSelectTool" type="Node" parent="Tools" unique_id=1608148096 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("36_lasso")
 editor = NodePath("../..")
 
-[node name="PoseEditorTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="PoseEditorTool" type="Node" parent="Tools" unique_id=1573017471 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("40_posetool")
 editor = NodePath("../..")
 
-[node name="RectangleTool" type="Node" parent="Tools" node_paths=PackedStringArray("stroke_color_picker", "fill_color_picker", "stroke_width_slider", "stroke_enabled_check", "fill_enabled_check", "editor")]
+[node name="RectangleTool" type="Node" parent="Tools" unique_id=2063027893 node_paths=PackedStringArray("stroke_color_picker", "fill_color_picker", "stroke_width_slider", "stroke_enabled_check", "fill_enabled_check", "editor")]
 unique_name_in_owner = true
 script = ExtResource("50_recttool")
 stroke_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeVBox/StrokeColorPicker")
@@ -237,7 +237,7 @@ stroke_enabled_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/T
 fill_enabled_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/FillVBox/FillEnabledCheck")
 editor = NodePath("../..")
 
-[node name="EllipseTool" type="Node" parent="Tools" node_paths=PackedStringArray("stroke_color_picker", "fill_color_picker", "stroke_width_slider", "stroke_enabled_check", "fill_enabled_check", "editor")]
+[node name="EllipseTool" type="Node" parent="Tools" unique_id=1212303859 node_paths=PackedStringArray("stroke_color_picker", "fill_color_picker", "stroke_width_slider", "stroke_enabled_check", "fill_enabled_check", "editor")]
 unique_name_in_owner = true
 script = ExtResource("51_ellipsetool")
 stroke_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeVBox/StrokeColorPicker")
@@ -247,7 +247,7 @@ stroke_enabled_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/T
 fill_enabled_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/FillVBox/FillEnabledCheck")
 editor = NodePath("../..")
 
-[node name="TextTool" type="Node" parent="Tools" node_paths=PackedStringArray("font_option_button", "font_size_spin_box", "fill_color_picker", "stroke_color_picker", "stroke_width_slider", "editor")]
+[node name="TextTool" type="Node" parent="Tools" unique_id=127608246 node_paths=PackedStringArray("font_option_button", "font_size_spin_box", "fill_color_picker", "stroke_color_picker", "stroke_width_slider", "editor")]
 unique_name_in_owner = true
 script = ExtResource("48_texttool")
 font_option_button = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox/FontOptionButton")
@@ -257,12 +257,12 @@ stroke_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/To
 stroke_width_slider = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox/StrokeWidthSlider")
 editor = NodePath("../..")
 
-[node name="SelectTool" type="Node" parent="Tools" node_paths=PackedStringArray("editor")]
+[node name="SelectTool" type="Node" parent="Tools" unique_id=971357163 node_paths=PackedStringArray("editor")]
 unique_name_in_owner = true
 script = ExtResource("49_selecttool")
 editor = NodePath("../..")
 
-[node name="DiagramShapeTool" type="Node" parent="Tools" node_paths=PackedStringArray("shape_type_option", "stroke_color_picker", "fill_color_picker", "stroke_width_slider", "stroke_enabled_check", "fill_enabled_check", "text_size_spin_box", "text_color_picker", "bold_check", "italic_check", "underline_check", "strikethrough_check", "editor")]
+[node name="DiagramShapeTool" type="Node" parent="Tools" unique_id=322645325 node_paths=PackedStringArray("shape_type_option", "stroke_color_picker", "fill_color_picker", "stroke_width_slider", "stroke_enabled_check", "fill_enabled_check", "text_size_spin_box", "text_color_picker", "bold_check", "italic_check", "underline_check", "strikethrough_check", "editor")]
 unique_name_in_owner = true
 script = ExtResource("52_diagramshapetool")
 shape_type_option = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/ShapeVBox/ShapeTypeOption")
@@ -279,7 +279,7 @@ underline_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOp
 strikethrough_check = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox/StrikethroughCheck")
 editor = NodePath("../..")
 
-[node name="ConnectorTool" type="Node" parent="Tools" node_paths=PackedStringArray("line_color_picker", "line_width_slider", "arrow_type_option", "text_size_spin_box", "text_color_picker", "editor")]
+[node name="ConnectorTool" type="Node" parent="Tools" unique_id=1907768082 node_paths=PackedStringArray("line_color_picker", "line_width_slider", "arrow_type_option", "text_size_spin_box", "text_color_picker", "editor")]
 unique_name_in_owner = true
 script = ExtResource("53_connectortool")
 line_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox/LineColorPicker")
@@ -289,39 +289,39 @@ text_size_spin_box = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/Too
 text_color_picker = NodePath("../../h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox/ConnectorTextColorPicker")
 editor = NodePath("../..")
 
-[node name="h" type="HBoxContainer" parent="."]
+[node name="h" type="HBoxContainer" parent="." unique_id=1168047274]
 clip_contents = true
 layout_mode = 2
 
-[node name="MainHSplitContainer" type="HSplitContainer" parent="h"]
+[node name="MainHSplitContainer" type="HSplitContainer" parent="h" unique_id=2092357098]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 drag_area_highlight_in_editor = true
 
-[node name="v" type="VBoxContainer" parent="h/MainHSplitContainer"]
+[node name="v" type="VBoxContainer" parent="h/MainHSplitContainer" unique_id=1338601247]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="HBoxContainer" type="HBoxContainer" parent="h/MainHSplitContainer/v"]
+[node name="HBoxContainer" type="HBoxContainer" parent="h/MainHSplitContainer/v" unique_id=413345746]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="h" type="HFlowContainer" parent="h/MainHSplitContainer/v/HBoxContainer"]
+[node name="h" type="HFlowContainer" parent="h/MainHSplitContainer/v/HBoxContainer" unique_id=1151718262]
 custom_minimum_size = Vector2(350, 80)
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 0
 theme_override_constants/h_separation = 8
 
-[node name="ToolsContainer" type="HFlowContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h"]
+[node name="ToolsContainer" type="HFlowContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h" unique_id=1385896434]
 custom_minimum_size = Vector2(350, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/h_separation = 6
 
-[node name="ToolsOptionButton" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="ToolsOptionButton" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=49609176]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
@@ -385,7 +385,7 @@ popup/item_18/text = "Insert Image..."
 popup/item_18/icon = ExtResource("35_3qddm")
 popup/item_18/id = 4
 
-[node name="SelectionIndicatorButton" type="MenuButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="SelectionIndicatorButton" type="MenuButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=2046760895]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -393,7 +393,7 @@ size_flags_vertical = 4
 tooltip_text = "Selection active - click for options"
 icon = ExtResource("30_selact")
 
-[node name="PaneToolButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="PaneToolButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=402245249]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
@@ -402,7 +402,7 @@ toggle_mode = true
 button_group = ExtResource("2_ymijy")
 icon = ExtResource("15_ow12a")
 
-[node name="TransformToolButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="TransformToolButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=1670916737]
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Transform tool for moving the layer"
@@ -410,32 +410,32 @@ toggle_mode = true
 button_group = ExtResource("2_ymijy")
 icon = ExtResource("40_v7532")
 
-[node name="SpeechBubbleToolButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="SpeechBubbleToolButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=1734397141]
 visible = false
 layout_mode = 2
 toggle_mode = true
 button_group = ExtResource("2_ymijy")
 text = "Speech"
 
-[node name="CenterViewButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="CenterViewButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=2077138987]
 visible = false
 layout_mode = 2
 tooltip_text = "Center view and reset zoom"
 icon = ExtResource("17_tml0f")
 
-[node name="MaskContainer" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="MaskContainer" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=1296333823]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 9
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer" unique_id=1935505835]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "Mask Color: "
 
-[node name="MaskColorOptionButton" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer"]
+[node name="MaskColorOptionButton" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer" unique_id=1590258564]
 unique_name_in_owner = true
 texture_filter = 1
 layout_mode = 2
@@ -453,52 +453,52 @@ popup/item_2/text = "Green"
 popup/item_2/icon = SubResource("GradientTexture2D_oylf0")
 popup/item_2/id = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=1282043974]
 layout_mode = 2
 
-[node name="Button2" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer"]
+[node name="Button2" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer" unique_id=1258335550]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 icon = ExtResource("18_bdl26")
 flat = true
 
-[node name="Button" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer"]
+[node name="Button" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer" unique_id=192939010]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 icon = ExtResource("19_wq4ht")
 flat = true
 
-[node name="Button3" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer"]
+[node name="Button3" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=901477183]
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Center view and reset zoom"
 icon = ExtResource("44_4jqk7")
 
-[node name="ToolOptionsContainer" type="MarginContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h"]
+[node name="ToolOptionsContainer" type="MarginContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h" unique_id=1603402463]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="BrushOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="BrushOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=1230882359]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
 theme_override_constants/separation = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions" unique_id=1897833927]
 layout_mode = 2
 
-[node name="ColorPickerButton" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer"]
+[node name="ColorPickerButton" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer" unique_id=1330050821]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 
-[node name="VBoxContainer2" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions"]
+[node name="VBoxContainer2" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions" unique_id=1141067328]
 layout_mode = 2
 
-[node name="ToolSizeVSlider" type="VSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer2"]
+[node name="ToolSizeVSlider" type="VSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer2" unique_id=309694800]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 1
@@ -507,20 +507,20 @@ max_value = 46.0
 value = 1.0
 ticks_on_borders = true
 
-[node name="SmudgeOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="SmudgeOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=1449044809]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions" unique_id=1746204877]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer" unique_id=1560558296]
 layout_mode = 2
 text = "Brush Size:"
 
-[node name="SizeVSlider" type="VSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer"]
+[node name="SizeVSlider" type="VSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer" unique_id=1430377594]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_horizontal = 1
@@ -529,14 +529,14 @@ max_value = 46.0
 value = 1.0
 ticks_on_borders = true
 
-[node name="VBoxContainer2" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions"]
+[node name="VBoxContainer2" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions" unique_id=785060185]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2" unique_id=1118191985]
 layout_mode = 2
 text = "Strength:"
 
-[node name="StrengthVSlider" type="VSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2"]
+[node name="StrengthVSlider" type="VSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SmudgeOptions/VBoxContainer2" unique_id=935957612]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 size_flags_vertical = 4
@@ -544,120 +544,120 @@ max_value = 5.0
 step = 0.05
 value = 0.5
 
-[node name="BucketOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="BucketOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=1835314332]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BucketOptions"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BucketOptions" unique_id=1287325808]
 layout_mode = 2
 
-[node name="ColorPickerButton" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BucketOptions/VBoxContainer"]
+[node name="ColorPickerButton" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BucketOptions/VBoxContainer" unique_id=877199636]
 custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
 
-[node name="EraserOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="EraserOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=1741016435]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EraserOptions"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EraserOptions" unique_id=186981715]
 layout_mode = 2
 
-[node name="VSlider" type="VSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EraserOptions/VBoxContainer"]
+[node name="VSlider" type="VSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EraserOptions/VBoxContainer" unique_id=178345975]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 max_value = 46.0
 value = 1.0
 ticks_on_borders = true
 
-[node name="SpeechBubbleOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="SpeechBubbleOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=32450472]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="EditModeCheckButton" type="CheckButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions"]
+[node name="EditModeCheckButton" type="CheckButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions" unique_id=856979411]
 layout_mode = 2
 text = "Edit Mode"
 
-[node name="LineEdit" type="LineEdit" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions"]
+[node name="LineEdit" type="LineEdit" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions" unique_id=660521077]
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Bubble Text"
 expand_to_text_length = true
 
-[node name="ApplyButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions"]
+[node name="ApplyButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions" unique_id=872351744]
 layout_mode = 2
 text = "Apply"
 
-[node name="SelectionOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="SelectionOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=147145802]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="SelectAllButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+[node name="SelectAllButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions" unique_id=85944724]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Select All (Ctrl+A)"
 icon = ExtResource("31_selall")
 flat = true
 
-[node name="DeselectButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+[node name="DeselectButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions" unique_id=1083960517]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Deselect (Ctrl+D)"
 icon = ExtResource("32_desel")
 flat = true
 
-[node name="InvertButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+[node name="InvertButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions" unique_id=1240499638]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Invert Selection (Ctrl+Shift+I)"
 icon = ExtResource("33_invert")
 flat = true
 
-[node name="SelectionSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+[node name="SelectionSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions" unique_id=1990016437]
 layout_mode = 2
 
-[node name="DeleteSelectionButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+[node name="DeleteSelectionButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions" unique_id=1348731761]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Delete Contents (Del)"
 icon = ExtResource("34_delsel")
 flat = true
 
-[node name="FillColorPickerButton" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+[node name="FillColorPickerButton" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions" unique_id=154233137]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(32, 32)
 layout_mode = 2
 tooltip_text = "Fill Selection with Color (Alt+Backspace)"
 
-[node name="SelectionModeSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+[node name="SelectionModeSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions" unique_id=299135790]
 layout_mode = 2
 
-[node name="SelectionModeLabel" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions"]
+[node name="SelectionModeLabel" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SelectionOptions" unique_id=1192737065]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Selection mode: Hold Shift to Add, Alt to Subtract, Shift+Alt to Intersect"
 text = "Mode: Replace"
 
-[node name="TextOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="TextOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=1368784350]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="FontVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+[node name="FontVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions" unique_id=657601283]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox" unique_id=975185353]
 layout_mode = 2
 text = "Font:"
 
-[node name="FontOptionButton" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox"]
+[node name="FontOptionButton" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FontVBox" unique_id=1083141361]
 unique_name_in_owner = true
 layout_mode = 2
 selected = 0
@@ -675,162 +675,162 @@ popup/item_4/id = 4
 popup/item_5/text = "Space Mono Bold"
 popup/item_5/id = 5
 
-[node name="SizeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+[node name="SizeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions" unique_id=591632726]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/SizeVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/SizeVBox" unique_id=362756649]
 layout_mode = 2
 text = "Size:"
 
-[node name="FontSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/SizeVBox"]
+[node name="FontSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/SizeVBox" unique_id=510238917]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = 8.0
 max_value = 200.0
 value = 48.0
 
-[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions" unique_id=1107812498]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FillVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FillVBox" unique_id=2142794799]
 layout_mode = 2
 text = "Fill:"
 
-[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FillVBox"]
+[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/FillVBox" unique_id=900715210]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 
-[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions" unique_id=525289451]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeVBox" unique_id=1256731705]
 layout_mode = 2
 text = "Stroke:"
 
-[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeVBox"]
+[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeVBox" unique_id=1812922334]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 
-[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions"]
+[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions" unique_id=227574334]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox" unique_id=596028071]
 layout_mode = 2
 text = "Width:"
 
-[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox"]
+[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/TextOptions/StrokeWidthVBox" unique_id=6553177]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 max_value = 20.0
 value = 2.0
 
-[node name="RectangleOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="RectangleOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=905575560]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions"]
+[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions" unique_id=1630884658]
 layout_mode = 2
 
-[node name="StrokeEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeVBox"]
+[node name="StrokeEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeVBox" unique_id=1215191120]
 unique_name_in_owner = true
 layout_mode = 2
 button_pressed = true
 text = "Stroke"
 
-[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeVBox"]
+[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeVBox" unique_id=1633017903]
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 
-[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions"]
+[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions" unique_id=1517366655]
 layout_mode = 2
 
-[node name="FillEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/FillVBox"]
+[node name="FillEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/FillVBox" unique_id=7822409]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Fill"
 
-[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/FillVBox"]
+[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/FillVBox" unique_id=419676699]
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 color = Color(1, 1, 1, 1)
 
-[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions"]
+[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions" unique_id=1165424591]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeWidthVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeWidthVBox" unique_id=2096877179]
 layout_mode = 2
 text = "Width:"
 
-[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeWidthVBox"]
+[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/RectangleOptions/StrokeWidthVBox" unique_id=1306500371]
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 min_value = 1.0
 max_value = 20.0
 value = 2.0
 
-[node name="EllipseOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="EllipseOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=1355556049]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions"]
+[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions" unique_id=942808957]
 layout_mode = 2
 
-[node name="StrokeEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeVBox"]
+[node name="StrokeEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeVBox" unique_id=1485705535]
 layout_mode = 2
 button_pressed = true
 text = "Stroke"
 
-[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeVBox"]
+[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeVBox" unique_id=1334944683]
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 
-[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions"]
+[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions" unique_id=1698771217]
 layout_mode = 2
 
-[node name="FillEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/FillVBox"]
+[node name="FillEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/FillVBox" unique_id=397494848]
 layout_mode = 2
 text = "Fill"
 
-[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/FillVBox"]
+[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/FillVBox" unique_id=1670212646]
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 color = Color(1, 1, 1, 1)
 
-[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions"]
+[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions" unique_id=875680928]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeWidthVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeWidthVBox" unique_id=1215828290]
 layout_mode = 2
 text = "Width:"
 
-[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeWidthVBox"]
+[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/EllipseOptions/StrokeWidthVBox" unique_id=1418871790]
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 min_value = 1.0
 max_value = 20.0
 value = 2.0
 
-[node name="DiagramShapeOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="DiagramShapeOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=1655253267]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="ShapeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+[node name="ShapeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions" unique_id=628536022]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/ShapeVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/ShapeVBox" unique_id=64358285]
 layout_mode = 2
 text = "Shape:"
 
-[node name="ShapeTypeOption" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/ShapeVBox"]
+[node name="ShapeTypeOption" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/ShapeVBox" unique_id=1888012395]
 unique_name_in_owner = true
 layout_mode = 2
 item_count = 3
@@ -841,120 +841,120 @@ popup/item_1/id = 1
 popup/item_2/text = "Diamond"
 popup/item_2/id = 2
 
-[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+[node name="StrokeVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions" unique_id=23672407]
 layout_mode = 2
 
-[node name="StrokeEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeVBox"]
+[node name="StrokeEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeVBox" unique_id=1154485422]
 layout_mode = 2
 button_pressed = true
 text = "Stroke"
 
-[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeVBox"]
+[node name="StrokeColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeVBox" unique_id=2078334730]
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 
-[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+[node name="FillVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions" unique_id=1949590845]
 layout_mode = 2
 
-[node name="FillEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/FillVBox"]
+[node name="FillEnabledCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/FillVBox" unique_id=1787358417]
 layout_mode = 2
 text = "Fill"
 
-[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/FillVBox"]
+[node name="FillColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/FillVBox" unique_id=1002490348]
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 color = Color(1, 1, 1, 1)
 
-[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+[node name="StrokeWidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions" unique_id=1276194427]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeWidthVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeWidthVBox" unique_id=268381258]
 layout_mode = 2
 text = "Width:"
 
-[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeWidthVBox"]
+[node name="StrokeWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StrokeWidthVBox" unique_id=1940629748]
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 min_value = 1.0
 max_value = 10.0
 value = 2.0
 
-[node name="TextVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+[node name="TextVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions" unique_id=382460513]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox" unique_id=1303315845]
 layout_mode = 2
 text = "Text:"
 
-[node name="TextSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox"]
+[node name="TextSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox" unique_id=1185859380]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = 8.0
 max_value = 72.0
 value = 14.0
 
-[node name="TextColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox"]
+[node name="TextColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/TextVBox" unique_id=218406762]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 30)
 layout_mode = 2
 
-[node name="StyleVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions"]
+[node name="StyleVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions" unique_id=731834912]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox" unique_id=2108999194]
 layout_mode = 2
 text = "Style:"
 
-[node name="StyleHBox" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox"]
+[node name="StyleHBox" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox" unique_id=1520616086]
 layout_mode = 2
 
-[node name="BoldCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox"]
+[node name="BoldCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox" unique_id=766481180]
 unique_name_in_owner = true
 layout_mode = 2
 text = "B"
 
-[node name="ItalicCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox"]
+[node name="ItalicCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox" unique_id=1229602116]
 unique_name_in_owner = true
 layout_mode = 2
 text = "I"
 
-[node name="UnderlineCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox"]
+[node name="UnderlineCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox" unique_id=1521100546]
 unique_name_in_owner = true
 layout_mode = 2
 text = "U"
 
-[node name="StrikethroughCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox"]
+[node name="StrikethroughCheck" type="CheckBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/DiagramShapeOptions/StyleVBox/StyleHBox" unique_id=1967682707]
 unique_name_in_owner = true
 layout_mode = 2
 text = "S"
 
-[node name="ConnectorOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer"]
+[node name="ConnectorOptions" type="HBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer" unique_id=212740274]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="ColorVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions"]
+[node name="ColorVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions" unique_id=1640443971]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox" unique_id=1342851155]
 layout_mode = 2
 text = "Color:"
 
-[node name="LineColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox"]
+[node name="LineColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ColorVBox" unique_id=562037376]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 color = Color(0.529412, 0.807843, 0.921569, 1)
 
-[node name="WidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions"]
+[node name="WidthVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions" unique_id=48815318]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/WidthVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/WidthVBox" unique_id=1380985756]
 layout_mode = 2
 text = "Width:"
 
-[node name="LineWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/WidthVBox"]
+[node name="LineWidthSlider" type="HSlider" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/WidthVBox" unique_id=1417055956]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
@@ -962,14 +962,14 @@ min_value = 1.0
 max_value = 8.0
 value = 2.0
 
-[node name="ArrowVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions"]
+[node name="ArrowVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions" unique_id=687793327]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ArrowVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ArrowVBox" unique_id=615002696]
 layout_mode = 2
 text = "Arrow:"
 
-[node name="ArrowTypeOption" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ArrowVBox"]
+[node name="ArrowTypeOption" type="OptionButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/ArrowVBox" unique_id=1877534195]
 unique_name_in_owner = true
 layout_mode = 2
 selected = 1
@@ -981,32 +981,32 @@ popup/item_1/id = 1
 popup/item_2/text = "Double"
 popup/item_2/id = 2
 
-[node name="TextVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions"]
+[node name="TextVBox" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions" unique_id=1531252545]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox"]
+[node name="Label" type="Label" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox" unique_id=279138008]
 layout_mode = 2
 text = "Text:"
 
-[node name="ConnectorTextSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox"]
+[node name="ConnectorTextSizeSpinBox" type="SpinBox" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox" unique_id=615777297]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = 8.0
 max_value = 48.0
 value = 12.0
 
-[node name="ConnectorTextColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox"]
+[node name="ConnectorTextColorPicker" type="ColorPickerButton" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/ConnectorOptions/TextVBox" unique_id=1446738996]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 30)
 layout_mode = 2
 
-[node name="VSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer"]
+[node name="VSeparator" type="VSeparator" parent="h/MainHSplitContainer/v/HBoxContainer" unique_id=1936908032]
 layout_mode = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer" unique_id=293006952]
 layout_mode = 2
 
-[node name="LayerCardsButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/VBoxContainer"]
+[node name="LayerCardsButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/VBoxContainer" unique_id=190008288]
 unique_name_in_owner = true
 texture_filter = 1
 layout_mode = 2
@@ -1016,38 +1016,38 @@ toggle_mode = true
 icon = ExtResource("18_tml0f")
 icon_alignment = 1
 
-[node name="PromptButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/VBoxContainer"]
+[node name="PromptButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/VBoxContainer" unique_id=1594098212]
 unique_name_in_owner = true
 texture_filter = 1
 layout_mode = 2
 tooltip_text = "AI Image Generation Menu"
 icon = ExtResource("19_tml0f")
 
-[node name="HSeparator" type="HSeparator" parent="h/MainHSplitContainer/v"]
+[node name="HSeparator" type="HSeparator" parent="h/MainHSplitContainer/v" unique_id=55866650]
 layout_mode = 2
 
-[node name="MarginContainer" type="PanelContainer" parent="h/MainHSplitContainer/v"]
+[node name="MarginContainer" type="PanelContainer" parent="h/MainHSplitContainer/v" unique_id=582233991]
 material = SubResource("ShaderMaterial_u8jc2")
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 1
 theme_override_styles/panel = ExtResource("20_t8fyw")
 
-[node name="DrawingAreaSubViewportContainer" type="SubViewportContainer" parent="h/MainHSplitContainer/v/MarginContainer"]
+[node name="DrawingAreaSubViewportContainer" type="SubViewportContainer" parent="h/MainHSplitContainer/v/MarginContainer" unique_id=977225836]
 unique_name_in_owner = true
 clip_contents = true
 layout_mode = 2
 size_flags_vertical = 3
 stretch = true
 
-[node name="DrawingAreaSubViewport" type="SubViewport" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer"]
+[node name="DrawingAreaSubViewport" type="SubViewport" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer" unique_id=809990509]
 unique_name_in_owner = true
 transparent_bg = true
 handle_input_locally = false
 size = Vector2i(1888, 979)
 render_target_update_mode = 4
 
-[node name="InputAreaCamera" type="Camera2D" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
+[node name="InputAreaCamera" type="Camera2D" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport" unique_id=395637706]
 unique_name_in_owner = true
 zoom = Vector2(0.5, 0.5)
 limit_left = -5000
@@ -1055,7 +1055,7 @@ limit_top = -5000
 limit_right = 5000
 limit_bottom = 5000
 
-[node name="RenderViewControl" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport" node_paths=PackedStringArray("subviewport_container", "render_viewport")]
+[node name="RenderViewControl" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport" unique_id=1936080130 node_paths=PackedStringArray("subviewport_container", "render_viewport")]
 unique_name_in_owner = true
 z_index = 10
 layout_mode = 3
@@ -1069,7 +1069,7 @@ script = ExtResource("23_40suu")
 subviewport_container = NodePath("RenderViewSubviewportContainer")
 render_viewport = NodePath("RenderViewSubviewportContainer/RenderViewport")
 
-[node name="RenderViewSubviewportContainer" type="SubViewportContainer" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl"]
+[node name="RenderViewSubviewportContainer" type="SubViewportContainer" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl" unique_id=1296427786]
 z_index = 1000
 layout_mode = 1
 anchors_preset = 15
@@ -1078,7 +1078,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="RenderViewport" type="SubViewport" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl/RenderViewSubviewportContainer"]
+[node name="RenderViewport" type="SubViewport" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/RenderViewControl/RenderViewSubviewportContainer" unique_id=1540151205]
 unique_name_in_owner = true
 transparent_bg = true
 handle_input_locally = false
@@ -1086,7 +1086,7 @@ gui_disable_input = true
 size = Vector2i(1876, 979)
 render_target_update_mode = 4
 
-[node name="Control" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
+[node name="Control" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport" unique_id=1154270704]
 unique_name_in_owner = true
 layout_mode = 3
 anchors_preset = 15
@@ -1096,7 +1096,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="LayersContainer" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control"]
+[node name="LayersContainer" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control" unique_id=999780323]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -1107,7 +1107,7 @@ grow_vertical = 2
 mouse_filter = 1
 script = ExtResource("8_fjkto")
 
-[node name="SelectionOverlay" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control"]
+[node name="SelectionOverlay" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control" unique_id=1018775932]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
@@ -1118,7 +1118,7 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("38_selover")
 
-[node name="MiniMapControl" type="Control" parent="h/MainHSplitContainer/v/MarginContainer"]
+[node name="MiniMapControl" type="Control" parent="h/MainHSplitContainer/v/MarginContainer" unique_id=903067334]
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(150, 84)
@@ -1126,7 +1126,7 @@ layout_mode = 2
 size_flags_horizontal = 0
 size_flags_vertical = 0
 
-[node name="MarginContainer" type="PanelContainer" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl"]
+[node name="MarginContainer" type="PanelContainer" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl" unique_id=2126239731]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -1136,19 +1136,19 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_t8fyw")
 
-[node name="TextureRect2" type="TextureRect" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl/MarginContainer"]
+[node name="TextureRect2" type="TextureRect" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl/MarginContainer" unique_id=1721851491]
 material = SubResource("ShaderMaterial_vtsnj")
 layout_mode = 2
 texture = SubResource("PlaceholderTexture2D_t8fyw")
 expand_mode = 1
 
-[node name="TextureRect" type="TextureRect" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl/MarginContainer"]
+[node name="TextureRect" type="TextureRect" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl/MarginContainer" unique_id=1280625271]
 unique_name_in_owner = true
 layout_mode = 2
 expand_mode = 3
 stretch_mode = 4
 
-[node name="HBoxContainer" type="HBoxContainer" parent="h/MainHSplitContainer/v/MarginContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="h/MainHSplitContainer/v/MarginContainer" unique_id=1115677613]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 0
@@ -1156,72 +1156,72 @@ size_flags_vertical = 0
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="Control" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer"]
+[node name="Control" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer" unique_id=1017945887]
 layout_mode = 2
 mouse_filter = 2
 
-[node name="CenterViewButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer"]
+[node name="CenterViewButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer" unique_id=1177822769]
 layout_mode = 2
 tooltip_text = "Center view and reset zoom"
 focus_mode = 0
 icon = ExtResource("17_tml0f")
 flat = true
 
-[node name="ZoomOutButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer"]
+[node name="ZoomOutButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer" unique_id=1489211235]
 layout_mode = 2
 tooltip_text = "Zoom Out"
 focus_mode = 0
 icon = ExtResource("18_bdl26")
 flat = true
 
-[node name="ZoomInButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer"]
+[node name="ZoomInButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer" unique_id=1381127940]
 layout_mode = 2
 tooltip_text = "Zoom In"
 focus_mode = 0
 icon = ExtResource("19_wq4ht")
 flat = true
 
-[node name="DockPanelContainer" type="MarginContainer" parent="h/MainHSplitContainer"]
+[node name="DockPanelContainer" type="MarginContainer" parent="h/MainHSplitContainer" unique_id=1451562888]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="DockSplitContainer" type="VSplitContainer" parent="h/MainHSplitContainer/DockPanelContainer"]
+[node name="DockSplitContainer" type="VSplitContainer" parent="h/MainHSplitContainer/DockPanelContainer" unique_id=131426348]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="FullSizeLayersContainer" type="MarginContainer" parent="h/MainHSplitContainer/DockPanelContainer/DockSplitContainer"]
+[node name="FullSizeLayersContainer" type="MarginContainer" parent="h/MainHSplitContainer/DockPanelContainer/DockSplitContainer" unique_id=1096799046]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="FullSizeAIContainer" type="MarginContainer" parent="h/MainHSplitContainer/DockPanelContainer/DockSplitContainer"]
+[node name="FullSizeAIContainer" type="MarginContainer" parent="h/MainHSplitContainer/DockPanelContainer/DockSplitContainer" unique_id=1941061038]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/margin_bottom = 7
 
-[node name="MessageWindow" type="Window" parent="."]
+[node name="MessageWindow" type="Window" parent="." unique_id=786217184]
 unique_name_in_owner = true
 initial_position = 2
 size = Vector2i(700, 300)
 visible = false
 script = ExtResource("11_v238w")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MessageWindow"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MessageWindow" unique_id=51844678]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="MessageTitle" type="Label" parent="MessageWindow/VBoxContainer"]
+[node name="MessageTitle" type="Label" parent="MessageWindow/VBoxContainer" unique_id=177576082]
 unique_name_in_owner = true
 layout_mode = 2
 text = "test"
 label_settings = SubResource("LabelSettings_v238w")
 horizontal_alignment = 1
 
-[node name="MessageContent" type="Label" parent="MessageWindow/VBoxContainer"]
+[node name="MessageContent" type="Label" parent="MessageWindow/VBoxContainer" unique_id=522011125]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
@@ -1231,7 +1231,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
 
-[node name="ProgressWindow" type="Window" parent="."]
+[node name="ProgressWindow" type="Window" parent="." unique_id=2037808269]
 unique_name_in_owner = true
 oversampling_override = 1.0
 initial_position = 2
@@ -1240,7 +1240,7 @@ visible = false
 unresizable = true
 script = ExtResource("11_v238w")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ProgressWindow"]
+[node name="VBoxContainer" type="VBoxContainer" parent="ProgressWindow" unique_id=1168937370]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -1249,16 +1249,16 @@ grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="ProgressLabel" type="Label" parent="ProgressWindow/VBoxContainer"]
+[node name="ProgressLabel" type="Label" parent="ProgressWindow/VBoxContainer" unique_id=2023829934]
 unique_name_in_owner = true
 layout_mode = 2
 horizontal_alignment = 1
 
-[node name="ProgressBar" type="ProgressBar" parent="ProgressWindow/VBoxContainer"]
+[node name="ProgressBar" type="ProgressBar" parent="ProgressWindow/VBoxContainer" unique_id=1382399749]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PoseEditorWindow" type="Window" parent="."]
+[node name="PoseEditorWindow" type="Window" parent="." unique_id=722500218]
 unique_name_in_owner = true
 oversampling_override = 1.0
 title = "3D Pose Editor"
@@ -1268,14 +1268,17 @@ visible = false
 always_on_top = true
 min_size = Vector2i(400, 500)
 
-[node name="PoseEditorPanel" parent="PoseEditorWindow" instance=ExtResource("41_posepanel")]
+[node name="PoseEditorPanel" parent="PoseEditorWindow" unique_id=2058091983 instance=ExtResource("41_posepanel")]
 unique_name_in_owner = true
+
+[node name="HSplitContainer" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer" index="1"]
+split_offsets = PackedInt32Array(200)
 
 [node name="SubViewport" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer" index="0"]
 size = Vector2i(350, 2)
 render_target_update_mode = 0
 
-[node name="LayerCardsPopupPanel" type="Window" parent="."]
+[node name="LayerCardsPopupPanel" type="Window" parent="." unique_id=1598404133]
 unique_name_in_owner = true
 oversampling_override = 1.0
 position = Vector2i(666, 259)
@@ -1284,7 +1287,7 @@ visible = false
 always_on_top = true
 min_size = Vector2i(445, 300)
 
-[node name="LayerCardsPanelContainer" type="PanelContainer" parent="LayerCardsPopupPanel"]
+[node name="LayerCardsPanelContainer" type="PanelContainer" parent="LayerCardsPopupPanel" unique_id=108730039]
 unique_name_in_owner = true
 anchors_preset = 15
 anchor_right = 1.0
@@ -1293,75 +1296,75 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
 
-[node name="MarginContainer" type="MarginContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer" unique_id=261386967]
 layout_mode = 2
 theme_override_constants/margin_bottom = 8
 
-[node name="VBoxContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer" unique_id=1187175049]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="TopOfLayersContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer"]
+[node name="TopOfLayersContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer" unique_id=1527637110]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="BackButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/TopOfLayersContainer"]
+[node name="BackButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/TopOfLayersContainer" unique_id=1365455539]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
 icon = ExtResource("22_j5h4u")
 flat = true
 
-[node name="AIActionLabel" type="Label" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/TopOfLayersContainer"]
+[node name="AIActionLabel" type="Label" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/TopOfLayersContainer" unique_id=1440739969]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Pick an image to Send to Edit"
 horizontal_alignment = 1
 
-[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer" unique_id=128106427]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6
 
-[node name="v2" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="v2" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer" unique_id=1247413749]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="Label" type="Label" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2"]
+[node name="Label" type="Label" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2" unique_id=2108758648]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Image Layers"
 horizontal_alignment = 1
 
-[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2"]
+[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2" unique_id=1945488683]
 layout_mode = 2
 size_flags_vertical = 0
 
-[node name="NewLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer"]
+[node name="NewLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer" unique_id=1539302328]
 layout_mode = 2
 tooltip_text = "Add Drawing Layer"
 icon = ExtResource("2_dcy55")
 flat = true
 icon_alignment = 1
 
-[node name="CopyLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer"]
+[node name="CopyLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer" unique_id=1572648153]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Copy Selected Layers"
 icon = ExtResource("3_m1bgl")
 flat = true
 
-[node name="MergeLayersButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer"]
+[node name="MergeLayersButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer" unique_id=2050529794]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Merge Selected Layers"
 text = "M"
 flat = true
 
-[node name="DeleteLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer"]
+[node name="DeleteLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/HBoxContainer" unique_id=2075990601]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
@@ -1369,41 +1372,41 @@ tooltip_text = "Delete Selected Layers"
 icon = ExtResource("4_oylf0")
 flat = true
 
-[node name="HSeparator" type="HSeparator" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2"]
+[node name="HSeparator" type="HSeparator" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2" unique_id=415726752]
 layout_mode = 2
 
-[node name="ScrollContainer" type="ScrollContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2"]
+[node name="ScrollContainer" type="ScrollContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2" unique_id=2047516857]
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 0
 mouse_force_pass_scroll_events = false
 horizontal_scroll_mode = 0
 
-[node name="LayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/ScrollContainer"]
+[node name="LayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/v2/ScrollContainer" unique_id=892137664]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="VSeparator" type="VSeparator" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="VSeparator" type="VSeparator" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer" unique_id=800146683]
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_oylf0")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer" unique_id=659376726]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Label2" type="Label" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="Label2" type="Label" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=53156247]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Mask Layers"
 horizontal_alignment = 1
 
-[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=419432151]
 layout_mode = 2
 size_flags_vertical = 4
 
-[node name="NewMaskLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="NewMaskLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer" unique_id=1579269791]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Add a mask layer for AI image editing"
@@ -1411,21 +1414,21 @@ icon = ExtResource("2_dcy55")
 flat = true
 alignment = 0
 
-[node name="CopyMaskLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="CopyMaskLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer" unique_id=363087239]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Copy Selected Mask Layers"
 icon = ExtResource("3_m1bgl")
 flat = true
 
-[node name="MergeMaskLayersButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="MergeMaskLayersButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer" unique_id=32042406]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Merge Selected Mask Layers"
 text = "M"
 flat = true
 
-[node name="DeleteMaskLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="DeleteMaskLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer" unique_id=717723493]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
@@ -1433,10 +1436,10 @@ tooltip_text = "Delete Selected Mask Layers"
 icon = ExtResource("4_oylf0")
 flat = true
 
-[node name="HSeparator" type="HSeparator" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1577255396]
 layout_mode = 2
 
-[node name="ScrollContainer" type="ScrollContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=931142068]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -1444,47 +1447,47 @@ mouse_filter = 0
 mouse_force_pass_scroll_events = false
 horizontal_scroll_mode = 0
 
-[node name="v2" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer"]
+[node name="v2" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer" unique_id=23996799]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="MaskLayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2"]
+[node name="MaskLayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2" unique_id=494407559]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="ControlLayersSeparator" type="HSeparator" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2"]
+[node name="ControlLayersSeparator" type="HSeparator" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2" unique_id=1545770379]
 visible = false
 layout_mode = 2
 
-[node name="ControlLayersLabel" type="Label" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2"]
+[node name="ControlLayersLabel" type="Label" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2" unique_id=1108422436]
 visible = false
 layout_mode = 2
 text = "Control Layers"
 horizontal_alignment = 1
 
-[node name="ControlLayerButtonsContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2"]
+[node name="ControlLayerButtonsContainer" type="HBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2" unique_id=404103112]
 visible = false
 layout_mode = 2
 size_flags_vertical = 4
 
-[node name="NewControlLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2/ControlLayerButtonsContainer"]
+[node name="NewControlLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2/ControlLayerButtonsContainer" unique_id=378542710]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Add a pose control layer for ControlNet"
 text = "+ Pose"
 flat = true
 
-[node name="OpenPoseEditorButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2/ControlLayerButtonsContainer"]
+[node name="OpenPoseEditorButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2/ControlLayerButtonsContainer" unique_id=525719656]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Open 3D Pose Editor"
 text = "3D Edit"
 flat = true
 
-[node name="DeleteControlLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2/ControlLayerButtonsContainer"]
+[node name="DeleteControlLayerButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2/ControlLayerButtonsContainer" unique_id=1983519349]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 10
@@ -1492,13 +1495,13 @@ tooltip_text = "Delete Selected Control Layers"
 icon = ExtResource("4_oylf0")
 flat = true
 
-[node name="ControlLayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2"]
+[node name="ControlLayerCardsContainer" type="VBoxContainer" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer/HBoxContainer/VBoxContainer/ScrollContainer/v2" unique_id=1746352386]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="SendActionButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer"]
+[node name="SendActionButton" type="Button" parent="LayerCardsPopupPanel/LayerCardsPanelContainer/MarginContainer/VBoxContainer" unique_id=1688824591]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -1506,7 +1509,7 @@ text = "Send To AI"
 icon = ExtResource("25_30sgg")
 icon_alignment = 2
 
-[node name="ImageGenWindow" type="Window" parent="."]
+[node name="ImageGenWindow" type="Window" parent="." unique_id=978611081]
 unique_name_in_owner = true
 oversampling_override = 1.0
 title = "AI Image Generation"
@@ -1515,7 +1518,7 @@ size = Vector2i(545, 700)
 visible = false
 always_on_top = true
 
-[node name="ImageGenPanelContainer" type="PanelContainer" parent="ImageGenWindow"]
+[node name="ImageGenPanelContainer" type="PanelContainer" parent="ImageGenWindow" unique_id=335761945]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(50, 0)
 anchors_preset = 15
@@ -1525,17 +1528,17 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
 
-[node name="MarginContainer" type="MarginContainer" parent="ImageGenWindow/ImageGenPanelContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="ImageGenWindow/ImageGenPanelContainer" unique_id=160029439]
 layout_mode = 2
 theme_override_constants/margin_left = 5
 theme_override_constants/margin_top = 5
 theme_override_constants/margin_right = 5
 theme_override_constants/margin_bottom = 10
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer" unique_id=647675512]
 layout_mode = 2
 
-[node name="ConnectionLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
+[node name="ConnectionLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer" unique_id=1271040248]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
@@ -1546,29 +1549,29 @@ Connect to backend to
 access AI Features."
 vertical_alignment = 1
 
-[node name="ScrollContainer" type="ScrollContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer" unique_id=628252510]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer" unique_id=1622270833]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=1273086516]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer" unique_id=457345202]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/HBoxContainer" unique_id=1840150752]
 layout_mode = 2
 text = "Prompt:"
 
-[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/HBoxContainer" unique_id=1173775323]
 layout_mode = 2
 tooltip_text = "Prompts are where you describe what you want your image to be
 "
@@ -1579,7 +1582,7 @@ text = "  ?  "
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="PromptTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer"]
+[node name="PromptTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer" unique_id=426130197]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
@@ -1587,7 +1590,7 @@ size_flags_vertical = 3
 placeholder_text = "type prompt to generate image here ..."
 wrap_mode = 1
 
-[node name="PositivePromptMicButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit"]
+[node name="PositivePromptMicButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit" unique_id=1970817938]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 3
@@ -1604,7 +1607,7 @@ grow_vertical = 0
 tooltip_text = "Click to record positive prompt"
 icon = ExtResource("26_30sgg")
 
-[node name="PromptHistoryButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit"]
+[node name="PromptHistoryButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer/PromptTextEdit" unique_id=2077666577]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 3
@@ -1620,60 +1623,60 @@ grow_horizontal = 0
 grow_vertical = 0
 icon = ExtResource("47_hu8v1")
 
-[node name="3DContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
+[node name="3DContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=685613381]
 layout_mode = 2
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer" unique_id=14169683]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2" unique_id=1692407208]
 layout_mode = 2
 text = "Open Pose Editor: "
 
-[node name="3DPoseControllerButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2"]
+[node name="3DPoseControllerButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2" unique_id=936651626]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
 
-[node name="3DPoseViewportContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer"]
+[node name="3DPoseViewportContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer" unique_id=1314873926]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="PoseTexture" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewportContainer"]
+[node name="PoseTexture" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewportContainer" unique_id=1448412092]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
 size_flags_horizontal = 4
 expand_mode = 2
 
-[node name="UpdateButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewportContainer"]
+[node name="UpdateButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewportContainer" unique_id=1365150857]
 layout_mode = 2
 size_flags_horizontal = 2
 size_flags_vertical = 4
 text = "update"
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=283760345]
 visible = false
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer2" unique_id=714035789]
 layout_mode = 2
 text = "Spritesheet Generation:"
 
-[node name="SpriteSheetCheckButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer2"]
+[node name="SpriteSheetCheckButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer2" unique_id=1801990463]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
 
-[node name="WorkflowContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
+[node name="WorkflowContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=1963082657]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/WorkflowContainer"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/WorkflowContainer" unique_id=1300246942]
 layout_mode = 2
 text = "Workflow:"
 
-[node name="WorkflowOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/WorkflowContainer"]
+[node name="WorkflowOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/WorkflowContainer" unique_id=817869911]
 unique_name_in_owner = true
 layout_mode = 2
 selected = 0
@@ -1684,36 +1687,36 @@ popup/item_0/id = 0
 popup/item_1/text = "Qwen"
 popup/item_1/id = 1
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=1731262665]
 visible = false
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=584676662]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer" unique_id=1749071768]
 layout_mode = 2
 text = "Advanced Settings:"
 
-[node name="AdvancedSettingsCheckButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer"]
+[node name="AdvancedSettingsCheckButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/HBoxContainer" unique_id=283088319]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer"]
+[node name="AdvancedSettingsContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=1241647522]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6
 
-[node name="Cont" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="Cont" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer" unique_id=373034972]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/Cont"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/Cont" unique_id=368516563]
 layout_mode = 2
 text = "Negative prompt:"
 
-[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/Cont"]
+[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/Cont" unique_id=1435314084]
 layout_mode = 2
 tooltip_text = "Negative prompts are for
 keywords that describe something 
@@ -1725,7 +1728,7 @@ text = "  ?  "
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="NegativeTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="NegativeTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer" unique_id=1521804991]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 46)
 layout_mode = 2
@@ -1734,7 +1737,7 @@ text = "blurry, dark, ugly, low quality"
 wrap_mode = 1
 caret_blink = true
 
-[node name="NegativePromptMicButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit"]
+[node name="NegativePromptMicButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit" unique_id=356207243]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 3
@@ -1750,32 +1753,32 @@ grow_horizontal = 0
 grow_vertical = 0
 icon = ExtResource("26_30sgg")
 
-[node name="HFlowContainer" type="HFlowContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="HFlowContainer" type="HFlowContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer" unique_id=1517263430]
 layout_mode = 2
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer" unique_id=783677955]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ImageWidthLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
+[node name="ImageWidthLabel" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer" unique_id=1784195651]
 layout_mode = 2
 text = "Image Size(px):"
 
-[node name="ImageWidthOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer"]
+[node name="ImageWidthOptionButton" type="OptionButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer" unique_id=798853117]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 6
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer" unique_id=1016498782]
 layout_mode = 2
 size_flags_horizontal = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3" unique_id=1512453170]
 layout_mode = 2
 size_flags_horizontal = 6
 text = "Steps: "
 
-[node name="StepsSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3"]
+[node name="StepsSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer3" unique_id=1864955110]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
@@ -1786,16 +1789,16 @@ rounded = true
 alignment = 1
 custom_arrow_step = 1.0
 
-[node name="HBoxContainer4" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="HBoxContainer4" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer" unique_id=1359769163]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4"]
+[node name="Label2" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4" unique_id=1259359263]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "Cfg: "
 
-[node name="CFGSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4"]
+[node name="CFGSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/HBoxContainer4" unique_id=1898416499]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
@@ -1804,18 +1807,18 @@ step = 0.01
 value = 1.0
 alignment = 1
 
-[node name="DenoiseContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer"]
+[node name="DenoiseContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer" unique_id=1224835241]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 2
 theme_override_constants/separation = 21
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/DenoiseContainer"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/DenoiseContainer" unique_id=92487410]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "Denoise:"
 
-[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/DenoiseContainer"]
+[node name="DenoiseSpinBox" type="SpinBox" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HFlowContainer/DenoiseContainer" unique_id=91304321]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 2
@@ -1825,23 +1828,23 @@ value = 1.0
 alignment = 1
 custom_arrow_step = 1.0
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer" unique_id=271097528]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer6"]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer6" unique_id=859662113]
 layout_mode = 2
 text = "Seed:"
 
-[node name="SeedLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer6"]
+[node name="SeedLineEdit" type="LineEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/HBoxContainer6" unique_id=1902241510]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer" unique_id=1317811703]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="SendPromptButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+[node name="SendPromptButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3" unique_id=1814237706]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Generate Image (generates image image in a new layer using the provided prompt)"
@@ -1849,7 +1852,7 @@ icon = ExtResource("23_hm28v")
 alignment = 0
 icon_alignment = 1
 
-[node name="EditImgButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+[node name="EditImgButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3" unique_id=1516476940]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8
@@ -1857,7 +1860,7 @@ tooltip_text = "Edit selected Image (edits the currently selected layer with the
 disabled = true
 icon = ExtResource("24_spfkh")
 
-[node name="SendMaskEditButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3"]
+[node name="SendMaskEditButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3" unique_id=1836863024]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 8

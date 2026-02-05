@@ -211,7 +211,7 @@ func _create_bone_lines() -> void:
 
 	add_child(bone_lines_mesh)
 
-
+# TODO make if so this code does not run unless the editor is visible
 func _process(_delta: float) -> void:
 	_update_visual_positions()
 	_update_bone_lines()
