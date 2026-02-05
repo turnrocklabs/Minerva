@@ -215,6 +215,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.spreadsheet_editor = new_spreadsheet_editor
 
 		Editor.Type.PCB:
+			vbox_container.clip_contents = true
 			var pcb_editor_scene = load("res://Scenes/PCBEditor.tscn")
 			var new_pcb_editor = pcb_editor_scene.instantiate()
 			new_pcb_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL

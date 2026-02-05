@@ -64,6 +64,9 @@ var created_at: float = 0.0
 ## Display color
 var color: Color = Color(0.2, 0.8, 0.6, 0.8)  # Teal for route hints
 
+## Client-provided idempotency key (empty = no dedup)
+var client_id: String = ""
+
 
 ## Create a waypoint-only hint (just bend points)
 static func create_waypoint_hint(points: Array[Vector2], note: String = "", author_name: String = "human") -> PCBRouteHint:
@@ -286,7 +289,8 @@ func to_dict() -> Dictionary:
 		"author": author,
 		"text": text,
 		"color": color.to_html(),
-		"created_at": created_at
+		"created_at": created_at,
+		"client_id": client_id
 	}
 
 
@@ -335,6 +339,7 @@ func load_from_dict(data: Dictionary) -> void:
 		color = Color.from_string(color_str, Color(0.2, 0.8, 0.6, 0.8))
 
 	created_at = data.get("created_at", 0.0)
+	client_id = data.get("client_id", "")
 
 
 ## Create from dictionary (static constructor)

@@ -5,7 +5,6 @@ extends Control
 const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBSpatialIndexScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSpatialIndex.gd")
-const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
 
@@ -15,8 +14,6 @@ signal component_deselected(component_id: String)
 signal component_moved(component_id: String, new_position: Vector2)
 signal component_double_clicked(component_id: String)
 signal canvas_clicked(world_position: Vector2)
-signal suggestion_accepted(suggestion_id: String)
-signal suggestion_rejected(suggestion_id: String)
 signal zoom_changed(new_zoom: float)
 signal selection_changed()
 
@@ -111,9 +108,6 @@ signal route_hint_pin_requested(position: Vector2)  # Emitted when user needs to
 var selected_pin_info: Dictionary = {}  # {component, pin, position}
 signal pin_selected(pin_info: Dictionary)
 
-## Ghost layer for suggestion preview
-var active_suggestion_id: String = ""
-
 ## Colors
 var board_color: Color = Color(0.15, 0.25, 0.15, 1.0)
 var board_edge_color: Color = Color(0.4, 0.4, 0.4, 1.0)
@@ -156,13 +150,6 @@ var annotation_ai_color: Color = Color(0.3, 0.7, 0.9)     # Cyan for AI
 ## Route hint colors (by author)
 var route_hint_human_color: Color = Color(0.2, 0.8, 0.6, 0.8)  # Teal for human
 var route_hint_ai_color: Color = Color(0.6, 0.4, 0.9, 0.8)     # Purple for AI
-
-## Pin remap suggestion colors
-var pin_remap_old_color: Color = Color(0.9, 0.3, 0.3, 0.7)  # Red for old pin
-var pin_remap_new_color: Color = Color(0.3, 0.9, 0.3, 0.7)  # Green for new pin
-
-## Route suggestion colors
-var route_ghost_color: Color = Color(0.5, 0.8, 1.0, 0.6)  # Light blue for route ghost
 
 ## Font
 var font: Font
@@ -376,9 +363,6 @@ func _draw() -> void:
 	if show_ratsnest:
 		_draw_ratsnest()
 
-	# Draw suggestion ghosts
-	_draw_suggestion_ghosts()
-
 	# Draw annotations (on top of everything except selection)
 	if show_annotations:
 		_draw_annotations()
@@ -399,8 +383,6 @@ func _draw() -> void:
 	if is_drawing_route_hint or route_hint_mode != RouteHintMode.NONE:
 		_draw_route_hint_preview()
 
-	# Draw active suggestion arrow
-	_draw_suggestion_arrow()
 
 
 ## Draw the PCB board outline
@@ -835,144 +817,6 @@ func _get_rotated_rect_points(center: Vector2, size: Vector2, rotation_degrees: 
 	return result
 
 
-## Draw suggestion ghost overlay
-func _draw_suggestion_ghosts() -> void:
-	for sug_id in data.suggestions:
-		var suggestion: PCBSuggestionScript = data.suggestions[sug_id]
-		if not suggestion.is_pending():
-			continue
-
-		match suggestion.type:
-			PCBSuggestionScript.SuggestionType.MOVE:
-				_draw_move_ghost(suggestion)
-			PCBSuggestionScript.SuggestionType.ADD:
-				_draw_add_ghost(suggestion)
-			PCBSuggestionScript.SuggestionType.PIN_REMAP:
-				_draw_pin_remap_ghost(suggestion)
-			PCBSuggestionScript.SuggestionType.ROUTE:
-				_draw_route_ghost(suggestion)
-
-
-## Draw ghost for move suggestion
-func _draw_move_ghost(suggestion: PCBSuggestionScript) -> void:
-	var comp := data.get_component(suggestion.target_component)
-	if not comp:
-		return
-
-	var proposed_pos := suggestion.get_proposed_position()
-	var screen_pos := world_to_screen(proposed_pos)
-	var screen_size := Vector2(comp.width, comp.height) * zoom
-
-	# Draw ghost rectangle
-	var rect_points := _get_rotated_rect_points(screen_pos, screen_size, comp.rotation)
-	var ghost := ghost_color
-	if suggestion.id == active_suggestion_id:
-		ghost.a = 0.7
-	draw_colored_polygon(rect_points, ghost)
-	var ghost_outline_points: PackedVector2Array = rect_points.duplicate()
-	ghost_outline_points.append(rect_points[0])
-	draw_polyline(ghost_outline_points, ghost.lightened(0.3), 2.0)
-
-	# Draw ghost label
-	var label_pos := screen_pos - Vector2(0, screen_size.y / 2 + 10)
-	draw_string(font, label_pos, comp.id + " (proposed)", HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, ghost)
-
-
-## Draw ghost for add suggestion
-func _draw_add_ghost(suggestion: PCBSuggestionScript) -> void:
-	var pos_data: Dictionary = suggestion.proposed_state.get("position", {})
-	var pos := Vector2(pos_data.get("x", 0), pos_data.get("y", 0))
-	var screen_pos := world_to_screen(pos)
-
-	# Draw simple placeholder
-	var placeholder_size := Vector2(20, 10) * zoom
-	var rect := Rect2(screen_pos - placeholder_size / 2, placeholder_size)
-	draw_rect(rect, ghost_color)
-	draw_rect(rect, ghost_color.lightened(0.3), false, 2.0)
-
-
-## Draw ghost for pin remap suggestion
-func _draw_pin_remap_ghost(suggestion: PCBSuggestionScript) -> void:
-	var old_pin := suggestion.get_old_pin()
-	var new_pin := suggestion.get_new_pin()
-
-	var old_comp := data.get_component(old_pin.get("component", ""))
-	var new_comp := data.get_component(new_pin.get("component", ""))
-
-	if not old_comp or not new_comp:
-		return
-
-	var old_pin_name: String = old_pin.get("pin", "")
-	var new_pin_name: String = new_pin.get("pin", "")
-
-	var old_pos := old_comp.get_pin_world_position(old_pin_name)
-	var new_pos := new_comp.get_pin_world_position(new_pin_name)
-
-	var old_screen := world_to_screen(old_pos)
-	var new_screen := world_to_screen(new_pos)
-
-	# Draw dimmed old pin with X (red)
-	var marker_size := 6.0
-	draw_circle(old_screen, marker_size, pin_remap_old_color)
-	# Draw X over old pin
-	var x_size := 4.0
-	draw_line(old_screen - Vector2(x_size, x_size), old_screen + Vector2(x_size, x_size), Color.RED, 2.0)
-	draw_line(old_screen - Vector2(x_size, -x_size), old_screen + Vector2(x_size, -x_size), Color.RED, 2.0)
-
-	# Draw highlighted new pin (green)
-	draw_circle(new_screen, marker_size, pin_remap_new_color)
-	# Draw checkmark-like indicator
-	draw_circle(new_screen, marker_size - 2, Color(0.2, 0.8, 0.2, 1.0))
-
-	# Draw arrow from old to new
-	_draw_arrow(old_screen, new_screen, Color(0.8, 0.8, 0.3, 0.8), 2.0)
-
-	# Draw net name label at midpoint
-	var midpoint := (old_screen + new_screen) / 2.0
-	var net_name := suggestion.get_net_name()
-	if not net_name.is_empty():
-		draw_string(font, midpoint + Vector2(5, -5), net_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
-
-
-## Draw ghost for route suggestion
-func _draw_route_ghost(suggestion: PCBSuggestionScript) -> void:
-	var waypoints := suggestion.get_route_waypoints()
-	if waypoints.size() < 2:
-		return
-
-	var net_name := suggestion.get_net_name()
-	var width := suggestion.get_route_width()
-
-	# Get net color if available, otherwise use default
-	var color := route_ghost_color
-	var net = data.get_net(net_name)
-	if net:
-		color = net.color
-		color.a = 0.6
-
-	# Convert waypoints to screen coordinates
-	var screen_points: PackedVector2Array = []
-	for wp in waypoints:
-		screen_points.append(world_to_screen(wp))
-
-	# Draw dashed polyline for the route
-	var trace_width := maxf(width * zoom, 2.0)
-	for i in range(screen_points.size() - 1):
-		_draw_dashed_line(screen_points[i], screen_points[i + 1], color, trace_width, 8.0)
-
-	# Draw waypoint markers
-	var endpoint_radius := 5.0
-	var midpoint_radius := 3.0
-
-	for i in range(screen_points.size()):
-		var is_endpoint := (i == 0 or i == screen_points.size() - 1)
-		var radius := endpoint_radius if is_endpoint else midpoint_radius
-		draw_circle(screen_points[i], radius, color.lightened(0.2))
-		draw_arc(screen_points[i], radius, 0, TAU, 16, color.darkened(0.2), 1.5)
-
-	# Draw net name label near first waypoint
-	if not net_name.is_empty() and screen_points.size() > 0:
-		draw_string(font, screen_points[0] + Vector2(8, -8), net_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color.lightened(0.3))
 
 
 ## Draw all annotations
@@ -1149,6 +993,20 @@ func _draw_dashed_rect(rect: Rect2, color: Color, width: float, dash_length: flo
 
 
 ## Draw all route hints
+## Resolve a pin reference like "U1.15" to a world position.
+## Returns null if the component or pin is not found.
+func _resolve_pin_world_position(pin_ref: String) -> Variant:
+	var parsed := PCBRouteHintScript.parse_pin_ref(pin_ref)
+	if parsed.component.is_empty() or parsed.pin.is_empty():
+		return null
+	var comp = data.get_component(parsed.component)
+	if not comp:
+		return null
+	if not comp.pins.has(parsed.pin):
+		return null
+	return comp.get_pin_world_position(parsed.pin)
+
+
 func _draw_route_hints() -> void:
 	for hint_id in data.route_hints:
 		var hint: PCBRouteHintScript = data.route_hints[hint_id]
@@ -1157,7 +1015,7 @@ func _draw_route_hints() -> void:
 
 ## Draw a single route hint
 func _draw_route_hint(hint: PCBRouteHintScript) -> void:
-	if hint.waypoints.is_empty():
+	if hint.waypoints.is_empty() and hint.source_pins.is_empty() and hint.dest_pins.is_empty():
 		return
 
 	var color := hint.color
@@ -1212,37 +1070,52 @@ func _draw_waypoint_hint(hint: PCBRouteHintScript, screen_points: PackedVector2A
 
 ## Draw a single trace hint
 func _draw_single_trace_hint(hint: PCBRouteHintScript, screen_points: PackedVector2Array, color: Color) -> void:
+	# Build full path: resolved source pin -> waypoints -> resolved dest pin
+	var full_path: PackedVector2Array = []
+
+	if not hint.source_pins.is_empty():
+		var src_world = _resolve_pin_world_position(hint.source_pins[0])
+		if src_world != null:
+			full_path.append(world_to_screen(src_world))
+
+	for pt in screen_points:
+		full_path.append(pt)
+
+	if not hint.dest_pins.is_empty():
+		var dst_world = _resolve_pin_world_position(hint.dest_pins[0])
+		if dst_world != null:
+			full_path.append(world_to_screen(dst_world))
+
+	if full_path.size() < 2:
+		return
+
 	# Draw the path based on detail level
 	var line_width := 2.5 if hint.width <= 0 else hint.width * zoom
 
 	if hint.detail_level == PCBRouteHintScript.DetailLevel.DETAILED:
-		# Solid line for detailed hints
-		if screen_points.size() >= 2:
-			draw_polyline(screen_points, color, line_width)
+		draw_polyline(full_path, color, line_width)
 	else:
-		# Dashed line for sparse/guided hints
-		if screen_points.size() >= 2:
-			for i in range(screen_points.size() - 1):
-				_draw_dashed_line(screen_points[i], screen_points[i + 1], color, line_width, 8.0)
+		for i in range(full_path.size() - 1):
+			_draw_dashed_line(full_path[i], full_path[i + 1], color, line_width, 8.0)
 
 	# Draw waypoint markers
-	for i in range(screen_points.size()):
-		var is_endpoint := (i == 0 or i == screen_points.size() - 1)
+	for i in range(full_path.size()):
+		var is_endpoint := (i == 0 or i == full_path.size() - 1)
 		var marker_size := 6.0 if is_endpoint else 4.0
-		draw_circle(screen_points[i], marker_size, color)
+		draw_circle(full_path[i], marker_size, color)
 
 	# Draw pin labels at endpoints
-	if not hint.source_pins.is_empty() and screen_points.size() > 0:
-		draw_string(font, screen_points[0] + Vector2(-40, -8), hint.source_pins[0], HORIZONTAL_ALIGNMENT_RIGHT, -1, font_size - 2, color)
-	if not hint.dest_pins.is_empty() and screen_points.size() > 0:
-		var last_idx := screen_points.size() - 1
-		draw_string(font, screen_points[last_idx] + Vector2(8, -8), hint.dest_pins[0], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, color)
+	if not hint.source_pins.is_empty():
+		draw_string(font, full_path[0] + Vector2(-40, -8), hint.source_pins[0], HORIZONTAL_ALIGNMENT_RIGHT, -1, font_size - 2, color)
+	if not hint.dest_pins.is_empty():
+		var last_idx := full_path.size() - 1
+		draw_string(font, full_path[last_idx] + Vector2(8, -8), hint.dest_pins[0], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, color)
 
 	# Draw layer indicator
 	if not hint.layer.is_empty():
-		var mid_idx := screen_points.size() / 2
-		if mid_idx < screen_points.size():
-			draw_string(font, screen_points[mid_idx] + Vector2(0, 15), hint.layer, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, color.lightened(0.2))
+		var mid_idx := full_path.size() / 2
+		if mid_idx < full_path.size():
+			draw_string(font, full_path[mid_idx] + Vector2(0, 15), hint.layer, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, color.lightened(0.2))
 
 
 ## Draw a bus routing hint
@@ -1276,6 +1149,17 @@ func _draw_bus_hint(hint: PCBRouteHintScript, screen_points: PackedVector2Array,
 	# Determine entry/exit points for pin connections
 	var entry_point: Vector2 = screen_points[0] if screen_points.size() > 0 else Vector2.ZERO
 	var exit_point: Vector2 = screen_points[screen_points.size() - 1] if screen_points.size() > 0 else Vector2.ZERO
+
+	# When no waypoints, resolve entry/exit from first source/dest pin
+	if screen_points.is_empty():
+		if not hint.source_pins.is_empty():
+			var src_world = _resolve_pin_world_position(hint.source_pins[0])
+			if src_world != null:
+				entry_point = world_to_screen(src_world)
+		if not hint.dest_pins.is_empty():
+			var dst_world = _resolve_pin_world_position(hint.dest_pins[0])
+			if dst_world != null:
+				exit_point = world_to_screen(dst_world)
 
 	# Draw source pins connecting to corridor entry
 	if not hint.source_pins.is_empty() and data:
@@ -1656,25 +1540,6 @@ func _draw_inspect_pin_preview(cursor_pos: Vector2, preview_color: Color) -> voi
 		draw_arc(pin_screen, 6.0, 0, TAU, 32, Color(0.2, 0.8, 0.6), 2.0)
 
 
-## Draw arrow showing suggested move
-func _draw_suggestion_arrow() -> void:
-	if active_suggestion_id.is_empty():
-		return
-
-	var suggestion := data.get_suggestion(active_suggestion_id)
-	if not suggestion or suggestion.type != PCBSuggestionScript.SuggestionType.MOVE:
-		return
-
-	var comp := data.get_component(suggestion.target_component)
-	if not comp:
-		return
-
-	var from_pos := world_to_screen(comp.position)
-	var to_pos := world_to_screen(suggestion.get_proposed_position())
-
-	_draw_arrow(from_pos, to_pos, move_arrow_color, 2.0)
-
-
 ## Draw an arrow from start to end
 func _draw_arrow(start: Vector2, end: Vector2, color: Color, width: float) -> void:
 	draw_line(start, end, color, width)
@@ -1947,7 +1812,6 @@ func _handle_key_input(event: InputEventKey) -> void:
 				selected_annotation_id = ""
 				selected_route_hint_id = ""
 				selected_trace_id = ""
-				active_suggestion_id = ""
 			queue_redraw()
 		KEY_R:
 			# Rotate selected annotation, or rotate selected components, or enter region mode
@@ -2795,30 +2659,6 @@ func select_component(component_id: String, add_to_selection: bool = false) -> v
 		queue_redraw()
 
 
-## Set active suggestion for preview
-func set_active_suggestion(suggestion_id: String) -> void:
-	active_suggestion_id = suggestion_id
-	queue_redraw()
-
-
-## Accept the active suggestion
-func accept_active_suggestion() -> void:
-	if active_suggestion_id:
-		data.accept_suggestion(active_suggestion_id)
-		suggestion_accepted.emit(active_suggestion_id)
-		active_suggestion_id = ""
-		queue_redraw()
-
-
-## Reject the active suggestion
-func reject_active_suggestion() -> void:
-	if active_suggestion_id:
-		data.reject_suggestion(active_suggestion_id)
-		suggestion_rejected.emit(active_suggestion_id)
-		active_suggestion_id = ""
-		queue_redraw()
-
-
 ## Zoom to fit all components
 func zoom_to_fit() -> void:
 	if not data or data.components.is_empty():
@@ -2925,10 +2765,6 @@ func capture_to_image(width: int = 800, height: int = 600) -> Image:
 	pcb_copy.annotation_ai_color = annotation_ai_color
 	pcb_copy.route_hint_human_color = route_hint_human_color
 	pcb_copy.route_hint_ai_color = route_hint_ai_color
-	pcb_copy.pin_remap_old_color = pin_remap_old_color
-	pcb_copy.pin_remap_new_color = pin_remap_new_color
-	pcb_copy.route_ghost_color = route_ghost_color
-
 	# Copy font settings
 	pcb_copy.font = font
 	pcb_copy.font_size = font_size
@@ -2938,7 +2774,6 @@ func capture_to_image(width: int = 800, height: int = 600) -> Image:
 	pcb_copy.hovered_component = ""
 	pcb_copy.selected_annotation_id = ""
 	pcb_copy.selected_route_hint_id = ""
-	pcb_copy.active_suggestion_id = ""
 
 	viewport.add_child(pcb_copy)
 

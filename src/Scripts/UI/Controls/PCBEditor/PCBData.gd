@@ -5,7 +5,6 @@ extends RefCounted
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBNetScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBNet.gd")
 const PCBTraceScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBTrace.gd")
-const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
 
@@ -16,8 +15,6 @@ signal component_added(component_id: String)
 signal component_removed(component_id: String)
 signal net_changed(net_name: String)
 signal trace_changed(trace_id: String)
-signal suggestion_added(suggestion_id: String)
-signal suggestion_resolved(suggestion_id: String, accepted: bool)
 signal annotation_added(annotation_id: String)
 signal annotation_removed(annotation_id: String)
 signal route_hint_added(hint_id: String)
@@ -38,9 +35,6 @@ var components: Dictionary = {}   # component_id -> PCBComponent
 var nets: Dictionary = {}         # net_name -> PCBNet
 var traces: Dictionary = {}       # trace_id -> PCBTrace
 var vias: Array[Dictionary] = []  # [{position, size, drill, net_name, layers}]
-
-## AI suggestions (pending proposals)
-var suggestions: Dictionary = {}  # suggestion_id -> PCBSuggestion
 
 ## Annotations (collaborative overlays)
 var annotations: Dictionary = {}  # annotation_id -> PCBAnnotation
@@ -335,113 +329,6 @@ func add_via(via_data: Dictionary) -> void:
 #endregion
 
 
-#region Suggestion Management
-
-## Add an AI suggestion
-func add_suggestion(suggestion: PCBSuggestionScript) -> void:
-	if suggestion.id.is_empty():
-		push_error("[PCBData] Suggestion must have an ID")
-		return
-
-	suggestions[suggestion.id] = suggestion
-	suggestion_added.emit(suggestion.id)
-	data_changed.emit()
-
-
-## Get a suggestion by ID
-func get_suggestion(suggestion_id: String) -> PCBSuggestionScript:
-	return suggestions.get(suggestion_id, null)
-
-
-## Get all pending suggestions
-func get_pending_suggestions() -> Array[PCBSuggestionScript]:
-	var result: Array[PCBSuggestionScript] = []
-	for sug_id in suggestions:
-		if suggestions[sug_id].is_pending():
-			result.append(suggestions[sug_id])
-	return result
-
-
-## Accept a suggestion
-func accept_suggestion(suggestion_id: String) -> bool:
-	var suggestion := get_suggestion(suggestion_id)
-	if not suggestion or not suggestion.is_pending():
-		return false
-
-	# Apply the suggestion based on type
-	match suggestion.type:
-		PCBSuggestionScript.SuggestionType.MOVE:
-			var proposed_pos := suggestion.get_proposed_position()
-			move_component(suggestion.target_component, proposed_pos)
-
-		PCBSuggestionScript.SuggestionType.ROTATE:
-			var proposed_rot := suggestion.get_proposed_rotation()
-			rotate_component(suggestion.target_component, proposed_rot)
-
-		PCBSuggestionScript.SuggestionType.ADD:
-			var component := PCBComponentScript.new()
-			component.load_from_dict(suggestion.proposed_state)
-			add_component(component)
-
-		PCBSuggestionScript.SuggestionType.DELETE:
-			remove_component(suggestion.target_component)
-
-		PCBSuggestionScript.SuggestionType.PIN_REMAP:
-			var net_name := suggestion.get_net_name()
-			var old_pin := suggestion.get_old_pin()
-			var new_pin := suggestion.get_new_pin()
-			# Disconnect old pin and connect new pin
-			disconnect_pin_from_net(net_name, old_pin.get("component", ""), old_pin.get("pin", ""))
-			connect_pin_to_net(net_name, new_pin.get("component", ""), new_pin.get("pin", ""))
-
-		PCBSuggestionScript.SuggestionType.ROUTE:
-			var trace := PCBTraceScript.new()
-			trace.net_name = suggestion.get_net_name()
-			trace.layer = suggestion.get_route_layer()
-			trace.width = suggestion.get_route_width()
-			var waypoints := suggestion.get_route_waypoints()
-			for wp in waypoints:
-				trace.waypoints.append(wp)
-			add_trace(trace)
-
-	suggestion.accept()
-	suggestion_resolved.emit(suggestion_id, true)
-	data_changed.emit()
-	return true
-
-
-## Reject a suggestion
-func reject_suggestion(suggestion_id: String) -> void:
-	var suggestion := get_suggestion(suggestion_id)
-	if suggestion:
-		suggestion.reject()
-		suggestion_resolved.emit(suggestion_id, false)
-		data_changed.emit()
-
-
-## Remove a suggestion
-func remove_suggestion(suggestion_id: String) -> void:
-	if suggestions.has(suggestion_id):
-		suggestions.erase(suggestion_id)
-		data_changed.emit()
-
-
-## Clear all resolved suggestions
-func clear_resolved_suggestions() -> void:
-	var to_remove: Array[String] = []
-	for sug_id in suggestions:
-		if not suggestions[sug_id].is_pending():
-			to_remove.append(sug_id)
-
-	for sug_id in to_remove:
-		suggestions.erase(sug_id)
-
-	if to_remove.size() > 0:
-		data_changed.emit()
-
-#endregion
-
-
 #region Annotation Management
 
 ## Add an annotation
@@ -533,18 +420,24 @@ func clear_annotations(author: String = "") -> void:
 
 #region Route Hint Management
 
-## Add a route hint
-func add_route_hint(hint: PCBRouteHintScript) -> void:
+## Add a route hint. Returns the hint that was added (or the existing one if client_id matched).
+func add_route_hint(hint: PCBRouteHintScript) -> PCBRouteHintScript:
 	if hint.id.is_empty():
 		push_error("[PCBData] Route hint must have an ID")
-		return
+		return null
+
+	# Idempotency: if client_id is set and matches an existing hint, return the existing one
+	if not hint.client_id.is_empty():
+		for existing_id in route_hints:
+			if route_hints[existing_id].client_id == hint.client_id:
+				return route_hints[existing_id]
 
 	# Reject self-referencing hints
 	if hint.hint_type == PCBRouteHintScript.HintType.SINGLE_TRACE:
 		if not hint.source_pins.is_empty() and not hint.dest_pins.is_empty():
 			if hint.source_pins[0] == hint.dest_pins[0]:
 				push_warning("[PCBData] Rejected self-referencing single_trace hint: %s" % hint.source_pins[0])
-				return
+				return null
 	elif hint.hint_type == PCBRouteHintScript.HintType.BUS:
 		if not hint.source_pins.is_empty() and hint.source_pins.size() == hint.dest_pins.size():
 			var all_same := true
@@ -554,7 +447,7 @@ func add_route_hint(hint: PCBRouteHintScript) -> void:
 					break
 			if all_same:
 				push_warning("[PCBData] Rejected self-referencing bus hint: all sources match destinations")
-				return
+				return null
 
 	route_hints[hint.id] = hint
 	record_change("add_route_hint", {
@@ -564,6 +457,7 @@ func add_route_hint(hint: PCBRouteHintScript) -> void:
 	})
 	route_hint_added.emit(hint.id)
 	data_changed.emit()
+	return hint
 
 
 ## Get a route hint by ID
@@ -799,10 +693,6 @@ func to_dict() -> Dictionary:
 	for id in traces:
 		trace_dict[id] = traces[id].to_dict()
 
-	var sug_dict := {}
-	for id in suggestions:
-		sug_dict[id] = suggestions[id].to_dict()
-
 	var ann_dict := {}
 	for id in annotations:
 		ann_dict[id] = annotations[id].to_dict()
@@ -831,7 +721,6 @@ func to_dict() -> Dictionary:
 		"nets": net_dict,
 		"traces": trace_dict,
 		"vias": vias_arr,
-		"suggestions": sug_dict,
 		"annotations": ann_dict,
 		"route_hints": hint_dict
 	}
@@ -894,13 +783,6 @@ func load_from_dict(data: Dictionary) -> void:
 					else:
 						via_entry["position"] = Vector2.ZERO
 			vias.append(via_entry)
-
-	# Load suggestions
-	suggestions.clear()
-	var sug_data: Dictionary = data.get("suggestions", {})
-	for id in sug_data:
-		var suggestion = PCBSuggestionScript.from_dict(sug_data[id])
-		suggestions[id] = suggestion
 
 	# Load annotations
 	annotations.clear()
@@ -1042,7 +924,6 @@ func clear() -> void:
 	nets.clear()
 	traces.clear()
 	vias.clear()
-	suggestions.clear()
 	annotations.clear()
 	route_hints.clear()
 	history.clear()

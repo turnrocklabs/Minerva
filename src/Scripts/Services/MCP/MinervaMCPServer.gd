@@ -252,14 +252,6 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _pcb_rotate_component(arguments)
 		"minerva_pcb_delete_component":
 			return _pcb_delete_component(arguments)
-		"minerva_pcb_suggest_move":
-			return _pcb_suggest_move(arguments)
-		"minerva_pcb_get_suggestions":
-			return _pcb_get_suggestions(arguments)
-		"minerva_pcb_accept_suggestion":
-			return _pcb_accept_suggestion(arguments)
-		"minerva_pcb_reject_suggestion":
-			return _pcb_reject_suggestion(arguments)
 		"minerva_pcb_connect_net":
 			return _pcb_connect_net(arguments)
 		"minerva_pcb_export_csv":
@@ -292,10 +284,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _pcb_interpret_route_hints(arguments)
 		"minerva_pcb_get_change_journal":
 			return _pcb_get_change_journal(arguments)
-		"minerva_pcb_suggest_pin_remap":
-			return _pcb_suggest_pin_remap(arguments)
-		"minerva_pcb_suggest_route":
-			return _pcb_suggest_route(arguments)
+		"minerva_pcb_get_pin_position":
+			return _pcb_get_pin_position(arguments)
 		"minerva_pcb_get_image":
 			return await _pcb_get_image(arguments)
 		"minerva_pcb_create_note":
@@ -3973,7 +3963,6 @@ const PCBEditorScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBEditor.
 const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBTraceScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBTrace.gd")
-const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
 
@@ -4091,6 +4080,28 @@ func _register_pcb_tools() -> void:
 				}
 			},
 			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_pcb_get_pin_position",
+		"Get the world position and info for a specific pin on a component. Useful for calculating waypoints or verifying pin locations before creating route hints.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				},
+				"component_id": {
+					"type": "string",
+					"description": "Component ID (e.g., 'U3', 'R1')"
+				},
+				"pin": {
+					"type": "string",
+					"description": "Pin name or number (e.g., '1', 'VCC', 'SDA')"
+				}
+			},
+			"required": ["editor_name", "component_id", "pin"]
 		}
 	)
 
@@ -4239,82 +4250,6 @@ func _register_pcb_tools() -> void:
 				}
 			},
 			"required": ["editor_name", "component_id"]
-		}
-	)
-
-	_register_tool("minerva_pcb_suggest_move",
-		"Propose a component move as a suggestion (creates ghost preview for user approval).",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "Name of the PCB editor tab"
-				},
-				"component_id": {
-					"type": "string",
-					"description": "Component ID to suggest moving"
-				},
-				"direction": {
-					"type": "string",
-					"description": "Natural language direction or absolute: 'closer to U2', 'down a bit', or '25.4,12.7' for absolute"
-				},
-				"reason": {
-					"type": "string",
-					"description": "Reason for the suggestion (shown to user)"
-				}
-			},
-			"required": ["editor_name", "component_id", "direction"]
-		}
-	)
-
-	_register_tool("minerva_pcb_get_suggestions",
-		"Get all pending AI suggestions for a PCB.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "Name of the PCB editor tab"
-				}
-			},
-			"required": ["editor_name"]
-		}
-	)
-
-	_register_tool("minerva_pcb_accept_suggestion",
-		"Accept a pending suggestion.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "Name of the PCB editor tab"
-				},
-				"suggestion_id": {
-					"type": "string",
-					"description": "Suggestion ID to accept"
-				}
-			},
-			"required": ["editor_name", "suggestion_id"]
-		}
-	)
-
-	_register_tool("minerva_pcb_reject_suggestion",
-		"Reject a pending suggestion.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "Name of the PCB editor tab"
-				},
-				"suggestion_id": {
-					"type": "string",
-					"description": "Suggestion ID to reject"
-				}
-			},
-			"required": ["editor_name", "suggestion_id"]
 		}
 	)
 
@@ -4642,6 +4577,10 @@ func _register_pcb_tools() -> void:
 				"text": {
 					"type": "string",
 					"description": "Additional notes or description"
+				},
+				"client_id": {
+					"type": "string",
+					"description": "Optional idempotency key. If a hint with this client_id already exists, the existing hint is returned instead of creating a duplicate."
 				}
 			},
 			"required": ["editor_name", "hint_type"]
@@ -4713,86 +4652,6 @@ func _register_pcb_tools() -> void:
 				}
 			},
 			"required": ["editor_name"]
-		}
-	)
-
-	# New suggestion tools
-	_register_tool("minerva_pcb_suggest_pin_remap",
-		"Suggest remapping a net connection from one pin to another. Creates a visual preview showing the old pin (red X) and new pin (green) for user approval.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "Name of the PCB editor tab"
-				},
-				"net_name": {
-					"type": "string",
-					"description": "Name of the net to remap (e.g., 'I2C_SDA', 'VCC')"
-				},
-				"old_component": {
-					"type": "string",
-					"description": "Component ID of the current pin connection (e.g., 'U1')"
-				},
-				"old_pin": {
-					"type": "string",
-					"description": "Current pin name/number (e.g., '12', 'SDA')"
-				},
-				"new_component": {
-					"type": "string",
-					"description": "Component ID for the new pin connection (can be same as old_component)"
-				},
-				"new_pin": {
-					"type": "string",
-					"description": "New pin name/number to connect to (e.g., '8', 'GPIO5')"
-				},
-				"reason": {
-					"type": "string",
-					"description": "Reason for the suggestion (shown to user)"
-				}
-			},
-			"required": ["editor_name", "net_name", "old_component", "old_pin", "new_component", "new_pin"]
-		}
-	)
-
-	_register_tool("minerva_pcb_suggest_route",
-		"Suggest a routing path for a net. Creates a dashed polyline preview showing the proposed trace for user approval.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "Name of the PCB editor tab"
-				},
-				"net_name": {
-					"type": "string",
-					"description": "Name of the net to route (e.g., 'VCC', 'GND', 'SDA')"
-				},
-				"waypoints": {
-					"type": "array",
-					"description": "Array of waypoints defining the route path [{x, y}, ...]",
-					"items": {
-						"type": "object",
-						"properties": {
-							"x": {"type": "number"},
-							"y": {"type": "number"}
-						}
-					}
-				},
-				"layer": {
-					"type": "string",
-					"description": "PCB layer for the trace: 'top' or 'bottom'. Default: 'top'"
-				},
-				"width": {
-					"type": "number",
-					"description": "Trace width in mm. Common values: 0.15, 0.2, 0.25, 0.3, 0.5, 1.0. Default: 0.25"
-				},
-				"reason": {
-					"type": "string",
-					"description": "Reason for the suggestion (shown to user)"
-				}
-			},
-			"required": ["editor_name", "net_name", "waypoints"]
 		}
 	)
 
@@ -5098,6 +4957,63 @@ func _pcb_get_nets(args: Dictionary) -> Dictionary:
 	}
 
 
+## Get pin world position and info
+func _pcb_get_pin_position(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var component_id: String = args.get("component_id", "")
+	var pin: String = args.get("pin", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+	if component_id.is_empty():
+		return {"error": "component_id is required", "success": false}
+	if pin.is_empty():
+		return {"error": "pin is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	var comp = data.get_component(component_id)
+	if not comp:
+		return {"error": "Component not found: %s" % component_id, "success": false}
+
+	# Build available pins list for self-correction on error
+	var available_pins: Array = []
+	for pin_name in comp.pins:
+		var symbolic_name: String = comp.get_pin_name(str(pin_name))
+		var entry := {"pin": str(pin_name)}
+		if not symbolic_name.is_empty():
+			entry["name"] = symbolic_name
+		available_pins.append(entry)
+
+	if not comp.pins.has(pin):
+		return {
+			"error": "Pin '%s' not found on component '%s'" % [pin, component_id],
+			"success": false,
+			"available_pins": available_pins
+		}
+
+	var world_pos: Vector2 = comp.get_pin_world_position(pin)
+	var symbolic_name: String = comp.get_pin_name(pin)
+
+	var result := {
+		"success": true,
+		"world_position": {"x": float(world_pos.x), "y": float(world_pos.y)},
+		"component_position": {"x": float(comp.position.x), "y": float(comp.position.y)},
+		"component_rotation": float(comp.rotation),
+		"pin": str(pin),
+		"pin_name": symbolic_name,
+		"available_pins": available_pins
+	}
+
+	return result
+
+
 ## Add a component
 func _pcb_add_component(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
@@ -5315,115 +5231,6 @@ func _pcb_delete_component(args: Dictionary) -> Dictionary:
 	}
 
 
-## Suggest move
-func _pcb_suggest_move(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-	var component_id: String = args.get("component_id", "")
-	var direction: String = args.get("direction", "")
-	var reason: String = args.get("reason", "")
-
-	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
-	if component_id.is_empty():
-		return {"error": "component_id is required", "success": false}
-	if direction.is_empty():
-		return {"error": "direction is required", "success": false}
-
-	var pcb_editor = _find_pcb_editor(editor_name)
-	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
-
-	var suggestion_id = pcb_editor.suggest_move(component_id, direction, reason)
-	if suggestion_id.is_empty():
-		return {"error": "Failed to create suggestion", "success": false}
-
-	return {
-		"success": true,
-		"suggestion_id": suggestion_id,
-		"message": "Suggestion created. User will see a ghost preview and can accept or reject."
-	}
-
-
-## Get pending suggestions
-func _pcb_get_suggestions(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-
-	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
-
-	var pcb_editor = _find_pcb_editor(editor_name)
-	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
-
-	var data = pcb_editor.get_data()
-	if not data:
-		return {"error": "PCB data not available", "success": false}
-
-	var pending = data.get_pending_suggestions()
-	var suggestions: Array = []
-
-	for sug in pending:
-		suggestions.append({
-			"id": sug.id,
-			"type": PCBSuggestionScript.SuggestionType.keys()[sug.type],
-			"description": sug.description,
-			"target": sug.target_component,
-			"reason": sug.reason
-		})
-
-	return {
-		"success": true,
-		"pending_count": suggestions.size(),
-		"suggestions": suggestions
-	}
-
-
-## Accept suggestion
-func _pcb_accept_suggestion(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-	var suggestion_id: String = args.get("suggestion_id", "")
-
-	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
-	if suggestion_id.is_empty():
-		return {"error": "suggestion_id is required", "success": false}
-
-	var pcb_editor = _find_pcb_editor(editor_name)
-	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
-
-	var data = pcb_editor.get_data()
-	if not data:
-		return {"error": "PCB data not available", "success": false}
-
-	if data.accept_suggestion(suggestion_id):
-		return {"success": true, "accepted": suggestion_id}
-	else:
-		return {"error": "Failed to accept suggestion: %s" % suggestion_id, "success": false}
-
-
-## Reject suggestion
-func _pcb_reject_suggestion(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-	var suggestion_id: String = args.get("suggestion_id", "")
-
-	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
-	if suggestion_id.is_empty():
-		return {"error": "suggestion_id is required", "success": false}
-
-	var pcb_editor = _find_pcb_editor(editor_name)
-	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
-
-	var data = pcb_editor.get_data()
-	if not data:
-		return {"error": "PCB data not available", "success": false}
-
-	data.reject_suggestion(suggestion_id)
-	return {"success": true, "rejected": suggestion_id}
-
-
 ## Connect pins to net
 func _pcb_connect_net(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
@@ -5445,20 +5252,34 @@ func _pcb_connect_net(args: Dictionary) -> Dictionary:
 	if not data:
 		return {"error": "PCB data not available", "success": false}
 
-	var connected: Array = []
+	# Collect operations first
+	var operations: Array = []
 	for pin_info in pins:
 		if pin_info is Dictionary:
 			var comp_id: String = pin_info.get("component", "")
 			var pin_name: String = pin_info.get("pin", "")
 			if not comp_id.is_empty() and not pin_name.is_empty():
-				data.connect_pin_to_net(net_name, comp_id, pin_name)
-				connected.append("%s.%s" % [comp_id, pin_name])
+				operations.append({"component": comp_id, "pin": pin_name})
 
-	return {
+	# Build result and test serialization before committing
+	var connected: Array = []
+	for op in operations:
+		connected.append("%s.%s" % [str(op.component), str(op.pin)])
+
+	var result := {
 		"success": true,
-		"net_name": net_name,
+		"net_name": str(net_name),
 		"connected_pins": connected
 	}
+	var test_json := JSON.stringify(result)
+	if test_json.is_empty():
+		return {"error": "Internal serialization error", "success": false}
+
+	# Commit all operations
+	for op in operations:
+		data.connect_pin_to_net(net_name, op.component, op.pin)
+
+	return result
 
 
 ## Export CSV
@@ -5814,14 +5635,19 @@ func _pcb_add_annotation(args: Dictionary) -> Dictionary:
 	if not associated_net.is_empty():
 		annotation.associated_net = associated_net
 
-	data.add_annotation(annotation)
-
-	return {
+	# Transactional: build result and test serialization before committing
+	var result := {
 		"success": true,
-		"annotation_id": annotation.id,
-		"type": type_str,
-		"description": annotation.get_description()
+		"annotation_id": str(annotation.id),
+		"type": str(type_str),
+		"description": str(annotation.get_description())
 	}
+	var test_json := JSON.stringify(result)
+	if test_json.is_empty():
+		return {"error": "Internal serialization error", "success": false}
+
+	data.add_annotation(annotation)
+	return result
 
 
 ## List annotations
@@ -5936,106 +5762,6 @@ func _pcb_clear_annotations(args: Dictionary) -> Dictionary:
 	}
 
 
-## Suggest pin remap
-func _pcb_suggest_pin_remap(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-	var net_name: String = args.get("net_name", "")
-	var old_component: String = args.get("old_component", "")
-	var old_pin: String = args.get("old_pin", "")
-	var new_component: String = args.get("new_component", "")
-	var new_pin: String = args.get("new_pin", "")
-	var reason: String = args.get("reason", "")
-
-	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
-	if net_name.is_empty():
-		return {"error": "net_name is required", "success": false}
-	if old_component.is_empty():
-		return {"error": "old_component is required", "success": false}
-	if old_pin.is_empty():
-		return {"error": "old_pin is required", "success": false}
-	if new_component.is_empty():
-		return {"error": "new_component is required", "success": false}
-	if new_pin.is_empty():
-		return {"error": "new_pin is required", "success": false}
-
-	var pcb_editor = _find_pcb_editor(editor_name)
-	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
-
-	var data = pcb_editor.get_data()
-	if not data:
-		return {"error": "PCB data not available", "success": false}
-
-	# Validate components exist
-	if not data.has_component(old_component):
-		return {"error": "Component not found: %s" % old_component, "success": false}
-	if not data.has_component(new_component):
-		return {"error": "Component not found: %s" % new_component, "success": false}
-
-	# Create suggestion
-	var suggestion: PCBSuggestionScript = PCBSuggestionScript.create_pin_remap_suggestion(
-		net_name, old_component, old_pin, new_component, new_pin, reason
-	)
-
-	data.add_suggestion(suggestion)
-
-	return {
-		"success": true,
-		"suggestion_id": suggestion.id,
-		"description": suggestion.description,
-		"message": "Pin remap suggestion created. User will see old pin (red X) and new pin (green) for approval."
-	}
-
-
-## Suggest route
-func _pcb_suggest_route(args: Dictionary) -> Dictionary:
-	var editor_name: String = args.get("editor_name", "")
-	var net_name: String = args.get("net_name", "")
-	var waypoints_arr: Array = args.get("waypoints", [])
-	var layer: String = args.get("layer", "top")
-	var width: float = args.get("width", 0.25)
-	var reason: String = args.get("reason", "")
-
-	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
-	if net_name.is_empty():
-		return {"error": "net_name is required", "success": false}
-	if waypoints_arr.size() < 2:
-		return {"error": "waypoints requires at least 2 points", "success": false}
-
-	var pcb_editor = _find_pcb_editor(editor_name)
-	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
-
-	var data = pcb_editor.get_data()
-	if not data:
-		return {"error": "PCB data not available", "success": false}
-
-	# Convert waypoints to the format expected by suggestion
-	var waypoints: Array = []
-	for wp_data in waypoints_arr:
-		if wp_data is Dictionary:
-			waypoints.append({"x": wp_data.get("x", 0), "y": wp_data.get("y", 0)})
-
-	# Create suggestion
-	var suggestion: PCBSuggestionScript = PCBSuggestionScript.create_route_suggestion(
-		net_name, waypoints, layer, width, reason
-	)
-
-	data.add_suggestion(suggestion)
-
-	return {
-		"success": true,
-		"suggestion_id": suggestion.id,
-		"description": suggestion.description,
-		"waypoint_count": waypoints.size(),
-		"layer": layer,
-		"width_mm": width,
-		"message": "Route suggestion created. User will see a dashed line preview for approval."
-	}
-
-
 ## Add a routing hint
 func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
@@ -6047,6 +5773,7 @@ func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
 	var width: float = args.get("width", 0.0)
 	var bus_spacing: float = args.get("bus_spacing", 0.0)
 	var text: String = args.get("text", "")
+	var client_id: String = args.get("client_id", "")
 
 	if editor_name.is_empty():
 		return {"error": "editor_name is required", "success": false}
@@ -6103,16 +5830,34 @@ func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
 	if not layer.is_empty():
 		hint.layer = layer
 
-	data.add_route_hint(hint)
+	# Set client_id for idempotency
+	if not client_id.is_empty():
+		hint.client_id = client_id
 
-	return {
+	var created_id := hint.id
+	var returned_hint = data.add_route_hint(hint)
+	if returned_hint == null:
+		return {"error": "Route hint was rejected (self-referencing)", "success": false}
+
+	var is_duplicate: bool = (returned_hint.id != created_id)
+
+	var result := {
 		"success": true,
-		"hint_id": hint.id,
+		"hint_id": str(returned_hint.id),
 		"hint_type": hint_type_str,
-		"detail_level": PCBRouteHintScript.DetailLevel.keys()[hint.detail_level],
-		"waypoint_count": waypoints.size(),
-		"description": hint.get_description()
+		"detail_level": str(PCBRouteHintScript.DetailLevel.keys()[returned_hint.detail_level]),
+		"waypoint_count": int(waypoints.size()),
+		"description": str(returned_hint.get_description())
 	}
+	if is_duplicate:
+		result["duplicate"] = true
+
+	# Transactional: test serialization before returning
+	var test_json := JSON.stringify(result)
+	if test_json.is_empty():
+		return {"error": "Internal serialization error", "success": false}
+
+	return result
 
 
 ## List route hints

@@ -7,13 +7,11 @@ const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBCanvasScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBCanvas.gd")
 const PCBSpatialIndexScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSpatialIndex.gd")
-const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 
 ## Signals
 signal data_changed()
 signal component_selected(component_id: String)
-signal suggestion_pending(suggestion_id: String)
 
 ## Data model
 var data: PCBDataScript = null
@@ -30,12 +28,6 @@ var is_modified: bool = false
 var canvas: PCBCanvasScript = null
 var toolbar: HBoxContainer = null
 var properties_panel: VBoxContainer = null
-var suggestion_bar: HBoxContainer = null
-
-## Suggestion bar elements
-var suggestion_label: Label = null
-var accept_button: Button = null
-var reject_button: Button = null
 
 ## Tool mode buttons (Select, Translate, Rotate)
 var tool_buttons: Dictionary = {}  # mode -> Button
@@ -144,10 +136,6 @@ func _build_ui() -> void:
 	properties_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right_sidebar.add_child(properties_panel)
 
-	# Bottom - suggestion bar
-	suggestion_bar = _create_suggestion_bar()
-	suggestion_bar.visible = false  # Hidden until there are suggestions
-	main_vbox.add_child(suggestion_bar)
 
 
 func _create_toolbar() -> HBoxContainer:
@@ -454,40 +442,11 @@ func _create_properties_panel() -> VBoxContainer:
 	return panel
 
 
-func _create_suggestion_bar() -> HBoxContainer:
-	var bar := HBoxContainer.new()
-	bar.name = "SuggestionBar"
-	bar.custom_minimum_size.y = 40
-
-	var icon := Label.new()
-	icon.text = "AI:"
-	bar.add_child(icon)
-
-	suggestion_label = Label.new()
-	suggestion_label.text = "No suggestions"
-	suggestion_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(suggestion_label)
-
-	accept_button = Button.new()
-	accept_button.text = "Accept"
-	accept_button.pressed.connect(_on_accept_suggestion)
-	bar.add_child(accept_button)
-
-	reject_button = Button.new()
-	reject_button.text = "Reject"
-	reject_button.pressed.connect(_on_reject_suggestion)
-	bar.add_child(reject_button)
-
-	return bar
-
-
 func _connect_signals() -> void:
 	# Canvas signals
 	canvas.component_selected.connect(_on_component_selected)
 	canvas.component_moved.connect(_on_component_moved)
 	canvas.component_double_clicked.connect(_on_component_double_clicked)
-	canvas.suggestion_accepted.connect(_on_suggestion_accepted)
-	canvas.suggestion_rejected.connect(_on_suggestion_rejected)
 	canvas.selection_changed.connect(_on_selection_changed)
 
 	# Tool mode signals
@@ -505,8 +464,6 @@ func _connect_signals() -> void:
 
 	# Data signals
 	data.data_changed.connect(_on_data_changed)
-	data.suggestion_added.connect(_on_suggestion_added)
-	data.suggestion_resolved.connect(_on_suggestion_resolved)
 
 	# Set data to canvas
 	canvas.set_data(data)
@@ -534,14 +491,6 @@ func _on_component_double_clicked(component_id: String) -> void:
 	print("[PCBEditor] Double clicked: ", component_id)
 
 
-func _on_suggestion_accepted(suggestion_id: String) -> void:
-	_update_suggestion_bar()
-
-
-func _on_suggestion_rejected(suggestion_id: String) -> void:
-	_update_suggestion_bar()
-
-
 func _on_selection_changed() -> void:
 	var selected := canvas.get_selected_components()
 	if selected.size() == 1:
@@ -559,23 +508,6 @@ func _on_data_changed() -> void:
 func _update_board_size_label() -> void:
 	if board_size_label and data:
 		board_size_label.text = "Board: %sx%smm" % [data.board_width, data.board_height]
-
-
-func _on_suggestion_added(suggestion_id: String) -> void:
-	_update_suggestion_bar()
-	suggestion_pending.emit(suggestion_id)
-
-
-func _on_suggestion_resolved(suggestion_id: String, accepted: bool) -> void:
-	_update_suggestion_bar()
-
-
-func _on_accept_suggestion() -> void:
-	canvas.accept_active_suggestion()
-
-
-func _on_reject_suggestion() -> void:
-	canvas.reject_active_suggestion()
 
 
 ## Toggle tool mode from sidebar button
@@ -770,28 +702,6 @@ func _clear_properties_panel() -> void:
 #endregion
 
 
-#region Suggestion Bar
-
-func _update_suggestion_bar() -> void:
-	var pending := data.get_pending_suggestions()
-	if pending.is_empty():
-		suggestion_bar.visible = false
-		canvas.set_active_suggestion("")
-		return
-
-	suggestion_bar.visible = true
-
-	# Show first pending suggestion
-	var suggestion := pending[0]
-	suggestion_label.text = suggestion.description
-	if not suggestion.reason.is_empty():
-		suggestion_label.text += " - " + suggestion.reason
-
-	canvas.set_active_suggestion(suggestion.id)
-
-#endregion
-
-
 #region Public API
 
 ## Get the PCB data
@@ -870,26 +780,6 @@ func move_component_relative(component_id: String, description: String) -> Vecto
 		data.save_to_history("Move " + component_id)
 		data.move_component(component_id, data.snap_to_grid(new_pos))
 	return new_pos
-
-
-## Create a suggestion for moving a component
-func suggest_move(component_id: String, direction: String, reason: String = "") -> String:
-	var comp := data.get_component(component_id)
-	if not comp:
-		return ""
-
-	var new_pos := spatial_index.interpret_relative_move(component_id, direction)
-	new_pos = data.snap_to_grid(new_pos)
-
-	var suggestion = PCBSuggestionScript.create_move_suggestion(
-		component_id,
-		comp.position,
-		new_pos,
-		reason
-	)
-
-	data.add_suggestion(suggestion)
-	return suggestion.id
 
 
 ## Get component context description
