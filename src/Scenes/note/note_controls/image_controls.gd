@@ -23,9 +23,13 @@ var image: Image:
 		_image_cache = value.duplicate() if value else null
 
 		if is_node_ready():
-			_texture_rect.texture = ImageTexture.create_from_image(value)
-			if value.has_meta("caption"): # extract caption if available
-				caption = value.get_meta("caption")
+			# Only set texture if we have a valid, non-empty image
+			if value and not value.is_empty():
+				_texture_rect.texture = ImageTexture.create_from_image(value)
+				if value.has_meta("caption"): # extract caption if available
+					caption = value.get_meta("caption")
+			else:
+				push_warning("[NoteImageControls] Received null or empty image")
 		else:
 			_image_backing = value
 
@@ -65,13 +69,16 @@ func setup(owner_note: Note, note_image: Image, image_caption: String = ""):
 
 
 func _ready() -> void:
-	# Only create texture if we have a backing image (set before ready)
-	if _image_backing:
+	# Only create texture if we have a valid, non-empty backing image (set before ready)
+	if _image_backing and not _image_backing.is_empty():
 		_texture_rect.texture = ImageTexture.create_from_image(_image_backing)
 		if _image_backing.has_meta("caption"): # extract caption if available
 			caption = _image_backing.get_meta("caption")
 		# Populate cache from backing image
 		_image_cache = _image_backing.duplicate()
+		_image_backing = null
+	elif _image_backing:
+		push_warning("[NoteImageControls] Backing image was empty")
 		_image_backing = null
 
 	_caption_line_edit.text = _caption_backing

@@ -5,7 +5,6 @@ extends RefCounted
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBNetScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBNet.gd")
 const PCBTraceScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBTrace.gd")
-const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
 
@@ -16,8 +15,6 @@ signal component_added(component_id: String)
 signal component_removed(component_id: String)
 signal net_changed(net_name: String)
 signal trace_changed(trace_id: String)
-signal suggestion_added(suggestion_id: String)
-signal suggestion_resolved(suggestion_id: String, accepted: bool)
 signal annotation_added(annotation_id: String)
 signal annotation_removed(annotation_id: String)
 signal route_hint_added(hint_id: String)
@@ -37,9 +34,7 @@ var layers: Array[String] = ["top", "bottom"]
 var components: Dictionary = {}   # component_id -> PCBComponent
 var nets: Dictionary = {}         # net_name -> PCBNet
 var traces: Dictionary = {}       # trace_id -> PCBTrace
-
-## AI suggestions (pending proposals)
-var suggestions: Dictionary = {}  # suggestion_id -> PCBSuggestion
+var vias: Array[Dictionary] = []  # [{position, size, drill, net_name, layers}]
 
 ## Annotations (collaborative overlays)
 var annotations: Dictionary = {}  # annotation_id -> PCBAnnotation
@@ -51,6 +46,11 @@ var route_hints: Dictionary = {}  # hint_id -> PCBRouteHint
 var history: Array[Dictionary] = []
 var history_index: int = -1
 const MAX_HISTORY_SIZE := 50
+
+## Change journal — append-only log of forward actions (not undo/redo)
+var change_journal: Array[Dictionary] = []
+const MAX_JOURNAL_SIZE := 200
+signal journal_entry_added(entry: Dictionary)
 
 ## Next trace ID counter
 var _next_trace_id: int = 1
@@ -89,6 +89,8 @@ func remove_component(component_id: String) -> void:
 	if not components.has(component_id):
 		return
 
+	record_change("remove_component", {"component_id": component_id})
+
 	# Remove from all nets
 	for net_name in nets:
 		nets[net_name].remove_component_pins(component_id)
@@ -102,7 +104,13 @@ func remove_component(component_id: String) -> void:
 func move_component(component_id: String, new_position: Vector2) -> void:
 	var component := get_component(component_id)
 	if component:
+		var old_position := component.position
 		component.position = new_position
+		record_change("move_component", {
+			"component_id": component_id,
+			"old_position": {"x": old_position.x, "y": old_position.y},
+			"new_position": {"x": new_position.x, "y": new_position.y}
+		})
 		component_changed.emit(component_id)
 		data_changed.emit()
 
@@ -111,7 +119,13 @@ func move_component(component_id: String, new_position: Vector2) -> void:
 func rotate_component(component_id: String, degrees: float) -> void:
 	var component := get_component(component_id)
 	if component:
+		var old_rotation := component.rotation
 		component.set_rotation(degrees)
+		record_change("rotate_component", {
+			"component_id": component_id,
+			"old_rotation": old_rotation,
+			"new_rotation": degrees
+		})
 		component_changed.emit(component_id)
 		data_changed.emit()
 
@@ -254,6 +268,13 @@ func get_trace(trace_id: String) -> PCBTraceScript:
 ## Remove a trace
 func remove_trace(trace_id: String) -> void:
 	if traces.has(trace_id):
+		var trace = traces[trace_id]
+		record_change("remove_trace", {
+			"trace_id": trace_id,
+			"net_name": trace.net_name,
+			"layer": trace.layer,
+			"segment_count": maxi(0, trace.waypoints.size() - 1)
+		})
 		traces.erase(trace_id)
 		trace_changed.emit(trace_id)
 		data_changed.emit()
@@ -275,112 +296,35 @@ func get_trace_ids() -> Array[String]:
 		result.append(id)
 	return result
 
-#endregion
+
+## Get trace at a position (for hit testing)
+## Returns the closest trace ID, preferring shorter traces when multiple match
+func get_trace_at(position: Vector2, threshold: float = 1.0) -> String:
+	var best_id: String = ""
+	var best_length: float = INF
+
+	for trace_id in traces:
+		var trace: PCBTraceScript = traces[trace_id]
+		if trace.is_point_near(position, threshold):
+			var trace_length: float = trace.get_length()
+			if trace_length < best_length:
+				best_length = trace_length
+				best_id = trace_id
+
+	return best_id
 
 
-#region Suggestion Management
-
-## Add an AI suggestion
-func add_suggestion(suggestion: PCBSuggestionScript) -> void:
-	if suggestion.id.is_empty():
-		push_error("[PCBData] Suggestion must have an ID")
-		return
-
-	suggestions[suggestion.id] = suggestion
-	suggestion_added.emit(suggestion.id)
+## Clear all traces and vias
+func clear_traces() -> void:
+	traces.clear()
+	vias.clear()
+	_next_trace_id = 1
 	data_changed.emit()
 
 
-## Get a suggestion by ID
-func get_suggestion(suggestion_id: String) -> PCBSuggestionScript:
-	return suggestions.get(suggestion_id, null)
-
-
-## Get all pending suggestions
-func get_pending_suggestions() -> Array[PCBSuggestionScript]:
-	var result: Array[PCBSuggestionScript] = []
-	for sug_id in suggestions:
-		if suggestions[sug_id].is_pending():
-			result.append(suggestions[sug_id])
-	return result
-
-
-## Accept a suggestion
-func accept_suggestion(suggestion_id: String) -> bool:
-	var suggestion := get_suggestion(suggestion_id)
-	if not suggestion or not suggestion.is_pending():
-		return false
-
-	# Apply the suggestion based on type
-	match suggestion.type:
-		PCBSuggestionScript.SuggestionType.MOVE:
-			var proposed_pos := suggestion.get_proposed_position()
-			move_component(suggestion.target_component, proposed_pos)
-
-		PCBSuggestionScript.SuggestionType.ROTATE:
-			var proposed_rot := suggestion.get_proposed_rotation()
-			rotate_component(suggestion.target_component, proposed_rot)
-
-		PCBSuggestionScript.SuggestionType.ADD:
-			var component := PCBComponentScript.new()
-			component.load_from_dict(suggestion.proposed_state)
-			add_component(component)
-
-		PCBSuggestionScript.SuggestionType.DELETE:
-			remove_component(suggestion.target_component)
-
-		PCBSuggestionScript.SuggestionType.PIN_REMAP:
-			var net_name := suggestion.get_net_name()
-			var old_pin := suggestion.get_old_pin()
-			var new_pin := suggestion.get_new_pin()
-			# Disconnect old pin and connect new pin
-			disconnect_pin_from_net(net_name, old_pin.get("component", ""), old_pin.get("pin", ""))
-			connect_pin_to_net(net_name, new_pin.get("component", ""), new_pin.get("pin", ""))
-
-		PCBSuggestionScript.SuggestionType.ROUTE:
-			var trace := PCBTraceScript.new()
-			trace.net_name = suggestion.get_net_name()
-			trace.layer = suggestion.get_route_layer()
-			trace.width = suggestion.get_route_width()
-			var waypoints := suggestion.get_route_waypoints()
-			for wp in waypoints:
-				trace.waypoints.append(wp)
-			add_trace(trace)
-
-	suggestion.accept()
-	suggestion_resolved.emit(suggestion_id, true)
-	data_changed.emit()
-	return true
-
-
-## Reject a suggestion
-func reject_suggestion(suggestion_id: String) -> void:
-	var suggestion := get_suggestion(suggestion_id)
-	if suggestion:
-		suggestion.reject()
-		suggestion_resolved.emit(suggestion_id, false)
-		data_changed.emit()
-
-
-## Remove a suggestion
-func remove_suggestion(suggestion_id: String) -> void:
-	if suggestions.has(suggestion_id):
-		suggestions.erase(suggestion_id)
-		data_changed.emit()
-
-
-## Clear all resolved suggestions
-func clear_resolved_suggestions() -> void:
-	var to_remove: Array[String] = []
-	for sug_id in suggestions:
-		if not suggestions[sug_id].is_pending():
-			to_remove.append(sug_id)
-
-	for sug_id in to_remove:
-		suggestions.erase(sug_id)
-
-	if to_remove.size() > 0:
-		data_changed.emit()
+## Add a via
+func add_via(via_data: Dictionary) -> void:
+	vias.append(via_data)
 
 #endregion
 
@@ -476,15 +420,44 @@ func clear_annotations(author: String = "") -> void:
 
 #region Route Hint Management
 
-## Add a route hint
-func add_route_hint(hint: PCBRouteHintScript) -> void:
+## Add a route hint. Returns the hint that was added (or the existing one if client_id matched).
+func add_route_hint(hint: PCBRouteHintScript) -> PCBRouteHintScript:
 	if hint.id.is_empty():
 		push_error("[PCBData] Route hint must have an ID")
-		return
+		return null
+
+	# Idempotency: if client_id is set and matches an existing hint, return the existing one
+	if not hint.client_id.is_empty():
+		for existing_id in route_hints:
+			if route_hints[existing_id].client_id == hint.client_id:
+				return route_hints[existing_id]
+
+	# Reject self-referencing hints
+	if hint.hint_type == PCBRouteHintScript.HintType.SINGLE_TRACE:
+		if not hint.source_pins.is_empty() and not hint.dest_pins.is_empty():
+			if hint.source_pins[0] == hint.dest_pins[0]:
+				push_warning("[PCBData] Rejected self-referencing single_trace hint: %s" % hint.source_pins[0])
+				return null
+	elif hint.hint_type == PCBRouteHintScript.HintType.BUS:
+		if not hint.source_pins.is_empty() and hint.source_pins.size() == hint.dest_pins.size():
+			var all_same := true
+			for i in range(hint.source_pins.size()):
+				if hint.source_pins[i] != hint.dest_pins[i]:
+					all_same = false
+					break
+			if all_same:
+				push_warning("[PCBData] Rejected self-referencing bus hint: all sources match destinations")
+				return null
 
 	route_hints[hint.id] = hint
+	record_change("add_route_hint", {
+		"hint_id": hint.id,
+		"hint_type": PCBRouteHintScript.HintType.keys()[hint.hint_type],
+		"author": hint.author
+	})
 	route_hint_added.emit(hint.id)
 	data_changed.emit()
+	return hint
 
 
 ## Get a route hint by ID
@@ -667,6 +640,43 @@ func _restore_state(state: Dictionary) -> void:
 #endregion
 
 
+#region Change Journal
+
+## Record a change to the journal
+func record_change(action: String, details: Dictionary) -> void:
+	var entry := {
+		"timestamp": Time.get_unix_time_from_system(),
+		"action": action,
+		"details": details
+	}
+	change_journal.append(entry)
+
+	# Enforce max size — drop oldest entries
+	while change_journal.size() > MAX_JOURNAL_SIZE:
+		change_journal.remove_at(0)
+
+	journal_entry_added.emit(entry)
+
+
+## Get journal entries, optionally filtered by timestamp
+func get_change_journal(since_timestamp: float = 0.0) -> Array[Dictionary]:
+	if since_timestamp <= 0.0:
+		return change_journal.duplicate()
+
+	var result: Array[Dictionary] = []
+	for entry in change_journal:
+		if entry.get("timestamp", 0.0) >= since_timestamp:
+			result.append(entry)
+	return result
+
+
+## Clear all journal entries
+func clear_change_journal() -> void:
+	change_journal.clear()
+
+#endregion
+
+
 #region Serialization
 
 ## Serialize the entire PCB data
@@ -683,10 +693,6 @@ func to_dict() -> Dictionary:
 	for id in traces:
 		trace_dict[id] = traces[id].to_dict()
 
-	var sug_dict := {}
-	for id in suggestions:
-		sug_dict[id] = suggestions[id].to_dict()
-
 	var ann_dict := {}
 	for id in annotations:
 		ann_dict[id] = annotations[id].to_dict()
@@ -694,6 +700,15 @@ func to_dict() -> Dictionary:
 	var hint_dict := {}
 	for id in route_hints:
 		hint_dict[id] = route_hints[id].to_dict()
+
+	# Serialize vias (convert Vector2 positions to Dictionary for JSON safety)
+	var vias_arr: Array = []
+	for via in vias:
+		var via_copy = via.duplicate()
+		if via_copy.has("position") and via_copy["position"] is Vector2:
+			var p: Vector2 = via_copy["position"]
+			via_copy["position"] = {"x": p.x, "y": p.y}
+		vias_arr.append(via_copy)
 
 	return {
 		"version": 1,
@@ -705,7 +720,7 @@ func to_dict() -> Dictionary:
 		"components": comp_dict,
 		"nets": net_dict,
 		"traces": trace_dict,
-		"suggestions": sug_dict,
+		"vias": vias_arr,
 		"annotations": ann_dict,
 		"route_hints": hint_dict
 	}
@@ -744,12 +759,30 @@ func load_from_dict(data: Dictionary) -> void:
 		var trace = PCBTraceScript.from_dict(trace_data[id])
 		traces[id] = trace
 
-	# Load suggestions
-	suggestions.clear()
-	var sug_data: Dictionary = data.get("suggestions", {})
-	for id in sug_data:
-		var suggestion = PCBSuggestionScript.from_dict(sug_data[id])
-		suggestions[id] = suggestion
+	# Load vias
+	vias.clear()
+	var vias_data: Array = data.get("vias", [])
+	for via_data in vias_data:
+		if via_data is Dictionary:
+			var via_entry: Dictionary = via_data.duplicate()
+			if via_data.has("position"):
+				var pos = via_data["position"]
+				if pos is Vector2:
+					via_entry["position"] = pos
+				elif pos is Dictionary:
+					via_entry["position"] = Vector2(
+						pos.get("x", 0), pos.get("y", 0))
+				elif pos is String:
+					# Handle "(x, y)" from JSON round-trip of Vector2
+					var s: String = str(pos).replace("(", "").replace(")", "").strip_edges()
+					var parts: PackedStringArray = s.split(",")
+					if parts.size() >= 2:
+						via_entry["position"] = Vector2(
+							float(parts[0].strip_edges()),
+							float(parts[1].strip_edges()))
+					else:
+						via_entry["position"] = Vector2.ZERO
+			vias.append(via_entry)
 
 	# Load annotations
 	annotations.clear()
@@ -764,6 +797,11 @@ func load_from_dict(data: Dictionary) -> void:
 	for id in hint_data:
 		var hint = PCBRouteHintScript.from_dict(hint_data[id])
 		route_hints[id] = hint
+
+	# Save baseline snapshot so the first action can be undone
+	history.clear()
+	history_index = -1
+	save_to_history("Load")
 
 	structure_changed.emit()
 	data_changed.emit()
@@ -885,11 +923,13 @@ func clear() -> void:
 	components.clear()
 	nets.clear()
 	traces.clear()
-	suggestions.clear()
+	vias.clear()
 	annotations.clear()
 	route_hints.clear()
 	history.clear()
 	history_index = -1
+	_next_trace_id = 1
+	change_journal.clear()
 	structure_changed.emit()
 	data_changed.emit()
 

@@ -215,12 +215,14 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.spreadsheet_editor = new_spreadsheet_editor
 
 		Editor.Type.PCB:
+			vbox_container.clip_contents = true
 			var pcb_editor_scene = load("res://Scenes/PCBEditor.tscn")
 			var new_pcb_editor = pcb_editor_scene.instantiate()
 			new_pcb_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			new_pcb_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(new_pcb_editor)
 			editor.pcb_editor = new_pcb_editor
+			new_pcb_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
 
 	return editor
 
@@ -250,7 +252,7 @@ func _ready():
 			Type.GRAPHICS: _load_graphics_file(file)
 			Type.VIDEO: video_player.video_path = file
 	
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -482,6 +484,12 @@ func get_saved_state() -> int:
 				# TODO: Add proper save tracking for spreadsheet
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
+		Type.PCB:
+			if not pcb_editor or not pcb_editor.is_modified:
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+		Type.KANBAN:
+			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 	return state
 
@@ -616,6 +624,10 @@ func _on_create_note_button_pressed() -> void:
 		Type.SPREADSHEET:
 			var markdown_content: String = spreadsheet_editor.spreadsheet_data.to_markdown()
 			new_note = Note.create_spreadsheet_note(tab_title, tab_title, markdown_content)
+		Type.PCB:
+			var pcb_image = await pcb_editor.canvas.capture_to_image(800, 600)
+			# Full PCB note with state for Edit button restoration
+			new_note = Note.create_pcb_note(tab_title, pcb_image, pcb_editor.data.to_dict())
 		_:
 			new_note = Note.create_error_note(tab_title, "Can't create a note for the specified Editor type (%s)" % type)
 
@@ -874,6 +886,30 @@ func undo_action():
 		Type.GRAPHICS:
 			if graphics_editor:
 				graphics_editor.undo_command()
+		Type.PCB:
+			if pcb_editor:
+				if pcb_editor.data.undo():
+					pcb_editor.canvas.queue_redraw()
+		Type.SPREADSHEET:
+			if spreadsheet_editor:
+				spreadsheet_editor._perform_undo()
+
+
+func redo_action():
+	match type:
+		Type.TEXT:
+			code_edit.redo()
+			code_edit.grab_focus()
+		Type.GRAPHICS:
+			if graphics_editor:
+				graphics_editor.redo_command()
+		Type.PCB:
+			if pcb_editor:
+				if pcb_editor.data.redo():
+					pcb_editor.canvas.queue_redraw()
+		Type.SPREADSHEET:
+			if spreadsheet_editor:
+				spreadsheet_editor._perform_redo()
 
 func clear_text():
 	if Type.TEXT != type:
@@ -893,7 +929,7 @@ func _on_mic_button_pressed() -> void:
 
 ## Returns whether or not this editor instance can be turned into a [class Note] objects
 func _supports_note():
-	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET]
+	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET, Type.PCB]
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
@@ -926,6 +962,12 @@ func _create_note() -> Note:
 			var csv_content = spreadsheet_editor.get_content()
 			note = Note.create_text_note("Spreadsheet Note", csv_content)
 			print("[Editor] Spreadsheet note created: %s" % note)
+		Type.PCB:
+			print("[Editor] Creating PCB image note for LLM...")
+			var image = await pcb_editor.canvas.capture_to_image(800, 600)
+			# Simple image note for LLM context (transient, no Edit needed)
+			note = Note.create_image_note("PCB Note", image)
+			print("[Editor] PCB image note created: %s" % note)
 
 	note.enabled = true
 	print("[Editor] _create_note() returning note: %s" % note)
@@ -944,6 +986,13 @@ func _update_note(note: Note) -> void:
 	elif type == Type.SPREADSHEET:
 		var controls_container = note.get_controls_container() as NoteTextControls
 		controls_container.content = spreadsheet_editor.spreadsheet_data.to_markdown()
+
+	elif type == Type.PCB:
+		var controls_container = note.get_controls_container() as NoteImageControls
+		controls_container.image = await pcb_editor.canvas.capture_to_image(800, 600)
+		# If this is a persistent note (has linked_pcb_data), update the PCB state too
+		if not note.linked_pcb_data.is_empty():
+			note.linked_pcb_data = JSON.stringify(pcb_editor.data.to_dict())
 
 
 var _proxy_note: Note.Proxy

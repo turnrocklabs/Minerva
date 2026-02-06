@@ -530,6 +530,16 @@ func _on_undo_button_pressed():
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
+func _on_redo_button_pressed():
+	var current_tab = %EditorPane.Tabs.get_current_tab_control()
+	if current_tab:
+		if current_tab.get_class() == "ScrollContainer":
+			current_tab.get_node("NoteEditor").redo_action()
+		else:
+			current_tab.redo_action()
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+
+
 func _on_add_file_editor_pressed() -> void:
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.TEXT)
 

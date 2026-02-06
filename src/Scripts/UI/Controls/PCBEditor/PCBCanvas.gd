@@ -5,7 +5,6 @@ extends Control
 const PCBDataScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBData.gd")
 const PCBComponentScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBComponent.gd")
 const PCBSpatialIndexScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSpatialIndex.gd")
-const PCBSuggestionScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBSuggestion.gd")
 const PCBAnnotationScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBAnnotation.gd")
 const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRouteHint.gd")
 
@@ -15,8 +14,6 @@ signal component_deselected(component_id: String)
 signal component_moved(component_id: String, new_position: Vector2)
 signal component_double_clicked(component_id: String)
 signal canvas_clicked(world_position: Vector2)
-signal suggestion_accepted(suggestion_id: String)
-signal suggestion_rejected(suggestion_id: String)
 signal zoom_changed(new_zoom: float)
 signal selection_changed()
 
@@ -56,8 +53,13 @@ var is_box_selecting: bool = false
 var box_select_start: Vector2 = Vector2.ZERO
 var box_select_end: Vector2 = Vector2.ZERO
 
+## General tool mode (works on components and annotations)
+enum ToolMode { NONE, SELECT, TRANSLATE, ROTATE }
+var tool_mode: ToolMode = ToolMode.NONE
+signal tool_mode_changed(mode: ToolMode)
+
 ## Annotation drawing mode
-enum AnnotationMode { NONE, SELECT, ARROW, TEXT, REGION, POLYLINE }
+enum AnnotationMode { NONE, ARROW, TEXT, REGION, POLYLINE }
 var annotation_mode: AnnotationMode = AnnotationMode.NONE
 var is_drawing_annotation: bool = false
 var annotation_points: Array[Vector2] = []  # World coordinates
@@ -75,7 +77,7 @@ signal annotation_text_requested(position: Vector2)  # Emitted when text annotat
 signal annotation_created(annotation_id: String)
 
 ## Route hint drawing mode
-enum RouteHintMode { NONE, WAYPOINT, SINGLE_TRACE, BUS }
+enum RouteHintMode { NONE, WAYPOINT, SINGLE_TRACE, BUS, INSPECT_PIN }
 var route_hint_mode: RouteHintMode = RouteHintMode.NONE
 var is_drawing_route_hint: bool = false
 var route_hint_points: Array[Vector2] = []  # World coordinates for waypoints
@@ -94,13 +96,17 @@ var bus_waypoints: Array[Vector2] = []       # Shared corridor waypoints
 ## Route hint selection state
 var selected_route_hint_id: String = ""
 
+## Trace selection state
+var selected_trace_id: String = ""
+
 ## Signal for route hint mode changes
 signal route_hint_mode_changed(mode: RouteHintMode)
 signal route_hint_created(hint_id: String)
 signal route_hint_pin_requested(position: Vector2)  # Emitted when user needs to select a pin
 
-## Ghost layer for suggestion preview
-var active_suggestion_id: String = ""
+## Selected pin state (for INSPECT_PIN mode)
+var selected_pin_info: Dictionary = {}  # {component, pin, position}
+signal pin_selected(pin_info: Dictionary)
 
 ## Colors
 var board_color: Color = Color(0.15, 0.25, 0.15, 1.0)
@@ -113,6 +119,9 @@ var component_hover_color: Color = Color(0.25, 0.7, 0.35, 1.0)
 var pin_color: Color = Color(0.9, 0.75, 0.3, 1.0)
 var label_color: Color = Color.WHITE
 var trace_color: Color = Color(0.8, 0.2, 0.2, 1.0)
+var trace_top_color: Color = Color(0.9, 0.3, 0.3, 1.0)  # Red for top layer (F.Cu)
+var trace_bottom_color: Color = Color(0.3, 0.5, 0.9, 1.0)  # Blue for bottom layer (B.Cu)
+var trace_selected_color: Color = Color(1.0, 1.0, 0.3, 1.0)
 var ratsnest_color: Color = Color(0.5, 0.5, 0.8, 0.5)
 var selection_box_color: Color = Color(0.3, 0.5, 0.8, 0.3)
 var selection_border_color: Color = Color(0.4, 0.6, 0.9, 1.0)
@@ -142,13 +151,6 @@ var annotation_ai_color: Color = Color(0.3, 0.7, 0.9)     # Cyan for AI
 var route_hint_human_color: Color = Color(0.2, 0.8, 0.6, 0.8)  # Teal for human
 var route_hint_ai_color: Color = Color(0.6, 0.4, 0.9, 0.8)     # Purple for AI
 
-## Pin remap suggestion colors
-var pin_remap_old_color: Color = Color(0.9, 0.3, 0.3, 0.7)  # Red for old pin
-var pin_remap_new_color: Color = Color(0.3, 0.9, 0.3, 0.7)  # Green for new pin
-
-## Route suggestion colors
-var route_ghost_color: Color = Color(0.5, 0.8, 1.0, 0.6)  # Light blue for route ghost
-
 ## Font
 var font: Font
 var font_size: int = 12
@@ -175,6 +177,23 @@ func _ready() -> void:
 	_create_context_menu()
 
 
+func _exit_tree() -> void:
+	# Release focus to prevent input events being sent to a removed node
+	if has_focus():
+		release_focus()
+
+	# Stop receiving mouse events
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# Clear any ongoing interaction state to prevent callbacks
+	is_panning = false
+	is_dragging_component = false
+	is_box_selecting = false
+	is_drawing_annotation = false
+	is_dragging_annotation = false
+	is_drawing_route_hint = false
+
+
 ## Create the right-click context menu
 func _create_context_menu() -> void:
 	context_menu = PopupMenu.new()
@@ -184,7 +203,6 @@ func _create_context_menu() -> void:
 	# Add annotation submenu
 	var annotation_menu := PopupMenu.new()
 	annotation_menu.name = "AnnotationMenu"
-	annotation_menu.add_item("Select (S)", 0)
 	annotation_menu.add_item("Arrow (A)", 1)
 	annotation_menu.add_item("Text (T)", 2)
 	annotation_menu.add_item("Region (R)", 3)
@@ -257,7 +275,6 @@ func _update_context_menu_for_selection() -> void:
 ## Handle annotation submenu selection
 func _on_annotation_menu_pressed(id: int) -> void:
 	match id:
-		0: set_annotation_mode(AnnotationMode.SELECT)
 		1: set_annotation_mode(AnnotationMode.ARROW)
 		2: set_annotation_mode(AnnotationMode.TEXT)
 		3: set_annotation_mode(AnnotationMode.REGION)
@@ -335,19 +352,16 @@ func _draw() -> void:
 	if show_grid:
 		_draw_grid()
 
-	# Draw traces
-	if show_traces:
-		_draw_traces()
-
 	# Draw components
 	_draw_components()
+
+	# Draw traces (on top of components for visibility)
+	if show_traces:
+		_draw_traces()
 
 	# Draw ratsnest (unrouted connections) - drawn AFTER components so lines are visible on top
 	if show_ratsnest:
 		_draw_ratsnest()
-
-	# Draw suggestion ghosts
-	_draw_suggestion_ghosts()
 
 	# Draw annotations (on top of everything except selection)
 	if show_annotations:
@@ -369,8 +383,6 @@ func _draw() -> void:
 	if is_drawing_route_hint or route_hint_mode != RouteHintMode.NONE:
 		_draw_route_hint_preview()
 
-	# Draw active suggestion arrow
-	_draw_suggestion_arrow()
 
 
 ## Draw the PCB board outline
@@ -422,23 +434,75 @@ func _draw_grid() -> void:
 
 ## Draw all traces
 func _draw_traces() -> void:
+	# Draw bottom layer first (underneath top layer)
 	for trace_id in data.traces:
 		var trace = data.traces[trace_id]
-		if trace.waypoints.size() < 2:
+		if trace.layer != "bottom":
 			continue
+		_draw_single_trace(trace, true)
 
-		var net = data.get_net(trace.net_name)
-		var color := trace_color
+	# Draw top layer on top
+	for trace_id in data.traces:
+		var trace = data.traces[trace_id]
+		if trace.layer == "bottom":
+			continue
+		_draw_single_trace(trace, false)
+
+	# Draw vias (on top of all traces)
+	for via in data.vias:
+		var pos_data = via.get("position", Vector2.ZERO)
+		var pos: Vector2
+		if pos_data is Vector2:
+			pos = world_to_screen(pos_data)
+		elif pos_data is Dictionary:
+			pos = world_to_screen(Vector2(pos_data.get("x", 0), pos_data.get("y", 0)))
+		else:
+			continue  # Skip malformed via data
+
+		var outer_radius: float = (via.get("size", 0.8) / 2.0) * zoom
+		var inner_radius: float = (via.get("drill", 0.4) / 2.0) * zoom
+
+		# Get net color if available
+		var color := pad_copper_color
+		var net = data.get_net(via.get("net_name", ""))
 		if net:
 			color = net.color
 
-		var points: PackedVector2Array = []
-		for wp in trace.waypoints:
-			points.append(world_to_screen(wp))
+		# Draw via as filled circle with hole
+		draw_circle(pos, maxf(outer_radius, 2.0), color)
+		draw_circle(pos, maxf(inner_radius, 1.0), drill_hole_color)
 
-		if points.size() >= 2:
-			var trace_width = trace.width * zoom
-			draw_polyline(points, color, maxf(trace_width, 1.0))
+
+## Draw a single trace with layer-appropriate styling
+func _draw_single_trace(trace, is_bottom_layer: bool) -> void:
+	if trace.waypoints.size() < 2:
+		return
+
+	# Use pure layer colors for clear distinction
+	var color := trace_bottom_color if is_bottom_layer else trace_top_color
+	var is_selected: bool = (trace.id == selected_trace_id) and not selected_trace_id.is_empty()
+
+	if is_selected:
+		color = trace_selected_color
+
+	var points: PackedVector2Array = []
+	for wp in trace.waypoints:
+		points.append(world_to_screen(wp))
+
+	if points.size() >= 2:
+		var trace_width = trace.width * zoom
+
+		# Draw glow behind selected trace
+		if is_selected:
+			var glow_color := Color(trace_selected_color, 0.25)
+			draw_polyline(points, glow_color, maxf(trace_width + 6.0, 4.0))
+
+		draw_polyline(points, color, maxf(trace_width, 1.0))
+
+		# Draw waypoint markers on selected trace
+		if is_selected:
+			for pt in points:
+				draw_circle(pt, 3.0, trace_selected_color)
 
 
 ## Draw ratsnest (unrouted net connections)
@@ -753,144 +817,6 @@ func _get_rotated_rect_points(center: Vector2, size: Vector2, rotation_degrees: 
 	return result
 
 
-## Draw suggestion ghost overlay
-func _draw_suggestion_ghosts() -> void:
-	for sug_id in data.suggestions:
-		var suggestion: PCBSuggestionScript = data.suggestions[sug_id]
-		if not suggestion.is_pending():
-			continue
-
-		match suggestion.type:
-			PCBSuggestionScript.SuggestionType.MOVE:
-				_draw_move_ghost(suggestion)
-			PCBSuggestionScript.SuggestionType.ADD:
-				_draw_add_ghost(suggestion)
-			PCBSuggestionScript.SuggestionType.PIN_REMAP:
-				_draw_pin_remap_ghost(suggestion)
-			PCBSuggestionScript.SuggestionType.ROUTE:
-				_draw_route_ghost(suggestion)
-
-
-## Draw ghost for move suggestion
-func _draw_move_ghost(suggestion: PCBSuggestionScript) -> void:
-	var comp := data.get_component(suggestion.target_component)
-	if not comp:
-		return
-
-	var proposed_pos := suggestion.get_proposed_position()
-	var screen_pos := world_to_screen(proposed_pos)
-	var screen_size := Vector2(comp.width, comp.height) * zoom
-
-	# Draw ghost rectangle
-	var rect_points := _get_rotated_rect_points(screen_pos, screen_size, comp.rotation)
-	var ghost := ghost_color
-	if suggestion.id == active_suggestion_id:
-		ghost.a = 0.7
-	draw_colored_polygon(rect_points, ghost)
-	var ghost_outline_points: PackedVector2Array = rect_points.duplicate()
-	ghost_outline_points.append(rect_points[0])
-	draw_polyline(ghost_outline_points, ghost.lightened(0.3), 2.0)
-
-	# Draw ghost label
-	var label_pos := screen_pos - Vector2(0, screen_size.y / 2 + 10)
-	draw_string(font, label_pos, comp.id + " (proposed)", HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, ghost)
-
-
-## Draw ghost for add suggestion
-func _draw_add_ghost(suggestion: PCBSuggestionScript) -> void:
-	var pos_data: Dictionary = suggestion.proposed_state.get("position", {})
-	var pos := Vector2(pos_data.get("x", 0), pos_data.get("y", 0))
-	var screen_pos := world_to_screen(pos)
-
-	# Draw simple placeholder
-	var placeholder_size := Vector2(20, 10) * zoom
-	var rect := Rect2(screen_pos - placeholder_size / 2, placeholder_size)
-	draw_rect(rect, ghost_color)
-	draw_rect(rect, ghost_color.lightened(0.3), false, 2.0)
-
-
-## Draw ghost for pin remap suggestion
-func _draw_pin_remap_ghost(suggestion: PCBSuggestionScript) -> void:
-	var old_pin := suggestion.get_old_pin()
-	var new_pin := suggestion.get_new_pin()
-
-	var old_comp := data.get_component(old_pin.get("component", ""))
-	var new_comp := data.get_component(new_pin.get("component", ""))
-
-	if not old_comp or not new_comp:
-		return
-
-	var old_pin_name: String = old_pin.get("pin", "")
-	var new_pin_name: String = new_pin.get("pin", "")
-
-	var old_pos := old_comp.get_pin_world_position(old_pin_name)
-	var new_pos := new_comp.get_pin_world_position(new_pin_name)
-
-	var old_screen := world_to_screen(old_pos)
-	var new_screen := world_to_screen(new_pos)
-
-	# Draw dimmed old pin with X (red)
-	var marker_size := 6.0
-	draw_circle(old_screen, marker_size, pin_remap_old_color)
-	# Draw X over old pin
-	var x_size := 4.0
-	draw_line(old_screen - Vector2(x_size, x_size), old_screen + Vector2(x_size, x_size), Color.RED, 2.0)
-	draw_line(old_screen - Vector2(x_size, -x_size), old_screen + Vector2(x_size, -x_size), Color.RED, 2.0)
-
-	# Draw highlighted new pin (green)
-	draw_circle(new_screen, marker_size, pin_remap_new_color)
-	# Draw checkmark-like indicator
-	draw_circle(new_screen, marker_size - 2, Color(0.2, 0.8, 0.2, 1.0))
-
-	# Draw arrow from old to new
-	_draw_arrow(old_screen, new_screen, Color(0.8, 0.8, 0.3, 0.8), 2.0)
-
-	# Draw net name label at midpoint
-	var midpoint := (old_screen + new_screen) / 2.0
-	var net_name := suggestion.get_net_name()
-	if not net_name.is_empty():
-		draw_string(font, midpoint + Vector2(5, -5), net_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
-
-
-## Draw ghost for route suggestion
-func _draw_route_ghost(suggestion: PCBSuggestionScript) -> void:
-	var waypoints := suggestion.get_route_waypoints()
-	if waypoints.size() < 2:
-		return
-
-	var net_name := suggestion.get_net_name()
-	var width := suggestion.get_route_width()
-
-	# Get net color if available, otherwise use default
-	var color := route_ghost_color
-	var net = data.get_net(net_name)
-	if net:
-		color = net.color
-		color.a = 0.6
-
-	# Convert waypoints to screen coordinates
-	var screen_points: PackedVector2Array = []
-	for wp in waypoints:
-		screen_points.append(world_to_screen(wp))
-
-	# Draw dashed polyline for the route
-	var trace_width := maxf(width * zoom, 2.0)
-	for i in range(screen_points.size() - 1):
-		_draw_dashed_line(screen_points[i], screen_points[i + 1], color, trace_width, 8.0)
-
-	# Draw waypoint markers
-	var endpoint_radius := 5.0
-	var midpoint_radius := 3.0
-
-	for i in range(screen_points.size()):
-		var is_endpoint := (i == 0 or i == screen_points.size() - 1)
-		var radius := endpoint_radius if is_endpoint else midpoint_radius
-		draw_circle(screen_points[i], radius, color.lightened(0.2))
-		draw_arc(screen_points[i], radius, 0, TAU, 16, color.darkened(0.2), 1.5)
-
-	# Draw net name label near first waypoint
-	if not net_name.is_empty() and screen_points.size() > 0:
-		draw_string(font, screen_points[0] + Vector2(8, -8), net_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color.lightened(0.3))
 
 
 ## Draw all annotations
@@ -1067,6 +993,20 @@ func _draw_dashed_rect(rect: Rect2, color: Color, width: float, dash_length: flo
 
 
 ## Draw all route hints
+## Resolve a pin reference like "U1.15" to a world position.
+## Returns null if the component or pin is not found.
+func _resolve_pin_world_position(pin_ref: String) -> Variant:
+	var parsed := PCBRouteHintScript.parse_pin_ref(pin_ref)
+	if parsed.component.is_empty() or parsed.pin.is_empty():
+		return null
+	var comp = data.get_component(parsed.component)
+	if not comp:
+		return null
+	if not comp.pins.has(parsed.pin):
+		return null
+	return comp.get_pin_world_position(parsed.pin)
+
+
 func _draw_route_hints() -> void:
 	for hint_id in data.route_hints:
 		var hint: PCBRouteHintScript = data.route_hints[hint_id]
@@ -1075,7 +1015,7 @@ func _draw_route_hints() -> void:
 
 ## Draw a single route hint
 func _draw_route_hint(hint: PCBRouteHintScript) -> void:
-	if hint.waypoints.is_empty():
+	if hint.waypoints.is_empty() and hint.source_pins.is_empty() and hint.dest_pins.is_empty():
 		return
 
 	var color := hint.color
@@ -1130,37 +1070,52 @@ func _draw_waypoint_hint(hint: PCBRouteHintScript, screen_points: PackedVector2A
 
 ## Draw a single trace hint
 func _draw_single_trace_hint(hint: PCBRouteHintScript, screen_points: PackedVector2Array, color: Color) -> void:
+	# Build full path: resolved source pin -> waypoints -> resolved dest pin
+	var full_path: PackedVector2Array = []
+
+	if not hint.source_pins.is_empty():
+		var src_world = _resolve_pin_world_position(hint.source_pins[0])
+		if src_world != null:
+			full_path.append(world_to_screen(src_world))
+
+	for pt in screen_points:
+		full_path.append(pt)
+
+	if not hint.dest_pins.is_empty():
+		var dst_world = _resolve_pin_world_position(hint.dest_pins[0])
+		if dst_world != null:
+			full_path.append(world_to_screen(dst_world))
+
+	if full_path.size() < 2:
+		return
+
 	# Draw the path based on detail level
 	var line_width := 2.5 if hint.width <= 0 else hint.width * zoom
 
 	if hint.detail_level == PCBRouteHintScript.DetailLevel.DETAILED:
-		# Solid line for detailed hints
-		if screen_points.size() >= 2:
-			draw_polyline(screen_points, color, line_width)
+		draw_polyline(full_path, color, line_width)
 	else:
-		# Dashed line for sparse/guided hints
-		if screen_points.size() >= 2:
-			for i in range(screen_points.size() - 1):
-				_draw_dashed_line(screen_points[i], screen_points[i + 1], color, line_width, 8.0)
+		for i in range(full_path.size() - 1):
+			_draw_dashed_line(full_path[i], full_path[i + 1], color, line_width, 8.0)
 
 	# Draw waypoint markers
-	for i in range(screen_points.size()):
-		var is_endpoint := (i == 0 or i == screen_points.size() - 1)
+	for i in range(full_path.size()):
+		var is_endpoint := (i == 0 or i == full_path.size() - 1)
 		var marker_size := 6.0 if is_endpoint else 4.0
-		draw_circle(screen_points[i], marker_size, color)
+		draw_circle(full_path[i], marker_size, color)
 
 	# Draw pin labels at endpoints
-	if not hint.source_pins.is_empty() and screen_points.size() > 0:
-		draw_string(font, screen_points[0] + Vector2(-40, -8), hint.source_pins[0], HORIZONTAL_ALIGNMENT_RIGHT, -1, font_size - 2, color)
-	if not hint.dest_pins.is_empty() and screen_points.size() > 0:
-		var last_idx := screen_points.size() - 1
-		draw_string(font, screen_points[last_idx] + Vector2(8, -8), hint.dest_pins[0], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, color)
+	if not hint.source_pins.is_empty():
+		draw_string(font, full_path[0] + Vector2(-40, -8), hint.source_pins[0], HORIZONTAL_ALIGNMENT_RIGHT, -1, font_size - 2, color)
+	if not hint.dest_pins.is_empty():
+		var last_idx := full_path.size() - 1
+		draw_string(font, full_path[last_idx] + Vector2(8, -8), hint.dest_pins[0], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, color)
 
 	# Draw layer indicator
 	if not hint.layer.is_empty():
-		var mid_idx := screen_points.size() / 2
-		if mid_idx < screen_points.size():
-			draw_string(font, screen_points[mid_idx] + Vector2(0, 15), hint.layer, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, color.lightened(0.2))
+		var mid_idx := full_path.size() / 2
+		if mid_idx < full_path.size():
+			draw_string(font, full_path[mid_idx] + Vector2(0, 15), hint.layer, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, color.lightened(0.2))
 
 
 ## Draw a bus routing hint
@@ -1194,6 +1149,17 @@ func _draw_bus_hint(hint: PCBRouteHintScript, screen_points: PackedVector2Array,
 	# Determine entry/exit points for pin connections
 	var entry_point: Vector2 = screen_points[0] if screen_points.size() > 0 else Vector2.ZERO
 	var exit_point: Vector2 = screen_points[screen_points.size() - 1] if screen_points.size() > 0 else Vector2.ZERO
+
+	# When no waypoints, resolve entry/exit from first source/dest pin
+	if screen_points.is_empty():
+		if not hint.source_pins.is_empty():
+			var src_world = _resolve_pin_world_position(hint.source_pins[0])
+			if src_world != null:
+				entry_point = world_to_screen(src_world)
+		if not hint.dest_pins.is_empty():
+			var dst_world = _resolve_pin_world_position(hint.dest_pins[0])
+			if dst_world != null:
+				exit_point = world_to_screen(dst_world)
 
 	# Draw source pins connecting to corridor entry
 	if not hint.source_pins.is_empty() and data:
@@ -1321,6 +1287,11 @@ func _draw_route_hint_preview() -> void:
 	preview_color.a = 0.7
 
 	var cursor_pos := get_local_mouse_position()
+
+	# Handle INSPECT_PIN mode specially
+	if route_hint_mode == RouteHintMode.INSPECT_PIN:
+		_draw_inspect_pin_preview(cursor_pos, preview_color)
+		return
 
 	# Handle BUS mode with multi-phase UI
 	if route_hint_mode == RouteHintMode.BUS:
@@ -1493,23 +1464,80 @@ func _draw_numbered_circle(center: Vector2, number: int, color: Color) -> void:
 	draw_string(font, center + text_offset, num_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 
 
-## Draw arrow showing suggested move
-func _draw_suggestion_arrow() -> void:
-	if active_suggestion_id.is_empty():
-		return
+## Draw Select Pin mode preview - shows cursor feedback and selected pin info
+func _draw_inspect_pin_preview(cursor_pos: Vector2, preview_color: Color) -> void:
+	# Draw crosshair cursor
+	var crosshair_size := 10.0
+	draw_line(cursor_pos - Vector2(crosshair_size, 0), cursor_pos + Vector2(crosshair_size, 0), preview_color, 1.5)
+	draw_line(cursor_pos - Vector2(0, crosshair_size), cursor_pos + Vector2(0, crosshair_size), preview_color, 1.5)
 
-	var suggestion := data.get_suggestion(active_suggestion_id)
-	if not suggestion or suggestion.type != PCBSuggestionScript.SuggestionType.MOVE:
-		return
+	# Draw mode label at cursor
+	draw_string(font, cursor_pos + Vector2(12, -5), "Inspect Pin", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, preview_color)
+	draw_string(font, cursor_pos + Vector2(12, 10), "Click on a pin to view info", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size - 2, preview_color)
 
-	var comp := data.get_component(suggestion.target_component)
-	if not comp:
-		return
+	# Highlight pin under cursor
+	var world_pos := screen_to_world(cursor_pos)
+	var hover_pin := _get_pin_at_position(world_pos, 5.0)
+	if not hover_pin.is_empty():
+		var pin_screen := world_to_screen(hover_pin.position)
+		draw_circle(pin_screen, 8.0, Color(0.2, 0.8, 0.6, 0.5))
+		draw_arc(pin_screen, 8.0, 0, TAU, 32, preview_color, 1.5)
 
-	var from_pos := world_to_screen(comp.position)
-	var to_pos := world_to_screen(suggestion.get_proposed_position())
+	# Draw selected pin info box if we have a selection
+	if not selected_pin_info.is_empty():
+		var pin_screen := world_to_screen(selected_pin_info.position)
+		var pin_text := "%s.%s" % [selected_pin_info.component, selected_pin_info.pin]
 
-	_draw_arrow(from_pos, to_pos, move_arrow_color, 2.0)
+		# Look up pin name from component geometry (e.g., "3V3", "GND")
+		var pin_label := ""
+		if data:
+			var comp = data.get_component(selected_pin_info.component)
+			if comp:
+				pin_label = comp.get_pin_name(selected_pin_info.pin)
+
+		# If no pin name, fall back to net name
+		if pin_label.is_empty() and data:
+			for n_name in data.nets:
+				var net = data.nets[n_name]
+				for pin in net.pins:
+					if pin.get("component_id", "") == selected_pin_info.component and pin.get("pin_name", "") == selected_pin_info.pin:
+						pin_label = n_name
+						break
+				if not pin_label.is_empty():
+					break
+
+		# Get text sizes for background
+		var pin_text_size := font.get_string_size(pin_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+		var label_text_size := Vector2.ZERO
+		if not pin_label.is_empty():
+			label_text_size = font.get_string_size(pin_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+
+		var padding := Vector2(8, 4)
+		var box_width := maxf(pin_text_size.x, label_text_size.x) + padding.x * 2
+		var box_height := pin_text_size.y + padding.y * 2
+		if not pin_label.is_empty():
+			box_height += label_text_size.y + 2  # Add space for label
+
+		var box_pos := pin_screen + Vector2(12, -box_height + padding.y)
+		var box_size := Vector2(box_width, box_height)
+
+		# Draw background with border
+		var bg_rect := Rect2(box_pos, box_size)
+		draw_rect(bg_rect, Color(0.1, 0.1, 0.12, 0.95))  # Dark background
+		draw_rect(bg_rect, Color(0.2, 0.8, 0.6), false, 1.5)  # Teal border
+
+		# Draw pin text in bright white
+		draw_string(font, box_pos + padding + Vector2(0, pin_text_size.y - 2), pin_text,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
+
+		# Draw pin label below in slightly dimmer white
+		if not pin_label.is_empty():
+			draw_string(font, box_pos + padding + Vector2(0, pin_text_size.y + label_text_size.y), pin_label,
+						HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.8, 0.8, 0.8))
+
+		# Draw highlight circle on selected pin
+		draw_circle(pin_screen, 6.0, Color(0.2, 0.8, 0.6, 0.5))
+		draw_arc(pin_screen, 6.0, 0, TAU, 32, Color(0.2, 0.8, 0.6), 2.0)
 
 
 ## Draw an arrow from start to end
@@ -1574,7 +1602,7 @@ func screen_to_world(screen_pos: Vector2) -> Vector2:
 #region Input Handling
 
 func _gui_input(event: InputEvent) -> void:
-	if not data:
+	if not is_inside_tree() or not data:
 		return
 
 	if event is InputEventMouseButton:
@@ -1592,7 +1620,12 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 		if event.pressed:
 			grab_focus()
 
-			# Handle annotation mode first
+			# Handle tool mode first (Select, Translate, Rotate)
+			if tool_mode != ToolMode.NONE:
+				if _handle_tool_click(world_pos, event):
+					return
+
+			# Handle annotation mode
 			if annotation_mode != AnnotationMode.NONE:
 				_handle_annotation_click(world_pos, event.double_click)
 				queue_redraw()
@@ -1652,6 +1685,11 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 					var comp := data.get_component(drag_component_id)
 					if comp and comp.position != drag_start_component_pos:
 						data.save_to_history("Move " + drag_component_id)
+						data.record_change("move_component", {
+							"component_id": drag_component_id,
+							"old_position": {"x": drag_start_component_pos.x, "y": drag_start_component_pos.y},
+							"new_position": {"x": comp.position.x, "y": comp.position.y}
+						})
 						component_moved.emit(drag_component_id, comp.position)
 				drag_component_id = ""
 
@@ -1748,11 +1786,13 @@ func _handle_key_input(event: InputEventKey) -> void:
 
 	match event.keycode:
 		KEY_DELETE, KEY_BACKSPACE:
-			# Delete selected annotation or route hint first, otherwise delete selected components
+			# Delete selected annotation, route hint, or trace first, otherwise delete selected components
 			if not selected_annotation_id.is_empty():
 				_delete_selected_annotation()
 			elif not selected_route_hint_id.is_empty():
 				_delete_selected_route_hint()
+			elif not selected_trace_id.is_empty():
+				_delete_selected_trace()
 			else:
 				_delete_selected()
 		KEY_ESCAPE:
@@ -1771,7 +1811,7 @@ func _handle_key_input(event: InputEventKey) -> void:
 				_clear_selection()
 				selected_annotation_id = ""
 				selected_route_hint_id = ""
-				active_suggestion_id = ""
+				selected_trace_id = ""
 			queue_redraw()
 		KEY_R:
 			# Rotate selected annotation, or rotate selected components, or enter region mode
@@ -1808,13 +1848,14 @@ func _handle_key_input(event: InputEventKey) -> void:
 				_scale_selected_annotation(0.8)
 			else:
 				_zoom_at(size / 2, 0.8)
-		# Annotation mode shortcuts
+		# Tool mode shortcuts
 		KEY_S:
-			# Select mode for annotations
-			if annotation_mode == AnnotationMode.SELECT:
-				clear_annotation_mode()
+			# Select mode for components and annotations
+			if tool_mode == ToolMode.SELECT:
+				clear_tool_mode()
 			else:
-				set_annotation_mode(AnnotationMode.SELECT)
+				set_tool_mode(ToolMode.SELECT)
+		# Annotation mode shortcuts
 		KEY_A:
 			if annotation_mode == AnnotationMode.ARROW:
 				clear_annotation_mode()
@@ -1825,17 +1866,24 @@ func _handle_key_input(event: InputEventKey) -> void:
 				clear_annotation_mode()
 			else:
 				set_annotation_mode(AnnotationMode.TEXT)
-		KEY_P:
-			if annotation_mode == AnnotationMode.POLYLINE:
-				clear_annotation_mode()
-			else:
-				set_annotation_mode(AnnotationMode.POLYLINE)
 		# Route hint mode shortcuts
 		KEY_W:
 			if route_hint_mode == RouteHintMode.WAYPOINT:
 				clear_route_hint_mode()
 			else:
 				set_route_hint_mode(RouteHintMode.WAYPOINT)
+		KEY_P:
+			# Shift+P for Select Pin mode, plain P for Polyline annotation
+			if event.shift_pressed:
+				if route_hint_mode == RouteHintMode.INSPECT_PIN:
+					clear_route_hint_mode()
+				else:
+					set_route_hint_mode(RouteHintMode.INSPECT_PIN)
+			else:
+				if annotation_mode == AnnotationMode.POLYLINE:
+					clear_annotation_mode()
+				else:
+					set_annotation_mode(AnnotationMode.POLYLINE)
 		KEY_ENTER, KEY_KP_ENTER:
 			# Advance bus phase or finalize other route hints
 			if bus_phase != BusPhase.NONE:
@@ -1907,7 +1955,13 @@ func _rotate_selected() -> void:
 	for comp_id in selected_components:
 		var comp := data.get_component(comp_id)
 		if comp:
+			var old_rotation := comp.rotation
 			comp.rotate_clockwise()
+			data.record_change("rotate_component", {
+				"component_id": comp_id,
+				"old_rotation": old_rotation,
+				"new_rotation": comp.rotation
+			})
 			data.component_changed.emit(comp_id)
 
 	queue_redraw()
@@ -1962,8 +2016,6 @@ func _invert_selected_arrow() -> void:
 ## Handle annotation click based on current mode
 func _handle_annotation_click(world_pos: Vector2, is_double_click: bool) -> void:
 	match annotation_mode:
-		AnnotationMode.SELECT:
-			_handle_select_click(world_pos)
 		AnnotationMode.ARROW:
 			_handle_arrow_click(world_pos)
 		AnnotationMode.TEXT:
@@ -1974,39 +2026,110 @@ func _handle_annotation_click(world_pos: Vector2, is_double_click: bool) -> void
 			_handle_polyline_click(world_pos, is_double_click)
 
 
-## Handle select mode click - select annotation or route hint for transforms
-func _handle_select_click(world_pos: Vector2) -> void:
+## Handle tool mode click - select/translate/rotate components and annotations
+func _handle_tool_click(world_pos: Vector2, event: InputEventMouseButton) -> bool:
+	if tool_mode == ToolMode.NONE:
+		return false
+
 	var threshold := 3.0 / zoom  # Threshold in world units
 
-	# Try to find an annotation at click position
-	var hit_ann_id := data.get_annotation_at(world_pos, threshold)
+	match tool_mode:
+		ToolMode.SELECT, ToolMode.TRANSLATE:
+			# Try to find a component at click position first
+			var hit_component := data.get_component_at(world_pos)
+			if not hit_component.is_empty():
+				# Select the component
+				if not event.shift_pressed:
+					_clear_selection()
+					selected_annotation_id = ""
+					selected_route_hint_id = ""
+					selected_trace_id = ""
+				if hit_component not in selected_components:
+					selected_components.append(hit_component)
+					component_selected.emit(hit_component)
+				selection_changed.emit()
 
-	if not hit_ann_id.is_empty():
-		# Select the annotation and start dragging
-		selected_annotation_id = hit_ann_id
-		selected_route_hint_id = ""  # Deselect any route hint
-		is_dragging_annotation = true
-		annotation_drag_start = world_pos
-		var annotation := data.get_annotation(hit_ann_id)
-		if annotation:
-			annotation_drag_offset = annotation.get_center() - world_pos
-		return
+				# Start drag if in translate mode
+				if tool_mode == ToolMode.TRANSLATE:
+					is_dragging_component = true
+					drag_component_id = hit_component
+					drag_start_mouse = event.position
+					var comp := data.get_component(hit_component)
+					if comp:
+						drag_start_component_pos = comp.position
+				queue_redraw()
+				return true
 
-	# Try to find a route hint at click position
-	var hit_hint_id := data.get_route_hint_at(world_pos, threshold)
+			# Try to find an annotation at click position
+			var hit_ann_id := data.get_annotation_at(world_pos, threshold)
+			if not hit_ann_id.is_empty():
+				selected_annotation_id = hit_ann_id
+				selected_route_hint_id = ""
+				selected_trace_id = ""
+				_clear_selection()  # Deselect components
 
-	if not hit_hint_id.is_empty():
-		# Select the route hint
-		selected_route_hint_id = hit_hint_id
-		selected_annotation_id = ""  # Deselect any annotation
-		is_dragging_annotation = false
-		queue_redraw()
-		return
+				# Start drag if in translate mode
+				if tool_mode == ToolMode.TRANSLATE:
+					is_dragging_annotation = true
+					annotation_drag_start = world_pos
+					var annotation := data.get_annotation(hit_ann_id)
+					if annotation:
+						annotation_drag_offset = annotation.get_center() - world_pos
+				queue_redraw()
+				return true
 
-	# Clicked on empty space - deselect all
-	selected_annotation_id = ""
-	selected_route_hint_id = ""
-	is_dragging_annotation = false
+			# Try to find a route hint at click position
+			var hit_hint_id := data.get_route_hint_at(world_pos, threshold)
+			if not hit_hint_id.is_empty():
+				selected_route_hint_id = hit_hint_id
+				selected_annotation_id = ""
+				selected_trace_id = ""
+				_clear_selection()  # Deselect components
+				queue_redraw()
+				return true
+
+			# Try to find a trace at click position
+			var hit_trace_id := data.get_trace_at(world_pos, threshold)
+			if not hit_trace_id.is_empty():
+				selected_trace_id = hit_trace_id
+				selected_annotation_id = ""
+				selected_route_hint_id = ""
+				_clear_selection()  # Deselect components
+				queue_redraw()
+				return true
+
+			# Clicked on empty space - deselect all
+			_clear_selection()
+			selected_annotation_id = ""
+			selected_route_hint_id = ""
+			selected_trace_id = ""
+			selection_changed.emit()
+			queue_redraw()
+			return true
+
+		ToolMode.ROTATE:
+			# Rotate selected components
+			if not selected_components.is_empty():
+				data.save_to_history("Rotate components")
+				for comp_id in selected_components:
+					var comp := data.get_component(comp_id)
+					if comp:
+						var old_rotation := comp.rotation
+						comp.rotate_clockwise()
+						data.record_change("rotate_component", {
+							"component_id": comp_id,
+							"old_rotation": old_rotation,
+							"new_rotation": comp.rotation
+						})
+				queue_redraw()
+				return true
+
+			# Rotate selected annotation
+			if not selected_annotation_id.is_empty():
+				_rotate_selected_annotation()
+				return true
+
+	return false
 
 
 ## Handle arrow annotation click
@@ -2099,6 +2222,22 @@ func _handle_route_hint_click(world_pos: Vector2, is_double_click: bool) -> void
 			_handle_trace_hint_click(world_pos, is_double_click)
 		RouteHintMode.BUS:
 			_handle_bus_hint_click(world_pos, is_double_click)
+		RouteHintMode.INSPECT_PIN:
+			_handle_select_pin_click(world_pos)
+
+
+## Handle select pin click - select a pin to view its info
+func _handle_select_pin_click(world_pos: Vector2) -> void:
+	var pin_info := _get_pin_at_position(world_pos, 5.0)
+	if not pin_info.is_empty():
+		selected_pin_info = pin_info
+		pin_selected.emit(pin_info)
+		queue_redraw()
+	else:
+		# Clicked on empty space - clear selection
+		selected_pin_info = {}
+		pin_selected.emit({})
+		queue_redraw()
 
 
 ## Handle waypoint hint click - just placing bend points
@@ -2135,7 +2274,11 @@ func _handle_trace_hint_click(world_pos: Vector2, is_double_click: bool) -> void
 	elif is_double_click or not pin_info.is_empty():
 		# Double click or click on pin - finish the trace
 		if not pin_info.is_empty():
-			route_hint_dest_pin = "%s.%s" % [pin_info.component, pin_info.pin]
+			var candidate_dest := "%s.%s" % [pin_info.component, pin_info.pin]
+			if candidate_dest == route_hint_source_pin and not route_hint_source_pin.is_empty():
+				cancel_route_hint()  # Self-reference — cancel
+				return
+			route_hint_dest_pin = candidate_dest
 			route_hint_points.append(pin_info.position)
 		else:
 			route_hint_points.append(world_pos)
@@ -2268,6 +2411,10 @@ func cancel_annotation() -> void:
 func set_annotation_mode(mode: AnnotationMode) -> void:
 	if annotation_mode != mode:
 		cancel_annotation()
+		# Clear tool mode when entering annotation mode (mutual exclusion)
+		if mode != AnnotationMode.NONE and tool_mode != ToolMode.NONE:
+			tool_mode = ToolMode.NONE
+			tool_mode_changed.emit(ToolMode.NONE)
 		annotation_mode = mode
 		annotation_mode_changed.emit(mode)
 		queue_redraw()
@@ -2278,15 +2425,47 @@ func clear_annotation_mode() -> void:
 	set_annotation_mode(AnnotationMode.NONE)
 
 
+## Set tool mode (Select, Translate, Rotate)
+func set_tool_mode(mode: ToolMode) -> void:
+	if tool_mode != mode:
+		# Clear other modes when entering a tool mode
+		if mode != ToolMode.NONE:
+			if annotation_mode != AnnotationMode.NONE:
+				cancel_annotation()
+				annotation_mode = AnnotationMode.NONE
+				annotation_mode_changed.emit(AnnotationMode.NONE)
+			if route_hint_mode != RouteHintMode.NONE:
+				cancel_route_hint()
+				route_hint_mode = RouteHintMode.NONE
+				route_hint_mode_changed.emit(RouteHintMode.NONE)
+		tool_mode = mode
+		tool_mode_changed.emit(mode)
+		queue_redraw()
+
+
+## Clear tool mode (return to normal)
+func clear_tool_mode() -> void:
+	set_tool_mode(ToolMode.NONE)
+
+
 ## Set route hint mode
 func set_route_hint_mode(mode: RouteHintMode) -> void:
 	if route_hint_mode != mode:
 		cancel_route_hint()
-		# Clear annotation mode when entering route hint mode
-		if mode != RouteHintMode.NONE and annotation_mode != AnnotationMode.NONE:
-			cancel_annotation()
-			annotation_mode = AnnotationMode.NONE
-			annotation_mode_changed.emit(AnnotationMode.NONE)
+		# Clear selected pin when changing modes
+		if not selected_pin_info.is_empty():
+			selected_pin_info = {}
+			pin_selected.emit({})
+		if mode != RouteHintMode.NONE:
+			# Clear tool mode when entering route hint mode (mutual exclusion)
+			if tool_mode != ToolMode.NONE:
+				tool_mode = ToolMode.NONE
+				tool_mode_changed.emit(ToolMode.NONE)
+			# Clear annotation mode when entering route hint mode
+			if annotation_mode != AnnotationMode.NONE:
+				cancel_annotation()
+				annotation_mode = AnnotationMode.NONE
+				annotation_mode_changed.emit(AnnotationMode.NONE)
 		route_hint_mode = mode
 		route_hint_mode_changed.emit(mode)
 		queue_redraw()
@@ -2343,6 +2522,16 @@ func _delete_selected_route_hint() -> void:
 		return
 	data.remove_route_hint(selected_route_hint_id)
 	selected_route_hint_id = ""
+	queue_redraw()
+
+
+## Delete selected trace
+func _delete_selected_trace() -> void:
+	if selected_trace_id.is_empty() or not data:
+		return
+	data.save_to_history("Delete trace")
+	data.remove_trace(selected_trace_id)
+	selected_trace_id = ""
 	queue_redraw()
 
 
@@ -2470,30 +2659,6 @@ func select_component(component_id: String, add_to_selection: bool = false) -> v
 		queue_redraw()
 
 
-## Set active suggestion for preview
-func set_active_suggestion(suggestion_id: String) -> void:
-	active_suggestion_id = suggestion_id
-	queue_redraw()
-
-
-## Accept the active suggestion
-func accept_active_suggestion() -> void:
-	if active_suggestion_id:
-		data.accept_suggestion(active_suggestion_id)
-		suggestion_accepted.emit(active_suggestion_id)
-		active_suggestion_id = ""
-		queue_redraw()
-
-
-## Reject the active suggestion
-func reject_active_suggestion() -> void:
-	if active_suggestion_id:
-		data.reject_suggestion(active_suggestion_id)
-		suggestion_rejected.emit(active_suggestion_id)
-		active_suggestion_id = ""
-		queue_redraw()
-
-
 ## Zoom to fit all components
 func zoom_to_fit() -> void:
 	if not data or data.components.is_empty():
@@ -2539,5 +2704,144 @@ func _on_data_changed() -> void:
 
 func _on_structure_changed() -> void:
 	queue_redraw()
+
+#endregion
+
+
+#region Image Export
+
+## Capture the PCB view as an Image (for export or LLM viewing)
+## Uses a SubViewport to render the PCB at a specified size
+func capture_to_image(width: int = 800, height: int = 600) -> Image:
+	if not data:
+		var placeholder_img := Image.create(width, height, false, Image.FORMAT_RGBA8)
+		placeholder_img.fill(Color(0.08, 0.08, 0.08, 1.0))
+		return placeholder_img
+
+	# Create a SubViewport to render the PCB
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(width, height)
+	viewport.transparent_bg = false
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+	# Create a copy of this PCBCanvas to render in the viewport
+	var pcb_copy = get_script().new()
+	pcb_copy.size = Vector2(width, height)
+	pcb_copy.data = data
+	pcb_copy.spatial_index = spatial_index
+
+	# Copy display options
+	pcb_copy.show_grid = show_grid
+	pcb_copy.show_ratsnest = show_ratsnest
+	pcb_copy.show_traces = show_traces
+	pcb_copy.show_labels = show_labels
+	pcb_copy.show_pins = show_pins
+	pcb_copy.snap_to_grid = snap_to_grid
+	pcb_copy.show_pads = show_pads
+	pcb_copy.show_annotations = show_annotations
+	pcb_copy.show_route_hints = show_route_hints
+
+	# Copy colors
+	pcb_copy.board_color = board_color
+	pcb_copy.board_edge_color = board_edge_color
+	pcb_copy.grid_color = grid_color
+	pcb_copy.grid_major_color = grid_major_color
+	pcb_copy.component_color = component_color
+	pcb_copy.component_selected_color = component_selected_color
+	pcb_copy.component_hover_color = component_hover_color
+	pcb_copy.pin_color = pin_color
+	pcb_copy.label_color = label_color
+	pcb_copy.trace_color = trace_color
+	pcb_copy.ratsnest_color = ratsnest_color
+	pcb_copy.selection_box_color = selection_box_color
+	pcb_copy.selection_border_color = selection_border_color
+	pcb_copy.ghost_color = ghost_color
+	pcb_copy.move_arrow_color = move_arrow_color
+	pcb_copy.pad_copper_color = pad_copper_color
+	pcb_copy.pad_smd_color = pad_smd_color
+	pcb_copy.drill_hole_color = drill_hole_color
+	pcb_copy.mounting_hole_color = mounting_hole_color
+	pcb_copy.annotation_human_color = annotation_human_color
+	pcb_copy.annotation_ai_color = annotation_ai_color
+	pcb_copy.route_hint_human_color = route_hint_human_color
+	pcb_copy.route_hint_ai_color = route_hint_ai_color
+	# Copy font settings
+	pcb_copy.font = font
+	pcb_copy.font_size = font_size
+
+	# Clear selection state for clean export
+	pcb_copy.selected_components.clear()
+	pcb_copy.hovered_component = ""
+	pcb_copy.selected_annotation_id = ""
+	pcb_copy.selected_route_hint_id = ""
+
+	viewport.add_child(pcb_copy)
+
+	# Add viewport to tree temporarily
+	add_child(viewport)
+
+	# Setup zoom to fit the board content in the viewport
+	_setup_zoom_to_fit_for_capture(pcb_copy, width, height)
+
+	# Force a redraw and wait for render to complete
+	pcb_copy.queue_redraw()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+
+	# Get the rendered image
+	var _img := viewport.get_texture().get_image()
+
+	# Clean up
+	viewport.remove_child(pcb_copy)
+	pcb_copy.queue_free()
+	remove_child(viewport)
+	viewport.queue_free()
+
+	return _img
+
+
+## Setup zoom and pan for the capture canvas to fit content
+func _setup_zoom_to_fit_for_capture(canvas_copy, width: int, height: int) -> void:
+	# Calculate bounds including board and all components
+	var min_pos := Vector2(0, 0)
+	var max_pos := Vector2(data.board_width, data.board_height)
+
+	# Expand bounds to include all components
+	for comp_id in data.components:
+		var comp: PCBComponentScript = data.components[comp_id]
+		var bounds := comp.get_bounding_rect()
+		min_pos.x = minf(min_pos.x, bounds.position.x)
+		min_pos.y = minf(min_pos.y, bounds.position.y)
+		max_pos.x = maxf(max_pos.x, bounds.end.x)
+		max_pos.y = maxf(max_pos.y, bounds.end.y)
+
+	# Add 5% margin
+	var content_size := max_pos - min_pos
+	var margin := content_size * 0.05
+	min_pos -= margin
+	max_pos += margin
+	content_size = max_pos - min_pos
+
+	var content_center := (min_pos + max_pos) / 2.0
+
+	# Calculate zoom to fit
+	var zoom_x := float(width) / content_size.x
+	var zoom_y := float(height) / content_size.y
+	canvas_copy.zoom = minf(zoom_x, zoom_y)
+	canvas_copy.zoom = clampf(canvas_copy.zoom, canvas_copy.min_zoom, canvas_copy.max_zoom)
+
+	# Center on content (world_to_screen adds size/2, so pan_offset = -content_center * zoom)
+	canvas_copy.pan_offset = -content_center * canvas_copy.zoom
+
+
+## Capture PCB to base64-encoded PNG (for MCP tools)
+func capture_to_base64_png(width: int = 800, height: int = 600) -> String:
+	var _img := await capture_to_image(width, height)
+	if _img == null or _img.is_empty():
+		return ""
+
+	var png_buffer := _img.save_png_to_buffer()
+	return Marshalls.raw_to_base64(png_buffer)
 
 #endregion
