@@ -719,6 +719,15 @@ func _release_textures_recursive(node: Node) -> void:
 	# Release texture if this is a TextureRect
 	if node is TextureRect and node.texture:
 		node.texture = null
+	# Release texture if this is a Sprite2D
+	if node is Sprite2D and node.texture:
+		node.texture = null
+	# Release icon if this is a BaseButton (Button, etc.)
+	if node is BaseButton and node.icon:
+		node.icon = null
+	# Null out SubViewportContainer to break viewport texture references
+	if node is SubViewportContainer:
+		node.stretch = false
 	# Recurse into children
 	for child in node.get_children():
 		_release_textures_recursive(child)

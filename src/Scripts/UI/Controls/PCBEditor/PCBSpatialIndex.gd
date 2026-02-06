@@ -259,6 +259,7 @@ func describe_component_context(component_id: String) -> Dictionary:
 
 	return {
 		"id": component_id,
+		"value": comp.properties.get("value", ""),
 		"position": {"x": comp.position.x, "y": comp.position.y},
 		"rotation": comp.rotation,
 		"footprint": PCBComponentScript.FootprintType.keys()[comp.footprint],

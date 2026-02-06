@@ -2021,7 +2021,10 @@ func _exit_tree():
 	if _current_compose_thread != null and _current_compose_thread.is_alive():
 		_current_compose_thread.wait_to_finish()
 	_current_compose_thread = null
- 
+
+	if drawing_area_sub_viewport:
+		drawing_area_sub_viewport = null
+
 # Static helper functions that don't access node properties
 static func _get_rotated_corners_static(position_: Vector2, size_: Vector2, rotation_: float, pivot_offset_: Vector2) -> Array[Vector2]:
 	var corners: Array[Vector2] = []

@@ -4361,7 +4361,7 @@ func _register_pcb_tools() -> void:
 												"position": {"type": "object"},
 												"size": {"type": "object"},
 												"drill": {"type": "number"},
-												"layers": {"type": "array"}
+												"layers": {"type": "array", "items": {"type": "string"}}
 											}
 										}
 									}

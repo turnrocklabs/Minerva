@@ -16,6 +16,7 @@ signal component_double_clicked(component_id: String)
 signal canvas_clicked(world_position: Vector2)
 signal zoom_changed(new_zoom: float)
 signal selection_changed()
+signal component_lock_changed(message: String)
 
 ## Data references
 var data: PCBDataScript = null
@@ -144,7 +145,7 @@ var show_annotations: bool = true
 var show_route_hints: bool = true
 
 ## Annotation colors (by author)
-var annotation_human_color: Color = Color(0.9, 0.7, 0.2)  # Yellow for human
+var annotation_human_color: Color = Color(0.95, 0.5, 0.9)  # Light magenta for human
 var annotation_ai_color: Color = Color(0.3, 0.7, 0.9)     # Cyan for AI
 
 ## Route hint colors (by author)
@@ -236,11 +237,11 @@ func _create_context_menu() -> void:
 
 ## Update context menu based on current selection
 func _update_context_menu_for_selection() -> void:
-	# Remove old dynamic items (IDs 200-399)
+	# Remove old dynamic items (IDs 200-410)
 	var indices_to_remove: Array[int] = []
 	for i in range(context_menu.item_count):
 		var id := context_menu.get_item_id(i)
-		if id >= 200 and id <= 399:
+		if id >= 200 and id <= 410:
 			indices_to_remove.append(i)
 
 	# Remove in reverse order to avoid index shifting
@@ -270,6 +271,31 @@ func _update_context_menu_for_selection() -> void:
 
 			if annotation.type == PCBAnnotationScript.AnnotationType.ARROW:
 				context_menu.add_item("Invert Arrow (I)", 205)
+
+	# Component lock/unlock items
+	var has_lock_section := false
+
+	# Check for an unlocked component under the cursor (for "Lock" option)
+	var comp_under_cursor := data.get_component_at(context_menu_world_pos)
+	if not comp_under_cursor.is_empty() or not selected_components.is_empty():
+		context_menu.add_separator("", 400)
+		has_lock_section = true
+		if not comp_under_cursor.is_empty():
+			context_menu.add_item("Lock %s (L)" % comp_under_cursor, 401)
+		else:
+			context_menu.add_item("Lock Component (L)", 401)
+
+	var locked_under_cursor := _get_locked_component_at(context_menu_world_pos)
+	if not locked_under_cursor.is_empty():
+		if not has_lock_section:
+			context_menu.add_separator("", 403)
+			has_lock_section = true
+		context_menu.add_item("Unlock %s" % locked_under_cursor, 402)
+
+	if _has_any_locked_components():
+		if not has_lock_section:
+			context_menu.add_separator("", 405)
+		context_menu.add_item("Unlock All Components (Shift+L)", 404)
 
 
 ## Handle annotation submenu selection
@@ -321,6 +347,27 @@ func _on_context_menu_pressed(id: int) -> void:
 			_start_route_hint_from_context_pin()
 		302:  # Delete selected route hint
 			_delete_selected_route_hint()
+		401:  # Lock component(s) — selected ones, or the one under cursor
+			if not selected_components.is_empty():
+				_lock_selected_components()
+			else:
+				var cursor_comp_id := data.get_component_at(context_menu_world_pos)
+				if not cursor_comp_id.is_empty():
+					var cursor_comp := data.get_component(cursor_comp_id)
+					if cursor_comp:
+						cursor_comp.locked = true
+						component_lock_changed.emit("Locked %s" % cursor_comp_id)
+						queue_redraw()
+		402:  # Unlock the locked component under cursor
+			var comp_id := _get_locked_component_at(context_menu_world_pos)
+			if not comp_id.is_empty():
+				var comp := data.get_component(comp_id)
+				if comp:
+					comp.locked = false
+					component_lock_changed.emit("Unlocked %s" % comp_id)
+					queue_redraw()
+		404:  # Unlock all components
+			_unlock_all_components()
 
 
 ## Show the context menu at the given screen position
@@ -557,6 +604,10 @@ func _draw_component(comp: PCBComponentScript) -> void:
 	elif comp.id == hovered_component:
 		color = component_hover_color
 
+	# Dim locked components
+	if comp.locked:
+		color.a = 0.4
+
 	# Get the rigid body transform for this component
 	# This ensures body and pads rotate together as a unit around the anchor
 	var xform := comp.get_transform()
@@ -577,6 +628,10 @@ func _draw_component(comp: PCBComponentScript) -> void:
 	outline_points.append(screen_poly[0])  # Close loop
 	draw_polyline(outline_points, color.darkened(0.3), 1.0)
 
+	# Draw hatch overlay for locked components
+	if comp.locked:
+		_draw_locked_hatch(screen_poly)
+
 	# Draw pads with accurate geometry if available
 	if show_pads and comp.has_pad_geometry and comp.pads.size() > 0:
 		_draw_component_pads(comp, xform)
@@ -591,6 +646,47 @@ func _draw_component(comp: PCBComponentScript) -> void:
 		var screen_center := world_to_screen(world_center)
 		var label_pos := screen_center - Vector2(0, comp.height * zoom / 2 + 10)
 		draw_string(font, label_pos, comp.id, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, label_color)
+
+
+## Draw diagonal hatch lines over a locked component's screen polygon
+func _draw_locked_hatch(screen_poly: PackedVector2Array) -> void:
+	if screen_poly.size() < 3:
+		return
+
+	# Compute axis-aligned bounding box of the screen polygon
+	var min_pt := screen_poly[0]
+	var max_pt := screen_poly[0]
+	for pt in screen_poly:
+		min_pt.x = minf(min_pt.x, pt.x)
+		min_pt.y = minf(min_pt.y, pt.y)
+		max_pt.x = maxf(max_pt.x, pt.x)
+		max_pt.y = maxf(max_pt.y, pt.y)
+
+	var hatch_color := Color(0.9, 0.4, 0.1, 0.35)
+	var spacing := 8.0
+	var diag := max_pt - min_pt
+	var total := diag.x + diag.y
+
+	# Draw diagonal lines (top-left to bottom-right direction)
+	var d := 0.0
+	while d < total:
+		# Line from (min_x + d, min_y) toward (min_x, min_y + d), clipped to bbox
+		var x0 := min_pt.x + d
+		var y0 := min_pt.y
+		var x1 := min_pt.x
+		var y1 := min_pt.y + d
+
+		# Clip to bounding box
+		if x0 > max_pt.x:
+			y0 += x0 - max_pt.x
+			x0 = max_pt.x
+		if y1 > max_pt.y:
+			x1 += y1 - max_pt.y
+			y1 = max_pt.y
+
+		if x0 >= min_pt.x and y0 <= max_pt.y and x1 <= max_pt.x and y1 >= min_pt.y:
+			draw_line(Vector2(x0, y0), Vector2(x1, y1), hatch_color, 1.0)
+		d += spacing
 
 
 ## Draw pads with accurate geometry from KiCAD footprint
@@ -1832,8 +1928,16 @@ func _handle_key_input(event: InputEventKey) -> void:
 			show_ratsnest = not show_ratsnest
 			queue_redraw()
 		KEY_L:
-			show_labels = not show_labels
-			queue_redraw()
+			if event.shift_pressed:
+				# Shift+L: Unlock all components
+				_unlock_all_components()
+			elif not selected_components.is_empty():
+				# L with selection: Lock selected components
+				_lock_selected_components()
+			else:
+				# L with no selection: Toggle labels
+				show_labels = not show_labels
+				queue_redraw()
 		KEY_HOME:
 			_center_view()
 		KEY_PLUS, KEY_KP_ADD:
@@ -1945,6 +2049,46 @@ func _delete_selected() -> void:
 	selected_components.clear()
 	selection_changed.emit()
 	queue_redraw()
+
+
+## Lock all currently selected components and clear selection
+func _lock_selected_components() -> void:
+	if selected_components.is_empty():
+		return
+
+	var names: PackedStringArray = []
+	for comp_id in selected_components:
+		var comp := data.get_component(comp_id)
+		if comp:
+			comp.locked = true
+			names.append(comp_id)
+
+	selected_components.clear()
+	selection_changed.emit()
+
+	if names.size() == 1:
+		component_lock_changed.emit("Locked %s" % names[0])
+	elif names.size() > 1:
+		component_lock_changed.emit("Locked %d components" % names.size())
+
+	queue_redraw()
+
+
+## Unlock all locked components
+func _unlock_all_components() -> void:
+	if not data:
+		return
+
+	var count := 0
+	for comp_id in data.components:
+		var comp: PCBComponentScript = data.components[comp_id]
+		if comp.locked:
+			comp.locked = false
+			count += 1
+
+	if count > 0:
+		component_lock_changed.emit("Unlocked all (%d)" % count)
+		queue_redraw()
 
 
 func _rotate_selected() -> void:
@@ -2563,6 +2707,28 @@ func _get_pin_at_position(world_pos: Vector2, threshold: float = 5.0) -> Diction
 				}
 
 	return best_match
+
+
+## Get a locked component at a world position (for unlock context menu).
+## Only checks locked components — the inverse of normal hit-testing.
+func _get_locked_component_at(world_pos: Vector2) -> String:
+	if not data:
+		return ""
+	for comp_id in data.components:
+		var comp: PCBComponentScript = data.components[comp_id]
+		if comp.locked and comp.contains_point(world_pos):
+			return comp_id
+	return ""
+
+
+## Check if any component is currently locked
+func _has_any_locked_components() -> bool:
+	if not data:
+		return false
+	for comp_id in data.components:
+		if data.components[comp_id].locked:
+			return true
+	return false
 
 
 ## Finalize the current route hint
