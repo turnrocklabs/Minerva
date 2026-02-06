@@ -292,7 +292,7 @@ func _create_tools_panel() -> VBoxContainer:
 	# Annotation mode label
 	annotation_mode_label = Label.new()
 	annotation_mode_label.text = ""
-	annotation_mode_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+	annotation_mode_label.add_theme_color_override("font_color", Color(0.95, 0.5, 0.9))
 	panel.add_child(annotation_mode_label)
 
 	panel.add_child(HSeparator.new())
@@ -470,6 +470,9 @@ func _connect_signals() -> void:
 	canvas.route_hint_created.connect(_on_route_hint_created)
 	canvas.pin_selected.connect(_on_pin_selected)
 
+	# Lock signals
+	canvas.component_lock_changed.connect(_on_component_lock_changed)
+
 	# Data signals
 	data.data_changed.connect(_on_data_changed)
 
@@ -608,6 +611,17 @@ func _on_route_hint_mode_changed(mode: int) -> void:
 func _on_route_hint_created(hint_id: String) -> void:
 	# Could show a brief notification
 	pass
+
+
+## Handle component lock/unlock — show brief status in tool mode label
+func _on_component_lock_changed(message: String) -> void:
+	if tool_mode_label:
+		tool_mode_label.text = message
+		# Clear after 2 seconds
+		get_tree().create_timer(2.0).timeout.connect(func():
+			if tool_mode_label and tool_mode_label.text == message:
+				tool_mode_label.text = ""
+		)
 
 
 ## Handle pin selected (from INSPECT_PIN mode)

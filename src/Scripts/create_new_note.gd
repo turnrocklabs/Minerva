@@ -163,6 +163,7 @@ func _on_add_note_pressed():
 		%RecordAudioButton.text = "Press To Record Note"
 		%PlayAudioButton.disabled = true
 		effect.set_recording_active(false)
+		SingletonObject.AtT._stop_mic()
 	
 	%CreateNewNote.hide()
 
@@ -305,9 +306,11 @@ func _on_record_audio_button_pressed() -> void:
 		audio_controls.audio = effect.get_recording() # type -> AudioStreamWAV
 		%RecordAudioButton.text = "Press To Record Note"
 		effect.set_recording_active(false)
+		SingletonObject.AtT._stop_mic()
 		%PlayAudioButton.disabled = false
 		%AddNotePopUp.disabled = false
 	else:
+		SingletonObject.AtT._start_mic()
 		effect.set_recording_active(true)
 		%PlayAudioButton.disabled = true
 		%AddNotePopUp.disabled = true

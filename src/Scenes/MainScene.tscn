@@ -1,4 +1,4 @@
-[gd_scene load_steps=74 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene load_steps=73 format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -82,10 +82,6 @@ unicode = 110
 [sub_resource type="Shortcut" id="Shortcut_gb6ck"]
 events = [SubResource("InputEventKey_s4ag0")]
 
-[sub_resource type="CanvasTexture" id="CanvasTexture_o30k1"]
-diffuse_texture = ExtResource("8_oxf75")
-
-[sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_i6lnv"]
 
 [node name="RootControl" type="Control" node_paths=PackedStringArray("terminal_container")]
 texture_filter = 1
@@ -588,7 +584,7 @@ icon_68 = ExtResource("37_toq4t")
 [node name="HButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["Experimental"]]
 layout_mode = 2
 tooltip_text = "splits the editor in 2 horizontal panes"
-icon = SubResource("CanvasTexture_o30k1")
+icon = ExtResource("8_oxf75")
 icon_alignment = 1
 script = ExtResource("21_rnx1y")
 
@@ -827,11 +823,6 @@ layout_mode = 2
 
 [node name="AudioToText" type="Node" parent="."]
 script = ExtResource("14_rrnyx")
-
-[node name="AudioStreamRecord" type="AudioStreamPlayer" parent="AudioToText"]
-stream = SubResource("AudioStreamMicrophone_i6lnv")
-autoplay = true
-bus = &"Rec"
 
 [node name="ColorRect" type="ColorRect" parent="."]
 unique_name_in_owner = true

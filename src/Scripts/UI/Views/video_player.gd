@@ -285,6 +285,7 @@ func _on_screenshot_button_pressed() -> void:
 	var editor = ep.add(Editor.Type.GRAPHICS, null, stream_position)
 	editor.graphics_editor.create_new_image_layer("Layer", image)
 	remove_child(viewport)
+	viewport.queue_free()
 	viewport = null
 
 

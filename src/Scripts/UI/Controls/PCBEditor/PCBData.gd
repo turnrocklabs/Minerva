@@ -147,9 +147,12 @@ func get_all_components() -> Array[PCBComponentScript]:
 
 
 ## Get component at a position (for hit testing)
+## Skips locked components so clicks pass through to items underneath.
 func get_component_at(position: Vector2) -> String:
 	for component_id in components:
 		var component: PCBComponentScript = components[component_id]
+		if component.locked:
+			continue
 		if component.contains_point(position):
 			return component_id
 	return ""

@@ -52,6 +52,9 @@ var properties: Dictionary = {}
 ## Layer: "top" or "bottom"
 var layer: String = "top"
 
+## Whether this component is locked (skipped during hit-testing)
+var locked: bool = false
+
 ## Visual properties
 var color: Color = Color(0.2, 0.6, 0.3, 1.0)
 var label_visible: bool = true
@@ -467,6 +470,7 @@ func duplicate_component():
 	copy.has_pad_geometry = has_pad_geometry
 	copy.bbox_center_offset = bbox_center_offset
 	copy.local_bounds = local_bounds
+	copy.locked = locked
 	return copy
 
 
@@ -516,7 +520,8 @@ func to_dict() -> Dictionary:
 		"properties": properties.duplicate(),
 		"layer": layer,
 		"color": {"r": color.r, "g": color.g, "b": color.b, "a": color.a},
-		"label_visible": label_visible
+		"label_visible": label_visible,
+		"locked": locked
 	}
 
 
@@ -596,6 +601,7 @@ func load_from_dict(data: Dictionary) -> void:
 		)
 
 	label_visible = data.get("label_visible", true)
+	locked = data.get("locked", false)
 
 
 ## Create from dictionary (static constructor)
