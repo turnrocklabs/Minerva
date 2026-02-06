@@ -43,12 +43,35 @@ func set_tools(tools: Array[Dictionary]) -> void:
 func format_tools_for_request() -> Array:
 	var function_declarations: Array = []
 	for tool in available_tools:
+		var params = tool.get("input_schema", {"type": "object", "properties": {}})
+		params = _strip_unsupported_schema_fields(params)
 		function_declarations.append({
 			"name": tool.get("name", ""),
 			"description": tool.get("description", ""),
-			"parameters": tool.get("input_schema", {"type": "object", "properties": {}})
+			"parameters": params
 		})
 	return [{"function_declarations": function_declarations}]
+
+
+## Recursively strip schema fields that Gemini doesn't support
+static func _strip_unsupported_schema_fields(schema: Variant) -> Variant:
+	if schema is not Dictionary:
+		return schema
+	var result: Dictionary = {}
+	for key in schema:
+		if key in ["additionalProperties", "$schema"]:
+			continue
+		var value = schema[key]
+		if value is Dictionary:
+			result[key] = _strip_unsupported_schema_fields(value)
+		elif value is Array:
+			var cleaned: Array = []
+			for item in value:
+				cleaned.append(_strip_unsupported_schema_fields(item))
+			result[key] = cleaned
+		else:
+			result[key] = value
+	return result
 
 
 func _parse_request_results(response: RequestResults) -> BotResponse:

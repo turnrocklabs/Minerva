@@ -706,19 +706,21 @@ func regenerate_response(chi: ChatHistoryItem):
 	
 	var index = history.HistoryItemList.find(chi)
 
-	var existing_response: ChatHistoryItem
+	# Clean up all items after the user message (orphaned tool-call chains from previous responses)
+	var items_to_remove: Array[ChatHistoryItem] = []
+	for i in range(index + 1, history.HistoryItemList.size()):
+		items_to_remove.append(history.HistoryItemList[i])
+	for item in items_to_remove:
+		if is_instance_valid(item.rendered_node):
+			item.rendered_node.queue_free()
+		history.HistoryItemList.erase(item)
 
-	for item in history.HistoryItemList.slice(index):
-		if item.Role == ChatHistoryItem.ChatRole.MODEL:
-			existing_response = item
-			break
-
-	if not existing_response:
-		existing_response = ChatHistoryItem.new()
-		existing_response.Role = ChatHistoryItem.ChatRole.MODEL
-		existing_response.provider = SingletonObject.ChatList[current_tab].provider
-		history.HistoryItemList.append(existing_response)
-		history.VBox.add_history_item(existing_response)
+	# Create a fresh response item
+	var existing_response = ChatHistoryItem.new()
+	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
+	existing_response.provider = history.provider
+	history.HistoryItemList.append(existing_response)
+	history.VBox.add_history_item(existing_response)
 
 	# We format items until we get to the user response
 	var predicate = func(item: ChatHistoryItem) -> Array:
@@ -742,7 +744,11 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	var history_list = await create_prompt(chi, false, null, predicate)
 
-	existing_response.rendered_node.loading = true
+	# Ensure rendered_node exists (may have been freed if message was deleted)
+	if not is_instance_valid(existing_response.rendered_node):
+		existing_response.rendered_node = history.VBox.add_history_item(existing_response)
+	if existing_response.rendered_node:
+		existing_response.rendered_node.loading = true
 
 	var bot_response = await history.provider.generate_content(history_list)
 
@@ -769,14 +775,20 @@ func regenerate_response(chi: ChatHistoryItem):
 		existing_response.IsToolCall = true
 		existing_response.ToolCalls = bot_response.tool_calls
 
-		existing_response.rendered_node.render()
-		existing_response.rendered_node.loading = false
+		if not is_instance_valid(existing_response.rendered_node):
+			existing_response.rendered_node = history.VBox.add_history_item(existing_response)
+		if is_instance_valid(existing_response.rendered_node):
+			existing_response.rendered_node.render()
+			existing_response.rendered_node.loading = false
 
 		# Reuse the same tool call handling as execute_regular_chat
 		await handle_tool_calls(history, bot_response.tool_calls, 0, existing_response, chi)
 	else:
-		existing_response.rendered_node.render()
-		existing_response.rendered_node.loading = false
+		if not is_instance_valid(existing_response.rendered_node):
+			existing_response.rendered_node = history.VBox.add_history_item(existing_response)
+		if is_instance_valid(existing_response.rendered_node):
+			existing_response.rendered_node.render()
+			existing_response.rendered_node.loading = false
 
 		# Emit response_arrived signal to trigger notification sound
 		chi.response_arrived.emit(existing_response)
@@ -1155,7 +1167,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		model_chi.ToolExecutions.append(execution_entry)
 
 		# Update the rendered node to show this tool call
-		if model_chi.rendered_node:
+		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.update_tool_execution(tool_id, "", false)
 
 		# Check path permissions before executing
@@ -1183,7 +1195,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		execution_entry["status"] = "error" if is_error else "done"
 
 		# Update the rendered node with the result
-		if model_chi.rendered_node:
+		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.update_tool_execution(tool_id, result_str, is_error)
 
 		# Create tool result history item (hidden - for API continuity only)
@@ -1246,7 +1258,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
 
 	# Show loading state at bottom of message (append mode - doesn't hide content)
-	if model_chi.rendered_node:
+	if is_instance_valid(model_chi.rendered_node):
 		model_chi.rendered_node.loading_append = true
 
 	# Get LLM's response to tool results
@@ -1254,7 +1266,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 	if not continuation_response:
 		print("[Agent] ERROR: No continuation response received")
-		if model_chi.rendered_node:
+		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = false
 		finish_with_signal.call()
 		return
@@ -1264,7 +1276,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		print("[Agent] ERROR in response: %s" % continuation_response.error)
 		# Append error message to accumulator
 		model_chi.Message += "\n\n[Agent Error: %s]" % continuation_response.error
-		if model_chi.rendered_node:
+		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = false
 			model_chi.rendered_node.render()
 		finish_with_signal.call()
@@ -1296,7 +1308,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# We only use ToolExecutions for UI display (which is already being updated correctly).
 
 		# Update the accumulator's rendered node
-		if model_chi.rendered_node:
+		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = false
 			model_chi.rendered_node.render()
 			await get_tree().process_frame
@@ -1325,7 +1337,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# Final update to accumulator
 		# NOTE: Do NOT clear IsToolCall - the accumulator must retain its tool_calls
 		# for API serialization so subsequent requests see the proper message sequence
-		if model_chi.rendered_node:
+		if not is_instance_valid(model_chi.rendered_node):
+			model_chi.rendered_node = history.VBox.add_history_item(model_chi)
+		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = false
 			model_chi.rendered_node.first_time_message = true
 			model_chi.rendered_node.render()

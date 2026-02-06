@@ -257,7 +257,7 @@ func describe_component_context(component_id: String) -> Dictionary:
 	# Determine region
 	var region := _get_board_region(comp.position)
 
-	return {
+	var result := {
 		"id": component_id,
 		"position": {"x": comp.position.x, "y": comp.position.y},
 		"rotation": comp.rotation,
@@ -265,8 +265,14 @@ func describe_component_context(component_id: String) -> Dictionary:
 		"layer": comp.layer,
 		"nearby": nearby,
 		"connected_to": connected,
-		"region": region
+		"region": region,
+		"pins": comp.pins.keys()
 	}
+	if comp.properties.has("value"):
+		result["value"] = comp.properties["value"]
+	if not comp.properties.is_empty():
+		result["properties"] = comp.properties
+	return result
 
 
 ## Determine which region of the board a position is in

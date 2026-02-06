@@ -465,6 +465,12 @@ func open_file(filename: String):
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
 		editor_pane.add(Editor.Type.GRAPHICS, filename)
+	elif filename.to_lower().ends_with(".minpcb"):
+		editor_pane.add(Editor.Type.PCB, filename)
+	elif filename.to_lower().ends_with(".minkb"):
+		editor_pane.add(Editor.Type.KANBAN, filename)
+	elif filename.to_lower().ends_with(".minsheet"):
+		editor_pane.add(Editor.Type.SPREADSHEET, filename)
 	else:
 		editor_pane.add(Editor.Type.TEXT, filename)
 		# new_control = CodeEdit.new()
