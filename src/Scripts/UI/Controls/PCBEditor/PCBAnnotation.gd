@@ -30,7 +30,7 @@ var positions: Array[Vector2] = []
 var text: String = ""
 
 ## Display color
-var color: Color = Color(0.9, 0.7, 0.2)  # Yellow default for human
+var color: Color = Color(0.95, 0.5, 0.9)  # Light magenta default for human
 
 ## Author of the annotation
 var author: String = "human"  # "human" or "ai"
@@ -105,7 +105,7 @@ static func _generate_id() -> String:
 ## Get default color for author
 static func _get_author_color(author_name: String) -> Color:
 	if author_name == "human":
-		return Color(0.9, 0.7, 0.2)  # Yellow for human
+		return Color(0.95, 0.5, 0.9)  # Light magenta for human
 	else:
 		return Color(0.3, 0.7, 0.9)  # Cyan for AI
 

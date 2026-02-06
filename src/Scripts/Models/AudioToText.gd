@@ -20,10 +20,32 @@ var FieldForFilling#:TextEdit # needed to remove the type because this is gettin
 # Store the stop signal
 var stop_signal:bool = false
 
+var mic_player: AudioStreamPlayer
+
 func _ready():
 	var idx = AudioServer.get_bus_index("Rec")
 	effect = AudioServer.get_bus_effect(idx, 0)
-	#btnStop == null
+	# Create mic player dynamically (not in scene) to avoid Godot 4.6 shutdown crash:
+	# AudioStreamPlaybackMicrophone::stop() dereferences freed audio driver in destructor.
+	# By creating on-demand and destroying when done, the playback is cleaned up while
+	# the audio driver is still alive.
+	mic_player = AudioStreamPlayer.new()
+	mic_player.bus = &"Rec"
+	add_child(mic_player)
+
+func _start_mic():
+	if not mic_player.playing:
+		mic_player.stream = AudioStreamMicrophone.new()
+		mic_player.play()
+
+func _stop_mic():
+	if mic_player.playing:
+		mic_player.stop()
+	mic_player.stream = null
+
+func _exit_tree():
+	_stop_mic()
+
 func _StartConverting():
 	if SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENAI).is_empty():
 		SingletonObject.ErrorDisplay("No API Key", "Missing OpenAI API key for Whisper service")
@@ -34,6 +56,7 @@ func _StartConverting():
 		btn.modulate = Color.WHITE
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
+		_stop_mic()
 		recording.save_to_wav(file_path)
 		
 		# Verify that the format is indeed WAV
@@ -97,8 +120,9 @@ func _StartConverting():
 			print("Failed to open audio file: ", file_path)
 			return ERR_INVALID_DATA
 	else:
+		_start_mic()
 		effect.set_recording_active(true)
-	
+
 	return OK
 
 func _StopConverting():
@@ -107,6 +131,7 @@ func _StopConverting():
 	if effect.is_recording_active():
 		effect.set_recording_active(false)
 		print("Recording stopped")
+	_stop_mic()
 	
 	# Disconnect HTTPRequest if it exists
 	if http_request:

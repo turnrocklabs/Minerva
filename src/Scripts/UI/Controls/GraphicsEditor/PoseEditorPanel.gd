@@ -57,6 +57,11 @@ var pose_texture: Texture:
 		return _texture
 
 
+func _exit_tree() -> void:
+	subviewport = null
+	camera = null
+
+
 func _ready() -> void:
 	# Configure main viewport
 	if subviewport:

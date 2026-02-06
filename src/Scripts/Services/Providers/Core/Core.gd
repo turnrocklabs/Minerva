@@ -27,10 +27,13 @@ var http_request: HTTPRequest = HTTPRequest.new()
 # Array to store fetched services (might be populated after connection)
 var services: Array[Service]
 
-## How long the chached services list is valid
+## How long the cached services list is valid
 var _services_cache_timeout: float = 150
 ## Last time the services were fetched
 var _services_last_fetch: float = -1
+## In-flight fetch deduplication: if non-null, a fetch is already in progress
+var _services_fetch_in_flight: bool = false
+signal _services_fetch_completed
 
 # JWT token obtained after successful login
 var _jwt_token: String = ""
@@ -452,16 +455,24 @@ func invalidate_services_cache() -> void:
 	services.clear()
 
 ## Fetches the list of available services from the Core.[br]
-## If [param use_cache] is `true` it will use cached list of services it they
-## were fetched in the last [member _services_cache_timeout] seconds.
-func fetch_services(use_cache: = false) -> Array[Service]:
+## If [param use_cache] is `true` (default) it will use cached list of services
+## if they were fetched in the last [member _services_cache_timeout] seconds.
+## Concurrent calls are deduplicated — only one request is sent to the server.
+func fetch_services(use_cache: = true) -> Array[Service]:
 	if not client._connected:
 		push_warning("Attempted to fetch services while not connected.")
 		return []
-	
+
 	if use_cache and Time.get_unix_time_from_system() - _services_last_fetch < _services_cache_timeout:
 		_services_last_fetch = Time.get_unix_time_from_system()
 		return services
+
+	# If a fetch is already in-flight, wait for it instead of sending a duplicate request
+	if _services_fetch_in_flight:
+		await _services_fetch_completed
+		return services
+
+	_services_fetch_in_flight = true
 
 	var req_id: = client.request_connections() # Send the request to the core
 
@@ -470,6 +481,8 @@ func fetch_services(use_cache: = false) -> Array[Service]:
 
 	if not msg:
 		push_error("Did not receive response for skills/discovery or timed out.")
+		_services_fetch_in_flight = false
+		_services_fetch_completed.emit()
 		return [] # Timeout or error
 
 	# Check structure and extract services array
@@ -478,22 +491,21 @@ func fetch_services(use_cache: = false) -> Array[Service]:
 		services_array = msg["params"]["result"]["services"]
 	else:
 		push_error("Received skills/discovery response in unexpected format: ", msg)
+		_services_fetch_in_flight = false
+		_services_fetch_completed.emit()
 		return []
 
 	# Clear existing services and parse new ones
 	services.clear()
 	for srvc_dta in services_array:
 		if srvc_dta.has("params") and typeof(srvc_dta["params"]) == TYPE_DICTIONARY:
-			# print("\nParsing Service data:") # Debug
-			# print(srvc_dta["params"])      # Debug
 			services.append(Service.new(srvc_dta["params"]))
 		else:
 			push_warning("Skipping service entry with invalid format: ", srvc_dta)
 
-	#print("\n\nParsed Services:") # Debug
-	#print(services)               # Debug
-
 	_services_last_fetch = Time.get_unix_time_from_system()
+	_services_fetch_in_flight = false
+	_services_fetch_completed.emit()
 
 	return services
 

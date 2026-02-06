@@ -43,12 +43,26 @@ func set_tools(tools: Array[Dictionary]) -> void:
 func format_tools_for_request() -> Array:
 	var function_declarations: Array = []
 	for tool in available_tools:
+		var schema = tool.get("input_schema", {"type": "object", "properties": {}}).duplicate(true)
+		_strip_unsupported_schema_fields(schema)
 		function_declarations.append({
 			"name": tool.get("name", ""),
 			"description": tool.get("description", ""),
-			"parameters": tool.get("input_schema", {"type": "object", "properties": {}})
+			"parameters": schema
 		})
 	return [{"function_declarations": function_declarations}]
+
+
+## Recursively remove JSON Schema fields that Google's Gemini API doesn't support
+static func _strip_unsupported_schema_fields(schema: Variant) -> void:
+	if schema is Dictionary:
+		schema.erase("additionalProperties")
+		schema.erase("$schema")
+		for value in schema.values():
+			_strip_unsupported_schema_fields(value)
+	elif schema is Array:
+		for item in schema:
+			_strip_unsupported_schema_fields(item)
 
 
 func _parse_request_results(response: RequestResults) -> BotResponse:

@@ -1,9 +1,7 @@
-[gd_scene load_steps=4 format=3 uid="uid://26r74su11f20"]
+[gd_scene load_steps=3 format=3 uid="uid://26r74su11f20"]
 
 [ext_resource type="Script" uid="uid://dd0pgtwdefoms" path="res://Scenes/toast/toast_notification.gd" id="1_jce67"]
 [ext_resource type="Theme" uid="uid://ip2e1pskfoes" path="res://assets/themes/toast.tres" id="2_mttjx"]
-
-[sub_resource type="CanvasTexture" id="CanvasTexture_jce67"]
 
 [node name="ToastNotification" type="Control"]
 layout_mode = 3
@@ -33,4 +31,3 @@ custom_minimum_size = Vector2(400, 40)
 layout_mode = 0
 offset_right = 400.0
 offset_bottom = 40.0
-texture = SubResource("CanvasTexture_jce67")
