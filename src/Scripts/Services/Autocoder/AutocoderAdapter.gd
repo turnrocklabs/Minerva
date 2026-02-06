@@ -646,6 +646,36 @@ func delete_review_agent(agent_id: String) -> bool:
 	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
 
 
+## Update a review agent's order (execution priority)
+func update_review_agent_order(agent_id: String, order: int) -> bool:
+	if not Core.client._connected:
+		push_warning("Can't update review agent order. Core not connected")
+		return false
+
+	var action := get_action("autocoder/review-agent/update")
+	if not action:
+		push_warning("Update review agent action not found")
+		return false
+
+	var data := {
+		"agent_id": agent_id,
+		"order": order
+	}
+
+	var msg = await Core.send_message(service, action, data).receive()
+
+	if not msg:
+		push_warning("Review Agent Order Update Error: No response from server")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to update order")
+		push_warning("Review Agent Order Update Error: %s" % error_msg)
+		return false
+
+	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+
+
 ## Generate a development plan from prompt (planning mode)
 ## @param prompt: The planning prompt
 ## @param session_id: Optional session ID to continue planning

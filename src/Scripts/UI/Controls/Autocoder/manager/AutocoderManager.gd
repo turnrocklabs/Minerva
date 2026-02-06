@@ -994,7 +994,7 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store) -> void:  # ta
 		var status_map = {
 			"plan": AutocoderTaskClass.TaskStatus.PLAN,
 			"in_progress": AutocoderTaskClass.TaskStatus.IN_PROGRESS,
-			"review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"review": AutocoderTaskClass.TaskStatus.AI_REVIEW,  # Backend "review" maps to AI Review column
 			"ai_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
 			"human_review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
 			"done": AutocoderTaskClass.TaskStatus.DONE,
