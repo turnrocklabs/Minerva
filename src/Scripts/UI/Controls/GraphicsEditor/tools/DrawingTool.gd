@@ -658,8 +658,8 @@ func _build_selection_mask() -> PackedByteArray:
 	for y in range(height):
 		for x in range(width):
 			var pixel_index = y * width + x
-			var byte_index = pixel_index / 8
-			var bit_index = pixel_index % 8
+			var byte_index = int(pixel_index / 8.0)
+			var bit_index = int(pixel_index % 8.0)
 			
 			if editor.is_pixel_selected(x, y):
 				mask[byte_index] = mask[byte_index] | (1 << bit_index)

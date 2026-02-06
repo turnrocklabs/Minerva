@@ -1,4 +1,4 @@
-[gd_scene load_steps=74 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -54,6 +54,7 @@
 [ext_resource type="Texture2D" uid="uid://bit2mc7dcdd4p" path="res://assets/icons/new_line_icons/new_line_icon_48.png" id="36_hfhsg"]
 [ext_resource type="Texture2D" uid="uid://cu670w2c46b66" path="res://assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_24.png" id="36_w0aut"]
 [ext_resource type="Texture2D" uid="uid://dbcxp7ty3bnc4" path="res://assets/icons/new_line_icons/new_line_icon_68.png" id="37_toq4t"]
+[ext_resource type="Texture2D" uid="uid://c5cxofvkrs71b" path="res://assets/icons/pcb_editor/pcb_icon_24.png" id="37_ukagr"]
 [ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="38_6qpnt"]
 [ext_resource type="Texture2D" uid="uid://djqrl07g4xxjo" path="res://assets/icons/paperclip_icons/paperclip_icon_48_no_bg.png" id="39_dp74p"]
 [ext_resource type="Texture2D" uid="uid://dpphnihk74dd0" path="res://assets/icons/create_pencil_icons/pencil_icon_64_no_bg.png" id="39_ttovn"]
@@ -65,9 +66,9 @@
 [ext_resource type="PackedScene" uid="uid://bd8ohb6l8jjyr" path="res://Scenes/ProjectRecent.tscn" id="54_7n3d4"]
 [ext_resource type="Script" uid="uid://1fueuihora3v" path="res://Scenes/note/NotesContainer.gd" id="57_jnakw"]
 [ext_resource type="Script" uid="uid://b172wgd7hty1f" path="res://Scripts/Drawer/Drawer_manager.gd" id="58_a7b38"]
-[ext_resource type="Texture2D" path="res://assets/icons/undo_icons/redo_arrow.png" id="68_redo1"]
-[ext_resource type="Texture2D" path="res://assets/icons/undo_icons/redo_arrow_48.png" id="69_redo2"]
-[ext_resource type="Texture2D" path="res://assets/icons/undo_icons/redo_arrow_64.png" id="70_redo3"]
+[ext_resource type="Texture2D" uid="uid://d5168e401a07" path="res://assets/icons/undo_icons/redo_arrow.png" id="68_redo1"]
+[ext_resource type="Texture2D" uid="uid://eu5n264nx6h8" path="res://assets/icons/undo_icons/redo_arrow_48.png" id="69_redo2"]
+[ext_resource type="Texture2D" uid="uid://d14ff0fa4a1cf" path="res://assets/icons/undo_icons/redo_arrow_64.png" id="70_redo3"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -528,7 +529,7 @@ icon = ExtResource("36_w0aut")
 layout_mode = 2
 size_flags_horizontal = 0
 tooltip_text = "Create new PCB editor tab"
-text = "PCB"
+icon = ExtResource("37_ukagr")
 
 [node name="Control" type="Control" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" unique_id=679684188]
 layout_mode = 2
@@ -548,7 +549,7 @@ tooltip_text = "clears all the text in the current tab"
 icon = ExtResource("21_akf3o")
 script = ExtResource("21_rnx1y")
 
-[node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" unique_id=131727324]
 layout_mode = 2
 tooltip_text = "Undo (Returns Editor to previous state)"
 icon = ExtResource("11_srtkx")
@@ -557,7 +558,7 @@ icon_24 = ExtResource("11_srtkx")
 icon_48 = ExtResource("29_rqudt")
 icon_68 = ExtResource("30_i8mta")
 
-[node name="RedoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer"]
+[node name="RedoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" unique_id=1075632333]
 layout_mode = 2
 tooltip_text = "Redo (Restores previously undone action)"
 icon = ExtResource("68_redo1")
@@ -566,7 +567,7 @@ icon_24 = ExtResource("68_redo1")
 icon_48 = ExtResource("69_redo2")
 icon_68 = ExtResource("70_redo3")
 
-[node name="BackSpaceButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" groups=["editor_action_button"]]
+[node name="BackSpaceButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" unique_id=1481836571 groups=["editor_action_button"]]
 layout_mode = 2
 tooltip_text = "Backspace"
 focus_mode = 0
