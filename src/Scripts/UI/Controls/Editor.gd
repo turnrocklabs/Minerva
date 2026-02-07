@@ -37,6 +37,7 @@ var logs_viewer  # AutocoderLogsViewer - type annotation removed to avoid circul
 var kanban_board  # AutocoderKanbanBoard - type annotation removed to avoid circular dependency
 var spreadsheet_editor  # SpreadsheetEditor
 var pcb_editor  # PCBEditor - type annotation removed to avoid circular dependency
+var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid circular dependency
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -72,6 +73,7 @@ enum Type {
 	KANBAN,
 	SPREADSHEET,
 	PCB,
+	VIDEO_EDITOR,
 }
 
 
@@ -224,6 +226,18 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.pcb_editor = new_pcb_editor
 			new_pcb_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
 
+		Editor.Type.VIDEO_EDITOR:
+			vbox_container.clip_contents = true
+			var video_editor_scene = load("res://Scenes/VideoEditorPanel.tscn")
+			var new_video_editor = video_editor_scene.instantiate()
+			new_video_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_video_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(new_video_editor)
+			editor.video_editor_panel = new_video_editor
+			new_video_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
+			if file_:
+				new_video_editor.load_from_path(file_)
+
 	return editor
 
 func toggle(on: bool) -> void:
@@ -255,7 +269,7 @@ func _ready():
 			Type.KANBAN: _load_kanban_file(file)
 			Type.SPREADSHEET: _load_spreadsheet_file(file)
 	
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -544,6 +558,10 @@ func get_saved_state() -> int:
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 		Type.KANBAN:
+			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+		Type.VIDEO_EDITOR:
+			# Video editors save their edits to the recording directory
 			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 	return state

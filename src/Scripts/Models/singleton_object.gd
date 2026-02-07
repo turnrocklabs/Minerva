@@ -782,6 +782,9 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 @onready var editor_pane: EditorPane = editor_container.editor_pane if editor_container else null
 var editors: Array[Editor]
 var Is_code_completed:bool = true
+
+## Video recorder overlay scene
+var video_recorder_overlay_scene = preload("res://Scenes/VideoRecorder.tscn")
 #endregion
 
 #region Common UI Tasks
