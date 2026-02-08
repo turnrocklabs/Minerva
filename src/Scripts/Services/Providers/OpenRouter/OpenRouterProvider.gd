@@ -387,53 +387,20 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 
 
 # ============================================================================
-# Model Variants
+# Dynamic Model Factory
 # ============================================================================
 
-## GLM-4.7 from Zhipu AI - Advanced reasoning model
-class GLM47 extends OpenRouterProvider:
-	func _init():
-		super()
-		api_model_id = "z-ai/glm-4.7"
-		model_name = "glm-4.7"
-		display_name = "GLM-4.7"
-		short_name = "GLM"
-		input_token_cost = 0.20   # $0.20 per million input tokens
-		output_token_cost = 0.60   # $0.60 per million output tokens
-		is_reasoning_model = true
-
-
-## Minimax M2.1 - Efficient coding and agentic model
-class MinimaxM21 extends OpenRouterProvider:
-	func _init():
-		super()
-		api_model_id = "minimax/minimax-m2.1"
-		model_name = "minimax-m2.1"
-		display_name = "Minimax M2.1"
-		short_name = "MM2"
-		input_token_cost = 0.13   # $0.13 per million input tokens
-		output_token_cost = 0.40   # $0.40 per million output tokens
-
-
-## Kimi K2.5 from Moonshot AI - Large MoE model for long-context
-class KimiK25 extends OpenRouterProvider:
-	func _init():
-		super()
-		api_model_id = "moonshotai/kimi-k2.5"
-		model_name = "kimi-k2.5"
-		display_name = "Kimi K2.5"
-		short_name = "KK25"
-		input_token_cost = 0.50   # $0.50 per million input tokens
-		output_token_cost = 2.80   # $2.80 per million output tokens
-
-
-## Grok 4.1 Fast from xAI - Fast agentic model with 2M context
-class Grok41Fast extends OpenRouterProvider:
-	func _init():
-		super()
-		api_model_id = "x-ai/grok-4.1-fast"
-		model_name = "grok-4.1-fast"
-		display_name = "Grok 4.1 Fast"
-		short_name = "G41F"
-		input_token_cost = 0.20   # $0.20 per million input tokens
-		output_token_cost = 0.50   # $0.50 per million output tokens
+## Creates a configured OpenRouterProvider instance from a model config dictionary.
+## Config keys: api_model_id, display_name, short_name, input_token_cost,
+##              output_token_cost, is_reasoning_model
+static func create_from_config(config: Dictionary) -> OpenRouterProvider:
+	var p := OpenRouterProvider.new()
+	p.api_model_id = config.get("api_model_id", "")
+	var parts: PackedStringArray = p.api_model_id.split("/")
+	p.model_name = parts[-1] if not parts.is_empty() else p.api_model_id
+	p.display_name = config.get("display_name", p.model_name)
+	p.short_name = config.get("short_name", "OR")
+	p.input_token_cost = config.get("input_token_cost", 0.0)
+	p.output_token_cost = config.get("output_token_cost", 0.0)
+	p.is_reasoning_model = config.get("is_reasoning_model", false)
+	return p

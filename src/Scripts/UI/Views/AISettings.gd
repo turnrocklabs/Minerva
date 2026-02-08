@@ -179,8 +179,8 @@ func _rebuild_provider_dropdown() -> void:
 
 	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
 	sorted_keys.sort_custom(
-		func(a: SingletonObject.API_MODEL_PROVIDERS, b: SingletonObject.API_MODEL_PROVIDERS):
-			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
+		func(a, b):
+			return _get_provider_instance(a).token_cost < _get_provider_instance(b).token_cost
 	)
 
 	for key in sorted_keys:
@@ -188,8 +188,7 @@ func _rebuild_provider_dropdown() -> void:
 		if not SingletonObject.is_model_enabled(key):
 			continue
 
-		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
-		var instance = script.new()
+		var instance = _get_provider_instance(key)
 		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.display_name], key)
 
 	# Restore previous selection if still available
@@ -197,6 +196,15 @@ func _rebuild_provider_dropdown() -> void:
 		var idx = _provider_option_button.get_item_index(current_id)
 		if idx >= 0:
 			_provider_option_button.select(idx)
+
+
+## Creates a provider instance for the given model key, applying config for dynamic models
+func _get_provider_instance(key: int) -> BaseProvider:
+	if key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+		var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(key)
+		if not config.is_empty():
+			return OpenRouterProvider.create_from_config(config)
+	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key].new()
 
 
 func _on_provider_option_button_item_selected(index: int):
