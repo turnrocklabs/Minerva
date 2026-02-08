@@ -201,6 +201,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _insert_spreadsheet_column(arguments)
 		"minerva_format_cells":
 			return _format_cells(arguments)
+		"minerva_set_row_height":
+			return _set_row_height(arguments)
 		"minerva_set_cell_formula":
 			return _set_cell_formula(arguments)
 		"minerva_create_chart":
@@ -1053,9 +1055,45 @@ func _register_spreadsheet_tools() -> void:
 					"type": "string",
 					"description": "Number display format: 'none' (default), 'currency' or 'usd' ($X,XXX.XX), 'percent' (X.XX%), 'decimal' (X.XX)",
 					"enum": ["none", "currency", "usd", "percent", "decimal"]
+				},
+				"wrap_text": {
+					"type": "boolean",
+					"description": "Enable text wrapping in cell (displays text on multiple lines)"
 				}
 			},
 			"required": ["editor_name", "range"]
+		}
+	)
+
+	_register_tool("minerva_set_row_height",
+		"Set the height of one or more spreadsheet rows. Use to make wrapped text visible.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"rows": {
+					"type": "array",
+					"description": "Array of row configs. Row numbers are 1-based.",
+					"items": {
+						"type": "object",
+						"properties": {
+							"row": {
+								"type": "integer",
+								"description": "Row number (1-based)"
+							},
+							"height": {
+								"type": "number",
+								"description": "Height in pixels (min 16, max 200)"
+							}
+						},
+						"required": ["row", "height"]
+					}
+				}
+			},
+			"required": ["editor_name", "rows"]
 		}
 	)
 
@@ -3141,6 +3179,8 @@ func _format_cells(args: Dictionary) -> Dictionary:
 		format_options["bg_color"] = Color.html(args.get("bg_color", "#000000"))
 	if args.has("number_format"):
 		format_options["number_format"] = args.get("number_format", "none")
+	if args.has("wrap_text"):
+		format_options["wrap_text"] = args.get("wrap_text", false)
 
 	# Apply formatting with history recording
 	var formatted_count := 0
@@ -3152,6 +3192,59 @@ func _format_cells(args: Dictionary) -> Dictionary:
 		"success": true,
 		"cells_formatted": formatted_count,
 		"message": "Formatted %d cells" % formatted_count
+	}
+
+
+func _set_row_height(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var rows: Array = args.get("rows", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if rows.is_empty():
+		return {"error": "rows array is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	var updated_count := 0
+	for row_config in rows:
+		if not row_config is Dictionary:
+			continue
+		var row_1based: int = row_config.get("row", -1)
+		var height: float = row_config.get("height", -1.0)
+		if row_1based < 1 or height < 0:
+			continue
+
+		var row := row_1based - 1  # Convert to 0-based
+		if row < 0 or row >= data.row_count:
+			continue
+
+		height = clampf(height, SpreadsheetDataScript.MIN_ROW_HEIGHT, SpreadsheetDataScript.MAX_ROW_HEIGHT)
+		var old_height: float = data.get_row_height(row)
+		data.set_row_height(row, height)
+		if height != old_height:
+			editor.spreadsheet_editor.history.record_row_resize(row, old_height, height)
+		updated_count += 1
+
+	# Trigger UI updates
+	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+	editor.spreadsheet_editor.row_headers.queue_redraw()
+	editor.spreadsheet_editor._update_scrollbar_ranges()
+
+	return {
+		"success": true,
+		"rows_updated": updated_count,
+		"message": "Updated height for %d rows" % updated_count
 	}
 
 

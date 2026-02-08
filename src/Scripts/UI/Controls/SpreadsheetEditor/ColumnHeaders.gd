@@ -9,6 +9,7 @@ signal column_resize_started(col: int)
 signal column_resize(col: int, new_width: float)
 signal column_resize_ended(col: int)
 signal column_autofit_requested(col: int)
+signal column_context_menu_requested(col: int, screen_pos: Vector2)
 
 ## Reference to spreadsheet data
 var data: SpreadsheetDataScript = null
@@ -140,6 +141,14 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
+	if event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.pressed:
+			var x := event.position.x + scroll_offset_x
+			var col := _get_col_at_x(x)
+			if col >= 0:
+				column_context_menu_requested.emit(col, get_screen_position() + event.position)
+		return
+
 	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
 

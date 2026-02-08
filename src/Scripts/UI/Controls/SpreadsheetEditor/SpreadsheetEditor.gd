@@ -50,6 +50,12 @@ var chart_canvases: Array = []  # Array of ChartCanvas
 var charts: Array = []  # Array of SpreadsheetChart
 var chart_config_dialog: Window
 
+## Context menu
+var context_menu: PopupMenu
+var _context_source: String = ""  # "cell", "row", "column"
+var _context_row: int = -1
+var _context_col: int = -1
+
 ## Current selection
 var current_row: int = 0
 var current_col: int = 0
@@ -453,6 +459,7 @@ func _connect_signals() -> void:
 	cells_canvas.scroll_changed.connect(_on_scroll_changed)
 	cells_canvas.navigation_requested.connect(_on_canvas_navigation)
 	cells_canvas.edit_requested.connect(_on_canvas_edit_requested)
+	cells_canvas.context_menu_requested.connect(_on_cell_context_menu)
 
 	# Column header signals
 	column_headers.column_clicked.connect(_on_column_clicked)
@@ -460,12 +467,14 @@ func _connect_signals() -> void:
 	column_headers.column_resize.connect(_on_column_resize)
 	column_headers.column_resize_ended.connect(_on_column_resize_ended)
 	column_headers.column_autofit_requested.connect(_on_column_autofit)
+	column_headers.column_context_menu_requested.connect(_on_column_context_menu)
 
 	# Row header signals
 	row_headers.row_clicked.connect(_on_row_clicked)
 	row_headers.row_resize_started.connect(_on_row_resize_started)
 	row_headers.row_resize.connect(_on_row_resize)
 	row_headers.row_resize_ended.connect(_on_row_resize_ended)
+	row_headers.row_context_menu_requested.connect(_on_row_context_menu)
 
 	# Scrollbar signals
 	h_scrollbar.value_changed.connect(_on_h_scroll_changed)
@@ -696,6 +705,130 @@ func _on_row_resize_ended(row: int) -> void:
 		if new_height != _resize_row_start_height:
 			history.record_row_resize(_resize_row, _resize_row_start_height, new_height)
 	_resize_row = -1
+
+
+## Context menu handlers
+
+func _create_context_menu() -> void:
+	context_menu = PopupMenu.new()
+	context_menu.id_pressed.connect(_on_context_menu_id_pressed)
+	add_child(context_menu)
+
+
+func _show_context_menu(screen_pos: Vector2) -> void:
+	if not context_menu:
+		_create_context_menu()
+
+	context_menu.clear()
+
+	# Check if any cell in the selection has wrap_text enabled
+	var has_wrap := false
+	var all_rects: Array[Rect2i] = cells_canvas.get_all_selection_rects()
+	if all_rects.is_empty():
+		all_rects = [Rect2i(current_col, current_row, 1, 1)]
+	for sel_rect in all_rects:
+		for row in range(sel_rect.position.y, sel_rect.end.y):
+			for col in range(sel_rect.position.x, sel_rect.end.x):
+				var cell = spreadsheet_data.get_cell_if_exists(row, col)
+				if cell and cell.wrap_text:
+					has_wrap = true
+					break
+			if has_wrap:
+				break
+		if has_wrap:
+			break
+
+	context_menu.add_check_item("Wrap Text", 0)
+	context_menu.set_item_checked(0, has_wrap)
+
+	if _context_source == "cell" or _context_source == "row":
+		context_menu.add_separator()
+		context_menu.add_item("Auto-Fit Row Height", 1)
+
+	context_menu.position = Vector2i(int(screen_pos.x), int(screen_pos.y))
+	context_menu.popup()
+
+
+func _on_cell_context_menu(row: int, col: int, screen_pos: Vector2) -> void:
+	_context_source = "cell"
+	_context_row = row
+	_context_col = col
+	current_row = row
+	current_col = col
+	_update_selection_display()
+	_show_context_menu(screen_pos)
+
+
+func _on_row_context_menu(row: int, screen_pos: Vector2) -> void:
+	_context_source = "row"
+	_context_row = row
+	_context_col = -1
+	# Select entire row
+	cells_canvas.select_range(row, 0, row, spreadsheet_data.column_count - 1)
+	_show_context_menu(screen_pos)
+
+
+func _on_column_context_menu(col: int, screen_pos: Vector2) -> void:
+	_context_source = "column"
+	_context_row = -1
+	_context_col = col
+	# Select entire column
+	cells_canvas.select_range(0, col, spreadsheet_data.row_count - 1, col)
+	_show_context_menu(screen_pos)
+
+
+func _on_context_menu_id_pressed(id: int) -> void:
+	match id:
+		0:  # Wrap Text toggle
+			_apply_format_to_selection({"wrap_text": "toggle"})
+		1:  # Auto-Fit Row Height
+			_auto_fit_selected_row_heights()
+
+
+func _auto_fit_selected_row_heights() -> void:
+	var all_rects: Array[Rect2i] = cells_canvas.get_all_selection_rects()
+	if all_rects.is_empty():
+		all_rects = [Rect2i(current_col, current_row, 1, 1)]
+
+	var rows_done: Dictionary = {}
+	for sel_rect in all_rects:
+		for row in range(sel_rect.position.y, sel_rect.end.y):
+			if rows_done.has(row):
+				continue
+			rows_done[row] = true
+			_auto_fit_row_height(row)
+
+
+func _auto_fit_row_height(row: int) -> void:
+	var cell_font: Font = cells_canvas.font
+	var cell_font_size: int = cells_canvas.font_size
+	var padding: float = cells_canvas.cell_padding * 2.0
+	var line_height: float = cell_font.get_height(cell_font_size)
+	var old_height: float = spreadsheet_data.get_row_height(row)
+	var needed_height: float = SpreadsheetDataScript.DEFAULT_ROW_HEIGHT
+
+	for col in range(spreadsheet_data.column_count):
+		var cell = spreadsheet_data.get_cell_if_exists(row, col)
+		if not cell or cell.is_empty():
+			continue
+		if cell.wrap_text:
+			var col_width: float = spreadsheet_data.get_column_width(col) - padding
+			var text_size: Vector2 = cell_font.get_multiline_string_size(
+				cell.get_display_text(), HORIZONTAL_ALIGNMENT_LEFT, col_width, cell_font_size
+			)
+			needed_height = maxf(needed_height, text_size.y + padding)
+		else:
+			needed_height = maxf(needed_height, line_height + padding)
+
+	needed_height = clampf(needed_height, SpreadsheetDataScript.MIN_ROW_HEIGHT, SpreadsheetDataScript.MAX_ROW_HEIGHT)
+
+	if needed_height != old_height:
+		spreadsheet_data.set_row_height(row, needed_height)
+		history.record_row_resize(row, old_height, needed_height)
+		cells_canvas.queue_redraw()
+		row_headers.queue_redraw()
+		_update_scrollbar_ranges()
+		content_changed.emit()
 
 
 func _update_selection_display() -> void:
@@ -1224,6 +1357,7 @@ func _apply_format_to_selection(format: Dictionary) -> void:
 					"alignment": cell.alignment,
 					"text_color": cell.text_color,
 					"bg_color": cell.bg_color,
+					"wrap_text": cell.wrap_text,
 				}
 
 				# Apply format changes
@@ -1237,6 +1371,11 @@ func _apply_format_to_selection(format: Dictionary) -> void:
 					cell.text_color = format["text_color"]
 				if format.has("bg_color"):
 					cell.bg_color = format["bg_color"]
+				if format.has("wrap_text"):
+					if format["wrap_text"] == "toggle":
+						cell.wrap_text = not cell.wrap_text
+					else:
+						cell.wrap_text = format["wrap_text"]
 
 				# Capture new format
 				var new_format: Dictionary = {
@@ -1245,6 +1384,7 @@ func _apply_format_to_selection(format: Dictionary) -> void:
 					"alignment": cell.alignment,
 					"text_color": cell.text_color,
 					"bg_color": cell.bg_color,
+					"wrap_text": cell.wrap_text,
 				}
 
 				# Only record if format actually changed
@@ -1324,6 +1464,8 @@ func _apply_history_action(action, is_undo: bool) -> void:
 				cell.text_color = format_data["text_color"]
 			if format_data.has("bg_color"):
 				cell.bg_color = format_data["bg_color"]
+			if format_data.has("wrap_text"):
+				cell.wrap_text = format_data["wrap_text"]
 
 		SpreadsheetHistoryScript.ActionType.RANGE_CLEAR:
 			if is_undo:
@@ -1364,6 +1506,8 @@ func _apply_history_action(action, is_undo: bool) -> void:
 					cell.text_color = format_data["text_color"]
 				if format_data.has("bg_color"):
 					cell.bg_color = format_data["bg_color"]
+				if format_data.has("wrap_text"):
+					cell.wrap_text = format_data["wrap_text"]
 
 		SpreadsheetHistoryScript.ActionType.ROW_RESIZE:
 			var row: int = action.data["row"]
@@ -1532,6 +1676,7 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 		"text_color": cell.text_color,
 		"bg_color": cell.bg_color,
 		"number_format": cell.number_format,
+		"wrap_text": cell.wrap_text,
 	}
 
 	# Apply new format
@@ -1548,6 +1693,8 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 	if format_options.has("number_format"):
 		cell.number_format = format_options["number_format"]
 		cell.refresh_display()
+	if format_options.has("wrap_text"):
+		cell.wrap_text = format_options["wrap_text"]
 
 	# Capture new format
 	var new_format := {
@@ -1557,6 +1704,7 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 		"text_color": cell.text_color,
 		"bg_color": cell.bg_color,
 		"number_format": cell.number_format,
+		"wrap_text": cell.wrap_text,
 	}
 
 	# Record in history

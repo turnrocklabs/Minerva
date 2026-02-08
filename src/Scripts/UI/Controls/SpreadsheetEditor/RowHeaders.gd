@@ -8,6 +8,7 @@ signal row_clicked(row: int)
 signal row_resize_started(row: int)
 signal row_resize(row: int, new_height: float)
 signal row_resize_ended(row: int)
+signal row_context_menu_requested(row: int, screen_pos: Vector2)
 
 ## Reference to spreadsheet data
 var data: SpreadsheetDataScript = null
@@ -134,6 +135,14 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
+	if event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.pressed:
+			var y := event.position.y + scroll_offset_y
+			var row := _get_row_at_y(y)
+			if row >= 0:
+				row_context_menu_requested.emit(row, get_screen_position() + event.position)
+		return
+
 	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
 

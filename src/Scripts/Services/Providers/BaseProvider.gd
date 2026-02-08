@@ -214,6 +214,8 @@ class RequestResults extends RefCounted:
 ## This function will return array of
 var timed_out: bool = false
 func make_request(url: String, method: int, body: Variant = "", headers: Array[String]= []) -> RequestResults:
+	# Reset timeout state for each new request
+	timed_out = false
 	# setup request object for the delta endpoint and append API key
 	var http_request: = HTTPRequest.new()
 	http_request.use_threads = true
@@ -224,6 +226,8 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	if len(API_KEY) == 0 and PROVIDER != SingletonObject.API_PROVIDER.LOCAL:
 		SingletonObject.ErrorDisplay("No API Access", "API Key is missing or rejected")
 		push_error("Invalid API key")
+		active_requests.erase(http_request)
+		http_request.queue_free()
 		return RequestResults.from_error("API Key is missing or rejected")
 
 	if http_request.is_inside_tree():
@@ -242,11 +246,13 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	if error != OK:
 		SingletonObject.call_deferred("ErrorDisplay", "Error", "An error occurred during the HTTP request: %s" % error)#ErrorDisplay("Error", "An error occurred during the HTTP request: %s" % error)
 		#push_error("An error occurred during the HTTP request: %s" % error)
+		active_requests.erase(http_request)
+		http_request.queue_free()
 		return RequestResults.from_error("Unexpected error occurred")
 
 	# Setup timeout timer
 	var timeout_seconds: float = get_effective_timeout()
-	
+
 	var timeout_timer: SceneTreeTimer = null
 
 	if timeout_seconds > 0 and is_inside_tree():
@@ -264,9 +270,15 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 
 	# Check if we timed out
 	if timed_out:
+		active_requests.erase(http_request)
+		http_request.queue_free()
 		return RequestResults.from_error("Request timed out after %d seconds" % int(timeout_seconds))
 
 	var results = RequestResults.from_request_response(request_results, http_request, url)
+
+	# Clean up the HTTPRequest node now that we have the response data
+	active_requests.erase(http_request)
+	http_request.queue_free()
 
 	return results
 
