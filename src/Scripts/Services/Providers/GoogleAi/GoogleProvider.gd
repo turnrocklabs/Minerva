@@ -381,7 +381,7 @@ func to_bot_response(data: Variant) -> BotResponse:
 				# Gemini doesn't provide an ID for function calls, so we generate one
 				# Use a counter to ensure uniqueness when multiple calls are in the same response
 				_tool_call_counter += 1
-				var call_id: String = "gemini_call_%s_%d_%d" % [func_call.get("name", "unknown"), Time.get_ticks_msec(), _tool_call_counter]
+				var call_id: String = "gc_%d_%d" % [Time.get_ticks_msec(), _tool_call_counter]
 				response.add_tool_call(
 					call_id,
 					func_call.get("name", ""),

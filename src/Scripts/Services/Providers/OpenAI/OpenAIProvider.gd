@@ -145,7 +145,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	if chat_item.Role == ChatHistoryItem.ChatRole.TOOL:
 		return {
 			"role": "tool",
-			"tool_call_id": chat_item.ToolCallId,
+			"tool_call_id": sanitize_tool_id(chat_item.ToolCallId),
 			"content": chat_item.Message
 		}
 
@@ -178,7 +178,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 				args_string = JSON.stringify(args)
 
 			tool_calls_formatted.append({
-				"id": tool_call.get("id", ""),
+				"id": sanitize_tool_id(tool_call.get("id", "")),
 				"type": "function",
 				"function": {
 					"name": tool_call.get("name", ""),

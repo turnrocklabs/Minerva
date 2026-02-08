@@ -203,6 +203,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _format_cells(arguments)
 		"minerva_set_row_height":
 			return _set_row_height(arguments)
+		"minerva_set_column_width":
+			return _set_column_width(arguments)
 		"minerva_set_cell_formula":
 			return _set_cell_formula(arguments)
 		"minerva_create_chart":
@@ -885,7 +887,7 @@ func _register_spreadsheet_tools() -> void:
 						"type": "object",
 						"properties": {
 							"cell": {"type": "string", "description": "Cell reference (e.g., 'A1', 'B2')"},
-							"value": {"description": "Value to set (string, number, or formula starting with '=')"}
+							"value": {"type": "string", "description": "Value to set (string, number, or formula starting with '=')"}
 						},
 						"required": ["cell", "value"]
 					}
@@ -911,7 +913,7 @@ func _register_spreadsheet_tools() -> void:
 				"values": {
 					"type": "array",
 					"description": "Array of values for the new row (one per column)",
-					"items": {}
+					"items": {"type": "string"}
 				}
 			},
 			"required": ["editor_name"]
@@ -938,7 +940,7 @@ func _register_spreadsheet_tools() -> void:
 				"values": {
 					"type": "array",
 					"description": "Array of values for the column (starting from row 1 if header is provided)",
-					"items": {}
+					"items": {"type": "string"}
 				}
 			},
 			"required": ["editor_name"]
@@ -1094,6 +1096,38 @@ func _register_spreadsheet_tools() -> void:
 				}
 			},
 			"required": ["editor_name", "rows"]
+		}
+	)
+
+	_register_tool("minerva_set_column_width",
+		"Set the width of one or more spreadsheet columns. Use to make content fully visible.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"columns": {
+					"type": "array",
+					"description": "Array of column configs. Column can be a letter (A, B, ...) or 1-based number.",
+					"items": {
+						"type": "object",
+						"properties": {
+							"column": {
+								"type": "string",
+								"description": "Column letter (e.g., 'A', 'B') or 1-based number (e.g., '1', '2')"
+							},
+							"width": {
+								"type": "number",
+								"description": "Width in pixels (min 30, max 500)"
+							}
+						},
+						"required": ["column", "width"]
+					}
+				}
+			},
+			"required": ["editor_name", "columns"]
 		}
 	)
 
@@ -3245,6 +3279,65 @@ func _set_row_height(args: Dictionary) -> Dictionary:
 		"success": true,
 		"rows_updated": updated_count,
 		"message": "Updated height for %d rows" % updated_count
+	}
+
+
+func _set_column_width(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var columns: Array = args.get("columns", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if columns.is_empty():
+		return {"error": "columns array is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	var updated_count := 0
+	for col_config in columns:
+		if not col_config is Dictionary:
+			continue
+		var col_str: String = str(col_config.get("column", ""))
+		var width: float = col_config.get("width", -1.0)
+		if col_str.is_empty() or width < 0:
+			continue
+
+		# Parse column: letter (A, B, ...) or 1-based number
+		var col: int = -1
+		if col_str.is_valid_int():
+			col = int(col_str) - 1  # Convert 1-based to 0-based
+		else:
+			col = SpreadsheetDataScript.parse_column_label(col_str.to_upper())
+
+		if col < 0 or col >= data.column_count:
+			continue
+
+		width = clampf(width, SpreadsheetDataScript.MIN_COLUMN_WIDTH, SpreadsheetDataScript.MAX_COLUMN_WIDTH)
+		var old_width: float = data.get_column_width(col)
+		data.set_column_width(col, width)
+		if width != old_width:
+			editor.spreadsheet_editor.history.record_column_resize(col, old_width, width)
+		updated_count += 1
+
+	# Trigger UI updates
+	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+	editor.spreadsheet_editor.column_headers.queue_redraw()
+	editor.spreadsheet_editor._update_scrollbar_ranges()
+
+	return {
+		"success": true,
+		"columns_updated": updated_count,
+		"message": "Updated width for %d columns" % updated_count
 	}
 
 

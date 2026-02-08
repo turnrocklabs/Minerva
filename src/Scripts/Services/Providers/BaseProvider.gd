@@ -96,6 +96,20 @@ func get_effective_num_gpu() -> int:
 	# Fall back to default
 	return default_num_gpu
 
+## Sanitize a tool call ID to be safe across all providers.
+## OpenAI: max 40 chars. Anthropic: must match ^[a-zA-Z0-9_-]+$
+static var _tool_id_regex: RegEx = _init_tool_id_regex()
+static func _init_tool_id_regex() -> RegEx:
+	var r := RegEx.new()
+	r.compile("[^a-zA-Z0-9_-]")
+	return r
+
+static func sanitize_tool_id(id: String) -> String:
+	var clean := _tool_id_regex.sub(id, "_", true).left(40)
+	if clean.is_empty():
+		clean = "tool_0"
+	return clean
+
 ## Temperature constraints
 var temperature_min: float = 0.0
 var temperature_max: float = 2.0
