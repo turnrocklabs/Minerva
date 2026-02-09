@@ -27,6 +27,8 @@ class ProviderItem:
 ## Key: "default" (String) for standard providers, or Service object for service-specific sets
 var _provider_sets: Dictionary = {}
 var _current_set_key: Variant = "default"
+## Services used to build the current combined set (for rebuilding after provider changes)
+var _current_combined_services: Array = []
 
 
 func _ready():
@@ -44,9 +46,11 @@ func _ready():
 
 ## Handle provider enable/disable changes
 func _on_provider_enabled_changed(_provider: SingletonObject.API_PROVIDER, _enabled: bool) -> void:
-	# Rebuild the default set and invalidate cached combined sets
 	_setup_default_provider_set()
-	clear_combined_provider_sets()  # Force combined sets to rebuild with fresh data
+	# Rebuild the active combined set with fresh default data (preserves core providers)
+	if not _current_combined_services.is_empty() and _current_set_key is String and (_current_set_key as String).begins_with("combined_"):
+		var has_internal_chat := _contains_internal_chat_service(_current_combined_services)
+		_create_combined_set(_current_combined_services, _current_set_key, has_internal_chat)
 	_rebuild_dropdown()
 
 
@@ -62,15 +66,17 @@ func switch_to_provider_set_for_service(service: Service):
 func switch_to_provider_set_for_services(services: Array):
 	if services.is_empty():
 		switch_to_provider_set("default")
+		_current_combined_services = []
 		return
-	
+
 	var combined_key := _create_combined_key(services)
-	
+
 	# ALWAYS recreate - don't reuse cached combined sets
 	var has_internal_chat := _contains_internal_chat_service(services)
 	_create_combined_set(services, combined_key, has_internal_chat)
-	
+
 	_current_set_key = combined_key
+	_current_combined_services = services
 	_rebuild_dropdown()
 
 
@@ -97,17 +103,23 @@ func get_item_index_for_provider(provider: BaseProvider) -> int:
 	for i in range(get_item_count()):
 		var item_id := get_item_id(i)
 		var metadata = get_item_metadata(get_item_index(item_id))
-		
+
 		if provider is CoreProvider and metadata is Array:
 			var core_provider := provider as CoreProvider
 			if metadata.size() >= 2 and metadata[1] == core_provider.action:
 				return i
-		
+
+		# Dynamic OpenRouter models: match by api_model_id since they share a script
+		elif item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE and provider is OpenRouterProvider:
+			var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(item_id)
+			if not config.is_empty() and config.get("api_model_id") == provider.api_model_id:
+				return i
+
 		elif not provider is CoreProvider and item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 			var expected_script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id]
 			if expected_script == provider.get_script():
 				return i
-	
+
 	return -1
 
 
@@ -140,8 +152,7 @@ func _setup_default_provider_set():
 
 	sorted_keys.sort_custom(
 		func(a, b):
-			return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[a].new().token_cost < \
-				   SingletonObject.API_MODEL_PROVIDER_SCRIPTS[b].new().token_cost
+			return _get_token_cost_for_key(a) < _get_token_cost_for_key(b)
 	)
 
 	# Add TURNROCK and HUMAN at the end (they're special/local providers)
@@ -156,7 +167,16 @@ func _setup_default_provider_set():
 			continue
 
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
-		var instance = script.new()
+		var instance: BaseProvider
+		# Dynamic OpenRouter models need config applied
+		if key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+			var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(key)
+			if not config.is_empty():
+				instance = OpenRouterProvider.create_from_config(config)
+			else:
+				instance = script.new()
+		else:
+			instance = script.new()
 		var item := ProviderItem.new(instance.display_name, key, script, null, "")
 		items.append(item)
 
@@ -251,6 +271,11 @@ func _get_provider_from_id(item_id: int) -> BaseProvider:
 	# CoreProvider: metadata is [Service, Action]
 	if metadata is Array and metadata.size() == 2:
 		provider = CoreProvider.new.callv(metadata)
+	# Dynamic OpenRouter model: use factory with config
+	elif item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+		var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(item_id)
+		if not config.is_empty():
+			provider = OpenRouterProvider.create_from_config(config)
 	# Standard provider: use script from dictionary
 	elif item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
@@ -267,14 +292,30 @@ func get_provider_for_tab(tab: int) -> BaseProvider:
 	else:
 		return SingletonObject.ChatList[tab].provider
 
+## Old OpenRouter enum IDs (14-17) mapped to their api_model_id for migration
+const _LEGACY_OR_IDS := {
+	14: "z-ai/glm-4.7",
+	15: "minimax/minimax-m2.1",
+	16: "moonshotai/kimi-k2.5",
+	17: "x-ai/grok-4.1-fast",
+}
+
 ## Loads previously saved provider selection from config
 func _load_saved_provider():
 	if not SingletonObject.config_has_saved_section("Providers"):
 		return
-	
+
 	var provider_id = SingletonObject.get_config_file_value("Providers", "DefaultProviderId")
 	if provider_id == null:
 		return
+
+	# Migrate old OpenRouter enum IDs (14-17) to dynamic model IDs
+	if provider_id in _LEGACY_OR_IDS:
+		var api_model_id: String = _LEGACY_OR_IDS[provider_id]
+		var config: Dictionary = SingletonObject.openrouter_model_manager.get_model_by_api_id(api_model_id)
+		if not config.is_empty():
+			provider_id = config["id"]
+			SingletonObject.save_to_config_file("Providers", "DefaultProviderId", provider_id)
 
 	var index := _find_item_index_by_id(provider_id)
 	if index != -1:
@@ -312,6 +353,16 @@ func _contains_internal_chat_service(services: Array) -> bool:
 		if service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
 			return true
 	return false
+
+
+## Gets the token cost for a model key (handles dynamic OpenRouter models)
+func _get_token_cost_for_key(key: int) -> float:
+	if key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+		var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(key)
+		if not config.is_empty():
+			return config.get("input_token_cost", 0.0) + config.get("output_token_cost", 0.0)
+		return 0.0
+	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key].new().token_cost
 
 
 ## Truncates long action names for display

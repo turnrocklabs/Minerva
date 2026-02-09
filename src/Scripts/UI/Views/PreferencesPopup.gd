@@ -236,6 +236,7 @@ func _on_about_to_popup():
 	set_microphone_option_menu(SingletonObject.get_microphone())
 	populate_output_devices_button()
 	_sync_provider_checkboxes()
+	_populate_openrouter_models()
 
 
 ## Sync provider checkbox states with SingletonObject enabled state
@@ -411,6 +412,357 @@ func _on_password_checkbox_toggled(toggled_on:bool) -> void:
 
 func _on_hcp_logs_button_pressed() -> void:
 	logs_window.popup_centered()
+
+
+#region OpenRouter Models Tab
+
+@onready var _or_model_list_container: VBoxContainer = %ORModelListContainer
+
+func _populate_openrouter_models() -> void:
+	# Clear existing rows
+	for child in _or_model_list_container.get_children():
+		child.queue_free()
+
+	var manager = SingletonObject.openrouter_model_manager
+	if not manager:
+		return
+
+	for config in manager.models:
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var name_label := Label.new()
+		name_label.text = config.get("display_name", "")
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.size_flags_stretch_ratio = 1.5
+		row.add_child(name_label)
+
+		var id_label := Label.new()
+		id_label.text = config.get("api_model_id", "")
+		id_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		id_label.modulate.a = 0.6
+		row.add_child(id_label)
+
+		var cost_label := Label.new()
+		cost_label.text = "$%.2f/$%.2f" % [config.get("input_token_cost", 0.0), config.get("output_token_cost", 0.0)]
+		cost_label.custom_minimum_size.x = 80
+		row.add_child(cost_label)
+
+		var edit_btn := Button.new()
+		edit_btn.text = "Edit"
+		var model_id: int = config.get("id", 0)
+		edit_btn.pressed.connect(_on_or_edit_model.bind(model_id))
+		row.add_child(edit_btn)
+
+		var del_btn := Button.new()
+		del_btn.text = "Delete"
+		del_btn.pressed.connect(_on_or_delete_model.bind(model_id))
+		row.add_child(del_btn)
+
+		_or_model_list_container.add_child(row)
+
+	if manager.models.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "No OpenRouter models configured."
+		empty_label.modulate.a = 0.5
+		_or_model_list_container.add_child(empty_label)
+
+
+func _on_or_edit_model(model_id: int) -> void:
+	var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(model_id)
+	if not config.is_empty():
+		_show_or_model_dialog(config)
+
+
+func _on_or_delete_model(model_id: int) -> void:
+	var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(model_id)
+	if config.is_empty():
+		return
+
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Delete Model"
+	dialog.dialog_text = "Remove \"%s\" from OpenRouter models?" % config.get("display_name", "")
+	dialog.content_scale_factor = get_tree().root.content_scale_factor
+	dialog.confirmed.connect(func():
+		SingletonObject.openrouter_model_manager.remove_model(model_id)
+		_populate_openrouter_models()
+	)
+	dialog.canceled.connect(func(): dialog.queue_free())
+	dialog.confirmed.connect(func(): dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+## Show add/edit dialog for an OpenRouter model.
+## Pass empty dict for add mode, or existing config for edit mode.
+func _show_or_model_dialog(existing_config: Dictionary = {}) -> void:
+	var is_edit := not existing_config.is_empty()
+	var win := Window.new()
+	win.title = "Edit OpenRouter Model" if is_edit else "Add OpenRouter Model"
+	var scale: float = get_tree().root.content_scale_factor
+	win.content_scale_factor = scale
+	win.size = Vector2i(Vector2(420, 380) * scale)
+	win.close_requested.connect(func(): win.queue_free())
+
+	var margin := MarginContainer.new()
+	margin.anchors_preset = Control.PRESET_FULL_RECT
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	win.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	# Model ID
+	var id_label := Label.new()
+	id_label.text = "Model ID (e.g. openai/gpt-4o)"
+	vbox.add_child(id_label)
+	var id_edit := LineEdit.new()
+	id_edit.text = existing_config.get("api_model_id", "")
+	id_edit.placeholder_text = "provider/model-name"
+	vbox.add_child(id_edit)
+
+	# Display Name
+	var dn_label := Label.new()
+	dn_label.text = "Display Name"
+	vbox.add_child(dn_label)
+	var dn_edit := LineEdit.new()
+	dn_edit.text = existing_config.get("display_name", "")
+	vbox.add_child(dn_edit)
+
+	# Short Name
+	var sn_label := Label.new()
+	sn_label.text = "Short Name (3-4 chars)"
+	vbox.add_child(sn_label)
+	var sn_edit := LineEdit.new()
+	sn_edit.text = existing_config.get("short_name", "")
+	sn_edit.max_length = 5
+	vbox.add_child(sn_edit)
+
+	# Costs
+	var cost_hbox := HBoxContainer.new()
+	cost_hbox.add_theme_constant_override("separation", 8)
+	var in_label := Label.new()
+	in_label.text = "In $/M:"
+	cost_hbox.add_child(in_label)
+	var in_spin := SpinBox.new()
+	in_spin.min_value = 0.0
+	in_spin.max_value = 1000.0
+	in_spin.step = 0.01
+	in_spin.value = existing_config.get("input_token_cost", 0.0)
+	in_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cost_hbox.add_child(in_spin)
+	var out_label := Label.new()
+	out_label.text = "Out $/M:"
+	cost_hbox.add_child(out_label)
+	var out_spin := SpinBox.new()
+	out_spin.min_value = 0.0
+	out_spin.max_value = 1000.0
+	out_spin.step = 0.01
+	out_spin.value = existing_config.get("output_token_cost", 0.0)
+	out_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cost_hbox.add_child(out_spin)
+	vbox.add_child(cost_hbox)
+
+	# Reasoning model checkbox
+	var reasoning_check := CheckButton.new()
+	reasoning_check.text = "Reasoning model"
+	reasoning_check.button_pressed = existing_config.get("is_reasoning_model", false)
+	vbox.add_child(reasoning_check)
+
+	# Spacer
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(spacer)
+
+	# Buttons
+	var sep := HSeparator.new()
+	vbox.add_child(sep)
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.add_theme_constant_override("separation", 8)
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.pressed.connect(func(): win.queue_free())
+	btn_hbox.add_child(cancel_btn)
+	var save_btn := Button.new()
+	save_btn.text = "Save"
+	save_btn.pressed.connect(func():
+		var api_model_id := id_edit.text.strip_edges()
+		if api_model_id.is_empty():
+			return
+		var new_config := {
+			"api_model_id": api_model_id,
+			"display_name": dn_edit.text.strip_edges() if not dn_edit.text.strip_edges().is_empty() else api_model_id,
+			"short_name": sn_edit.text.strip_edges() if not sn_edit.text.strip_edges().is_empty() else "OR",
+			"input_token_cost": in_spin.value,
+			"output_token_cost": out_spin.value,
+			"is_reasoning_model": reasoning_check.button_pressed,
+		}
+		if is_edit:
+			SingletonObject.openrouter_model_manager.update_model(existing_config["id"], new_config)
+		else:
+			SingletonObject.openrouter_model_manager.add_model(new_config)
+		_populate_openrouter_models()
+		win.queue_free()
+	)
+	btn_hbox.add_child(save_btn)
+	vbox.add_child(btn_hbox)
+
+	add_child(win)
+	win.popup_centered()
+
+
+func _on_or_browse_api_pressed() -> void:
+	var api_key := get_api_key(SingletonObject.API_PROVIDER.OPENROUTER)
+	if api_key.strip_edges().is_empty():
+		SingletonObject.ErrorDisplay("No API Key", "Please set your OpenRouter API key in the API Keys tab first.", self)
+		return
+
+	_show_or_browse_dialog(api_key)
+
+
+func _show_or_browse_dialog(api_key: String) -> void:
+	var win := Window.new()
+	win.title = "Browse OpenRouter Models"
+	var scale: float = get_tree().root.content_scale_factor
+	win.content_scale_factor = scale
+	win.size = Vector2i(Vector2(620, 520) * scale)
+	win.close_requested.connect(func(): win.queue_free())
+
+	var margin := MarginContainer.new()
+	margin.anchors_preset = Control.PRESET_FULL_RECT
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	win.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	# Search bar
+	var search_hbox := HBoxContainer.new()
+	var search_edit := LineEdit.new()
+	search_edit.placeholder_text = "Search models..."
+	search_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	search_hbox.add_child(search_edit)
+	var refresh_btn := Button.new()
+	refresh_btn.text = "Refresh"
+	search_hbox.add_child(refresh_btn)
+	vbox.add_child(search_hbox)
+
+	# Model list
+	var item_list := ItemList.new()
+	item_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	item_list.allow_reselect = true
+	vbox.add_child(item_list)
+
+	# Details label
+	var details_label := Label.new()
+	details_label.text = "Select a model to see details."
+	details_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details_label.custom_minimum_size.y = 40
+	vbox.add_child(details_label)
+
+	# Status label for loading
+	var status_label := Label.new()
+	status_label.text = "Loading models..."
+	status_label.modulate.a = 0.6
+	vbox.add_child(status_label)
+
+	# Buttons
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
+	btn_hbox.add_theme_constant_override("separation", 8)
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.pressed.connect(func(): win.queue_free())
+	btn_hbox.add_child(cancel_btn)
+	var add_btn := Button.new()
+	add_btn.text = "Add Selected"
+	add_btn.disabled = true
+	btn_hbox.add_child(add_btn)
+	vbox.add_child(btn_hbox)
+
+	add_child(win)
+	win.popup_centered()
+
+	# Store fetched models for selection
+	var all_models: Array = []
+
+	# Filter function
+	var _filter_list := func(search_text: String):
+		item_list.clear()
+		var query := search_text.strip_edges().to_lower()
+		for i in range(all_models.size()):
+			var m: Dictionary = all_models[i]
+			var name_: String = m.get("display_name", "")
+			var id_: String = m.get("api_model_id", "")
+			if query.is_empty() or query in name_.to_lower() or query in id_.to_lower():
+				var cost_str := "$%.2f/$%.2f" % [m.get("input_token_cost", 0.0), m.get("output_token_cost", 0.0)]
+				item_list.add_item("%s — %s" % [name_, cost_str])
+				item_list.set_item_metadata(item_list.get_item_count() - 1, i)
+
+	# Selection handler
+	item_list.item_selected.connect(func(idx: int):
+		var model_idx: int = item_list.get_item_metadata(idx)
+		var m: Dictionary = all_models[model_idx]
+		details_label.text = "%s\nID: %s\nCost: $%.2f in / $%.2f out per M tokens" % [
+			m.get("display_name", ""),
+			m.get("api_model_id", ""),
+			m.get("input_token_cost", 0.0),
+			m.get("output_token_cost", 0.0),
+		]
+		if m.get("context_length", 0) > 0:
+			details_label.text += "\nContext: %dk" % (m["context_length"] / 1000)
+		add_btn.disabled = false
+	)
+
+	# Add button handler
+	add_btn.pressed.connect(func():
+		var selected := item_list.get_selected_items()
+		if selected.is_empty():
+			return
+		var model_idx: int = item_list.get_item_metadata(selected[0])
+		var m: Dictionary = all_models[model_idx].duplicate()
+		m.erase("context_length")
+		# Check if already added
+		var existing: Dictionary = SingletonObject.openrouter_model_manager.get_model_by_api_id(m.get("api_model_id", ""))
+		if not existing.is_empty():
+			SingletonObject.ErrorDisplay("Already Added", "Model \"%s\" is already in your list." % m.get("display_name", ""), self)
+			return
+		SingletonObject.openrouter_model_manager.add_model(m)
+		_populate_openrouter_models()
+		win.queue_free()
+	)
+
+	# Search filter
+	search_edit.text_changed.connect(func(text: String): _filter_list.call(text))
+
+	# Fetch models
+	var _do_fetch := func():
+		status_label.text = "Loading models..."
+		add_btn.disabled = true
+		var fetched = await SingletonObject.openrouter_model_manager.fetch_api_models(api_key)
+		all_models.clear()
+		all_models.append_array(fetched)
+		if all_models.is_empty():
+			status_label.text = "No models found or API error."
+		else:
+			status_label.text = "%d models available" % all_models.size()
+			_filter_list.call(search_edit.text)
+
+	refresh_btn.pressed.connect(func(): _do_fetch.call())
+	_do_fetch.call()
+
+#endregion OpenRouter Models Tab
 
 
 #region Provider toggles

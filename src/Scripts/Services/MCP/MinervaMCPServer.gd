@@ -36,6 +36,7 @@ func _init(manager = null) -> void:
 		_register_spreadsheet_tools()
 		_register_kanban_tools()
 		_register_pcb_tools()
+		_register_video_editor_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -200,6 +201,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _insert_spreadsheet_column(arguments)
 		"minerva_format_cells":
 			return _format_cells(arguments)
+		"minerva_set_row_height":
+			return _set_row_height(arguments)
+		"minerva_set_column_width":
+			return _set_column_width(arguments)
 		"minerva_set_cell_formula":
 			return _set_cell_formula(arguments)
 		"minerva_create_chart":
@@ -290,6 +295,26 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return await _pcb_get_image(arguments)
 		"minerva_pcb_create_note":
 			return await _pcb_create_note(arguments)
+
+		# Video editor tools
+		"minerva_create_video_editor":
+			return _create_video_editor(arguments)
+		"minerva_video_add_cut":
+			return _video_add_cut(arguments)
+		"minerva_video_add_speed_region":
+			return _video_add_speed_region(arguments)
+		"minerva_video_remove_edit":
+			return _video_remove_edit(arguments)
+		"minerva_video_set_pip_position":
+			return _video_set_pip_position(arguments)
+		"minerva_video_set_crop_position":
+			return _video_set_crop_position(arguments)
+		"minerva_video_get_state":
+			return _video_get_state(arguments)
+		"minerva_video_export":
+			return _video_export(arguments)
+		"minerva_video_list_recordings":
+			return _video_list_recordings(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -862,7 +887,7 @@ func _register_spreadsheet_tools() -> void:
 						"type": "object",
 						"properties": {
 							"cell": {"type": "string", "description": "Cell reference (e.g., 'A1', 'B2')"},
-							"value": {"description": "Value to set (string, number, or formula starting with '=')"}
+							"value": {"type": "string", "description": "Value to set (string, number, or formula starting with '=')"}
 						},
 						"required": ["cell", "value"]
 					}
@@ -888,7 +913,7 @@ func _register_spreadsheet_tools() -> void:
 				"values": {
 					"type": "array",
 					"description": "Array of values for the new row (one per column)",
-					"items": {}
+					"items": {"type": "string"}
 				}
 			},
 			"required": ["editor_name"]
@@ -915,7 +940,7 @@ func _register_spreadsheet_tools() -> void:
 				"values": {
 					"type": "array",
 					"description": "Array of values for the column (starting from row 1 if header is provided)",
-					"items": {}
+					"items": {"type": "string"}
 				}
 			},
 			"required": ["editor_name"]
@@ -1032,9 +1057,77 @@ func _register_spreadsheet_tools() -> void:
 					"type": "string",
 					"description": "Number display format: 'none' (default), 'currency' or 'usd' ($X,XXX.XX), 'percent' (X.XX%), 'decimal' (X.XX)",
 					"enum": ["none", "currency", "usd", "percent", "decimal"]
+				},
+				"wrap_text": {
+					"type": "boolean",
+					"description": "Enable text wrapping in cell (displays text on multiple lines)"
 				}
 			},
 			"required": ["editor_name", "range"]
+		}
+	)
+
+	_register_tool("minerva_set_row_height",
+		"Set the height of one or more spreadsheet rows. Use to make wrapped text visible.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"rows": {
+					"type": "array",
+					"description": "Array of row configs. Row numbers are 1-based.",
+					"items": {
+						"type": "object",
+						"properties": {
+							"row": {
+								"type": "integer",
+								"description": "Row number (1-based)"
+							},
+							"height": {
+								"type": "number",
+								"description": "Height in pixels (min 16, max 200)"
+							}
+						},
+						"required": ["row", "height"]
+					}
+				}
+			},
+			"required": ["editor_name", "rows"]
+		}
+	)
+
+	_register_tool("minerva_set_column_width",
+		"Set the width of one or more spreadsheet columns. Use to make content fully visible.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the spreadsheet editor tab"
+				},
+				"columns": {
+					"type": "array",
+					"description": "Array of column configs. Column can be a letter (A, B, ...) or 1-based number.",
+					"items": {
+						"type": "object",
+						"properties": {
+							"column": {
+								"type": "string",
+								"description": "Column letter (e.g., 'A', 'B') or 1-based number (e.g., '1', '2')"
+							},
+							"width": {
+								"type": "number",
+								"description": "Width in pixels (min 30, max 500)"
+							}
+						},
+						"required": ["column", "width"]
+					}
+				}
+			},
+			"required": ["editor_name", "columns"]
 		}
 	)
 
@@ -3120,6 +3213,8 @@ func _format_cells(args: Dictionary) -> Dictionary:
 		format_options["bg_color"] = Color.html(args.get("bg_color", "#000000"))
 	if args.has("number_format"):
 		format_options["number_format"] = args.get("number_format", "none")
+	if args.has("wrap_text"):
+		format_options["wrap_text"] = args.get("wrap_text", false)
 
 	# Apply formatting with history recording
 	var formatted_count := 0
@@ -3131,6 +3226,118 @@ func _format_cells(args: Dictionary) -> Dictionary:
 		"success": true,
 		"cells_formatted": formatted_count,
 		"message": "Formatted %d cells" % formatted_count
+	}
+
+
+func _set_row_height(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var rows: Array = args.get("rows", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if rows.is_empty():
+		return {"error": "rows array is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	var updated_count := 0
+	for row_config in rows:
+		if not row_config is Dictionary:
+			continue
+		var row_1based: int = row_config.get("row", -1)
+		var height: float = row_config.get("height", -1.0)
+		if row_1based < 1 or height < 0:
+			continue
+
+		var row := row_1based - 1  # Convert to 0-based
+		if row < 0 or row >= data.row_count:
+			continue
+
+		height = clampf(height, SpreadsheetDataScript.MIN_ROW_HEIGHT, SpreadsheetDataScript.MAX_ROW_HEIGHT)
+		var old_height: float = data.get_row_height(row)
+		data.set_row_height(row, height)
+		if height != old_height:
+			editor.spreadsheet_editor.history.record_row_resize(row, old_height, height)
+		updated_count += 1
+
+	# Trigger UI updates
+	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+	editor.spreadsheet_editor.row_headers.queue_redraw()
+	editor.spreadsheet_editor._update_scrollbar_ranges()
+
+	return {
+		"success": true,
+		"rows_updated": updated_count,
+		"message": "Updated height for %d rows" % updated_count
+	}
+
+
+func _set_column_width(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var columns: Array = args.get("columns", [])
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	if columns.is_empty():
+		return {"error": "columns array is required", "success": false}
+
+	var editor = _find_spreadsheet_editor(editor_name)
+	if not editor:
+		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+
+	if not editor.spreadsheet_editor:
+		return {"error": "Spreadsheet editor not initialized", "success": false}
+
+	var data = editor.spreadsheet_editor.spreadsheet_data
+	if not data:
+		return {"error": "No spreadsheet data available", "success": false}
+
+	var updated_count := 0
+	for col_config in columns:
+		if not col_config is Dictionary:
+			continue
+		var col_str: String = str(col_config.get("column", ""))
+		var width: float = col_config.get("width", -1.0)
+		if col_str.is_empty() or width < 0:
+			continue
+
+		# Parse column: letter (A, B, ...) or 1-based number
+		var col: int = -1
+		if col_str.is_valid_int():
+			col = int(col_str) - 1  # Convert 1-based to 0-based
+		else:
+			col = SpreadsheetDataScript.parse_column_label(col_str.to_upper())
+
+		if col < 0 or col >= data.column_count:
+			continue
+
+		width = clampf(width, SpreadsheetDataScript.MIN_COLUMN_WIDTH, SpreadsheetDataScript.MAX_COLUMN_WIDTH)
+		var old_width: float = data.get_column_width(col)
+		data.set_column_width(col, width)
+		if width != old_width:
+			editor.spreadsheet_editor.history.record_column_resize(col, old_width, width)
+		updated_count += 1
+
+	# Trigger UI updates
+	editor.spreadsheet_editor.cells_canvas.queue_redraw()
+	editor.spreadsheet_editor.column_headers.queue_redraw()
+	editor.spreadsheet_editor._update_scrollbar_ranges()
+
+	return {
+		"success": true,
+		"columns_updated": updated_count,
+		"message": "Updated width for %d columns" % updated_count
 	}
 
 
@@ -6290,6 +6497,347 @@ func _pcb_create_note(args: Dictionary) -> Dictionary:
 		"component_count": pcb_data.get("components", {}).size(),
 		"net_count": pcb_data.get("nets", {}).size(),
 		"message": "Created PCB note '%s' in thread '%s'. Edit button restores full state." % [note_title, thread_name]
+	}
+
+#endregion
+
+
+#region Video Editor Tools
+
+func _register_video_editor_tools() -> void:
+	_register_tool("minerva_create_video_editor",
+		"Open a recording in the video editor. Creates a new editor tab for editing a recorded video.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the video editor tab"
+				},
+				"recording_path": {
+					"type": "string",
+					"description": "Path to the recording directory (from minerva_video_list_recordings)"
+				}
+			},
+			"required": ["name", "recording_path"]
+		}
+	)
+
+	_register_tool("minerva_video_add_cut",
+		"Cut out a time region from the video. The cut region will be excluded from the final export.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the video editor tab"
+				},
+				"start_ms": {
+					"type": "integer",
+					"description": "Start time in milliseconds"
+				},
+				"end_ms": {
+					"type": "integer",
+					"description": "End time in milliseconds"
+				}
+			},
+			"required": ["editor_name", "start_ms", "end_ms"]
+		}
+	)
+
+	_register_tool("minerva_video_add_speed_region",
+		"Speed up a time region in the video (fast-forward effect).",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the video editor tab"
+				},
+				"start_ms": {
+					"type": "integer",
+					"description": "Start time in milliseconds"
+				},
+				"end_ms": {
+					"type": "integer",
+					"description": "End time in milliseconds"
+				},
+				"speed": {
+					"type": "number",
+					"description": "Speed multiplier (e.g. 2.0, 3.0, 5.0). Default: 3.0"
+				}
+			},
+			"required": ["editor_name", "start_ms", "end_ms"]
+		}
+	)
+
+	_register_tool("minerva_video_remove_edit",
+		"Remove a cut or speed edit by segment index, reverting it to normal playback.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the video editor tab"
+				},
+				"segment_index": {
+					"type": "integer",
+					"description": "Index of the segment to remove (from minerva_video_get_state)"
+				}
+			},
+			"required": ["editor_name", "segment_index"]
+		}
+	)
+
+	_register_tool("minerva_video_set_pip_position",
+		"Set the Picture-in-Picture webcam overlay position at a specific time. Creates a keyframe for smooth transitions.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the video editor tab"
+				},
+				"time_ms": {
+					"type": "integer",
+					"description": "Time in milliseconds for the keyframe"
+				},
+				"x": {
+					"type": "number",
+					"description": "Normalized X position (0.0=left, 1.0=right)"
+				},
+				"y": {
+					"type": "number",
+					"description": "Normalized Y position (0.0=top, 1.0=bottom)"
+				}
+			},
+			"required": ["editor_name", "time_ms", "x", "y"]
+		}
+	)
+
+	_register_tool("minerva_video_set_crop_position",
+		"Set the vertical (9:16) crop region center position at a specific time. Creates a keyframe for the crop window.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the video editor tab"
+				},
+				"time_ms": {
+					"type": "integer",
+					"description": "Time in milliseconds for the keyframe"
+				},
+				"x": {
+					"type": "number",
+					"description": "Normalized center X position of the 9:16 crop (0.0=left, 0.5=center, 1.0=right)"
+				}
+			},
+			"required": ["editor_name", "time_ms", "x"]
+		}
+	)
+
+	_register_tool("minerva_video_get_state",
+		"Get the current edit state of a video editor, including segments, keyframes, and duration.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the video editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	)
+
+	_register_tool("minerva_video_export",
+		"Export the video to MP4 file. Requires ffmpeg to be installed.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the video editor tab"
+				},
+				"output_path": {
+					"type": "string",
+					"description": "Full file path for the output MP4"
+				},
+				"aspect_ratio": {
+					"type": "string",
+					"enum": ["16:9", "9:16"],
+					"description": "Export aspect ratio. '16:9' for landscape (1920x1080), '9:16' for vertical/shorts (1080x1920). Default: '16:9'"
+				}
+			},
+			"required": ["editor_name", "output_path"]
+		}
+	)
+
+	_register_tool("minerva_video_list_recordings",
+		"List all available video recordings with their metadata.",
+		{
+			"type": "object",
+			"properties": {},
+		}
+	)
+
+
+## Find a video editor by tab name
+func _find_video_editor(name_: String):  # Returns VideoEditorPanel or null
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return null
+
+	var clean_name = name_.strip_edges()
+
+	# Exact match
+	for editor in editor_pane.get_open_editors():
+		if editor.type == Editor.Type.VIDEO_EDITOR and editor.tab_title == clean_name:
+			return editor.video_editor_panel
+
+	# Case-insensitive match
+	var lower_name = clean_name.to_lower()
+	for editor in editor_pane.get_open_editors():
+		if editor.type == Editor.Type.VIDEO_EDITOR and editor.tab_title.to_lower() == lower_name:
+			return editor.video_editor_panel
+
+	return null
+
+
+## Create a new video editor
+func _create_video_editor(args: Dictionary) -> Dictionary:
+	var name_: String = args.get("name", "")
+	var recording_path: String = args.get("recording_path", "")
+
+	if name_.is_empty():
+		return {"success": false, "error": "name is required"}
+	if recording_path.is_empty():
+		return {"success": false, "error": "recording_path is required"}
+
+	# Check if editor already open with this name
+	var existing = _find_video_editor(name_)
+	if existing:
+		return {"success": true, "editor_name": name_, "message": "Editor already open"}
+
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return {"success": false, "error": "Editor pane not available"}
+
+	var editor = editor_pane.add(Editor.Type.VIDEO_EDITOR, recording_path, name_)
+	if not editor:
+		return {"success": false, "error": "Failed to create video editor"}
+
+	return {
+		"success": true,
+		"editor_name": name_,
+		"message": "Video editor created for recording: %s" % recording_path
+	}
+
+
+## Add a cut segment
+func _video_add_cut(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var start_ms: int = args.get("start_ms", 0)
+	var end_ms: int = args.get("end_ms", 0)
+
+	var editor = _find_video_editor(editor_name)
+	if not editor:
+		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+
+	return editor.mcp_add_cut(start_ms, end_ms)
+
+
+## Add a speed region
+func _video_add_speed_region(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var start_ms: int = args.get("start_ms", 0)
+	var end_ms: int = args.get("end_ms", 0)
+	var speed: float = args.get("speed", 3.0)
+
+	var editor = _find_video_editor(editor_name)
+	if not editor:
+		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+
+	return editor.mcp_add_speed_region(start_ms, end_ms, speed)
+
+
+## Remove an edit segment
+func _video_remove_edit(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var segment_index: int = args.get("segment_index", -1)
+
+	var editor = _find_video_editor(editor_name)
+	if not editor:
+		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+
+	return editor.mcp_remove_edit(segment_index)
+
+
+## Set PiP position keyframe
+func _video_set_pip_position(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var time_ms: int = args.get("time_ms", 0)
+	var x: float = args.get("x", 0.85)
+	var y: float = args.get("y", 0.8)
+
+	var editor = _find_video_editor(editor_name)
+	if not editor:
+		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+
+	return editor.mcp_set_pip_position(time_ms, x, y)
+
+
+## Set crop position keyframe
+func _video_set_crop_position(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var time_ms: int = args.get("time_ms", 0)
+	var x: float = args.get("x", 0.5)
+
+	var editor = _find_video_editor(editor_name)
+	if not editor:
+		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+
+	return editor.mcp_set_crop_position(time_ms, x)
+
+
+## Get editor state
+func _video_get_state(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	var editor = _find_video_editor(editor_name)
+	if not editor:
+		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+
+	var state = editor.get_state_dict()
+	state["success"] = true
+	return state
+
+
+## Export video
+func _video_export(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var output_path: String = args.get("output_path", "")
+	var aspect_ratio_str: String = args.get("aspect_ratio", "16:9")
+
+	if output_path.is_empty():
+		return {"success": false, "error": "output_path is required"}
+
+	var editor = _find_video_editor(editor_name)
+	if not editor:
+		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+
+	return editor.mcp_export(output_path, aspect_ratio_str)
+
+
+## List all recordings
+func _video_list_recordings(_args: Dictionary) -> Dictionary:
+	var VideoRecordingDataScript = load("res://Scripts/UI/Controls/VideoRecorder/VideoRecordingData.gd")
+	var recordings = VideoRecordingDataScript.list_recordings()
+	return {
+		"success": true,
+		"recordings": recordings,
+		"count": recordings.size()
 	}
 
 #endregion

@@ -163,7 +163,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 				"role": "user",
 				"content": [{
 					"type": "tool_result",
-					"tool_use_id": chat_item.ToolCallId,
+					"tool_use_id": sanitize_tool_id(chat_item.ToolCallId),
 					"content": chat_item.Message
 				}]
 			}
@@ -182,7 +182,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		for tool_call in chat_item.ToolCalls:
 			tool_content.append({
 				"type": "tool_use",
-				"id": tool_call.get("id", ""),
+				"id": sanitize_tool_id(tool_call.get("id", "")),
 				"name": tool_call.get("name", ""),
 				"input": tool_call.get("arguments", {})
 			})

@@ -65,6 +65,9 @@ func _ready() -> void:
 	# Generate unique ID
 	editor_id = str(randi() % 1000000).pad_zeros(6)
 
+	# Check if data was pre-loaded (e.g. via load_from_dict before entering tree)
+	var preloaded := data != null
+
 	# Initialize data (only if not already loaded via load_from_dict)
 	if not data:
 		data = PCBDataScript.new()
@@ -75,6 +78,11 @@ func _ready() -> void:
 
 	# Connect signals
 	_connect_signals()
+
+	# If data was pre-loaded, the earlier call_deferred("_post_load_update") likely
+	# fired before _build_ui() ran (UI didn't exist yet). Re-schedule it now.
+	if preloaded:
+		call_deferred("_post_load_update")
 
 
 func _build_ui() -> void:
