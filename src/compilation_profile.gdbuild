@@ -1,0 +1,13 @@
+{
+	"disabled_build_options": {
+		"disable_navigation_2d": true,
+		"disable_navigation_3d": true,
+		"disable_physics_2d": true,
+		"disable_physics_3d": true,
+		"module_godot_physics_2d_enabled": false,
+		"module_godot_physics_3d_enabled": false,
+		"module_jolt_physics_enabled": false
+	},
+	"disabled_classes": [],
+	"type": "build_profile"
+}

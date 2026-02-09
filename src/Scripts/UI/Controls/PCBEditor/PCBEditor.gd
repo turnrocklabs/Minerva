@@ -1,4 +1,4 @@
-@tool
+#@tool
 class_name PCBEditor
 extends PanelContainer
 ## PCB Viewer for displaying boards loaded from pcb-architect.

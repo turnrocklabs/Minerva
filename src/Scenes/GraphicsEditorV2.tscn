@@ -1265,7 +1265,7 @@ layout_mode = 2
 unique_name_in_owner = true
 oversampling_override = 1.0
 title = "3D Pose Editor"
-position = Vector2i(381, 36)
+position = Vector2i(321, 36)
 size = Vector2i(730, 600)
 visible = false
 always_on_top = true
@@ -1274,8 +1274,11 @@ min_size = Vector2i(400, 500)
 [node name="PoseEditorPanel" parent="PoseEditorWindow" unique_id=2058091983 instance=ExtResource("41_posepanel")]
 unique_name_in_owner = true
 
-[node name="SubViewport" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer" parent_id_path=PackedInt32Array(2058091983, 1633829300) index="0" unique_id=1768477175]
-size = Vector2i(350, 2)
+[node name="SubViewportContainer" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer" parent_id_path=PackedInt32Array(2058091983, 1038675265) index="1" unique_id=1633829300]
+stretch = false
+
+[node name="SubViewport" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer" index="0" unique_id=1768477175]
+size = Vector2i(350, 498)
 render_target_update_mode = 0
 
 [node name="LayerCardsPopupPanel" type="Window" parent="." unique_id=1598404133]
@@ -1647,7 +1650,7 @@ layout_mode = 2
 unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
-size_flags_horizontal = 4
+size_flags_horizontal = 3
 texture = SubResource("ViewportTexture_v7532")
 expand_mode = 2
 

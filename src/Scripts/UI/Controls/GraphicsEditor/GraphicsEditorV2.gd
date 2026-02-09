@@ -421,6 +421,74 @@ func _build_flex_switches(action_id: String) -> Dictionary:
 	}
 
 
+## Run flex 2-image composition (image1 + image2). Returns result dict with success, request_id, message or error.
+func request_flex_compose_two(gen_params: Dictionary, image1_layer_name: String, image2_layer_name: String) -> Dictionary:
+	if image1_layer_name.is_empty():
+		return {"error": "image1_layer is required for compose_2", "success": false}
+	if image2_layer_name.is_empty():
+		return {"error": "image2_layer is required for compose_2", "success": false}
+	var image1_layer: LayerV2 = _find_layer_by_name(image1_layer_name)
+	var image2_layer: LayerV2 = _find_layer_by_name(image2_layer_name)
+	if not image1_layer:
+		return {"error": "Image 1 layer not found: %s" % image1_layer_name, "success": false}
+	if image1_layer.type != LayerV2.Type.IMAGE:
+		return {"error": "Image 1 layer must be an image layer", "success": false}
+	if not image2_layer:
+		return {"error": "Image 2 layer not found: %s" % image2_layer_name, "success": false}
+	if image2_layer.type != LayerV2.Type.IMAGE:
+		return {"error": "Image 2 layer must be an image layer", "success": false}
+	var switches: Dictionary = _build_flex_switches("compose_2")
+	for key in switches:
+		gen_params[key] = switches[key]
+	var images: Array = [
+		{"buffer": image1_layer.image.save_png_to_buffer(), "role": "image1", "filename": "image1.png"},
+		{"buffer": image2_layer.image.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
+	]
+	_current_image_gen_request_id = MediaGen.send_media_flex_request(gen_params, images)
+	return {"success": true, "request_id": _current_image_gen_request_id, "message": "Flex 2-image composition started"}
+
+
+## Run flex 3-image composition (image1 + image2 + pose editor texture as image3). Returns result dict.
+func request_flex_compose_three_with_pose(gen_params: Dictionary, image1_layer_name: String, image2_layer_name: String) -> Dictionary:
+	if image1_layer_name.is_empty():
+		return {"error": "image1_layer is required for compose_3_with_pose", "success": false}
+	if image2_layer_name.is_empty():
+		return {"error": "image2_layer is required for compose_3_with_pose", "success": false}
+	var layer1: LayerV2 = _find_layer_by_name(image1_layer_name)
+	var layer2: LayerV2 = _find_layer_by_name(image2_layer_name)
+	if not layer1:
+		return {"error": "Image 1 layer not found: %s" % image1_layer_name, "success": false}
+	if layer1.type != LayerV2.Type.IMAGE:
+		return {"error": "Image 1 must be an image layer", "success": false}
+	if not layer2:
+		return {"error": "Image 2 layer not found: %s" % image2_layer_name, "success": false}
+	if layer2.type != LayerV2.Type.IMAGE and layer2.type != LayerV2.Type.MASK:
+		return {"error": "Image 2 must be an image or mask layer", "success": false}
+	var pose_buffer: PackedByteArray = PackedByteArray()
+	if d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture:
+		var pose_image: Image = pose_editor_panel.pose_texture.get_image()
+		if pose_image != null and not pose_image.is_empty():
+			if pose_image.get_format() != Image.FORMAT_RGBA8:
+				pose_image = pose_image.duplicate()
+				pose_image.convert(Image.FORMAT_RGBA8)
+			pose_buffer = pose_image.save_png_to_buffer()
+	if pose_buffer.is_empty():
+		return {"error": "Pose required for compose_3_with_pose. Enable pose editor and ensure it has a texture.", "success": false}
+	var switches: Dictionary = _build_flex_switches("compose_3_with_pose")
+	for key in switches:
+		gen_params[key] = switches[key]
+	var img1_for_export: Image = layer1.image.duplicate()
+	if img1_for_export.get_format() != Image.FORMAT_RGBA8:
+		img1_for_export.convert(Image.FORMAT_RGBA8)
+	var img2_for_export: Image = layer2.image.duplicate()
+	if img2_for_export.get_format() != Image.FORMAT_RGBA8:
+		img2_for_export.convert(Image.FORMAT_RGBA8)
+	var image1_dict: Dictionary = {"buffer": img1_for_export.save_png_to_buffer(), "role": "image1", "filename": "image1.png"}
+	var image2_dict: Dictionary = {"buffer": img2_for_export.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
+	_current_image_gen_request_id = MediaGen.send_media_flex_request_three_with_pose(gen_params, image1_dict, image2_dict, pose_buffer)
+	return {"success": true, "request_id": _current_image_gen_request_id, "message": "Flex 2 layers + pose composition started"}
+
+
 ## Execute a flex workflow action (qwen_2511_flex)
 func _execute_flex_action(action_id: String, gen_params: Dictionary, original_params: Dictionary) -> Dictionary:
 	# Build the boolean switches for the action
@@ -457,38 +525,7 @@ func _execute_flex_action(action_id: String, gen_params: Dictionary, original_pa
 			})
 
 		"compose_2":
-			# Need image1 and image2
-			var image1_name: String = original_params.get("image1_layer", "")
-			var image2_name: String = original_params.get("image2_layer", "")
-
-			if image1_name.is_empty():
-				return {"error": "image1_layer is required for compose_2", "success": false}
-			if image2_name.is_empty():
-				return {"error": "image2_layer is required for compose_2", "success": false}
-
-			var image1_layer: LayerV2 = _find_layer_by_name(image1_name)
-			var image2_layer: LayerV2 = _find_layer_by_name(image2_name)
-
-			if not image1_layer:
-				return {"error": "Image 1 layer not found: %s" % image1_name, "success": false}
-			if image1_layer.type != LayerV2.Type.IMAGE:
-				return {"error": "Image 1 layer must be an image layer", "success": false}
-
-			if not image2_layer:
-				return {"error": "Image 2 layer not found: %s" % image2_name, "success": false}
-			if image2_layer.type != LayerV2.Type.IMAGE:
-				return {"error": "Image 2 layer must be an image layer", "success": false}
-
-			images.append({
-				"buffer": image1_layer.image.save_png_to_buffer(),
-				"role": "image1",
-				"filename": "image1.png"
-			})
-			images.append({
-				"buffer": image2_layer.image.save_png_to_buffer(),
-				"role": "image2",
-				"filename": "image2.png"
-			})
+			return request_flex_compose_two(gen_params, original_params.get("image1_layer", ""), original_params.get("image2_layer", ""))
 
 		"compose_3":
 			# Need image1, image2, and image3
@@ -539,47 +576,7 @@ func _execute_flex_action(action_id: String, gen_params: Dictionary, original_pa
 			})
 
 		"compose_3_with_pose":
-			# image1 and image2 from params (layer names); image3 = pose from pose editor
-			var image1_name: String = original_params.get("image1_layer", "")
-			var image2_name: String = original_params.get("image2_layer", "")
-			if image1_name.is_empty():
-				return {"error": "image1_layer is required for compose_3_with_pose", "success": false}
-			if image2_name.is_empty():
-				return {"error": "image2_layer is required for compose_3_with_pose", "success": false}
-			var layer1: LayerV2 = _find_layer_by_name(image1_name)
-			var layer2: LayerV2 = _find_layer_by_name(image2_name)
-			if not layer1:
-				return {"error": "Image 1 layer not found: %s" % image1_name, "success": false}
-			if layer1.type != LayerV2.Type.IMAGE:
-				return {"error": "Image 1 must be an image layer", "success": false}
-			if not layer2:
-				return {"error": "Image 2 layer not found: %s" % image2_name, "success": false}
-			if layer2.type != LayerV2.Type.IMAGE and layer2.type != LayerV2.Type.MASK:
-				return {"error": "Image 2 must be an image or mask layer", "success": false}
-			var pose_buffer: PackedByteArray = PackedByteArray()
-			if d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture:
-				var pose_image: Image = pose_editor_panel.pose_texture.get_image()
-				if pose_image != null and not pose_image.is_empty():
-					if pose_image.get_format() != Image.FORMAT_RGBA8:
-						pose_image = pose_image.duplicate()
-						pose_image.convert(Image.FORMAT_RGBA8)
-					pose_buffer = pose_image.save_png_to_buffer()
-			if pose_buffer.is_empty():
-				return {"error": "Pose required for compose_3_with_pose. Enable pose editor and ensure it has a texture.", "success": false}
-			var img1_for_export: Image = layer1.image.duplicate()
-			if img1_for_export.get_format() != Image.FORMAT_RGBA8:
-				img1_for_export.convert(Image.FORMAT_RGBA8)
-			var img2_for_export: Image = layer2.image.duplicate()
-			if img2_for_export.get_format() != Image.FORMAT_RGBA8:
-				img2_for_export.convert(Image.FORMAT_RGBA8)
-			var image1_dict: Dictionary = {"buffer": img1_for_export.save_png_to_buffer(), "role": "image1", "filename": "image1.png"}
-			var image2_dict: Dictionary = {"buffer": img2_for_export.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
-			_current_image_gen_request_id = MediaGen.send_media_flex_request_three_with_pose(gen_params, image1_dict, image2_dict, pose_buffer)
-			return {
-				"success": true,
-				"request_id": _current_image_gen_request_id,
-				"message": "Flex 2 layers + pose composition started"
-			}
+			return request_flex_compose_three_with_pose(gen_params, original_params.get("image1_layer", ""), original_params.get("image2_layer", ""))
 
 		_:
 			return {"error": "Unknown flex action: %s" % action_id, "success": false}
@@ -710,13 +707,7 @@ func _ready() -> void:
 	var viewport_texture := ViewportTexture.new()
 	viewport_texture.viewport_path = drawing_area_sub_viewport.get_path()
 	mini_map_texture_rect.texture = viewport_texture
-
-	# Set up PoseTexture ViewportTexture at runtime to avoid export errors
-	if pose_editor_panel and pose_editor_panel.subviewport and pose_texture_rect:
-		var pose_viewport_texture := ViewportTexture.new()
-		pose_viewport_texture.viewport_path = pose_editor_panel.subviewport.get_path()
-		pose_texture_rect.texture = pose_viewport_texture
-
+	
 	if Core.connected:
 		enable_ai_features()
 	else:
@@ -2207,47 +2198,33 @@ func _on_edit_img_button_pressed() -> void:
 				display_message("Selection", "Select at least one image layer in the layer list, then click Send.")
 			return
 		
-		# Flex + pose + 2 layers (image+image or image+mask) -> compose_3_with_pose
+		# Flex + pose + 2 layers (image+image or image+mask) -> compose_3_with_pose (3-image workflow, 3rd = pose editor)
 		var has_second: bool = selected_layers.size() >= 2 or selected_mask_layers.size() >= 1
 		if current_workflow == Workflow.QWEN_2511_FLEX and d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture and has_second:
 			var layer1: LayerV2 = selected_layers[0]
 			var layer2: LayerV2 = selected_layers[1] if selected_layers.size() >= 2 else selected_mask_layers[0]
 			if layer1.type == LayerV2.Type.IMAGE and (layer2.type == LayerV2.Type.IMAGE or layer2.type == LayerV2.Type.MASK):
-				var pose_image: Image = pose_editor_panel.pose_texture.get_image()
-				if pose_image != null and not pose_image.is_empty():
-					var pose_for_export: Image = pose_image.duplicate()
-					if pose_for_export.get_format() != Image.FORMAT_RGBA8:
-						pose_for_export.convert(Image.FORMAT_RGBA8)
-					var pose_buffer: PackedByteArray = pose_for_export.save_png_to_buffer()
-					if not pose_buffer.is_empty():
-						var gen_params: Dictionary = get_params_image_gen()
-						if gen_params.is_empty():
-							edit_img_button.modulate = Color.WHITE
-							edit_img_button.disabled = false
-							send_prompt_button.disabled = false
-							send_mask_edit_button.disabled = false
-							display_message("Prompt", "Enter a positive prompt for image generation.")
-							return
-						if !seed_line_edit.text.is_empty():
-							gen_params["seed"] = seed_line_edit.text
-						var switches: Dictionary = _build_flex_switches("compose_3_with_pose")
-						for key in switches:
-							gen_params[key] = switches[key]
-						var img1: Image = layer1.image.duplicate()
-						if img1.get_format() != Image.FORMAT_RGBA8:
-							img1.convert(Image.FORMAT_RGBA8)
-						var img2: Image = layer2.image.duplicate()
-						if img2.get_format() != Image.FORMAT_RGBA8:
-							img2.convert(Image.FORMAT_RGBA8)
-						var image1_dict: Dictionary = {"buffer": img1.save_png_to_buffer(), "role": "image1", "filename": "image1.png"}
-						var image2_dict: Dictionary = {"buffer": img2.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
-						var compose_toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2 layers + pose composition...")
-						SingletonObject.main_scene.add_child(compose_toast)
-						_current_image_gen_request_id = MediaGen.send_media_flex_request_three_with_pose(gen_params, image1_dict, image2_dict, pose_buffer)
-						image_gen_window.hide()
-						layer_cards_popup_panel.hide()
-						prompt_text_edit.text = ""
-						return
+				var gen_params: Dictionary = get_params_image_gen()
+				if gen_params.is_empty():
+					edit_img_button.modulate = Color.WHITE
+					edit_img_button.disabled = false
+					send_prompt_button.disabled = false
+					send_mask_edit_button.disabled = false
+					display_message("Prompt", "Enter a positive prompt for image generation.")
+					return
+				if !seed_line_edit.text.is_empty():
+					gen_params["seed"] = seed_line_edit.text
+				var result: Dictionary = request_flex_compose_three_with_pose(gen_params, layer1.name, layer2.name)
+				if result.get("success", false):
+					var compose_toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2 layers + pose composition...")
+					SingletonObject.main_scene.add_child(compose_toast)
+					image_gen_window.hide()
+					layer_cards_popup_panel.hide()
+					prompt_text_edit.text = ""
+					return
+				else:
+					display_message("Compose", result.get("error", "Compose failed."))
+					return
 		
 		var layer_to_send: LayerV2 = selected_layers[0]
 		# Get the image from the active layer

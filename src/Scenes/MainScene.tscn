@@ -1,4 +1,4 @@
-[gd_scene load_steps=73 format=3 uid="uid://cw1ig4ql83b6a"]
+[gd_scene format=3 uid="uid://cw1ig4ql83b6a"]
 
 [ext_resource type="Theme" uid="uid://cr3k2fgiaguik" path="res://assets/themes/blue_dark_mode.theme" id="1_hneab"]
 [ext_resource type="Script" uid="uid://ca6g5rlaxa8h6" path="res://Scripts/UI/Controls/menuMain.gd" id="1_oipdw"]
@@ -82,7 +82,6 @@ unicode = 110
 
 [sub_resource type="Shortcut" id="Shortcut_gb6ck"]
 events = [SubResource("InputEventKey_s4ag0")]
-
 
 [node name="RootControl" type="Control" unique_id=866659028 node_paths=PackedStringArray("terminal_container")]
 texture_filter = 1
@@ -832,7 +831,7 @@ layout_mode = 2
 [node name="AudioToText" type="Node" parent="." unique_id=544607571]
 script = ExtResource("14_rrnyx")
 
-[node name="ColorRect" type="ColorRect" parent="."]
+[node name="ColorRect" type="ColorRect" parent="." unique_id=1082148384]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1

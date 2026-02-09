@@ -511,5 +511,5 @@ func set_pose_data(data: Dictionary) -> void:
 
 func _on_visibility_changed() -> void:
 	#pose_skeleton.set_process(visible)
-	if get_parent():
+	if get_parent() and pose_skeleton:
 		pose_skeleton.set_process(get_parent().visible)
