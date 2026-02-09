@@ -31,6 +31,7 @@ var italic: bool = false
 var alignment: HorizontalAlignment = HORIZONTAL_ALIGNMENT_LEFT
 var text_color: Color = Color.WHITE
 var bg_color: Color = Color.TRANSPARENT
+var wrap_text: bool = false
 
 ## Date format string for DATE type cells
 var date_format: String = "YYYY-MM-DD"
@@ -174,6 +175,7 @@ func duplicate_cell() -> RefCounted:
 	copy.bg_color = bg_color
 	copy.date_format = date_format
 	copy.number_format = number_format
+	copy.wrap_text = wrap_text
 	return copy
 
 
@@ -202,6 +204,8 @@ func to_dict() -> Dictionary:
 		data["date_format"] = date_format
 	if number_format != "none":
 		data["number_format"] = number_format
+	if wrap_text:
+		data["wrap_text"] = true
 
 	return data
 
@@ -223,6 +227,7 @@ func load_from_dict(data: Dictionary) -> void:
 		date_format = data["date_format"]
 	if data.has("number_format"):
 		number_format = data["number_format"]
+	wrap_text = data.get("wrap_text", false)
 
 	# Compute display value
 	if type == CellType.NUMBER and value is float:

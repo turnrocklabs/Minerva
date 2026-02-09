@@ -72,6 +72,19 @@ func handle_new_spreadsheet():
 func handle_new_pcb():
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.PCB)
 
+# Handle new video recorder
+func handle_new_video_recorder():
+	# Show the recording overlay instead of opening an editor tab
+	var overlay_scene = load("res://Scenes/VideoRecorder.tscn")
+	var overlay = overlay_scene.instantiate()
+	overlay.recording_completed.connect(_on_recording_completed)
+	get_tree().root.add_child(overlay)
+
+func _on_recording_completed(recording_data) -> void:
+	# Open the recording in a video editor tab
+	var recording_path = recording_data.get_recording_dir()
+	SingletonObject.editor_container.editor_pane.add(Editor.Type.VIDEO_EDITOR, recording_path, "recording " + recording_data.recording_id.substr(0, 8))
+
 func _on_file_submenu_index_pressed(index):
 	match index:
 		0:
@@ -83,6 +96,8 @@ func _on_file_submenu_index_pressed(index):
 			handle_new_spreadsheet()
 		3:
 			handle_new_pcb()
+		4:
+			handle_new_video_recorder()
 			
 
 
@@ -141,6 +156,7 @@ func _ready():
 	file_submenu.add_item("New Graphics")
 	file_submenu.add_item("New Spreadsheet")
 	file_submenu.add_item("New PCB")
+	file_submenu.add_item("Record Video")
 	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
 	# Add the "New" submenu to the top of the "File" menu
 	%File.add_child(file_submenu)

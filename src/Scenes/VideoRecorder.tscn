@@ -1,0 +1,16 @@
+[gd_scene load_steps=2 format=3 uid="uid://videorecorder1"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/VideoRecorder/VideoRecorderOverlay.gd" id="1_recorder_overlay"]
+
+[node name="VideoRecorderOverlay" type="PanelContainer"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = -110.0
+offset_right = 310.0
+offset_bottom = -10.0
+grow_vertical = 0
+size_flags_horizontal = 0
+size_flags_vertical = 0
+script = ExtResource("1_recorder_overlay")

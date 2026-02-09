@@ -37,6 +37,7 @@ var logs_viewer  # AutocoderLogsViewer - type annotation removed to avoid circul
 var kanban_board  # AutocoderKanbanBoard - type annotation removed to avoid circular dependency
 var spreadsheet_editor  # SpreadsheetEditor
 var pcb_editor  # PCBEditor - type annotation removed to avoid circular dependency
+var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid circular dependency
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -72,6 +73,7 @@ enum Type {
 	KANBAN,
 	SPREADSHEET,
 	PCB,
+	VIDEO_EDITOR,
 }
 
 
@@ -224,6 +226,18 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.pcb_editor = new_pcb_editor
 			new_pcb_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
 
+		Editor.Type.VIDEO_EDITOR:
+			vbox_container.clip_contents = true
+			var video_editor_scene = load("res://Scenes/VideoEditorPanel.tscn")
+			var new_video_editor = video_editor_scene.instantiate()
+			new_video_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_video_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(new_video_editor)
+			editor.video_editor_panel = new_video_editor
+			new_video_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
+			if file_:
+				new_video_editor.load_from_path(file_)
+
 	return editor
 
 func toggle(on: bool) -> void:
@@ -251,8 +265,11 @@ func _ready():
 			Type.TEXT: _load_text_file(file)
 			Type.GRAPHICS: _load_graphics_file(file)
 			Type.VIDEO: video_player.video_path = file
+			Type.PCB: _load_pcb_file(file)
+			Type.KANBAN: _load_kanban_file(file)
+			Type.SPREADSHEET: _load_spreadsheet_file(file)
 	
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -348,6 +365,49 @@ func _load_graphics_file(filename: String):
 	# %SaveButton.disabled = false
 
 
+func _load_pcb_file(filename: String) -> void:
+	var fa := FileAccess.open(filename, FileAccess.READ)
+	if not fa:
+		SingletonObject.ErrorDisplay("Couldn't open file", error_string(FileAccess.get_open_error()))
+		return
+	var json := JSON.new()
+	if json.parse(fa.get_as_text()) != OK:
+		SingletonObject.ErrorDisplay("Invalid PCB file", json.get_error_message())
+		return
+	if json.data is Dictionary and pcb_editor:
+		pcb_editor.load_from_dict(json.data)
+
+
+func _load_kanban_file(filename: String) -> void:
+	var fa := FileAccess.open(filename, FileAccess.READ)
+	if not fa:
+		SingletonObject.ErrorDisplay("Couldn't open file", error_string(FileAccess.get_open_error()))
+		return
+	var json := JSON.new()
+	if json.parse(fa.get_as_text()) != OK:
+		SingletonObject.ErrorDisplay("Invalid Kanban file", json.get_error_message())
+		return
+	if json.data is Dictionary and kanban_board:
+		var AutocoderTaskStoreClass = load("res://Scripts/UI/Controls/Autocoder/AutocoderTaskStore.gd")
+		var task_store = AutocoderTaskStoreClass.deserialize(json.data)
+		kanban_board.set_task_store(task_store)
+
+
+func _load_spreadsheet_file(filename: String) -> void:
+	if not spreadsheet_editor:
+		return
+	var fa := FileAccess.open(filename, FileAccess.READ)
+	if not fa:
+		SingletonObject.ErrorDisplay("Couldn't open file", error_string(FileAccess.get_open_error()))
+		return
+	var json := JSON.new()
+	if json.parse(fa.get_as_text()) != OK:
+		SingletonObject.ErrorDisplay("Invalid spreadsheet file", json.get_error_message())
+		return
+	if json.data is Dictionary:
+		spreadsheet_editor.deserialize(json.data)
+
+
 ## Changes the function that runs when user clicks the "save" button
 ## from the [method prompt_close] to [parameter save_function].[br]
 ## To revert back pass the empty [parameter save_function]:[br]
@@ -367,7 +427,13 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 	match type:
 		Type.GRAPHICS:
 			$FileDialog.filters = PackedStringArray(["*.png"])
-			
+		Type.PCB:
+			$FileDialog.filters = PackedStringArray(["*.minpcb ; Minerva PCB"])
+		Type.KANBAN:
+			$FileDialog.filters = PackedStringArray(["*.minkb ; Minerva Kanban"])
+		Type.SPREADSHEET:
+			$FileDialog.filters = PackedStringArray(["*.minsheet ; Minerva Spreadsheet", "*.csv ; CSV Files"])
+
 	if not prompt_save: return true
 	if not show_save_file_dialog:
 		$CloseDialog.popup_centered(Vector2i(300, 100))
@@ -431,7 +497,10 @@ func save():
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
 			graphics_editor.saved = true
-	
+		Type.PCB:
+			if pcb_editor:
+				pcb_editor.is_modified = false
+
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 ## Returns the bitmask of the saved state for the editor.
@@ -489,6 +558,10 @@ func get_saved_state() -> int:
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 		Type.KANBAN:
+			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+		Type.VIDEO_EDITOR:
+			# Video editors save their edits to the recording directory
 			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 	return state
@@ -580,7 +653,44 @@ func save_file_to_disc(path: String) -> void:
 				return
 			save_file.store_string(serialized_text)
 			logs_viewer.mark_saved_snapshot()
-	
+
+		Type.PCB:
+			if pcb_editor:
+				var dict = pcb_editor.to_dict()
+				var json_string = JSON.stringify(dict, "\t")
+				var save_file = FileAccess.open(path, FileAccess.WRITE)
+				if save_file == null:
+					var error := error_string(FileAccess.get_open_error())
+					push_warning(error)
+					SingletonObject.ErrorDisplay("Couldn't save PCB file", error)
+					return
+				save_file.store_string(json_string)
+				pcb_editor.is_modified = false
+
+		Type.KANBAN:
+			if kanban_board and kanban_board.task_store:
+				var dict = kanban_board.task_store.serialize()
+				var json_string = JSON.stringify(dict, "\t")
+				var save_file = FileAccess.open(path, FileAccess.WRITE)
+				if save_file == null:
+					var error := error_string(FileAccess.get_open_error())
+					push_warning(error)
+					SingletonObject.ErrorDisplay("Couldn't save Kanban file", error)
+					return
+				save_file.store_string(json_string)
+
+		Type.SPREADSHEET:
+			if spreadsheet_editor:
+				var dict = spreadsheet_editor.serialize()
+				var json_string = JSON.stringify(dict, "\t")
+				var save_file = FileAccess.open(path, FileAccess.WRITE)
+				if save_file == null:
+					var error := error_string(FileAccess.get_open_error())
+					push_warning(error)
+					SingletonObject.ErrorDisplay("Couldn't save spreadsheet file", error)
+					return
+				save_file.store_string(json_string)
+
 	# Update editor state
 	_file_saved = true
 	file_saved_in_disc = true

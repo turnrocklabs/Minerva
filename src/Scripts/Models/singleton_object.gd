@@ -681,6 +681,9 @@ func _ready():
 	# Initialize enabled providers from config (must be after config_file.load)
 	_init_enabled_providers()
 
+	# Initialize dynamic OpenRouter models (must be after _init_enabled_providers)
+	_init_openrouter_models()
+
 	# Load UI scale from config
 	_load_ui_scale()
 
@@ -782,6 +785,9 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 @onready var editor_pane: EditorPane = editor_container.editor_pane if editor_container else null
 var editors: Array[Editor]
 var Is_code_completed:bool = true
+
+## Video recorder overlay scene
+var video_recorder_overlay_scene = preload("res://Scenes/VideoRecorder.tscn")
 #endregion
 
 #region Common UI Tasks
@@ -832,6 +838,8 @@ const GoogleProviderScript = preload("res://Scripts/Services/Providers/GoogleAi/
 const GoogleImageProviderScript = preload("res://Scripts/Services/Providers/GoogleAi/GoogleImageProvider.gd")
 const AnthropicProviderScript = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
 const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
+const OpenRouterModelManagerScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterModelManager.gd")
+const DYNAMIC_MODEL_ID_BASE := 10000
 const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
 const LocalProviderScript = preload("res://Scripts/Services/Providers/LocalProvider.gd")
 
@@ -859,14 +867,10 @@ enum API_MODEL_PROVIDERS {
 	CLAUDE_OPUS,
 	# TurnRock
 	TURNROCK,
-	# OpenRouter
-	OPENROUTER_GLM47,
-	OPENROUTER_MINIMAX_M21,
-	OPENROUTER_KIMI_K25,
-	OPENROUTER_GROK41_FAST,
-	# Claude Code (Max/Pro)
-	CLAUDE_CODE_SONNET,
-	CLAUDE_CODE_OPUS,
+	# Claude Code (Max/Pro) — explicit values to preserve backward compat
+	# after OpenRouter models (14-17) were moved to dynamic registration
+	CLAUDE_CODE_SONNET = 18,
+	CLAUDE_CODE_OPUS = 19,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -892,18 +896,14 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.CLAUDE_OPUS: AnthropicProviderScript.Opus,
 	# TurnRock
 	API_MODEL_PROVIDERS.TURNROCK: CoreProvider,
-	# OpenRouter
-	API_MODEL_PROVIDERS.OPENROUTER_GLM47: OpenRouterProviderScript.GLM47,
-	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: OpenRouterProviderScript.MinimaxM21,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K25: OpenRouterProviderScript.KimiK25,
-	API_MODEL_PROVIDERS.OPENROUTER_GROK41_FAST: OpenRouterProviderScript.Grok41Fast,
 	# Claude Code (Max/Pro)
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProviderScript.Opus,
 }
 
-## Maps each model to its parent provider (for enable/disable filtering)
-const MODEL_TO_PROVIDER: Dictionary = {
+## Maps each model to its parent provider (for enable/disable filtering).
+## Mutable so dynamic OpenRouter models can be registered at runtime.
+var MODEL_TO_PROVIDER: Dictionary = {
 	API_MODEL_PROVIDERS.HUMAN: API_PROVIDER.LOCAL,
 	# Local/Ollama
 	API_MODEL_PROVIDERS.NEMOTRON_NANO: API_PROVIDER.LOCAL,
@@ -923,11 +923,6 @@ const MODEL_TO_PROVIDER: Dictionary = {
 	API_MODEL_PROVIDERS.CLAUDE_OPUS: API_PROVIDER.ANTHROPIC,
 	# TurnRock
 	API_MODEL_PROVIDERS.TURNROCK: API_PROVIDER.TURNROCK,
-	# OpenRouter
-	API_MODEL_PROVIDERS.OPENROUTER_GLM47: API_PROVIDER.OPENROUTER,
-	API_MODEL_PROVIDERS.OPENROUTER_MINIMAX_M21: API_PROVIDER.OPENROUTER,
-	API_MODEL_PROVIDERS.OPENROUTER_KIMI_K25: API_PROVIDER.OPENROUTER,
-	API_MODEL_PROVIDERS.OPENROUTER_GROK41_FAST: API_PROVIDER.OPENROUTER,
 	# Claude Code
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: API_PROVIDER.CLAUDE_CODE,
@@ -965,8 +960,8 @@ func _init_enabled_providers() -> void:
 func is_provider_enabled(provider: API_PROVIDER) -> bool:
 	return _enabled_providers.get(provider, true)
 
-## Check if a model's provider is enabled
-func is_model_enabled(model: API_MODEL_PROVIDERS) -> bool:
+## Check if a model's provider is enabled (accepts enum or dynamic int ID)
+func is_model_enabled(model: int) -> bool:
 	var provider = MODEL_TO_PROVIDER.get(model, API_PROVIDER.LOCAL)
 	return is_provider_enabled(provider)
 
@@ -1022,6 +1017,34 @@ func resolve_model_alias(saved_name: String) -> String:
 # 	return Chats._provider_option_button.get_item_id(0) as API_MODEL_PROVIDERS
 
 @onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
+
+#region OpenRouter Dynamic Models
+
+var openrouter_model_manager  # OpenRouterModelManager instance (untyped for duck typing)
+
+func _init_openrouter_models() -> void:
+	openrouter_model_manager = OpenRouterModelManagerScript.new()
+	openrouter_model_manager.load_config()
+	_register_openrouter_models()
+	openrouter_model_manager.models_changed.connect(_on_openrouter_models_changed)
+
+func _register_openrouter_models() -> void:
+	# Clear previously registered dynamic models
+	for key in API_MODEL_PROVIDER_SCRIPTS.keys().duplicate():
+		if key >= DYNAMIC_MODEL_ID_BASE:
+			API_MODEL_PROVIDER_SCRIPTS.erase(key)
+			MODEL_TO_PROVIDER.erase(key)
+	# Register each dynamic model config
+	for config in openrouter_model_manager.models:
+		var model_id: int = config["id"]
+		API_MODEL_PROVIDER_SCRIPTS[model_id] = OpenRouterProviderScript
+		MODEL_TO_PROVIDER[model_id] = API_PROVIDER.OPENROUTER
+
+func _on_openrouter_models_changed() -> void:
+	_register_openrouter_models()
+	provider_enabled_changed.emit(API_PROVIDER.OPENROUTER, is_provider_enabled(API_PROVIDER.OPENROUTER))
+
+#endregion OpenRouter Dynamic Models
 
 #endregion API Consumer
 

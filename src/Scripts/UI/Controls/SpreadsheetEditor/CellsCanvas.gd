@@ -10,6 +10,7 @@ signal selection_changed(start_row: int, start_col: int, end_row: int, end_col: 
 signal scroll_changed(offset: Vector2)
 signal navigation_requested(direction: String)
 signal edit_requested()
+signal context_menu_requested(row: int, col: int, screen_pos: Vector2)
 
 ## Reference to spreadsheet data
 var data: SpreadsheetDataScript = null
@@ -220,32 +221,48 @@ func _draw_cell_content_region(start_row: int, start_col: int, end_row: int, end
 			var draw_font := font
 			var draw_size := font_size
 
-			# Vertical centering
-			var line_height := font.get_height(draw_size)
-			text_pos.y += (text_rect.size.y + line_height) / 2.0 - font.get_descent(draw_size)
-
-			# Horizontal alignment
-			var text_width := font.get_string_size(display_text, HORIZONTAL_ALIGNMENT_LEFT, -1, draw_size).x
-
-			match cell.alignment:
-				HORIZONTAL_ALIGNMENT_CENTER:
-					text_pos.x += (text_rect.size.x - text_width) / 2.0
-				HORIZONTAL_ALIGNMENT_RIGHT:
-					text_pos.x += text_rect.size.x - text_width
-
 			# Text color
 			var color: Color = cell.text_color if cell.text_color != Color.TRANSPARENT else text_color
 
-			# Draw text (clipped to cell)
-			draw_string(
-				draw_font,
-				text_pos,
-				display_text,
-				HORIZONTAL_ALIGNMENT_LEFT,
-				text_rect.size.x,
-				draw_size,
-				color
-			)
+			if cell.wrap_text:
+				# Wrapped text: top-aligned, multi-line
+				var line_height := draw_font.get_height(draw_size)
+				var max_lines := maxi(1, int(text_rect.size.y / line_height))
+				text_pos.y += draw_font.get_ascent(draw_size)
+				draw_multiline_string(
+					draw_font,
+					text_pos,
+					display_text,
+					cell.alignment,
+					text_rect.size.x,
+					draw_size,
+					max_lines,
+					color
+				)
+			else:
+				# Single-line: vertically centered
+				var line_height := draw_font.get_height(draw_size)
+				text_pos.y += (text_rect.size.y + line_height) / 2.0 - draw_font.get_descent(draw_size)
+
+				# Horizontal alignment
+				var text_width := draw_font.get_string_size(display_text, HORIZONTAL_ALIGNMENT_LEFT, -1, draw_size).x
+
+				match cell.alignment:
+					HORIZONTAL_ALIGNMENT_CENTER:
+						text_pos.x += (text_rect.size.x - text_width) / 2.0
+					HORIZONTAL_ALIGNMENT_RIGHT:
+						text_pos.x += text_rect.size.x - text_width
+
+				# Draw text (clipped to cell)
+				draw_string(
+					draw_font,
+					text_pos,
+					display_text,
+					HORIZONTAL_ALIGNMENT_LEFT,
+					text_rect.size.x,
+					draw_size,
+					color
+				)
 
 
 func _draw_selection() -> void:
@@ -469,6 +486,17 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 			if is_selecting:
 				is_selecting = false
 				_emit_selection_changed()
+
+	elif event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.pressed and cell.x >= 0 and cell.y >= 0:
+			# Select the cell if not already in selection
+			if not is_cell_selected(cell.y, cell.x):
+				additional_selections.clear()
+				selection_anchor = cell
+				selection_active = cell
+				cell_selected.emit(cell.y, cell.x)
+				queue_redraw()
+			context_menu_requested.emit(cell.y, cell.x, get_screen_position() + event.position)
 
 	elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
 		scroll_offset.y = maxf(0, scroll_offset.y - 30)

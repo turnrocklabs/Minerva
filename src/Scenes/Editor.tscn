@@ -44,6 +44,7 @@ pressed = true
 events = [SubResource("InputEventAction_1e7nj")]
 
 [node name="Editor" type="Control"]
+clip_contents = true
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
