@@ -1872,6 +1872,11 @@ disabled = true
 text = "Mask"
 icon = ExtResource("28_oylf0")
 
+[node name="Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3" unique_id=1081780859]
+visible = false
+layout_mode = 2
+text = "3 Image workflow"
+
 [connection signal="resized" from="." to="." method="_on_resized"]
 [connection signal="drag_ended" from="h/MainHSplitContainer" to="." method="_on_main_h_split_container_drag_ended"]
 [connection signal="drag_started" from="h/MainHSplitContainer" to="." method="_on_main_h_split_container_drag_started"]

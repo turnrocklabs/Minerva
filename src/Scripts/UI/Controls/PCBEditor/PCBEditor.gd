@@ -1,4 +1,4 @@
-#@tool
+@tool
 class_name PCBEditor
 extends PanelContainer
 ## PCB Viewer for displaying boards loaded from pcb-architect.
@@ -316,7 +316,8 @@ func _create_tools_panel() -> VBoxContainer:
 	panel.add_child(rhint_header)
 
 	var waypoint_btn := Button.new()
-	waypoint_btn.text = "Waypoint"
+	#waypoint_btn.text = "Waypoint"
+	waypoint_btn.icon = preload("uid://ds02ncw1qiwjg")
 	waypoint_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	waypoint_btn.tooltip_text = "Add waypoint-only hint (W)"
 	waypoint_btn.toggle_mode = true
@@ -325,7 +326,8 @@ func _create_tools_panel() -> VBoxContainer:
 	route_hint_buttons[PCBCanvasScript.RouteHintMode.WAYPOINT] = waypoint_btn
 
 	var trace_btn := Button.new()
-	trace_btn.text = "Trace"
+	#trace_btn.text = "Trace"
+	trace_btn.icon = preload("uid://baf6c4640wosu")
 	trace_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	trace_btn.tooltip_text = "Add single trace hint - click pins or waypoints"
 	trace_btn.toggle_mode = true
@@ -334,7 +336,8 @@ func _create_tools_panel() -> VBoxContainer:
 	route_hint_buttons[PCBCanvasScript.RouteHintMode.SINGLE_TRACE] = trace_btn
 
 	var bus_btn := Button.new()
-	bus_btn.text = "Bus"
+	#bus_btn.text = "Bus"
+	bus_btn.icon = preload("uid://xltjgri7a1pn")
 	bus_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	bus_btn.tooltip_text = "Add bus hint - click pin groups for parallel routing"
 	bus_btn.toggle_mode = true
