@@ -194,10 +194,11 @@ func add_llm_progress_with_full_content(preview_content: String, full_content: S
 	_scroll_to_bottom()
 
 func stop_llm_progress() -> void:
-	"""Stop all LLM progress animations (called when planning completes)"""
+	"""Stop and remove all LLM progress cards (called when planning completes)"""
 	if not _actions_list:
 		return
 	
+	var cards_to_remove: Array = []
 	for child in _actions_list.get_children():
 		if child.has_meta("is_llm_progress"):
 			# Stop the tween animation
@@ -205,14 +206,14 @@ func stop_llm_progress() -> void:
 				var tween = child.get_meta("llm_tween")
 				if tween:
 					tween.kill()
-			# Reset opacity to full
-			child.modulate.a = 1.0
-			# Mark as complete visually
-			child.remove_meta("is_llm_progress")
-			child.set_meta("is_llm_complete", true)
-			# Update icon to show completion (if it's a message card)
-			if child.has_method("set_role"):
-				child.set_role("system")  # Change from "llm" animated role to static "system"
+			# Mark for removal
+			cards_to_remove.append(child)
+	
+	# Remove the progress cards
+	for card in cards_to_remove:
+		card.queue_free()
+	
+	# Clear the reference
 	_llm_card = null
 	_llm_buffer = ""
 

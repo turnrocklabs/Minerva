@@ -383,6 +383,16 @@ func _subscribe_to_session(session_id: String) -> void:
 	else:
 		info("Successfully subscribed to planning topic")
 
+	# Subscribe to session-changed topic (for planning->coder transitions)
+	var session_changed_topic = "autocoder-orchestrator/session-changed/%s/%s" % [user_id, session_id]
+	info("Subscribing to session-changed topic: %s" % session_changed_topic)
+
+	success = await Core.subscribe(session_changed_topic)
+	if not success:
+		info("Warning: Failed to subscribe to session-changed topic")
+	else:
+		info("Successfully subscribed to session-changed topic")
+
 	# Setup global handlers for wildcard notifications
 	info("=== SETTING UP MESSAGE HANDLERS ===")
 
@@ -491,6 +501,46 @@ func _subscribe_to_session(session_id: String) -> void:
 			# Notify submit job manager of planning turn completion
 			if submit_job_manager and planning_status in ["complete", "awaiting_answers"]:
 				submit_job_manager.on_planning_turn_complete(pub_session_id, planning_status)
+	)
+
+	# Handle session-changed publications (planning->coder transitions)
+	var session_changed_awaiter = Core.await_message()
+	_notification_message_handlers.append(session_changed_awaiter)
+	session_changed_awaiter.with_cmd("publication").receive_all().connect(
+		func(msg: Dictionary):
+			var topic = msg.get("topic", "")
+			if not topic.begins_with("autocoder-orchestrator/session-changed/"):
+				return
+
+			var payload = msg.get("params", {}).get("data", {})
+			var old_session_id = payload.get("old_session_id", "")
+			var new_session_id = payload.get("new_session_id", "")
+			var reason = payload.get("reason", "unknown")
+			
+			_log_traffic("SESSION_CHANGED", payload)
+			info("🔄 Session changed: %s -> %s (reason: %s)" % [old_session_id, new_session_id, reason])
+			
+			# Handle the session change - resubscribe to new topics
+			_handle_session_changed(old_session_id, new_session_id, reason)
+	)
+
+	# Handle LLM traffic redirect (when session changes mid-stream)
+	var llm_redirect_awaiter = Core.await_message()
+	_notification_message_handlers.append(llm_redirect_awaiter)
+	llm_redirect_awaiter.with_cmd("publication").receive_all().connect(
+		func(msg: Dictionary):
+			var topic = msg.get("topic", "")
+			if not topic.begins_with("autocoder-orchestrator/llm-traffic/"):
+				return
+
+			var payload = msg.get("params", {}).get("data", {})
+			var event_type = payload.get("type", "")
+			
+			# Check for redirect notification
+			if event_type == "session_redirect":
+				var new_session_id = payload.get("new_session_id", "")
+				info("📡 LLM traffic redirect to new session: %s" % new_session_id)
+				_subscribe_to_new_session_llm(new_session_id)
 	)
 
 
@@ -813,8 +863,23 @@ func _handle_action_notification(session_id: String, topic: String, payload: Dic
 	# Backend sends "summary", but we also check "description" for compatibility
 	var description = payload.get("summary", payload.get("description", ""))
 	var status = payload.get("status", "")
-	var output = payload.get("output", "")
-	#var details = payload.get("details", {})
+	var details = payload.get("details", {})
+	
+	# Extract output from details (backend sends stdout/stderr in details)
+	var output = ""
+	if details is Dictionary:
+		# Try to get output from various detail fields
+		if details.has("output"):
+			output = str(details.get("output", ""))
+		elif details.has("stdout"):
+			output = str(details.get("stdout", ""))
+			var stderr = str(details.get("stderr", ""))
+			if not stderr.is_empty():
+				output += "\n[stderr] " + stderr
+		elif details.has("error"):
+			output = str(details.get("error", ""))
+		elif details.has("error_summary"):
+			output = str(details.get("error_summary", ""))
 	
 	print("[AutocoderManager] Action notification: type=%s, id=%s, status=%s, desc=%s" % [action_type, action_id, status, description])
 
@@ -880,6 +945,39 @@ func _handle_action_notification(session_id: String, topic: String, payload: Dic
 				return
 
 	info("Action notification processed for session %s" % session_id)
+
+
+## Handle session ID change (planning->coder transition)
+func _handle_session_changed(old_session_id: String, new_session_id: String, reason: String) -> void:
+	"""When backend creates a new OpenCode session from a planning session, resubscribe to new topics"""
+	info("🔄 Handling session change: %s -> %s (reason: %s)" % [old_session_id, new_session_id, reason])
+	
+	# Subscribe to new session's LLM traffic topic
+	_subscribe_to_new_session_llm(new_session_id)
+	
+	# Subscribe to new session's iteration topic
+	var user_id = Core.client.client_id
+	var iteration_topic = "autocoder-orchestrator/iteration/%s/%s" % [user_id, new_session_id]
+	Core.subscribe(iteration_topic)
+	info("Subscribed to new iteration topic: %s" % iteration_topic)
+	
+	# Subscribe to new session's actions topic
+	var actions_topic = "autocoder-orchestrator/actions/%s/%s" % [user_id, new_session_id]
+	Core.subscribe(actions_topic)
+	info("Subscribed to new actions topic: %s" % actions_topic)
+	
+	# Notify submit job manager about the session change
+	if submit_job_manager and submit_job_manager.has_method("on_session_id_changed"):
+		submit_job_manager.on_session_id_changed(old_session_id, new_session_id)
+
+
+## Subscribe to a new session's LLM traffic topic
+func _subscribe_to_new_session_llm(new_session_id: String) -> void:
+	"""Subscribe to LLM traffic for a new/different session"""
+	var user_id = Core.client.client_id
+	var new_llm_topic = "autocoder-orchestrator/llm-traffic/%s/%s" % [user_id, new_session_id]
+	info("📡 Subscribing to new LLM traffic topic: %s" % new_llm_topic)
+	Core.subscribe(new_llm_topic)
 
 
 ## Handle planning notification for a specific session
