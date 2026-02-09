@@ -220,11 +220,14 @@ func _create_tools_panel() -> VBoxContainer:
 	panel.name = "ToolsPanel"
 
 	# Tools section (works on components and annotations)
-	var tools_header := Label.new()
-	tools_header.text = "Tools"
-	tools_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	panel.add_child(tools_header)
+	#var tools_header := Label.new()
+	#tools_header.text = "Tools"
+	#tools_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	#panel.add_child(tools_header)
 
+	var tools_flow_panel = FlowContainer.new()
+	panel.add_child(tools_flow_panel)
+	
 	var select_btn := Button.new()
 	#select_btn.text = "Select"
 	select_btn.icon = preload("uid://eckoinneympm")
@@ -232,7 +235,7 @@ func _create_tools_panel() -> VBoxContainer:
 	select_btn.toggle_mode = true
 	select_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	select_btn.pressed.connect(func(): _toggle_tool_mode(PCBCanvasScript.ToolMode.SELECT))
-	panel.add_child(select_btn)
+	tools_flow_panel.add_child(select_btn)
 	tool_buttons[PCBCanvasScript.ToolMode.SELECT] = select_btn
 
 	var translate_btn := Button.new()
@@ -242,7 +245,7 @@ func _create_tools_panel() -> VBoxContainer:
 	translate_btn.tooltip_text = "Move selected items"
 	translate_btn.toggle_mode = true
 	translate_btn.pressed.connect(func(): _toggle_tool_mode(PCBCanvasScript.ToolMode.TRANSLATE))
-	panel.add_child(translate_btn)
+	tools_flow_panel.add_child(translate_btn)
 	tool_buttons[PCBCanvasScript.ToolMode.TRANSLATE] = translate_btn
 
 	var rotate_btn := Button.new()
@@ -252,7 +255,7 @@ func _create_tools_panel() -> VBoxContainer:
 	rotate_btn.tooltip_text = "Rotate selected items (R)"
 	rotate_btn.toggle_mode = true
 	rotate_btn.pressed.connect(func(): _toggle_tool_mode(PCBCanvasScript.ToolMode.ROTATE))
-	panel.add_child(rotate_btn)
+	tools_flow_panel.add_child(rotate_btn)
 	tool_buttons[PCBCanvasScript.ToolMode.ROTATE] = rotate_btn
 
 	# Tool mode label
@@ -269,6 +272,9 @@ func _create_tools_panel() -> VBoxContainer:
 	ann_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(ann_header)
 
+	var ann_flow_panel = FlowContainer.new()
+	panel.add_child(ann_flow_panel)
+	
 	var arrow_btn := Button.new()
 	#arrow_btn.text = "Arrow"
 	arrow_btn.icon = preload("uid://cln205u37w7n0")
@@ -276,7 +282,7 @@ func _create_tools_panel() -> VBoxContainer:
 	arrow_btn.tooltip_text = "Draw arrow annotation (A)"
 	arrow_btn.toggle_mode = true
 	arrow_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.ARROW))
-	panel.add_child(arrow_btn)
+	ann_flow_panel.add_child(arrow_btn)
 	annotation_buttons[PCBCanvasScript.AnnotationMode.ARROW] = arrow_btn
 
 	var text_btn := Button.new()
@@ -286,7 +292,7 @@ func _create_tools_panel() -> VBoxContainer:
 	text_btn.tooltip_text = "Add text annotation (T)"
 	text_btn.toggle_mode = true
 	text_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.TEXT))
-	panel.add_child(text_btn)
+	ann_flow_panel.add_child(text_btn)
 	annotation_buttons[PCBCanvasScript.AnnotationMode.TEXT] = text_btn
 
 	var region_btn := Button.new()
@@ -296,7 +302,7 @@ func _create_tools_panel() -> VBoxContainer:
 	region_btn.tooltip_text = "Highlight region annotation (Shift+R)"
 	region_btn.toggle_mode = true
 	region_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.REGION))
-	panel.add_child(region_btn)
+	ann_flow_panel.add_child(region_btn)
 	annotation_buttons[PCBCanvasScript.AnnotationMode.REGION] = region_btn
 
 	var polyline_btn := Button.new()
@@ -306,7 +312,7 @@ func _create_tools_panel() -> VBoxContainer:
 	polyline_btn.tooltip_text = "Draw polyline annotation (P)"
 	polyline_btn.toggle_mode = true
 	polyline_btn.pressed.connect(func(): _toggle_annotation_mode(PCBCanvasScript.AnnotationMode.POLYLINE))
-	panel.add_child(polyline_btn)
+	ann_flow_panel.add_child(polyline_btn)
 	annotation_buttons[PCBCanvasScript.AnnotationMode.POLYLINE] = polyline_btn
 
 	# Annotation mode label
@@ -322,7 +328,10 @@ func _create_tools_panel() -> VBoxContainer:
 	rhint_header.text = "Route Hints"
 	rhint_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(rhint_header)
-
+	
+	var route_flow_panel = FlowContainer.new()
+	panel.add_child(route_flow_panel)
+	
 	var waypoint_btn := Button.new()
 	#waypoint_btn.text = "Waypoint"
 	waypoint_btn.icon = preload("uid://ds02ncw1qiwjg")
@@ -330,7 +339,7 @@ func _create_tools_panel() -> VBoxContainer:
 	waypoint_btn.tooltip_text = "Add waypoint-only hint (W)"
 	waypoint_btn.toggle_mode = true
 	waypoint_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.WAYPOINT))
-	panel.add_child(waypoint_btn)
+	route_flow_panel.add_child(waypoint_btn)
 	route_hint_buttons[PCBCanvasScript.RouteHintMode.WAYPOINT] = waypoint_btn
 
 	var trace_btn := Button.new()
@@ -340,7 +349,7 @@ func _create_tools_panel() -> VBoxContainer:
 	trace_btn.tooltip_text = "Add single trace hint - click pins or waypoints"
 	trace_btn.toggle_mode = true
 	trace_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.SINGLE_TRACE))
-	panel.add_child(trace_btn)
+	route_flow_panel.add_child(trace_btn)
 	route_hint_buttons[PCBCanvasScript.RouteHintMode.SINGLE_TRACE] = trace_btn
 
 	var bus_btn := Button.new()
@@ -350,16 +359,17 @@ func _create_tools_panel() -> VBoxContainer:
 	bus_btn.tooltip_text = "Add bus hint - click pin groups for parallel routing"
 	bus_btn.toggle_mode = true
 	bus_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.BUS))
-	panel.add_child(bus_btn)
+	route_flow_panel.add_child(bus_btn)
 	route_hint_buttons[PCBCanvasScript.RouteHintMode.BUS] = bus_btn
 
 	var inspect_pin_btn := Button.new()
-	inspect_pin_btn.text = "Inspect Pin"
+	#inspect_pin_btn.text = "Inspect Pin"
+	inspect_pin_btn.icon = preload("uid://by52nhn1hxifb")
 	inspect_pin_btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	inspect_pin_btn.tooltip_text = "Click on a pin to see its info (Shift+P)"
 	inspect_pin_btn.toggle_mode = true
 	inspect_pin_btn.pressed.connect(func(): _toggle_route_hint_mode(PCBCanvasScript.RouteHintMode.INSPECT_PIN))
-	panel.add_child(inspect_pin_btn)
+	route_flow_panel.add_child(inspect_pin_btn)
 	route_hint_buttons[PCBCanvasScript.RouteHintMode.INSPECT_PIN] = inspect_pin_btn
 
 	# Route hint mode label
