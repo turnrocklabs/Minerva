@@ -37,6 +37,7 @@ func _init(manager = null) -> void:
 		_register_kanban_tools()
 		_register_pcb_tools()
 		_register_video_editor_tools()
+		_register_utility_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -139,6 +140,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _disable_notes(arguments)
 		"minerva_delete_note":
 			return _delete_note(arguments)
+		"minerva_get_note":
+			return _get_note(arguments)
 
 		# Editor tools
 		"minerva_create_text_editor":
@@ -315,6 +318,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _video_export(arguments)
 		"minerva_video_list_recordings":
 			return _video_list_recordings(arguments)
+
+		# Utility tools
+		"minerva_clock":
+			return _clock(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -533,6 +540,20 @@ func _register_notes_tools() -> void:
 				"note_id": {
 					"type": "string",
 					"description": "The UUID of the note to delete"
+				}
+			},
+			"required": ["note_id"]
+		}
+	)
+
+	_register_tool("minerva_get_note",
+		"Get a note's full content by its ID. Returns title, content, tab, and enabled status.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to read"
 				}
 			},
 			"required": ["note_id"]
@@ -1858,6 +1879,46 @@ func _delete_note(args: Dictionary) -> Dictionary:
 	note.queue_free()
 
 	return {"success": true, "message": "Note deleted"}
+
+
+func _get_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	# Get content from the backing controls
+	var content_text: String = ""
+	var controls_container = note.get_controls_container()
+	if controls_container is NoteTextControls:
+		content_text = controls_container.content
+
+	# Find which tab this note is in
+	var tab_name: String = ""
+	var notes_container = SingletonObject.notes_container
+	if notes_container:
+		for i in notes_container.get_tab_count():
+			var notes = notes_container.get_notes(i)
+			for n in notes:
+				if n.uuid == note_id:
+					tab_name = notes_container.get_tab_title(i)
+					break
+			if not tab_name.is_empty():
+				break
+
+	return {
+		"success": true,
+		"note_id": note_id,
+		"title": note.title,
+		"content": content_text,
+		"tab": tab_name,
+		"enabled": note.enabled,
+		"type": Note.Type.keys()[note.type] if note.type < Note.Type.size() else "UNKNOWN"
+	}
 
 #endregion
 
@@ -6838,6 +6899,94 @@ func _video_list_recordings(_args: Dictionary) -> Dictionary:
 		"success": true,
 		"recordings": recordings,
 		"count": recordings.size()
+	}
+
+#endregion
+
+
+#region Utility Tools
+
+func _register_utility_tools() -> void:
+	_register_tool("minerva_clock",
+		"Get a Unix timestamp. Three modes: (1) No arguments = current time. (2) delta_seconds = relative to now (negative for past, e.g. -300 for 5 minutes ago). (3) year/month/day/hour/minute/second = absolute date/time conversion.",
+		{
+			"type": "object",
+			"properties": {
+				"delta_seconds": {
+					"type": "integer",
+					"description": "Offset from current time in seconds. Negative for past (e.g. -300 = 5 minutes ago), positive for future (e.g. 3600 = 1 hour from now)."
+				},
+				"year": {
+					"type": "integer",
+					"description": "Year (e.g. 2026). Use year/month/day for absolute time conversion."
+				},
+				"month": {
+					"type": "integer",
+					"description": "Month (1-12)"
+				},
+				"day": {
+					"type": "integer",
+					"description": "Day of month (1-31)"
+				},
+				"hour": {
+					"type": "integer",
+					"description": "Hour (0-23), default 0"
+				},
+				"minute": {
+					"type": "integer",
+					"description": "Minute (0-59), default 0"
+				},
+				"second": {
+					"type": "integer",
+					"description": "Second (0-59), default 0"
+				}
+			},
+			"required": []
+		})
+
+
+func _clock(arguments: Dictionary) -> Dictionary:
+	var unix_now := int(Time.get_unix_time_from_system())
+
+	# Mode 1: delta_seconds — relative to now
+	if arguments.has("delta_seconds"):
+		var delta := int(arguments.get("delta_seconds", 0))
+		var target_ts := unix_now + delta
+		var dt := Time.get_datetime_dict_from_unix_time(target_ts)
+		return {
+			"success": true,
+			"unix_timestamp": target_ts,
+			"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second],
+			"timezone": "UTC",
+			"now_unix": unix_now,
+			"delta_seconds": delta
+		}
+
+	# Mode 2: absolute date/time
+	if arguments.has("year"):
+		var dt := {
+			"year": int(arguments.get("year", 1970)),
+			"month": int(arguments.get("month", 1)),
+			"day": int(arguments.get("day", 1)),
+			"hour": int(arguments.get("hour", 0)),
+			"minute": int(arguments.get("minute", 0)),
+			"second": int(arguments.get("second", 0)),
+		}
+		var unix_ts := Time.get_unix_time_from_datetime_dict(dt)
+		return {
+			"success": true,
+			"unix_timestamp": int(unix_ts),
+			"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second],
+			"timezone": "UTC"
+		}
+
+	# Mode 3: no arguments — current time
+	var dt := Time.get_datetime_dict_from_system(true)
+	return {
+		"success": true,
+		"unix_timestamp": unix_now,
+		"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second],
+		"timezone": "UTC"
 	}
 
 #endregion

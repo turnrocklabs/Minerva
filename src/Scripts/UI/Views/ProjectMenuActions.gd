@@ -28,6 +28,8 @@ func _new_project():
 	
 	SingletonObject.editor_container.clear_editor_tabs()
 	SingletonObject.clear_registered_objects()
+	if SingletonObject.trigger_manager:
+		SingletonObject.trigger_manager.clear_all()
 	save_path = ""
 	
 	await get_tree().process_frame
@@ -169,6 +171,7 @@ func serialize_project() -> Dictionary:
 		"ChatList": chats,
 		"NotesHistories": notes_histories,
 		"Editors": editors,
+		"Triggers": SingletonObject.trigger_manager.serialize() if SingletonObject.trigger_manager else [],
 		"last_tab_index": SingletonObject.last_tab_index,
 		"active_chatindex": active_chat_index,
 		"active_notes_index": SingletonObject.notes_container.current_tab,
@@ -238,6 +241,10 @@ func deserialize_project(data: Dictionary) -> int:
 		SingletonObject.editor_pane.Tabs.set_tab_title(tab_idx, editor.tab_title)
 		if editor.file:
 			SingletonObject.editor_pane.Tabs.set_tab_tooltip(tab_idx, editor.file)
+
+	# Restore triggers (per-project)
+	if SingletonObject.trigger_manager:
+		SingletonObject.trigger_manager.deserialize(data.get("Triggers", []))
 
 	# Initialize chat pane with histories
 	if SingletonObject.Chats:

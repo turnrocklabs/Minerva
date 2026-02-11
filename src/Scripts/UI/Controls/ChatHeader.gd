@@ -18,6 +18,14 @@ func setup(history) -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_theme_constant_override("separation", 8)
 
+	# Agent indicator label (for triggered agent chats)
+	if history.IsAgentChat:
+		var agent_label = Label.new()
+		agent_label.text = "[Agent]"
+		agent_label.add_theme_color_override("font_color", Color(0.3, 0.7, 1.0))
+		agent_label.tooltip_text = "Triggered agent chat"
+		add_child(agent_label)
+
 	# Agent mode toggle
 	agent_mode_toggle = CheckButton.new()
 	agent_mode_toggle.text = "Agent"

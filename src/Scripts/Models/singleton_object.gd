@@ -450,6 +450,19 @@ func is_mcp_http_server_running() -> bool:
 
 #endregion MCP
 
+#region Agent System
+var agent_registry: AgentRegistry = null
+var trigger_manager: TriggerManager = null
+
+func _init_agent_system() -> void:
+	agent_registry = AgentRegistry.new()
+	agent_registry.load_config()
+	trigger_manager = TriggerManager.new()
+	trigger_manager.name = "TriggerManager"
+	add_child(trigger_manager)
+	print("[SingletonObject] Agent system initialized (%d agents)" % agent_registry.agents.size())
+#endregion Agent System
+
 #region Image Generation Settings
 
 ## Maximum iterations allowed for iterative image generation in agentic mode
@@ -713,6 +726,9 @@ func _ready():
 	# Initialize MCP manager (connects to Nudge, etc.)
 	# Defer to avoid add_child errors during scene tree setup
 	initialize_mcp.call_deferred()
+
+	# Initialize agent system (registry + trigger manager)
+	_init_agent_system()
 
 
 ## Recursively release all textures in a node tree to prevent RID leaks on exit

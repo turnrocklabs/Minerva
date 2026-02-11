@@ -233,6 +233,8 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_submenu_item("Minerva (Self)", minerva_submenu.name)
 
 	tools_menu.add_separator()
+	tools_menu.add_item("Agents...", 102)
+	tools_menu.add_separator()
 	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
@@ -254,12 +256,23 @@ func _setup_tools_menu() -> void:
 		add_child(tools_menu)
 
 
+var _agent_manager_window: AgentManagerWindow = null
+
 func _on_tools_menu_id_pressed(id: int) -> void:
 	match id:
 		100:
 			_reconnect_all_mcp_servers()
 		101:
 			_show_mcp_installer()
+		102:
+			_show_agent_manager()
+
+
+func _show_agent_manager() -> void:
+	if not _agent_manager_window:
+		_agent_manager_window = AgentManagerWindow.new()
+		get_tree().root.add_child(_agent_manager_window)
+	_agent_manager_window.popup_centered()
 
 
 ## Setup the Chats submenu for switching between Chat and Autocoder views

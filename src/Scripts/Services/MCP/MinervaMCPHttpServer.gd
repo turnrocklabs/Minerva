@@ -18,7 +18,7 @@ var _connections: Array = []  # Array of MinervaMCPHttpConnection
 var _sessions: Dictionary = {}  # session_id -> {created_at, last_activity}
 var _is_running: bool = false
 var _port: int = DEFAULT_PORT
-var _processing_connections: bool = false
+var _inflight_connections: Dictionary = {}  # conn -> true (handling) / false (done)
 
 # Reference to the MCP manager and minerva server
 var _mcp_manager = null
@@ -71,6 +71,7 @@ func stop_server() -> void:
 	for conn in _connections:
 		conn.close()
 	_connections.clear()
+	_inflight_connections.clear()
 	_sessions.clear()
 
 	if _tcp_server:
@@ -103,17 +104,18 @@ func _accept_new_connections() -> void:
 
 
 func _process_connections() -> void:
-	# Guard against re-entrancy: async tool calls (e.g. pcb_get_image) use await,
-	# which yields to the event loop. _process() runs again during the yield and
-	# would re-enter this function, processing/removing the same connection twice.
-	if _processing_connections:
-		return
-	_processing_connections = true
-
 	var to_remove: Array[int] = []
 
 	for i in range(_connections.size()):
 		var conn = _connections[i]
+
+		# Skip connections being handled asynchronously
+		if _inflight_connections.has(conn):
+			if not _inflight_connections[conn]:
+				# Handler finished — mark for cleanup
+				_inflight_connections.erase(conn)
+				to_remove.append(i)
+			continue
 
 		# Check for timeout or disconnection
 		if conn.is_timed_out(CONNECTION_TIMEOUT) or not conn.is_peer_connected():
@@ -132,16 +134,14 @@ func _process_connections() -> void:
 			continue
 
 		if conn.state == MinervaMCPHttpConnectionScript.ConnectionState.COMPLETE:
-			# Process the request and send response
-			await _handle_request(conn, request)
-			conn.close()
-			to_remove.append(i)
+			# Fire-and-forget: handle asynchronously without blocking the loop.
+			# This allows other connections to be processed while a tool executes.
+			_inflight_connections[conn] = true
+			_handle_connection_async(conn, request)
 
 	# Remove processed connections (in reverse to maintain indices)
 	for i in range(to_remove.size() - 1, -1, -1):
 		_connections.remove_at(to_remove[i])
-
-	_processing_connections = false
 
 
 func _cleanup_stale_sessions() -> void:
@@ -155,6 +155,15 @@ func _cleanup_stale_sessions() -> void:
 
 	for session_id in to_remove:
 		_sessions.erase(session_id)
+
+
+## Handle a connection's request asynchronously and clean up when done.
+## Called fire-and-forget from _process_connections so other connections aren't blocked.
+func _handle_connection_async(conn, request: Dictionary) -> void:
+	await _handle_request(conn, request)
+	conn.close()
+	# Signal to _process_connections that this connection is done
+	_inflight_connections[conn] = false
 
 
 func _handle_request(conn, request: Dictionary) -> void:
