@@ -43,10 +43,13 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 					disabled.append(tool_name)
 			history.DisabledTools = disabled
 
-	# 4. Add to ChatList
+	# 4. Create agent memory tabs if configured (pass history so tabs auto-link)
+	_ensure_agent_memory_tabs(agent_def, history)
+
+	# 5. Add to ChatList
 	SingletonObject.ChatList.append(history)
 
-	# 5. Render in ChatPane
+	# 6. Render in ChatPane
 	var chats = SingletonObject.Chats
 	if chats:
 		chats.render_history(history)
@@ -58,7 +61,7 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 		if chats.buffer_control_chats and chats.buffer_control_chats.visible:
 			chats.buffer_control_chats.hide()
 
-	# 6. Send initial message if provided
+	# 7. Send initial message if provided
 	if not initial_message.is_empty() and chats:
 		chats.call_deferred("execute_regular_chat", initial_message)
 
@@ -105,3 +108,21 @@ static func _create_core_provider(service_id: String, action_name: String) -> Ba
 
 	push_error("[AgentSpawner] Core service '%s' action '%s' not found" % [service_id, action_name])
 	return null
+
+
+static func _ensure_agent_memory_tabs(agent_def: AgentDefinition, history: ChatHistory = null) -> void:
+	# Project-scoped memory tab
+	if not agent_def.memory_tab_name.is_empty() and SingletonObject.notes_container:
+		var vbox = SingletonObject.notes_container.find_or_create_agent_tab(
+			agent_def.memory_tab_name, agent_def.id
+		)
+		if history and history.HistoryId not in vbox.default_linked_chat_ids:
+			vbox.default_linked_chat_ids.append(history.HistoryId)
+
+	# App-scoped drawer memory tab
+	if not agent_def.drawer_tab_name.is_empty() and SingletonObject.drawer_notes_container:
+		var vbox = SingletonObject.drawer_notes_container.find_or_create_agent_tab(
+			agent_def.drawer_tab_name, agent_def.id
+		)
+		if history and history.HistoryId not in vbox.default_linked_chat_ids:
+			vbox.default_linked_chat_ids.append(history.HistoryId)

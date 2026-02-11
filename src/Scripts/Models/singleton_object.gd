@@ -592,6 +592,10 @@ func set_model_num_gpu(model_name: String, num_gpu: int) -> void:
 #region Chats
 @warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)
+## Emitted when an agent chat fully completes (all tool rounds done).
+## Unlike chat_completed which fires per-response, this fires once when the agent is truly finished.
+@warning_ignore("unused_signal")
+signal agent_chat_finished(history_id: String, agent_definition_id: String)
 var current_message: MessageMarkdown = null
 
 var ChatList: Array[ChatHistory]

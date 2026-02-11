@@ -17,6 +17,8 @@ var agent_max_rounds_spin: SpinBox
 var agent_tools_all_check: CheckButton
 var agent_tools_container: VBoxContainer
 var agent_tool_add_edit: LineEdit
+var agent_memory_tab_edit: LineEdit
+var agent_drawer_tab_edit: LineEdit
 var agent_new_btn: Button
 var agent_save_btn: Button
 var agent_delete_btn: Button
@@ -31,6 +33,9 @@ var trigger_agent_option: OptionButton
 var trigger_type_option: OptionButton
 var trigger_interval_spin: SpinBox
 var trigger_event_option: OptionButton
+var trigger_action_type_option: OptionButton
+var trigger_watched_label: Label
+var trigger_watched_container: VBoxContainer
 var trigger_message_edit: TextEdit
 var trigger_enabled_check: CheckButton
 var trigger_new_btn: Button
@@ -222,6 +227,19 @@ func _build_agents_tab() -> Control:
 	tool_add_hbox.add_child(tool_add_btn)
 	right_vbox.add_child(tool_add_hbox)
 
+	# Memory tabs
+	right_vbox.add_child(_label("Memory Tab (project notes):"))
+	agent_memory_tab_edit = LineEdit.new()
+	agent_memory_tab_edit.placeholder_text = "Leave empty for no project memory tab"
+	agent_memory_tab_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vbox.add_child(agent_memory_tab_edit)
+
+	right_vbox.add_child(_label("Memory Tab (drawer notes):"))
+	agent_drawer_tab_edit = LineEdit.new()
+	agent_drawer_tab_edit.placeholder_text = "Leave empty for no drawer memory tab"
+	agent_drawer_tab_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vbox.add_child(agent_drawer_tab_edit)
+
 	# Buttons
 	var btn_hbox = HBoxContainer.new()
 	btn_hbox.add_theme_constant_override("separation", 8)
@@ -325,14 +343,29 @@ func _build_triggers_tab() -> Control:
 	trigger_event_option.add_item("Note Created", TriggerDefinition.EventType.NOTE_CREATED)
 	trigger_event_option.add_item("Note Changed", TriggerDefinition.EventType.NOTE_CHANGED)
 	trigger_event_option.add_item("Chat Completed", TriggerDefinition.EventType.CHAT_COMPLETED)
+	trigger_event_option.item_selected.connect(_on_event_type_changed)
 	right_vbox.add_child(trigger_event_option)
+
+	# Action type (Spawn New vs Message Existing)
+	right_vbox.add_child(_label("Action:"))
+	trigger_action_type_option = OptionButton.new()
+	trigger_action_type_option.add_item("Spawn New Chat", TriggerDefinition.ActionType.SPAWN_NEW)
+	trigger_action_type_option.add_item("Message Existing Chat", TriggerDefinition.ActionType.MESSAGE_EXISTING)
+	trigger_action_type_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vbox.add_child(trigger_action_type_option)
+
+	# Watched agents (visible only for CHAT_COMPLETED)
+	trigger_watched_label = _label("Watch Agents (filter):")
+	right_vbox.add_child(trigger_watched_label)
+	trigger_watched_container = VBoxContainer.new()
+	right_vbox.add_child(trigger_watched_container)
 
 	# Initial message
 	right_vbox.add_child(_label("Initial Message:"))
 	trigger_message_edit = TextEdit.new()
 	trigger_message_edit.custom_minimum_size = Vector2(0, 80)
 	trigger_message_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	trigger_message_edit.placeholder_text = "Message sent when trigger fires..."
+	trigger_message_edit.placeholder_text = "Message sent when trigger fires. Use {agent_name}, {last_response}, {history_name} for context."
 	right_vbox.add_child(trigger_message_edit)
 
 	# Enabled toggle
@@ -620,6 +653,8 @@ func _clear_agent_form() -> void:
 		_on_provider_selected(0)
 	var empty_tools: Array[String] = []
 	_populate_tools_checkboxes(empty_tools)
+	agent_memory_tab_edit.text = ""
+	agent_drawer_tab_edit.text = ""
 
 #endregion Helper Builders
 
@@ -663,6 +698,9 @@ func _on_agent_selected(index: int) -> void:
 				break
 
 	_populate_tools_checkboxes(agent.enabled_tools)
+
+	agent_memory_tab_edit.text = agent.memory_tab_name
+	agent_drawer_tab_edit.text = agent.drawer_tab_name
 
 
 func _on_agent_new() -> void:
@@ -709,6 +747,8 @@ func _on_agent_save() -> void:
 		agent.presence_penalty = agent_pres_penalty_spin.value
 		agent.max_tool_call_rounds = int(agent_max_rounds_spin.value)
 		agent.enabled_tools = _get_selected_tools()
+		agent.memory_tab_name = agent_memory_tab_edit.text.strip_edges()
+		agent.drawer_tab_name = agent_drawer_tab_edit.text.strip_edges()
 		registry.update_agent(agent.id, agent)
 		SingletonObject.create_toast_notification("Agent updated: %s" % agent.name, ToastNotification.Type.SUCCESS)
 	else:
@@ -726,6 +766,8 @@ func _on_agent_save() -> void:
 		agent.presence_penalty = agent_pres_penalty_spin.value
 		agent.max_tool_call_rounds = int(agent_max_rounds_spin.value)
 		agent.enabled_tools = _get_selected_tools()
+		agent.memory_tab_name = agent_memory_tab_edit.text.strip_edges()
+		agent.drawer_tab_name = agent_drawer_tab_edit.text.strip_edges()
 		registry.add_agent(agent)
 		SingletonObject.create_toast_notification("Agent created: %s" % agent.name, ToastNotification.Type.SUCCESS)
 
@@ -796,16 +838,65 @@ func _on_trigger_selected(index: int) -> void:
 	trigger_type_option.select(trig.trigger_type)
 	trigger_interval_spin.value = trig.interval_seconds
 	trigger_event_option.select(trig.event_type)
+	trigger_action_type_option.select(trig.action_type)
 	trigger_message_edit.text = trig.initial_message
 	trigger_enabled_check.button_pressed = trig.enabled
 	_on_trigger_type_changed(trig.trigger_type)
+	_populate_watched_agents(trig.watched_agent_ids)
+	_update_watched_visibility(trig.trigger_type, trig.event_type)
 
 
 func _on_trigger_type_changed(index: int) -> void:
 	var is_timer = (index == TriggerDefinition.TriggerType.TIMER)
 	trigger_interval_spin.visible = is_timer
-	# Show/hide the interval label (parent's children traversal)
 	trigger_event_option.visible = not is_timer
+	var event_type = trigger_event_option.get_selected_id() if not is_timer else -1
+	_update_watched_visibility(index, event_type)
+
+
+func _on_event_type_changed(index: int) -> void:
+	var trigger_type = trigger_type_option.get_selected_id()
+	_update_watched_visibility(trigger_type, index)
+
+
+func _update_watched_visibility(trigger_type: int, event_type: int) -> void:
+	var show_watched = (trigger_type == TriggerDefinition.TriggerType.EVENT \
+			and event_type == TriggerDefinition.EventType.CHAT_COMPLETED)
+	trigger_watched_label.visible = show_watched
+	trigger_watched_container.visible = show_watched
+
+
+func _populate_watched_agents(selected_ids: Array[String]) -> void:
+	for child in trigger_watched_container.get_children():
+		child.queue_free()
+
+	var registry = SingletonObject.agent_registry
+	if not registry or registry.agents.is_empty():
+		var lbl = Label.new()
+		lbl.text = "(No agents defined)"
+		trigger_watched_container.add_child(lbl)
+		return
+
+	var hint_label = Label.new()
+	hint_label.text = "Empty = all agent chats"
+	hint_label.add_theme_font_size_override("font_size", 11)
+	hint_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	trigger_watched_container.add_child(hint_label)
+
+	for agent in registry.agents:
+		var cb = CheckBox.new()
+		cb.text = agent.name
+		cb.set_meta("agent_id", agent.id)
+		cb.button_pressed = agent.id in selected_ids
+		trigger_watched_container.add_child(cb)
+
+
+func _get_watched_agent_ids() -> Array[String]:
+	var result: Array[String] = []
+	for child in trigger_watched_container.get_children():
+		if child is CheckBox and child.button_pressed:
+			result.append(child.get_meta("agent_id"))
+	return result
 
 
 func _on_trigger_new() -> void:
@@ -816,9 +907,12 @@ func _on_trigger_new() -> void:
 	trigger_type_option.select(0)
 	trigger_interval_spin.value = 300
 	trigger_event_option.select(0)
+	trigger_action_type_option.select(0)
 	trigger_message_edit.text = ""
 	trigger_enabled_check.button_pressed = false
 	_on_trigger_type_changed(0)
+	var empty_ids: Array[String] = []
+	_populate_watched_agents(empty_ids)
 
 
 func _on_trigger_save() -> void:
@@ -840,6 +934,8 @@ func _on_trigger_save() -> void:
 		trig.trigger_type = trigger_type_option.get_selected_id()
 		trig.interval_seconds = trigger_interval_spin.value
 		trig.event_type = trigger_event_option.get_selected_id()
+		trig.action_type = trigger_action_type_option.get_selected_id()
+		trig.watched_agent_ids = _get_watched_agent_ids()
 		trig.initial_message = trigger_message_edit.text
 		trig.enabled = trigger_enabled_check.button_pressed
 		tm.update_trigger(trig.id, trig)
@@ -852,6 +948,8 @@ func _on_trigger_save() -> void:
 		trig.trigger_type = trigger_type_option.get_selected_id()
 		trig.interval_seconds = trigger_interval_spin.value
 		trig.event_type = trigger_event_option.get_selected_id()
+		trig.action_type = trigger_action_type_option.get_selected_id()
+		trig.watched_agent_ids = _get_watched_agent_ids()
 		trig.initial_message = trigger_message_edit.text
 		trig.enabled = trigger_enabled_check.button_pressed
 		tm.add_trigger(trig)
@@ -903,8 +1001,9 @@ func _refresh_trigger_list() -> void:
 				agent_name = agent.name
 
 		var type_str = "Timer" if trig.trigger_type == TriggerDefinition.TriggerType.TIMER else "Event"
+		var action_str = " (msg)" if trig.action_type == TriggerDefinition.ActionType.MESSAGE_EXISTING else ""
 		var enabled_str = " [ON]" if trig.enabled else " [OFF]"
 		var display_name = trig.name if not trig.name.is_empty() else agent_name
-		trigger_list.add_item("%s: %s%s" % [type_str, display_name, enabled_str])
+		trigger_list.add_item("%s%s: %s%s" % [type_str, action_str, display_name, enabled_str])
 
 #endregion List Refresh

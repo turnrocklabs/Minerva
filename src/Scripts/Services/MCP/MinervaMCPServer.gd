@@ -38,6 +38,7 @@ func _init(manager = null) -> void:
 		_register_pcb_tools()
 		_register_video_editor_tools()
 		_register_utility_tools()
+		_register_agent_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -142,6 +143,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _delete_note(arguments)
 		"minerva_get_note":
 			return _get_note(arguments)
+		"minerva_update_note":
+			return _update_note(arguments)
+		"minerva_link_note_to_chat":
+			return _link_note_to_chat(arguments)
 
 		# Editor tools
 		"minerva_create_text_editor":
@@ -322,6 +327,18 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 		# Utility tools
 		"minerva_clock":
 			return _clock(arguments)
+
+		# Agent registry tools
+		"minerva_list_agents":
+			return _list_agents(arguments)
+		"minerva_create_agent":
+			return _create_agent(arguments)
+		"minerva_update_agent":
+			return _update_agent(arguments)
+		"minerva_delete_agent":
+			return _delete_agent(arguments)
+		"minerva_spawn_agent":
+			return _spawn_agent(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -554,6 +571,50 @@ func _register_notes_tools() -> void:
 				"note_id": {
 					"type": "string",
 					"description": "The UUID of the note to read"
+				}
+			},
+			"required": ["note_id"]
+		}
+	)
+
+	_register_tool("minerva_update_note",
+		"Update a note's content and/or title in-place by its ID.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to update"
+				},
+				"content": {
+					"type": "string",
+					"description": "New content for the note. If omitted, content is unchanged."
+				},
+				"title": {
+					"type": "string",
+					"description": "New title for the note. If omitted, title is unchanged."
+				}
+			},
+			"required": ["note_id"]
+		}
+	)
+
+	_register_tool("minerva_link_note_to_chat",
+		"Link or unlink a note to a specific chat. Linked notes only appear in that chat's prompts. Unlinking makes the note global (visible to all chats).",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to link/unlink"
+				},
+				"chat_id": {
+					"type": "string",
+					"description": "HistoryId of the chat to link to. If omitted, unlinks from all chats (makes global)."
+				},
+				"unlink": {
+					"type": "boolean",
+					"description": "If true, removes the link to the specified chat_id instead of adding it. Defaults to false."
 				}
 			},
 			"required": ["note_id"]
@@ -1919,6 +1980,61 @@ func _get_note(args: Dictionary) -> Dictionary:
 		"enabled": note.enabled,
 		"type": Note.Type.keys()[note.type] if note.type < Note.Type.size() else "UNKNOWN"
 	}
+
+func _update_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	var updated_fields: Array[String] = []
+
+	if args.has("title"):
+		note.title = args["title"]
+		updated_fields.append("title")
+
+	if args.has("content"):
+		var controls_container = note.get_controls_container()
+		if controls_container is NoteTextControls:
+			controls_container.content = args["content"]
+			updated_fields.append("content")
+		else:
+			return {"error": "Note is not a text note, cannot update content", "success": false}
+
+	return {
+		"success": true,
+		"note_id": note_id,
+		"updated": updated_fields
+	}
+
+
+func _link_note_to_chat(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+	var chat_id: String = args.get("chat_id", "")
+	var do_unlink: bool = args.get("unlink", false)
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	if chat_id.is_empty():
+		note.linked_chat_ids.clear()
+		return {"success": true, "message": "Note unlinked from all chats (now global)"}
+
+	if do_unlink:
+		note.linked_chat_ids.erase(chat_id)
+		return {"success": true, "message": "Note unlinked from chat %s" % chat_id}
+	else:
+		if chat_id not in note.linked_chat_ids:
+			note.linked_chat_ids.append(chat_id)
+		return {"success": true, "message": "Note linked to chat %s" % chat_id}
 
 #endregion
 
@@ -6987,6 +7103,353 @@ func _clock(arguments: Dictionary) -> Dictionary:
 		"unix_timestamp": unix_now,
 		"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second],
 		"timezone": "UTC"
+	}
+
+#endregion
+
+
+#region Agent Registry Tool Registration and Implementations
+
+func _register_agent_tools() -> void:
+	_register_tool("minerva_list_agents",
+		"List all agent definitions in the registry.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	)
+
+	_register_tool("minerva_create_agent",
+		"Create a new agent definition in the registry. Returns the agent ID. Provider enum IDs: HUMAN=0, NEMOTRON_NANO=1, DEVSTRAL_SMALL=2, GPT_NANO=3, GPT_STANDARD=4, GPT_DEEP=5, GEMINI_FLASH=7, GEMINI_PRO=8, CLAUDE_HAIKU=10, CLAUDE_SONNET=11, CLAUDE_OPUS=12, TURNROCK=13, CLAUDE_CODE_SONNET=18, CLAUDE_CODE_OPUS=19. For TURNROCK provider, also set core_service_id and core_action_name. For OpenRouter models use their dynamic ID (>=1000).",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the agent"
+				},
+				"system_prompt": {
+					"type": "string",
+					"description": "System prompt that defines the agent's behavior"
+				},
+				"provider_enum_id": {
+					"type": "integer",
+					"description": "Provider model enum ID (see tool description for values)"
+				},
+				"core_service_id": {
+					"type": "string",
+					"description": "Core/TurnRock service ID (e.g. 'model-chat'). Required when provider_enum_id=13 (TURNROCK)."
+				},
+				"core_action_name": {
+					"type": "string",
+					"description": "Core/TurnRock action/model name (e.g. 'glm-4.7-flash:latest'). Required when provider_enum_id=13 (TURNROCK)."
+				},
+				"temperature": {
+					"type": "number",
+					"description": "Temperature (0.0-2.0). Default 1.0"
+				},
+				"top_p": {
+					"type": "number",
+					"description": "Top-p sampling (0.0-1.0). Default 1.0"
+				},
+				"frequency_penalty": {
+					"type": "number",
+					"description": "Frequency penalty (-2.0 to 2.0). Default 0.0"
+				},
+				"presence_penalty": {
+					"type": "number",
+					"description": "Presence penalty (-2.0 to 2.0). Default 0.0"
+				},
+				"max_tool_call_rounds": {
+					"type": "integer",
+					"description": "Max agentic tool call rounds. Default 10"
+				},
+				"enabled_tools": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Allowlist of MCP tool names. Empty = all tools enabled."
+				},
+				"memory_tab_name": {
+					"type": "string",
+					"description": "Project-scoped notes tab name for agent memory. Created and locked to the agent on spawn."
+				},
+				"drawer_tab_name": {
+					"type": "string",
+					"description": "App-scoped drawer notes tab name for agent memory. Created and locked to the agent on spawn."
+				}
+			},
+			"required": ["name", "system_prompt", "provider_enum_id"]
+		}
+	)
+
+	_register_tool("minerva_update_agent",
+		"Update an existing agent definition. Only the provided fields are changed; omitted fields keep their current values.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {
+					"type": "string",
+					"description": "ID of the agent to update"
+				},
+				"name": {
+					"type": "string",
+					"description": "New display name"
+				},
+				"system_prompt": {
+					"type": "string",
+					"description": "New system prompt"
+				},
+				"provider_enum_id": {
+					"type": "integer",
+					"description": "New provider model enum ID"
+				},
+				"core_service_id": {
+					"type": "string",
+					"description": "New Core/TurnRock service ID"
+				},
+				"core_action_name": {
+					"type": "string",
+					"description": "New Core/TurnRock action/model name"
+				},
+				"temperature": {
+					"type": "number",
+					"description": "New temperature"
+				},
+				"top_p": {
+					"type": "number",
+					"description": "New top-p"
+				},
+				"frequency_penalty": {
+					"type": "number",
+					"description": "New frequency penalty"
+				},
+				"presence_penalty": {
+					"type": "number",
+					"description": "New presence penalty"
+				},
+				"max_tool_call_rounds": {
+					"type": "integer",
+					"description": "New max tool call rounds"
+				},
+				"enabled_tools": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "New tool allowlist"
+				},
+				"memory_tab_name": {
+					"type": "string",
+					"description": "New project-scoped memory tab name"
+				},
+				"drawer_tab_name": {
+					"type": "string",
+					"description": "New app-scoped drawer memory tab name"
+				}
+			},
+			"required": ["agent_id"]
+		}
+	)
+
+	_register_tool("minerva_delete_agent",
+		"Delete an agent definition from the registry.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {
+					"type": "string",
+					"description": "ID of the agent to delete"
+				}
+			},
+			"required": ["agent_id"]
+		}
+	)
+
+	_register_tool("minerva_spawn_agent",
+		"Spawn a new chat from a registered agent definition. Creates a fully configured agent chat and optionally sends an initial message.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {
+					"type": "string",
+					"description": "ID of the agent definition to spawn. Use either agent_id or agent_name."
+				},
+				"agent_name": {
+					"type": "string",
+					"description": "Name of the agent definition to spawn. Used if agent_id is not provided."
+				},
+				"initial_message": {
+					"type": "string",
+					"description": "Optional message to send immediately after spawning."
+				}
+			},
+			"required": []
+		}
+	)
+
+
+func _list_agents(_args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var result: Array = []
+	for agent in registry.agents:
+		result.append({
+			"id": agent.id,
+			"name": agent.name,
+			"provider_enum_id": agent.provider_enum_id,
+			"core_service_id": agent.core_service_id,
+			"core_action_name": agent.core_action_name,
+			"memory_tab_name": agent.memory_tab_name,
+			"drawer_tab_name": agent.drawer_tab_name,
+			"max_tool_call_rounds": agent.max_tool_call_rounds,
+			"enabled_tools_count": agent.enabled_tools.size(),
+		})
+
+	return {
+		"success": true,
+		"agents": result,
+		"count": result.size()
+	}
+
+
+func _create_agent(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var agent_name: String = args.get("name", "")
+	if agent_name.is_empty():
+		return {"error": "name is required", "success": false}
+
+	var agent = AgentDefinition.new()
+	agent.name = agent_name
+	agent.system_prompt = args.get("system_prompt", "")
+	agent.provider_enum_id = int(args.get("provider_enum_id", 0))
+	agent.core_service_id = args.get("core_service_id", "")
+	agent.core_action_name = args.get("core_action_name", "")
+	agent.temperature = float(args.get("temperature", 1.0))
+	agent.top_p = float(args.get("top_p", 1.0))
+	agent.frequency_penalty = float(args.get("frequency_penalty", 0.0))
+	agent.presence_penalty = float(args.get("presence_penalty", 0.0))
+	agent.max_tool_call_rounds = int(args.get("max_tool_call_rounds", 10))
+	agent.memory_tab_name = args.get("memory_tab_name", "")
+	agent.drawer_tab_name = args.get("drawer_tab_name", "")
+
+	var tools: Array = args.get("enabled_tools", [])
+	for t in tools:
+		agent.enabled_tools.append(str(t))
+
+	registry.add_agent(agent)
+
+	return {
+		"success": true,
+		"agent_id": agent.id,
+		"name": agent.name
+	}
+
+
+func _update_agent(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+
+	var agent = registry.get_agent(agent_id)
+	if not agent:
+		return {"error": "Agent not found: %s" % agent_id, "success": false}
+
+	if args.has("name"):
+		agent.name = args["name"]
+	if args.has("system_prompt"):
+		agent.system_prompt = args["system_prompt"]
+	if args.has("provider_enum_id"):
+		agent.provider_enum_id = int(args["provider_enum_id"])
+	if args.has("core_service_id"):
+		agent.core_service_id = args["core_service_id"]
+	if args.has("core_action_name"):
+		agent.core_action_name = args["core_action_name"]
+	if args.has("temperature"):
+		agent.temperature = float(args["temperature"])
+	if args.has("top_p"):
+		agent.top_p = float(args["top_p"])
+	if args.has("frequency_penalty"):
+		agent.frequency_penalty = float(args["frequency_penalty"])
+	if args.has("presence_penalty"):
+		agent.presence_penalty = float(args["presence_penalty"])
+	if args.has("max_tool_call_rounds"):
+		agent.max_tool_call_rounds = int(args["max_tool_call_rounds"])
+	if args.has("memory_tab_name"):
+		agent.memory_tab_name = args["memory_tab_name"]
+	if args.has("drawer_tab_name"):
+		agent.drawer_tab_name = args["drawer_tab_name"]
+	if args.has("enabled_tools"):
+		agent.enabled_tools.clear()
+		for t in args["enabled_tools"]:
+			agent.enabled_tools.append(str(t))
+
+	registry.update_agent(agent_id, agent)
+
+	return {
+		"success": true,
+		"agent_id": agent_id,
+		"message": "Agent updated"
+	}
+
+
+func _delete_agent(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+
+	var agent = registry.get_agent(agent_id)
+	if not agent:
+		return {"error": "Agent not found: %s" % agent_id, "success": false}
+
+	registry.remove_agent(agent_id)
+
+	return {
+		"success": true,
+		"message": "Agent '%s' deleted" % agent.name
+	}
+
+
+func _spawn_agent(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var agent_def: AgentDefinition = null
+
+	var agent_id: String = args.get("agent_id", "")
+	var agent_name: String = args.get("agent_name", "")
+
+	if not agent_id.is_empty():
+		agent_def = registry.get_agent(agent_id)
+	elif not agent_name.is_empty():
+		agent_def = registry.get_agent_by_name(agent_name)
+
+	if not agent_def:
+		return {"error": "Agent not found (id='%s', name='%s')" % [agent_id, agent_name], "success": false}
+
+	var initial_message: String = args.get("initial_message", "")
+
+	var history = AgentSpawner.spawn_agent(agent_def, initial_message)
+	if not history:
+		return {"error": "Failed to spawn agent '%s'" % agent_def.name, "success": false}
+
+	return {
+		"success": true,
+		"chat_id": history.HistoryId,
+		"agent_name": agent_def.name,
+		"agent_id": agent_def.id
 	}
 
 #endregion

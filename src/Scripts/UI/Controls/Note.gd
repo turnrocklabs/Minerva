@@ -121,6 +121,14 @@ var linked_spreadsheet: String = ""
 ## and restores the full PCB state instead of creating a graphics editor.
 var linked_pcb_data: String = ""
 
+## If non-empty, this note is only included in prompts for the listed chat HistoryIds.
+## Empty means global (included in all chats) for backward compatibility.
+var linked_chat_ids: Array[String] = []
+
+## Returns true if this note should contribute to the given chat's prompt.
+func is_linked_to_chat(history_id: String) -> bool:
+	return linked_chat_ids.is_empty() or history_id in linked_chat_ids
+
 var expanded_height: float = 150
 
 var _error: = false:
@@ -142,6 +150,7 @@ var _initialized: = false
 @onready var sync_texture_rect: TextureRect = %SyncStateTextureRect
 @onready var use_state_button: Button = %UseStateButton
 @onready var _nudge_export_button: MenuButton = %NudgeExportButton
+@onready var _link_button: MenuButton = %LinkButton
 
 const NudgeMCPClientScript := preload("res://Scripts/Services/MCP/Servers/NudgeMCPClient.gd")
 
@@ -176,6 +185,11 @@ func _ready() -> void:
 	_check_button.button_pressed = _enabled_backing
 
 	_title_backing = ""
+
+	# Setup link button popup
+	_link_button.get_popup().id_pressed.connect(_on_link_menu_id_pressed)
+	_link_button.about_to_popup.connect(_rebuild_link_menu)
+	_update_link_button_label()
 
 
 static func create_text_note(note_title: String, content: String, note_uuid: String = "", register: = true) -> Note:
@@ -841,6 +855,71 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 
 # endregion
 
+# region Chat Linking
+
+func _rebuild_link_menu() -> void:
+	var popup: PopupMenu = _link_button.get_popup()
+	popup.clear()
+
+	if SingletonObject.ChatList.is_empty():
+		popup.add_item("No chats open", -1)
+		popup.set_item_disabled(0, true)
+		return
+
+	# Add each chat as a checkable item
+	for i in SingletonObject.ChatList.size():
+		var h = SingletonObject.ChatList[i]
+		popup.add_check_item(h.HistoryName, i)
+		var is_linked: bool = h.HistoryId in linked_chat_ids
+		popup.set_item_checked(popup.get_item_index(i), is_linked)
+
+	popup.add_separator()
+	popup.add_item("Unlink All (global)", 9999)
+	if linked_chat_ids.is_empty():
+		popup.set_item_disabled(popup.item_count - 1, true)
+
+
+func _on_link_menu_id_pressed(id: int) -> void:
+	if id == 9999:
+		linked_chat_ids.clear()
+	elif id >= 0 and id < SingletonObject.ChatList.size():
+		var history_id: String = SingletonObject.ChatList[id].HistoryId
+		if history_id in linked_chat_ids:
+			linked_chat_ids.erase(history_id)
+		else:
+			linked_chat_ids.append(history_id)
+	_update_link_button_label()
+	changed.emit(&"linked_chat_ids")
+
+
+func _update_link_button_label() -> void:
+	if not is_node_ready():
+		return
+	if linked_chat_ids.is_empty():
+		_link_button.text = "All"
+		_link_button.tooltip_text = "This note is sent to all chats. Click to link to specific chats."
+	else:
+		_link_button.text = str(linked_chat_ids.size())
+		var names: Array[String] = []
+		for lid in linked_chat_ids:
+			var found_name: String = lid
+			for h in SingletonObject.ChatList:
+				if h.HistoryId == lid:
+					found_name = h.HistoryName
+					break
+			names.append(found_name)
+		_link_button.tooltip_text = "Linked to: %s" % ", ".join(names)
+
+
+## Called when a note is dropped onto a chat tab (from ChatPane._drop_data).
+func link_to_chat(history_id: String) -> void:
+	if history_id not in linked_chat_ids:
+		linked_chat_ids.append(history_id)
+		_update_link_button_label()
+		changed.emit(&"linked_chat_ids")
+
+# endregion
+
 # region Serialization
 
 ## Serializes the [class Note] object into a JSON serializable dictionary.
@@ -865,6 +944,10 @@ func serialize() -> Dictionary:
 	# Add linked PCB data if set
 	if not linked_pcb_data.is_empty():
 		note_data["LinkedPCBData"] = linked_pcb_data
+
+	# Add linked chat IDs if set
+	if not linked_chat_ids.is_empty():
+		note_data["LinkedChatIds"] = linked_chat_ids
 
 	# Merge the controls data
 	note_data.merge(_serialize_controls_data())
@@ -1016,6 +1099,11 @@ static func deserialize(note_data: Dictionary, register = true) -> Note:
 				push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))
 				return
 
+	# Restore linked chat IDs before ready (not UI-dependent)
+	var saved_links: Array = note_data.get("LinkedChatIds", [])
+	for lid in saved_links:
+		note.linked_chat_ids.append(str(lid))
+
 	# can't edit until the node is ready
 	note.ready.connect(
 		func():
@@ -1024,6 +1112,7 @@ static func deserialize(note_data: Dictionary, register = true) -> Note:
 			note.visible = note_data.get("Visible", true)
 			note.linked_spreadsheet = note_data.get("LinkedSpreadsheet", "")
 			note.linked_pcb_data = note_data.get("LinkedPCBData", "")
+			note._update_link_button_label()
 	)
 
 	return note

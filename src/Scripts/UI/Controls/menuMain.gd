@@ -198,6 +198,10 @@ func _ready():
 	# Create Chats submenu (replaces the checkable "Chats" item with a submenu for Chat/Autocoder)
 	_setup_chats_submenu()
 
+	# Add "Agent Tabs" checkable toggle to the View menu
+	view.add_separator()
+	view.add_check_item("Agent Tabs", 20)
+
 
 func _setup_tools_menu() -> void:
 	tools_menu = PopupMenu.new()
@@ -1123,6 +1127,7 @@ func _on_view_id_pressed(id: int):
 		16: SingletonObject.increment_scale_ui()
 		17: SingletonObject.decrement_ui_scale()
 		18: SingletonObject.reset_ui_scale()
+		20: _toggle_agent_tabs(); return
 	var index = view.get_item_index(id)
 	
 	if view.is_item_checkable(index):
@@ -1143,6 +1148,18 @@ func _show_messages():
 func _show_notes():
 	for i in range(SingletonObject.notes_container.get_tab_count()):
 		SingletonObject.notes_container.show_notes(i)
+
+
+var _agent_tabs_visible: bool = false
+func _toggle_agent_tabs() -> void:
+	_agent_tabs_visible = not _agent_tabs_visible
+	var idx = view.get_item_index(20)
+	view.set_item_checked(idx, _agent_tabs_visible)
+	if SingletonObject.notes_container:
+		SingletonObject.notes_container.set_agent_tabs_visible(_agent_tabs_visible)
+	if SingletonObject.drawer_notes_container:
+		SingletonObject.drawer_notes_container.set_agent_tabs_visible(_agent_tabs_visible)
+
 
 func _on_view_about_to_popup():
 	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)

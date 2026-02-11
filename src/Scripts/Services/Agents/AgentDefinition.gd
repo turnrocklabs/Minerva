@@ -15,6 +15,8 @@ var frequency_penalty: float = 0.0
 var presence_penalty: float = 0.0
 var max_tool_call_rounds: int = 10
 var enabled_tools: Array[String] = []
+var memory_tab_name: String = ""   # Project-scoped notes tab locked to this agent
+var drawer_tab_name: String = ""   # App-scoped drawer notes tab locked to this agent
 
 
 func _init(p_id: String = ""):
@@ -44,6 +46,8 @@ func serialize() -> Dictionary:
 		"presence_penalty": presence_penalty,
 		"max_tool_call_rounds": max_tool_call_rounds,
 		"enabled_tools": enabled_tools,
+		"memory_tab_name": memory_tab_name,
+		"drawer_tab_name": drawer_tab_name,
 	}
 
 
@@ -62,4 +66,6 @@ static func deserialize(data: Dictionary) -> AgentDefinition:
 	var tools = data.get("enabled_tools", [])
 	for t in tools:
 		def.enabled_tools.append(str(t))
+	def.memory_tab_name = data.get("memory_tab_name", "")
+	def.drawer_tab_name = data.get("drawer_tab_name", "")
 	return def

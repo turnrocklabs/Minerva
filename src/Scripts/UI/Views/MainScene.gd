@@ -55,7 +55,7 @@ func _ready() -> void:
 			%CreateNewNote.popup_centered()
 			%CreateNewNote.notes_container_override = SingletonObject.drawer_notes_container
 	)
-	
+
 	get_window().files_dropped.connect(_on_files_dropped)
 
 
@@ -193,6 +193,7 @@ func _on_disable_notes_button_pressed() -> void:
 		SingletonObject.toggle_all_notes(notes_enabled)
 	
 	notes_enabled = !notes_enabled
+
 
 #region help menu
 

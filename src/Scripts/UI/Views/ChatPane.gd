@@ -308,7 +308,8 @@ func create_user_history_item(text: String) -> ChatHistoryItem:
 # Handle human provider message creation
 func handle_human_provider_message(history: ChatHistory, user_history_item: ChatHistoryItem) -> void:
 	# Get working memory/notes
-	var working_memory: Array = await SingletonObject.notes_container.to_prompt(SingletonObject.ChatList[SingletonObject.Chats.current_tab].provider, )
+	var current_history = SingletonObject.ChatList[SingletonObject.Chats.current_tab]
+	var working_memory: Array = await SingletonObject.notes_container.to_prompt(current_history.provider, false, current_history.HistoryId)
 	
 	# Append working memory to the user history item
 	if working_memory:
@@ -539,7 +540,8 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 		return []
 
 	# any notes container `to_prompt` will go over both standard and drawer notes
-	var working_memory: Array = await SingletonObject.notes_container.to_prompt(provider, refresh_detached)
+	var history_id_for_filter: String = history.HistoryId if history else ""
+	var working_memory: Array = await SingletonObject.notes_container.to_prompt(provider, refresh_detached, history_id_for_filter)
 
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
@@ -821,13 +823,14 @@ func _on_send_message_button_item_selected(index: int) -> void:
 	var filteredInput: String = %txtMainUserInput.text#.replace("_",r"\_")
 	%txtMainUserInput.text = ""
 	audio_stop_1.disabled = false
-	_active_chat_requests += 1
 	match index:
 		0:
 			execute_regular_chat(filteredInput)
 		1:
+			_active_chat_requests += 1
 			execute_parallel_chat(filteredInput)
 		2:
+			_active_chat_requests += 1
 			execute_sequential_chat(filteredInput)
 
 func execute_hcp_chat():
@@ -928,6 +931,11 @@ func execute_regular_chat(text: String) -> void:
 
 	if text.is_empty(): return
 
+	# Track this request so the stop button works
+	# (callers like AgentSpawner, TriggerManager, and MCP tools bypass the UI button handler)
+	_active_chat_requests += 1
+	audio_stop_1.disabled = false
+
 	ensure_chat_open()
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
@@ -1023,6 +1031,10 @@ func execute_regular_chat(text: String) -> void:
 		print("[ChatPane] NOT entering tool call branch - skipping tool execution")
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 
+	# Notify trigger system that this agent chat is fully done (all tool rounds complete)
+	if history.IsAgentChat and not history.AgentDefinitionId.is_empty():
+		SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
+
 	_active_chat_requests -= 1
 	if _active_chat_requests <= 0:
 		_active_chat_requests = 0  # Ensure non-negative
@@ -1076,7 +1088,9 @@ func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reaso
 
 
 ## Clean up UI state after agent mode finishes (success or error).
-## Re-enables notes and decrements active request counter.
+## Re-enables notes and cleans up detached proxies.
+## Note: Does NOT touch _active_chat_requests — that is managed by the request lifecycle
+## (incremented in execute_regular_chat, decremented after await handle_tool_calls returns).
 func _finish_agent_mode() -> void:
 	# Disable notes in containers
 	for i in SingletonObject.notes_container.get_tab_count():
@@ -1087,12 +1101,6 @@ func _finish_agent_mode() -> void:
 	# Clear detached note proxies (editor "Send to LLM" toggles)
 	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
 	SingletonObject.detached_note_proxies.clear()
-
-	# Decrement active requests and update stop button
-	_active_chat_requests -= 1
-	if _active_chat_requests <= 0:
-		_active_chat_requests = 0
-		audio_stop_1.disabled = true
 
 
 ## Handle tool calls from an LLM response in agentic mode.
@@ -1756,6 +1764,10 @@ func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 
+	# Allow dropping notes onto chat tabs to link them
+	self.get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
+	self.get_tab_bar().set_drag_forwarding(Callable(), _can_drop_note_on_chat, _drop_note_on_chat)
+
 	# SingletonObject.initialize_chats(self)
 	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
 
@@ -1778,6 +1790,22 @@ func _ready():
 	_token_estimation_timer.wait_time = 0.3
 	_token_estimation_timer.timeout.connect(_on_token_estimation_timer_timeout)
 	add_child(_token_estimation_timer)
+
+
+## Accept Note drops on the chat tab bar to link notes to chats.
+func _can_drop_note_on_chat(_at_position: Vector2, data: Variant) -> bool:
+	return data is Note and get_tab_idx_at_point(_at_position) != -1
+
+
+func _drop_note_on_chat(at_position: Vector2, data: Variant) -> void:
+	if not data is Note:
+		return
+	var tab_idx: int = get_tab_idx_at_point(at_position)
+	if tab_idx < 0 or tab_idx >= SingletonObject.ChatList.size():
+		return
+	var history: ChatHistory = SingletonObject.ChatList[tab_idx]
+	(data as Note).link_to_chat(history.HistoryId)
+	SingletonObject.create_toast_notification("Linked \"%s\" to %s" % [(data as Note).title, history.HistoryName])
 
 
 ## Handle global input - ESC key triggers stop
