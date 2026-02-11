@@ -222,9 +222,6 @@ func _on_history_option_button_item_selected(index: int) -> void:
 	_switch_to_service_type(service_type)
 
 func _switch_to_service_type(service_type: ServiceHistory.ServiceType):
-	print("Switching to service type: ", service_type)
-	print("ChatList count before switch: ", SingletonObject.ChatList.size())
-	
 	if current_service_type != service_type:
 		current_service_type = service_type
 		_load_histories_for_service_type(service_type)
@@ -241,20 +238,13 @@ func _update_provider_options_for_current_type():
 
 
 func _load_histories_for_service_type(service_type: ServiceHistory.ServiceType):
-	print("BEFORE load - ChatList count: ", SingletonObject.ChatList.size())
-	
 	match service_type:
 		ServiceHistory.ServiceType.CHAT:
-			print("Loading CHAT histories")
 			current_histories = SingletonObject.ChatList
 		ServiceHistory.ServiceType.NOTES:
-			print("Loading NOTES histories") 
 			current_histories = SingletonObject.NotesList
 		_:
 			current_histories = []
-	
-	print("AFTER assignment - ChatList count: ", SingletonObject.ChatList.size())
-	print("Current histories count: ", current_histories.size())
 
 func _update_ui_for_service_type(service_type: ServiceHistory.ServiceType):
 	match service_type:

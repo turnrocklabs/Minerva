@@ -282,7 +282,7 @@ The server runs on port 9315 by default."""
 	copy_btn.pressed.connect(func():
 		DisplayServer.clipboard_set(config_text.text)
 		copy_btn.text = "Copied!"
-		get_tree().create_timer(1.5).timeout.connect(func(): copy_btn.text = "Copy Config")
+		copy_btn.create_tween().tween_callback(copy_btn.set.bind("text", "Copy Config")).set_delay(1.5)
 	)
 	vbox.add_child(copy_btn)
 

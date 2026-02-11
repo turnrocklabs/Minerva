@@ -1044,7 +1044,6 @@ stretch = true
 unique_name_in_owner = true
 transparent_bg = true
 handle_input_locally = false
-size = Vector2i(1888, 979)
 render_target_update_mode = 4
 
 [node name="InputAreaCamera" type="Camera2D" parent="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport"]
@@ -1272,7 +1271,6 @@ min_size = Vector2i(400, 500)
 unique_name_in_owner = true
 
 [node name="SubViewport" parent="PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer" index="0"]
-size = Vector2i(350, 2)
 render_target_update_mode = 0
 
 [node name="LayerCardsPopupPanel" type="Window" parent="."]

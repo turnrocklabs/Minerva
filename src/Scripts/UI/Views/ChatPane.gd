@@ -1952,7 +1952,7 @@ var clicked:= false
 func _on_tab_clicked(tab: int):
 	if clicked: show_title_edit_dialog(tab)
 	clicked = true
-	get_tree().create_timer(0.4).timeout.connect(func(): clicked = false)
+	create_tween().tween_callback(func(): clicked = false).set_delay(0.4)
 
 # endregion
 

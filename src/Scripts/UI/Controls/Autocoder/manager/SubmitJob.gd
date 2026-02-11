@@ -4,7 +4,7 @@ extends VBoxContainer
 @onready var _artifact_browser_popup: PersistentWindow = %ArtifactBrowserPopup
 @onready var _artifact_browser: ArtifactBrowser = %ArtifactBrowser
 
-@warning_ignore("unused_variable")
+@warning_ignore("unused_private_class_variable")
 @onready var _input_resources_container: Container = %InputResourcesCard
 @onready var _clear_resources_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ClearInputResourcesButton
 @onready var _attach_folder_button: Button = %AttachFolderButton

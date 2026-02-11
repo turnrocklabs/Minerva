@@ -300,11 +300,11 @@ func load_from_dict(data: Dictionary) -> void:
 
 	var type_str: String = data.get("hint_type", "SINGLE_TRACE")
 	var type_idx := HintType.keys().find(type_str)
-	hint_type = type_idx if type_idx >= 0 else HintType.SINGLE_TRACE
+	hint_type = (type_idx as HintType) if type_idx >= 0 else HintType.SINGLE_TRACE
 
 	var detail_str: String = data.get("detail_level", "GUIDED")
 	var detail_idx := DetailLevel.keys().find(detail_str)
-	detail_level = detail_idx if detail_idx >= 0 else DetailLevel.GUIDED
+	detail_level = (detail_idx as DetailLevel) if detail_idx >= 0 else DetailLevel.GUIDED
 
 	layer = data.get("layer", "")
 	width = data.get("width", 0.0)

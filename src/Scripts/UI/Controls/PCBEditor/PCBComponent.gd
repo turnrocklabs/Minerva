@@ -391,6 +391,7 @@ func setup_header_pins(pin_count: int, pin_names: Array = []) -> void:
 ## KiCAD convention: Pin 1 at origin (0,0) top-left, left side going down, right side going up
 func setup_dip_pins(pin_count: int, row_spacing: float = 7.62) -> void:
 	pins.clear()
+	@warning_ignore("integer_division")
 	var pins_per_side := pin_count / 2
 	var spacing := 2.54
 	var total_pin_height := (pins_per_side - 1) * spacing
@@ -417,6 +418,7 @@ func setup_dip_pins(pin_count: int, row_spacing: float = 7.62) -> void:
 ## body_extension: how much the body extends beyond pin rows on each end
 func setup_module_pins(pin_count: int, row_spacing: float = 22.86, body_extension: float = 9.0) -> void:
 	pins.clear()
+	@warning_ignore("integer_division")
 	var pins_per_side := pin_count / 2
 	var spacing := 2.54
 	var total_pin_height := (pins_per_side - 1) * spacing
@@ -531,7 +533,7 @@ func load_from_dict(data: Dictionary) -> void:
 
 	var footprint_str: String = data.get("footprint", "CUSTOM")
 	var footprint_idx := FootprintType.keys().find(footprint_str)
-	footprint = footprint_idx if footprint_idx >= 0 else FootprintType.CUSTOM
+	footprint = (footprint_idx as FootprintType) if footprint_idx >= 0 else FootprintType.CUSTOM
 
 	footprint_id = data.get("footprint_id", "")
 

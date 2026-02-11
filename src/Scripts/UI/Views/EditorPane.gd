@@ -193,6 +193,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 
 ## Convenience function to add a PCB editor
 func add_pcb_editor(name_: String = "") -> Editor:
+	@warning_ignore("incompatible_ternary")
 	return add(Editor.Type.PCB, null, name_ if not name_.is_empty() else null, null, true)
 
 

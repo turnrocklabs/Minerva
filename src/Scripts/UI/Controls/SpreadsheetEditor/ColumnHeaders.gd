@@ -143,8 +143,8 @@ func _gui_input(event: InputEvent) -> void:
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	if event.button_index == MOUSE_BUTTON_RIGHT:
 		if event.pressed:
-			var x := event.position.x + scroll_offset_x
-			var col := _get_col_at_x(x)
+			var ctx_x := event.position.x + scroll_offset_x
+			var col := _get_col_at_x(ctx_x)
 			if col >= 0:
 				column_context_menu_requested.emit(col, get_screen_position() + event.position)
 		return

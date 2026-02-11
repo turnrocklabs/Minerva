@@ -198,7 +198,7 @@ func _update_remove_all_button() -> void:
 	# if mode is being changed, disable the button for brief time so user doesn't accidentally delete them completely
 	if not _remove_all_button.has_meta("mode") or _remove_all_button.get_meta("mode") != "local" and not notes.is_empty():
 		_remove_all_button.disabled = true
-		get_tree().create_timer(0.2).timeout.connect(func(): _remove_all_button.disabled = notes.is_empty())
+		create_tween().tween_callback(func(): _remove_all_button.disabled = notes.is_empty()).set_delay(0.2)
 	else:
 		_remove_all_button.disabled = notes.is_empty()
 

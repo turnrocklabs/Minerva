@@ -190,9 +190,9 @@ func _on_state_updated() -> void:
 
 		# disable the button for half a second, so the user doesn't accidentally delete it locally also
 		note._remove_button.disabled = true
-		note.get_tree().create_timer(0.5).timeout.connect(
-			func(): if is_instance_valid(note): note._remove_button.disabled = false
-		)
+		note.create_tween().tween_callback(func():
+			note._remove_button.disabled = false
+		).set_delay(0.5)
 
 		if adapter:
 			note.sync_controller_button.visible = true # keep visible so users can upload still

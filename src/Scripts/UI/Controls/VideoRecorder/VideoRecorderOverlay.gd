@@ -30,9 +30,6 @@ var status_label: Label = null
 var level_bar: ProgressBar = null
 var level_label: Label = null
 
-## State
-var _overlay_visible: bool = false
-
 
 func _ready() -> void:
 	z_index = 1000  # Stay on top (same pattern as video_player.gd fullscreen)
@@ -41,7 +38,7 @@ func _ready() -> void:
 	_build_ui()
 	_update_ui_state()
 	# Re-check camera availability after a short delay (feeds need time to enumerate)
-	get_tree().create_timer(1.0).timeout.connect(_refresh_camera_modes)
+	create_tween().tween_callback(_refresh_camera_modes).set_delay(1.0)
 
 
 func _build_ui() -> void:
@@ -246,6 +243,7 @@ func _on_stop_pressed() -> void:
 
 
 func _on_elapsed_time_updated(seconds: float) -> void:
+	@warning_ignore("integer_division")
 	var minutes := int(seconds) / 60
 	var secs := int(seconds) % 60
 	timer_label.text = "%d:%02d" % [minutes, secs]

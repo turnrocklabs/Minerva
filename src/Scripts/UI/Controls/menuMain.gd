@@ -1550,7 +1550,7 @@ After loading, press Ctrl+Shift+Y in Firefox to toggle the extension."""
 	copy_btn.pressed.connect(func():
 		DisplayServer.clipboard_set(dest_extension_path)
 		copy_btn.text = "Copied!"
-		get_tree().create_timer(1.5).timeout.connect(func(): copy_btn.text = "Copy")
+		copy_btn.create_tween().tween_callback(copy_btn.set.bind("text", "Copy")).set_delay(1.5)
 	)
 	path_hbox.add_child(copy_btn)
 

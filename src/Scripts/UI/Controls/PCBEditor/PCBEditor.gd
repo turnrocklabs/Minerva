@@ -491,7 +491,7 @@ func _on_component_selected(component_id: String) -> void:
 	component_selected.emit(component_id)
 
 
-func _on_component_moved(component_id: String, new_position: Vector2) -> void:
+func _on_component_moved(component_id: String, _new_position: Vector2) -> void:
 	is_modified = true
 	_update_properties_panel(component_id)
 	data_changed.emit()
@@ -570,15 +570,15 @@ func _on_annotation_mode_changed(mode: int) -> void:
 
 
 ## Handle request for text input (when placing text annotation)
-func _on_annotation_text_requested(position: Vector2) -> void:
-	pending_text_position = position
+func _on_annotation_text_requested(world_pos: Vector2) -> void:
+	pending_text_position = world_pos
 	text_input_line.text = ""
 	text_input_dialog.popup_centered()
 	text_input_line.grab_focus()
 
 
 ## Handle annotation created
-func _on_annotation_created(annotation_id: String) -> void:
+func _on_annotation_created(_annotation_id: String) -> void:
 	# Could show a brief notification or update stats
 	pass
 
@@ -608,7 +608,7 @@ func _on_route_hint_mode_changed(mode: int) -> void:
 
 
 ## Handle route hint created
-func _on_route_hint_created(hint_id: String) -> void:
+func _on_route_hint_created(_hint_id: String) -> void:
 	# Could show a brief notification
 	pass
 
@@ -618,10 +618,10 @@ func _on_component_lock_changed(message: String) -> void:
 	if tool_mode_label:
 		tool_mode_label.text = message
 		# Clear after 2 seconds
-		get_tree().create_timer(2.0).timeout.connect(func():
+		create_tween().tween_callback(func():
 			if tool_mode_label and tool_mode_label.text == message:
 				tool_mode_label.text = ""
-		)
+		).set_delay(2.0)
 
 
 ## Handle pin selected (from INSPECT_PIN mode)
@@ -784,11 +784,11 @@ func export_yaml() -> String:
 
 
 ## Add a component programmatically
-func add_component_at(component_id: String, footprint_type: int, position: Vector2) -> void:
+func add_component_at(component_id: String, footprint_type: int, world_pos: Vector2) -> void:
 	var comp := PCBComponentScript.new()
 	comp.id = component_id if not component_id.is_empty() else data.generate_component_id("U")
 	comp.footprint = footprint_type as PCBComponentScript.FootprintType
-	comp.position = position
+	comp.position = world_pos
 	comp.setup_standard_pins()
 
 	data.save_to_history("Add " + comp.id)

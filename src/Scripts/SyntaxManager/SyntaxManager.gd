@@ -28,10 +28,8 @@ func _load_color_groups():
 		
 		# Check if the resource is valid and has JSON data
 		if groups_resource and groups_resource.data:
-			print("this is executing")
-		# Access the "colorGroups" dictionary from the JSON data
+			# Access the "colorGroups" dictionary from the JSON data
 			if groups_resource.data.has("colorGroups"):
-				print("this is also executing")
 				_color_groups = groups_resource.data.colorGroups
 			else:
 				push_warning("JSON resource doesn't contain 'colorGroups' key")

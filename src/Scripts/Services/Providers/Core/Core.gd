@@ -123,8 +123,6 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 			HcpLogs.LOG_TYPE.INFO
 		)
 
-	print("Attempting authentication to: ", auth_endpoint)
-	print("core: starting auth request")
 	var err = http_request.request(auth_endpoint, headers, HTTPClient.METHOD_POST, body)
 
 	

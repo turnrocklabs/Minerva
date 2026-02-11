@@ -867,7 +867,7 @@ func from_csv(csv_text: String) -> void:
 			var fp_str := fields[footprint_idx]
 			var fp_idx := PCBComponentScript.FootprintType.keys().find(fp_str)
 			if fp_idx >= 0:
-				component.footprint = fp_idx
+				component.footprint = fp_idx as PCBComponentScript.FootprintType
 
 		if x_idx >= 0 and fields.size() > x_idx:
 			component.position.x = fields[x_idx].to_float()

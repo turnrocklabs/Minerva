@@ -262,7 +262,6 @@ func remove_registered_object(value: Variant) -> bool:
 ## Clears all registered objects.[br]
 ## Primary use at project close.
 func clear_registered_objects():
-	print("Clearing registered object")
 	_registered_objects.clear()
 
 ## Given the object, tries to find the uuid for that object

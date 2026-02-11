@@ -62,7 +62,7 @@ func get_selected_service_data() -> Array[Dictionary]:
 			
 			# this is not available if the service is not currently available
 			# so we'll take the name from the item list
-			var service: Service = check_box.get_meta("service")
+			var service: Service = check_box.get_meta("service", null)
 			
 			var service_name: String
 

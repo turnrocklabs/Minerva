@@ -280,9 +280,6 @@ func _get_provider_from_id(item_id: int) -> BaseProvider:
 	elif item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
 	
-	if provider:
-		print("Selected provider: ", provider.model_name)
-	
 	return provider
 
 ## Returns the provider for a specific tab index
