@@ -14,6 +14,12 @@ var tools_enabled: bool = false
 ## Counter for generating unique tool call IDs
 var _tool_call_counter: int = 0
 
+## Regex to strip leaked tool-call text from Gemini responses.
+## Gemini sometimes emits tool call plans as text like:
+##   call:default_api:tool_name{param: <ctrl46> value <ctrl46> }
+## These are noise — the real tool calls come as structured functionCall parts.
+var _tool_call_text_regex: RegEx
+
 
 func _init():
 	provider_name = "Google"
@@ -33,6 +39,12 @@ func _init():
 	supports_temperature = true
 	supports_top_p = true
 	temperature_warning = "Gemini 3 works best with temperature=1.0"
+
+	# Compile regex to strip leaked tool-call text from responses
+	# Matches: call:default_api:tool_name{...} blocks including multi-line with <ctrl46> delimiters
+	# Example: call:default_api:cobrowser_read{selector:\n<ctrl46>\nbody\n<ctrl46>\n}
+	_tool_call_text_regex = RegEx.new()
+	_tool_call_text_regex.compile("call:default_api:\\w+\\{[^}]*\\}")
 
 
 ## Set available tools for agentic mode
@@ -101,6 +113,14 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	var request_body = {
 		"contents": prompt
 	}
+
+	# Add system instruction if set (from SYSTEM role messages)
+	# Gemini REST API uses snake_case: system_instruction (per v1beta docs)
+	if not system_prompt.is_empty():
+		request_body["system_instruction"] = {
+			"parts": [{"text": system_prompt}]
+		}
+		print("[Gemini] Added system_instruction (%d chars)" % system_prompt.length())
 
 	# Add tools if enabled
 	print("[Gemini] generate_content: tools_enabled=%s, available_tools.size=%d" % [tools_enabled, available_tools.size()])
@@ -200,9 +220,9 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		# Tool results are sent as user role with functionResponse
 		# Gemini expects: {role: "user", parts: [{functionResponse: {name, response}}]}
 		var response_content: Variant
-		var parsed = JSON.parse_string(chat_item.Message)
-		if parsed != null:
-			response_content = parsed
+		var json := JSON.new()
+		if json.parse(chat_item.Message) == OK:
+			response_content = json.data
 		else:
 			response_content = {"content": chat_item.Message}
 
@@ -373,8 +393,14 @@ func to_bot_response(data: Variant) -> BotResponse:
 		for part in content["parts"]:
 			print("[Gemini] part keys: %s" % str(part.keys()))
 			if "text" in part:
-				print("[Gemini] Found text part, length: %d" % part["text"].length())
-				response.text += "\n%s" % part["text"]
+				var text_content: String = part["text"]
+				# Strip leaked tool-call text (call:default_api:...) from Gemini responses
+				if _tool_call_text_regex:
+					text_content = _tool_call_text_regex.sub(text_content, "", true)
+				# Also strip <ctrl46> delimiters that Gemini uses around tool call params
+				text_content = text_content.replace("<ctrl46>", "")
+				print("[Gemini] Found text part, length: %d (after cleanup: %d)" % [part["text"].length(), text_content.length()])
+				response.text += "\n%s" % text_content
 			elif "functionCall" in part:
 				# Parse function call
 				var func_call: Dictionary = part["functionCall"]

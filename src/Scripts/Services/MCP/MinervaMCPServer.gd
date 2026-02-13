@@ -7096,13 +7096,15 @@ func _clock(arguments: Dictionary) -> Dictionary:
 			"timezone": "UTC"
 		}
 
-	# Mode 3: no arguments — current time
-	var dt := Time.get_datetime_dict_from_system(true)
+	# Mode 3: no arguments — current local time
+	var dt := Time.get_datetime_dict_from_system(false)
+	var tz := Time.get_time_zone_from_system()
+	var tz_name: String = tz.get("name", "Local")
 	return {
 		"success": true,
 		"unix_timestamp": unix_now,
 		"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second],
-		"timezone": "UTC"
+		"timezone": tz_name
 	}
 
 #endregion
