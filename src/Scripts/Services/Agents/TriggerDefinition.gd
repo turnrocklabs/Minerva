@@ -17,6 +17,12 @@ var initial_message: String = ""
 var action_type: ActionType = ActionType.SPAWN_NEW
 ## For CHAT_COMPLETED: only fire when these agent definitions complete (empty = all agent chats).
 var watched_agent_ids: Array[String] = []
+## Batch execution: list of parameter values to iterate sequentially (empty = single fire).
+var batch_params: Array[String] = []
+## After batch completes, fire this trigger by ID (empty = no chaining).
+var chain_trigger_id: String = ""
+## Optional UI label for batch params (e.g. "Ticker Symbols").
+var batch_label: String = ""
 
 
 func _init(p_id: String = ""):
@@ -38,6 +44,9 @@ func serialize() -> Dictionary:
 		"initial_message": initial_message,
 		"action_type": action_type,
 		"watched_agent_ids": watched_agent_ids,
+		"batch_params": batch_params,
+		"chain_trigger_id": chain_trigger_id,
+		"batch_label": batch_label,
 	}
 
 
@@ -54,4 +63,9 @@ static func deserialize(data: Dictionary) -> TriggerDefinition:
 	var ids = data.get("watched_agent_ids", [])
 	for aid in ids:
 		trig.watched_agent_ids.append(str(aid))
+	var bp = data.get("batch_params", [])
+	for p in bp:
+		trig.batch_params.append(str(p))
+	trig.chain_trigger_id = data.get("chain_trigger_id", "")
+	trig.batch_label = data.get("batch_label", "")
 	return trig

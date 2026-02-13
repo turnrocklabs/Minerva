@@ -4,6 +4,8 @@ extends Node
 ## connections for EVENT triggers. Calls AgentSpawner when triggers fire.
 
 signal triggers_changed
+signal batch_progress(trigger_id: String, index: int, total: int, param: String)
+signal batch_completed(trigger_id: String, completed: int, total: int)
 
 var triggers: Array[TriggerDefinition] = []
 
@@ -16,12 +18,34 @@ var _timer_nodes: Dictionary = {}
 ## Signal connection state keyed by trigger_id
 var _connected_signals: Dictionary = {}
 
+## Active batch executions keyed by trigger_id
+var _active_batches: Dictionary = {}
+
+## Pending single-fire chains: trigger_id -> { chain_trigger_id, chain_visited }
+var _pending_single_chains: Dictionary = {}
+
+
+class BatchState:
+	var trigger_id: String
+	var params: Array[String]
+	var current_index: int = 0
+	var completed_count: int = 0
+	var active_history_id: String = ""
+	var all_history_ids: Array[String] = []
+	var context_accumulator: Array[Dictionary] = []
+	## Cycle detection: set of trigger IDs visited in this chain
+	var chain_visited: Dictionary = {}
+	## Optional context passed into the batch start
+	var initial_context: Dictionary = {}
+
 
 func _ready() -> void:
 	# Connect to chat_completed for anti-flood cleanup
 	SingletonObject.chat_completed.connect(_on_chat_completed)
 	# Connect to agent_chat_finished for CHAT_COMPLETED event triggers
 	SingletonObject.agent_chat_finished.connect(_on_agent_chat_finished)
+	# Safety net: clean up batches/anti-flood if a chat is force-stopped
+	SingletonObject.stop_all_requests.connect(_on_stop_request)
 
 
 #region CRUD
@@ -78,6 +102,8 @@ func clear_all() -> void:
 		_deactivate_trigger(trig)
 	triggers.clear()
 	_active_trigger_chats.clear()
+	_active_batches.clear()
+	_pending_single_chains.clear()
 	triggers_changed.emit()
 
 #endregion CRUD
@@ -187,6 +213,37 @@ func _on_chat_completed(_response) -> void:
 
 
 func _on_agent_chat_finished(history_id: String, agent_definition_id: String) -> void:
+	# Check if this history belongs to an active batch
+	for trigger_id in _active_batches.keys():
+		var batch: BatchState = _active_batches[trigger_id]
+		if batch.active_history_id == history_id:
+			# Collect context from completed agent
+			var ctx = _build_completion_context(history_id, agent_definition_id)
+			batch.context_accumulator.append(ctx)
+			batch.completed_count += 1
+			batch.all_history_ids.append(history_id)
+			batch.active_history_id = ""
+			# Advance to next param via deferred call to avoid deep stacks
+			call_deferred("_fire_batch_next", trigger_id)
+			# Don't clear anti-flood here — batch manages its own state
+			break
+
+	# Check if this history belongs to a pending single-fire chain
+	for trigger_id in _pending_single_chains.keys():
+		if _active_trigger_chats.get(trigger_id, "") == history_id:
+			var chain_info: Dictionary = _pending_single_chains[trigger_id]
+			_pending_single_chains.erase(trigger_id)
+			_active_trigger_chats.erase(trigger_id)
+			var chain_target: String = chain_info["chain_trigger_id"]
+			var visited: Dictionary = chain_info.get("chain_visited", {})
+			visited[trigger_id] = true
+			if visited.has(chain_target):
+				push_warning("[TriggerManager] Cycle detected: trigger '%s' already visited in chain, stopping." % chain_target)
+			else:
+				var ctx = _build_completion_context(history_id, agent_definition_id)
+				call_deferred("_fire_trigger", chain_target, ctx, visited)
+			break
+
 	# Clear anti-flood for any trigger whose active chat matches this history
 	for trigger_id in _active_trigger_chats.keys():
 		if _active_trigger_chats[trigger_id] == history_id:
@@ -209,6 +266,25 @@ func _on_agent_chat_finished(history_id: String, agent_definition_id: String) ->
 		# Build context for template variables
 		var context := _build_completion_context(history_id, agent_definition_id)
 		_fire_trigger(trig.id, context)
+
+
+func _on_stop_request(history_id: String) -> void:
+	# Safety net: if a stopped chat belongs to an active batch, clean up the batch
+	# so it doesn't stay stuck forever. The primary signal (agent_chat_finished)
+	# is emitted by ChatPane's stop handler, but this catches edge cases.
+	for trigger_id in _active_batches.keys():
+		var batch: BatchState = _active_batches[trigger_id]
+		if batch.active_history_id == history_id:
+			print("[TriggerManager] Batch '%s' had active chat stopped, cleaning up" % trigger_id)
+			batch.active_history_id = ""
+			# Don't advance — just clean up. agent_chat_finished will handle advancement.
+			break
+
+	# Also clear anti-flood for single-fire triggers
+	for trigger_id in _active_trigger_chats.keys():
+		if _active_trigger_chats[trigger_id] == history_id:
+			_active_trigger_chats.erase(trigger_id)
+			break
 
 
 func _build_completion_context(history_id: String, agent_definition_id: String) -> Dictionary:
@@ -247,9 +323,16 @@ func _apply_template(message: String, context: Dictionary) -> String:
 	return result
 
 
-func _fire_trigger(trigger_id: String, context: Dictionary = {}) -> void:
+func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: Dictionary = {}, force: bool = false) -> void:
 	var trig = get_trigger(trigger_id)
-	if not trig or not trig.enabled:
+	if not trig:
+		return
+	if not trig.enabled and not force:
+		return
+
+	# Anti-flood for batch triggers: don't re-fire while a batch is running
+	if _active_batches.has(trigger_id):
+		print("[TriggerManager] Skipping trigger '%s' - batch still running" % trigger_id)
 		return
 
 	# Anti-flood: don't fire if same trigger already has an active chat
@@ -261,6 +344,11 @@ func _fire_trigger(trigger_id: String, context: Dictionary = {}) -> void:
 				return
 		# Chat no longer exists, clear tracking
 		_active_trigger_chats.erase(trigger_id)
+
+	# Branch: batch execution vs single fire
+	if not trig.batch_params.is_empty():
+		_start_batch(trig, context, chain_visited)
+		return
 
 	# Look up agent definition
 	var registry = SingletonObject.agent_registry
@@ -283,6 +371,12 @@ func _fire_trigger(trigger_id: String, context: Dictionary = {}) -> void:
 			_action_spawn_new(trig, agent_def, message, trigger_id)
 		TriggerDefinition.ActionType.MESSAGE_EXISTING:
 			_action_message_existing(trig, agent_def, message, trigger_id)
+
+	# Single-fire chaining (non-batch trigger with chain_trigger_id)
+	if not trig.chain_trigger_id.is_empty() and trig.batch_params.is_empty():
+		# Defer chaining — the agent hasn't finished yet.
+		# Chaining for single-fire is handled in _on_agent_chat_finished via _pending_single_chains.
+		_pending_single_chains[trigger_id] = { "chain_trigger_id": trig.chain_trigger_id, "chain_visited": chain_visited.duplicate() }
 
 
 func _action_spawn_new(trig: TriggerDefinition, agent_def: AgentDefinition, message: String, trigger_id: String) -> void:
@@ -326,6 +420,146 @@ func _action_message_existing(trig: TriggerDefinition, agent_def: AgentDefinitio
 		print("[TriggerManager] Fired trigger '%s' -> messaged existing agent '%s'" % [trigger_id, agent_def.name])
 
 #endregion Trigger Callbacks
+
+
+#region Batch Execution
+
+func _start_batch(trig: TriggerDefinition, context: Dictionary, chain_visited: Dictionary) -> void:
+	var batch = BatchState.new()
+	batch.trigger_id = trig.id
+	for p in trig.batch_params:
+		batch.params.append(p)
+	batch.current_index = 0
+	batch.completed_count = 0
+	batch.initial_context = context.duplicate()
+	batch.chain_visited = chain_visited.duplicate()
+	batch.chain_visited[trig.id] = true
+	_active_batches[trig.id] = batch
+	print("[TriggerManager] Starting batch for trigger '%s' (%d params)" % [trig.id, batch.params.size()])
+	_fire_batch_next(trig.id)
+
+
+func _fire_batch_next(trigger_id: String) -> void:
+	if not _active_batches.has(trigger_id):
+		return
+
+	var batch: BatchState = _active_batches[trigger_id]
+	if batch.current_index >= batch.params.size():
+		_on_batch_completed(trigger_id)
+		return
+
+	var trig = get_trigger(trigger_id)
+	if not trig:
+		_active_batches.erase(trigger_id)
+		return
+
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		push_error("[TriggerManager] No agent registry for batch step")
+		_active_batches.erase(trigger_id)
+		return
+
+	var agent_def = registry.get_agent(trig.agent_id)
+	if not agent_def:
+		push_warning("[TriggerManager] Agent '%s' not found for batch trigger '%s'" % [trig.agent_id, trigger_id])
+		_active_batches.erase(trigger_id)
+		return
+
+	var param = batch.params[batch.current_index]
+	var context = batch.initial_context.duplicate()
+	context["param"] = param
+	context["batch_index"] = str(batch.current_index)
+	context["batch_total"] = str(batch.params.size())
+
+	var message = _apply_template(trig.initial_message, context)
+
+	batch_progress.emit(trigger_id, batch.current_index, batch.params.size(), param)
+	print("[TriggerManager] Batch '%s' step %d/%d param='%s'" % [trigger_id, batch.current_index + 1, batch.params.size(), param])
+
+	batch.current_index += 1
+
+	match trig.action_type:
+		TriggerDefinition.ActionType.SPAWN_NEW:
+			var history = AgentSpawner.spawn_agent(agent_def, message, trigger_id)
+			if history:
+				batch.active_history_id = history.HistoryId
+			else:
+				push_warning("[TriggerManager] Batch spawn failed for param '%s', skipping" % param)
+				call_deferred("_fire_batch_next", trigger_id)
+		TriggerDefinition.ActionType.MESSAGE_EXISTING:
+			var target_history: ChatHistory = null
+			var target_idx: int = -1
+			for i in range(SingletonObject.ChatList.size() - 1, -1, -1):
+				var chat: ChatHistory = SingletonObject.ChatList[i]
+				if chat.AgentDefinitionId == agent_def.id:
+					target_history = chat
+					target_idx = i
+					break
+			if not target_history:
+				target_history = AgentSpawner.spawn_agent(agent_def, "", trigger_id)
+				if not target_history:
+					push_warning("[TriggerManager] Batch MESSAGE_EXISTING: fallback spawn failed for param '%s'" % param)
+					call_deferred("_fire_batch_next", trigger_id)
+					return
+				target_idx = SingletonObject.ChatList.find(target_history)
+			batch.active_history_id = target_history.HistoryId
+			var chats = SingletonObject.Chats
+			if chats and target_idx >= 0:
+				chats.current_tab = target_idx
+				chats.call_deferred("execute_regular_chat", message)
+
+
+func _on_batch_completed(trigger_id: String) -> void:
+	if not _active_batches.has(trigger_id):
+		return
+
+	var batch: BatchState = _active_batches[trigger_id]
+	var completed = batch.completed_count
+	var total = batch.params.size()
+
+	print("[TriggerManager] Batch completed for trigger '%s': %d/%d" % [trigger_id, completed, total])
+	batch_completed.emit(trigger_id, completed, total)
+
+	# Build chaining context from accumulated results
+	var chain_context: Dictionary = {
+		"batch_completed": str(completed),
+		"batch_total": str(total),
+	}
+	# Include last response from the final batch item
+	if not batch.context_accumulator.is_empty():
+		var last_ctx = batch.context_accumulator[batch.context_accumulator.size() - 1]
+		chain_context["last_response"] = last_ctx.get("last_response", "")
+		chain_context["agent_name"] = last_ctx.get("agent_name", "")
+		chain_context["history_name"] = last_ctx.get("history_name", "")
+
+	var chain_visited = batch.chain_visited.duplicate()
+	_active_batches.erase(trigger_id)
+
+	# Chain to next trigger if configured
+	var trig = get_trigger(trigger_id)
+	if trig and not trig.chain_trigger_id.is_empty():
+		if chain_visited.has(trig.chain_trigger_id):
+			push_warning("[TriggerManager] Cycle detected: trigger '%s' already visited in chain, stopping." % trig.chain_trigger_id)
+		else:
+			print("[TriggerManager] Chaining from '%s' -> '%s'" % [trigger_id, trig.chain_trigger_id])
+			call_deferred("_fire_trigger", trig.chain_trigger_id, chain_context, chain_visited)
+
+
+func get_batch_status(trigger_id: String) -> Dictionary:
+	if not _active_batches.has(trigger_id):
+		return {"active": false}
+	var batch: BatchState = _active_batches[trigger_id]
+	return {
+		"active": true,
+		"trigger_id": trigger_id,
+		"current_index": batch.current_index,
+		"completed_count": batch.completed_count,
+		"total": batch.params.size(),
+		"current_param": batch.params[batch.current_index - 1] if batch.current_index > 0 and batch.current_index <= batch.params.size() else "",
+		"active_history_id": batch.active_history_id,
+	}
+
+#endregion Batch Execution
 
 
 #region Serialization (per-project)

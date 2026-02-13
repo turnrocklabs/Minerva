@@ -37,6 +37,9 @@ var trigger_action_type_option: OptionButton
 var trigger_watched_label: Label
 var trigger_watched_container: VBoxContainer
 var trigger_message_edit: TextEdit
+var trigger_batch_params_edit: TextEdit
+var trigger_batch_label_edit: LineEdit
+var trigger_chain_option: OptionButton
 var trigger_enabled_check: CheckButton
 var trigger_new_btn: Button
 var trigger_save_btn: Button
@@ -365,8 +368,29 @@ func _build_triggers_tab() -> Control:
 	trigger_message_edit = TextEdit.new()
 	trigger_message_edit.custom_minimum_size = Vector2(0, 80)
 	trigger_message_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	trigger_message_edit.placeholder_text = "Message sent when trigger fires. Use {agent_name}, {last_response}, {history_name} for context."
+	trigger_message_edit.placeholder_text = "Message sent when trigger fires.\nVars: {agent_name}, {last_response}, {history_name}, {param}, {batch_index}, {batch_total}"
 	right_vbox.add_child(trigger_message_edit)
+
+	# Batch parameters
+	right_vbox.add_child(_label("Batch Parameters (one per line):"))
+	trigger_batch_params_edit = TextEdit.new()
+	trigger_batch_params_edit.custom_minimum_size = Vector2(0, 60)
+	trigger_batch_params_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trigger_batch_params_edit.placeholder_text = "AAPL\nMSFT\nGOOGL\n(leave empty for single fire)"
+	right_vbox.add_child(trigger_batch_params_edit)
+
+	# Parameter label
+	right_vbox.add_child(_label("Parameter Label (optional):"))
+	trigger_batch_label_edit = LineEdit.new()
+	trigger_batch_label_edit.placeholder_text = "e.g. Ticker Symbols"
+	trigger_batch_label_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vbox.add_child(trigger_batch_label_edit)
+
+	# Chain to trigger
+	right_vbox.add_child(_label("Chain To (after completion):"))
+	trigger_chain_option = OptionButton.new()
+	trigger_chain_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vbox.add_child(trigger_chain_option)
 
 	# Enabled toggle
 	trigger_enabled_check = CheckButton.new()
@@ -840,6 +864,10 @@ func _on_trigger_selected(index: int) -> void:
 	trigger_event_option.select(trig.event_type)
 	trigger_action_type_option.select(trig.action_type)
 	trigger_message_edit.text = trig.initial_message
+	trigger_batch_params_edit.text = "\n".join(trig.batch_params)
+	trigger_batch_label_edit.text = trig.batch_label
+	_populate_chain_options(trig.id)
+	_select_chain_option(trig.chain_trigger_id)
 	trigger_enabled_check.button_pressed = trig.enabled
 	_on_trigger_type_changed(trig.trigger_type)
 	_populate_watched_agents(trig.watched_agent_ids)
@@ -909,6 +937,9 @@ func _on_trigger_new() -> void:
 	trigger_event_option.select(0)
 	trigger_action_type_option.select(0)
 	trigger_message_edit.text = ""
+	trigger_batch_params_edit.text = ""
+	trigger_batch_label_edit.text = ""
+	_populate_chain_options("")
 	trigger_enabled_check.button_pressed = false
 	_on_trigger_type_changed(0)
 	var empty_ids: Array[String] = []
@@ -937,6 +968,9 @@ func _on_trigger_save() -> void:
 		trig.action_type = trigger_action_type_option.get_selected_id()
 		trig.watched_agent_ids = _get_watched_agent_ids()
 		trig.initial_message = trigger_message_edit.text
+		trig.batch_params = _parse_batch_params()
+		trig.batch_label = trigger_batch_label_edit.text.strip_edges()
+		trig.chain_trigger_id = _get_selected_chain_trigger_id()
 		trig.enabled = trigger_enabled_check.button_pressed
 		tm.update_trigger(trig.id, trig)
 		SingletonObject.create_toast_notification("Trigger updated", ToastNotification.Type.SUCCESS)
@@ -951,6 +985,9 @@ func _on_trigger_save() -> void:
 		trig.action_type = trigger_action_type_option.get_selected_id()
 		trig.watched_agent_ids = _get_watched_agent_ids()
 		trig.initial_message = trigger_message_edit.text
+		trig.batch_params = _parse_batch_params()
+		trig.batch_label = trigger_batch_label_edit.text.strip_edges()
+		trig.chain_trigger_id = _get_selected_chain_trigger_id()
 		trig.enabled = trigger_enabled_check.button_pressed
 		tm.add_trigger(trig)
 		SingletonObject.create_toast_notification("Trigger created", ToastNotification.Type.SUCCESS)
@@ -967,6 +1004,50 @@ func _on_trigger_delete() -> void:
 	_selected_trigger_idx = -1
 	_refresh_trigger_list()
 	SingletonObject.create_toast_notification("Trigger deleted", ToastNotification.Type.SUCCESS)
+
+
+func _parse_batch_params() -> Array[String]:
+	var result: Array[String] = []
+	var lines = trigger_batch_params_edit.text.split("\n")
+	for line in lines:
+		var trimmed = line.strip_edges()
+		if not trimmed.is_empty():
+			result.append(trimmed)
+	return result
+
+
+func _populate_chain_options(exclude_trigger_id: String) -> void:
+	trigger_chain_option.clear()
+	trigger_chain_option.add_item("(None)")
+	trigger_chain_option.set_item_metadata(0, "")
+
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return
+
+	for trig in tm.triggers:
+		if trig.id == exclude_trigger_id:
+			continue
+		var display = trig.name if not trig.name.is_empty() else trig.id
+		trigger_chain_option.add_item(display)
+		trigger_chain_option.set_item_metadata(trigger_chain_option.item_count - 1, trig.id)
+
+
+func _select_chain_option(chain_id: String) -> void:
+	if chain_id.is_empty():
+		trigger_chain_option.select(0)
+		return
+	for i in trigger_chain_option.item_count:
+		if trigger_chain_option.get_item_metadata(i) == chain_id:
+			trigger_chain_option.select(i)
+			return
+	trigger_chain_option.select(0)
+
+
+func _get_selected_chain_trigger_id() -> String:
+	if trigger_chain_option.selected < 0:
+		return ""
+	return trigger_chain_option.get_item_metadata(trigger_chain_option.selected)
 
 #endregion Trigger Callbacks
 
@@ -1003,7 +1084,9 @@ func _refresh_trigger_list() -> void:
 		var type_str = "Timer" if trig.trigger_type == TriggerDefinition.TriggerType.TIMER else "Event"
 		var action_str = " (msg)" if trig.action_type == TriggerDefinition.ActionType.MESSAGE_EXISTING else ""
 		var enabled_str = " [ON]" if trig.enabled else " [OFF]"
+		var batch_str = " [%d params]" % trig.batch_params.size() if not trig.batch_params.is_empty() else ""
+		var chain_str = " -> chain" if not trig.chain_trigger_id.is_empty() else ""
 		var display_name = trig.name if not trig.name.is_empty() else agent_name
-		trigger_list.add_item("%s%s: %s%s" % [type_str, action_str, display_name, enabled_str])
+		trigger_list.add_item("%s%s: %s%s%s%s" % [type_str, action_str, display_name, batch_str, chain_str, enabled_str])
 
 #endregion List Refresh

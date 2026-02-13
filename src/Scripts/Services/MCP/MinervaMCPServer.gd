@@ -39,6 +39,7 @@ func _init(manager = null) -> void:
 		_register_video_editor_tools()
 		_register_utility_tools()
 		_register_agent_tools()
+		_register_trigger_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -125,6 +126,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _send_message(arguments)
 		"minerva_get_chat_history":
 			return _get_chat_history(arguments)
+		"minerva_list_chats":
+			return _list_chats(arguments)
 		"minerva_close_chat":
 			return _close_chat(arguments)
 
@@ -340,6 +343,20 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_spawn_agent":
 			return _spawn_agent(arguments)
 
+		# Trigger tools
+		"minerva_list_triggers":
+			return _list_triggers(arguments)
+		"minerva_create_trigger":
+			return _create_trigger(arguments)
+		"minerva_update_trigger":
+			return _update_trigger(arguments)
+		"minerva_delete_trigger":
+			return _delete_trigger(arguments)
+		"minerva_fire_trigger":
+			return _fire_trigger_mcp(arguments)
+		"minerva_get_batch_status":
+			return _get_batch_status(arguments)
+
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
 
@@ -452,6 +469,15 @@ func _register_chat_tools() -> void:
 				}
 			},
 			"required": ["chat_id"]
+		}
+	)
+
+	_register_tool("minerva_list_chats",
+		"List all open chat tabs with their IDs, names, message counts, and agent info.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
 		}
 	)
 
@@ -1769,6 +1795,22 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 		"name": history.HistoryName,
 		"messages": messages
 	}
+
+
+func _list_chats(_args: Dictionary) -> Dictionary:
+	var result: Array[Dictionary] = []
+	for history in SingletonObject.ChatList:
+		var entry: Dictionary = {
+			"chat_id": history.HistoryId,
+			"name": history.HistoryName,
+			"message_count": history.HistoryItemList.size(),
+			"is_agent": history.IsAgentChat,
+		}
+		if history.IsAgentChat:
+			entry["agent_definition_id"] = history.AgentDefinitionId
+			entry["max_tool_rounds"] = history.MaxToolCallRounds
+		result.append(entry)
+	return {"success": true, "chats": result, "count": result.size()}
 
 
 func _close_chat(args: Dictionary) -> Dictionary:
@@ -7453,5 +7495,326 @@ func _spawn_agent(args: Dictionary) -> Dictionary:
 		"agent_name": agent_def.name,
 		"agent_id": agent_def.id
 	}
+
+#endregion
+
+
+#region Trigger Tool Registration and Implementations
+
+func _register_trigger_tools() -> void:
+	_register_tool("minerva_list_triggers",
+		"List all trigger definitions. Shows id, name, agent, type, enabled status, batch params count, and chain target.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	)
+
+	_register_tool("minerva_create_trigger",
+		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the trigger"
+				},
+				"agent_id": {
+					"type": "string",
+					"description": "ID of the agent definition to run when triggered"
+				},
+				"trigger_type": {
+					"type": "integer",
+					"description": "0=TIMER, 1=EVENT. Default 0"
+				},
+				"interval_seconds": {
+					"type": "number",
+					"description": "Timer interval in seconds (min 5). Default 300"
+				},
+				"event_type": {
+					"type": "integer",
+					"description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED. Default 0"
+				},
+				"action_type": {
+					"type": "integer",
+					"description": "0=SPAWN_NEW, 1=MESSAGE_EXISTING. Default 0"
+				},
+				"initial_message": {
+					"type": "string",
+					"description": "Message template. Vars: {param}, {batch_index}, {batch_total}, {agent_name}, {last_response}, {history_name}"
+				},
+				"batch_params": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "List of parameter values for batch execution. Empty = single fire."
+				},
+				"batch_label": {
+					"type": "string",
+					"description": "Optional UI label for batch params (e.g. 'Ticker Symbols')"
+				},
+				"chain_trigger_id": {
+					"type": "string",
+					"description": "Trigger ID to fire after this trigger (or batch) completes"
+				},
+				"watched_agent_ids": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "For CHAT_COMPLETED events: only fire when these agent IDs complete (empty = all)"
+				},
+				"enabled": {
+					"type": "boolean",
+					"description": "Whether the trigger is active. Default false"
+				}
+			},
+			"required": ["name", "agent_id"]
+		}
+	)
+
+	_register_tool("minerva_update_trigger",
+		"Update an existing trigger definition. Only provided fields are changed.",
+		{
+			"type": "object",
+			"properties": {
+				"trigger_id": {
+					"type": "string",
+					"description": "ID of the trigger to update"
+				},
+				"name": { "type": "string", "description": "New display name" },
+				"agent_id": { "type": "string", "description": "New agent definition ID" },
+				"trigger_type": { "type": "integer", "description": "0=TIMER, 1=EVENT" },
+				"interval_seconds": { "type": "number", "description": "Timer interval" },
+				"event_type": { "type": "integer", "description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED" },
+				"action_type": { "type": "integer", "description": "0=SPAWN_NEW, 1=MESSAGE_EXISTING" },
+				"initial_message": { "type": "string", "description": "Message template" },
+				"batch_params": { "type": "array", "items": {"type": "string"}, "description": "Batch parameter list" },
+				"batch_label": { "type": "string", "description": "UI label for batch params" },
+				"chain_trigger_id": { "type": "string", "description": "Chain target trigger ID" },
+				"watched_agent_ids": { "type": "array", "items": {"type": "string"}, "description": "Agent filter for CHAT_COMPLETED" },
+				"enabled": { "type": "boolean", "description": "Active state" }
+			},
+			"required": ["trigger_id"]
+		}
+	)
+
+	_register_tool("minerva_delete_trigger",
+		"Delete a trigger definition by ID.",
+		{
+			"type": "object",
+			"properties": {
+				"trigger_id": {
+					"type": "string",
+					"description": "ID of the trigger to delete"
+				}
+			},
+			"required": ["trigger_id"]
+		}
+	)
+
+	_register_tool("minerva_fire_trigger",
+		"Manually fire a trigger immediately, bypassing timer/event conditions. Works even if the trigger is disabled.",
+		{
+			"type": "object",
+			"properties": {
+				"trigger_id": {
+					"type": "string",
+					"description": "ID of the trigger to fire"
+				}
+			},
+			"required": ["trigger_id"]
+		}
+	)
+
+	_register_tool("minerva_get_batch_status",
+		"Check the progress of an active batch execution for a trigger.",
+		{
+			"type": "object",
+			"properties": {
+				"trigger_id": {
+					"type": "string",
+					"description": "ID of the trigger to check batch status for"
+				}
+			},
+			"required": ["trigger_id"]
+		}
+	)
+
+
+func _list_triggers(_args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var result: Array[Dictionary] = []
+	var registry = SingletonObject.agent_registry
+	for trig in tm.triggers:
+		var agent_name := ""
+		if registry:
+			var agent_def = registry.get_agent(trig.agent_id)
+			if agent_def:
+				agent_name = agent_def.name
+		var entry: Dictionary = {
+			"id": trig.id,
+			"name": trig.name,
+			"agent_id": trig.agent_id,
+			"agent_name": agent_name,
+			"trigger_type": trig.trigger_type,
+			"enabled": trig.enabled,
+			"action_type": trig.action_type,
+			"initial_message": trig.initial_message,
+		}
+		if trig.trigger_type == TriggerDefinition.TriggerType.TIMER:
+			entry["interval_seconds"] = trig.interval_seconds
+		else:
+			entry["event_type"] = trig.event_type
+			entry["watched_agent_ids"] = trig.watched_agent_ids
+		if not trig.batch_params.is_empty():
+			entry["batch_params"] = trig.batch_params
+			entry["batch_label"] = trig.batch_label
+		if not trig.chain_trigger_id.is_empty():
+			entry["chain_trigger_id"] = trig.chain_trigger_id
+		result.append(entry)
+
+	return {"success": true, "triggers": result, "count": result.size()}
+
+
+func _create_trigger(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trig_name: String = args.get("name", "")
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+
+	var trig = TriggerDefinition.new()
+	trig.name = trig_name
+	trig.agent_id = agent_id
+	trig.trigger_type = int(args.get("trigger_type", TriggerDefinition.TriggerType.TIMER))
+	trig.interval_seconds = float(args.get("interval_seconds", 300.0))
+	trig.event_type = int(args.get("event_type", TriggerDefinition.EventType.NOTE_CREATED))
+	trig.action_type = int(args.get("action_type", TriggerDefinition.ActionType.SPAWN_NEW))
+	trig.initial_message = args.get("initial_message", "")
+	trig.batch_label = args.get("batch_label", "")
+	trig.chain_trigger_id = args.get("chain_trigger_id", "")
+	trig.enabled = args.get("enabled", false)
+
+	var bp: Array = args.get("batch_params", [])
+	for p in bp:
+		trig.batch_params.append(str(p))
+
+	var wids: Array = args.get("watched_agent_ids", [])
+	for wid in wids:
+		trig.watched_agent_ids.append(str(wid))
+
+	tm.add_trigger(trig)
+
+	return {
+		"success": true,
+		"trigger_id": trig.id,
+		"name": trig.name
+	}
+
+
+func _update_trigger(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trigger_id: String = args.get("trigger_id", "")
+	if trigger_id.is_empty():
+		return {"error": "trigger_id is required", "success": false}
+
+	var existing = tm.get_trigger(trigger_id)
+	if not existing:
+		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+
+	# Clone into a new TriggerDefinition with same ID
+	var trig = TriggerDefinition.new(trigger_id)
+	trig.name = args.get("name", existing.name)
+	trig.agent_id = args.get("agent_id", existing.agent_id)
+	trig.trigger_type = int(args.get("trigger_type", existing.trigger_type))
+	trig.interval_seconds = float(args.get("interval_seconds", existing.interval_seconds))
+	trig.event_type = int(args.get("event_type", existing.event_type))
+	trig.action_type = int(args.get("action_type", existing.action_type))
+	trig.initial_message = args.get("initial_message", existing.initial_message)
+	trig.batch_label = args.get("batch_label", existing.batch_label)
+	trig.chain_trigger_id = args.get("chain_trigger_id", existing.chain_trigger_id)
+	trig.enabled = args.get("enabled", existing.enabled)
+
+	if args.has("batch_params"):
+		var bp: Array = args["batch_params"]
+		for p in bp:
+			trig.batch_params.append(str(p))
+	else:
+		trig.batch_params = existing.batch_params.duplicate()
+
+	if args.has("watched_agent_ids"):
+		var wids: Array = args["watched_agent_ids"]
+		for wid in wids:
+			trig.watched_agent_ids.append(str(wid))
+	else:
+		trig.watched_agent_ids = existing.watched_agent_ids.duplicate()
+
+	tm.update_trigger(trigger_id, trig)
+
+	return {"success": true, "trigger_id": trigger_id}
+
+
+func _delete_trigger(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trigger_id: String = args.get("trigger_id", "")
+	if trigger_id.is_empty():
+		return {"error": "trigger_id is required", "success": false}
+
+	var existing = tm.get_trigger(trigger_id)
+	if not existing:
+		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+
+	tm.remove_trigger(trigger_id)
+	return {"success": true, "trigger_id": trigger_id}
+
+
+func _fire_trigger_mcp(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trigger_id: String = args.get("trigger_id", "")
+	if trigger_id.is_empty():
+		return {"error": "trigger_id is required", "success": false}
+
+	var trig = tm.get_trigger(trigger_id)
+	if not trig:
+		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+
+	tm._fire_trigger(trigger_id, {}, {}, true)  # force=true bypasses enabled check for manual fire
+
+	var is_batch = not trig.batch_params.is_empty()
+	return {
+		"success": true,
+		"trigger_id": trigger_id,
+		"is_batch": is_batch,
+		"batch_size": trig.batch_params.size() if is_batch else 0,
+		"message": "Trigger fired" + (" (batch of %d)" % trig.batch_params.size() if is_batch else "")
+	}
+
+
+func _get_batch_status(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trigger_id: String = args.get("trigger_id", "")
+	if trigger_id.is_empty():
+		return {"error": "trigger_id is required", "success": false}
+
+	var status = tm.get_batch_status(trigger_id)
+	status["success"] = true
+	return status
 
 #endregion

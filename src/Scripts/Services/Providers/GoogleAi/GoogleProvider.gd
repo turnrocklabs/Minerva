@@ -419,6 +419,10 @@ func to_bot_response(data: Variant) -> BotResponse:
 
 	response.text = response.text.strip_edges()
 
+	# Detect silent empty responses (no text, no tool calls) — likely a transient API issue
+	if response.text.is_empty() and response.tool_calls.is_empty() and not response.error:
+		response.error = "Gemini returned empty response (no text, no tool calls, finishReason: %s)" % finish_reason
+
 	response.prompt_tokens = data["usageMetadata"]["promptTokenCount"]
 	response.completion_tokens = data["usageMetadata"].get("candidatesTokenCount", 0)
 

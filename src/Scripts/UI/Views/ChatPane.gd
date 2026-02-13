@@ -1279,16 +1279,34 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		finish_with_signal.call()
 		return
 
-	# Check for errors in response
+	# Check for errors in response — retry once for transient empty-response errors
 	if continuation_response.error:
 		print("[Agent] ERROR in response: %s" % continuation_response.error)
-		# Append error message to accumulator
-		model_chi.Message += "\n\n[Agent Error: %s]" % continuation_response.error
-		if is_instance_valid(model_chi.rendered_node):
-			model_chi.rendered_node.loading_append = false
-			model_chi.rendered_node.render()
-		finish_with_signal.call()
-		return
+		# Retry once for empty/transient errors (e.g., Gemini returning empty content)
+		if current_round > 0 and "empty response" in continuation_response.error.to_lower():
+			print("[Agent] Retrying continuation after empty response (round %d)..." % current_round)
+			await get_tree().create_timer(1.0).timeout
+			continuation_response = await generate_content_from_provider(history, continuation_list)
+			if continuation_response and not continuation_response.error:
+				# Retry succeeded — continue processing below
+				pass
+			else:
+				var err_msg = continuation_response.error if continuation_response else "No response on retry"
+				print("[Agent] Retry also failed: %s" % err_msg)
+				model_chi.Message += "\n\n[Agent Error: %s (retry also failed)]" % err_msg
+				if is_instance_valid(model_chi.rendered_node):
+					model_chi.rendered_node.loading_append = false
+					model_chi.rendered_node.render()
+				finish_with_signal.call()
+				return
+		else:
+			# Non-retryable error
+			model_chi.Message += "\n\n[Agent Error: %s]" % continuation_response.error
+			if is_instance_valid(model_chi.rendered_node):
+				model_chi.rendered_node.loading_append = false
+				model_chi.rendered_node.render()
+			finish_with_signal.call()
+			return
 
 	# Process the continuation response
 	var continuation_chi = process_bot_response(continuation_response, history.provider)
@@ -2204,6 +2222,12 @@ func _on_audio_stop_1_pressed() -> void:
 
 		# Finish agent mode if active
 		_finish_agent_mode()
+
+		# Notify trigger/batch system that this agent chat was stopped
+		# (the zombie coroutine in execute_regular_chat will never reach
+		# the agent_chat_finished emit at line 1036, so we emit it here)
+		if history.IsAgentChat and not history.AgentDefinitionId.is_empty():
+			SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
 
 		# Decrement ref count for the stopped request
 		_active_chat_requests -= 1
