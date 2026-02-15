@@ -106,24 +106,6 @@ shader_parameter/square_size = 0.3
 shader_parameter/color1 = Color(0.862745, 0.862745, 0.862745, 1)
 shader_parameter/color2 = Color(1, 1, 1, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_t8fyw"]
-draw_center = false
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.196078, 0.196078, 0.196078, 1)
-corner_radius_bottom_right = 5
-corner_radius_bottom_left = 5
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_vtsnj"]
-shader = ExtResource("9_u8jc2")
-shader_parameter/square_size = 0.07
-shader_parameter/color1 = Color(0.862745, 0.862745, 0.862745, 1)
-shader_parameter/color2 = Color(1, 1, 1, 1)
-
-[sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_t8fyw"]
-
 [sub_resource type="LabelSettings" id="LabelSettings_v238w"]
 font_size = 36
 
@@ -465,21 +447,21 @@ popup/item_2/id = 2
 [node name="VBoxContainer" type="VBoxContainer" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=1282043974]
 layout_mode = 2
 
-[node name="Button2" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer" unique_id=1258335550]
+[node name="ZoomOutButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer" unique_id=1258335550]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 icon = ExtResource("18_bdl26")
 flat = true
 
-[node name="Button" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer" unique_id=192939010]
+[node name="ZoomInButton" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer" unique_id=192939010]
 layout_mode = 2
 size_flags_horizontal = 4
 size_flags_vertical = 4
 icon = ExtResource("19_wq4ht")
 flat = true
 
-[node name="Button3" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=901477183]
+[node name="CenterViewButton2" type="Button" parent="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer" unique_id=901477183]
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Center view and reset zoom"
@@ -1128,69 +1110,6 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("38_selover")
 
-[node name="MiniMapControl" type="Control" parent="h/MainHSplitContainer/v/MarginContainer" unique_id=903067334]
-unique_name_in_owner = true
-visible = false
-custom_minimum_size = Vector2(150, 84)
-layout_mode = 2
-size_flags_horizontal = 0
-size_flags_vertical = 0
-
-[node name="MarginContainer" type="PanelContainer" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl" unique_id=2126239731]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_right = 8.27988
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_t8fyw")
-
-[node name="TextureRect2" type="TextureRect" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl/MarginContainer" unique_id=1721851491]
-material = SubResource("ShaderMaterial_vtsnj")
-layout_mode = 2
-texture = SubResource("PlaceholderTexture2D_t8fyw")
-expand_mode = 1
-
-[node name="TextureRect" type="TextureRect" parent="h/MainHSplitContainer/v/MarginContainer/MiniMapControl/MarginContainer" unique_id=1280625271]
-unique_name_in_owner = true
-layout_mode = 2
-expand_mode = 3
-stretch_mode = 4
-
-[node name="HBoxContainer" type="HBoxContainer" parent="h/MainHSplitContainer/v/MarginContainer" unique_id=1115677613]
-visible = false
-layout_mode = 2
-size_flags_horizontal = 0
-size_flags_vertical = 0
-theme_override_constants/separation = 8
-alignment = 1
-
-[node name="Control" type="Control" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer" unique_id=1017945887]
-layout_mode = 2
-mouse_filter = 2
-
-[node name="CenterViewButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer" unique_id=1177822769]
-layout_mode = 2
-tooltip_text = "Center view and reset zoom"
-focus_mode = 0
-icon = ExtResource("17_tml0f")
-flat = true
-
-[node name="ZoomOutButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer" unique_id=1489211235]
-layout_mode = 2
-tooltip_text = "Zoom Out"
-focus_mode = 0
-icon = ExtResource("18_bdl26")
-flat = true
-
-[node name="ZoomInButton" type="Button" parent="h/MainHSplitContainer/v/MarginContainer/HBoxContainer" unique_id=1381127940]
-layout_mode = 2
-tooltip_text = "Zoom In"
-focus_mode = 0
-icon = ExtResource("19_wq4ht")
-flat = true
-
 [node name="DockPanelContainer" type="MarginContainer" parent="h/MainHSplitContainer" unique_id=1451562888]
 unique_name_in_owner = true
 visible = false
@@ -1529,6 +1448,7 @@ oversampling_override = 1.0
 title = "AI Image Generation"
 position = Vector2i(17, 36)
 size = Vector2i(545, 600)
+visible = false
 always_on_top = true
 
 [node name="ImageGenPanelContainer" type="PanelContainer" parent="ImageGenWindow" unique_id=335761945]
@@ -1967,6 +1887,7 @@ icon = ExtResource("28_oylf0")
 
 [node name="ThreeImageWorkflowButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3" unique_id=1081780859]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 tooltip_text = "Send 2 image layers and 3D Pose Editor to backend "
 disabled = true
@@ -1983,9 +1904,9 @@ icon = ExtResource("68_4jqk7")
 [connection signal="toggled" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/SpeechBubbleToolButton" to="." method="_on_speech_bubble_tool_button_toggled"]
 [connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
 [connection signal="item_selected" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/MaskContainer/MaskColorOptionButton" to="." method="_on_mask_color_option_button_item_selected"]
-[connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer/Button2" to="." method="_on_zoom_out_button_pressed"]
-[connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer/Button" to="." method="_on_zoom_in_button_pressed"]
-[connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/Button3" to="." method="_on_center_view_button_pressed"]
+[connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer/ZoomOutButton" to="." method="_on_zoom_out_button_pressed"]
+[connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/VBoxContainer/ZoomInButton" to="." method="_on_zoom_in_button_pressed"]
+[connection signal="pressed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolsContainer/CenterViewButton2" to="." method="_on_center_view_button_pressed"]
 [connection signal="color_changed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/BrushOptions/VBoxContainer/ColorPickerButton" to="." method="_on_color_picker_button_color_changed"]
 [connection signal="toggled" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/EditModeCheckButton" to="Tools/SpeechBubbleTool" method="_on_edit_mode_check_button_toggled"]
 [connection signal="text_changed" from="h/MainHSplitContainer/v/HBoxContainer/h/ToolOptionsContainer/SpeechBubbleOptions/LineEdit" to="Tools/SpeechBubbleTool" method="_on_line_edit_text_changed"]
@@ -2000,9 +1921,6 @@ icon = ExtResource("68_4jqk7")
 [connection signal="gui_input" from="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_gui_input"]
 [connection signal="mouse_entered" from="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_entered"]
 [connection signal="mouse_exited" from="h/MainHSplitContainer/v/MarginContainer/DrawingAreaSubViewportContainer/DrawingAreaSubViewport/Control/LayersContainer" to="." method="_on_layers_container_mouse_exited"]
-[connection signal="pressed" from="h/MainHSplitContainer/v/MarginContainer/HBoxContainer/CenterViewButton" to="." method="_on_center_view_button_pressed"]
-[connection signal="pressed" from="h/MainHSplitContainer/v/MarginContainer/HBoxContainer/ZoomOutButton" to="." method="_on_zoom_out_button_pressed"]
-[connection signal="pressed" from="h/MainHSplitContainer/v/MarginContainer/HBoxContainer/ZoomInButton" to="." method="_on_zoom_in_button_pressed"]
 [connection signal="close_requested" from="PoseEditorWindow" to="." method="_on_pose_editor_window_close_requested"]
 [connection signal="pose_rendered" from="PoseEditorWindow/PoseEditorPanel" to="." method="_on_pose_editor_panel_pose_rendered"]
 [connection signal="close_requested" from="LayerCardsPopupPanel" to="." method="_on_layer_cards_popup_panel_close_requested"]

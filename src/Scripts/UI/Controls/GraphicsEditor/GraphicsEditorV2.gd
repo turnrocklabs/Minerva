@@ -126,14 +126,12 @@ signal selection_changed()
 @onready var edit_img_button: Button = %EditImgButton
 @onready var send_mask_edit_button: Button = %SendMaskEditButton
 @onready var three_image_workflow_button: Button = %ThreeImageWorkflowButton
-@onready var _3d_pose_controller_button: CheckButton = %"3DPoseControllerButton"
+
 
 
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
 @onready var dock_panel_container: MarginContainer = %DockPanelContainer
-@onready var mini_map_control: Control = %MiniMapControl
-@onready var mini_map_texture_rect: TextureRect = %TextureRect
 
 @onready var dock_split_container: VSplitContainer = %DockSplitContainer
 @onready var render_view_control: RenderViewRect = %RenderViewControl
@@ -703,12 +701,9 @@ func _ready() -> void:
 	
 	get_viewport().set_embedding_subwindows(false)
 	
-	mini_map_control.visible = false
-
 	# Set up MiniMap ViewportTexture at runtime to avoid export errors
 	var viewport_texture := ViewportTexture.new()
 	viewport_texture.viewport_path = drawing_area_sub_viewport.get_path()
-	mini_map_texture_rect.texture = viewport_texture
 	
 	if Core.connected:
 		enable_ai_features()
@@ -2705,12 +2700,6 @@ func _on_send_action_button_pressed() -> void:
 func _on_resized() -> void:
 	if is_node_ready():
 		response_layout_toggle()
-		if mini_map_control and mini_map_control.visible:
-			mini_map_control.custom_minimum_size.x = layers_container.size.x / 6.5
-			mini_map_control.custom_minimum_size.y = layers_container.size.y / 6.5
-			var margin_con: PanelContainer = mini_map_control.get_child(0)
-			margin_con.position = Vector2.ZERO
-			margin_con.anchors_preset = Control.PRESET_FULL_RECT
 
 var floating_windows_active: = true  # Always use floating windows mode
 func response_layout_toggle() -> void:
@@ -2781,10 +2770,15 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 			denoise_spin_box.value = 0.85
 			edit_img_button.disabled = false
 			send_mask_edit_button.disabled = true  # Flex doesn't use mask_edit, uses compose instead
+	if index == 0:
+		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
+			button.disabled = true
+	else:
+		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
+			button.disabled = false
 
 
 func toggle_enable_ai_fields(enable: bool = true) -> void:
-	
 	for btn in [prompt_button, workflow_option_button, negative_prompt_mic_button, 
 				positive_prompt_mic_button, advanced_settings_check_button, send_action_button]:
 		btn.disabled = !enable
@@ -2799,17 +2793,27 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 		1:  # Qwen - edit and mask
 			edit_img_button.disabled = not enable
 			send_mask_edit_button.disabled = not enable
-	
-	if _3d_pose_controller_button.button_pressed:
-		workflow_option_button.select(1)
-	workflow_option_button.disabled = _3d_pose_controller_button.button_pressed
-	three_image_workflow_button.disabled = !_3d_pose_controller_button.button_pressed
+		2:  # Qwen 2511 Flex - edit and mask
+			edit_img_button.disabled = not enable
+			send_mask_edit_button.disabled = not enable
+	if workflow_option_button.selected == 0:
+		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
+			button.disabled = true
+	else:
+		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
+			button.disabled = false
+	#if _3d_pose_controller_button.button_pressed:
+		#workflow_option_button.select(2)
+	#workflow_option_button.disabled = _3d_pose_controller_button.button_pressed
+	#three_image_workflow_button.disabled = !_3d_pose_controller_button.button_pressed
+
 
 func disable_ai_features(error: int) -> void:
 	if error != 0:
 		connection_label.text = "Not Connected to backend.\nConnect to backend to \naccess AI Features."
 		connection_label.show()
 	toggle_enable_ai_fields(false)
+
 
 func enable_ai_features() -> void:
 	if connection_label.visible:
