@@ -756,7 +756,7 @@ func send_media_gen_request(generation_params: Dictionary, topic: String = "medi
 		"topic": topic,  # Use provided topic parameter
 		"entity_type": "client",
 		"params": {
-			"client_id": client_id,
+			"client_id": Core._client_id,  # Use Core._client_id for consistency with other media gen functions
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
@@ -785,7 +785,7 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 		"topic": "media_gen/image_editing", # <--- IMPORTANT: Correct topic for image editing
 		"entity_type": "client",
 		"params": {
-			"client_id": client_id,
+			"client_id": Core._client_id,  # Use Core._client_id for consistency with other media gen functions
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {

@@ -23,7 +23,6 @@ var registered: = false
 var client: CoreClient
 # HTTPRequest node for making the initial authentication call
 var http_request: HTTPRequest = HTTPRequest.new()
-
 # Array to store fetched services (might be populated after connection)
 var services: Array[Service]
 
@@ -64,6 +63,7 @@ func _ready() -> void:
 	client = cn # Assign the client instance
 
 	# Add the HTTPRequest node to the scene tree to make it process
+	http_request.use_threads = true
 	add_child(http_request)
 	# Connect the request_completed signal to handle the HTTP response
 	http_request.request_completed.connect(_on_auth_request_completed)
@@ -83,13 +83,14 @@ func close_connection() -> void:
 	print("core: cancel auth request")
 	
 	http_request.cancel_request()
-
+	
 	Core.client.close_connection("User disconnected")
 
 	_connecting = false
 	registered = false
 	_jwt_token = ""
 	_client_id = ""
+	http_request.queue_free()
 
 
 var should_display_error: = true
@@ -125,6 +126,10 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 	print("Attempting authentication to: ", auth_endpoint)
 	print("core: starting auth request")
+	if http_request == null:
+		http_request = HTTPRequest.new()
+		http_request.use_threads = true
+		add_child(http_request)
 	var err = http_request.request(auth_endpoint, headers, HTTPClient.METHOD_POST, body)
 
 	
@@ -229,6 +234,7 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 # --- NEW: Handles the response from the HTTP authentication request ---
 func _on_auth_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray):
 	print("core: auth request callback")
+	http_request.queue_free()
 	if result != HTTPRequest.RESULT_SUCCESS:
 		var err_msg = "HTTP Auth Request Failed: %s" % _get_http_result_string(result)
 		push_error(err_msg)

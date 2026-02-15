@@ -125,6 +125,8 @@ signal selection_changed()
 @onready var send_action_button: Button = %SendActionButton
 @onready var edit_img_button: Button = %EditImgButton
 @onready var send_mask_edit_button: Button = %SendMaskEditButton
+@onready var three_image_workflow_button: Button = %ThreeImageWorkflowButton
+@onready var _3d_pose_controller_button: CheckButton = %"3DPoseControllerButton"
 
 
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
@@ -2099,6 +2101,8 @@ func _on_media_gen_request_timeout(request_id: String) -> void:
 	edit_img_button.disabled = false
 	send_mask_edit_button.modulate = Color.WHITE
 	send_mask_edit_button.disabled = false
+	three_image_workflow_button.modulate = Color.WHITE
+	three_image_workflow_button.disabled = false
 	if progress_window.visible:
 		progress_window.hide()
 	_current_image_gen_request_id = ""
@@ -2115,6 +2119,8 @@ func _on_image_received(filename:String, request_id: String, buffer: PackedByteA
 	edit_img_button.disabled = false
 	send_mask_edit_button.modulate = Color.WHITE
 	send_mask_edit_button.disabled = false
+	three_image_workflow_button.modulate = Color.WHITE
+	three_image_workflow_button.disabled = false
 	if progress_window.visible:
 		progress_window.hide()
 
@@ -2138,7 +2144,8 @@ func _on_image_received(filename:String, request_id: String, buffer: PackedByteA
 enum AI_REQUEST {
 	IMAGE_GEN,
 	EDIT_IMAGE,
-	MASK_EDIT
+	MASK_EDIT,
+	THREE_IMAGE_COMPOSE  # 2 layers + pose editor as 3rd image
 }
 var ai_request_type: AI_REQUEST = AI_REQUEST.EDIT_IMAGE
 func _on_edit_button_pressed() -> void:
@@ -2198,33 +2205,8 @@ func _on_edit_img_button_pressed() -> void:
 				display_message("Selection", "Select at least one image layer in the layer list, then click Send.")
 			return
 		
-		# Flex + pose + 2 layers (image+image or image+mask) -> compose_3_with_pose (3-image workflow, 3rd = pose editor)
-		var has_second: bool = selected_layers.size() >= 2 or selected_mask_layers.size() >= 1
-		if current_workflow == Workflow.QWEN_2511_FLEX and d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture and has_second:
-			var layer1: LayerV2 = selected_layers[0]
-			var layer2: LayerV2 = selected_layers[1] if selected_layers.size() >= 2 else selected_mask_layers[0]
-			if layer1.type == LayerV2.Type.IMAGE and (layer2.type == LayerV2.Type.IMAGE or layer2.type == LayerV2.Type.MASK):
-				var gen_params: Dictionary = get_params_image_gen()
-				if gen_params.is_empty():
-					edit_img_button.modulate = Color.WHITE
-					edit_img_button.disabled = false
-					send_prompt_button.disabled = false
-					send_mask_edit_button.disabled = false
-					display_message("Prompt", "Enter a positive prompt for image generation.")
-					return
-				if !seed_line_edit.text.is_empty():
-					gen_params["seed"] = seed_line_edit.text
-				var result: Dictionary = request_flex_compose_three_with_pose(gen_params, layer1.name, layer2.name)
-				if result.get("success", false):
-					var compose_toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2 layers + pose composition...")
-					SingletonObject.main_scene.add_child(compose_toast)
-					image_gen_window.hide()
-					layer_cards_popup_panel.hide()
-					prompt_text_edit.text = ""
-					return
-				else:
-					display_message("Compose", result.get("error", "Compose failed."))
-					return
+		# This was handling compose_3_with_pose, but user wants that on a different button
+		# Removed the 3-image compose code from here - now handled by _on_three_image_workflow_button_pressed
 		
 		var layer_to_send: LayerV2 = selected_layers[0]
 		# Get the image from the active layer
@@ -2271,6 +2253,58 @@ func _on_edit_img_button_pressed() -> void:
 			params["seed"] = seed_line_edit.text
 		
 		_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, image_filename)
+		
+		image_gen_window.hide()
+		layer_cards_popup_panel.hide()
+		prompt_text_edit.text = ""
+	elif ai_request_type == AI_REQUEST.THREE_IMAGE_COMPOSE:
+		# Handle 3-image composition (2 layers + pose editor)
+		var has_second: bool = selected_layers.size() >= 2 or (selected_layers.size() >= 1 and selected_mask_layers.size() >= 1)
+		if not has_second:
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			display_message("Selection", "Select 2 layers (image+image or image+mask) for 3-image composition.")
+			return
+		
+		var layer1: LayerV2 = selected_layers[0]
+		var layer2: LayerV2 = selected_layers[1] if selected_layers.size() >= 2 else selected_mask_layers[0]
+		
+		if layer1.type != LayerV2.Type.IMAGE:
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			display_message("Selection", "First layer must be an image layer.")
+			return
+		
+		if layer2.type != LayerV2.Type.IMAGE and layer2.type != LayerV2.Type.MASK:
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			display_message("Selection", "Second layer must be an image or mask layer.")
+			return
+		
+		# Get generation params
+		var params: Dictionary = get_params_image_gen()
+		if params.is_empty():
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			display_message("Prompt", "Enter a positive prompt for 3-image composition.")
+			return
+		
+		if !seed_line_edit.text.is_empty():
+			params["seed"] = seed_line_edit.text
+		
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2 layers + pose composition...")
+		SingletonObject.main_scene.add_child(toast)
+		
+		# Call the 3-image workflow function
+		var result: Dictionary = request_flex_compose_three_with_pose(params, layer1.name, layer2.name)
+		
+		if not result.get("success", false):
+			display_message("Compose Error", result.get("error", "3-image composition failed."))
+			return
 		
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
@@ -2750,12 +2784,10 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 
 
 func toggle_enable_ai_fields(enable: bool = true) -> void:
-	#var is_wf0 = workflow_option_button.selected == 0
-	var disabled = !enable
 	
 	for btn in [prompt_button, workflow_option_button, negative_prompt_mic_button, 
 				positive_prompt_mic_button, advanced_settings_check_button, send_action_button]:
-		btn.disabled = disabled
+		btn.disabled = !enable
 	
 	prompt_text_edit.editable = enable
 	negative_text_edit.editable = enable
@@ -2767,13 +2799,11 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 		1:  # Qwen - edit and mask
 			edit_img_button.disabled = not enable
 			send_mask_edit_button.disabled = not enable
-		2:  # Qwen 2511 Flex - edit but no mask (uses compose instead)
-			edit_img_button.disabled = not enable
-			send_mask_edit_button.disabled = true
-		_:  # Default fallback
-			edit_img_button.disabled = not enable
-			send_mask_edit_button.disabled = not enable
-	workflow_option_button.disabled = not enable
+	
+	if _3d_pose_controller_button.button_pressed:
+		workflow_option_button.select(1)
+	workflow_option_button.disabled = _3d_pose_controller_button.button_pressed
+	three_image_workflow_button.disabled = !_3d_pose_controller_button.button_pressed
 
 func disable_ai_features(error: int) -> void:
 	if error != 0:
@@ -3212,6 +3242,7 @@ func _on_main_h_split_container_drag_started() -> void:
 	dragging_split = true
 
 
+
 func _on_update_button_pressed() -> void:
 	_on_open_pose_editor_button_pressed()
 
@@ -3220,8 +3251,8 @@ var is_d_pose_first_time: = true
 func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 	%"3DPoseViewportContainer".visible = toggled_on
 	workflow_option_button.select(1)
-	_on_workflow_option_button_item_selected(1)  # Update current_workflow to Qwen when pose is enabled
-	workflow_option_button.disabled = toggled_on
+	#_on_workflow_option_button_item_selected(1)  # Update current_workflow to Qwen when pose is enabled
+	#workflow_option_button.disabled = toggled_on
 	d_pose_controlller_enabled = toggled_on
 	if is_d_pose_first_time:
 		is_d_pose_first_time = false
@@ -3238,3 +3269,52 @@ func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 		send_prompt_button.disabled = false
 		send_mask_edit_button.modulate = Color.WHITE
 		send_mask_edit_button.disabled = false
+
+
+func _on_three_image_workflow_button_pressed() -> void:
+	# 3-Image Compose: Automatically uses qwen_2511_flex workflow internally
+	# Prerequisites: Pose editor enabled, 2 layers selected (validation happens on send)
+	if not d_pose_controlller_enabled or not pose_editor_panel or not pose_editor_panel.pose_texture:
+		display_message("Pose Editor", "Enable pose editor and ensure it has a texture for 3-image composition.")
+		return
+	
+	if floating_windows_active:
+		if !layer_cards_popup_panel.visible:
+			layer_cards_popup_panel.position = Vector2(
+				(
+					image_gen_window.position.x 
+					- layer_cards_popup_panel.size.x / 2.0
+					+ image_gen_window.size.x / 2.0
+				),
+				image_gen_window.position.y + image_gen_window.size.y + 30
+			)
+			if layer_cards_popup_panel.get_child_count() > 0:
+				layer_cards_popup_panel.show()
+				layer_cards_popup_panel.borderless = false
+				ai_action_label.text = "Pick 2 layers (image + image or image + mask). Pose editor will be used as 3rd image."
+				%TopOfLayersContainer.show()
+				send_action_button.disabled = false
+				send_action_button.show()
+			ai_request_type = AI_REQUEST.THREE_IMAGE_COMPOSE
+		else:
+			layer_cards_popup_panel.hide()
+			layer_cards_popup_panel.borderless = true
+			%TopOfLayersContainer.hide()
+			send_action_button.disabled = true
+			send_action_button.hide()
+			
+			# Re-enable buttons when toggling popup closed
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			send_mask_edit_button.disabled = false
+			edit_img_button.disabled = false
+	else:
+		ai_request_type = AI_REQUEST.THREE_IMAGE_COMPOSE
+		send_action_button.pressed.emit()
+	
+	# Open the layer selection panel (same pattern as edit button)
+	three_image_workflow_button.modulate = Color.LIME_GREEN
+	send_prompt_button.disabled = true
+	edit_img_button.disabled = true
+	send_mask_edit_button.disabled = true
