@@ -1307,24 +1307,32 @@ func _on_question_answered(question_id: String, answer: String, session_id: Stri
 		return
 	_submitted_questions[question_id] = true
 	
+	# Show progress BEFORE the await - the backend response only arrives after
+	# the follow-up planning is complete, so add the spinner now while we wait
+	_action_stream.add_llm_progress("Continuing planning with your answers...")
+	_set_prompt_enabled(false)
+	
 	# Forward to autocoder adapter (await it since it's async)
+	# NOTE: The backend sends the planning_complete notification BEFORE returning
+	# the response, so on_planning_turn_complete() may have already run by the
+	# time this returns. We call stop_llm_progress() here as a safety net.
 	var success = await autocoder_manager.autocoder_adapter.answer_question(resolved_session_id, question_id, answer)
 	
 	print("[SubmitJob] Answer submission result: %s" % ("SUCCESS" if success else "FAILED"))
 	
+	# Always stop the spinner after the await returns (safety net in case
+	# on_planning_turn_complete fired before the spinner was created)
+	if _action_stream:
+		_action_stream.stop_llm_progress()
+	
 	if success:
-		# Show visual feedback that planning is continuing
-		_action_stream.add_llm_progress("Continuing planning with your answers...")
-		
-		# Disable prompt while processing
-		_set_prompt_enabled(false)
-		
 		SingletonObject.create_toast_notification(
-			"Answer submitted - refining plan based on your input...",
+			"Answer submitted - plan updated",
 			ToastNotification.Type.INFO
 		)
 		print("[SubmitJob] Now waiting for planning notification on topic: autocoder-orchestrator/planning/%s/%s" % [Core.client.client_id, resolved_session_id])
 	else:
+		_set_prompt_enabled(true)
 		SingletonObject.create_toast_notification(
 			"Answer submission failed - please retry if needed",
 			ToastNotification.Type.WARNING
