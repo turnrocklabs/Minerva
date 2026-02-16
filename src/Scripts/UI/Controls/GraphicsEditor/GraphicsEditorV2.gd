@@ -109,6 +109,19 @@ signal selection_changed()
 @onready var seed_line_edit: LineEdit = %SeedLineEdit
 @onready var workflow_option_button: OptionButton = %WorkflowOptionButton
 
+@onready var image_1_texture_rect: TextureRect = %Image1TextureRect
+@onready var load_image_1_button: Button = %LoadImage1Button
+@onready var pick_image_1_button: Button = %PickImage1Button
+@onready var pose_editor_image_1_button: Button = %PoseEditorImage1Button
+@onready var image_2_texture_rect: TextureRect = %Image2TextureRect
+@onready var load_image_2_button: Button = %LoadImage2Button
+@onready var pick_image_2_button: Button = %PickImage2Button
+@onready var pose_editor_image_2_button: Button = %PoseEditorImage2Button
+@onready var image_3_texture_rect: TextureRect = %Image3TextureRect
+@onready var load_image_3_button: Button = %LoadImage3Button
+@onready var pick_image_3_button: Button = %PickImage3Button
+@onready var pose_editor_image_3_button: Button = %PoseEditorImage3Button
+
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
 @onready var mask_layer_cards_container: VBoxContainer = %MaskLayerCardsContainer
@@ -1505,29 +1518,61 @@ func _on_layers_container_mouse_entered() -> void:
 	_mouse_in_layers_container = true
 	# Cursor is now managed globally, no need to re-apply on container enter
 
-
 func _on_add_image_button_pressed() -> void:
-	var fd: = FileDialog.new()
-	
-	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	fd.access = FileDialog.ACCESS_FILESYSTEM
-	# fd.filters = []
+	image_file_dialog("tool_options")
 
-	fd.file_selected.connect(_on_file_selected)
 
-	add_child(fd)
+var add_image_destination: = ""
+var add_image_fd: FileDialog = null
+func image_file_dialog(destination :String) -> void:
+	if add_image_fd == null:
+		add_image_fd = FileDialog.new()
+		add_image_fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		add_image_fd.access = FileDialog.ACCESS_FILESYSTEM
+		add_image_fd.filters = ["*.png", "*.jpg", "*.jpeg"]
+		add_image_fd.size = Vector2(600.0, 500.0) 
+	#match source:
+		#"tool_options":
+			#add_image_destination = "new_layer" # this is for the image to be added as a layer
+		#"image1_button":
+			#add_image_destination = "image1_texture" # this is for adding the image to image1
+		#"image2_button":
+			#add_image_destination = "image2_texture" # this is for adding the image to image2
+		#"image3_button":
+			#add_image_destination = "image3_texture" # this is for adding the image to image3
+	add_image_destination = destination
+	add_image_fd.file_selected.connect(_on_file_selected)
+	add_child(add_image_fd)
+	add_image_fd.popup_centered()
 
-	fd.popup_centered()
-
+var image1_image: Image
+var image2_image: Image
+var image3_image: Image
 func _on_file_selected(fp: String) -> void:
 	var image: = Image.load_from_file(fp)
+	
+	match add_image_destination:
+		"new_layer":
+			var l: = LayerV2.create_image_layer(fp.get_file(), image)
+			add_layer(l)
+			_select_tool_by_id(13) # reselect the Select tool
+		"image1_texture":
+			image1_image = image
+			image_1_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
+		"image2_texture":
+			image2_image = image
+			image_2_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
+		"image3_texture":
+			image3_image = image
+			image_3_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
+	
+	add_image_destination = ""
+	add_image_fd.file_selected.disconnect(_on_file_selected)
+	add_image_fd.queue_free()
 
-	var l: = LayerV2.create_image_layer(fp.get_file(), image)
-
-	add_layer(l)
-
-	# reselect the Select tool
-	_select_tool_by_id(13)
 
 func _on_layers_container_mouse_exited() -> void:
 	_mouse_in_layers_container = false
@@ -1808,22 +1853,22 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 	# Get the item's ID (not position index) to match against
 	var item_id = _tools_option_button.get_item_id(index)
 	match item_id:
-		0: _on_brush_tool_button_toggled(true); return
-		1: _on_eraser_tool_button_toggled(true); return
-		2: _on_smudge_tool_button_toggled(true); return
-		3: _on_bucket_tool_button_toggled(true); return
-		4: active_tool = null; _on_add_image_button_pressed(); return
-		5: active_tool = eyedropper_tool; return
-		6: active_tool = magic_wand_tool; return
-		7: active_tool = rectangle_select_tool; return
-		8: active_tool = lasso_select_tool; return
-		9: active_tool = pan_tool; return
-		12: active_tool = text_tool; return
-		13: active_tool = select_tool; return
-		14: active_tool = rectangle_tool; return
-		15: active_tool = ellipse_tool; return
-		16: active_tool = diagram_shape_tool; return
-		17: active_tool = connector_tool; return
+		0: _on_brush_tool_button_toggled(true)
+		1: _on_eraser_tool_button_toggled(true)
+		2: _on_smudge_tool_button_toggled(true)
+		3: _on_bucket_tool_button_toggled(true)
+		4: active_tool = null; image_file_dialog("tool_options")
+		5: active_tool = eyedropper_tool
+		6: active_tool = magic_wand_tool
+		7: active_tool = rectangle_select_tool
+		8: active_tool = lasso_select_tool
+		9: active_tool = pan_tool
+		12: active_tool = text_tool
+		13: active_tool = select_tool
+		14: active_tool = rectangle_tool
+		15: active_tool = ellipse_tool
+		16: active_tool = diagram_shape_tool
+		17: active_tool = connector_tool
 		_: pass
 	
 
@@ -2571,13 +2616,28 @@ func _on_open_pose_editor_button_pressed() -> void:
 func _on_pose_editor_window_close_requested() -> void:
 	if pose_editor_window:
 		pose_editor_window.hide()
+		add_image_destination = ""
 
 
 func _on_pose_editor_panel_pose_rendered(image: Image) -> void:
 	# Update the active CONTROL layer with the rendered 2D pose image
-	if active_layer and active_layer.type == LayerV2.Type.CONTROL:
-		active_layer.image = image
-		active_layer.queue_redraw()
+	match add_image_destination:
+		"new_layer":
+			var l: = LayerV2.create_image_layer("Pose Editor", image)
+			add_layer(l)
+			_select_tool_by_id(13) # reselect the Select tool
+		"image1_texture":
+			image1_image = image
+			image_1_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
+		"image2_texture":
+			image2_image = image
+			image_2_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
+		"image3_texture":
+			image3_image = image
+			image_3_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))	
 
 #endregion LayersCards Masks PopUp panel
 
@@ -2705,7 +2765,6 @@ var floating_windows_active: = true  # Always use floating windows mode
 func response_layout_toggle() -> void:
 	# Always use popup/floating window mode for Layers and AI panels
 	# Buttons are always visible, clicking them opens popup windows
-
 	if full_size_ai_container.get_child_count() > 0:
 		full_size_ai_container.remove_child(image_gen_panel_container)
 		image_gen_window.size = image_gen_panel_container.size
@@ -2738,9 +2797,7 @@ func check_ai_buttons_toggle() -> void:
 			send_mask_edit_button.disabled = true
 	
 
-
 var draw_render_view: = false
-
 func _on_draw_rect(rect: Rect2) -> void:
 	render_view_control.draw_render_view = draw_render_view
 	render_view_control._rect = rect
@@ -3322,3 +3379,66 @@ func _on_three_image_workflow_button_pressed() -> void:
 	send_prompt_button.disabled = true
 	edit_img_button.disabled = true
 	send_mask_edit_button.disabled = true
+
+
+func _on_load_image_1_button_pressed() -> void:
+	image_file_dialog("image1_texture")
+
+
+func _on_load_image_2_button_pressed() -> void:
+	image_file_dialog("image2_texture")
+
+
+func _on_load_image_3_button_pressed() -> void:
+	image_file_dialog("image3_texture")
+
+
+func _on_pose_editor_image_1_button_pressed() -> void:
+	_on_open_pose_editor_button_pressed()
+	add_image_destination = "image1_texture"
+
+
+func _on_pose_editor_image_2_button_pressed() -> void:
+	_on_open_pose_editor_button_pressed()
+	add_image_destination = "image2_texture"
+
+
+func _on_pose_editor_image_3_button_pressed() -> void:
+	_on_open_pose_editor_button_pressed( )
+	add_image_destination = "image3_texture"
+
+
+func _on_pick_image_1_button_pressed() -> void:
+	layer_cards_popup_panel.position = Vector2(
+			(
+				layer_cards_toggle_button.global_position.x 
+				-layer_cards_popup_panel.size.x/2.0
+				+layer_cards_toggle_button.size.x/2.0
+			),
+			layer_cards_toggle_button.global_position.y + (layer_cards_toggle_button.size.y * 3.0)
+		)
+	layer_cards_popup_panel.show()
+
+
+func _on_pick_image_2_button_pressed() -> void:
+	layer_cards_popup_panel.position = Vector2(
+			(
+				layer_cards_toggle_button.global_position.x 
+				-layer_cards_popup_panel.size.x/2.0
+				+layer_cards_toggle_button.size.x/2.0
+			),
+			layer_cards_toggle_button.global_position.y + (layer_cards_toggle_button.size.y * 3.0)
+		)
+	layer_cards_popup_panel.show()
+
+
+func _on_pick_image_3_button_pressed() -> void:
+	layer_cards_popup_panel.position = Vector2(
+			(
+				layer_cards_toggle_button.global_position.x 
+				-layer_cards_popup_panel.size.x/2.0
+				+layer_cards_toggle_button.size.x/2.0
+			),
+			layer_cards_toggle_button.global_position.y + (layer_cards_toggle_button.size.y * 3.0)
+		)
+	layer_cards_popup_panel.show()
