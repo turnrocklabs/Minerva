@@ -1061,7 +1061,9 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store) -> void:  # ta
 
 	print("[AutocoderManager] _update_kanban_from_planning_tasks: Processing %d tasks" % tasks.size())
 
+	# Build lookup of existing tasks by plan_task_id (String keys) and title
 	var existing_tasks: Dictionary = {}
+	var existing_by_title: Dictionary = {}
 	for task in task_store.get_all_tasks():
 		var plan_task_id = ""
 		if task.metadata and task.metadata.has("plan_task_id"):
@@ -1069,17 +1071,18 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store) -> void:  # ta
 		if plan_task_id.is_empty():
 			plan_task_id = task.id
 		existing_tasks[plan_task_id] = task
+		if not task.title.is_empty():
+			existing_by_title[task.title] = task
 
 	print("[AutocoderManager] Found %d existing tasks in store" % existing_tasks.size())
 
-	# Add new tasks
 	for task_data in tasks:
 		if not task_data is Dictionary:
 			continue
 
-		var task_id = task_data.get("id", "")
+		# Always convert to String to match existing_tasks keys
+		var task_id = str(task_data.get("id", ""))
 		if task_id.is_empty():
-			# Generate ID if not provided
 			task_id = "plan_%s" % str(Time.get_ticks_msec())
 
 		var title = task_data.get("title", "Untitled Task")
@@ -1108,8 +1111,12 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store) -> void:  # ta
 		
 		print("[AutocoderManager] Task %s: status_key='%s' -> mapped_status=%d" % [task_id, status_key, mapped_status])
 
-		if existing_tasks.has(task_id):
-			var existing_task = existing_tasks[task_id]
+		# Match by plan_task_id first, fall back to title match
+		var existing_task = existing_tasks.get(task_id)
+		if not existing_task and not title.is_empty():
+			existing_task = existing_by_title.get(title)
+		
+		if existing_task:
 			print("[AutocoderManager] Updating existing task %s (kanban_id=%s) to status %d" % [task_id, existing_task.id, mapped_status])
 			task_store.update_task(existing_task.id, {
 				"title": title,
