@@ -1239,6 +1239,50 @@ func skip_question(question_id: String) -> void:
 		var session_id = _get_selected_session_id()
 		_on_question_answered(question_id, "", session_id)
 
+
+func on_session_id_changed(old_session_id: String, new_session_id: String) -> void:
+	"""Handle session ID change when transitioning from planning to coder mode.
+	The backend creates a new OpenCode session, so we need to update our references."""
+	print("[SubmitJob] 🔄 Session ID changed: %s -> %s" % [old_session_id, new_session_id])
+	
+	# Migrate tracking data from old session to new session
+	if _processing_sessions.has(old_session_id):
+		_processing_sessions[new_session_id] = _processing_sessions[old_session_id]
+		_processing_sessions.erase(old_session_id)
+	
+	if _latest_archive_by_session.has(old_session_id):
+		_latest_archive_by_session[new_session_id] = _latest_archive_by_session[old_session_id]
+		_latest_archive_by_session.erase(old_session_id)
+	
+	if _latest_patch_by_session.has(old_session_id):
+		_latest_patch_by_session[new_session_id] = _latest_patch_by_session[old_session_id]
+		_latest_patch_by_session.erase(old_session_id)
+	
+	if _source_dir_by_session.has(old_session_id):
+		_source_dir_by_session[new_session_id] = _source_dir_by_session[old_session_id]
+		_source_dir_by_session.erase(old_session_id)
+		# Also update the config file
+		var source_dir = _source_dir_by_session[new_session_id]
+		SingletonObject.save_to_config_file(SOURCE_DIR_SECTION, new_session_id, source_dir)
+	
+	# Update kanban board session ID if it exists
+	var kanban_board = _get_kanban_board_for_session(old_session_id)
+	if kanban_board:
+		kanban_board.set_meta("session_id", new_session_id)
+		if kanban_board.task_store:
+			kanban_board.task_store.session_id = new_session_id
+		print("[SubmitJob] Updated kanban board session ID to: %s" % new_session_id)
+	
+	# Update the session dropdown if it has the old session
+	if _session_option_button:
+		for i in range(_session_option_button.item_count):
+			var item_text = _session_option_button.get_item_text(i)
+			if old_session_id in item_text:
+				var new_label = item_text.replace(old_session_id, new_session_id)
+				_session_option_button.set_item_text(i, new_label)
+				print("[SubmitJob] Updated session dropdown: %s" % new_label)
+				break
+
 func _on_question_answered(question_id: String, answer: String, session_id: String = "") -> void:
 	"""Handle question answer and forward to backend"""
 	var autocoder_manager = SingletonObject.autocoder_manager
@@ -1263,24 +1307,32 @@ func _on_question_answered(question_id: String, answer: String, session_id: Stri
 		return
 	_submitted_questions[question_id] = true
 	
+	# Show progress BEFORE the await - the backend response only arrives after
+	# the follow-up planning is complete, so add the spinner now while we wait
+	_action_stream.add_llm_progress("Continuing planning with your answers...")
+	_set_prompt_enabled(false)
+	
 	# Forward to autocoder adapter (await it since it's async)
+	# NOTE: The backend sends the planning_complete notification BEFORE returning
+	# the response, so on_planning_turn_complete() may have already run by the
+	# time this returns. We call stop_llm_progress() here as a safety net.
 	var success = await autocoder_manager.autocoder_adapter.answer_question(resolved_session_id, question_id, answer)
 	
 	print("[SubmitJob] Answer submission result: %s" % ("SUCCESS" if success else "FAILED"))
 	
+	# Always stop the spinner after the await returns (safety net in case
+	# on_planning_turn_complete fired before the spinner was created)
+	if _action_stream:
+		_action_stream.stop_llm_progress()
+	
 	if success:
-		# Show visual feedback that planning is continuing
-		_action_stream.add_llm_progress("Continuing planning with your answers...")
-		
-		# Disable prompt while processing
-		_set_prompt_enabled(false)
-		
 		SingletonObject.create_toast_notification(
-			"Answer submitted - refining plan based on your input...",
+			"Answer submitted - plan updated",
 			ToastNotification.Type.INFO
 		)
 		print("[SubmitJob] Now waiting for planning notification on topic: autocoder-orchestrator/planning/%s/%s" % [Core.client.client_id, resolved_session_id])
 	else:
+		_set_prompt_enabled(true)
 		SingletonObject.create_toast_notification(
 			"Answer submission failed - please retry if needed",
 			ToastNotification.Type.WARNING
