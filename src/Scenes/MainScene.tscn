@@ -115,6 +115,7 @@ grow_vertical = 2
 
 [node name="ManyNewFilesDialogWindow" parent="." unique_id=1371114313 instance=ExtResource("3_xdign")]
 unique_name_in_owner = true
+oversampling_override = 1.0
 initial_position = 4
 size = Vector2i(320, 100)
 visible = false
@@ -829,16 +830,6 @@ layout_mode = 2
 
 [node name="AudioToText" type="Node" parent="." unique_id=544607571]
 script = ExtResource("14_rrnyx")
-
-[node name="ColorRect" type="ColorRect" parent="." unique_id=1082148384]
-unique_name_in_owner = true
-visible = false
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
 
 [node name="ProjectRecent" parent="." unique_id=659653697 instance=ExtResource("54_7n3d4")]
 unique_name_in_owner = true

@@ -355,7 +355,7 @@ func _on_mirror_button_pressed() -> void:
 	_update_status("Pose mirrored")
 
 
-## Render skeleton to 2D OpenPose image
+## Render skeleton to 2D OpenPose image (used by "Set Texture")
 func _on_render_button_pressed() -> void:
 	_update_status("Rendering to 2D...")
 	var image = render_to_2d_image(render_size)

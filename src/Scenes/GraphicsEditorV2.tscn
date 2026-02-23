@@ -131,7 +131,7 @@ anti_aliasing = false
 viewport_path = NodePath("PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport")
 
 [sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_dqxga"]
-size = Vector2(72, 36)
+size = Vector2(64, 36)
 
 [node name="GraphicsEditorV2" type="PanelContainer" unique_id=1919594253]
 texture_filter = 1
@@ -1447,7 +1447,7 @@ unique_name_in_owner = true
 oversampling_override = 1.0
 title = "AI Image Generation"
 position = Vector2i(17, 36)
-size = Vector2i(550, 600)
+size = Vector2i(520, 500)
 visible = false
 always_on_top = true
 
@@ -1517,7 +1517,7 @@ vertical_alignment = 1
 
 [node name="PromptTextEdit" type="TextEdit" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/VBoxContainer" unique_id=426130197]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 160)
+custom_minimum_size = Vector2(0, 140)
 layout_mode = 2
 placeholder_text = "type prompt to generate image here ..."
 wrap_mode = 1
@@ -1556,6 +1556,7 @@ grow_vertical = 0
 icon = ExtResource("47_hu8v1")
 
 [node name="3DContainer" type="VBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=685613381]
+visible = false
 layout_mode = 2
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer" unique_id=14169683]
@@ -1632,7 +1633,6 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Load an image from disc to send to the bacnkend"
 disabled = true
-text = "load"
 icon = ExtResource("65_dqxga")
 
 [node name="PickImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=234667611 groups=["imagesButtons"]]
@@ -1644,12 +1644,15 @@ icon = ExtResource("33_3qddm")
 
 [node name="PoseEditorImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=957384129 groups=["imagesButtons"]]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 disabled = true
 text = "Pose Editor"
 
 [node name="SendImage1Button" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=533936362 groups=["imagesButtons"]]
+unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 10
 disabled = true
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer" unique_id=1507174597]
@@ -1670,7 +1673,6 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Load an image from disc to send to the bacnkend"
 disabled = true
-text = "load"
 icon = ExtResource("65_dqxga")
 
 [node name="PickImage2Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2" unique_id=1580744727 groups=["imagesButtons"]]
@@ -1687,7 +1689,9 @@ disabled = true
 text = "Pose Editor"
 
 [node name="SendImage2sButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2" unique_id=1739815191 groups=["imagesButtons"]]
+unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 10
 disabled = true
 
 [node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer" unique_id=1255312703]
@@ -1708,7 +1712,6 @@ unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Load an image from disc to send to the bacnkend"
 disabled = true
-text = "load"
 icon = ExtResource("65_dqxga")
 
 [node name="PickImage3Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3" unique_id=1936420298 groups=["imagesButtons"]]
@@ -1725,7 +1728,9 @@ disabled = true
 text = "Pose Editor"
 
 [node name="SendImage3Button" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3" unique_id=144773080 groups=["imagesButtons"]]
+unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 10
 disabled = true
 
 [node name="AdvancedSettingsButtonContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=584676662]
@@ -1899,6 +1904,7 @@ icon = ExtResource("24_spfkh")
 
 [node name="SendMaskEditButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3" unique_id=1836863024]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 disabled = true
