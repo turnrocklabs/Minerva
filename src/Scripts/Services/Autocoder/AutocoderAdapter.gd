@@ -1,6 +1,7 @@
 class_name AutocoderAdapter
 extends BaseServiceAdapter
 
+signal review_agents_changed
 
 class GenerationOutput extends RefCounted:
 	var session_id: String
@@ -508,7 +509,10 @@ func create_review_agent(name: String, prompt: String, setup_commands: Array = [
 		SingletonObject.ErrorDisplay("Review Agent Create Error", error_msg)
 		return ""
 
-	return safe_extract(msg, ["params", "result", "agent_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+	var agent_id = safe_extract(msg, ["params", "result", "agent_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+	if not agent_id.is_empty():
+		review_agents_changed.emit()
+	return agent_id
 
 
 ## List all review agents for the current user
@@ -618,7 +622,10 @@ func update_review_agent(agent_id: String, name: String = "", prompt: String = "
 		SingletonObject.ErrorDisplay("Review Agent Update Error", error_msg)
 		return false
 
-	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	var success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	if success:
+		review_agents_changed.emit()
+	return success
 
 
 ## Delete a review agent by ID
@@ -643,7 +650,10 @@ func delete_review_agent(agent_id: String) -> bool:
 		SingletonObject.ErrorDisplay("Review Agent Delete Error", error_msg)
 		return false
 
-	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	var del_success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	if del_success:
+		review_agents_changed.emit()
+	return del_success
 
 
 ## Update a review agent's order (execution priority)

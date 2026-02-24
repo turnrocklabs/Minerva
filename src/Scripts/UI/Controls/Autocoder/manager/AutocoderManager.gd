@@ -9,6 +9,8 @@ var submit_job_manager: Node  # Will be cast to AutocoderSubmitJobManager in _re
 var _monitoring_sessions: PackedStringArray
 var _latest_archive_by_session: Dictionary = {}  # session_id -> archive_uri
 var _latest_patch_by_session: Dictionary = {}  # session_id -> patch_uri
+var _session_events: Dictionary = {}  # session_id -> Array[Dictionary] — buffered notifications for MCP polling
+const MAX_EVENTS_PER_SESSION: int = 200
 
 # keep an array of notification message handlers so they dont go out of scope and get garbage collected
 var _notification_message_handlers: Array[Core.AwaitMessage]
@@ -37,6 +39,28 @@ func _log_traffic(_category: String, _data: Variant = null) -> void:
 	# LLM traffic, session history, and all conversation data is persisted server-side
 	# This allows users to continue sessions across devices
 	pass
+
+
+## Buffer a notification event for MCP polling via _autocoder_status
+func _buffer_event(session_id: String, event_type: String, payload: Dictionary) -> void:
+	if not _session_events.has(session_id):
+		_session_events[session_id] = []
+	_session_events[session_id].append({
+		"timestamp": Time.get_unix_time_from_system(),
+		"type": event_type,
+		"payload": payload
+	})
+	if _session_events[session_id].size() > MAX_EVENTS_PER_SESSION:
+		_session_events[session_id].pop_front()
+
+
+## Get buffered events for a session, optionally filtered by timestamp
+func get_session_events(session_id: String, since: float = 0.0) -> Array:
+	if not _session_events.has(session_id):
+		return []
+	if since <= 0.0:
+		return _session_events[session_id]
+	return _session_events[session_id].filter(func(e): return e["timestamp"] > since)
 
 func _init() -> void:
 	Core.ready.connect(
@@ -546,6 +570,8 @@ func _subscribe_to_session(session_id: String) -> void:
 
 ## Handle iteration notification for a specific session
 func _handle_iteration_notification(session_id: String, topic: String, payload: Dictionary) -> void:
+	_buffer_event(session_id, "iteration", payload)
+
 	# Record artifacts regardless of which viewers are open
 	_record_artifact_ready(session_id, payload)
 
@@ -854,6 +880,8 @@ func _format_response_preview(model: String, content: String) -> String:
 
 ## Handle action notification for a specific session (hierarchical action stream)
 func _handle_action_notification(session_id: String, topic: String, payload: Dictionary) -> void:
+	_buffer_event(session_id, "action", payload)
+
 	# Find the kanban board or log viewer for this session
 	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
 		return
@@ -983,6 +1011,8 @@ func _subscribe_to_new_session_llm(new_session_id: String) -> void:
 ## Handle planning notification for a specific session
 func _handle_planning_notification(session_id: String, topic: String, payload: Dictionary) -> void:
 	"""Handle planning updates and populate kanban board"""
+	_buffer_event(session_id, "planning", payload)
+
 	print("[AutocoderManager] ========== PLANNING NOTIFICATION RECEIVED ==========")
 	print("[AutocoderManager] Session: %s" % session_id)
 	print("[AutocoderManager] Topic: %s" % topic)

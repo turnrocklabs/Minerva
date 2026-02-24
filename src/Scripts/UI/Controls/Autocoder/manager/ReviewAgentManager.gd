@@ -31,6 +31,11 @@ func _ready() -> void:
 	_cancel_edit_button.pressed.connect(_on_cancel_edit_pressed)
 	_clear_button.pressed.connect(_on_clear_pressed)
 
+	# Auto-refresh when agents are created/updated/deleted externally (e.g. via MCP)
+	var adapter = _get_adapter()
+	if adapter:
+		adapter.review_agents_changed.connect(_on_review_agents_changed)
+
 	_reset_form()
 	_refresh_agents.call_deferred()
 
@@ -260,6 +265,10 @@ func _get_setup_count(commands: Variant) -> int:
 
 func _on_refresh_pressed() -> void:
 	await _refresh_agents()
+
+
+func _on_review_agents_changed() -> void:
+	_refresh_agents.call_deferred()
 
 
 func _on_save_pressed() -> void:

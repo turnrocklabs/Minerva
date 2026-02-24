@@ -233,7 +233,8 @@ func _handle_initialize(conn, params: Dictionary, request_id) -> void:
 	_sessions[new_session_id] = {
 		"created_at": Time.get_unix_time_from_system(),
 		"last_activity": Time.get_unix_time_from_system(),
-		"client_info": params.get("clientInfo", {})
+		"client_info": params.get("clientInfo", {}),
+		"enabled_sets": []  # empty = all sets enabled (backward compatible)
 	}
 
 	client_connected.emit(new_session_id)
@@ -262,6 +263,11 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 	if _sessions.has(session_id):
 		_sessions[session_id].last_activity = Time.get_unix_time_from_system()
 
+	# Resolve enabled sets: use global from minerva_server
+	var enabled_sets: Array = []
+	if _mcp_manager and _mcp_manager.minerva_server:
+		enabled_sets = _mcp_manager.minerva_server._enabled_tool_sets
+
 	# Get all minerva tools from the registry
 	var tools: Array[Dictionary] = []
 
@@ -270,6 +276,11 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 			var tool = _mcp_manager.tool_registry[tool_name]
 			# Only include minerva tools (not external MCP server tools)
 			if tool.server_name == "minerva":
+				# Apply tool set filtering
+				if not enabled_sets.is_empty():
+					# When filtering is active, only include tools from enabled sets or "meta" set
+					if tool.tool_set != "meta" and tool.tool_set not in enabled_sets:
+						continue
 				tools.append({
 					"name": tool.name,
 					"description": tool.description,
@@ -299,6 +310,18 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 	if not tool_name.begins_with("minerva_"):
 		_send_jsonrpc_error(conn, request_id, -32602, "Unknown tool: %s" % tool_name)
 		return
+
+	# Enforce tool set filtering
+	if _mcp_manager and _mcp_manager.minerva_server:
+		var enabled_sets: Array = _mcp_manager.minerva_server._enabled_tool_sets
+		if not enabled_sets.is_empty():
+			# Check if this tool's set is enabled
+			if _mcp_manager.tool_registry.has(tool_name):
+				var tool_def = _mcp_manager.tool_registry[tool_name]
+				if tool_def.tool_set != "meta" and tool_def.tool_set not in enabled_sets:
+					_send_jsonrpc_error(conn, request_id, -32602,
+						"Tool set '%s' is not enabled for this session. Use minerva_enable_tool_sets to enable it." % tool_def.tool_set)
+					return
 
 	# Execute the tool
 	if not _mcp_manager or not _mcp_manager.minerva_server:

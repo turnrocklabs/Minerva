@@ -127,23 +127,84 @@ func _download_payload(artifact_uri: String, transfer_mode: String = "base64") -
 	}
 
 
+## Download artifact via binary WebSocket transfer.
+## Returns {"filename": String, "buffer": PackedByteArray} or empty dict on failure.
+func _download_binary(artifact_uri: String) -> Dictionary:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't download artifact. Core not connected")
+		return {}
+
+	var action := get_action("artifact/download")
+	if not action:
+		SingletonObject.ErrorDisplay("Download Error", "artifact/download action not found")
+		return {}
+
+	var download_data := {"uri": artifact_uri, "transfer_mode": "binary"}
+
+	SingletonObject.create_toast_notification("Downloading artifact...", ToastNotification.Type.INFO)
+
+	# Generate request_id and prepare core_client for binary frames
+	var request_id: String = Core.client.send_text_message(service, action, download_data)
+	Core.client.prepare_binary_artifact_download(request_id)
+	print("🔽 _download_binary: sent request_id=%s for uri=%s, waiting for artifact_binary_received..." % [request_id, artifact_uri])
+
+	# Wait for artifact_binary_received signal
+	var result: Dictionary = {}
+	var timed_out := false
+
+	var on_received := func(req_id: String, filename: String, buffer: PackedByteArray):
+		print("🔽 _download_binary: signal fired! req_id=%s (expected=%s) filename=%s size=%s" % [req_id, request_id, filename, buffer.size()])
+		if req_id == request_id:
+			# Mutate the captured dict — reassignment (result = {...}) won't
+			# propagate to the outer scope in GDScript lambdas.
+			result["filename"] = filename
+			result["buffer"] = buffer
+		else:
+			print("🔽 _download_binary: req_id MISMATCH, ignoring")
+
+	Core.client.artifact_binary_received.connect(on_received)
+
+	# Poll with timeout
+	var timeout := 120.0
+	var elapsed := 0.0
+	while result.is_empty() and not timed_out:
+		await SingletonObject.get_tree().process_frame
+		elapsed += SingletonObject.get_tree().root.get_process_delta_time()
+		if elapsed >= timeout:
+			timed_out = true
+
+	# Disconnect signal
+	if Core.client.artifact_binary_received.is_connected(on_received):
+		Core.client.artifact_binary_received.disconnect(on_received)
+
+	if timed_out and result.is_empty():
+		print("🔽 _download_binary: TIMED OUT after %ss (result empty=%s)" % [elapsed, result.is_empty()])
+		SingletonObject.ErrorDisplay("Download Error", "Binary artifact download timed out")
+		return {}
+	elif result.is_empty():
+		print("🔽 _download_binary: loop exited but result empty (elapsed=%ss)" % elapsed)
+		SingletonObject.ErrorDisplay("Download Error", "Binary artifact download failed")
+		return {}
+
+	return result
+
+
 ## Download an artifact by URI and save it to disk
 ## Opens a file dialog for the user to choose save location
 ## Returns true on success, false on failure
-func download(artifact_uri: String, transfer_mode: String = "base64") -> bool:
-	var payload = await _download_payload(artifact_uri, transfer_mode)
-	if payload.is_empty():
+func download(artifact_uri: String) -> bool:
+	var result = await _download_binary(artifact_uri)
+	if result.is_empty():
 		return false
 
-	var filename = str(payload.get("filename", ""))
-	var content_base64 = str(payload.get("content", ""))
-	var size = float(payload.get("size", 0.0))
+	var filename: String = result.get("filename", "")
+	var bytes: PackedByteArray = result.get("buffer", PackedByteArray())
 
-	# Decode base64 to bytes
-	var bytes := Marshalls.base64_to_raw(content_base64)
 	if bytes.is_empty():
-		SingletonObject.ErrorDisplay("Artifact Download Error", "Failed to decode artifact data")
+		SingletonObject.ErrorDisplay("Download Error", "Empty artifact data")
 		return false
+
+	var size := float(bytes.size())
 
 	# Open file dialog to save
 	var file_dialog := FileDialog.new()
@@ -165,14 +226,14 @@ func download(artifact_uri: String, transfer_mode: String = "base64") -> bool:
 	file_dialog.popup_centered_ratio(0.5)
 
 	# Use an array to capture the path (arrays are passed by reference)
-	var result := [""]
+	var dialog_result := [""]
 
 	# Create a one-shot callable to capture the path
 	var on_file_selected := func(path: String):
-		result[0] = path
+		dialog_result[0] = path
 
 	var on_canceled := func():
-		result[0] = ""
+		dialog_result[0] = ""
 
 	file_dialog.file_selected.connect(on_file_selected, CONNECT_ONE_SHOT)
 	file_dialog.canceled.connect(on_canceled, CONNECT_ONE_SHOT)
@@ -185,7 +246,7 @@ func download(artifact_uri: String, transfer_mode: String = "base64") -> bool:
 
 	file_dialog.queue_free()
 
-	var selected_path: String = result[0]
+	var selected_path: String = dialog_result[0]
 
 	if selected_path.is_empty():
 		# User canceled
@@ -210,23 +271,23 @@ func download(artifact_uri: String, transfer_mode: String = "base64") -> bool:
 
 ## Download an artifact and extract it into a destination directory
 ## Returns true on success, false on failure
-func download_and_extract(artifact_uri: String, destination_dir: String, transfer_mode: String = "base64") -> bool:
+func download_and_extract(artifact_uri: String, destination_dir: String) -> bool:
 	if destination_dir.is_empty():
 		SingletonObject.ErrorDisplay("Extract Error", "Missing destination directory")
 		return false
 
-	var payload = await _download_payload(artifact_uri, transfer_mode)
-	if payload.is_empty():
+	var result = await _download_binary(artifact_uri)
+	if result.is_empty():
 		return false
 
-	var filename = str(payload.get("filename", ""))
-	var content_base64 = str(payload.get("content", ""))
-	var size = float(payload.get("size", 0.0))
+	var filename: String = result.get("filename", "")
+	var bytes: PackedByteArray = result.get("buffer", PackedByteArray())
 
-	var bytes := Marshalls.base64_to_raw(content_base64)
 	if bytes.is_empty():
-		SingletonObject.ErrorDisplay("Extract Error", "Failed to decode artifact data")
+		SingletonObject.ErrorDisplay("Extract Error", "Empty artifact data")
 		return false
+
+	var size := float(bytes.size())
 
 	var artifacts_dir = "user://autocoder_artifacts"
 	var dir = DirAccess.open("user://")
