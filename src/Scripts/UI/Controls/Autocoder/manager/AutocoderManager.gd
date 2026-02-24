@@ -579,23 +579,34 @@ func _handle_iteration_notification(session_id: String, topic: String, payload: 
 	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
 		return
 
+	# Route summary to SubmitJob stream (once per notification, outside tab loop)
+	if submit_job_manager and submit_job_manager.has_method("add_iteration_message"):
+		submit_job_manager.add_iteration_message(session_id, payload)
+	var status_text = str(payload.get("status", "")).to_lower()
+	if status_text in ["complete", "completed", "awaiting_user", "in_review", "error", "failed"]:
+		if submit_job_manager.has_method("stop_llm_stream"):
+			submit_job_manager.stop_llm_stream()
+	if status_text == "awaiting_user":
+		if submit_job_manager.has_method("add_approval_card"):
+			submit_job_manager.add_approval_card(session_id, payload)
+
 	for tab in SingletonObject.editor_pane.Tabs.get_children():
 		if not tab is Editor:
 			continue
 
 		var editor = tab as Editor
-		
+
 		# Route to kanban board
 		if editor.type == Editor.Type.KANBAN:
 			var kanban = editor.kanban_board
 			if kanban and kanban.get_meta("session_id", "") == session_id:
 				var status = payload.get("status", "unknown")
 				info("Routing iteration notification to kanban for session %s (status: %s)" % [session_id, status])
-				
+
 				# TODO: Update kanban board with iteration data
 				# For now, just log it
-				
-				# Show error dialog if status is error
+
+				# Show error as toast (non-blocking) — errors may be transient if user retries
 				if status == "error":
 					var error_msg = str(payload.get("error", ""))
 					if error_msg.is_empty():
@@ -603,18 +614,10 @@ func _handle_iteration_notification(session_id: String, topic: String, payload: 
 					if error_msg.is_empty():
 						error_msg = str(payload.get("message", ""))
 					if error_msg.is_empty():
-						error_msg = "Unknown error occurred"
-					SingletonObject.ErrorDisplay("Generation Failed", error_msg)
-				
+						error_msg = "Generation error occurred"
+					SingletonObject.create_toast_notification("Generation error: " + error_msg, ToastNotification.Type.WARNING)
+
 				# Don't return - also route to logs viewer if present
-		
-		# Route summary to SubmitJob stream
-		if submit_job_manager and submit_job_manager.has_method("add_iteration_message"):
-			submit_job_manager.add_iteration_message(session_id, payload)
-		var status_text = str(payload.get("status", "")).to_lower()
-		if status_text in ["complete", "completed", "awaiting_user", "in_review", "error", "failed"]:
-			if submit_job_manager.has_method("stop_llm_stream"):
-				submit_job_manager.stop_llm_stream()
 
 		# Route to logs viewer
 		if editor.type == Editor.Type.LOGS:
@@ -943,6 +946,16 @@ func _handle_action_notification(session_id: String, topic: String, payload: Dic
 
 		info("Routed action to SubmitJob stream: %s (%s)" % [action_type, frontend_status])
 
+	# Record review model completion in kanban task stage history
+	if action_type == "review_model" and status.to_lower() == "completed" and details is Dictionary:
+		var review_model = str(details.get("model", ""))
+		var agent_name = str(details.get("model_display_name", ""))
+		var issue_count = details.get("issue_count", 0)
+		var fixes_count = details.get("issues_with_fixes", 0)
+		if not review_model.is_empty():
+			_update_kanban_tasks_stage_history(session_id, "ai_review", review_model,
+				{"agent_name": agent_name, "issues": issue_count, "fixes": fixes_count})
+
 	for tab in SingletonObject.editor_pane.Tabs.get_children():
 		if not tab is Editor:
 			continue
@@ -1025,8 +1038,10 @@ func _handle_planning_notification(session_id: String, topic: String, payload: D
 	var tasks = payload.get("tasks", [])
 	var questions = payload.get("questions", [])
 	var status = payload.get("status", "unknown")
-	
-	print("[AutocoderManager] Status: %s, Tasks: %d, Questions: %d" % [status, tasks.size(), questions.size()])
+	var notification_model = str(payload.get("model", ""))
+	var notification_type = str(payload.get("notification_type", ""))
+
+	print("[AutocoderManager] Status: %s, Tasks: %d, Questions: %d, Model: %s, Type: %s" % [status, tasks.size(), questions.size(), notification_model, notification_type])
 
 	# Find or create kanban board for this session
 	var kanban_editor: Editor = null
@@ -1073,7 +1088,7 @@ func _handle_planning_notification(session_id: String, topic: String, payload: D
 
 			# Update tasks from planning
 			if tasks.size() > 0:
-				_update_kanban_from_planning_tasks(tasks, task_store)
+				_update_kanban_from_planning_tasks(tasks, task_store, notification_model, notification_type)
 
 		# Handle questions - route through SubmitJob's deduplication logic
 		if submit_job_manager and submit_job_manager.has_method("_handle_planning_questions"):
@@ -1081,7 +1096,7 @@ func _handle_planning_notification(session_id: String, topic: String, payload: D
 
 		info("Updated kanban board for planning session %s (status: %s, %d tasks)" % [session_id, status, tasks.size()])
 
-func _update_kanban_from_planning_tasks(tasks: Array, task_store) -> void:  # task_store: AutocoderTaskStore
+func _update_kanban_from_planning_tasks(tasks: Array, task_store, model: String = "", notification_type: String = "") -> void:  # task_store: AutocoderTaskStore
 	"""Update kanban board with tasks from planning"""
 	if not task_store:
 		print("[AutocoderManager] ERROR: No task_store provided")
@@ -1156,6 +1171,9 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store) -> void:  # ta
 				"metadata": metadata,
 				"source_context": "Planning: %s" % category
 			})
+			# Record stage history from notification
+			if not model.is_empty():
+				_record_stage_history_for_task(existing_task, notification_type, model)
 			continue
 
 		# Create task in mapped status
@@ -1173,7 +1191,47 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store) -> void:  # ta
 		# Store metadata
 		task.metadata = metadata
 		existing_tasks[task_id] = task
+		# Record stage history from notification
+		if not model.is_empty():
+			_record_stage_history_for_task(task, notification_type, model)
 		info("Added planning task to kanban: %s" % title)
+
+
+func _record_stage_history_for_task(target_task: AutocoderTask, notification_type: String, model: String) -> void:
+	"""Record a stage history entry based on planning notification type"""
+	match notification_type:
+		"tasks_started":
+			target_task.add_stage_entry("in_progress", model, {"summary": "Code generation"})
+		"tasks_in_review":
+			target_task.add_stage_entry("ai_review", model, {"summary": "Review started"})
+		"tasks_done":
+			target_task.add_stage_entry("done", model, {"summary": "Completed"})
+
+
+func _update_kanban_tasks_stage_history(session_id: String, stage: String, model: String, details: Dictionary = {}) -> void:
+	"""Find kanban board for session and update tasks in matching stage with stage history"""
+	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
+		return
+	for tab in SingletonObject.editor_pane.Tabs.get_children():
+		if not tab is Editor:
+			continue
+		var editor = tab as Editor
+		if editor.type == Editor.Type.KANBAN:
+			var kanban = editor.kanban_board
+			if kanban and kanban.get_meta("session_id", "") == session_id and kanban.task_store:
+				for task in kanban.task_store.get_all_tasks():
+					# Match tasks in the relevant status
+					var dominated = false
+					match stage:
+						"ai_review":
+							dominated = task.status == AutocoderTask.TaskStatus.AI_REVIEW or task.status == AutocoderTask.TaskStatus.IN_PROGRESS
+						"done":
+							dominated = task.status == AutocoderTask.TaskStatus.DONE
+						_:
+							dominated = true
+					if dominated:
+						task.add_stage_entry(stage, model, details)
+				return
 
 
 func monitor_session(user_id: String, session_id: String, _notification_topics: Array[String] = []):

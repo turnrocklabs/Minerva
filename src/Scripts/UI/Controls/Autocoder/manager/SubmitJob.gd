@@ -92,9 +92,11 @@ func _ready() -> void:
 	_populate_models([])
 	_populate_review_agents([])
 	
-	# Connect action stream question answers
+	# Connect action stream question answers and approval actions
 	if _action_stream:
 		_action_stream.question_answered.connect(_on_question_answered)
+		_action_stream.approval_action.connect(_on_approval_action)
+		_action_stream.approval_extract.connect(_on_approval_extract)
 	
 	# Connect mode selector
 	if _mode_option_button:
@@ -144,6 +146,58 @@ func _ready() -> void:
 		_session_option_button.item_selected.connect(_on_session_option_selected)
 
 
+
+
+## Programmatic entry point for MCP-initiated sessions.
+## Syncs the UI to track a session started externally, so it behaves
+## identically to one started from the Submit button.
+func setup_mcp_session(session_id: String, prompt: String, mode: AutocoderMode, auto_review: bool = false, input_archive_uri: String = "") -> void:
+	if session_id.is_empty():
+		return
+
+	# Clear action stream and show prompt
+	if _action_stream:
+		_action_stream.clear()
+	if _action_stream and not prompt.is_empty():
+		_action_stream.add_message("📝 Prompt:\n\n" + prompt, "user")
+
+	# Set mode
+	if _mode_option_button:
+		_mode_option_button.select(mode)
+		_on_mode_selected(mode)
+
+	# Set auto-review checkbox
+	if _auto_review_check_box:
+		_auto_review_check_box.button_pressed = auto_review
+
+	# Fill prompt field
+	if _prompt_text_edit:
+		_prompt_text_edit.text = prompt
+
+	# Set input archive if provided
+	if not input_archive_uri.is_empty():
+		var ArtifactClass = load("res://Scripts/Services/ArtifactRegistry/Artifact.gd")
+		if ArtifactClass:
+			var artifact = ArtifactClass.new()
+			artifact.artifact_uri = input_archive_uri
+			artifact.filename = input_archive_uri.get_file()
+			selected_artifact = artifact
+
+	# Ensure session appears in dropdown and is selected
+	_ensure_session_option(session_id, "processing")
+	_select_session_in_dropdown(session_id)
+
+	# Switch to "Continue Session" mode so the dropdown is active
+	if _continue_session_check_box:
+		_continue_session_check_box.button_pressed = true
+		_session_option_button.disabled = false
+
+	# Start full monitoring (kanban board + all topic subscriptions)
+	var user_id = Core.client.client_id
+	if SingletonObject.autocoder_manager:
+		SingletonObject.autocoder_manager.monitor_session(user_id, session_id)
+
+	print("[SubmitJob] MCP session synced to UI: %s (mode=%d, auto_review=%s)" % [session_id, mode, auto_review])
 
 
 func _refresh_session_history():
@@ -614,6 +668,16 @@ func _load_session_history_to_action_stream(session_id: String) -> void:
 						preview += "\n" + (content.substr(0, 150) + "..." if content.length() > 150 else content)
 					_action_stream.add_message(preview, "response")
 	
+	# Show approval card if session is awaiting user action
+	var status_lower = str(session_status).to_lower()
+	if status_lower in ["awaiting_user", "in_review"] and iterations is Array and iterations.size() > 0:
+		var last_iter = iterations[iterations.size() - 1]
+		if last_iter is Dictionary:
+			var iter_status = str(last_iter.get("status", "")).to_lower()
+			if iter_status == "awaiting_user" or status_lower == "awaiting_user":
+				print("[SubmitJob] Session is awaiting user - showing approval card")
+				add_approval_card(session_id, last_iter)
+
 	print("[SubmitJob] Loaded session history: backend_tasks=%d, backend_questions=%d, kanban_tasks=%d, llm_events=%d" % [tasks.size(), questions.size(), kanban_task_count, llm_events.size() if llm_events is Array else 0])
 
 
@@ -1193,6 +1257,97 @@ func add_iteration_message(_session_id: String, payload: Dictionary) -> void:
 	if not patch_uri.is_empty():
 		lines.append("Patch: %s" % patch_uri)
 	_action_stream.add_message("\n".join(lines), "system")
+
+func add_approval_card(session_id: String, payload: Dictionary) -> void:
+	"""Add an approval card to the action stream for awaiting_user sessions"""
+	if not _action_stream:
+		return
+	var archive_uri = str(payload.get("output_archive_uri", ""))
+	if archive_uri.is_empty():
+		archive_uri = str(payload.get("archive_uri", ""))
+	var patch_uri = str(payload.get("patch_uri", ""))
+	var review_summary = str(payload.get("ai_review_summary", ""))
+	if review_summary.is_empty():
+		review_summary = str(payload.get("summary", ""))
+	var file_count = int(payload.get("files_changed_count", payload.get("file_count", 0)))
+
+	# Extract individual review results
+	var review_results: Array = []
+	var review_result = payload.get("review_result", {})
+	if review_result is Dictionary:
+		var reviews = review_result.get("reviews", [])
+		if reviews is Array:
+			review_results = reviews
+
+	# Store archive/patch URIs for download buttons
+	if not archive_uri.is_empty():
+		set_latest_archive_uri(session_id, archive_uri)
+	if not patch_uri.is_empty():
+		set_latest_patch_uri(session_id, patch_uri)
+
+	_action_stream.add_approval_card(session_id, archive_uri, patch_uri, review_summary, file_count, review_results)
+
+
+func _on_approval_action(session_id: String, action: String, feedback: String) -> void:
+	"""Handle approve/reject from approval card"""
+	var autocoder_manager = SingletonObject.autocoder_manager
+	if not autocoder_manager or not autocoder_manager.autocoder_adapter:
+		SingletonObject.create_toast_notification("Autocoder not connected", ToastNotification.Type.WARNING)
+		return
+
+	var user_id = Core.client.client_id
+	var success := false
+
+	match action:
+		"approve":
+			success = await autocoder_manager.autocoder_adapter.approve(user_id, session_id)
+			if success:
+				SingletonObject.create_toast_notification("Session approved", ToastNotification.Type.SUCCESS)
+			else:
+				SingletonObject.create_toast_notification("Failed to approve session", ToastNotification.Type.WARNING)
+		"reject":
+			success = await autocoder_manager.autocoder_adapter.request_revision(user_id, session_id, feedback)
+			if success:
+				SingletonObject.create_toast_notification("Revision requested", ToastNotification.Type.SUCCESS)
+			else:
+				SingletonObject.create_toast_notification("Failed to request revision", ToastNotification.Type.WARNING)
+
+
+func _on_approval_extract(session_id: String) -> void:
+	"""Handle extract request from approval card"""
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.artifact_registry_adapter:
+		SingletonObject.ErrorDisplay("Can't extract", "Please connect to core first!")
+		return
+
+	var archive_uri = _latest_archive_by_session.get(session_id, "")
+	if archive_uri.is_empty():
+		SingletonObject.create_toast_notification("No artifact available for this session", ToastNotification.Type.WARNING)
+		return
+
+	_restore_source_dir_for_session(session_id)
+	var source_dir = _source_dir_by_session.get(session_id, "")
+
+	if not source_dir.is_empty():
+		# Source folder already set - extract directly
+		await SingletonObject.autocoder_manager.artifact_registry_adapter.download_and_extract(archive_uri, source_dir)
+	else:
+		# Show directory picker
+		var dialog := FileDialog.new()
+		dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+		dialog.title = "Select folder to extract generated code"
+		dialog.access = FileDialog.ACCESS_FILESYSTEM
+		add_child(dialog)
+		dialog.popup_centered_ratio(0.6)
+
+		var selected_dir = await dialog.dir_selected
+		dialog.queue_free()
+
+		if selected_dir.is_empty():
+			return
+
+		_save_source_dir_for_session(session_id, selected_dir)
+		await SingletonObject.autocoder_manager.artifact_registry_adapter.download_and_extract(archive_uri, selected_dir)
+
 
 func add_llm_progress(content: String) -> void:
 	"""Route LLM traffic to action stream for visibility"""

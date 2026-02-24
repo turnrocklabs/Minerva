@@ -8224,11 +8224,15 @@ func _autocoder_plan(args: Dictionary) -> Dictionary:
 	if not result:
 		return {"error": "Planning request failed", "success": false}
 
-	# Subscribe to session notifications for status tracking
+	# Sync UI to track this session (same as if user clicked "Start Planning")
 	if result.session_id and not result.session_id.is_empty():
 		var mgr = SingletonObject.autocoder_manager
-		if mgr:
-			await mgr._subscribe_to_session(result.session_id)
+		if mgr and mgr.submit_job_manager:
+			mgr.submit_job_manager.setup_mcp_session(
+				result.session_id, prompt,
+				AutocoderSubmitJobManager.AutocoderMode.PLAN,
+				false, input_archive_uri
+			)
 
 	var response: Dictionary = {
 		"success": true,
@@ -8278,11 +8282,15 @@ func _autocoder_generate(args: Dictionary) -> Dictionary:
 	if not result:
 		return {"error": "Generation request failed", "success": false}
 
-	# Subscribe to session notifications
+	# Sync UI to track this session (same as if user clicked "Generate Code")
 	if result.session_id and not result.session_id.is_empty():
 		var mgr = SingletonObject.autocoder_manager
-		if mgr:
-			await mgr._subscribe_to_session(result.session_id)
+		if mgr and mgr.submit_job_manager:
+			mgr.submit_job_manager.setup_mcp_session(
+				result.session_id, prompt,
+				AutocoderSubmitJobManager.AutocoderMode.CODER,
+				auto_review, input_archive_uri
+			)
 
 	return {
 		"success": true,

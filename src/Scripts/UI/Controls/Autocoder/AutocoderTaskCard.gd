@@ -19,7 +19,17 @@ var task: AutocoderTask
 @onready var _actions_button: Button = %ActionsButton
 @onready var _actions_menu: PopupMenu = %ActionsMenu
 @onready var _source_button: Button = %SourceButton
+@onready var _expand_button: Button = %ExpandButton
+@onready var _details_container: VBoxContainer = %DetailsContainer
+@onready var _stage_history_list: VBoxContainer = %StageHistoryList
+@onready var _activity_indicator: RichTextLabel = %ActivityIndicator
 var _source_menu: PopupMenu
+
+var _expanded: bool = false
+var _expand_tween: Tween
+var _activity_tween: Tween
+const EXPAND_DURATION: float = 0.4
+const EXPAND_ICON_COLOR: Color = Color(0.16, 1.0, 1.0, 1.0)
 
 func _ready():
 	if _actions_button:
@@ -105,11 +115,11 @@ func _update_display():
 		_status_badge.text = task.get_status_name()
 		_update_status_badge_color()
 	if _model_label:
-		if task.assigned_model.is_empty():
-			_model_label.visible = false
-		else:
-			_model_label.visible = true
-			_model_label.text = task.assigned_model
+		_update_model_label()
+	if _activity_indicator:
+		_update_activity_indicator()
+	if _expanded and _stage_history_list:
+		_populate_stage_history()
 	if _files_label:
 		if task.related_files.is_empty():
 			_files_label.visible = false
@@ -139,6 +149,199 @@ func _update_status_badge_color():
 			color = Color(0.6, 0.6, 0.65)
 	
 	_status_badge.add_theme_color_override("font_color", color)
+
+## --- Expand / Collapse ---
+
+func _on_expand_button_pressed() -> void:
+	_expanded = not _expanded
+	if _expanded:
+		_expand_content()
+	else:
+		_contract_content()
+
+
+func _expand_content() -> void:
+	if not _details_container:
+		return
+	_populate_stage_history()
+	_details_container.visible = true
+
+	# Measure content
+	_details_container.custom_minimum_size.y = 0
+	await get_tree().process_frame
+	var content_size = _details_container.get_combined_minimum_size().y
+
+	if _expand_tween and _expand_tween.is_running():
+		_expand_tween.kill()
+	_expand_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	_expand_tween.set_parallel(true)
+	_details_container.custom_minimum_size.y = 0
+	_expand_tween.tween_property(_details_container, "custom_minimum_size:y", content_size, EXPAND_DURATION)
+	if _expand_button:
+		_expand_tween.tween_property(_expand_button, "rotation", 0.0, EXPAND_DURATION)
+		_expand_tween.tween_property(_expand_button, "self_modulate", Color.WHITE, EXPAND_DURATION)
+
+
+func _contract_content() -> void:
+	if not _details_container:
+		return
+	var content_size = _details_container.get_combined_minimum_size().y
+
+	if _expand_tween and _expand_tween.is_running():
+		_expand_tween.kill()
+	_expand_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	_expand_tween.set_parallel(true)
+	_expand_tween.tween_property(_details_container, "custom_minimum_size:y", 0.0, EXPAND_DURATION).from(content_size)
+	if _expand_button:
+		_expand_tween.tween_property(_expand_button, "rotation", deg_to_rad(-90.0), EXPAND_DURATION)
+		_expand_tween.tween_property(_expand_button, "self_modulate", EXPAND_ICON_COLOR, EXPAND_DURATION)
+	_expand_tween.set_parallel(false)
+	_expand_tween.tween_callback(func(): _details_container.visible = false)
+
+
+## --- Stage History Rendering ---
+
+func _populate_stage_history() -> void:
+	if not _stage_history_list or not task:
+		return
+
+	# Clear existing children
+	for child in _stage_history_list.get_children():
+		child.queue_free()
+
+	var history = task.get_stage_history()
+	if history.is_empty():
+		var empty_label = Label.new()
+		empty_label.text = "No stage history yet"
+		empty_label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45))
+		empty_label.add_theme_font_size_override("font_size", 10)
+		_stage_history_list.add_child(empty_label)
+		return
+
+	for entry in history:
+		if not entry is Dictionary:
+			continue
+		var hbox = HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 6)
+
+		# Stage icon
+		var stage_str = str(entry.get("stage", ""))
+		var stage_icon = Label.new()
+		stage_icon.add_theme_font_size_override("font_size", 10)
+		match stage_str:
+			"in_progress":
+				stage_icon.text = ">"
+				stage_icon.add_theme_color_override("font_color", Color(0.95, 0.8, 0.3))
+			"ai_review":
+				stage_icon.text = "R"
+				stage_icon.add_theme_color_override("font_color", Color(0.5, 0.9, 0.7))
+			"done":
+				stage_icon.text = "D"
+				stage_icon.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
+			_:
+				stage_icon.text = "-"
+				stage_icon.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+		hbox.add_child(stage_icon)
+
+		# Model name
+		var model_str = str(entry.get("model", ""))
+		if not model_str.is_empty():
+			var model_label = Label.new()
+			model_label.text = AutocoderTask.format_model_name(model_str)
+			model_label.add_theme_color_override("font_color", Color(0.4, 0.6, 0.95))
+			model_label.add_theme_font_size_override("font_size", 10)
+			model_label.tooltip_text = model_str
+			hbox.add_child(model_label)
+
+		# Agent name (if present, for review entries)
+		var agent_name = str(entry.get("agent_name", ""))
+		if not agent_name.is_empty():
+			var agent_label = Label.new()
+			agent_label.text = agent_name
+			agent_label.add_theme_color_override("font_color", Color(0.4, 0.85, 0.5))
+			agent_label.add_theme_font_size_override("font_size", 10)
+			hbox.add_child(agent_label)
+
+		# Issue count (if present)
+		var issues = entry.get("issues", 0)
+		if issues is float or issues is int:
+			if int(issues) > 0:
+				var issue_label = Label.new()
+				issue_label.text = "%d issues" % int(issues)
+				issue_label.add_theme_color_override("font_color", Color(0.95, 0.8, 0.3))
+				issue_label.add_theme_font_size_override("font_size", 10)
+				hbox.add_child(issue_label)
+
+		_stage_history_list.add_child(hbox)
+
+
+## --- Model Label (summary from stage history) ---
+
+func _update_model_label() -> void:
+	if not _model_label or not task:
+		return
+
+	# Collect all unique models from stage history
+	var all_models: Array[String] = []
+	for entry in task.get_stage_history():
+		if entry is Dictionary:
+			var m = str(entry.get("model", ""))
+			if not m.is_empty() and not all_models.has(m):
+				all_models.append(m)
+
+	# Fall back to assigned_model if no stage history
+	if all_models.is_empty():
+		if task.assigned_model.is_empty():
+			_model_label.visible = false
+		else:
+			_model_label.visible = true
+			_model_label.text = AutocoderTask.format_model_name(task.assigned_model)
+			_model_label.tooltip_text = task.assigned_model
+		return
+
+	_model_label.visible = true
+	if all_models.size() == 1:
+		_model_label.text = AutocoderTask.format_model_name(all_models[0])
+		_model_label.tooltip_text = all_models[0]
+	else:
+		_model_label.text = "%s +%d" % [AutocoderTask.format_model_name(all_models[0]), all_models.size() - 1]
+		var tooltip_lines: PackedStringArray
+		for m in all_models:
+			tooltip_lines.append(m)
+		_model_label.tooltip_text = "\n".join(tooltip_lines)
+
+
+## --- Activity Indicator ---
+
+func _update_activity_indicator() -> void:
+	if not _activity_indicator or not task:
+		return
+
+	var is_active = task.status == AutocoderTask.TaskStatus.IN_PROGRESS or task.status == AutocoderTask.TaskStatus.AI_REVIEW
+	_activity_indicator.visible = is_active
+
+	if is_active:
+		_start_activity_pulse()
+	else:
+		_stop_activity_pulse()
+
+
+func _start_activity_pulse() -> void:
+	if _activity_tween and _activity_tween.is_running():
+		return  # Already pulsing
+	_activity_indicator.text = "..."
+	_activity_tween = create_tween().set_loops()
+	_activity_tween.tween_property(_activity_indicator, "modulate:a", 0.3, 0.5).set_trans(Tween.TRANS_SINE)
+	_activity_tween.tween_property(_activity_indicator, "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_SINE)
+
+
+func _stop_activity_pulse() -> void:
+	if _activity_tween and _activity_tween.is_running():
+		_activity_tween.kill()
+		_activity_tween = null
+	if _activity_indicator:
+		_activity_indicator.modulate.a = 1.0
+
 
 func _on_card_clicked(event: InputEvent):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:

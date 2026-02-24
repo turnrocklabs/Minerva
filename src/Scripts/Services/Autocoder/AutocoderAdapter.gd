@@ -277,6 +277,44 @@ func approve(user_id: String, session_id: String) -> bool:
 	return success
 
 
+## Request a revision for a session (user wants changes)
+## @param user_id: The user ID
+## @param session_id: The session to request revision for
+## @param feedback: Description of what needs to change
+func request_revision(user_id: String, session_id: String, feedback: String) -> bool:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't request revision. Core not connected")
+		return false
+
+	var action := get_action("autocoder/request-revision")
+
+	var data := {
+		"user_id": user_id,
+		"session_id": session_id,
+		"feedback": feedback,
+		"requester_id": user_id
+	}
+
+	var msg = await Core.send_message(service, action, data).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Revision Error", "No response from server")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to request revision")
+		SingletonObject.ErrorDisplay("Revision Error", error_msg)
+		return false
+
+	var success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	var message = safe_extract(msg, ["params", "result", "message"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+
+	if success:
+		SingletonObject.create_toast_notification(message if not message.is_empty() else "Revision requested successfully", ToastNotification.Type.SUCCESS)
+
+	return success
+
+
 ## Get available review models for AI code review
 ## Returns array of {id, description, enabled} dictionaries
 func get_review_models() -> Array[Dictionary]:

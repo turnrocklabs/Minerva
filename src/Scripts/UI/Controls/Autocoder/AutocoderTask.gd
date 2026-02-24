@@ -107,6 +107,40 @@ func get_source_object() -> Object:
 	return SingletonObject.get_registered_object(note_uuid)
 
 
+## Stage history -- tracks which model(s) worked on each stage
+func add_stage_entry(stage: String, model: String = "", details: Dictionary = {}) -> void:
+	if not metadata.has("stage_history"):
+		metadata["stage_history"] = []
+	var entry: Dictionary = {"stage": stage, "model": model, "timestamp": Time.get_datetime_string_from_system()}
+	for key in details:
+		entry[key] = details[key]
+	metadata["stage_history"].append(entry)
+	updated_at = Time.get_datetime_string_from_system()
+
+
+func get_stage_history() -> Array:
+	return metadata.get("stage_history", [])
+
+
+func get_models_for_stage(stage: String) -> Array[String]:
+	var models: Array[String] = []
+	for entry in get_stage_history():
+		if entry is Dictionary and str(entry.get("stage", "")) == stage:
+			var m = str(entry.get("model", ""))
+			if not m.is_empty() and not models.has(m):
+				models.append(m)
+	return models
+
+
+static func format_model_name(model: String) -> String:
+	if model.is_empty():
+		return ""
+	var slash_pos = model.rfind("/")
+	if slash_pos >= 0 and slash_pos < model.length() - 1:
+		return model.substr(slash_pos + 1)
+	return model
+
+
 func has_note_uuid(note_uuid: String) -> bool:
 	if note_uuid.is_empty():
 		return false

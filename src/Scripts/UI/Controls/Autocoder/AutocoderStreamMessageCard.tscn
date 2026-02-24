@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3 uid="uid://stream_msg_jkl012"]
+[gd_scene load_steps=4 format=3 uid="uid://stream_msg_jkl012"]
 
 [ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderStreamMessageCard.gd" id="1_msg"]
+[ext_resource type="Texture2D" uid="uid://du56h2igq3el7" path="res://assets/icons/expand-arrow-24.png" id="2_expand"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_msg"]
 bg_color = Color(0.1, 0.1, 0.12, 1)
@@ -18,21 +19,71 @@ layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_msg")
 script = ExtResource("1_msg")
 
-[node name="Content" type="HBoxContainer" parent="."]
+[node name="Content" type="VBoxContainer" parent="."]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 4
 
-[node name="IconLabel" type="Label" parent="Content"]
+[node name="Header" type="HBoxContainer" parent="Content"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ExpandControl" type="Control" parent="Content/Header"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+
+[node name="ExpandButton" type="Button" parent="Content/Header/ExpandControl"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -9.0
+offset_top = -9.0
+offset_right = 9.0
+offset_bottom = 9.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(9, 9)
+rotation = -1.5708
+focus_mode = 0
+self_modulate = Color(0.16, 1.0, 1.0, 1.0)
+icon = ExtResource("2_expand")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="IconLabel" type="Label" parent="Content/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 14
 text = "🤖"
 
-[node name="ContentLabel" type="Label" parent="Content"]
+[node name="PreviewLabel" type="Label" parent="Content/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.75, 0.75, 0.8, 1)
 theme_override_font_sizes/font_size = 12
-text = "Message content goes here..."
+text = "Message preview..."
+text_overrun_behavior = 3
+max_lines_visible = 2
+
+[node name="FullContentContainer" type="VBoxContainer" parent="Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="ContentLabel" type="Label" parent="Content/FullContentContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.75, 0.75, 0.8, 1)
+theme_override_font_sizes/font_size = 12
+text = "Full message content..."
 autowrap_mode = 2
+
+[connection signal="pressed" from="Content/Header/ExpandControl/ExpandButton" to="." method="_on_expand_button_pressed"]
