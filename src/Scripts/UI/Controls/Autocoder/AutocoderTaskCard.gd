@@ -58,7 +58,7 @@ func _get_drag_data(_at_position: Vector2) -> Variant:
 	var preview = Label.new()
 	preview.text = task.title
 	preview.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
-	preview.add_theme_font_size_override("font_size", 12)
+	preview.add_theme_font_size_override("font_size", 18)
 	
 	var preview_panel = PanelContainer.new()
 	var style = StyleBoxFlat.new()
@@ -214,7 +214,7 @@ func _populate_stage_history() -> void:
 		var empty_label = Label.new()
 		empty_label.text = "No stage history yet"
 		empty_label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.45))
-		empty_label.add_theme_font_size_override("font_size", 10)
+		empty_label.add_theme_font_size_override("font_size", 15)
 		_stage_history_list.add_child(empty_label)
 		return
 
@@ -227,7 +227,7 @@ func _populate_stage_history() -> void:
 		# Stage icon
 		var stage_str = str(entry.get("stage", ""))
 		var stage_icon = Label.new()
-		stage_icon.add_theme_font_size_override("font_size", 10)
+		stage_icon.add_theme_font_size_override("font_size", 15)
 		match stage_str:
 			"in_progress":
 				stage_icon.text = ">"
@@ -249,7 +249,7 @@ func _populate_stage_history() -> void:
 			var model_label = Label.new()
 			model_label.text = AutocoderTask.format_model_name(model_str)
 			model_label.add_theme_color_override("font_color", Color(0.4, 0.6, 0.95))
-			model_label.add_theme_font_size_override("font_size", 10)
+			model_label.add_theme_font_size_override("font_size", 15)
 			model_label.tooltip_text = model_str
 			hbox.add_child(model_label)
 
@@ -259,7 +259,7 @@ func _populate_stage_history() -> void:
 			var agent_label = Label.new()
 			agent_label.text = agent_name
 			agent_label.add_theme_color_override("font_color", Color(0.4, 0.85, 0.5))
-			agent_label.add_theme_font_size_override("font_size", 10)
+			agent_label.add_theme_font_size_override("font_size", 15)
 			hbox.add_child(agent_label)
 
 		# Issue count (if present)
@@ -269,7 +269,7 @@ func _populate_stage_history() -> void:
 				var issue_label = Label.new()
 				issue_label.text = "%d issues" % int(issues)
 				issue_label.add_theme_color_override("font_color", Color(0.95, 0.8, 0.3))
-				issue_label.add_theme_font_size_override("font_size", 10)
+				issue_label.add_theme_font_size_override("font_size", 15)
 				hbox.add_child(issue_label)
 
 		_stage_history_list.add_child(hbox)

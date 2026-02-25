@@ -54,7 +54,7 @@ func _build_options():
 			var btn = Button.new()
 			btn.text = str(option)
 			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			btn.add_theme_font_size_override("font_size", 12)
+			btn.add_theme_font_size_override("font_size", 18)
 			btn.pressed.connect(func(): _submit_answer(str(option)))
 			_options_container.add_child(btn)
 			_options_container.move_child(btn, 0)  # Add before input/submit

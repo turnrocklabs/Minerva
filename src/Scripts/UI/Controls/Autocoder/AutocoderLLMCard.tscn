@@ -39,14 +39,14 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "🤖 Model"
 
 [node name="ExpandButton" type="Button" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(28, 28)
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "▼"
 flat = true
 
@@ -54,7 +54,7 @@ flat = true
 unique_name_in_owner = true
 custom_minimum_size = Vector2(70, 28)
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "📋 Copy"
 flat = true
 
@@ -62,7 +62,7 @@ flat = true
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.75, 1, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "⏳ Generating..."
 
 [node name="ContentContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer"]
@@ -75,7 +75,7 @@ custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_colors/default_color = Color(0.85, 0.85, 0.9, 1)
-theme_override_font_sizes/normal_font_size = 12
+theme_override_font_sizes/normal_font_size = 18
 bbcode_enabled = true
 text = "Waiting for response..."
 fit_content = true
@@ -98,5 +98,5 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "Tokens: 0 in / 0 out"

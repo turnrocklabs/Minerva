@@ -51,7 +51,7 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="MarginContainer/VBoxContainer/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "{ }"
 
 [node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer/Header"]
@@ -59,7 +59,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.75, 0.75, 0.8, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Raw event"
 
 [node name="JsonTextEdit" type="TextEdit" parent="MarginContainer/VBoxContainer"]
@@ -67,7 +67,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.8, 0.7, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 theme_override_styles/normal = SubResource("StyleBoxFlat_json_text")
 text = ""
 editable = false

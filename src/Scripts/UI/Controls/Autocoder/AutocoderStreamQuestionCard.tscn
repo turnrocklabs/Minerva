@@ -29,20 +29,20 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="Content/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "❓"
 
 [node name="Title" type="Label" parent="Content/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.95, 0.8, 0.4, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Question from AI"
 
 [node name="QuestionLabel" type="Label" parent="Content"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "What would you like me to do?"
 autowrap_mode = 2
 
@@ -54,11 +54,11 @@ theme_override_constants/separation = 6
 [node name="TextInput" type="LineEdit" parent="Content/OptionsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 placeholder_text = "Type your answer..."
 
 [node name="SubmitButton" type="Button" parent="Content/OptionsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Submit Answer"

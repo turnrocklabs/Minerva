@@ -2,6 +2,7 @@ class_name AutocoderAdapter
 extends BaseServiceAdapter
 
 signal review_agents_changed
+signal review_presets_changed
 
 class GenerationOutput extends RefCounted:
 	var session_id: String
@@ -649,19 +650,25 @@ func update_review_agent(agent_id: String, name: String = "", prompt: String = "
 	if tools_enabled != null:
 		data["tools_enabled"] = tools_enabled
 
+	print("[ReviewAgent Update] Sending data: %s" % str(data))
 	var msg = await Core.send_message(service, action, data).receive()
+	print("[ReviewAgent Update] Response: %s" % str(msg))
 
 	if not msg:
 		SingletonObject.ErrorDisplay("Review Agent Update Error", "No response from server")
 		return false
 
 	if msg.get("cmd") == "error":
-		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to update review agent")
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "")
+		if error_msg.is_empty():
+			error_msg = str(msg.get("params", {}))
 		SingletonObject.ErrorDisplay("Review Agent Update Error", error_msg)
 		return false
 
 	var success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
-	if success:
+	if not success:
+		SingletonObject.ErrorDisplay("Review Agent Update Error", "Server returned success=false. Response: %s" % str(msg.get("params", {})))
+	else:
 		review_agents_changed.emit()
 	return success
 
@@ -722,6 +729,138 @@ func update_review_agent_order(agent_id: String, order: int) -> bool:
 		return false
 
 	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+
+
+## Create a review agent preset (named group of agent IDs)
+func create_review_preset(name: String, agent_ids: Array) -> String:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't create review preset. Core not connected")
+		return ""
+
+	var action := get_action("autocoder/review-preset/create")
+	if not action:
+		push_warning("Create review preset action not found")
+		return ""
+
+	var data := {
+		"name": name,
+		"agent_ids": agent_ids
+	}
+
+	var msg = await Core.send_message(service, action, data).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Review Preset Create Error", "No response from server")
+		return ""
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to create review preset")
+		SingletonObject.ErrorDisplay("Review Preset Create Error", error_msg)
+		return ""
+
+	var preset_id = safe_extract(msg, ["params", "result", "preset_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+	if not preset_id.is_empty():
+		review_presets_changed.emit()
+	return preset_id
+
+
+## List all review agent presets
+func list_review_presets() -> Array[Dictionary]:
+	var presets: Array[Dictionary] = []
+
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't list review presets. Core not connected")
+		return presets
+
+	var action := get_action("autocoder/review-preset/list")
+	if not action:
+		push_warning("List review presets action not found")
+		return presets
+
+	var msg = await Core.send_message(service, action, {}).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Review Preset List Error", "No response from server")
+		return presets
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to list review presets")
+		SingletonObject.ErrorDisplay("Review Preset List Error", error_msg)
+		return presets
+
+	var result_presets = safe_extract(msg, ["params", "result", "presets"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_ARRAY], [])
+
+	for preset_data in result_presets:
+		if preset_data is Dictionary:
+			presets.append(preset_data)
+
+	return presets
+
+
+## Update a review agent preset
+func update_review_preset(preset_id: String, name: String = "", agent_ids: Array = []) -> bool:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't update review preset. Core not connected")
+		return false
+
+	var action := get_action("autocoder/review-preset/update")
+	if not action:
+		push_warning("Update review preset action not found")
+		return false
+
+	var data := {
+		"preset_id": preset_id
+	}
+
+	if not name.is_empty():
+		data["name"] = name
+
+	if not agent_ids.is_empty():
+		data["agent_ids"] = agent_ids
+
+	var msg = await Core.send_message(service, action, data).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Review Preset Update Error", "No response from server")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to update review preset")
+		SingletonObject.ErrorDisplay("Review Preset Update Error", error_msg)
+		return false
+
+	var success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	if success:
+		review_presets_changed.emit()
+	return success
+
+
+## Delete a review agent preset
+func delete_review_preset(preset_id: String) -> bool:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't delete review preset. Core not connected")
+		return false
+
+	var action := get_action("autocoder/review-preset/delete")
+	if not action:
+		push_warning("Delete review preset action not found")
+		return false
+
+	var msg = await Core.send_message(service, action, {"preset_id": preset_id}).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Review Preset Delete Error", "No response from server")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to delete review preset")
+		SingletonObject.ErrorDisplay("Review Preset Delete Error", error_msg)
+		return false
+
+	var del_success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	if del_success:
+		review_presets_changed.emit()
+	return del_success
 
 
 ## Generate a development plan from prompt (planning mode)

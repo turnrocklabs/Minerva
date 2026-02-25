@@ -339,6 +339,23 @@ func _refresh_child_views() -> void:
 	else:
 		push_warning("[AutocoderManager] Could not find SessionView node")
 
+	# Refresh ReviewAgentManager (Agents tab)
+	var agent_manager = get_node_or_null("TabContainer/Agents")
+	if agent_manager:
+		if agent_manager.has_method("_refresh_models"):
+			print("[AutocoderManager] Calling ReviewAgentManager._refresh_models()")
+			agent_manager._refresh_models()
+		if agent_manager.has_method("_refresh_agents"):
+			print("[AutocoderManager] Calling ReviewAgentManager._refresh_agents()")
+			agent_manager._refresh_agents()
+
+	# Refresh review agents and presets in SubmitJob (for the checkbox list and preset dropdown)
+	if submit_job_manager:
+		if submit_job_manager.has_method("_refresh_review_agents"):
+			submit_job_manager._refresh_review_agents()
+		if submit_job_manager.has_method("_refresh_presets"):
+			submit_job_manager._refresh_presets()
+
 
 ## Show notification for resumable sessions
 func _show_resume_sessions_notification(active_sessions: Array[Dictionary]) -> void:
@@ -589,6 +606,12 @@ func _handle_iteration_notification(session_id: String, topic: String, payload: 
 	if status_text == "awaiting_user":
 		if submit_job_manager.has_method("add_approval_card"):
 			submit_job_manager.add_approval_card(session_id, payload)
+		# Notify SubmitJob of terminal state
+		if submit_job_manager.has_method("_set_job_state"):
+			submit_job_manager._set_job_state(submit_job_manager.JobState.AWAITING_USER)
+	elif status_text in ["error", "failed"]:
+		if submit_job_manager.has_method("_set_job_state"):
+			submit_job_manager._set_job_state(submit_job_manager.JobState.ERROR)
 
 	for tab in SingletonObject.editor_pane.Tabs.get_children():
 		if not tab is Editor:

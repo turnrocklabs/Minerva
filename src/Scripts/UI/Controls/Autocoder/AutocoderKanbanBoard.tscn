@@ -74,13 +74,13 @@ color = Color(0.5, 0.7, 1.0, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Plan"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent"]
@@ -132,13 +132,13 @@ color = Color(0.95, 0.8, 0.3, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "In Progress"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent"]
@@ -190,13 +190,13 @@ color = Color(0.5, 0.9, 0.7, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "AI Review"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
@@ -248,13 +248,13 @@ color = Color(0.9, 0.6, 0.3, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Human Review"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
@@ -306,13 +306,13 @@ color = Color(0.5, 0.5, 0.55, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Done"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent"]

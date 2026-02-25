@@ -26,7 +26,7 @@ func _build_ui() -> void:
 
 	var title_label := Label.new()
 	title_label.text = "Recent Sessions"
-	title_label.add_theme_font_size_override("font_size", 13)
+	title_label.add_theme_font_size_override("font_size", 20)
 	title_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
 	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title_label)
@@ -34,7 +34,7 @@ func _build_ui() -> void:
 	_refresh_button = Button.new()
 	_refresh_button.text = "Refresh"
 	_refresh_button.flat = true
-	_refresh_button.add_theme_font_size_override("font_size", 12)
+	_refresh_button.add_theme_font_size_override("font_size", 18)
 	_refresh_button.pressed.connect(_on_refresh_pressed)
 	header.add_child(_refresh_button)
 
@@ -55,7 +55,7 @@ func _build_ui() -> void:
 	_loading_label = Label.new()
 	_loading_label.text = "Loading sessions..."
 	_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_loading_label.add_theme_font_size_override("font_size", 12)
+	_loading_label.add_theme_font_size_override("font_size", 18)
 	_loading_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
 	_loading_label.visible = false
 	_session_list_container.add_child(_loading_label)
@@ -64,7 +64,7 @@ func _build_ui() -> void:
 	_empty_label = Label.new()
 	_empty_label.text = "No previous sessions found.\nStart a new generation to create your first session."
 	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_empty_label.add_theme_font_size_override("font_size", 12)
+	_empty_label.add_theme_font_size_override("font_size", 18)
 	_empty_label.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))
 	_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_empty_label.visible = false
@@ -169,7 +169,7 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 
 	var id_label := Label.new()
 	id_label.text = short_id
-	id_label.add_theme_font_size_override("font_size", 13)
+	id_label.add_theme_font_size_override("font_size", 20)
 	id_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.92))
 	id_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header_row.add_child(id_label)
@@ -177,7 +177,7 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 	# Status badge with modern pill style
 	var status_badge := Label.new()
 	status_badge.text = _get_status_emoji(status) + " " + status.capitalize()
-	status_badge.add_theme_font_size_override("font_size", 10)
+	status_badge.add_theme_font_size_override("font_size", 15)
 	status_badge.add_theme_color_override("font_color", status_color)
 
 	var badge_style := StyleBoxFlat.new()
@@ -198,7 +198,7 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 
 	var prompt_label := Label.new()
 	prompt_label.text = prompt_preview
-	prompt_label.add_theme_font_size_override("font_size", 12)
+	prompt_label.add_theme_font_size_override("font_size", 18)
 	prompt_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
 	prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(prompt_label)
@@ -212,7 +212,7 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 	var created_at = str(session.get("created_at", ""))
 	var time_label := Label.new()
 	time_label.text = _format_timestamp(created_at)
-	time_label.add_theme_font_size_override("font_size", 11)
+	time_label.add_theme_font_size_override("font_size", 16)
 	time_label.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))
 	time_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(time_label)
@@ -221,7 +221,7 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 	var view_btn := Button.new()
 	view_btn.text = "View"
 	view_btn.flat = true
-	view_btn.add_theme_font_size_override("font_size", 11)
+	view_btn.add_theme_font_size_override("font_size", 16)
 	view_btn.pressed.connect(func(): _on_session_view_clicked(session))
 	footer_row.add_child(view_btn)
 
@@ -230,7 +230,7 @@ func _build_session_card(session: Dictionary) -> PanelContainer:
 		var resume_btn := Button.new()
 		resume_btn.text = "Resume"
 		resume_btn.flat = true
-		resume_btn.add_theme_font_size_override("font_size", 11)
+		resume_btn.add_theme_font_size_override("font_size", 16)
 		resume_btn.add_theme_color_override("font_color", Color(0.5, 0.9, 0.7))
 		resume_btn.pressed.connect(func(): _on_session_resume_clicked(session))
 		footer_row.add_child(resume_btn)

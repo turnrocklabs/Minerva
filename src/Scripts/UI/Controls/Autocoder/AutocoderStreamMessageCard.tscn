@@ -59,7 +59,7 @@ expand_icon = true
 [node name="IconLabel" type="Label" parent="Content/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "🤖"
 
 [node name="PreviewLabel" type="Label" parent="Content/Header"]
@@ -67,7 +67,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.75, 0.75, 0.8, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Message preview..."
 text_overrun_behavior = 3
 max_lines_visible = 2
@@ -82,7 +82,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.75, 0.75, 0.8, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Full message content..."
 autowrap_mode = 2
 

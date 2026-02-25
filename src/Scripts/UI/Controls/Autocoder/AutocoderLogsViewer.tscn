@@ -76,7 +76,7 @@ theme_override_constants/separation = 12
 
 [node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 27
 text = "📋"
 
 [node name="SessionLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
@@ -84,14 +84,14 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 15
+theme_override_font_sizes/font_size = 22
 text = "Session: -"
 
 [node name="StatusLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.8, 0.6, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Idle"
 
 [node name="SpinnerLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
@@ -99,13 +99,13 @@ unique_name_in_owner = true
 layout_mode = 2
 visible = false
 theme_override_colors/font_color = Color(0.4, 0.7, 1, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Running..."
 
 [node name="AdvancedToggle" type="CheckBox" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Advanced"
 
 [node name="SummaryPanel" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
@@ -130,28 +130,28 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "📊"
 
 [node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Review Summary"
 
 [node name="ReviewStateLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = ""
 
 [node name="ReviewSummaryLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/SummaryPanel/SummaryMargin/SummaryBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 autowrap_mode = 3
 text = ""
 
@@ -177,20 +177,20 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "⚡"
 
 [node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Actions Required"
 
 [node name="Subtitle" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.7, 0.8, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Review the generated code and choose an action"
 
 [node name="ButtonsRow" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent"]
@@ -201,14 +201,14 @@ theme_override_constants/separation = 12
 unique_name_in_owner = true
 custom_minimum_size = Vector2(140, 36)
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Request Review"
 
 [node name="ApproveButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/ReviewPanel/ReviewMargin/ReviewContent/ButtonsRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 36)
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Approve"
 
 [node name="ArtifactsPanel" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
@@ -233,14 +233,14 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "📦"
 
 [node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Generated Artifacts"
 
 [node name="PatchRow" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox"]
@@ -251,21 +251,21 @@ theme_override_constants/separation = 8
 custom_minimum_size = Vector2(70, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Patch:"
 
 [node name="PatchValueLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/PatchRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "-"
 text_overrun_behavior = 3
 
 [node name="PatchCopyButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/PatchRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "Copy"
 flat = true
 
@@ -277,21 +277,21 @@ theme_override_constants/separation = 8
 custom_minimum_size = Vector2(70, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Archive:"
 
 [node name="ArchiveValueLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/ArchiveRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "-"
 text_overrun_behavior = 3
 
 [node name="ArchiveCopyButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/ArtifactsPanel/ArtifactsMargin/ArtifactsBox/ArchiveRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "Copy"
 flat = true
 
@@ -316,14 +316,14 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard/TimelineMargin/TimelineContent/TimelineHeader"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "📜"
 
 [node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard/TimelineMargin/TimelineContent/TimelineHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Timeline"
 
 [node name="TimelineList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/TimelineCard/TimelineMargin/TimelineContent"]
@@ -352,14 +352,14 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard/IssuesMargin/IssuesContent/IssuesHeader"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "⚠️"
 
 [node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard/IssuesMargin/IssuesContent/IssuesHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Issues"
 
 [node name="IssuesList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/IssuesCard/IssuesMargin/IssuesContent"]
@@ -393,14 +393,14 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard/RawMargin/RawContent/RawHeader"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "📄"
 
 [node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard/RawMargin/RawContent/RawHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Raw JSON"
 
 [node name="RawList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/RawCard/RawMargin/RawContent"]
@@ -428,14 +428,14 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard/LlmMargin/LlmContent/LlmHeader"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "🤖"
 
 [node name="Title" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard/LlmMargin/LlmContent/LlmHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "LLM Traffic"
 
 [node name="LlmList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AdvancedSection/LlmCard/LlmMargin/LlmContent"]

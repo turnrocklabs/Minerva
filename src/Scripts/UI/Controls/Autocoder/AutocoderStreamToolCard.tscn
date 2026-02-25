@@ -59,7 +59,7 @@ expand_icon = true
 [node name="StatusLabel" type="Label" parent="Content/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "..."
 
 [node name="ToolNameLabel" type="Label" parent="Content/Header"]
@@ -67,14 +67,14 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.7, 0.8, 1, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "tool_name"
 
 [node name="DescriptionLabel" type="Label" parent="Content"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "Running tool..."
 autowrap_mode = 2
 
@@ -87,7 +87,7 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.9, 0.6, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 15
 text = "Output text"
 autowrap_mode = 2
 

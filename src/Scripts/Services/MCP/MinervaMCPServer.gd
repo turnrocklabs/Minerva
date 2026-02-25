@@ -379,10 +379,22 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return await _autocoder_create_review_agent(arguments)
 		"minerva_autocoder_list_review_agents":
 			return await _autocoder_list_review_agents(arguments)
+		"minerva_autocoder_update_review_agent":
+			return await _autocoder_update_review_agent(arguments)
+		"minerva_autocoder_delete_review_agent":
+			return await _autocoder_delete_review_agent(arguments)
 		"minerva_autocoder_list_sessions":
 			return await _autocoder_list_sessions(arguments)
 		"minerva_autocoder_download":
 			return await _autocoder_download(arguments)
+		"minerva_autocoder_create_review_preset":
+			return await _autocoder_create_review_preset(arguments)
+		"minerva_autocoder_list_review_presets":
+			return await _autocoder_list_review_presets(arguments)
+		"minerva_autocoder_update_review_preset":
+			return await _autocoder_update_review_preset(arguments)
+		"minerva_autocoder_delete_review_preset":
+			return await _autocoder_delete_review_preset(arguments)
 
 		# Meta tools (tool set management)
 		"minerva_list_tool_sets":
@@ -8155,6 +8167,33 @@ func _register_autocoder_tools() -> void:
 		}
 	, "autocoder")
 
+	_register_tool("minerva_autocoder_update_review_agent",
+		"Update an existing review agent. Only the provided fields are changed; omitted fields keep their current values.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {"type": "string", "description": "ID of the review agent to update"},
+				"name": {"type": "string", "description": "New display name (optional)"},
+				"prompt": {"type": "string", "description": "New review prompt/instructions (optional)"},
+				"setup_commands": {"type": "array", "items": {"type": "string"}, "description": "New setup commands (optional)"},
+				"model": {"type": "string", "description": "New model override (optional)"},
+				"tools_enabled": {"type": "boolean", "description": "Whether agent can use tools (optional)"}
+			},
+			"required": ["agent_id"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_delete_review_agent",
+		"Delete a review agent from the registry.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {"type": "string", "description": "ID of the review agent to delete"}
+			},
+			"required": ["agent_id"]
+		}
+	, "autocoder")
+
 	_register_tool("minerva_autocoder_list_sessions",
 		"List AutoCoder sessions, optionally filtered by status.",
 		{
@@ -8184,6 +8223,71 @@ func _register_autocoder_tools() -> void:
 				}
 			},
 			"required": []
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_create_review_preset",
+		"Create a named preset grouping review agent IDs for quick reuse during job submission.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the preset (e.g. 'Godot Review Suite')"
+				},
+				"agent_ids": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "List of review agent IDs to include in this preset"
+				}
+			},
+			"required": ["name", "agent_ids"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_list_review_presets",
+		"List all review agent presets.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_update_review_preset",
+		"Update an existing review agent preset. Only the provided fields are changed.",
+		{
+			"type": "object",
+			"properties": {
+				"preset_id": {
+					"type": "string",
+					"description": "ID of the preset to update"
+				},
+				"name": {
+					"type": "string",
+					"description": "New display name (optional)"
+				},
+				"agent_ids": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "New list of agent IDs (optional)"
+				}
+			},
+			"required": ["preset_id"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_delete_review_preset",
+		"Delete a review agent preset.",
+		{
+			"type": "object",
+			"properties": {
+				"preset_id": {
+					"type": "string",
+					"description": "ID of the preset to delete"
+				}
+			},
+			"required": ["preset_id"]
 		}
 	, "autocoder")
 
@@ -8430,6 +8534,37 @@ func _autocoder_list_review_agents(_args: Dictionary) -> Dictionary:
 	return {"success": true, "agents": agents, "count": agents.size()}
 
 
+func _autocoder_update_review_agent(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+	var name: String = args.get("name", "")
+	var prompt: String = args.get("prompt", "")
+	var setup_commands = args.get("setup_commands", null)
+	var model: String = args.get("model", "")
+	var tools_enabled = args.get("tools_enabled", null)
+	var ok = await adapter.update_review_agent(agent_id, name, prompt, setup_commands, model, tools_enabled)
+	if not ok:
+		return {"error": "Failed to update review agent", "success": false}
+	return {"success": true, "agent_id": agent_id, "message": "Review agent updated"}
+
+
+func _autocoder_delete_review_agent(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+	var ok = await adapter.delete_review_agent(agent_id)
+	if not ok:
+		return {"error": "Failed to delete review agent", "success": false}
+	return {"success": true, "agent_id": agent_id, "message": "Review agent deleted"}
+
+
 func _autocoder_list_sessions(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
@@ -8502,5 +8637,57 @@ func _autocoder_download(args: Dictionary) -> Dictionary:
 		"artifact_uri": artifact_uri,
 		"path": global_path
 	}
+
+
+func _autocoder_create_review_preset(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var preset_name: String = args.get("name", "")
+	if preset_name.is_empty():
+		return {"error": "name is required", "success": false}
+	var agent_ids: Array = args.get("agent_ids", [])
+	if agent_ids.is_empty():
+		return {"error": "agent_ids is required and must be non-empty", "success": false}
+	var preset_id = await adapter.create_review_preset(preset_name, agent_ids)
+	if not preset_id or (preset_id is String and preset_id.is_empty()):
+		return {"error": "Failed to create review preset", "success": false}
+	return {"success": true, "preset_id": preset_id, "message": "Review preset created"}
+
+
+func _autocoder_list_review_presets(_args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var presets = await adapter.list_review_presets()
+	return {"success": true, "presets": presets, "count": presets.size()}
+
+
+func _autocoder_update_review_preset(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var preset_id: String = args.get("preset_id", "")
+	if preset_id.is_empty():
+		return {"error": "preset_id is required", "success": false}
+	var preset_name: String = args.get("name", "")
+	var agent_ids: Array = args.get("agent_ids", [])
+	var ok = await adapter.update_review_preset(preset_id, preset_name, agent_ids)
+	if not ok:
+		return {"error": "Failed to update review preset", "success": false}
+	return {"success": true, "preset_id": preset_id, "message": "Review preset updated"}
+
+
+func _autocoder_delete_review_preset(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var preset_id: String = args.get("preset_id", "")
+	if preset_id.is_empty():
+		return {"error": "preset_id is required", "success": false}
+	var ok = await adapter.delete_review_preset(preset_id)
+	if not ok:
+		return {"error": "Failed to delete review preset", "success": false}
+	return {"success": true, "preset_id": preset_id, "message": "Review preset deleted"}
 
 #endregion

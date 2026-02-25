@@ -43,21 +43,21 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Task Title"
 autowrap_mode = 3
 
 [node name="StatusBadge" type="Label" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 15
 text = "Plan"
 
 [node name="ActionsButton" type="Button" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 flat = true
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "⋯"
 
 [node name="ActionsMenu" type="PopupMenu" parent="MarginContainer/VBoxContainer/Header"]
@@ -67,7 +67,7 @@ unique_name_in_owner = true
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Task description goes here..."
 autowrap_mode = 3
 
@@ -106,7 +106,7 @@ expand_icon = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 15
 text = "Details"
 
 [node name="ActivityIndicator" type="RichTextLabel" parent="MarginContainer/VBoxContainer/DetailsHeader"]
@@ -116,7 +116,7 @@ layout_mode = 2
 custom_minimum_size = Vector2(30, 0)
 bbcode_enabled = true
 theme_override_colors/default_color = Color(0.95, 0.8, 0.3, 1)
-theme_override_font_sizes/normal_font_size = 10
+theme_override_font_sizes/normal_font_size = 15
 text = "..."
 fit_content = true
 scroll_active = false
@@ -140,7 +140,7 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.4, 0.6, 0.9, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 15
 flat = true
 text = "🤖 Autocoder"
 tooltip_text = "Click to view source"
@@ -150,14 +150,14 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 15
 text = "anthropic/claude-sonnet-4"
 
 [node name="FilesLabel" type="Label" parent="MarginContainer/VBoxContainer/Footer"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 15
 text = "2 files"
 
 [connection signal="pressed" from="MarginContainer/VBoxContainer/DetailsHeader/ExpandControl/ExpandButton" to="." method="_on_expand_button_pressed"]

@@ -917,7 +917,7 @@ func _create_review_request_dialog() -> AcceptDialog:
 	# Info label
 	var info := Label.new()
 	info.text = "Leave blank to use default review behavior."
-	info.add_theme_font_size_override("font_size", 11)
+	info.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(info)
 
 	SingletonObject.add_child(dialog)
