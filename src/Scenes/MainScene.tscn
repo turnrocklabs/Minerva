@@ -438,6 +438,7 @@ split_offset = -100
 
 [node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2"]
 unique_name_in_owner = true
+clip_contents = true
 custom_minimum_size = Vector2(540, 0)
 layout_mode = 2
 size_flags_horizontal = 3

@@ -16,6 +16,7 @@ corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
 
 [node name="AutocoderKanbanBoard" type="Control"]
+clip_contents = true
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -36,14 +37,15 @@ vertical_scroll_mode = 1
 [node name="ColumnsContainer" type="HBoxContainer" parent="ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 0
+size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 16
 
 [node name="PlanColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn"]
@@ -101,7 +103,8 @@ target_status = 0
 [node name="InProgressColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn"]
@@ -159,7 +162,8 @@ target_status = 1
 [node name="AIReviewColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn"]
@@ -217,7 +221,8 @@ target_status = 2
 [node name="HumanReviewColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn"]
@@ -275,7 +280,8 @@ target_status = 3
 [node name="DoneColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn"]
