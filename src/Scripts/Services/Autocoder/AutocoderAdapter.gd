@@ -49,7 +49,7 @@ class GenerationOutput extends RefCounted:
 #     "topic": "autocoder/generate"
 # }
 
-func generate(prompt: String, session_id: String = "", input_archive_uri: String = "", require_permission: bool = false, model: String = "", review_agent_ids: Array = [], use_plan_tasks: bool = false, plan_task_ids: Array = [], auto_review: bool = false) -> GenerationOutput:
+func generate(prompt: String, session_id: String = "", input_archive_uri: String = "", require_permission: bool = false, model: String = "", review_agent_ids: Array = [], use_plan_tasks: bool = false, plan_task_ids: Array = [], auto_review: bool = false, review_model: String = "", task_model_overrides: Dictionary = {}) -> GenerationOutput:
 	if not Core.client._connected:
 		SingletonObject.create_toast_notification("Can't start autocoder. Core not connected")
 		return null
@@ -79,7 +79,13 @@ func generate(prompt: String, session_id: String = "", input_archive_uri: String
 		data["use_plan_tasks"] = true
 		if not plan_task_ids.is_empty():
 			data["plan_task_ids"] = plan_task_ids
-	
+
+	if not review_model.is_empty():
+		data["review_model"] = review_model
+
+	if not task_model_overrides.is_empty():
+		data["task_model_overrides"] = task_model_overrides
+
 	# Use longer timeout for code generation (can take several minutes)
 	var msg = await Core.send_message(service, action, data).with_timeout(600.0).receive()
 
@@ -1036,6 +1042,41 @@ func answer_question(session_id: String, question_id: String, answer: String) ->
 		var lowered = error_msg.to_lower()
 		if lowered.find("not found") != -1 or lowered.find("already") != -1:
 			return true
+		return false
+
+	return true
+
+
+## Inject additional context into a planning session
+## @param session_id: The session ID to inject context into
+## @param content: The context text to inject
+## @param context_type: "text" (user-typed) or "notes" (from notes panel)
+func inject_context(session_id: String, content: String, context_type: String = "text") -> bool:
+	if not Core.client._connected:
+		push_warning("Can't inject context - Core not connected")
+		return false
+
+	var action := get_action("autocoder/inject-context")
+	if not action:
+		push_warning("[AutocoderAdapter] inject-context action not available")
+		return false
+
+	var data := {
+		"session_id": session_id,
+		"content": content,
+		"context_type": context_type
+	}
+
+	# Use longer timeout — may trigger a re-plan
+	var msg = await Core.send_message(service, action, data).with_timeout(120.0).receive()
+
+	if not msg:
+		push_warning("No response when injecting context - may have timed out")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to inject context")
+		push_warning("Inject context error: %s" % error_msg)
 		return false
 
 	return true

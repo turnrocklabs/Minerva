@@ -58,6 +58,83 @@ visible = false
 [node name="ArtifactBrowser" parent="ArtifactBrowserPopup" instance=ExtResource("3_dt4tt")]
 unique_name_in_owner = true
 
+[node name="PhaseModelPopup" parent="." instance=ExtResource("2_0n6lh")]
+unique_name_in_owner = true
+title = "Per-Phase Model Settings"
+position = Vector2i(0, 0)
+size = Vector2i(500, 340)
+visible = false
+
+[node name="MarginContainer" type="MarginContainer" parent="PhaseModelPopup"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="VBoxContainer" type="VBoxContainer" parent="PhaseModelPopup/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Description" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 16
+text = "Override the model used for each phase. \"Use Default\" uses the main model dropdown selection."
+autowrap_mode = 3
+
+[node name="PlanModelRow" type="HBoxContainer" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PlanModelLabel" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer/PlanModelRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 0)
+theme_override_font_sizes/font_size = 17
+text = "Planning"
+
+[node name="PlanModelOption" type="OptionButton" parent="PhaseModelPopup/MarginContainer/VBoxContainer/PlanModelRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 17
+
+[node name="GenerateModelRow" type="HBoxContainer" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="GenerateModelLabel" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer/GenerateModelRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 0)
+theme_override_font_sizes/font_size = 17
+text = "Generation"
+
+[node name="GenerateModelOption" type="OptionButton" parent="PhaseModelPopup/MarginContainer/VBoxContainer/GenerateModelRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 17
+
+[node name="ReviewModelRow" type="HBoxContainer" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ReviewModelLabel" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer/ReviewModelRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 0)
+theme_override_font_sizes/font_size = 17
+text = "Review"
+
+[node name="ReviewModelOption" type="OptionButton" parent="PhaseModelPopup/MarginContainer/VBoxContainer/ReviewModelRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 17
+
 [node name="VSplitContainer" type="VSplitContainer" parent="."]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -232,6 +309,14 @@ layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Select generation model"
 theme_override_font_sizes/font_size = 17
+
+[node name="PhaseModelSettingsButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainVBox/MainInputCard/CardMargin/CardContent/OptionsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+tooltip_text = "Per-phase model settings"
+text = "⚙"
+flat = true
 
 [node name="AutoReviewCheckBox" type="CheckBox" parent="VSplitContainer/TopSection/ScrollContainer/MainVBox/MainInputCard/CardMargin/CardContent/OptionsRow"]
 unique_name_in_owner = true

@@ -8,6 +8,7 @@ signal task_delete_requested(task: AutocoderTask)
 signal source_clicked(task: AutocoderTask)
 signal note_dropped_on_card(note: Note, card: AutocoderTaskCard)
 signal note_link_removed(task: AutocoderTask, note_uuid: String)
+signal model_override_changed(task_id: String, model: String)
 
 var task: AutocoderTask
 
@@ -24,6 +25,11 @@ var task: AutocoderTask
 @onready var _stage_history_list: VBoxContainer = %StageHistoryList
 @onready var _activity_indicator: RichTextLabel = %ActivityIndicator
 var _source_menu: PopupMenu
+var _context_menu: PopupMenu
+var _model_submenu: PopupMenu
+
+## Available models for the "Set Model" submenu (set by the kanban board)
+var available_models: Array[Dictionary] = []
 
 var _expanded: bool = false
 var _expand_tween: Tween
@@ -44,7 +50,17 @@ func _ready():
 	_source_menu = PopupMenu.new()
 	_source_menu.id_pressed.connect(_on_source_menu_item_selected)
 	add_child(_source_menu)
-	
+
+	# Create context menu for right-click on card
+	_model_submenu = PopupMenu.new()
+	_model_submenu.name = "ModelSubmenu"
+	_model_submenu.id_pressed.connect(_on_model_submenu_item_selected)
+
+	_context_menu = PopupMenu.new()
+	_context_menu.add_child(_model_submenu)
+	_context_menu.add_submenu_item("Set Model", "ModelSubmenu")
+	add_child(_context_menu)
+
 	# Make card clickable
 	gui_input.connect(_on_card_clicked)
 
@@ -344,8 +360,11 @@ func _stop_activity_pulse() -> void:
 
 
 func _on_card_clicked(event: InputEvent):
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		task_clicked.emit(task)
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			task_clicked.emit(task)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			_show_card_context_menu()
 
 func _on_actions_button_pressed():
 	if not _actions_menu:
@@ -747,6 +766,56 @@ func _find_note_by_uuid_recursive(parent: Node, uuid: String) -> Note:
 			return result
 	
 	return null
+
+
+## --- Card Context Menu (right-click) ---
+
+func _show_card_context_menu() -> void:
+	if not _context_menu or not _model_submenu or not task:
+		return
+
+	# Populate model submenu
+	_model_submenu.clear()
+	_model_submenu.add_item("(Clear Override)", 0)
+	_model_submenu.add_separator()
+
+	for i in range(available_models.size()):
+		var model_data = available_models[i]
+		var model_id = str(model_data.get("id", ""))
+		if model_id.is_empty():
+			continue
+		var model_name = str(model_data.get("name", ""))
+		var label = model_name if not model_name.is_empty() else model_id
+		if not model_name.is_empty() and model_name != model_id:
+			label = "%s (%s)" % [model_name, model_id]
+		# Use index + 1 as ID (0 is reserved for clear)
+		_model_submenu.add_item(label, i + 1)
+		_model_submenu.set_item_metadata(_model_submenu.get_item_count() - 1, model_id)
+		# Check mark if this is the currently assigned model
+		if model_id == task.assigned_model:
+			_model_submenu.set_item_checked(_model_submenu.get_item_count() - 1, true)
+
+	var mouse_pos = get_global_mouse_position()
+	_context_menu.popup(Rect2i(int(mouse_pos.x), int(mouse_pos.y), 200, 0))
+
+
+func _on_model_submenu_item_selected(id: int) -> void:
+	if not task:
+		return
+
+	if id == 0:
+		# Clear override
+		task.assigned_model = ""
+		model_override_changed.emit(task.id, "")
+	else:
+		# Set model override from metadata
+		var item_index = _model_submenu.get_item_index(id)
+		if item_index >= 0:
+			var model_id = str(_model_submenu.get_item_metadata(item_index))
+			task.assigned_model = model_id
+			model_override_changed.emit(task.id, model_id)
+
+	_update_display()
 
 
 func _flash_control(control: Control):
