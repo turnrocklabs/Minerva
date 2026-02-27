@@ -40,14 +40,14 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.9, 0.92, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "📂 Generated Files"
 
 [node name="FileCountLabel" type="Label" parent="MainMargin/VBox/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "0 files"
 
 [node name="Spacer" type="Control" parent="MainMargin/VBox/Header"]
@@ -77,6 +77,6 @@ size_flags_vertical = 3
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "No files generated yet"
 horizontal_alignment = 1

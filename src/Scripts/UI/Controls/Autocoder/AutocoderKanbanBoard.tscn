@@ -16,6 +16,7 @@ corner_radius_bottom_right = 12
 corner_radius_bottom_left = 12
 
 [node name="AutocoderKanbanBoard" type="Control"]
+clip_contents = true
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -36,14 +37,15 @@ vertical_scroll_mode = 1
 [node name="ColumnsContainer" type="HBoxContainer" parent="ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 0
+size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 16
 
 [node name="PlanColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn"]
@@ -74,13 +76,13 @@ color = Color(0.5, 0.7, 1.0, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Plan"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/PlanColumn/ColumnPanel/ColumnMargin/ColumnContent"]
@@ -101,7 +103,8 @@ target_status = 0
 [node name="InProgressColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn"]
@@ -132,13 +135,13 @@ color = Color(0.95, 0.8, 0.3, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "In Progress"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/InProgressColumn/ColumnPanel/ColumnMargin/ColumnContent"]
@@ -159,7 +162,8 @@ target_status = 1
 [node name="AIReviewColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn"]
@@ -190,13 +194,13 @@ color = Color(0.5, 0.9, 0.7, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "AI Review"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/AIReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
@@ -217,7 +221,8 @@ target_status = 2
 [node name="HumanReviewColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn"]
@@ -248,13 +253,13 @@ color = Color(0.9, 0.6, 0.3, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Human Review"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/HumanReviewColumn/ColumnPanel/ColumnMargin/ColumnContent"]
@@ -275,7 +280,8 @@ target_status = 3
 [node name="DoneColumn" type="VBoxContainer" parent="ScrollContainer/ColumnsContainer"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(280, 0)
+custom_minimum_size = Vector2(200, 0)
+size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
 [node name="ColumnPanel" type="PanelContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn"]
@@ -306,13 +312,13 @@ color = Color(0.5, 0.5, 0.55, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Done"
 
 [node name="CountLabel" type="Label" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent/Header"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "(0)"
 
 [node name="ListScrollContainer" type="ScrollContainer" parent="ScrollContainer/ColumnsContainer/DoneColumn/ColumnPanel/ColumnMargin/ColumnContent"]

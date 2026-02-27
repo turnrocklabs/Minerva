@@ -2,6 +2,8 @@ class_name AutocoderActionStream
 extends Control
 
 signal question_answered(question_id: String, answer: String, session_id: String)
+signal approval_action(session_id: String, action: String, feedback: String)
+signal approval_extract(session_id: String)
 
 enum ActionType {
 	TOOL_CALL,
@@ -13,6 +15,7 @@ enum ActionType {
 const TOOL_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderStreamToolCard.tscn")
 const MESSAGE_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderStreamMessageCard.tscn")
 const QUESTION_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderStreamQuestionCard.tscn")
+const APPROVAL_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderStreamApprovalCard.tscn")
 
 @onready var _scroll_container: ScrollContainer = %ScrollContainer
 @onready var _actions_list: VBoxContainer = %ActionsList
@@ -20,6 +23,7 @@ const QUESTION_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/Autocod
 
 var _tool_cards: Dictionary = {}  # action_id -> card
 var _question_cards: Dictionary = {}  # question_id -> card
+var _approval_cards: Dictionary = {}  # session_id -> card
 var _auto_scroll: bool = true
 var _llm_card = null  # AutocoderStreamMessageCard - type removed to avoid load order issues
 var _llm_buffer: String = ""
@@ -90,6 +94,52 @@ func add_question(question_id: String, question_text: String, options: Array = [
 
 func add_error(message: String) -> void:
 	add_message("Error: " + message, "error")
+
+
+func add_approval_card(session_id: String, archive_uri: String, patch_uri: String, review_summary: String, file_count: int, review_results: Array = []) -> void:
+	# If card already exists and has been acted on, remove old and create fresh
+	if _approval_cards.has(session_id):
+		var existing = _approval_cards[session_id]
+		if existing and is_instance_valid(existing):
+			if existing.has_meta("acted"):
+				existing.queue_free()
+				_approval_cards.erase(session_id)
+			else:
+				# Update existing card that hasn't been acted on
+				existing.setup(session_id, archive_uri, patch_uri, review_summary, file_count, review_results)
+				_scroll_to_bottom()
+				return
+
+	var card = APPROVAL_CARD_SCENE.instantiate()
+	if _actions_list:
+		_actions_list.add_child(card)
+	card.setup(session_id, archive_uri, patch_uri, review_summary, file_count, review_results)
+	card.approved.connect(_on_approval_approved)
+	card.rejected.connect(_on_approval_rejected)
+	card.extract_requested.connect(_on_extract_requested)
+
+	_approval_cards[session_id] = card
+
+	_update_empty_state()
+	_scroll_to_bottom()
+
+
+func _on_approval_approved(session_id: String) -> void:
+	var card = _approval_cards.get(session_id)
+	if card and is_instance_valid(card):
+		card.set_state("approved")
+	approval_action.emit(session_id, "approve", "")
+
+
+func _on_approval_rejected(session_id: String, feedback: String) -> void:
+	var card = _approval_cards.get(session_id)
+	if card and is_instance_valid(card):
+		card.set_state("rejected")
+	approval_action.emit(session_id, "reject", feedback)
+
+
+func _on_extract_requested(session_id: String) -> void:
+	approval_extract.emit(session_id)
 
 func add_llm_progress(content: String) -> void:
 	"""Add or update LLM streaming progress (shows model thinking) - shows ALL content, no truncation"""
@@ -170,7 +220,7 @@ func add_llm_progress_with_full_content(preview_content: String, full_content: S
 		# Update full content if available
 		if not full_content.is_empty():
 			_llm_card._full_content = full_content
-			if not _llm_card._view_full_button:
+			if not _llm_card._has_full_content:
 				_llm_card._add_view_full_button()
 	else:
 		# Create new card with full content
@@ -221,6 +271,7 @@ func clear() -> void:
 			child.queue_free()
 	_tool_cards.clear()
 	_question_cards.clear()
+	_approval_cards.clear()
 	_update_empty_state()
 
 func _update_empty_state():

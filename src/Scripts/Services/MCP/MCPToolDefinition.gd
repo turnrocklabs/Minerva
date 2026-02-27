@@ -15,6 +15,10 @@ extends Resource
 ## Name of the server that provides this tool
 @export var server_name: String = ""
 
+## Tool set this tool belongs to (e.g., "chat", "autocoder", "spreadsheet")
+## Used for filtering tools by category. Empty string means uncategorized.
+@export var tool_set: String = ""
+
 
 ## Convert to OpenAI function calling format
 func to_openai_format() -> Dictionary:

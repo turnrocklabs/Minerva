@@ -32,7 +32,10 @@ static func format_action_summary(action_type: String, payload: Dictionary) -> S
 		"review_model":
 			var details = payload.get("details", {})
 			var name = str(details.get("model_display_name", details.get("model_id", "")))
-			return "Review model: %s" % (name if not name.is_empty() else "model")
+			var model = str(details.get("model", ""))
+			if not model.is_empty():
+				return "Review: %s [%s]" % [name if not name.is_empty() else "agent", model]
+			return "Review: %s" % (name if not name.is_empty() else "model")
 		"review_fix":
 			var summary = str(payload.get("summary", ""))
 			return summary if not summary.is_empty() else "Applying fix"
@@ -51,7 +54,10 @@ static func format_action_secondary(action_type: String, payload: Dictionary) ->
 	if action_type == "review_model":
 		var issue_count = details.get("issue_count", null)
 		var fix_count = details.get("issues_with_fixes", details.get("fixes_count", null))
+		var model = str(details.get("model", ""))
 		var parts: Array[String] = []
+		if not model.is_empty():
+			parts.append("model: %s" % model)
 		if issue_count != null:
 			parts.append("issues: %s" % str(issue_count))
 		if fix_count != null:

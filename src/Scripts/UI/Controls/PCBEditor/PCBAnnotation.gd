@@ -244,7 +244,7 @@ func load_from_dict(data: Dictionary) -> void:
 
 	var type_str: String = data.get("type", "TEXT")
 	var type_idx := AnnotationType.keys().find(type_str)
-	type = type_idx as AnnotationType if type_idx >= 0 else AnnotationType.TEXT
+	type = (type_idx as AnnotationType) if type_idx >= 0 else AnnotationType.TEXT
 
 	positions.clear()
 	var positions_data: Array = data.get("positions", [])

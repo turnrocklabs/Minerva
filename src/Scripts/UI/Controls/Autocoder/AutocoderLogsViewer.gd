@@ -3,9 +3,11 @@ extends VBoxContainer
 
 signal entry_added
 
-static var autocoder_logs_scene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.tscn")
+static var autocoder_logs_scene: PackedScene = null
 
 static func create() -> AutocoderLogsViewer:
+	if autocoder_logs_scene == null:
+		autocoder_logs_scene = load("res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.tscn")
 	return autocoder_logs_scene.instantiate()
 
 
@@ -917,7 +919,7 @@ func _create_review_request_dialog() -> AcceptDialog:
 	# Info label
 	var info := Label.new()
 	info.text = "Leave blank to use default review behavior."
-	info.add_theme_font_size_override("font_size", 11)
+	info.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(info)
 
 	SingletonObject.add_child(dialog)

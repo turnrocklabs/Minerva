@@ -607,8 +607,8 @@ func _on_annotation_mode_changed(mode: int) -> void:
 
 
 ## Handle request for text input (when placing text annotation)
-func _on_annotation_text_requested(position_: Vector2) -> void:
-	pending_text_position = position_
+func _on_annotation_text_requested(world_pos: Vector2) -> void:
+	pending_text_position = world_pos
 	text_input_line.text = ""
 	text_input_dialog.popup_centered()
 	text_input_line.grab_focus()
@@ -821,11 +821,11 @@ func export_yaml() -> String:
 
 
 ## Add a component programmatically
-func add_component_at(component_id: String, footprint_type: int, position_: Vector2) -> void:
+func add_component_at(component_id: String, footprint_type: int, world_pos: Vector2) -> void:
 	var comp := PCBComponentScript.new()
 	comp.id = component_id if not component_id.is_empty() else data.generate_component_id("U")
 	comp.footprint = footprint_type as PCBComponentScript.FootprintType
-	comp.position = position_
+	comp.position = world_pos
 	comp.setup_standard_pins()
 
 	data.save_to_history("Add " + comp.id)

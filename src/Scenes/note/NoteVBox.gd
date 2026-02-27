@@ -39,6 +39,13 @@ var supports_remote: = true:
 
 var uuid: = ""
 
+## If set, this tab is locked to an agent and hidden by default.
+var locked_agent_id: String = ""
+
+## Template chat links for this tab. New notes added to this tab inherit these IDs.
+## Used by agent memory tabs to auto-link notes to the agent's chat.
+var default_linked_chat_ids: Array[String] = []
+
 var _auto_upload_backing: bool = false
 var auto_upload: bool:
 	set(value):
@@ -67,6 +74,13 @@ func _ready() -> void:
 	auto_upload = _auto_upload_backing
 
 func _on_vbox_child_entered_tree(node: Node):
+	if node is Note:
+		# Propagate tab-level default links to new notes (e.g., agent memory tabs)
+		if not default_linked_chat_ids.is_empty() and node.linked_chat_ids.is_empty():
+			for lid in default_linked_chat_ids:
+				if lid not in node.linked_chat_ids:
+					node.linked_chat_ids.append(lid)
+
 	if node is Note and supports_remote:
 		
 		var controller: = SingletonObject.notes_sync_manger.get_sync_controller(node)

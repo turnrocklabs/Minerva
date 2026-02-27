@@ -280,7 +280,7 @@ func _rebuild_review_agents_ui():
 		
 		# Style the checkbox
 		checkbox.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-		checkbox.add_theme_font_size_override("font_size", 12)
+		checkbox.add_theme_font_size_override("font_size", 18)
 		
 		_review_agents_list.add_child(checkbox)
 

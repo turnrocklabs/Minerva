@@ -198,6 +198,10 @@ func _ready():
 	# Create Chats submenu (replaces the checkable "Chats" item with a submenu for Chat/Autocoder)
 	_setup_chats_submenu()
 
+	# Add "Agent Tabs" checkable toggle to the View menu
+	view.add_separator()
+	view.add_check_item("Agent Tabs", 20)
+
 
 func _setup_tools_menu() -> void:
 	tools_menu = PopupMenu.new()
@@ -233,6 +237,8 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_submenu_item("Minerva (Self)", minerva_submenu.name)
 
 	tools_menu.add_separator()
+	tools_menu.add_item("Agents...", 102)
+	tools_menu.add_separator()
 	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
@@ -254,12 +260,23 @@ func _setup_tools_menu() -> void:
 		add_child(tools_menu)
 
 
+var _agent_manager_window: AgentManagerWindow = null
+
 func _on_tools_menu_id_pressed(id: int) -> void:
 	match id:
 		100:
 			_reconnect_all_mcp_servers()
 		101:
 			_show_mcp_installer()
+		102:
+			_show_agent_manager()
+
+
+func _show_agent_manager() -> void:
+	if not _agent_manager_window:
+		_agent_manager_window = AgentManagerWindow.new()
+		get_tree().root.add_child(_agent_manager_window)
+	_agent_manager_window.popup_centered()
 
 
 ## Setup the Chats submenu for switching between Chat and Autocoder views
@@ -617,6 +634,67 @@ func _refresh_minerva_submenu() -> void:
 		minerva_submenu.set_item_disabled(minerva_submenu.get_item_count() - 1, true)
 		minerva_submenu.add_item("Start HTTP Server", 11)
 
+	# Tool Sets submenu (stays open on toggle so users can check multiple items)
+	var minerva_server = mcp.minerva_server if mcp else null
+	if minerva_server:
+		# Remove old submenu child if it exists from a previous refresh
+		var old_sub = minerva_submenu.get_node_or_null("ToolSetsSubmenu")
+		if old_sub:
+			minerva_submenu.remove_child(old_sub)
+			old_sub.queue_free()
+
+		var ts_menu := PopupMenu.new()
+		ts_menu.name = "ToolSetsSubmenu"
+		ts_menu.hide_on_checkable_item_selection = false
+		ts_menu.id_pressed.connect(_on_tool_set_submenu_pressed)
+		minerva_submenu.add_child(ts_menu)
+		minerva_submenu.add_submenu_item("Tool Sets", ts_menu.name)
+
+		var all_enabled: bool = minerva_server._enabled_tool_sets.is_empty()
+
+		# "All" toggle at the top
+		ts_menu.add_check_item("All", 50)
+		var all_idx = ts_menu.get_item_index(50)
+		ts_menu.set_item_checked(all_idx, all_enabled)
+
+		ts_menu.add_separator()
+
+		# Gather tool sets with counts (excluding meta — always available)
+		var sets: Dictionary = {}
+		for tool_name in mcp.tool_registry:
+			var tool = mcp.tool_registry[tool_name]
+			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
+				sets[tool.tool_set] = sets.get(tool.tool_set, 0) + 1
+
+		# Sort set names for consistent ordering
+		var set_names: Array = sets.keys()
+		set_names.sort()
+
+		# Add a check item for each tool set (IDs 100+)
+		_minerva_tool_set_names = set_names
+		for i in range(set_names.size()):
+			var tool_set_name: String = set_names[i]
+			var count: int = sets[tool_set_name]
+			var item_id: int = 100 + i
+			var is_enabled: bool = all_enabled or (tool_set_name in minerva_server._enabled_tool_sets)
+			ts_menu.add_check_item("%s (%d)" % [tool_set_name, count], item_id)
+			var item_idx = ts_menu.get_item_index(item_id)
+			ts_menu.set_item_checked(item_idx, is_enabled)
+
+
+## Cached tool set names for mapping menu IDs back to set names
+var _minerva_tool_set_names: Array = []
+
+
+func _on_tool_set_submenu_pressed(id: int) -> void:
+	match id:
+		50: _toggle_all_tool_sets()
+		_:
+			if id >= 100:
+				_toggle_tool_set(id - 100)
+	# Re-sync the check states without closing the submenu
+	_refresh_tool_set_checks()
+
 
 ## Refresh all tool submenus
 func _refresh_all_tool_submenus() -> void:
@@ -661,6 +739,81 @@ func _on_minerva_submenu_pressed(id: int) -> void:
 		0: _toggle_minerva_server()
 		10: _stop_minerva_http_server()
 		11: _start_minerva_http_server()
+
+
+func _toggle_all_tool_sets() -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp or not mcp.minerva_server:
+		return
+	var server = mcp.minerva_server
+	if server._enabled_tool_sets.is_empty():
+		# Currently all enabled — there's nothing to disable to, so ignore
+		# (user should uncheck individual sets instead)
+		pass
+	else:
+		# Re-enable all
+		server._enabled_tool_sets = []
+		SingletonObject.create_toast_notification("All tool sets enabled", ToastNotification.Type.INFO)
+
+
+func _toggle_tool_set(index: int) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp or not mcp.minerva_server:
+		return
+	if index < 0 or index >= _minerva_tool_set_names.size():
+		return
+
+	var server = mcp.minerva_server
+	var tool_set_name: String = _minerva_tool_set_names[index]
+
+	if server._enabled_tool_sets.is_empty():
+		# Currently all enabled — populate with all sets minus the one being toggled off
+		var all_sets: Array = []
+		for tool_name in mcp.tool_registry:
+			var tool = mcp.tool_registry[tool_name]
+			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
+				if tool.tool_set not in all_sets:
+					all_sets.append(tool.tool_set)
+		all_sets.erase(tool_set_name)
+		server._enabled_tool_sets = all_sets
+		SingletonObject.create_toast_notification("Disabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
+	else:
+		# Toggle within the existing enabled list
+		if tool_set_name in server._enabled_tool_sets:
+			server._enabled_tool_sets.erase(tool_set_name)
+			SingletonObject.create_toast_notification("Disabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
+			# If nothing left enabled, re-enable all
+			if server._enabled_tool_sets.is_empty():
+				SingletonObject.create_toast_notification("All tool sets re-enabled", ToastNotification.Type.INFO)
+		else:
+			server._enabled_tool_sets.append(tool_set_name)
+			SingletonObject.create_toast_notification("Enabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
+
+
+## Update check marks in the tool sets submenu without rebuilding it
+func _refresh_tool_set_checks() -> void:
+	var ts_menu: PopupMenu = minerva_submenu.get_node_or_null("ToolSetsSubmenu")
+	if not ts_menu:
+		return
+	var mcp = SingletonObject.mcp_manager
+	if not mcp or not mcp.minerva_server:
+		return
+	var server = mcp.minerva_server
+	var all_enabled: bool = server._enabled_tool_sets.is_empty()
+
+	# Update "All" checkbox
+	var all_idx = ts_menu.get_item_index(50)
+	if all_idx >= 0:
+		ts_menu.set_item_checked(all_idx, all_enabled)
+
+	# Update individual set checkboxes
+	for i in range(_minerva_tool_set_names.size()):
+		var tool_set_name: String = _minerva_tool_set_names[i]
+		var item_id: int = 100 + i
+		var item_idx = ts_menu.get_item_index(item_id)
+		if item_idx >= 0:
+			var is_enabled: bool = all_enabled or (tool_set_name in server._enabled_tool_sets)
+			ts_menu.set_item_checked(item_idx, is_enabled)
 
 
 ## Toggle Nudge connection
@@ -1110,6 +1263,7 @@ func _on_view_id_pressed(id: int):
 		16: SingletonObject.increment_scale_ui()
 		17: SingletonObject.decrement_ui_scale()
 		18: SingletonObject.reset_ui_scale()
+		20: _toggle_agent_tabs(); return
 	var index = view.get_item_index(id)
 	
 	if view.is_item_checkable(index):
@@ -1130,6 +1284,18 @@ func _show_messages():
 func _show_notes():
 	for i in range(SingletonObject.notes_container.get_tab_count()):
 		SingletonObject.notes_container.show_notes(i)
+
+
+var _agent_tabs_visible: bool = false
+func _toggle_agent_tabs() -> void:
+	_agent_tabs_visible = not _agent_tabs_visible
+	var idx = view.get_item_index(20)
+	view.set_item_checked(idx, _agent_tabs_visible)
+	if SingletonObject.notes_container:
+		SingletonObject.notes_container.set_agent_tabs_visible(_agent_tabs_visible)
+	if SingletonObject.drawer_notes_container:
+		SingletonObject.drawer_notes_container.set_agent_tabs_visible(_agent_tabs_visible)
+
 
 func _on_view_about_to_popup():
 	view.set_item_checked(1, SingletonObject.main_ui.editor_pane.visible)

@@ -227,9 +227,16 @@ class RequestResults extends RefCounted:
 # Helper function to make HTTP requests
 ## This function will return array of
 var timed_out: bool = false
+## Per-request generation counter to invalidate stale timeout timers.
+## SceneTreeTimers can't be cancelled, so old timers from previous requests
+## may fire during a new request. By checking the counter, we ensure only
+## the timer belonging to the current request can trigger a timeout.
+var _request_generation: int = 0
 func make_request(url: String, method: int, body: Variant = "", headers: Array[String]= []) -> RequestResults:
-	# Reset timeout state for each new request
+	# Reset timeout state and bump generation for each new request
 	timed_out = false
+	_request_generation += 1
+	var my_generation: int = _request_generation
 	# setup request object for the delta endpoint and append API key
 	var http_request: = HTTPRequest.new()
 	http_request.use_threads = true
@@ -271,10 +278,21 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 
 	if timeout_seconds > 0 and is_inside_tree():
 		timeout_timer = get_tree().create_timer(timeout_seconds)
+		# Use WeakRefs to avoid "Lambda capture was freed" errors.
+		# SceneTreeTimers can't be cancelled, so stale timers will fire
+		# after the provider or http_request has been queue_free'd.
+		var provider_ref: WeakRef = weakref(self)
+		var request_ref: WeakRef = weakref(http_request)
 		timeout_timer.timeout.connect(func():
-			timed_out = true
-			if is_instance_valid(http_request):
-				http_request.cancel_request()
+			var provider = provider_ref.get_ref()
+			if provider == null:
+				return
+			# Only timeout if this timer belongs to the current request.
+			if my_generation == provider._request_generation:
+				provider.timed_out = true
+				var req = request_ref.get_ref()
+				if req != null:
+					req.cancel_request()
 		)
 
 	# data returned from awaited signal is array of arguments that would
