@@ -512,14 +512,14 @@ func get_frame_at_time(time_ms: int) -> int:
 		return -1
 	var target_us := time_ms * 1000
 	# Binary search
-	var lo := 0
-	var hi := frame_index.size() - 1
+	var lo : int = 0
+	var hi : int = frame_index.size() - 1
 	while lo < hi:
-		var mid := (lo + hi) / 2
+		var mid := (lo + hi) / 2.0
 		if frame_index[mid][1] < target_us:
-			lo = mid + 1
+			lo = int(mid + 1)
 		else:
-			hi = mid
+			hi = int(mid)
 	return lo
 
 
@@ -606,8 +606,8 @@ static func list_recordings() -> Array:
 
 
 ## Load a recording from disk
-static func load_recording(recording_id: String) -> VideoRecordingData:
-	var data := VideoRecordingData.new(recording_id)
+static func load_recording(recording_id_: String) -> VideoRecordingData:
+	var data := VideoRecordingData.new(recording_id_)
 	if data.load_manifest() != OK:
 		return null
 	data.load_frame_index()

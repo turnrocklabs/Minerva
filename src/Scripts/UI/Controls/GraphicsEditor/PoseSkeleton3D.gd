@@ -95,7 +95,8 @@ func _ready() -> void:
 	_create_bone_visuals()
 	_create_bone_lines()
 	skeleton.rotate_y(180.0)
-
+	await get_tree().process_frame
+	set_process(false)
 
 func _setup_skeleton() -> void:
 	if not skeleton:
@@ -211,7 +212,7 @@ func _create_bone_lines() -> void:
 
 	add_child(bone_lines_mesh)
 
-
+# TODO make if so this code does not run unless the editor is visible
 func _process(_delta: float) -> void:
 	_update_visual_positions()
 	_update_bone_lines()

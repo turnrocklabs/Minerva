@@ -109,6 +109,22 @@ signal selection_changed()
 @onready var seed_line_edit: LineEdit = %SeedLineEdit
 @onready var workflow_option_button: OptionButton = %WorkflowOptionButton
 
+@onready var image_1_texture_rect: TextureRect = %Image1TextureRect
+@onready var load_image_1_button: Button = %LoadImage1Button
+@onready var pick_image_1_button: Button = %PickImage1Button
+@onready var pose_editor_image_1_button: Button = %PoseEditorImage1Button
+@onready var send_image_1_button: CheckButton = %SendImage1Button
+@onready var image_2_texture_rect: TextureRect = %Image2TextureRect
+@onready var load_image_2_button: Button = %LoadImage2Button
+@onready var pick_image_2_button: Button = %PickImage2Button
+@onready var pose_editor_image_2_button: Button = %PoseEditorImage2Button
+@onready var send_image_2_button: CheckButton = %SendImage2sButton
+@onready var image_3_texture_rect: TextureRect = %Image3TextureRect
+@onready var load_image_3_button: Button = %LoadImage3Button
+@onready var pick_image_3_button: Button = %PickImage3Button
+@onready var pose_editor_image_3_button: Button = %PoseEditorImage3Button
+@onready var send_image_3_button: CheckButton = %SendImage3Button
+
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
 @onready var mask_layer_cards_container: VBoxContainer = %MaskLayerCardsContainer
@@ -125,13 +141,13 @@ signal selection_changed()
 @onready var send_action_button: Button = %SendActionButton
 @onready var edit_img_button: Button = %EditImgButton
 @onready var send_mask_edit_button: Button = %SendMaskEditButton
+@onready var three_image_workflow_button: Button = %ThreeImageWorkflowButton
+
 
 
 @onready var full_size_ai_container: MarginContainer = %FullSizeAIContainer
 @onready var full_size_layers_container: MarginContainer = %FullSizeLayersContainer
 @onready var dock_panel_container: MarginContainer = %DockPanelContainer
-@onready var mini_map_control: Control = %MiniMapControl
-@onready var mini_map_texture_rect: TextureRect = %TextureRect
 
 @onready var dock_split_container: VSplitContainer = %DockSplitContainer
 @onready var render_view_control: RenderViewRect = %RenderViewControl
@@ -421,6 +437,74 @@ func _build_flex_switches(action_id: String) -> Dictionary:
 	}
 
 
+## Run flex 2-image composition (image1 + image2). Returns result dict with success, request_id, message or error.
+func request_flex_compose_two(gen_params: Dictionary, image1_layer_name: String, image2_layer_name: String) -> Dictionary:
+	if image1_layer_name.is_empty():
+		return {"error": "image1_layer is required for compose_2", "success": false}
+	if image2_layer_name.is_empty():
+		return {"error": "image2_layer is required for compose_2", "success": false}
+	var image1_layer: LayerV2 = _find_layer_by_name(image1_layer_name)
+	var image2_layer: LayerV2 = _find_layer_by_name(image2_layer_name)
+	if not image1_layer:
+		return {"error": "Image 1 layer not found: %s" % image1_layer_name, "success": false}
+	if image1_layer.type != LayerV2.Type.IMAGE:
+		return {"error": "Image 1 layer must be an image layer", "success": false}
+	if not image2_layer:
+		return {"error": "Image 2 layer not found: %s" % image2_layer_name, "success": false}
+	if image2_layer.type != LayerV2.Type.IMAGE:
+		return {"error": "Image 2 layer must be an image layer", "success": false}
+	var switches: Dictionary = _build_flex_switches("compose_2")
+	for key in switches:
+		gen_params[key] = switches[key]
+	var images: Array = [
+		{"buffer": image1_layer.image.save_png_to_buffer(), "role": "image1", "filename": "image1.png"},
+		{"buffer": image2_layer.image.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
+	]
+	_current_image_gen_request_id = MediaGen.send_media_flex_request(gen_params, images)
+	return {"success": true, "request_id": _current_image_gen_request_id, "message": "Flex 2-image composition started"}
+
+
+## Run flex 3-image composition (image1 + image2 + pose editor texture as image3). Returns result dict.
+func request_flex_compose_three_with_pose(gen_params: Dictionary, image1_layer_name: String, image2_layer_name: String) -> Dictionary:
+	if image1_layer_name.is_empty():
+		return {"error": "image1_layer is required for compose_3_with_pose", "success": false}
+	if image2_layer_name.is_empty():
+		return {"error": "image2_layer is required for compose_3_with_pose", "success": false}
+	var layer1: LayerV2 = _find_layer_by_name(image1_layer_name)
+	var layer2: LayerV2 = _find_layer_by_name(image2_layer_name)
+	if not layer1:
+		return {"error": "Image 1 layer not found: %s" % image1_layer_name, "success": false}
+	if layer1.type != LayerV2.Type.IMAGE:
+		return {"error": "Image 1 must be an image layer", "success": false}
+	if not layer2:
+		return {"error": "Image 2 layer not found: %s" % image2_layer_name, "success": false}
+	if layer2.type != LayerV2.Type.IMAGE and layer2.type != LayerV2.Type.MASK:
+		return {"error": "Image 2 must be an image or mask layer", "success": false}
+	var pose_buffer: PackedByteArray = PackedByteArray()
+	if d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture:
+		var pose_image: Image = pose_editor_panel.pose_texture.get_image()
+		if pose_image != null and not pose_image.is_empty():
+			if pose_image.get_format() != Image.FORMAT_RGBA8:
+				pose_image = pose_image.duplicate()
+				pose_image.convert(Image.FORMAT_RGBA8)
+			pose_buffer = pose_image.save_png_to_buffer()
+	if pose_buffer.is_empty():
+		return {"error": "Pose required for compose_3_with_pose. Enable pose editor and ensure it has a texture.", "success": false}
+	var switches: Dictionary = _build_flex_switches("compose_3_with_pose")
+	for key in switches:
+		gen_params[key] = switches[key]
+	var img1_for_export: Image = layer1.image.duplicate()
+	if img1_for_export.get_format() != Image.FORMAT_RGBA8:
+		img1_for_export.convert(Image.FORMAT_RGBA8)
+	var img2_for_export: Image = layer2.image.duplicate()
+	if img2_for_export.get_format() != Image.FORMAT_RGBA8:
+		img2_for_export.convert(Image.FORMAT_RGBA8)
+	var image1_dict: Dictionary = {"buffer": img1_for_export.save_png_to_buffer(), "role": "image1", "filename": "image1.png"}
+	var image2_dict: Dictionary = {"buffer": img2_for_export.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
+	_current_image_gen_request_id = MediaGen.send_media_flex_request_three_with_pose(gen_params, image1_dict, image2_dict, pose_buffer)
+	return {"success": true, "request_id": _current_image_gen_request_id, "message": "Flex 2 layers + pose composition started"}
+
+
 ## Execute a flex workflow action (qwen_2511_flex)
 func _execute_flex_action(action_id: String, gen_params: Dictionary, original_params: Dictionary) -> Dictionary:
 	# Build the boolean switches for the action
@@ -457,38 +541,7 @@ func _execute_flex_action(action_id: String, gen_params: Dictionary, original_pa
 			})
 
 		"compose_2":
-			# Need image1 and image2
-			var image1_name: String = original_params.get("image1_layer", "")
-			var image2_name: String = original_params.get("image2_layer", "")
-
-			if image1_name.is_empty():
-				return {"error": "image1_layer is required for compose_2", "success": false}
-			if image2_name.is_empty():
-				return {"error": "image2_layer is required for compose_2", "success": false}
-
-			var image1_layer: LayerV2 = _find_layer_by_name(image1_name)
-			var image2_layer: LayerV2 = _find_layer_by_name(image2_name)
-
-			if not image1_layer:
-				return {"error": "Image 1 layer not found: %s" % image1_name, "success": false}
-			if image1_layer.type != LayerV2.Type.IMAGE:
-				return {"error": "Image 1 layer must be an image layer", "success": false}
-
-			if not image2_layer:
-				return {"error": "Image 2 layer not found: %s" % image2_name, "success": false}
-			if image2_layer.type != LayerV2.Type.IMAGE:
-				return {"error": "Image 2 layer must be an image layer", "success": false}
-
-			images.append({
-				"buffer": image1_layer.image.save_png_to_buffer(),
-				"role": "image1",
-				"filename": "image1.png"
-			})
-			images.append({
-				"buffer": image2_layer.image.save_png_to_buffer(),
-				"role": "image2",
-				"filename": "image2.png"
-			})
+			return request_flex_compose_two(gen_params, original_params.get("image1_layer", ""), original_params.get("image2_layer", ""))
 
 		"compose_3":
 			# Need image1, image2, and image3
@@ -539,47 +592,7 @@ func _execute_flex_action(action_id: String, gen_params: Dictionary, original_pa
 			})
 
 		"compose_3_with_pose":
-			# image1 and image2 from params (layer names); image3 = pose from pose editor
-			var image1_name: String = original_params.get("image1_layer", "")
-			var image2_name: String = original_params.get("image2_layer", "")
-			if image1_name.is_empty():
-				return {"error": "image1_layer is required for compose_3_with_pose", "success": false}
-			if image2_name.is_empty():
-				return {"error": "image2_layer is required for compose_3_with_pose", "success": false}
-			var layer1: LayerV2 = _find_layer_by_name(image1_name)
-			var layer2: LayerV2 = _find_layer_by_name(image2_name)
-			if not layer1:
-				return {"error": "Image 1 layer not found: %s" % image1_name, "success": false}
-			if layer1.type != LayerV2.Type.IMAGE:
-				return {"error": "Image 1 must be an image layer", "success": false}
-			if not layer2:
-				return {"error": "Image 2 layer not found: %s" % image2_name, "success": false}
-			if layer2.type != LayerV2.Type.IMAGE and layer2.type != LayerV2.Type.MASK:
-				return {"error": "Image 2 must be an image or mask layer", "success": false}
-			var pose_buffer: PackedByteArray = PackedByteArray()
-			if d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture:
-				var pose_image: Image = pose_editor_panel.pose_texture.get_image()
-				if pose_image != null and not pose_image.is_empty():
-					if pose_image.get_format() != Image.FORMAT_RGBA8:
-						pose_image = pose_image.duplicate()
-						pose_image.convert(Image.FORMAT_RGBA8)
-					pose_buffer = pose_image.save_png_to_buffer()
-			if pose_buffer.is_empty():
-				return {"error": "Pose required for compose_3_with_pose. Enable pose editor and ensure it has a texture.", "success": false}
-			var img1_for_export: Image = layer1.image.duplicate()
-			if img1_for_export.get_format() != Image.FORMAT_RGBA8:
-				img1_for_export.convert(Image.FORMAT_RGBA8)
-			var img2_for_export: Image = layer2.image.duplicate()
-			if img2_for_export.get_format() != Image.FORMAT_RGBA8:
-				img2_for_export.convert(Image.FORMAT_RGBA8)
-			var image1_dict: Dictionary = {"buffer": img1_for_export.save_png_to_buffer(), "role": "image1", "filename": "image1.png"}
-			var image2_dict: Dictionary = {"buffer": img2_for_export.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
-			_current_image_gen_request_id = MediaGen.send_media_flex_request_three_with_pose(gen_params, image1_dict, image2_dict, pose_buffer)
-			return {
-				"success": true,
-				"request_id": _current_image_gen_request_id,
-				"message": "Flex 2 layers + pose composition started"
-			}
+			return request_flex_compose_three_with_pose(gen_params, original_params.get("image1_layer", ""), original_params.get("image2_layer", ""))
 
 		_:
 			return {"error": "Unknown flex action: %s" % action_id, "success": false}
@@ -704,19 +717,10 @@ func _ready() -> void:
 	
 	get_viewport().set_embedding_subwindows(false)
 	
-	mini_map_control.visible = false
-
 	# Set up MiniMap ViewportTexture at runtime to avoid export errors
 	var viewport_texture := ViewportTexture.new()
 	viewport_texture.viewport_path = drawing_area_sub_viewport.get_path()
-	mini_map_texture_rect.texture = viewport_texture
-
-	# Set up PoseTexture ViewportTexture at runtime to avoid export errors
-	if pose_editor_panel and pose_editor_panel.subviewport and pose_texture_rect:
-		var pose_viewport_texture := ViewportTexture.new()
-		pose_viewport_texture.viewport_path = pose_editor_panel.subviewport.get_path()
-		pose_texture_rect.texture = pose_viewport_texture
-
+	
 	if Core.connected:
 		enable_ai_features()
 	else:
@@ -743,6 +747,13 @@ func _ready() -> void:
 	_on_workflow_option_button_item_selected(0)  # Initialize current_workflow to match the selection
 
 	response_layout_toggle()
+
+	# Send-image toggles: enable only when the corresponding texture rect has a texture
+	_update_send_image_buttons_enabled()
+
+	# Edit button handles both single-image edit and mask (selective) edit; mask button is hidden
+	send_mask_edit_button.visible = false
+	edit_img_button.tooltip_text = "Edit image (Image 1). If Image 2 is enabled, sends image + mask for selective editing."
 
 	# Position drawing area at top-left of viewport on startup
 	call_deferred("_position_view_top_left")
@@ -962,6 +973,47 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 	if button_index == MOUSE_BUTTON_LEFT:
 
 		if layer_card.layer.locked: return # ignore locked layers
+		
+		# Check if we're picking a layer for an image texture slot
+		if add_image_destination != "":
+			# Allow IMAGE, DRAWING; allow MASK when Qwen or Qwen 2511 Flex is selected
+			var layer_type_ok: bool = false
+			match layer_card.layer.type:
+				LayerV2.Type.IMAGE, LayerV2.Type.DRAWING:
+					layer_type_ok = true
+				LayerV2.Type.MASK:
+					layer_type_ok = (current_workflow == Workflow.QWEN or current_workflow == Workflow.QWEN_2511_FLEX)
+				_:
+					layer_type_ok = false
+			if layer_type_ok:
+				var layer_image: Image = layer_card.layer.image
+				if layer_image == null or layer_image.is_empty():
+					display_message("Invalid Layer", "This layer has no image data.")
+					return
+				match add_image_destination:
+					"image1_texture":
+						image1_image = layer_image
+						image_1_texture_rect.texture = ImageTexture.create_from_image(layer_image)
+						image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
+					"image2_texture":
+						image2_image = layer_image
+						image_2_texture_rect.texture = ImageTexture.create_from_image(layer_image)
+						image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
+					"image3_texture":
+						image3_image = layer_image
+						image_3_texture_rect.texture = ImageTexture.create_from_image(layer_image)
+						image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
+				# Clear destination and close popup
+				add_image_destination = ""
+				_update_send_image_buttons_enabled()
+				layer_cards_popup_panel.hide()
+				return
+			else:
+				if layer_card.layer.type == LayerV2.Type.MASK:
+					display_message("Invalid Layer", "Mask layers are only valid when Qwen or Qwen 2511 Flex workflow is selected.")
+				else:
+					display_message("Invalid Layer", "Please select an image or drawing layer (or mask when Qwen/Qwen 2511 Flex is selected).")
+				return
 
 		if Input.is_key_pressed(KEY_CTRL):
 			layer_card.selected = not layer_card.selected
@@ -1517,29 +1569,74 @@ func _on_layers_container_mouse_entered() -> void:
 	_mouse_in_layers_container = true
 	# Cursor is now managed globally, no need to re-apply on container enter
 
-
 func _on_add_image_button_pressed() -> void:
-	var fd: = FileDialog.new()
-	
-	fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	fd.access = FileDialog.ACCESS_FILESYSTEM
-	# fd.filters = []
+	image_file_dialog("tool_options")
 
-	fd.file_selected.connect(_on_file_selected)
 
-	add_child(fd)
+var add_image_destination: = ""
+var add_image_fd: FileDialog = null
+func image_file_dialog(destination :String) -> void:
+	if add_image_fd == null:
+		add_image_fd = FileDialog.new()
+		add_image_fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		add_image_fd.access = FileDialog.ACCESS_FILESYSTEM
+		add_image_fd.filters = ["*.png", "*.jpg", "*.jpeg"]
+		add_image_fd.size = Vector2(600.0, 500.0) 
+	#match source:
+		#"tool_options":
+			#add_image_destination = "new_layer" # this is for the image to be added as a layer
+		#"image1_button":
+			#add_image_destination = "image1_texture" # this is for adding the image to image1
+		#"image2_button":
+			#add_image_destination = "image2_texture" # this is for adding the image to image2
+		#"image3_button":
+			#add_image_destination = "image3_texture" # this is for adding the image to image3
+	add_image_destination = destination
+	add_image_fd.file_selected.connect(_on_file_selected)
+	add_child(add_image_fd)
+	add_image_fd.popup_centered()
 
-	fd.popup_centered()
+var image1_image: Image
+var image2_image: Image
+var image3_image: Image
+
+## Update send-image CheckButtons: enable only when the corresponding texture rect has a texture set.
+func _update_send_image_buttons_enabled() -> void:
+	if send_image_1_button:
+		send_image_1_button.disabled = (image_1_texture_rect.texture == null or image1_image == null or image1_image.is_empty())
+	if send_image_2_button:
+		send_image_2_button.disabled = (image_2_texture_rect.texture == null or image2_image == null or image2_image.is_empty())
+	if send_image_3_button:
+		send_image_3_button.disabled = (image_3_texture_rect.texture == null or image3_image == null or image3_image.is_empty())
 
 func _on_file_selected(fp: String) -> void:
 	var image: = Image.load_from_file(fp)
+	
+	match add_image_destination:
+		"new_layer":
+			var l: = LayerV2.create_image_layer(fp.get_file(), image)
+			add_layer(l)
+			_select_tool_by_id(13) # reselect the Select tool
+		"image1_texture":
+			image1_image = image
+			image_1_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
+			_update_send_image_buttons_enabled()
+		"image2_texture":
+			image2_image = image
+			image_2_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
+			_update_send_image_buttons_enabled()
+		"image3_texture":
+			image3_image = image
+			image_3_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
+			_update_send_image_buttons_enabled()
+	
+	add_image_destination = ""
+	add_image_fd.file_selected.disconnect(_on_file_selected)
+	add_image_fd.queue_free()
 
-	var l: = LayerV2.create_image_layer(fp.get_file(), image)
-
-	add_layer(l)
-
-	# reselect the Select tool
-	_select_tool_by_id(13)
 
 func _on_layers_container_mouse_exited() -> void:
 	_mouse_in_layers_container = false
@@ -1732,17 +1829,22 @@ func _blend_colors(dst: Color, src: Color) -> Color:
 	
 	return Color(r, g, b, alpha)
 
+
+func _show_layer_cards_popup_below_toggle() -> void:
+	layer_cards_popup_panel.position = Vector2(
+		(
+			layer_cards_toggle_button.global_position.x
+			- layer_cards_popup_panel.size.x / 2.0
+			+ layer_cards_toggle_button.size.x / 2.0
+		),
+		layer_cards_toggle_button.global_position.y + (layer_cards_toggle_button.size.y * 3.0)
+	)
+	layer_cards_popup_panel.show()
+
+
 func _on_layer_cards_button_pressed() -> void:
 	if !layer_cards_popup_panel.visible:
-		layer_cards_popup_panel.position = Vector2(
-			(
-				layer_cards_toggle_button.global_position.x 
-				-layer_cards_popup_panel.size.x/2.0
-				+layer_cards_toggle_button.size.x/2.0
-			),
-			layer_cards_toggle_button.global_position.y + (layer_cards_toggle_button.size.y * 3.0)
-		)
-		layer_cards_popup_panel.show()
+		_show_layer_cards_popup_below_toggle()
 		if top_of_layers_container:
 			top_of_layers_container.hide()
 		if send_action_button:
@@ -1820,22 +1922,22 @@ func _on_tools_option_button_item_selected(index: int) -> void:
 	# Get the item's ID (not position index) to match against
 	var item_id = _tools_option_button.get_item_id(index)
 	match item_id:
-		0: _on_brush_tool_button_toggled(true); return
-		1: _on_eraser_tool_button_toggled(true); return
-		2: _on_smudge_tool_button_toggled(true); return
-		3: _on_bucket_tool_button_toggled(true); return
-		4: active_tool = null; _on_add_image_button_pressed(); return
-		5: active_tool = eyedropper_tool; return
-		6: active_tool = magic_wand_tool; return
-		7: active_tool = rectangle_select_tool; return
-		8: active_tool = lasso_select_tool; return
-		9: active_tool = pan_tool; return
-		12: active_tool = text_tool; return
-		13: active_tool = select_tool; return
-		14: active_tool = rectangle_tool; return
-		15: active_tool = ellipse_tool; return
-		16: active_tool = diagram_shape_tool; return
-		17: active_tool = connector_tool; return
+		0: _on_brush_tool_button_toggled(true)
+		1: _on_eraser_tool_button_toggled(true)
+		2: _on_smudge_tool_button_toggled(true)
+		3: _on_bucket_tool_button_toggled(true)
+		4: active_tool = null; image_file_dialog("tool_options")
+		5: active_tool = eyedropper_tool
+		6: active_tool = magic_wand_tool
+		7: active_tool = rectangle_select_tool
+		8: active_tool = lasso_select_tool
+		9: active_tool = pan_tool
+		12: active_tool = text_tool
+		13: active_tool = select_tool
+		14: active_tool = rectangle_tool
+		15: active_tool = ellipse_tool
+		16: active_tool = diagram_shape_tool
+		17: active_tool = connector_tool
 		_: pass
 	
 
@@ -2099,15 +2201,22 @@ func _on_send_prompt_button_pressed() -> void:
 	prompt_text_edit.text = ""
 
 
-func _on_media_gen_request_timeout(request_id: String) -> void:
-	if request_id != _current_image_gen_request_id:
-		return
+## Re-enable edit/send UI buttons (modulate and disabled state) after cancel, error, or completion.
+func _reset_edit_ui_buttons() -> void:
 	send_prompt_button.modulate = Color.WHITE
 	send_prompt_button.disabled = false
 	edit_img_button.modulate = Color.WHITE
 	edit_img_button.disabled = false
 	send_mask_edit_button.modulate = Color.WHITE
 	send_mask_edit_button.disabled = false
+	three_image_workflow_button.modulate = Color.WHITE
+	three_image_workflow_button.disabled = false
+
+
+func _on_media_gen_request_timeout(request_id: String) -> void:
+	if request_id != _current_image_gen_request_id:
+		return
+	_reset_edit_ui_buttons()
 	if progress_window.visible:
 		progress_window.hide()
 	_current_image_gen_request_id = ""
@@ -2118,12 +2227,7 @@ func _on_media_gen_request_timeout(request_id: String) -> void:
 func _on_image_received(filename:String, request_id: String, buffer: PackedByteArray) -> void:
 	if request_id != _current_image_gen_request_id:
 		return
-	send_prompt_button.modulate = Color.WHITE
-	send_prompt_button.disabled = false
-	edit_img_button.modulate = Color.WHITE
-	edit_img_button.disabled = false
-	send_mask_edit_button.modulate = Color.WHITE
-	send_mask_edit_button.disabled = false
+	_reset_edit_ui_buttons()
 	if progress_window.visible:
 		progress_window.hide()
 
@@ -2147,115 +2251,129 @@ func _on_image_received(filename:String, request_id: String, buffer: PackedByteA
 enum AI_REQUEST {
 	IMAGE_GEN,
 	EDIT_IMAGE,
-	MASK_EDIT
+	MASK_EDIT,
+	THREE_IMAGE_COMPOSE  # 2 layers + pose editor as 3rd image
 }
 var ai_request_type: AI_REQUEST = AI_REQUEST.EDIT_IMAGE
-func _on_edit_button_pressed() -> void:
-	# Always open layer cards popup so user can select layer(s); send happens when they click Send
-	edit_img_button.modulate = Color.LIME_GREEN
-	send_prompt_button.disabled = true
-	edit_img_button.disabled = true
-	send_mask_edit_button.disabled = true
-	if floating_windows_active:
-		if !layer_cards_popup_panel.visible:
-			layer_cards_popup_panel.position = Vector2(
-				(
-					image_gen_window.position.x 
-					-layer_cards_popup_panel.size.x/2.0
-					+ image_gen_window.size.x/2.0
-				),
-				image_gen_window.position.y + image_gen_window.size.y + 30
-			)
-			if layer_cards_popup_panel.get_child_count() > 0:
-				layer_cards_popup_panel.show()
-				layer_cards_popup_panel.borderless = false
-				if current_workflow == Workflow.QWEN_2511_FLEX and d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture:
-					ai_action_label.text = "Pick 1 layer to edit, or 2 layers (image + image or image + mask) to compose with pose as image 3"
-				else:
-					ai_action_label.text = "Pick an Layer to Send to Edit"
-				%TopOfLayersContainer.show()
-				send_action_button.disabled = false
-				send_action_button.show()
-			ai_request_type = AI_REQUEST.EDIT_IMAGE
-		else:
-			layer_cards_popup_panel.hide()
-			layer_cards_popup_panel.borderless = true
-			%TopOfLayersContainer.hide()
-			send_action_button.disabled = true
-			send_action_button.hide()
-			
-			# Re-enable buttons when toggling popup closed
-			edit_img_button.modulate = Color.WHITE
-			edit_img_button.disabled = false
-			send_prompt_button.disabled = false
-			send_mask_edit_button.disabled = false
+
+## Edit button: single-image edit or mask (selective) edit based on texture rects and send toggles.
+## - Image 1 enabled only → send single-image edit.
+## - Image 1 + Image 2 enabled → send selective edit (image + mask).
+func _on_edit_from_texture_rects_pressed() -> void:
+	if current_workflow == Workflow.Z_TURBO:
+		display_message("Workflow", "Edit is not available for Z-Turbo. Use Qwen or Qwen 2511 Flex.")
+		return
+	if image1_image == null or image1_image.is_empty():
+		display_message("Image Required", "Load or pick an image into Image 1 slot first (Load from file or Pick from layer).")
+		return
+	if not send_image_1_button.button_pressed:
+		display_message("Include Image", "Enable the Image 1 toggle (check button) next to the texture to include it in the edit request.")
+		return
+	var params: Dictionary = get_params_image_gen()
+	if params.is_empty():
+		display_message("Prompt", "Enter a positive prompt for image editing.")
+		return
+	var image_for_export: Image = image1_image.duplicate()
+	if image_for_export.get_format() != Image.FORMAT_RGBA8:
+		image_for_export.convert(Image.FORMAT_RGBA8)
+	var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
+	if image_buffer.is_empty():
+		display_message("Error", "Failed to convert Image 1 to PNG buffer.")
+		return
+	if !seed_line_edit.text.is_empty():
+		params["seed"] = seed_line_edit.text
+
+	var use_mask: bool = send_image_2_button.button_pressed and image2_image != null and not image2_image.is_empty()
+	if use_mask:
+		# Mask (selective) edit: image 1 + image 2 as mask
+		var img2_for_export: Image = image2_image.duplicate()
+		if img2_for_export.get_format() != Image.FORMAT_RGBA8:
+			img2_for_export.convert(Image.FORMAT_RGBA8)
+		var mask_buffer: PackedByteArray = img2_for_export.save_png_to_buffer()
+		if mask_buffer.is_empty():
+			display_message("Error", "Failed to convert Image 2 to PNG buffer for mask.")
+			return
+		var images_dir: Array = [
+			{"filename": "image1.png", "role": "image", "data": Marshalls.raw_to_base64(image_buffer), "content_type": "image/png"},
+			{"filename": "mask.png", "role": "mask", "data": Marshalls.raw_to_base64(mask_buffer), "content_type": "image/png"}
+		]
+		params["mask_channel"] = ""
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
+		SingletonObject.main_scene.add_child(toast)
+		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(params, images_dir)
 	else:
-		ai_request_type = AI_REQUEST.EDIT_IMAGE
-		send_action_button.pressed.emit()
+		# Single-image edit
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
+		SingletonObject.main_scene.add_child(toast)
+		_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, "image1.png")
+	image_gen_window.hide()
+	prompt_text_edit.text = ""
+
+# Commented out: previous behavior opened the layer panel to choose a layer, then Send to AI sent the request.
+# func _on_edit_button_pressed() -> void:
+# 	# Always open layer cards popup so user can select layer(s); send happens when they click Send
+# 	edit_img_button.modulate = Color.LIME_GREEN
+# 	send_prompt_button.disabled = true
+# 	edit_img_button.disabled = true
+# 	send_mask_edit_button.disabled = true
+# 	if floating_windows_active:
+# 		if !layer_cards_popup_panel.visible:
+# 			layer_cards_popup_panel.position = Vector2(
+# 				(
+# 					image_gen_window.position.x 
+# 					-layer_cards_popup_panel.size.x/2.0
+# 					+ image_gen_window.size.x/2.0
+# 				),
+# 				image_gen_window.position.y + image_gen_window.size.y + 30
+# 			)
+# 			if layer_cards_popup_panel.get_child_count() > 0:
+# 				layer_cards_popup_panel.show()
+# 				layer_cards_popup_panel.borderless = false
+# 				if current_workflow == Workflow.QWEN_2511_FLEX and d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture:
+# 					ai_action_label.text = "Pick 1 layer to edit, or 2 layers (image + image or image + mask) to compose with pose as image 3"
+# 				else:
+# 					ai_action_label.text = "Pick an Layer to Send to Edit"
+# 				%TopOfLayersContainer.show()
+# 				send_action_button.disabled = false
+# 				send_action_button.show()
+# 			ai_request_type = AI_REQUEST.EDIT_IMAGE
+# 		else:
+# 			layer_cards_popup_panel.hide()
+# 			layer_cards_popup_panel.borderless = true
+# 			%TopOfLayersContainer.hide()
+# 			send_action_button.disabled = true
+# 			send_action_button.hide()
+# 			
+# 			# Re-enable buttons when toggling popup closed
+# 			edit_img_button.modulate = Color.WHITE
+# 			edit_img_button.disabled = false
+# 			send_prompt_button.disabled = false
+# 			send_mask_edit_button.disabled = false
+# 	else:
+# 		ai_request_type = AI_REQUEST.EDIT_IMAGE
+# 		send_action_button.pressed.emit()
+
+func _on_edit_button_pressed() -> void:
+	_on_edit_from_texture_rects_pressed()
 
 
 func _on_edit_img_button_pressed() -> void:
 	if ai_request_type == AI_REQUEST.EDIT_IMAGE:
 		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
-			edit_img_button.modulate = Color.WHITE
-			edit_img_button.disabled = false
-			send_prompt_button.disabled = false
-			send_mask_edit_button.disabled = false
+			_reset_edit_ui_buttons()
 			if current_workflow == Workflow.Z_TURBO:
 				display_message("Workflow", "Edit is not available for Z-Turbo. Use Qwen or Qwen 2511 Flex.")
 			else:
 				display_message("Selection", "Select at least one image layer in the layer list, then click Send.")
 			return
 		
-		# Flex + pose + 2 layers (image+image or image+mask) -> compose_3_with_pose
-		var has_second: bool = selected_layers.size() >= 2 or selected_mask_layers.size() >= 1
-		if current_workflow == Workflow.QWEN_2511_FLEX and d_pose_controlller_enabled and pose_editor_panel and pose_editor_panel.pose_texture and has_second:
-			var layer1: LayerV2 = selected_layers[0]
-			var layer2: LayerV2 = selected_layers[1] if selected_layers.size() >= 2 else selected_mask_layers[0]
-			if layer1.type == LayerV2.Type.IMAGE and (layer2.type == LayerV2.Type.IMAGE or layer2.type == LayerV2.Type.MASK):
-				var pose_image: Image = pose_editor_panel.pose_texture.get_image()
-				if pose_image != null and not pose_image.is_empty():
-					var pose_for_export: Image = pose_image.duplicate()
-					if pose_for_export.get_format() != Image.FORMAT_RGBA8:
-						pose_for_export.convert(Image.FORMAT_RGBA8)
-					var pose_buffer: PackedByteArray = pose_for_export.save_png_to_buffer()
-					if not pose_buffer.is_empty():
-						var gen_params: Dictionary = get_params_image_gen()
-						if gen_params.is_empty():
-							edit_img_button.modulate = Color.WHITE
-							edit_img_button.disabled = false
-							send_prompt_button.disabled = false
-							send_mask_edit_button.disabled = false
-							display_message("Prompt", "Enter a positive prompt for image generation.")
-							return
-						if !seed_line_edit.text.is_empty():
-							gen_params["seed"] = seed_line_edit.text
-						var switches: Dictionary = _build_flex_switches("compose_3_with_pose")
-						for key in switches:
-							gen_params[key] = switches[key]
-						var img1: Image = layer1.image.duplicate()
-						if img1.get_format() != Image.FORMAT_RGBA8:
-							img1.convert(Image.FORMAT_RGBA8)
-						var img2: Image = layer2.image.duplicate()
-						if img2.get_format() != Image.FORMAT_RGBA8:
-							img2.convert(Image.FORMAT_RGBA8)
-						var image1_dict: Dictionary = {"buffer": img1.save_png_to_buffer(), "role": "image1", "filename": "image1.png"}
-						var image2_dict: Dictionary = {"buffer": img2.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
-						var compose_toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2 layers + pose composition...")
-						SingletonObject.main_scene.add_child(compose_toast)
-						_current_image_gen_request_id = MediaGen.send_media_flex_request_three_with_pose(gen_params, image1_dict, image2_dict, pose_buffer)
-						image_gen_window.hide()
-						layer_cards_popup_panel.hide()
-						prompt_text_edit.text = ""
-						return
+		# This was handling compose_3_with_pose, but user wants that on a different button
+		# Removed the 3-image compose code from here - now handled by _on_three_image_workflow_button_pressed
 		
 		var layer_to_send: LayerV2 = selected_layers[0]
 		# Get the image from the active layer
 		if layer_to_send == null:
-			edit_img_button.modulate = Color.WHITE
-			edit_img_button.disabled = false
-			send_prompt_button.disabled = false
-			send_mask_edit_button.disabled = false
+			_reset_edit_ui_buttons()
 			display_message("Error", "Selected layer is invalid.")
 			return
 		var image_to_edit: Image = layer_to_send.image
@@ -2271,19 +2389,12 @@ func _on_edit_img_button_pressed() -> void:
 		
 		if image_buffer.is_empty():
 			display_message("Error", "Failed to convert active layer image to PNG buffer.")
-			# Re-enable buttons
-			edit_img_button.modulate = Color.WHITE
-			edit_img_button.disabled = false
-			send_prompt_button.disabled = false
-			send_mask_edit_button.disabled = false
+			_reset_edit_ui_buttons()
 			return
 		
 		var params: Dictionary = get_params_image_gen()
 		if params.is_empty():
-			edit_img_button.modulate = Color.WHITE
-			edit_img_button.disabled = false
-			send_prompt_button.disabled = false
-			send_mask_edit_button.disabled = false
+			_reset_edit_ui_buttons()
 			display_message("Prompt", "Enter a positive prompt for image generation.")
 			return
 		
@@ -2294,6 +2405,58 @@ func _on_edit_img_button_pressed() -> void:
 			params["seed"] = seed_line_edit.text
 		
 		_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, image_filename)
+		
+		image_gen_window.hide()
+		layer_cards_popup_panel.hide()
+		prompt_text_edit.text = ""
+	elif ai_request_type == AI_REQUEST.THREE_IMAGE_COMPOSE:
+		# Handle 3-image composition (2 layers + pose editor)
+		var has_second: bool = selected_layers.size() >= 2 or (selected_layers.size() >= 1 and selected_mask_layers.size() >= 1)
+		if not has_second:
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			display_message("Selection", "Select 2 layers (image+image or image+mask) for 3-image composition.")
+			return
+		
+		var layer1: LayerV2 = selected_layers[0]
+		var layer2: LayerV2 = selected_layers[1] if selected_layers.size() >= 2 else selected_mask_layers[0]
+		
+		if layer1.type != LayerV2.Type.IMAGE:
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			display_message("Selection", "First layer must be an image layer.")
+			return
+		
+		if layer2.type != LayerV2.Type.IMAGE and layer2.type != LayerV2.Type.MASK:
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			display_message("Selection", "Second layer must be an image or mask layer.")
+			return
+		
+		# Get generation params
+		var params: Dictionary = get_params_image_gen()
+		if params.is_empty():
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			display_message("Prompt", "Enter a positive prompt for 3-image composition.")
+			return
+		
+		if !seed_line_edit.text.is_empty():
+			params["seed"] = seed_line_edit.text
+		
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2 layers + pose composition...")
+		SingletonObject.main_scene.add_child(toast)
+		
+		# Call the 3-image workflow function
+		var result: Dictionary = request_flex_compose_three_with_pose(params, layer1.name, layer2.name)
+		
+		if not result.get("success", false):
+			display_message("Compose Error", result.get("error", "3-image composition failed."))
+			return
 		
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
@@ -2469,45 +2632,9 @@ func get_first_image_layer() -> LayerV2:
 	return null
 
 
-func _on_mask_edit_button_pressed() -> void: 
-	send_mask_edit_button.modulate = Color.LIME_GREEN
-	send_prompt_button.disabled = true
-	edit_img_button.disabled = true
-	send_mask_edit_button.disabled = true
-	if floating_windows_active:
-		if !layer_cards_popup_panel.visible:
-			layer_cards_popup_panel.position = Vector2(
-				(
-					image_gen_window.position.x 
-					-layer_cards_popup_panel.size.x/2.0
-					+ image_gen_window.size.x/2.0
-				),
-				image_gen_window.position.y + image_gen_window.size.y + 30
-			)
-			layer_cards_popup_panel.borderless = false
-			ai_action_label.text = "Pick an Image Layer and a Mask Layer to Send to Edit"
-			send_action_button.disabled = false
-			ai_request_type = AI_REQUEST.MASK_EDIT
-			
-			%TopOfLayersContainer.show()
-			send_action_button.show()
-			image_gen_window.hide()
-			layer_cards_popup_panel.show()
-		else:
-			layer_cards_popup_panel.hide()
-			layer_cards_popup_panel.borderless = true
-			%TopOfLayersContainer.hide()
-			send_action_button.disabled = true
-			send_action_button.hide()
-			
-			# Re-enable buttons when toggling popup closed
-			send_mask_edit_button.modulate = Color.WHITE
-			send_mask_edit_button.disabled = false
-			send_prompt_button.disabled = false
-			edit_img_button.disabled = false
-	else:
-		ai_request_type = AI_REQUEST.MASK_EDIT
-		send_action_button.pressed.emit()
+## Mask button no longer has a separate flow: same as Edit (Edit handles both image and image+mask from texture rects).
+func _on_mask_edit_button_pressed() -> void:
+	_on_edit_button_pressed()
 
 #region LayersCards Masks PopUp panel
 func _on_new_mask_layer_button_pressed() -> void:
@@ -2565,13 +2692,31 @@ func _on_open_pose_editor_button_pressed() -> void:
 func _on_pose_editor_window_close_requested() -> void:
 	if pose_editor_window:
 		pose_editor_window.hide()
+		add_image_destination = ""
 
 
 func _on_pose_editor_panel_pose_rendered(image: Image) -> void:
-	# Update the active CONTROL layer with the rendered 2D pose image
-	if active_layer and active_layer.type == LayerV2.Type.CONTROL:
-		active_layer.image = image
-		active_layer.queue_redraw()
+	# Update the active CONTROL layer with the rendered 2D pose image, or image1/2/3 texture slots
+	match add_image_destination:
+		"new_layer":
+			var l: = LayerV2.create_image_layer("Pose Editor", image)
+			add_layer(l)
+			_select_tool_by_id(13) # reselect the Select tool
+		"image1_texture":
+			image1_image = image
+			image_1_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
+			_update_send_image_buttons_enabled()
+		"image2_texture":
+			image2_image = image
+			image_2_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
+			_update_send_image_buttons_enabled()
+		"image3_texture":
+			image3_image = image
+			image_3_texture_rect.texture = ImageTexture.create_from_image(image)
+			image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
+			_update_send_image_buttons_enabled()
 
 #endregion LayersCards Masks PopUp panel
 
@@ -2664,27 +2809,13 @@ func _on_color_picker_button_color_changed(color: Color) -> void:
 func _on_layer_cards_popup_panel_close_requested() -> void:
 	layer_cards_popup_panel.hide()
 	response_layout_toggle()
-	
-	# Re-enable buttons if user closes without sending
-	edit_img_button.modulate = Color.WHITE
-	edit_img_button.disabled = false
-	send_prompt_button.modulate = Color.WHITE
-	send_prompt_button.disabled = false
-	send_mask_edit_button.modulate = Color.WHITE
-	send_mask_edit_button.disabled = false
+	_reset_edit_ui_buttons()
 
 
 func _on_back_button_pressed() -> void:
 	image_gen_window.show()
 	layer_cards_popup_panel.hide()
-	
-	# Re-enable buttons when going back without sending
-	edit_img_button.modulate = Color.WHITE
-	edit_img_button.disabled = false
-	send_prompt_button.modulate = Color.WHITE
-	send_prompt_button.disabled = false
-	send_mask_edit_button.modulate = Color.WHITE
-	send_mask_edit_button.disabled = false
+	_reset_edit_ui_buttons()
 
 
 func _on_send_action_button_pressed() -> void:
@@ -2694,18 +2825,11 @@ func _on_send_action_button_pressed() -> void:
 func _on_resized() -> void:
 	if is_node_ready():
 		response_layout_toggle()
-		if mini_map_control and mini_map_control.visible:
-			mini_map_control.custom_minimum_size.x = layers_container.size.x / 6.5
-			mini_map_control.custom_minimum_size.y = layers_container.size.y / 6.5
-			var margin_con: PanelContainer = mini_map_control.get_child(0)
-			margin_con.position = Vector2.ZERO
-			margin_con.anchors_preset = Control.PRESET_FULL_RECT
 
 var floating_windows_active: = true  # Always use floating windows mode
 func response_layout_toggle() -> void:
 	# Always use popup/floating window mode for Layers and AI panels
 	# Buttons are always visible, clicking them opens popup windows
-
 	if full_size_ai_container.get_child_count() > 0:
 		full_size_ai_container.remove_child(image_gen_panel_container)
 		image_gen_window.size = image_gen_panel_container.size
@@ -2723,7 +2847,7 @@ func response_layout_toggle() -> void:
 	dock_panel_container.hide()
 
 
-static var _edit_img_base_tooltip: = "Edit selected Image (edits the currently selected layer with the current prompt)"
+static var _edit_img_base_tooltip: = "Edit image (Image 1). If Image 2 is enabled, sends image + mask for selective editing."
 #static var _mask_edit_base_tooltip: = "Send mask edit request (needs a mask layer and a regular layer to be selected)"
 func check_ai_buttons_toggle() -> void:
 	# Always in floating windows mode - enable buttons based on connection status
@@ -2738,9 +2862,7 @@ func check_ai_buttons_toggle() -> void:
 			send_mask_edit_button.disabled = true
 	
 
-
 var draw_render_view: = false
-
 func _on_draw_rect(rect: Rect2) -> void:
 	render_view_control.draw_render_view = draw_render_view
 	render_view_control._rect = rect
@@ -2770,15 +2892,18 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 			denoise_spin_box.value = 0.85
 			edit_img_button.disabled = false
 			send_mask_edit_button.disabled = true  # Flex doesn't use mask_edit, uses compose instead
+	if index == 0:
+		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
+			button.disabled = true
+	else:
+		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
+			button.disabled = false
 
 
 func toggle_enable_ai_fields(enable: bool = true) -> void:
-	#var is_wf0 = workflow_option_button.selected == 0
-	var disabled = !enable
-	
 	for btn in [prompt_button, workflow_option_button, negative_prompt_mic_button, 
 				positive_prompt_mic_button, advanced_settings_check_button, send_action_button]:
-		btn.disabled = disabled
+		btn.disabled = !enable
 	
 	prompt_text_edit.editable = enable
 	negative_text_edit.editable = enable
@@ -2790,19 +2915,27 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 		1:  # Qwen - edit and mask
 			edit_img_button.disabled = not enable
 			send_mask_edit_button.disabled = not enable
-		2:  # Qwen 2511 Flex - edit but no mask (uses compose instead)
-			edit_img_button.disabled = not enable
-			send_mask_edit_button.disabled = true
-		_:  # Default fallback
+		2:  # Qwen 2511 Flex - edit and mask
 			edit_img_button.disabled = not enable
 			send_mask_edit_button.disabled = not enable
-	workflow_option_button.disabled = not enable
+	if workflow_option_button.selected == 0:
+		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
+			button.disabled = true
+	else:
+		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
+			button.disabled = false
+	#if _3d_pose_controller_button.button_pressed:
+		#workflow_option_button.select(2)
+	#workflow_option_button.disabled = _3d_pose_controller_button.button_pressed
+	#three_image_workflow_button.disabled = !_3d_pose_controller_button.button_pressed
+
 
 func disable_ai_features(error: int) -> void:
 	if error != 0:
 		connection_label.text = "Not Connected to backend.\nConnect to backend to \naccess AI Features."
 		connection_label.show()
 	toggle_enable_ai_fields(false)
+
 
 func enable_ai_features() -> void:
 	if connection_label.visible:
@@ -3235,6 +3368,7 @@ func _on_main_h_split_container_drag_started() -> void:
 	dragging_split = true
 
 
+
 func _on_update_button_pressed() -> void:
 	_on_open_pose_editor_button_pressed()
 
@@ -3243,8 +3377,8 @@ var is_d_pose_first_time: = true
 func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 	%"3DPoseViewportContainer".visible = toggled_on
 	workflow_option_button.select(1)
-	_on_workflow_option_button_item_selected(1)  # Update current_workflow to Qwen when pose is enabled
-	workflow_option_button.disabled = toggled_on
+	#_on_workflow_option_button_item_selected(1)  # Update current_workflow to Qwen when pose is enabled
+	#workflow_option_button.disabled = toggled_on
 	d_pose_controlller_enabled = toggled_on
 	if is_d_pose_first_time:
 		is_d_pose_first_time = false
@@ -3253,11 +3387,106 @@ func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 	if !toggled_on and pose_editor_window:
 		pose_editor_window.hide()
 	
-	# Reset button states when toggling off
 	if !toggled_on:
-		edit_img_button.modulate = Color.WHITE
-		edit_img_button.disabled = false
-		send_prompt_button.modulate = Color.WHITE
-		send_prompt_button.disabled = false
-		send_mask_edit_button.modulate = Color.WHITE
-		send_mask_edit_button.disabled = false
+		_reset_edit_ui_buttons()
+
+
+func _on_three_image_workflow_button_pressed() -> void:
+	# 3-Image Compose: Requires qwen_2511_flex workflow to be selected
+	# Prerequisites: Qwen 2511 Flex workflow selected, pose editor enabled, 2 layers selected
+	if current_workflow != Workflow.QWEN_2511_FLEX:
+		display_message("Workflow", "3-image composition requires Qwen 2511 Flex workflow. Select it from the workflow dropdown.")
+		return
+	
+	if not d_pose_controlller_enabled or not pose_editor_panel or not pose_editor_panel.pose_texture:
+		display_message("Pose Editor", "Enable pose editor and ensure it has a texture for 3-image composition.")
+		return
+	
+	# Open the layer selection panel (same pattern as edit button)
+	three_image_workflow_button.modulate = Color.LIME_GREEN
+	send_prompt_button.disabled = true
+	edit_img_button.disabled = true
+	send_mask_edit_button.disabled = true
+	
+	if floating_windows_active:
+		if !layer_cards_popup_panel.visible:
+			layer_cards_popup_panel.position = Vector2(
+				(
+					image_gen_window.position.x 
+					- layer_cards_popup_panel.size.x / 2.0
+					+ image_gen_window.size.x / 2.0
+				),
+				image_gen_window.position.y + image_gen_window.size.y + 30
+			)
+			if layer_cards_popup_panel.get_child_count() > 0:
+				layer_cards_popup_panel.show()
+				layer_cards_popup_panel.borderless = false
+				ai_action_label.text = "Pick 2 layers (image + image or image + mask). Pose editor will be used as 3rd image."
+				%TopOfLayersContainer.show()
+				send_action_button.disabled = false
+				send_action_button.show()
+			ai_request_type = AI_REQUEST.THREE_IMAGE_COMPOSE
+		else:
+			layer_cards_popup_panel.hide()
+			layer_cards_popup_panel.borderless = true
+			%TopOfLayersContainer.hide()
+			send_action_button.disabled = true
+			send_action_button.hide()
+			
+			# Re-enable buttons when toggling popup closed
+			three_image_workflow_button.modulate = Color.WHITE
+			three_image_workflow_button.disabled = false
+			send_prompt_button.disabled = false
+			send_mask_edit_button.disabled = false
+			edit_img_button.disabled = false
+	else:
+		ai_request_type = AI_REQUEST.THREE_IMAGE_COMPOSE
+		send_action_button.pressed.emit()
+	
+	# Open the layer selection panel (same pattern as edit button)
+	three_image_workflow_button.modulate = Color.LIME_GREEN
+	send_prompt_button.disabled = true
+	edit_img_button.disabled = true
+	send_mask_edit_button.disabled = true
+
+
+func _on_load_image_1_button_pressed() -> void:
+	image_file_dialog("image1_texture")
+
+
+func _on_load_image_2_button_pressed() -> void:
+	image_file_dialog("image2_texture")
+
+
+func _on_load_image_3_button_pressed() -> void:
+	image_file_dialog("image3_texture")
+
+
+func _on_pose_editor_image_1_button_pressed() -> void:
+	add_image_destination = "image1_texture"
+	_on_open_pose_editor_button_pressed()
+
+
+func _on_pose_editor_image_2_button_pressed() -> void:
+	add_image_destination = "image2_texture"
+	_on_open_pose_editor_button_pressed()
+
+
+func _on_pose_editor_image_3_button_pressed() -> void:
+	add_image_destination = "image3_texture"
+	_on_open_pose_editor_button_pressed()
+
+
+func _on_pick_image_1_button_pressed() -> void:
+	add_image_destination = "image1_texture"
+	_show_layer_cards_popup_below_toggle()
+
+
+func _on_pick_image_2_button_pressed() -> void:
+	add_image_destination = "image2_texture"
+	_show_layer_cards_popup_below_toggle()
+
+
+func _on_pick_image_3_button_pressed() -> void:
+	add_image_destination = "image3_texture"
+	_show_layer_cards_popup_below_toggle()

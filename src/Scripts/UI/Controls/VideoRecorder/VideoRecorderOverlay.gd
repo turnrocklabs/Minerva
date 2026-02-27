@@ -31,7 +31,7 @@ var level_bar: ProgressBar = null
 var level_label: Label = null
 
 ## State
-var _overlay_visible: bool = false
+#var _overlay_visible: bool = false
 
 
 func _ready() -> void:
@@ -246,7 +246,7 @@ func _on_stop_pressed() -> void:
 
 
 func _on_elapsed_time_updated(seconds: float) -> void:
-	var minutes := int(seconds) / 60
+	var minutes := int(seconds/ 60.0)
 	var secs := int(seconds) % 60
 	timer_label.text = "%d:%02d" % [minutes, secs]
 

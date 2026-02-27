@@ -5192,10 +5192,10 @@ func _pcb_get_pin_position(args: Dictionary) -> Dictionary:
 	# Build available pins list for self-correction on error
 	var available_pins: Array = []
 	for pin_name in comp.pins:
-		var symbolic_name: String = comp.get_pin_name(str(pin_name))
+		var _symbolic_name: String = comp.get_pin_name(str(pin_name))
 		var entry := {"pin": str(pin_name)}
-		if not symbolic_name.is_empty():
-			entry["name"] = symbolic_name
+		if not _symbolic_name.is_empty():
+			entry["name"] = _symbolic_name
 		available_pins.append(entry)
 
 	if not comp.pins.has(pin):

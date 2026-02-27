@@ -194,7 +194,7 @@ func add_llm_progress_with_full_content(preview_content: String, full_content: S
 	_scroll_to_bottom()
 
 func stop_llm_progress() -> void:
-	"""Stop all LLM progress animations (called when planning completes)"""
+	"""Stop LLM progress animations and finalize cards (keeps them visible)"""
 	if not _actions_list:
 		return
 	
@@ -205,14 +205,13 @@ func stop_llm_progress() -> void:
 				var tween = child.get_meta("llm_tween")
 				if tween:
 					tween.kill()
-			# Reset opacity to full
+				child.remove_meta("llm_tween")
+			# Restore full opacity (tween may have left it dimmed)
 			child.modulate.a = 1.0
-			# Mark as complete visually
+			# Remove the progress marker so the card is treated as regular content
 			child.remove_meta("is_llm_progress")
-			child.set_meta("is_llm_complete", true)
-			# Update icon to show completion (if it's a message card)
-			if child.has_method("set_role"):
-				child.set_role("system")  # Change from "llm" animated role to static "system"
+	
+	# Clear the reference so new LLM traffic creates a fresh card
 	_llm_card = null
 	_llm_buffer = ""
 

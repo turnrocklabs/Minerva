@@ -355,7 +355,7 @@ func _on_mirror_button_pressed() -> void:
 	_update_status("Pose mirrored")
 
 
-## Render skeleton to 2D OpenPose image
+## Render skeleton to 2D OpenPose image (used by "Set Texture")
 func _on_render_button_pressed() -> void:
 	_update_status("Rendering to 2D...")
 	var image = render_to_2d_image(render_size)
@@ -507,3 +507,9 @@ func get_pose_data() -> Dictionary:
 func set_pose_data(data: Dictionary) -> void:
 	if pose_skeleton:
 		pose_skeleton.set_pose_data(data)
+
+
+func _on_visibility_changed() -> void:
+	#pose_skeleton.set_process(visible)
+	if get_parent() and pose_skeleton:
+		pose_skeleton.set_process(get_parent().visible)

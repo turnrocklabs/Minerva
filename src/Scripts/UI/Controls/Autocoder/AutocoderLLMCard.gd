@@ -123,12 +123,8 @@ func mark_complete(finish_reason: String, usage: Dictionary) -> void:
 		_:
 			_status_label.text = "✅ Done (%s)" % finish_reason
 
-	# Show usage stats if available
-	if usage and not usage.is_empty():
-		var input_tokens = usage.get("input_tokens", 0)
-		var output_tokens = usage.get("output_tokens", 0)
-		_usage_label.text = "Tokens: %d in / %d out" % [input_tokens, output_tokens]
-		_usage_label.visible = true
+	# Show enhanced usage stats
+	_update_usage_display(usage)
 
 
 func mark_error(error_message: String) -> void:
@@ -151,6 +147,52 @@ func _update_content_display() -> void:
 
 	# Display the accumulated text (basic BBCode support)
 	_content_label.append_text(_accumulated_text)
+
+
+func _update_usage_display(usage: Dictionary) -> void:
+	"""Update usage stats with enhanced display including cache info and cost estimate"""
+	if not usage or usage.is_empty():
+		_usage_label.visible = false
+		return
+	
+	var parts: Array[String] = []
+	
+	# Basic token counts
+	var input_tokens = usage.get("input_tokens", 0)
+	var output_tokens = usage.get("output_tokens", 0)
+	var total_tokens = input_tokens + output_tokens
+	
+	parts.append("📊 %s tokens" % _format_number(total_tokens))
+	parts.append("(%s in / %s out)" % [_format_number(input_tokens), _format_number(output_tokens)])
+	
+	# Cache info if available
+	var cache_read = usage.get("cache_read_input_tokens", 0)
+	var cache_creation = usage.get("cache_creation_input_tokens", 0)
+	if cache_read > 0 or cache_creation > 0:
+		var cache_parts: Array[String] = []
+		if cache_read > 0:
+			cache_parts.append("📖 %s cached" % _format_number(cache_read))
+		if cache_creation > 0:
+			cache_parts.append("💾 %s written" % _format_number(cache_creation))
+		parts.append(" | ".join(cache_parts))
+	
+	# Estimated cost (rough estimates based on typical API pricing)
+	# Claude 3.5 Sonnet: ~$3/1M input, ~$15/1M output
+	var estimated_cost = (input_tokens * 0.003 / 1000.0) + (output_tokens * 0.015 / 1000.0)
+	if estimated_cost > 0.001:
+		parts.append("💰 ~$%.4f" % estimated_cost)
+	
+	_usage_label.text = " ".join(parts)
+	_usage_label.visible = true
+
+
+func _format_number(num: int) -> String:
+	"""Format number with K/M suffix for readability"""
+	if num >= 1000000:
+		return "%.1fM" % (num / 1000000.0)
+	elif num >= 1000:
+		return "%.1fK" % (num / 1000.0)
+	return str(num)
 
 
 func _start_pulse_animation() -> void:

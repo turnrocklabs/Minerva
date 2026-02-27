@@ -23,12 +23,12 @@ static var _check_on: = preload("res://assets/icons/checked.svg")
 @onready var _entry_margin_container: MarginContainer = %EntryMarginContainer
 @onready var _entry_file_dialog: FileDialog = %EntryFileDialog
 @warning_ignore("unused_variable")
-@onready var _search_line_edit: LineEdit = %SearchLineEdit
+#@onready var _search_line_edit: LineEdit = %SearchLineEdit
 @onready var _exclude_patterns_edit: LineEdit = %ExcludePatternsEdit
 @onready var _file_count_label: Label = %FileCountLabel
 @onready var _total_size_label: Label = %TotalSizeLabel
 @warning_ignore("unused_variable")
-@onready var _change_dir_button: Button = %ChangeDirButton
+#@onready var _change_dir_button: Button = %ChangeDirButton
 
 ## Common exclude patterns that can be toggled
 var _default_exclude_patterns := [".git", ".godot", "node_modules", "__pycache__", ".vs", ".vscode", "bin", "obj"]
