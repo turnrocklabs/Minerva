@@ -4615,7 +4615,20 @@ func _register_pcb_tools() -> void:
 				},
 				"pin_count": {
 					"type": "integer",
-					"description": "Number of pins for HEADER/CONNECTOR (single row) or IC_DIP/MODULE (dual row, must be even)"
+					"description": "Number of pins. Works for all footprint types. HEADER/CONNECTOR = single row, IC_DIP/MODULE = dual row (even), others use generic layout via pad_type/pad_spacing/row_spacing."
+				},
+				"pad_type": {
+					"type": "string",
+					"enum": ["smd", "tht"],
+					"description": "Pad type for placeholder geometry (default: tht). Used when pin_count is set on non-specialised footprint types."
+				},
+				"pad_spacing": {
+					"type": "number",
+					"description": "Centre-to-centre pad spacing in mm (default: 2.54). Used with generic pin layout."
+				},
+				"row_spacing": {
+					"type": "number",
+					"description": "Row-to-row spacing for dual-row layouts in mm (default: 7.62). Used with generic pin layout."
 				},
 				"width": {
 					"type": "number",
@@ -5535,7 +5548,11 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 	var pin_names: Array = args.get("pin_names", [])
 
 	if pin_count > 0:
-		# Custom pin count specified
+		# Custom pin count specified — specialised methods for HEADER/DIP/MODULE,
+		# generic layout for everything else (SWITCH, RESISTOR, LED, etc.)
+		var pad_type: String = args.get("pad_type", "tht")
+		var pad_spacing: float = args.get("pad_spacing", 2.54)
+		var row_sp: float = args.get("row_spacing", 7.62)
 		match footprint_idx:
 			PCBComponentScript.FootprintType.HEADER, PCBComponentScript.FootprintType.CONNECTOR:
 				comp.setup_header_pins(pin_count, pin_names)
@@ -5545,7 +5562,7 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 				# MODULE uses wider row spacing and body extends beyond pins
 				comp.setup_module_pins(pin_count)
 			_:
-				comp.setup_standard_pins()
+				comp.setup_generic_pins(pin_count, pad_type, pad_spacing, row_sp)
 	else:
 		comp.setup_standard_pins()
 

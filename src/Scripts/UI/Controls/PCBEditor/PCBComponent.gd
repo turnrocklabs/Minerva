@@ -441,6 +441,61 @@ func setup_module_pins(pin_count: int, row_spacing: float = 22.86, body_extensio
 	bbox_center_offset = Vector2(row_spacing / 2.0, total_pin_height / 2.0)
 
 
+## Generic pin layout for any footprint type.
+## Works when none of the specialised methods (header, DIP, module) apply.
+##   pin_count  – number of pads (>= 1)
+##   pad_type   – "smd" or "tht" (affects pad/body sizing)
+##   spacing    – centre-to-centre pin pitch in mm (default 2.54)
+##   row_sp     – distance between dual rows in mm (default 7.62)
+func setup_generic_pins(pin_count: int, pad_type: String = "tht", spacing: float = 2.54, row_sp: float = 7.62) -> void:
+	pins.clear()
+
+	var is_smd := (pad_type == "smd")
+	# Pad body margin – THT pads are slightly larger than SMD
+	var pad_margin := 1.0 if is_smd else 1.27
+
+	if pin_count == 1:
+		# Single centred pad (mounting-hole style)
+		width = 3.2
+		height = 3.2
+		pins["1"] = Vector2(0, 0)
+		local_bounds = Rect2(-width / 2.0, -height / 2.0, width, height)
+		bbox_center_offset = Vector2.ZERO
+
+	elif pin_count <= 3:
+		# Inline horizontal row
+		var total_length := (pin_count - 1) * spacing
+		width = total_length + pad_margin * 2
+		height = pad_margin * 2
+		for i in range(pin_count):
+			pins[str(i + 1)] = Vector2(i * spacing, 0)
+		local_bounds = Rect2(-pad_margin, -height / 2.0, width, height)
+		bbox_center_offset = Vector2(total_length / 2.0, 0)
+
+	elif pin_count % 2 == 0:
+		# Even pin count >= 4 → dual-row (DIP-like)
+		@warning_ignore("integer_division")
+		var pins_per_side := pin_count / 2
+		var total_pin_height := (pins_per_side - 1) * spacing
+		width = row_sp + pad_margin * 2
+		height = total_pin_height + pad_margin * 2
+		for i in range(pins_per_side):
+			pins[str(i + 1)] = Vector2(0, i * spacing)
+			pins[str(pin_count - i)] = Vector2(row_sp, i * spacing)
+		local_bounds = Rect2(-pad_margin, -pad_margin, width, height)
+		bbox_center_offset = Vector2(row_sp / 2.0, total_pin_height / 2.0)
+
+	else:
+		# Odd pin count >= 5 → single-row vertical (header-like)
+		var total_length := (pin_count - 1) * spacing
+		width = pad_margin * 2
+		height = total_length + pad_margin * 2
+		for i in range(pin_count):
+			pins[str(i + 1)] = Vector2(0, i * spacing)
+		local_bounds = Rect2(-width / 2.0, -pad_margin, width, height)
+		bbox_center_offset = Vector2(0, total_length / 2.0)
+
+
 ## Setup custom size without changing pins
 ## Maintains origin-based positioning (body extends from near origin)
 func set_size(new_width: float, new_height: float) -> void:
