@@ -12,10 +12,6 @@ var available_models: Array[Dictionary] = []
 const TASK_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderTaskCard.tscn")
 
 var task_store: AutocoderTaskStore
-@warning_ignore("unused_variable")
-@onready var _scroll_container: ScrollContainer = %ScrollContainer
-@warning_ignore("unused_variable")
-@onready var _columns_container: HBoxContainer = %ColumnsContainer
 @onready var _plan_column: VBoxContainer = %PlanColumn
 @onready var _plan_list: AutocoderKanbanDropZone = %PlanList
 @onready var _in_progress_column: VBoxContainer = %InProgressColumn

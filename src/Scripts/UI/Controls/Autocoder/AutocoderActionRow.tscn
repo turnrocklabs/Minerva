@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://c6y5w1xg4nxt4"]
 
-[ext_resource type="Script" uid="uid://b0cfd6j8d6tup" path="res://Scripts/UI/Controls/Autocoder/AutocoderActionRow.gd" id="1_55j5b"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderActionRow.gd" id="1_55j5b"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_action_row"]
 bg_color = Color(0.1, 0.11, 0.13, 1)

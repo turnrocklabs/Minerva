@@ -4,8 +4,6 @@ extends VBoxContainer
 @onready var _artifact_browser_popup: PersistentWindow = %ArtifactBrowserPopup
 @onready var _artifact_browser: ArtifactBrowser = %ArtifactBrowser
 
-@warning_ignore("unused_variable")
-@onready var _input_resources_container: Container = %InputResourcesCard
 @onready var _clear_resources_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ClearInputResourcesButton
 @onready var _attach_folder_button: Button = %AttachFolderButton
 @onready var _set_source_folder_button: Button = %SetSourceFolderButton
@@ -28,9 +26,7 @@ extends VBoxContainer
 
 @onready var _auto_review_check_box: CheckBox = %AutoReviewCheckBox
 @onready var _require_permission_check_box: CheckBox = %RequirePermissionCheckBox
-@onready var _review_agents_panel: PanelContainer = %ReviewAgentsCard
 @onready var _review_agents_refresh_button: Button = %ReviewAgentsRefreshButton
-@onready var _agent_checkbox_scroll: ScrollContainer = %AgentCheckboxScroll
 @onready var _agent_checkbox_list: VBoxContainer = %AgentCheckboxList
 @onready var _review_agents_empty_label: Label = %ReviewAgentsEmptyLabel
 @onready var _review_agents_clear_button: Button = %ReviewAgentsClearButton

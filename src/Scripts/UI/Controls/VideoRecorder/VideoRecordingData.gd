@@ -515,6 +515,7 @@ func get_frame_at_time(time_ms: int) -> int:
 	var lo := 0
 	var hi := frame_index.size() - 1
 	while lo < hi:
+		@warning_ignore("integer_division")
 		var mid := (lo + hi) / 2
 		if frame_index[mid][1] < target_us:
 			lo = mid + 1
@@ -606,8 +607,8 @@ static func list_recordings() -> Array:
 
 
 ## Load a recording from disk
-static func load_recording(recording_id: String) -> VideoRecordingData:
-	var data := VideoRecordingData.new(recording_id)
+static func load_recording(p_recording_id: String) -> VideoRecordingData:
+	var data := VideoRecordingData.new(p_recording_id)
 	if data.load_manifest() != OK:
 		return null
 	data.load_frame_index()

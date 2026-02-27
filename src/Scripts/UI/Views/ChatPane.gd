@@ -1720,6 +1720,7 @@ func render_history(chat_history: ChatHistory):
 
 	# Create wrapper VBoxContainer to hold header and scroll container
 	var wrapper = VBoxContainer.new()
+	wrapper.name = chat_history.HistoryName if not chat_history.HistoryName.is_empty() else "Chat"
 	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	wrapper.size_flags_vertical = Control.SIZE_EXPAND_FILL
 

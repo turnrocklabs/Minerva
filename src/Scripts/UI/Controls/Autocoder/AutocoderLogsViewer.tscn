@@ -1,6 +1,6 @@
 [gd_scene load_steps=4 format=3 uid="uid://dtt1t2ufkclx4"]
 
-[ext_resource type="Script" uid="uid://d1vgcnau0fntq" path="res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.gd" id="1_8xlu0"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.gd" id="1_8xlu0"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
 bg_color = Color(0.12, 0.12, 0.14, 1)

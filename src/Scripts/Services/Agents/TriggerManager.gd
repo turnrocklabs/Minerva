@@ -379,14 +379,14 @@ func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: 
 		_pending_single_chains[trigger_id] = { "chain_trigger_id": trig.chain_trigger_id, "chain_visited": chain_visited.duplicate() }
 
 
-func _action_spawn_new(trig: TriggerDefinition, agent_def: AgentDefinition, message: String, trigger_id: String) -> void:
+func _action_spawn_new(_trig: TriggerDefinition, agent_def: AgentDefinition, message: String, trigger_id: String) -> void:
 	var history = AgentSpawner.spawn_agent(agent_def, message, trigger_id)
 	if history:
 		_active_trigger_chats[trigger_id] = history.HistoryId
 		print("[TriggerManager] Fired trigger '%s' -> spawned agent '%s'" % [trigger_id, agent_def.name])
 
 
-func _action_message_existing(trig: TriggerDefinition, agent_def: AgentDefinition, message: String, trigger_id: String) -> void:
+func _action_message_existing(_trig: TriggerDefinition, agent_def: AgentDefinition, message: String, trigger_id: String) -> void:
 	if message.is_empty():
 		print("[TriggerManager] MESSAGE_EXISTING trigger '%s' has empty message, skipping" % trigger_id)
 		return

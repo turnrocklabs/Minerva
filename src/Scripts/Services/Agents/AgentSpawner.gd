@@ -6,7 +6,7 @@ extends RefCounted
 const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
 
 
-static func spawn_agent(agent_def: AgentDefinition, initial_message: String = "", trigger_id: String = "") -> ChatHistory:
+static func spawn_agent(agent_def: AgentDefinition, initial_message: String = "", _trigger_id: String = "") -> ChatHistory:
 	if not agent_def:
 		push_error("[AgentSpawner] null AgentDefinition")
 		return null

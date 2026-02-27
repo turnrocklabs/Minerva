@@ -5459,10 +5459,10 @@ func _pcb_get_pin_position(args: Dictionary) -> Dictionary:
 	# Build available pins list for self-correction on error
 	var available_pins: Array = []
 	for pin_name in comp.pins:
-		var symbolic_name: String = comp.get_pin_name(str(pin_name))
+		var pin_sym_name: String = comp.get_pin_name(str(pin_name))
 		var entry := {"pin": str(pin_name)}
-		if not symbolic_name.is_empty():
-			entry["name"] = symbolic_name
+		if not pin_sym_name.is_empty():
+			entry["name"] = pin_sym_name
 		available_pins.append(entry)
 
 	if not comp.pins.has(pin):
@@ -7159,11 +7159,11 @@ func _clock(arguments: Dictionary) -> Dictionary:
 	if arguments.has("delta_seconds"):
 		var delta := int(arguments.get("delta_seconds", 0))
 		var target_ts := unix_now + delta
-		var dt := Time.get_datetime_dict_from_unix_time(target_ts)
+		var delta_dt := Time.get_datetime_dict_from_unix_time(target_ts)
 		return {
 			"success": true,
 			"unix_timestamp": target_ts,
-			"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second],
+			"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [delta_dt.year, delta_dt.month, delta_dt.day, delta_dt.hour, delta_dt.minute, delta_dt.second],
 			"timezone": "UTC",
 			"now_unix": unix_now,
 			"delta_seconds": delta
@@ -7171,7 +7171,7 @@ func _clock(arguments: Dictionary) -> Dictionary:
 
 	# Mode 2: absolute date/time
 	if arguments.has("year"):
-		var dt := {
+		var abs_dt := {
 			"year": int(arguments.get("year", 1970)),
 			"month": int(arguments.get("month", 1)),
 			"day": int(arguments.get("day", 1)),
@@ -7179,11 +7179,11 @@ func _clock(arguments: Dictionary) -> Dictionary:
 			"minute": int(arguments.get("minute", 0)),
 			"second": int(arguments.get("second", 0)),
 		}
-		var unix_ts := Time.get_unix_time_from_datetime_dict(dt)
+		var unix_ts := Time.get_unix_time_from_datetime_dict(abs_dt)
 		return {
 			"success": true,
 			"unix_timestamp": int(unix_ts),
-			"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second],
+			"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [abs_dt.year, abs_dt.month, abs_dt.day, abs_dt.hour, abs_dt.minute, abs_dt.second],
 			"timezone": "UTC"
 		}
 

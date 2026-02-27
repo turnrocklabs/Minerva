@@ -5,7 +5,6 @@ signal approved(session_id: String)
 signal rejected(session_id: String, feedback: String)
 signal extract_requested(session_id: String)
 
-@onready var _title_label: Label = %TitleLabel
 @onready var _file_count_label: Label = %FileCountLabel
 @onready var _summary_label: Label = %SummaryLabel
 @onready var _review_details_container: VBoxContainer = %ReviewDetailsContainer

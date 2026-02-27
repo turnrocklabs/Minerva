@@ -673,11 +673,11 @@ func _refresh_minerva_submenu() -> void:
 		# Add a check item for each tool set (IDs 100+)
 		_minerva_tool_set_names = set_names
 		for i in range(set_names.size()):
-			var set_name: String = set_names[i]
-			var count: int = sets[set_name]
+			var tool_set_name: String = set_names[i]
+			var count: int = sets[tool_set_name]
 			var item_id: int = 100 + i
-			var is_enabled: bool = all_enabled or (set_name in minerva_server._enabled_tool_sets)
-			ts_menu.add_check_item("%s (%d)" % [set_name, count], item_id)
+			var is_enabled: bool = all_enabled or (tool_set_name in minerva_server._enabled_tool_sets)
+			ts_menu.add_check_item("%s (%d)" % [tool_set_name, count], item_id)
 			var item_idx = ts_menu.get_item_index(item_id)
 			ts_menu.set_item_checked(item_idx, is_enabled)
 
@@ -764,7 +764,7 @@ func _toggle_tool_set(index: int) -> void:
 		return
 
 	var server = mcp.minerva_server
-	var set_name: String = _minerva_tool_set_names[index]
+	var tool_set_name: String = _minerva_tool_set_names[index]
 
 	if server._enabled_tool_sets.is_empty():
 		# Currently all enabled — populate with all sets minus the one being toggled off
@@ -774,20 +774,20 @@ func _toggle_tool_set(index: int) -> void:
 			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
 				if tool.tool_set not in all_sets:
 					all_sets.append(tool.tool_set)
-		all_sets.erase(set_name)
+		all_sets.erase(tool_set_name)
 		server._enabled_tool_sets = all_sets
-		SingletonObject.create_toast_notification("Disabled tool set: %s" % set_name, ToastNotification.Type.INFO)
+		SingletonObject.create_toast_notification("Disabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
 	else:
 		# Toggle within the existing enabled list
-		if set_name in server._enabled_tool_sets:
-			server._enabled_tool_sets.erase(set_name)
-			SingletonObject.create_toast_notification("Disabled tool set: %s" % set_name, ToastNotification.Type.INFO)
+		if tool_set_name in server._enabled_tool_sets:
+			server._enabled_tool_sets.erase(tool_set_name)
+			SingletonObject.create_toast_notification("Disabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
 			# If nothing left enabled, re-enable all
 			if server._enabled_tool_sets.is_empty():
 				SingletonObject.create_toast_notification("All tool sets re-enabled", ToastNotification.Type.INFO)
 		else:
-			server._enabled_tool_sets.append(set_name)
-			SingletonObject.create_toast_notification("Enabled tool set: %s" % set_name, ToastNotification.Type.INFO)
+			server._enabled_tool_sets.append(tool_set_name)
+			SingletonObject.create_toast_notification("Enabled tool set: %s" % tool_set_name, ToastNotification.Type.INFO)
 
 
 ## Update check marks in the tool sets submenu without rebuilding it
@@ -808,11 +808,11 @@ func _refresh_tool_set_checks() -> void:
 
 	# Update individual set checkboxes
 	for i in range(_minerva_tool_set_names.size()):
-		var set_name: String = _minerva_tool_set_names[i]
+		var tool_set_name: String = _minerva_tool_set_names[i]
 		var item_id: int = 100 + i
 		var item_idx = ts_menu.get_item_index(item_id)
 		if item_idx >= 0:
-			var is_enabled: bool = all_enabled or (set_name in server._enabled_tool_sets)
+			var is_enabled: bool = all_enabled or (tool_set_name in server._enabled_tool_sets)
 			ts_menu.set_item_checked(item_idx, is_enabled)
 
 

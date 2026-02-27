@@ -380,10 +380,10 @@ func is_tab_agent_locked(tab_idx: int) -> bool:
 
 
 ## Show or hide all agent-locked tabs.
-func set_agent_tabs_visible(visible: bool) -> void:
+func set_agent_tabs_visible(p_visible: bool) -> void:
 	for i in get_tab_count():
 		if is_tab_agent_locked(i):
-			set_tab_hidden(i, not visible)
+			set_tab_hidden(i, not p_visible)
 
 
 ## Find or create a tab locked to a specific agent.
@@ -391,11 +391,11 @@ func find_or_create_agent_tab(tab_name: String, agent_id: String) -> NoteVBox:
 	# Check existing tabs for one already locked to this agent with this name
 	var sanitized := tab_name.validate_node_name()
 	for i in get_tab_count():
-		var vbox: NoteVBox = get_tab_control(i)
-		if vbox.locked_agent_id == agent_id:
+		var existing_vbox: NoteVBox = get_tab_control(i)
+		if existing_vbox.locked_agent_id == agent_id:
 			var title := get_tab_title(i)
 			if title == tab_name or title == sanitized:
-				return vbox
+				return existing_vbox
 
 	# Not found, create and lock
 	var vbox = create_tab(tab_name)
@@ -541,15 +541,14 @@ var last_click: float = -1
 func _on_tab_bar_gui_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton:
+		var tab_idx: = get_tab_idx_at_point(event.position)
+
 		if event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
-			var tab_idx: = get_tab_idx_at_point(event.position)
 			if tab_idx != -1:
 				_show_tab_context_menu(tab_idx, get_global_mouse_position())
 			return
 
 		if not (event.pressed and event.button_index == MOUSE_BUTTON_LEFT): return
-
-		var tab_idx: = get_tab_idx_at_point(event.position)
 
 		if tab_idx == -1: return
 

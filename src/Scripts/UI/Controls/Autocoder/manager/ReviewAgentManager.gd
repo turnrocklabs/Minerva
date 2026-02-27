@@ -24,11 +24,6 @@ var _agents: Array[Dictionary] = []
 var _editing_agent_id: String = ""
 var _presets: Array[Dictionary] = []
 
-# Drag and drop state
-var _dragging_card: PanelContainer = null
-var _drag_start_index: int = -1
-var _drag_preview: Control = null
-
 
 func _ready() -> void:
 	_refresh_button.pressed.connect(_on_refresh_pressed)

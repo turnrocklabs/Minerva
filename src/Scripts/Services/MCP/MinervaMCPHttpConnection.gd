@@ -28,7 +28,6 @@ var _method: String = ""
 var _path: String = ""
 var _headers: Dictionary = {}
 var _content_length: int = 0
-var _header_byte_length: int = 0  # bytes consumed by header section
 var _body: String = ""
 
 
