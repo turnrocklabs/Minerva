@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dnc60adttl28o"
+path="res://.godot/imported/eraser_compute.glsl-a7cb5c8b80e02b81c091b87e6218f59b.res"
+
+[deps]
+
+source_file="res://Scripts/UI/Controls/GraphicsEditor/eraser_compute.glsl"
+dest_files=["res://.godot/imported/eraser_compute.glsl-a7cb5c8b80e02b81c091b87e6218f59b.res"]
+
+[params]
+

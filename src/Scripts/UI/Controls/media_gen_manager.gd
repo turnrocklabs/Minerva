@@ -159,30 +159,14 @@ func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
 
 
 ## Send a flex request with 3 images, where the third image is always the pose editor texture.
-## Use for qwen_2511_flex 3-image composition (e.g. use_empty_image1=false, use_empty_image2=false, use_empty_image3=false).
-## image1 and image2 are optional: pass empty dict {} when use_empty_image1/use_empty_image2 is true.
-## When provided, each must be {buffer: PackedByteArray, role: String, filename: String} with role "image1" or "image2".
-## pose_image_buffer is sent as image3 with role "image3" and filename "pose_control.png".
-## Returns request_id or "" if pose_image_buffer is empty.
+## Use for qwen_2511_flex 3-image composition (compose_3_with_pose).
+## image1 and image2 are dicts: {buffer: PackedByteArray, role: String, filename: String}.
+## pose_image_buffer is sent as image3. Returns request_id or "" if pose_image_buffer is empty.
 func send_media_flex_request_three_with_pose(params: Dictionary, image1: Dictionary, image2: Dictionary, pose_image_buffer: PackedByteArray) -> String:
 	if pose_image_buffer.is_empty():
 		return ""
-	var combined: Array = []
-	if image1.get("buffer", PackedByteArray()).size() > 0:
-		combined.append({
-			"buffer": image1["buffer"],
-			"role": image1.get("role", "image1"),
-			"filename": image1.get("filename", "image1.png")
-		})
-	if image2.get("buffer", PackedByteArray()).size() > 0:
-		combined.append({
-			"buffer": image2["buffer"],
-			"role": image2.get("role", "image2"),
-			"filename": image2.get("filename", "image2.png")
-		})
-	combined.append({
-		"buffer": pose_image_buffer,
-		"role": "image3",
-		"filename": "pose_control.png"
-	})
-	return send_media_flex_request(params, combined)
+	lock_media_gen_ui.emit(true)
+	var request_id: String = client.send_media_flex_request_three_with_pose(params, image1, image2, pose_image_buffer)
+	if request_id != "":
+		_start_request_timeout(request_id)
+	return request_id

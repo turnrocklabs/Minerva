@@ -737,7 +737,9 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				else:
 					push_error("FileAccess error: %s" % FileAccess.get_open_error())
 					push_error("   ❌ Could not save file %s" % out_path)
-				_reset_binary_transfer_state()
+				# Do NOT reset state here: multi-file responses (e.g. 2-image compose) send
+				# one FILE_END per file. Reset only when we get the final text "response"
+				# or a NEW_MESSAGE for another request (handled in _handle_message and NEW_MESSAGE).
 			else:
 				if SingletonObject.verbose_logging:
 					print("   ⚠️ FILE_END for unknown file index %s" % file_index)
@@ -754,7 +756,7 @@ func send_media_gen_request(generation_params: Dictionary, topic: String = "medi
 		"topic": topic,  # Use provided topic parameter
 		"entity_type": "client",
 		"params": {
-			"client_id": client_id,
+			"client_id": Core._client_id,  # Use Core._client_id for consistency with other media gen functions
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
@@ -783,7 +785,7 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 		"topic": "media_gen/image_editing", # <--- IMPORTANT: Correct topic for image editing
 		"entity_type": "client",
 		"params": {
-			"client_id": client_id,
+			"client_id": Core._client_id,  # Use Core._client_id for consistency with other media gen functions
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
@@ -843,8 +845,8 @@ func send_media_selective_edit_request(editing_params: Dictionary, images_dir: A
 ## This workflow uses boolean switches to control operation mode:
 ## - create: all use_empty_* = true (generate from noise)
 ## - edit: use_empty_latent=false, use_empty_image1=false (edit image1)
-## - compose_2: use_empty_latent=true, use_empty_image1/2=false (combine 2 images)
-## - compose_3: use_empty_latent=true, use_empty_image1/2/3=false (combine 3 images)
+## - compose_2: use_empty_latent=true, use_empty_image1/2=false, use_empty_image3=true (combine 2 images; send images with roles "image1", "image2")
+## - compose_3: use_empty_latent=true, use_empty_image1/2/3=false (combine 3 images; the 3rd image is always from the Pose Editor when using compose_3_with_pose)
 func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
 	var request_id: String = UUIDGen.v7()
 
@@ -894,6 +896,35 @@ func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
 	send_message_to_core(message)
 
 	return request_id
+
+
+## Send a flex request for 3-image composition: image1, image2, and image3 = pose editor texture.
+## Use for qwen_2511_flex compose_3_with_pose (use_empty_image1/2/3=false).
+## image1 and image2 are dicts: {buffer: PackedByteArray, role: String, filename: String}.
+## pose_image_buffer is sent as image3 with role "image3" and filename "pose_control.png".
+## Returns request_id or "" if pose_image_buffer is empty.
+func send_media_flex_request_three_with_pose(params: Dictionary, image1: Dictionary, image2: Dictionary, pose_image_buffer: PackedByteArray) -> String:
+	if pose_image_buffer.is_empty():
+		return ""
+	var combined: Array = []
+	if image1.get("buffer", PackedByteArray()).size() > 0:
+		combined.append({
+			"buffer": image1["buffer"],
+			"role": image1.get("role", "image1"),
+			"filename": image1.get("filename", "image1.png")
+		})
+	if image2.get("buffer", PackedByteArray()).size() > 0:
+		combined.append({
+			"buffer": image2["buffer"],
+			"role": image2.get("role", "image2"),
+			"filename": image2.get("filename", "image2.png")
+		})
+	combined.append({
+		"buffer": pose_image_buffer,
+		"role": "image3",
+		"filename": "pose_control.png"
+	})
+	return send_media_flex_request(params, combined)
 
 
 func _queue_message_for_retry(message: Dictionary) -> void: # Explicitly type parameter

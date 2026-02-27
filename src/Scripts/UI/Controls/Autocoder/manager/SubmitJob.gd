@@ -5,7 +5,7 @@ extends VBoxContainer
 @onready var _artifact_browser: ArtifactBrowser = %ArtifactBrowser
 
 @warning_ignore("unused_variable")
-@onready var _input_resources_container: Container = %InputResourcesCard
+#@onready var _input_resources_container: Container = %InputResourcesCard
 @onready var _clear_resources_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ClearInputResourcesButton
 @onready var _attach_folder_button: Button = %AttachFolderButton
 @onready var _set_source_folder_button: Button = %SetSourceFolderButton
