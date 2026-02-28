@@ -11,6 +11,7 @@ var _latest_archive_by_session: Dictionary = {}  # session_id -> archive_uri
 var _latest_patch_by_session: Dictionary = {}  # session_id -> patch_uri
 var _session_events: Dictionary = {}  # session_id -> Array[Dictionary] — buffered notifications for MCP polling
 const MAX_EVENTS_PER_SESSION: int = 200
+var _last_iteration_dedup: Dictionary = {}  # session_id -> {status, timestamp} — dedup dual-topic iteration notifications
 
 # keep an array of notification message handlers so they dont go out of scope and get garbage collected
 var _notification_message_handlers: Array[Core.AwaitMessage]
@@ -541,10 +542,17 @@ func _subscribe_to_session(session_id: String) -> void:
 
 			# Route to kanban board
 			_handle_planning_notification(pub_session_id, topic, payload)
-			
+
 			# Notify submit job manager of planning turn completion
 			if submit_job_manager and planning_status in ["complete", "awaiting_answers"]:
 				submit_job_manager.on_planning_turn_complete(pub_session_id, planning_status)
+
+			# Handle planning errors — reset UI so user isn't stuck
+			elif submit_job_manager and planning_status == "error":
+				var error_msg = str(payload.get("error", "Unknown error"))
+				var summary = str(payload.get("summary", "Planning failed"))
+				info("Planning error for session %s: %s" % [pub_session_id, summary])
+				submit_job_manager.on_planning_error(pub_session_id, error_msg)
 	)
 
 	# Handle session-changed publications (planning->coder transitions)
@@ -595,6 +603,19 @@ func _handle_iteration_notification(session_id: String, topic: String, payload: 
 	# Record artifacts regardless of which viewers are open
 	_record_artifact_ready(session_id, payload)
 
+	# Deduplicate: each _multicast_iteration publishes to both user-scoped and
+	# session-scoped topics with identical data. Skip the duplicate so we don't
+	# add duplicate approval cards, iteration messages, or kanban moves.
+	var status_text = str(payload.get("status", "")).to_lower()
+	var iteration_num = int(payload.get("iteration", -1))
+	var dedup_key = "%s_%s_%d" % [session_id, status_text, iteration_num]
+	var now_ms = Time.get_ticks_msec()
+	var last_dedup = _last_iteration_dedup.get(session_id, {})
+	if last_dedup.get("key", "") == dedup_key and (now_ms - int(last_dedup.get("time", 0))) < 2000:
+		info("Skipping duplicate iteration notification: %s (topic: %s)" % [dedup_key, topic])
+		return
+	_last_iteration_dedup[session_id] = {"key": dedup_key, "time": now_ms}
+
 	# Find the kanban board or log viewer for this session
 	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
 		return
@@ -602,7 +623,6 @@ func _handle_iteration_notification(session_id: String, topic: String, payload: 
 	# Route summary to SubmitJob stream (once per notification, outside tab loop)
 	if submit_job_manager and submit_job_manager.has_method("add_iteration_message"):
 		submit_job_manager.add_iteration_message(session_id, payload)
-	var status_text = str(payload.get("status", "")).to_lower()
 	if status_text in ["complete", "completed", "awaiting_user", "in_review", "error", "failed"]:
 		if submit_job_manager.has_method("stop_llm_stream"):
 			submit_job_manager.stop_llm_stream()
@@ -612,6 +632,8 @@ func _handle_iteration_notification(session_id: String, topic: String, payload: 
 		# Notify SubmitJob of terminal state
 		if submit_job_manager.has_method("_set_job_state"):
 			submit_job_manager._set_job_state(submit_job_manager.JobState.AWAITING_USER)
+		# Move kanban tasks to HUMAN_REVIEW
+		_move_kanban_tasks_to_human_review(session_id)
 	elif status_text in ["error", "failed"]:
 		if submit_job_manager.has_method("_set_job_state"):
 			submit_job_manager._set_job_state(submit_job_manager.JobState.ERROR)
@@ -1166,9 +1188,11 @@ func _update_kanban_from_planning_tasks(tasks: Array, task_store, model: String 
 		var status_map = {
 			"plan": AutocoderTaskClass.TaskStatus.PLAN,
 			"in_progress": AutocoderTaskClass.TaskStatus.IN_PROGRESS,
-			"review": AutocoderTaskClass.TaskStatus.AI_REVIEW,  # Backend "review" maps to AI Review column
+			"review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
+			"in_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
 			"ai_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
 			"human_review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"awaiting_user": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
 			"done": AutocoderTaskClass.TaskStatus.DONE,
 			"complete": AutocoderTaskClass.TaskStatus.DONE
 		}
@@ -1229,7 +1253,12 @@ func _record_stage_history_for_task(target_task: AutocoderTask, notification_typ
 		"tasks_started":
 			target_task.add_stage_entry("in_progress", model, {"summary": "Code generation"})
 		"tasks_in_review":
-			target_task.add_stage_entry("ai_review", model, {"summary": "Review started"})
+			# Only record ai_review stage if task is actually in AI_REVIEW status
+			# (run_review=True). For HUMAN_REVIEW (run_review=False), record human_review instead.
+			if target_task.status == AutocoderTask.TaskStatus.AI_REVIEW:
+				target_task.add_stage_entry("ai_review", model, {"summary": "Review started"})
+			else:
+				target_task.add_stage_entry("human_review", model, {"summary": "Ready for human review"})
 		"tasks_done":
 			target_task.add_stage_entry("done", model, {"summary": "Completed"})
 
@@ -1257,6 +1286,23 @@ func _update_kanban_tasks_stage_history(session_id: String, stage: String, model
 							dominated = true
 					if dominated:
 						task.add_stage_entry(stage, model, details)
+				return
+
+
+func _move_kanban_tasks_to_human_review(session_id: String) -> void:
+	"""Move all non-DONE kanban tasks for a session to HUMAN_REVIEW when awaiting_user arrives"""
+	if not SingletonObject.editor_pane or not SingletonObject.editor_pane.Tabs:
+		return
+	for tab in SingletonObject.editor_pane.Tabs.get_children():
+		if not tab is Editor:
+			continue
+		var editor = tab as Editor
+		if editor.type == Editor.Type.KANBAN:
+			var kanban = editor.kanban_board
+			if kanban and kanban.get_meta("session_id", "") == session_id and kanban.task_store:
+				for task in kanban.task_store.get_all_tasks():
+					if task.status != AutocoderTask.TaskStatus.DONE:
+						kanban.task_store.update_task(task.id, {"status": AutocoderTask.TaskStatus.HUMAN_REVIEW})
 				return
 
 

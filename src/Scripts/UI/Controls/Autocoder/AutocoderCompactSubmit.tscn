@@ -136,12 +136,6 @@ theme_override_font_sizes/font_size = 18
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="AutoReviewCheckBox" type="CheckBox" parent="MainPanel/MainMargin/MainContent/OptionsRow/ChecksSection"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 16
-text = "Auto-review"
-
 [node name="RequirePermissionCheckBox" type="CheckBox" parent="MainPanel/MainMargin/MainContent/OptionsRow/ChecksSection"]
 unique_name_in_owner = true
 layout_mode = 2

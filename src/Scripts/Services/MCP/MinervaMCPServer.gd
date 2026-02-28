@@ -8056,11 +8056,7 @@ func _register_autocoder_tools() -> void:
 				"review_agent_ids": {
 					"type": "array",
 					"items": {"type": "string"},
-					"description": "Optional list of review agent IDs to run after generation"
-				},
-				"auto_review": {
-					"type": "boolean",
-					"description": "Whether to automatically run review after generation (default: false)"
+					"description": "Optional list of review agent IDs to run after generation. If any are provided, review runs automatically."
 				}
 			},
 			"required": ["prompt"]
@@ -8352,7 +8348,7 @@ func _autocoder_plan(args: Dictionary) -> Dictionary:
 			mgr.submit_job_manager.setup_mcp_session(
 				result.session_id, prompt,
 				AutocoderSubmitJobManager.AutocoderMode.PLAN,
-				false, input_archive_uri
+				input_archive_uri
 			)
 
 	var response: Dictionary = {
@@ -8394,7 +8390,7 @@ func _autocoder_generate(args: Dictionary) -> Dictionary:
 	var model: String = args.get("model", "")
 	var use_plan_tasks: bool = args.get("use_plan_tasks", false)
 	var review_agent_ids: Array = args.get("review_agent_ids", [])
-	var auto_review: bool = args.get("auto_review", false)
+	var auto_review: bool = not review_agent_ids.is_empty()
 
 	var result = await adapter.generate(
 		prompt, session_id, input_archive_uri, false,
@@ -8410,7 +8406,7 @@ func _autocoder_generate(args: Dictionary) -> Dictionary:
 			mgr.submit_job_manager.setup_mcp_session(
 				result.session_id, prompt,
 				AutocoderSubmitJobManager.AutocoderMode.CODER,
-				auto_review, input_archive_uri
+				input_archive_uri
 			)
 
 	return {

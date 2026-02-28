@@ -166,13 +166,6 @@ button_pressed = true
 tooltip_text = "Automatically start code generation after planning completes. Uncheck to review/edit task models first."
 text = "Auto-generate"
 
-[node name="AutoReviewCheckBox" type="CheckBox" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 17
-button_pressed = true
-text = "Auto-review"
-
 [node name="RequirePermissionCheckBox" type="CheckBox" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2

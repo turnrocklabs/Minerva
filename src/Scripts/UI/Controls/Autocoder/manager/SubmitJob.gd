@@ -32,7 +32,7 @@ extends VBoxContainer
 @onready var _review_model_option: OptionButton = %ReviewModelOption
 
 @onready var _auto_generate_check_box: CheckBox = %AutoGenerateCheckBox
-@onready var _auto_review_check_box: CheckBox = %AutoReviewCheckBox
+
 @onready var _require_permission_check_box: CheckBox = %RequirePermissionCheckBox
 @onready var _review_agents_refresh_button: Button = %ReviewAgentsRefreshButton
 @onready var _agent_checkbox_list: VBoxContainer = %AgentCheckboxList
@@ -152,7 +152,6 @@ func _ready() -> void:
 	if _resource_button and _resource_popup:
 		_resource_button.pressed.connect(func(): _resource_popup.popup_centered())
 
-	_auto_review_check_box.toggled.connect(_on_auto_review_toggled)
 	_clear_text_button.pressed.connect(_on_clear_text_button_pressed)
 	_microphone_button.pressed.connect(_on_microphone_button_pressed)
 	_stop_button.pressed.connect(_on_stop_button_pressed)
@@ -216,7 +215,7 @@ func _input(event: InputEvent) -> void:
 ## Programmatic entry point for MCP-initiated sessions.
 ## Syncs the UI to track a session started externally, so it behaves
 ## identically to one started from the Submit button.
-func setup_mcp_session(session_id: String, prompt: String, mode: AutocoderMode, auto_review: bool = false, input_archive_uri: String = "") -> void:
+func setup_mcp_session(session_id: String, prompt: String, mode: AutocoderMode, input_archive_uri: String = "") -> void:
 	if session_id.is_empty():
 		return
 
@@ -234,10 +233,6 @@ func setup_mcp_session(session_id: String, prompt: String, mode: AutocoderMode, 
 			_set_job_state(JobState.GENERATING)
 		AutocoderMode.REVIEW:
 			_set_job_state(JobState.GENERATING)
-
-	# Set auto-review checkbox
-	if _auto_review_check_box:
-		_auto_review_check_box.button_pressed = auto_review
 
 	# Fill prompt field
 	if _prompt_text_edit:
@@ -269,7 +264,7 @@ func setup_mcp_session(session_id: String, prompt: String, mode: AutocoderMode, 
 	if SingletonObject.autocoder_manager:
 		SingletonObject.autocoder_manager.monitor_session(user_id, session_id)
 
-	print("[SubmitJob] MCP session synced to UI: %s (mode=%d, auto_review=%s)" % [session_id, mode, auto_review])
+	print("[SubmitJob] MCP session synced to UI: %s (mode=%d)" % [session_id, mode])
 
 
 func _refresh_session_history():
@@ -1169,12 +1164,6 @@ func _on_session_option_selected(_index: int) -> void:
 	_update_download_latest_button()
 
 
-func _on_auto_review_toggled(toggled_on: bool) -> void:
-	# If auto-review enabled and no agents loaded yet, refresh the list
-	if toggled_on and _agent_checkbox_list.get_child_count() == 0:
-		_refresh_review_agents()
-
-
 func _on_review_agents_refresh_pressed() -> void:
 	_refresh_review_agents()
 
@@ -1311,14 +1300,6 @@ func _on_submit_job_button_pressed() -> void:
 		SingletonObject.create_toast_notification(
 			"Session is already processing a request. Please wait.",
 			ToastNotification.Type.WARNING
-		)
-		return
-
-	# Validate: auto-review requires at least one review agent
-	if _auto_review_check_box.button_pressed and _get_selected_review_agent_ids().is_empty():
-		SingletonObject.ErrorDisplay(
-			"No Review Agents Selected",
-			"Auto-Review is enabled but no review agents are selected.\n\nEither select one or more review agents, or disable Auto-Review."
 		)
 		return
 
@@ -1463,19 +1444,7 @@ func _auto_promote_generate(session_id: String, model_id: String = "") -> void:
 				task_overrides[task.id] = task.assigned_model
 
 	var review_agent_ids: Array = _get_selected_review_agent_ids()
-	var auto_review_checked = _auto_review_check_box.button_pressed
-
-	# Guard: auto-review requires at least one review agent to be selected
-	if auto_review_checked and review_agent_ids.is_empty():
-		SingletonObject.ErrorDisplay(
-			"No Review Agents Selected",
-			"Auto-Review is enabled but no review agents are selected.\n\nEither select one or more review agents, or disable Auto-Review."
-		)
-		_set_job_state(JobState.IDLE)
-		_set_prompt_enabled(true)
-		return
-
-	var auto_review = auto_review_checked or not review_agent_ids.is_empty()
+	var auto_review = not review_agent_ids.is_empty()
 	var require_permission = _require_permission_check_box.button_pressed
 	var user_id = Core.client.client_id
 
@@ -1865,6 +1834,29 @@ func on_planning_turn_complete(session_id: String, planning_status: String) -> v
 				ToastNotification.Type.INFO
 			)
 
+func on_planning_error(session_id: String, error_msg: String) -> void:
+	"""Called when planning fails (e.g. LLM timeout). Resets UI so user isn't stuck."""
+	print("[SubmitJob] Planning error for session %s: %s" % [session_id, error_msg])
+
+	# Stop LLM progress animations
+	if _action_stream:
+		_action_stream.stop_llm_progress()
+		_action_stream.add_message("Planning failed: %s" % error_msg, "error")
+
+	# Release processing flag
+	if not session_id.is_empty():
+		_processing_sessions[session_id] = false
+
+	# Re-enable controls
+	_set_prompt_enabled(true)
+	_set_job_state(JobState.ERROR)
+
+	SingletonObject.create_toast_notification(
+		"Planning failed: %s" % error_msg.substr(0, 100),
+		ToastNotification.Type.WARNING
+	)
+
+
 func _set_prompt_enabled(enabled: bool) -> void:
 	"""Enable or disable the prompt input"""
 	if _prompt_text_edit:
@@ -2234,9 +2226,11 @@ func _populate_kanban_from_plan(tasks: Array, task_store) -> void:  # task_store
 		var status_map = {
 			"plan": AutocoderTaskClass.TaskStatus.PLAN,
 			"in_progress": AutocoderTaskClass.TaskStatus.IN_PROGRESS,
-			"review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
+			"in_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
 			"ai_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
 			"human_review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"awaiting_user": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
 			"done": AutocoderTaskClass.TaskStatus.DONE,
 			"complete": AutocoderTaskClass.TaskStatus.DONE
 		}
