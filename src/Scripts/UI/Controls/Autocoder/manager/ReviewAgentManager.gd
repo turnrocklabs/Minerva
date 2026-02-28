@@ -180,6 +180,7 @@ func _build_agent_card(agent: Dictionary, index: int) -> PanelContainer:
 	name_label.add_theme_font_size_override("font_size", 21)
 	name_label.add_theme_color_override("font_color", Color(0.95, 0.95, 0.97))
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	header.add_child(name_label)
 
 	var model_text = str(agent.get("model", ""))
@@ -187,6 +188,7 @@ func _build_agent_card(agent: Dictionary, index: int) -> PanelContainer:
 	model_label.text = model_text if not model_text.is_empty() else "default model"
 	model_label.add_theme_font_size_override("font_size", 16)
 	model_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	model_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	header.add_child(model_label)
 	
 	# Move up/down buttons
@@ -555,6 +557,7 @@ func _build_preset_card(preset: Dictionary) -> PanelContainer:
 	name_label.add_theme_font_size_override("font_size", 21)
 	name_label.add_theme_color_override("font_color", Color(0.95, 0.95, 0.97))
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	header.add_child(name_label)
 
 	var delete_button := Button.new()
