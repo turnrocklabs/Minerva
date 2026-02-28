@@ -348,6 +348,9 @@ func _refresh_child_views() -> void:
 		if agent_manager.has_method("_refresh_agents"):
 			print("[AutocoderManager] Calling ReviewAgentManager._refresh_agents()")
 			agent_manager._refresh_agents()
+		if agent_manager.has_method("_refresh_presets"):
+			print("[AutocoderManager] Calling ReviewAgentManager._refresh_presets()")
+			agent_manager._refresh_presets()
 
 	# Refresh review agents and presets in SubmitJob (for the checkbox list and preset dropdown)
 	if submit_job_manager:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=22 format=3 uid="uid://dhvyes0wg8qlw"]
+[gd_scene load_steps=25 format=3 uid="uid://dhvyes0wg8qlw"]
 
 [ext_resource type="Script" uid="uid://dyi3dgpcrkx28" path="res://Scripts/UI/Controls/Autocoder/manager/SubmitJob.gd" id="1_85ws8"]
 [ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="2_0n6lh"]
@@ -18,6 +18,9 @@
 [ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="folder_icon"]
 [ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="send_icon"]
 [ext_resource type="Texture2D" uid="uid://dkq31owppnmm7" path="res://assets/icons/robot_AI.png" id="robot_icon"]
+[ext_resource type="Texture2D" uid="uid://jdgspalgxo3u" path="res://assets/icons/gear_icons/gears_icon_24_no_bg.png" id="gear_24"]
+[ext_resource type="Texture2D" uid="uid://lmmhfyqj83jd" path="res://assets/icons/gear_icons/gears_icon_48_no_bg.png" id="gear_48"]
+[ext_resource type="Texture2D" uid="uid://cvwwmnuuovww5" path="res://assets/icons/gear_icons/gears_icon_64_no_bg.png" id="gear_64"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
 bg_color = Color(0.12, 0.12, 0.14, 1)
@@ -377,7 +380,7 @@ flat = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-split_offset = -250
+split_offset = -226
 
 [node name="TopSection" type="VBoxContainer" parent="VSplitContainer"]
 layout_mode = 2
@@ -411,7 +414,7 @@ theme_override_constants/separation = 8
 
 [node name="PromptTextEdit" type="TextEdit" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 50)
+custom_minimum_size = Vector2(0, 125)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/font_size = 18
@@ -506,8 +509,12 @@ icon_68 = ExtResource("stop_68")
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Job settings"
-text = "⚙"
+icon = ExtResource("gear_24")
 icon_alignment = 1
+script = ExtResource("icons_button")
+icon_24 = ExtResource("gear_24")
+icon_48 = ExtResource("gear_48")
+icon_68 = ExtResource("gear_64")
 
 [node name="SubmitJobButton" type="Button" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
 unique_name_in_owner = true
@@ -515,13 +522,6 @@ layout_mode = 2
 tooltip_text = "Start Job"
 icon = ExtResource("send_icon")
 icon_alignment = 1
-
-[node name="NotesIndicatorLabel" type="Label" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 15
-text = "No notes attached"
 
 [node name="SessionHistoryContainer" type="VBoxContainer" parent="."]
 unique_name_in_owner = true

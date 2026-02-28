@@ -48,7 +48,6 @@ extends VBoxContainer
 
 @onready var _submit_job_button: Button = %SubmitJobButton
 @onready var _select_package_button: Button = %SelectPackageButton
-@onready var _notes_indicator_label: Label = %NotesIndicatorLabel
 
 ## Keep AutocoderMode as static const for MCP backward compatibility
 enum AutocoderMode {
@@ -138,10 +137,6 @@ func _ready() -> void:
 
 	# Create planning action buttons (Add Context / Inject Notes)
 	_create_planning_actions_row()
-
-	# Update notes indicator
-	_update_notes_indicator()
-	visibility_changed.connect(_update_notes_indicator)
 
 	# Note: Session loading and model loading are now handled by AutocoderManager
 	# calling _refresh_session_history() and _refresh_models() after the autocoder_adapter is ready.
@@ -1336,6 +1331,9 @@ func _on_submit_job_button_pressed() -> void:
 	var phase_models = _get_phase_models()
 	var prompt_with_notes = _build_prompt_with_notes()
 
+	# Disable injected notes now that their content is captured
+	_disable_injected_notes()
+
 	# Resolve per-phase models (non-empty override wins, else fall back to main dropdown)
 	var planning_model = phase_models["planning"] if not phase_models["planning"].is_empty() else model_id
 
@@ -2093,29 +2091,15 @@ func _build_prompt_with_notes() -> String:
 	return "### Reference Notes ###\n%s\n### End Reference Notes ###\n\n%s" % [notes_text, prompt]
 
 
-func _update_notes_indicator() -> void:
-	"""Update the notes indicator label with current enabled note count"""
-	if not _notes_indicator_label:
-		return
-
-	var count = 0
+func _disable_injected_notes() -> void:
+	"""Turn off note inject switches after content has been captured into the prompt"""
 	for container in [SingletonObject.notes_container, SingletonObject.drawer_notes_container]:
 		if not container:
 			continue
-		for tab_idx in range(container.get_tab_count()):
-			var notes = container.get_notes(tab_idx)
-			for note in notes:
-				if note.enabled and note.type == Note.Type.TEXT:
-					var controls = note.get_controls_container()
-					if controls is NoteTextControls and not controls.content.strip_edges().is_empty():
-						count += 1
-
-	if count > 0:
-		_notes_indicator_label.text = "%d note%s attached" % [count, "s" if count != 1 else ""]
-		_notes_indicator_label.add_theme_color_override("font_color", Color(0.4, 0.7, 0.4, 1))
-	else:
-		_notes_indicator_label.text = "No notes attached"
-		_notes_indicator_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55, 1))
+		for i in container.get_tab_count():
+			container.disable_notes(i)
+	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+	SingletonObject.detached_note_proxies.clear()
 
 
 # ============================================================================
