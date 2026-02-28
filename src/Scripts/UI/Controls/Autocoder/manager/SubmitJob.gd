@@ -4,12 +4,12 @@ extends VBoxContainer
 @onready var _artifact_browser_popup: PersistentWindow = %ArtifactBrowserPopup
 @onready var _artifact_browser: ArtifactBrowser = %ArtifactBrowser
 
-@onready var _clear_resources_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ClearInputResourcesButton
+@onready var _clear_resources_button: Button = %ClearInputResourcesButton
 @onready var _attach_folder_button: Button = %AttachFolderButton
 @onready var _set_source_folder_button: Button = %SetSourceFolderButton
-@onready var _download_latest_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/DownloadLatestButton
-@onready var _extract_latest_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ExtractLatestButton
-@onready var _download_patch_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/DownloadPatchButton
+@onready var _download_latest_button: Button = %DownloadLatestButton
+@onready var _extract_latest_button: Button = %ExtractLatestButton
+@onready var _download_patch_button: Button = %DownloadPatchButton
 
 @onready var _selected_artifact_name_label: Label = %SelectedArtifactNameLabel
 @onready var _selected_artifact_uri_label: Label = %SelectedArtifactURILabel
@@ -17,13 +17,21 @@ extends VBoxContainer
 @onready var _prompt_text_edit: TextEdit = %PromptTextEdit
 
 @onready var _model_option_button: OptionButton = %ModelOptionButton
+@onready var _clear_text_button: Button = %ClearTextButton
+@onready var _microphone_button: Button = %MicrophoneButton
+@onready var _stop_button: Button = %StopButton
 
+@onready var _resource_popup: PersistentWindow = %ResourcePopup
+@onready var _resource_button: Button = %ResourceButton
 @onready var _phase_model_settings_button: Button = %PhaseModelSettingsButton
 @onready var _phase_model_popup: PersistentWindow = %PhaseModelPopup
+@onready var _review_agents_button: Button = %ReviewAgentsButton
+@onready var _review_agents_popup: PersistentWindow = %ReviewAgentsPopup
 @onready var _plan_model_option: OptionButton = %PlanModelOption
 @onready var _generate_model_option: OptionButton = %GenerateModelOption
 @onready var _review_model_option: OptionButton = %ReviewModelOption
 
+@onready var _auto_generate_check_box: CheckBox = %AutoGenerateCheckBox
 @onready var _auto_review_check_box: CheckBox = %AutoReviewCheckBox
 @onready var _require_permission_check_box: CheckBox = %RequirePermissionCheckBox
 @onready var _review_agents_refresh_button: Button = %ReviewAgentsRefreshButton
@@ -38,6 +46,8 @@ extends VBoxContainer
 @onready var _new_session_check_box: CheckBox = %NewSessionCheckBox
 @onready var _continue_session_check_box: CheckBox = %ContinueSessionCheckBox
 
+@onready var _submit_job_button: Button = %SubmitJobButton
+@onready var _select_package_button: Button = %SelectPackageButton
 @onready var _notes_indicator_label: Label = %NotesIndicatorLabel
 
 ## Keep AutocoderMode as static const for MCP backward compatibility
@@ -142,8 +152,15 @@ func _ready() -> void:
 
 	if _phase_model_settings_button:
 		_phase_model_settings_button.pressed.connect(_on_phase_model_settings_pressed)
+	if _review_agents_button:
+		_review_agents_button.pressed.connect(_on_review_agents_button_pressed)
+	if _resource_button and _resource_popup:
+		_resource_button.pressed.connect(func(): _resource_popup.popup_centered())
 
 	_auto_review_check_box.toggled.connect(_on_auto_review_toggled)
+	_clear_text_button.pressed.connect(_on_clear_text_button_pressed)
+	_microphone_button.pressed.connect(_on_microphone_button_pressed)
+	_stop_button.pressed.connect(_on_stop_button_pressed)
 	_review_agents_refresh_button.pressed.connect(_on_review_agents_refresh_pressed)
 	_review_agents_clear_button.pressed.connect(_on_review_agents_clear_pressed)
 	_select_all_button.pressed.connect(_on_select_all_pressed)
@@ -175,10 +192,28 @@ func _ready() -> void:
 			_refresh_models()
 	)
 
+	# Connections moved from .tscn to code for reparenting resilience
+	if _select_package_button and not _select_package_button.pressed.is_connected(_on_select_package_button_pressed):
+		_select_package_button.pressed.connect(_on_select_package_button_pressed)
+	if _clear_resources_button and not _clear_resources_button.pressed.is_connected(_on_clear_input_resources_button_pressed):
+		_clear_resources_button.pressed.connect(_on_clear_input_resources_button_pressed)
+	if _submit_job_button and not _submit_job_button.pressed.is_connected(_on_submit_job_button_pressed):
+		_submit_job_button.pressed.connect(_on_submit_job_button_pressed)
+	if _continue_session_check_box and not _continue_session_check_box.toggled.is_connected(_on_continue_session_check_box_toggled):
+		_continue_session_check_box.toggled.connect(_on_continue_session_check_box_toggled)
+
 	if _new_session_check_box and not _new_session_check_box.toggled.is_connected(_on_new_session_toggled):
 		_new_session_check_box.toggled.connect(_on_new_session_toggled)
 	if _session_option_button and not _session_option_button.item_selected.is_connected(_on_session_option_selected):
 		_session_option_button.item_selected.connect(_on_session_option_selected)
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ENTER and event.ctrl_pressed:
+			if _submit_job_button and not _submit_job_button.disabled:
+				get_viewport().set_input_as_handled()
+				_on_submit_job_button_pressed()
 
 
 
@@ -349,6 +384,11 @@ func _on_phase_model_settings_pressed() -> void:
 		_phase_model_popup.popup_centered()
 
 
+func _on_review_agents_button_pressed() -> void:
+	if _review_agents_popup:
+		_review_agents_popup.popup_centered()
+
+
 func _populate_phase_model_dropdowns() -> void:
 	"""Populate phase model dropdowns mirroring the main model dropdown, with '(Use Default)' as first item"""
 	for option_button in [_plan_model_option, _generate_model_option, _review_model_option]:
@@ -465,31 +505,30 @@ func _populate_review_agents(agents: Array[Dictionary]) -> void:
 
 func _set_job_state(new_state: JobState) -> void:
 	_job_state = new_state
-	var submit_button = $VSplitContainer/TopSection/ScrollContainer/MainVBox/MainInputCard/CardMargin/CardContent/SubmitJobButton
-	if not submit_button:
+	if not _submit_job_button:
 		return
 
 	var is_continue = _continue_session_check_box.button_pressed
 
 	match _job_state:
 		JobState.IDLE:
-			submit_button.text = "Continue Session" if is_continue else "Start Job"
-			submit_button.disabled = false
+			_submit_job_button.tooltip_text = "Continue Session" if is_continue else "Start Job"
+			_submit_job_button.disabled = false
 		JobState.PLANNING:
-			submit_button.text = "Planning..."
-			submit_button.disabled = true
+			_submit_job_button.tooltip_text = "Planning..."
+			_submit_job_button.disabled = true
 		JobState.AWAITING_QUESTIONS:
-			submit_button.text = "Awaiting Answers..."
-			submit_button.disabled = true
+			_submit_job_button.tooltip_text = "Awaiting Answers..."
+			_submit_job_button.disabled = true
 		JobState.GENERATING:
-			submit_button.text = "Generating..."
-			submit_button.disabled = true
+			_submit_job_button.tooltip_text = "Generating..."
+			_submit_job_button.disabled = true
 		JobState.AWAITING_USER:
-			submit_button.text = "Awaiting Approval"
-			submit_button.disabled = true
+			_submit_job_button.tooltip_text = "Awaiting Approval"
+			_submit_job_button.disabled = true
 		JobState.ERROR:
-			submit_button.text = "Retry"
-			submit_button.disabled = false
+			_submit_job_button.tooltip_text = "Retry"
+			_submit_job_button.disabled = false
 
 	# Show/hide planning action buttons
 	if _planning_actions_row:
@@ -1280,6 +1319,14 @@ func _on_submit_job_button_pressed() -> void:
 		)
 		return
 
+	# Validate: auto-review requires at least one review agent
+	if _auto_review_check_box.button_pressed and _get_selected_review_agent_ids().is_empty():
+		SingletonObject.ErrorDisplay(
+			"No Review Agents Selected",
+			"Auto-Review is enabled but no review agents are selected.\n\nEither select one or more review agents, or disable Auto-Review."
+		)
+		return
+
 	# Mark session as processing
 	if not session_id.is_empty():
 		_processing_sessions[session_id] = true
@@ -1418,7 +1465,19 @@ func _auto_promote_generate(session_id: String, model_id: String = "") -> void:
 				task_overrides[task.id] = task.assigned_model
 
 	var review_agent_ids: Array = _get_selected_review_agent_ids()
-	var auto_review = _auto_review_check_box.button_pressed or not review_agent_ids.is_empty()
+	var auto_review_checked = _auto_review_check_box.button_pressed
+
+	# Guard: auto-review requires at least one review agent to be selected
+	if auto_review_checked and review_agent_ids.is_empty():
+		SingletonObject.ErrorDisplay(
+			"No Review Agents Selected",
+			"Auto-Review is enabled but no review agents are selected.\n\nEither select one or more review agents, or disable Auto-Review."
+		)
+		_set_job_state(JobState.IDLE)
+		_set_prompt_enabled(true)
+		return
+
+	var auto_review = auto_review_checked or not review_agent_ids.is_empty()
 	var require_permission = _require_permission_check_box.button_pressed
 	var user_id = Core.client.client_id
 
@@ -1558,12 +1617,15 @@ func _on_approval_action(session_id: String, action: String, feedback: String) -
 			success = await autocoder_manager.autocoder_adapter.approve(user_id, session_id)
 			if success:
 				SingletonObject.create_toast_notification("Session approved", ToastNotification.Type.SUCCESS)
+				_set_job_state(JobState.IDLE)
+				_set_prompt_enabled(true)
 			else:
 				SingletonObject.create_toast_notification("Failed to approve session", ToastNotification.Type.WARNING)
 		"reject":
 			success = await autocoder_manager.autocoder_adapter.request_revision(user_id, session_id, feedback)
 			if success:
 				SingletonObject.create_toast_notification("Revision requested", ToastNotification.Type.SUCCESS)
+				_set_job_state(JobState.GENERATING)
 			else:
 				SingletonObject.create_toast_notification("Failed to request revision", ToastNotification.Type.WARNING)
 
@@ -1765,17 +1827,31 @@ func on_planning_turn_complete(session_id: String, planning_status: String) -> v
 		"complete":
 			# Auto-promote: if we were planning or awaiting questions, auto-start generation
 			if _job_state == JobState.PLANNING or _job_state == JobState.AWAITING_QUESTIONS:
-				if _action_stream:
-					_action_stream.add_message("✓ Planning Complete — auto-starting generation...", "system")
+				if _auto_generate_check_box.button_pressed:
+					if _action_stream:
+						_action_stream.add_message("✓ Planning Complete — auto-starting generation...", "system")
 
-				SingletonObject.create_toast_notification(
-					"Planning complete — starting code generation...",
-					ToastNotification.Type.SUCCESS
-				)
+					SingletonObject.create_toast_notification(
+						"Planning complete — starting code generation...",
+						ToastNotification.Type.SUCCESS
+					)
 
-				var model_id = _get_selected_model_id()
-				var promote_session_id = session_id if not session_id.is_empty() else _auto_promote_session_id
-				_auto_promote_generate(promote_session_id, model_id)
+					var model_id = _get_selected_model_id()
+					var promote_session_id = session_id if not session_id.is_empty() else _auto_promote_session_id
+					_auto_promote_generate(promote_session_id, model_id)
+				else:
+					# Auto-generate off — pause so user can review tasks / set per-task models
+					if _action_stream:
+						_action_stream.add_message("✓ Planning Complete\n\nReview tasks and click Start Generation when ready.", "system")
+					SingletonObject.create_toast_notification(
+						"Planning complete — review tasks, then start generation.",
+						ToastNotification.Type.SUCCESS
+					)
+					_set_job_state(JobState.IDLE)
+					_set_prompt_enabled(true)
+					# Override button text to clarify the next action
+					if _submit_job_button:
+						_submit_job_button.tooltip_text = "Start Generation"
 			else:
 				# Planning completed outside of auto-promote flow (e.g. resumed session)
 				if _action_stream:
@@ -1799,6 +1875,37 @@ func _set_prompt_enabled(enabled: bool) -> void:
 			_prompt_text_edit.placeholder_text = "Enter additional instructions, modifications, or questions..."
 		else:
 			_prompt_text_edit.placeholder_text = "Processing..."
+
+# ============================================================================
+# Clear / Voice Input / Stop
+# ============================================================================
+
+func _on_clear_text_button_pressed() -> void:
+	_prompt_text_edit.text = ""
+
+
+func _on_microphone_button_pressed() -> void:
+	if SingletonObject.AtT._StartConverting() != OK:
+		return
+	SingletonObject.AtT.FieldForFilling = _prompt_text_edit
+	SingletonObject.AtT.btn = _microphone_button
+	_microphone_button.modulate = Color(Color.LIME_GREEN)
+	SingletonObject.AtT.btnStop = _stop_button
+
+
+func _on_stop_button_pressed() -> void:
+	# Stop any active voice transcription
+	SingletonObject.AtT._StopConverting()
+
+	# Stop any active autocoder job
+	if _job_state == JobState.PLANNING or _job_state == JobState.GENERATING:
+		if _action_stream:
+			_action_stream.stop_llm_progress()
+			_action_stream.add_message("Stopped by user.", "system")
+		SingletonObject.create_toast_notification("Job stopped", ToastNotification.Type.INFO)
+		_set_job_state(JobState.IDLE)
+		_set_prompt_enabled(true)
+
 
 # ============================================================================
 # Planning Action Buttons (Add Context / Inject Notes)

@@ -38,18 +38,10 @@ theme_override_constants/separation = 8
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer/Header"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 20
-text = "Task Title"
-autowrap_mode = 3
-
 [node name="StatusBadge" type="Label" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 15
 text = "Plan"
 
@@ -62,6 +54,15 @@ text = "⋯"
 
 [node name="ActionsMenu" type="PopupMenu" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 20
+text = "Task Title"
+autowrap_mode = 3
 
 [node name="DescriptionLabel" type="Label" parent="MarginContainer/VBoxContainer"]
 unique_name_in_owner = true
