@@ -1182,6 +1182,91 @@ func delete_all_sessions() -> Dictionary:
 	}
 
 
+## Save user-selected models to backend (persisted in Agent Memory)
+## @param models: Array of {id: "provider/model", name: "Display Name"}
+func save_user_models(models: Array) -> bool:
+	if not Core.client._connected:
+		push_warning("Can't save user models. Core not connected")
+		return false
+
+	var action := get_action("autocoder/user-models/save")
+	if not action:
+		push_warning("Save user models action not found")
+		return false
+
+	var msg = await Core.send_message(service, action, {"models": models}).receive()
+
+	if not msg:
+		push_warning("No response when saving user models")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to save user models")
+		push_warning("Save user models error: %s" % error_msg)
+		return false
+
+	return true
+
+
+## Get user-saved models from backend
+## Returns array of {id, name} dictionaries
+func get_user_models() -> Array[Dictionary]:
+	var models: Array[Dictionary] = []
+
+	if not Core.client._connected:
+		push_warning("Can't get user models. Core not connected")
+		return models
+
+	var action := get_action("autocoder/user-models/get")
+	if not action:
+		push_warning("Get user models action not found")
+		return models
+
+	var msg = await Core.send_message(service, action, {}).receive()
+
+	if not msg:
+		push_warning("No response when getting user models")
+		return models
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to get user models")
+		push_warning("Get user models error: %s" % error_msg)
+		return models
+
+	var result_models = safe_extract(msg, ["params", "result", "models"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_ARRAY], [])
+
+	for model_data in result_models:
+		if model_data is Dictionary:
+			models.append(model_data)
+
+	return models
+
+
+## Clear all user-saved models from backend
+func clear_user_models() -> bool:
+	if not Core.client._connected:
+		push_warning("Can't clear user models. Core not connected")
+		return false
+
+	var action := get_action("autocoder/user-models/clear")
+	if not action:
+		push_warning("Clear user models action not found")
+		return false
+
+	var msg = await Core.send_message(service, action, {}).receive()
+
+	if not msg:
+		push_warning("No response when clearing user models")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to clear user models")
+		push_warning("Clear user models error: %s" % error_msg)
+		return false
+
+	return true
+
+
 func _delete_local_kanban_file(session_id: String) -> void:
 	"""Delete local Kanban save file for a session"""
 	var save_path = "user://autocoder_kanban/%s.json" % session_id

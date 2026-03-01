@@ -34,6 +34,9 @@ extends VBoxContainer
 @onready var _auto_generate_check_box: CheckBox = %AutoGenerateCheckBox
 
 @onready var _require_permission_check_box: CheckBox = %RequirePermissionCheckBox
+@onready var _browse_models_button: Button = %BrowseModelsButton
+@onready var _clear_user_models_button: Button = %ClearUserModelsButton
+@onready var _model_management_status_label: Label = %ModelManagementStatusLabel
 @onready var _review_agents_refresh_button: Button = %ReviewAgentsRefreshButton
 @onready var _agent_checkbox_list: VBoxContainer = %AgentCheckboxList
 @onready var _review_agents_empty_label: Label = %ReviewAgentsEmptyLabel
@@ -104,6 +107,9 @@ var _source_dir_by_session: Dictionary = {}  # session_id -> source dir
 const SOURCE_DIR_SECTION = "AutocoderSourceDirs"
 var _submitted_questions: Dictionary = {}  # question_id -> true
 
+# User-selected custom models from OpenRouter browse
+var _user_selected_models: Array = []  # [{id, name}, ...]
+
 # Planning action buttons (Add Context / Inject Notes)
 var _planning_actions_row: HBoxContainer = null
 var _add_context_button: Button = null
@@ -147,6 +153,10 @@ func _ready() -> void:
 
 	if _phase_model_settings_button:
 		_phase_model_settings_button.pressed.connect(_on_phase_model_settings_pressed)
+	if _browse_models_button:
+		_browse_models_button.pressed.connect(_on_browse_models_pressed)
+	if _clear_user_models_button:
+		_clear_user_models_button.pressed.connect(_on_clear_user_models_pressed)
 	if _review_agents_button:
 		_review_agents_button.pressed.connect(_on_review_agents_button_pressed)
 	if _resource_button and _resource_popup:
@@ -308,6 +318,9 @@ func _refresh_models() -> void:
 	print("[SubmitJob] Received %d models from adapter" % models.size())
 	_populate_models(models)
 	_populate_phase_model_dropdowns()
+
+	# Update user model count status
+	_update_user_model_status()
 
 
 func _refresh_review_agents() -> void:
@@ -2344,3 +2357,220 @@ func _handle_planning_questions(questions: Array, session_id: String) -> void:
 			"Planning has %d required question(s) - please answer them" % unanswered_required.size(),
 			ToastNotification.Type.INFO
 		)
+
+
+# =============================================================================
+# OpenRouter Model Management
+# =============================================================================
+
+func _update_user_model_status() -> void:
+	if not _model_management_status_label:
+		return
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.autocoder_adapter:
+		_model_management_status_label.text = ""
+		return
+	var user_models = await SingletonObject.autocoder_manager.autocoder_adapter.get_user_models()
+	_user_selected_models = []
+	for m in user_models:
+		if m is Dictionary:
+			_user_selected_models.append(m)
+	if _user_selected_models.size() > 0:
+		_model_management_status_label.text = "%d custom model(s) saved" % _user_selected_models.size()
+	else:
+		_model_management_status_label.text = ""
+
+
+func _on_browse_models_pressed() -> void:
+	var api_key: String = SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENROUTER)
+	if api_key.strip_edges().is_empty():
+		SingletonObject.ErrorDisplay("No API Key", "Set your OpenRouter API key in Preferences > API Keys first.")
+		return
+	_show_model_browse_dialog(api_key)
+
+
+func _on_clear_user_models_pressed() -> void:
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.autocoder_adapter:
+		return
+	_clear_user_models_button.disabled = true
+	var success = await SingletonObject.autocoder_manager.autocoder_adapter.clear_user_models()
+	_clear_user_models_button.disabled = false
+	if success:
+		_user_selected_models.clear()
+		SingletonObject.create_toast_notification("Custom models cleared")
+		_refresh_models()
+	else:
+		SingletonObject.create_toast_notification("Failed to clear custom models", ToastNotification.Type.ERROR)
+
+
+func _show_model_browse_dialog(api_key: String) -> void:
+	var win := Window.new()
+	win.title = "Browse OpenRouter Models"
+	var scale: float = get_tree().root.content_scale_factor
+	win.content_scale_factor = scale
+	win.size = Vector2i(Vector2(620, 560) * scale)
+	win.close_requested.connect(func(): win.queue_free())
+
+	var margin := MarginContainer.new()
+	margin.anchors_preset = Control.PRESET_FULL_RECT
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	win.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	# Search bar
+	var search_hbox := HBoxContainer.new()
+	var search_edit := LineEdit.new()
+	search_edit.placeholder_text = "Search models..."
+	search_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	search_hbox.add_child(search_edit)
+	var refresh_btn := Button.new()
+	refresh_btn.text = "Refresh"
+	search_hbox.add_child(refresh_btn)
+	vbox.add_child(search_hbox)
+
+	# Model list
+	var item_list := ItemList.new()
+	item_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	item_list.allow_reselect = true
+	vbox.add_child(item_list)
+
+	# Details label
+	var details_label := Label.new()
+	details_label.text = "Select a model to see details."
+	details_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details_label.custom_minimum_size.y = 48
+	vbox.add_child(details_label)
+
+	# Status label
+	var status_label := Label.new()
+	status_label.text = "Loading models..."
+	status_label.modulate.a = 0.6
+	vbox.add_child(status_label)
+
+	# Buttons
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
+	btn_hbox.add_theme_constant_override("separation", 8)
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Close"
+	cancel_btn.pressed.connect(func(): win.queue_free())
+	btn_hbox.add_child(cancel_btn)
+	var add_btn := Button.new()
+	add_btn.text = "Add Selected"
+	add_btn.disabled = true
+	btn_hbox.add_child(add_btn)
+	vbox.add_child(btn_hbox)
+
+	add_child(win)
+	win.popup_centered()
+
+	# Store fetched models
+	var all_models: Array = []
+	var models_added_this_session: Array = []
+
+	# Filter function
+	var _filter_list := func(search_text: String):
+		item_list.clear()
+		var query := search_text.strip_edges().to_lower()
+		for i in range(all_models.size()):
+			var m: Dictionary = all_models[i]
+			var name_: String = m.get("display_name", "")
+			var id_: String = m.get("api_model_id", "")
+			if query.is_empty() or query in name_.to_lower() or query in id_.to_lower():
+				var cost_str := "$%.2f/$%.2f" % [m.get("input_token_cost", 0.0), m.get("output_token_cost", 0.0)]
+				item_list.add_item("%s  %s" % [name_, cost_str])
+				item_list.set_item_metadata(item_list.get_item_count() - 1, i)
+
+	# Selection handler
+	item_list.item_selected.connect(func(idx: int):
+		var model_idx: int = item_list.get_item_metadata(idx)
+		var m: Dictionary = all_models[model_idx]
+		details_label.text = "%s\nID: %s\nCost: $%.2f in / $%.2f out per M tokens" % [
+			m.get("display_name", ""),
+			m.get("api_model_id", ""),
+			m.get("input_token_cost", 0.0),
+			m.get("output_token_cost", 0.0),
+		]
+		if m.get("context_length", 0) > 0:
+			details_label.text += "\nContext: %dk" % (m["context_length"] / 1000)
+		add_btn.disabled = false
+	)
+
+	# Add button handler — supports multi-add without closing
+	add_btn.pressed.connect(func():
+		var selected := item_list.get_selected_items()
+		if selected.is_empty():
+			return
+		var model_idx: int = item_list.get_item_metadata(selected[0])
+		var m: Dictionary = all_models[model_idx]
+		var model_id: String = m.get("api_model_id", "")
+		var model_name: String = m.get("display_name", model_id)
+
+		# Check if already in user models
+		for um in _user_selected_models:
+			if um.get("id") == model_id:
+				status_label.text = "Model already added: %s" % model_name
+				return
+
+		# Check if already added this session
+		for am in models_added_this_session:
+			if am.get("id") == model_id:
+				status_label.text = "Model already added: %s" % model_name
+				return
+
+		models_added_this_session.append({"id": model_id, "name": model_name})
+		status_label.text = "Added: %s (%d new this session)" % [model_name, models_added_this_session.size()]
+	)
+
+	# On window close, save all newly added models
+	win.tree_exiting.connect(func():
+		if models_added_this_session.is_empty():
+			return
+		# Merge with existing user models
+		var merged: Array = _user_selected_models.duplicate()
+		var existing_ids: Dictionary = {}
+		for um in merged:
+			existing_ids[um.get("id", "")] = true
+		for am in models_added_this_session:
+			if not existing_ids.has(am.get("id", "")):
+				merged.append(am)
+		_user_selected_models = merged
+		_save_user_models()
+	)
+
+	# Search filter
+	search_edit.text_changed.connect(func(text: String): _filter_list.call(text))
+
+	# Fetch models
+	refresh_btn.pressed.connect(func(): _fetch_openrouter_models(api_key, status_label, add_btn, all_models, _filter_list, search_edit))
+	_fetch_openrouter_models(api_key, status_label, add_btn, all_models, _filter_list, search_edit)
+
+
+func _save_user_models() -> void:
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.autocoder_adapter:
+		return
+	var success = await SingletonObject.autocoder_manager.autocoder_adapter.save_user_models(_user_selected_models)
+	if success:
+		SingletonObject.create_toast_notification("%d custom model(s) saved" % _user_selected_models.size())
+		_refresh_models()
+	else:
+		SingletonObject.create_toast_notification("Failed to save custom models", ToastNotification.Type.ERROR)
+
+
+func _fetch_openrouter_models(api_key: String, status_label: Label, add_btn: Button, all_models: Array, filter_fn: Callable, search_edit: LineEdit) -> void:
+	status_label.text = "Loading models..."
+	add_btn.disabled = true
+	var fetched = await SingletonObject.openrouter_model_manager.fetch_api_models(api_key)
+	all_models.clear()
+	all_models.append_array(fetched)
+	if all_models.is_empty():
+		status_label.text = "No models found or API error."
+	else:
+		status_label.text = "%d models available" % all_models.size()
+		filter_fn.call(search_edit.text)
