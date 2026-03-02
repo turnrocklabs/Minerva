@@ -20,3 +20,7 @@ bin/
 *.obj
 *.os
 *.dbliteMinerva.dmg
+
+# SQLite journal files
+*.dct-wal
+*.dct-shm
