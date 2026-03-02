@@ -198,7 +198,7 @@ func _refresh_review_agents() -> void:
 	_review_agents_list.add_item("Loading review agents...")
 	_review_agents_list.set_item_disabled(0, true)
 
-	var agents = await SingletonObject.autocoder_manager.autocoder_adapter.list_review_agents()
+	var agents = await SingletonObject.autocoder_manager.autocoder_adapter.agent_registry.list_agents()
 	_populate_review_agents(agents)
 	_review_agents_refresh_button.disabled = false
 
@@ -241,7 +241,7 @@ func _populate_models(models: Array[Dictionary]) -> void:
 	_model_option_button.disabled = false
 
 
-func _populate_review_agents(agents: Array[Dictionary]) -> void:
+func _populate_review_agents(agents: Array[AgentDefinition]) -> void:
 	_review_agents_list.clear()
 	_review_agents_empty_label.visible = false
 
@@ -253,31 +253,21 @@ func _populate_review_agents(agents: Array[Dictionary]) -> void:
 
 	var sorted_agents = agents.duplicate()
 	sorted_agents.sort_custom(
-		func(a, b):
-			var order_a = int(a.get("order", 0))
-			var order_b = int(b.get("order", 0))
-			if order_a == order_b:
-				return str(a.get("name", "")) < str(b.get("name", ""))
-			return order_a < order_b
+		func(a: AgentDefinition, b: AgentDefinition):
+			return a.name < b.name
 	)
 
 	for agent in sorted_agents:
-		if not (agent is Dictionary):
+		if agent.agent_id.is_empty():
 			continue
-		var agent_id = str(agent.get("agent_id", ""))
-		if agent_id.is_empty():
-			continue
-		var name_ = str(agent.get("name", "Unnamed Agent"))
-		var model = str(agent.get("model", ""))
-		var tools_enabled = bool(agent.get("tools_enabled", false))
-		var tools_tag = " 🛠" if tools_enabled else ""
-		var label = "🔍 %s%s" % [name_, tools_tag]
-		if not model.is_empty():
-			label = "%s (%s)" % [label, model]
+		var tools_tag = " 🛠" if agent.tools_enabled else ""
+		var label = "🔍 %s%s" % [agent.name, tools_tag]
+		if not agent.model.is_empty():
+			label = "%s (%s)" % [label, agent.model]
 
 		var index = _review_agents_list.item_count
 		_review_agents_list.add_item(label)
-		_review_agents_list.set_item_metadata(index, agent_id)
+		_review_agents_list.set_item_metadata(index, agent.agent_id)
 
 
 func _set_review_agents_enabled(enabled: bool) -> void:

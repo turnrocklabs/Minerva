@@ -44,7 +44,7 @@ var current_mode: AutocoderMode = AutocoderMode.PLAN:
 
 var selected_artifact_uri: String = ""
 var selected_session_id: String = ""
-var _available_review_agents: Array[Dictionary] = []
+var _available_review_agents: Array[AgentDefinition] = []
 var _enabled_agent_ids: Array[String] = []
 
 func _ready():
@@ -253,7 +253,7 @@ func select_session(session_id: String):
 
 # Review agents management
 
-func set_review_agents(agents: Array[Dictionary]):
+func set_review_agents(agents: Array[AgentDefinition]):
 	_available_review_agents = agents
 	_rebuild_review_agents_ui()
 
@@ -267,8 +267,8 @@ func _rebuild_review_agents_ui():
 	
 	# Build new checkboxes for each agent
 	for agent in _available_review_agents:
-		var agent_id = str(agent.get("id", ""))
-		var agent_name = str(agent.get("name", agent_id))
+		var agent_id = agent.agent_id
+		var agent_name = agent.name if not agent.name.is_empty() else agent_id
 		
 		if agent_id.is_empty():
 			continue

@@ -2,6 +2,16 @@ class_name AutocoderAdapter
 extends BaseServiceAdapter
 
 
+var _agent_registry: AgentRegistry
+
+## Typed agent registry — wraps the raw dict CRUD methods below.
+var agent_registry: AgentRegistry:
+	get:
+		if _agent_registry == null:
+			_agent_registry = AgentRegistry.new(self)
+		return _agent_registry
+
+
 class GenerationOutput extends RefCounted:
 	var session_id: String
 	var message: String
@@ -469,7 +479,8 @@ func request_review(user_id: String, session_id: String, custom_prompt: String =
 	return true
 
 
-## Create a review agent
+## Create a review agent (low-level Core transport).
+## Prefer agent_registry.register() for typed access.
 ## @param name: Agent name (required)
 ## @param prompt: Agent prompt (required)
 ## @param setup_commands: Optional setup commands list
@@ -511,7 +522,8 @@ func create_review_agent(name: String, prompt: String, setup_commands: Array = [
 	return safe_extract(msg, ["params", "result", "agent_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
 
 
-## List all review agents for the current user
+## List all review agents for the current user (low-level Core transport).
+## Prefer agent_registry.list_agents() for typed access.
 func list_review_agents() -> Array[Dictionary]:
 	var agents: Array[Dictionary] = []
 
@@ -544,7 +556,8 @@ func list_review_agents() -> Array[Dictionary]:
 	return agents
 
 
-## Get review agents (same result shape as list)
+## Get review agents (same result shape as list, low-level Core transport).
+## Prefer agent_registry.list_agents() for typed access.
 func get_review_agents() -> Array[Dictionary]:
 	var agents: Array[Dictionary] = []
 
@@ -577,7 +590,8 @@ func get_review_agents() -> Array[Dictionary]:
 	return agents
 
 
-## Update a review agent (send only fields that should change)
+## Update a review agent (send only fields that should change, low-level Core transport).
+## Prefer agent_registry.update() for typed access.
 func update_review_agent(agent_id: String, name: String = "", prompt: String = "", setup_commands: Variant = null, model: String = "", tools_enabled: Variant = null) -> bool:
 	if not Core.client._connected:
 		SingletonObject.create_toast_notification("Can't update review agent. Core not connected")
@@ -621,7 +635,8 @@ func update_review_agent(agent_id: String, name: String = "", prompt: String = "
 	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
 
 
-## Delete a review agent by ID
+## Delete a review agent by ID (low-level Core transport).
+## Prefer agent_registry.delete() for typed access.
 func delete_review_agent(agent_id: String) -> bool:
 	if not Core.client._connected:
 		SingletonObject.create_toast_notification("Can't delete review agent. Core not connected")

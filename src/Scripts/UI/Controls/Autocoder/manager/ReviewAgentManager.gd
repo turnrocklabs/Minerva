@@ -16,7 +16,7 @@ const DEFAULT_MODEL: String = "anthropic/claude-sonnet-4"
 @onready var _loading_label: Label = %LoadingLabel
 @onready var _empty_label: Label = %EmptyLabel
 
-var _agents: Array[Dictionary] = []
+var _agents: Array[AgentDefinition] = []
 var _editing_agent_id: String = ""
 
 
@@ -47,13 +47,13 @@ func _reset_form() -> void:
 	_cancel_edit_button.visible = false
 
 
-func _set_edit_mode(agent: Dictionary) -> void:
-	_editing_agent_id = str(agent.get("agent_id", ""))
-	_name_line_edit.text = str(agent.get("name", ""))
-	_prompt_text_edit.text = str(agent.get("prompt", ""))
-	_model_line_edit.text = str(agent.get("model", DEFAULT_MODEL))
-	_tools_enabled_check_box.button_pressed = bool(agent.get("tools_enabled", false))
-	_setup_commands_text_edit.text = _format_setup_commands(agent.get("setup_commands", []))
+func _set_edit_mode(agent: AgentDefinition) -> void:
+	_editing_agent_id = agent.agent_id
+	_name_line_edit.text = agent.name
+	_prompt_text_edit.text = agent.prompt
+	_model_line_edit.text = agent.model if not agent.model.is_empty() else DEFAULT_MODEL
+	_tools_enabled_check_box.button_pressed = agent.tools_enabled
+	_setup_commands_text_edit.text = _format_setup_commands(agent.setup_commands)
 	_save_button.text = "Update Agent"
 	_cancel_edit_button.visible = true
 
@@ -73,8 +73,7 @@ func _refresh_agents() -> void:
 		_empty_label.visible = true
 		return
 
-	var agents = await adapter.list_review_agents()
-	_agents = agents
+	_agents = await adapter.agent_registry.list_agents()
 
 	_loading_label.visible = false
 	_refresh_button.disabled = false
@@ -95,18 +94,18 @@ func _refresh_list() -> void:
 	_empty_label.visible = false
 
 	var sorted_agents = _agents.duplicate()
-	sorted_agents.sort_custom(func(a, b): return str(a.get("name", "")) < str(b.get("name", "")))
+	sorted_agents.sort_custom(func(a: AgentDefinition, b: AgentDefinition): return a.name < b.name)
 
 	for agent in sorted_agents:
 		var card = _build_agent_card(agent)
 		_agents_list.add_child(card)
 
 
-func _build_agent_card(agent: Dictionary) -> PanelContainer:
+func _build_agent_card(agent: AgentDefinition) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	var tools_enabled = bool(agent.get("tools_enabled", false))
+	var tools_enabled = agent.tools_enabled
 	var border_color = Color(0.25, 0.5, 0.35) if tools_enabled else Color(0.2, 0.2, 0.22)
 
 	var style := StyleBoxFlat.new()
@@ -130,20 +129,20 @@ func _build_agent_card(agent: Dictionary) -> PanelContainer:
 	vbox.add_child(header)
 
 	var name_label := Label.new()
-	name_label.text = str(agent.get("name", "Unnamed Agent"))
+	name_label.text = agent.name if not agent.name.is_empty() else "Unnamed Agent"
 	name_label.add_theme_font_size_override("font_size", 14)
 	name_label.add_theme_color_override("font_color", Color(0.95, 0.95, 0.97))
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(name_label)
 
-	var model_text = str(agent.get("model", ""))
+	var model_text = agent.model
 	var model_label := Label.new()
 	model_label.text = model_text if not model_text.is_empty() else "default model"
 	model_label.add_theme_font_size_override("font_size", 11)
 	model_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
 	header.add_child(model_label)
 
-	var prompt_preview := str(agent.get("prompt", ""))
+	var prompt_preview := agent.prompt
 	if prompt_preview.length() > 140:
 		prompt_preview = "%s..." % prompt_preview.substr(0, 140)
 
@@ -158,7 +157,7 @@ func _build_agent_card(agent: Dictionary) -> PanelContainer:
 	footer.add_theme_constant_override("separation", 12)
 	vbox.add_child(footer)
 
-	var setup_count = _get_setup_count(agent.get("setup_commands", []))
+	var setup_count = agent.setup_commands.size()
 	var meta_label := Label.new()
 	var tools_text = "🔧 Tools On" if tools_enabled else "Tools Off"
 	meta_label.text = "Setup: %d | %s" % [setup_count, tools_text]
@@ -179,7 +178,7 @@ func _build_agent_card(agent: Dictionary) -> PanelContainer:
 	delete_button.flat = true
 	delete_button.add_theme_font_size_override("font_size", 12)
 	delete_button.add_theme_color_override("font_color", Color(0.9, 0.5, 0.5))
-	delete_button.pressed.connect(func(): _on_delete_agent_pressed(str(agent.get("agent_id", ""))))
+	delete_button.pressed.connect(func(): _on_delete_agent_pressed(agent.agent_id))
 	footer.add_child(delete_button)
 
 	return panel
@@ -233,13 +232,25 @@ func _on_save_pressed() -> void:
 	var setup_commands = _parse_setup_commands(_setup_commands_text_edit.text)
 
 	if _editing_agent_id.is_empty():
-		var agent_id = await adapter.create_review_agent(name, prompt, setup_commands, model, tools_enabled)
+		var def := AgentDefinition.new()
+		def.name = name_
+		def.prompt = prompt
+		def.setup_commands = setup_commands
+		def.model = model
+		def.tools_enabled = tools_enabled
+		var agent_id = await adapter.agent_registry.register(def)
 		if agent_id.is_empty():
 			_save_button.disabled = false
 			return
 		SingletonObject.create_toast_notification("Review agent created.", ToastNotification.Type.SUCCESS)
 	else:
-		var ok = await adapter.update_review_agent(_editing_agent_id, name, prompt, setup_commands, model, tools_enabled)
+		var def := AgentDefinition.new(_editing_agent_id)
+		def.name = name_
+		def.prompt = prompt
+		def.setup_commands = setup_commands
+		def.model = model
+		def.tools_enabled = tools_enabled
+		var ok = await adapter.agent_registry.update(def)
 		if not ok:
 			_save_button.disabled = false
 			return
@@ -260,7 +271,7 @@ func _on_cancel_edit_pressed() -> void:
 	_reset_form()
 
 
-func _on_edit_agent_pressed(agent: Dictionary) -> void:
+func _on_edit_agent_pressed(agent: AgentDefinition) -> void:
 	_set_edit_mode(agent)
 
 
@@ -273,7 +284,7 @@ func _on_delete_agent_pressed(agent_id: String) -> void:
 		SingletonObject.ErrorDisplay("Not Connected", "Please connect to core first.")
 		return
 
-	var ok = await adapter.delete_review_agent(agent_id)
+	var ok = await adapter.agent_registry.delete(agent_id)
 	if ok:
 		if _editing_agent_id == agent_id:
 			_reset_form()
