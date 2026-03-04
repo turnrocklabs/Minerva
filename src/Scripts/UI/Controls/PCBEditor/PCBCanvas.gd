@@ -13,6 +13,7 @@ signal component_selected(component_id: String)
 signal component_deselected(component_id: String)
 signal component_moved(component_id: String, new_position: Vector2)
 signal component_double_clicked(component_id: String)
+@warning_ignore("unused_signal")
 signal canvas_clicked(world_position: Vector2)
 signal zoom_changed(new_zoom: float)
 signal selection_changed()
@@ -103,6 +104,7 @@ var selected_trace_id: String = ""
 ## Signal for route hint mode changes
 signal route_hint_mode_changed(mode: RouteHintMode)
 signal route_hint_created(hint_id: String)
+@warning_ignore("unused_signal")
 signal route_hint_pin_requested(position: Vector2)  # Emitted when user needs to select a pin
 
 ## Selected pin state (for INSPECT_PIN mode)
@@ -834,30 +836,30 @@ func _draw_fallback_pins(comp: PCBComponentScript, xform: Transform2D) -> void:
 
 
 ## Draw rectangular pad (sharp corners)
-func _draw_rect_pad(center: Vector2, size: Vector2, rotation_degrees: float, color: Color) -> void:
-	var rect_points := _get_rotated_rect_points(center, size, rotation_degrees)
+func _draw_rect_pad(center: Vector2, pad_size: Vector2, pad_rotation: float, color: Color) -> void:
+	var rect_points := _get_rotated_rect_points(center, pad_size, pad_rotation)
 	draw_colored_polygon(rect_points, color)
 
 
 ## Draw circular pad
-func _draw_circle_pad(center: Vector2, size: Vector2, color: Color) -> void:
-	var radius := maxf(size.x, size.y) / 2.0
+func _draw_circle_pad(center: Vector2, pad_size: Vector2, color: Color) -> void:
+	var radius := maxf(pad_size.x, pad_size.y) / 2.0
 	draw_circle(center, maxf(radius, 1.0), color)
 
 
 ## Draw oval pad (elongated circle)
-func _draw_oval_pad(center: Vector2, size: Vector2, rotation_degrees: float, color: Color) -> void:
+func _draw_oval_pad(center: Vector2, pad_size: Vector2, pad_rotation: float, color: Color) -> void:
 	# Approximate oval with a capsule shape
-	var rot_rad := deg_to_rad(rotation_degrees)
+	var rot_rad := deg_to_rad(pad_rotation)
 
-	if size.x > size.y:
+	if pad_size.x > pad_size.y:
 		# Horizontal oval
-		var radius := size.y / 2.0
-		var half_length := (size.x - size.y) / 2.0
+		var radius := pad_size.y / 2.0
+		var half_length := (pad_size.x - pad_size.y) / 2.0
 
 		# Draw center rectangle
-		var rect_size := Vector2(half_length * 2, size.y)
-		var rect_points := _get_rotated_rect_points(center, rect_size, rotation_degrees)
+		var rect_size := Vector2(half_length * 2, pad_size.y)
+		var rect_points := _get_rotated_rect_points(center, rect_size, pad_rotation)
 		draw_colored_polygon(rect_points, color)
 
 		# Draw end circles
@@ -866,12 +868,12 @@ func _draw_oval_pad(center: Vector2, size: Vector2, rotation_degrees: float, col
 		draw_circle(center + offset, maxf(radius, 1.0), color)
 	else:
 		# Vertical oval
-		var radius := size.x / 2.0
-		var half_length := (size.y - size.x) / 2.0
+		var radius := pad_size.x / 2.0
+		var half_length := (pad_size.y - pad_size.x) / 2.0
 
 		# Draw center rectangle
-		var rect_size := Vector2(size.x, half_length * 2)
-		var rect_points := _get_rotated_rect_points(center, rect_size, rotation_degrees)
+		var rect_size := Vector2(pad_size.x, half_length * 2)
+		var rect_points := _get_rotated_rect_points(center, rect_size, pad_rotation)
 		draw_colored_polygon(rect_points, color)
 
 		# Draw end circles
@@ -881,13 +883,9 @@ func _draw_oval_pad(center: Vector2, size: Vector2, rotation_degrees: float, col
 
 
 ## Draw rounded rectangle pad
-func _draw_roundrect_pad(center: Vector2, size: Vector2, rotation_degrees: float, color: Color) -> void:
-	# Approximate with a smaller rect and corner circles
-	var corner_radius := minf(size.x, size.y) * 0.25
-	var inner_size := size - Vector2(corner_radius * 2, corner_radius * 2)
-
+func _draw_roundrect_pad(center: Vector2, pad_size: Vector2, pad_rotation: float, color: Color) -> void:
 	# Draw inner rectangle
-	var rect_points := _get_rotated_rect_points(center, size, rotation_degrees)
+	var rect_points := _get_rotated_rect_points(center, pad_size, pad_rotation)
 	draw_colored_polygon(rect_points, color)
 
 	# Note: For true rounded corners we'd need more complex geometry
@@ -895,8 +893,8 @@ func _draw_roundrect_pad(center: Vector2, size: Vector2, rotation_degrees: float
 
 
 ## Get rotated rectangle points
-func _get_rotated_rect_points(center: Vector2, size: Vector2, rotation_degrees: float) -> PackedVector2Array:
-	var half_size := size / 2.0
+func _get_rotated_rect_points(center: Vector2, rect_size: Vector2, rect_rotation: float) -> PackedVector2Array:
+	var half_size := rect_size / 2.0
 	var corners := [
 		Vector2(-half_size.x, -half_size.y),
 		Vector2(half_size.x, -half_size.y),
@@ -904,7 +902,7 @@ func _get_rotated_rect_points(center: Vector2, size: Vector2, rotation_degrees: 
 		Vector2(-half_size.x, half_size.y)
 	]
 
-	var rot_rad := deg_to_rad(rotation_degrees)
+	var rot_rad := deg_to_rad(rect_rotation)
 	var result: PackedVector2Array = []
 
 	for corner in corners:
@@ -1209,6 +1207,7 @@ func _draw_single_trace_hint(hint: PCBRouteHintScript, screen_points: PackedVect
 
 	# Draw layer indicator
 	if not hint.layer.is_empty():
+		@warning_ignore("integer_division")
 		var mid_idx := full_path.size() / 2
 		if mid_idx < full_path.size():
 			draw_string(font, full_path[mid_idx] + Vector2(0, 15), hint.layer, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, color.lightened(0.2))
@@ -1292,14 +1291,15 @@ func _draw_bus_hint(hint: PCBRouteHintScript, screen_points: PackedVector2Array,
 
 	# Draw layer indicator
 	if not hint.layer.is_empty():
+		@warning_ignore("integer_division")
 		var mid_idx := screen_points.size() / 2
 		if mid_idx < screen_points.size():
 			draw_string(font, screen_points[mid_idx] + Vector2(0, 20), hint.layer, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size - 2, color.lightened(0.2))
 
 
 ## Draw a diamond shape marker
-func _draw_diamond(center: Vector2, size: float, color: Color) -> void:
-	var half := size / 2.0
+func _draw_diamond(center: Vector2, diamond_size: float, color: Color) -> void:
+	var half := diamond_size / 2.0
 	var points: PackedVector2Array = [
 		center + Vector2(0, -half),
 		center + Vector2(half, 0),
@@ -2334,10 +2334,10 @@ func _create_arrow_annotation(start: Vector2, end: Vector2) -> void:
 
 
 ## Create text annotation (called externally after text input)
-func create_text_annotation(position: Vector2, text_content: String) -> void:
+func create_text_annotation(world_pos: Vector2, text_content: String) -> void:
 	if text_content.is_empty():
 		return
-	var annotation := PCBAnnotationScript.create_text(position, text_content, "human")
+	var annotation := PCBAnnotationScript.create_text(world_pos, text_content, "human")
 	data.add_annotation(annotation)
 	annotation_created.emit(annotation.id)
 	queue_redraw()

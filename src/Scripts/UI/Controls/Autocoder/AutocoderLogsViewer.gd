@@ -3,9 +3,11 @@ extends VBoxContainer
 
 signal entry_added
 
-static var autocoder_logs_scene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.tscn")
+static var autocoder_logs_scene: PackedScene = null
 
 static func create() -> AutocoderLogsViewer:
+	if autocoder_logs_scene == null:
+		autocoder_logs_scene = load("res://Scripts/UI/Controls/Autocoder/AutocoderLogsViewer.tscn")
 	return autocoder_logs_scene.instantiate()
 
 
@@ -24,6 +26,8 @@ const ISSUE_ROW_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderIs
 const TOOL_ROW_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderToolRow.tscn")
 const RAW_ROW_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderRawJsonRow.tscn")
 const LLM_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderLLMCard.tscn")
+# Lazy load to avoid circular dependency at startup
+var FILE_TREE_SCENE: PackedScene = null
 
 @onready var _session_label: Label = %SessionLabel
 @onready var _status_label: Label = %StatusLabel
@@ -60,6 +64,9 @@ var _active_llm_cards: Dictionary = {}  # request_id -> AutocoderLLMCard
 var _action_rows: Dictionary = {}  # action_id -> AutocoderActionRow
 var _tool_rows: Dictionary = {}  # action_id -> AutocoderToolRow
 
+# File tree component (dynamically created)
+var _file_tree: AutocoderFileTree = null
+
 
 func _ready() -> void:
 	# Null safety checks for @onready nodes
@@ -88,7 +95,54 @@ func _ready() -> void:
 	else:
 		_archive_copy_button.pressed.connect(_on_archive_copy_pressed)
 
+	# Create file tree component dynamically
+	_create_file_tree()
+	
 	_reset_view()
+
+
+func _create_file_tree() -> void:
+	"""Create the file tree component and insert it after the ArtifactsPanel"""
+	# Lazy load the scene to avoid circular dependency
+	if FILE_TREE_SCENE == null:
+		FILE_TREE_SCENE = load("res://Scripts/UI/Controls/Autocoder/AutocoderFileTree.tscn")
+	
+	if FILE_TREE_SCENE == null:
+		push_warning("AutocoderLogsViewer: Could not load AutocoderFileTree.tscn")
+		return
+	
+	_file_tree = FILE_TREE_SCENE.instantiate()
+	_file_tree.file_selected.connect(_on_file_selected)
+	_file_tree.download_requested.connect(_on_download_requested)
+	
+	# Find MainVBox to insert file tree after ArtifactsPanel
+	var main_vbox = get_node_or_null("ScrollContainer/MainMargin/MainVBox")
+	if main_vbox and _artifacts_panel:
+		var artifacts_idx = _artifacts_panel.get_index()
+		main_vbox.add_child(_file_tree)
+		main_vbox.move_child(_file_tree, artifacts_idx + 1)
+	elif main_vbox:
+		main_vbox.add_child(_file_tree)
+
+
+func _on_file_selected(file_path: String, file_data: Dictionary) -> void:
+	"""Handle file selection in the tree"""
+	print("[LogsViewer] File selected: %s" % file_path)
+	# Could open a preview panel or copy the artifact URI
+	var artifact_uri = str(file_data.get("artifact_uri", ""))
+	if not artifact_uri.is_empty():
+		DisplayServer.clipboard_set(artifact_uri)
+		SingletonObject.create_toast_notification("File URI copied: %s" % file_path, ToastNotification.Type.SUCCESS)
+
+
+func _on_download_requested(uri: String, filename: String) -> void:
+	"""Handle download request from file tree"""
+	print("[LogsViewer] Download requested: %s -> %s" % [uri, filename])
+	# Trigger download via adapter
+	var adapter = _get_adapter()
+	if adapter:
+		SingletonObject.create_toast_notification("Downloading %s..." % filename, ToastNotification.Type.INFO)
+		# The adapter should handle actual download
 
 
 func configure_session(user: String, session: String, topics: PackedStringArray) -> void:
@@ -114,6 +168,7 @@ func add_iteration_entry(_topic: String, payload: Dictionary) -> void:
 	_update_summary_panel()
 	_update_review_panel(payload)
 	_update_artifacts_panel()
+	_update_file_tree(payload)
 	_update_status_labels()
 
 	if _advanced_toggle.button_pressed:
@@ -217,6 +272,11 @@ func _reset_view() -> void:
 		_review_panel.visible = false
 	if _artifacts_panel:
 		_artifacts_panel.visible = false
+	
+	# Reset file tree
+	if _file_tree:
+		_file_tree.clear()
+		_file_tree.visible = false
 
 	if _advanced_toggle:
 		_advanced_toggle.button_pressed = false
@@ -321,6 +381,36 @@ func _update_artifacts_panel() -> void:
 		_patch_copy_button.disabled = not has_patch
 	if _archive_copy_button:
 		_archive_copy_button.disabled = not has_archive
+
+
+func _update_file_tree(payload: Dictionary) -> void:
+	"""Update the file tree with files from iteration payload"""
+	if not _file_tree:
+		return
+	
+	var files = payload.get("files", {})
+	if not (files is Dictionary) or files.is_empty():
+		return
+	
+	var patch_uri = str(payload.get("patch_uri", _store.patch_uri))
+	var archive_uri = str(payload.get("output_archive_uri", payload.get("archive_uri", _store.archive_uri)))
+	
+	# Convert files dict to the format expected by file tree
+	var formatted_files: Dictionary = {}
+	for file_path in files.keys():
+		var file_data = files[file_path]
+		if file_data is Dictionary:
+			formatted_files[str(file_path)] = file_data
+		else:
+			# Simple string mapping (path -> uri)
+			formatted_files[str(file_path)] = {
+				"path": str(file_path),
+				"status": "added",
+				"artifact_uri": str(file_data) if file_data else ""
+			}
+	
+	_file_tree.set_files(formatted_files, archive_uri, patch_uri)
+	_file_tree.visible = not formatted_files.is_empty()
 
 
 func _update_status_labels() -> void:
@@ -829,7 +919,7 @@ func _create_review_request_dialog() -> AcceptDialog:
 	# Info label
 	var info := Label.new()
 	info.text = "Leave blank to use default review behavior."
-	info.add_theme_font_size_override("font_size", 11)
+	info.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(info)
 
 	SingletonObject.add_child(dialog)

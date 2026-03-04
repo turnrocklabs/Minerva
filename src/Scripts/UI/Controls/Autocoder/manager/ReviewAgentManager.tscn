@@ -41,147 +41,146 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_nqrwv")
 
-[node name="ScrollContainer" type="ScrollContainer" parent="."]
+[node name="MainMargin" type="MarginContainer" parent="."]
 layout_mode = 2
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="MainMargin" type="MarginContainer" parent="ScrollContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/margin_left = 20
 theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="MainVBox" type="VBoxContainer" parent="ScrollContainer/MainMargin"]
+[node name="ScrollContainer" type="ScrollContainer" parent="MainMargin"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 3
+
+[node name="MainVBox" type="VBoxContainer" parent="MainMargin/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 20
 
-[node name="HeaderCard" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+[node name="HeaderCard" type="PanelContainer" parent="MainMargin/ScrollContainer/MainVBox"]
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_card")
 
-[node name="CardMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard"]
+[node name="CardMargin" type="MarginContainer" parent="MainMargin/ScrollContainer/MainVBox/HeaderCard"]
 layout_mode = 2
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 14
 theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 14
 
-[node name="Header" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin"]
+[node name="Header" type="HBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/HeaderCard/CardMargin"]
 layout_mode = 2
 
-[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
+[node name="Icon" type="Label" parent="MainMargin/ScrollContainer/MainVBox/HeaderCard/CardMargin/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 27
 text = "🔍"
 
-[node name="TitleLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
+[node name="TitleLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/HeaderCard/CardMargin/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "Review Agents"
 
-[node name="RefreshButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/HeaderCard/CardMargin/Header"]
+[node name="RefreshButton" type="Button" parent="MainMargin/ScrollContainer/MainVBox/HeaderCard/CardMargin/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Refresh"
 flat = true
 
-[node name="FormCard" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+[node name="FormCard" type="PanelContainer" parent="MainMargin/ScrollContainer/MainVBox"]
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_card")
 
-[node name="CardMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard"]
+[node name="CardMargin" type="MarginContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard"]
 layout_mode = 2
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 16
 theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 16
 
-[node name="FormContainer" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin"]
+[node name="FormContainer" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin"]
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="FormHeader" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer"]
+[node name="FormHeader" type="HBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer"]
 layout_mode = 2
 
-[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/FormHeader"]
+[node name="Icon" type="Label" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/FormHeader"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "✏️"
 
-[node name="FormTitleLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/FormHeader"]
+[node name="FormTitleLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/FormHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Create / Edit Agent"
 
-[node name="NameSection" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer"]
+[node name="NameSection" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="NameLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/NameSection"]
+[node name="NameLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/NameSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Agent Name"
 
-[node name="NameLineEdit" type="LineEdit" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/NameSection"]
+[node name="NameLineEdit" type="LineEdit" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/NameSection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_styles/normal = SubResource("StyleBoxFlat_input")
 placeholder_text = "e.g., Security Review Agent"
 
-[node name="ModelSection" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer"]
+[node name="ModelSection" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="ModelLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/ModelSection"]
+[node name="ModelLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/ModelSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Model"
 
-[node name="ModelLineEdit" type="LineEdit" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/ModelSection"]
+[node name="ModelOptionButton" type="OptionButton" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/ModelSection"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_styles/normal = SubResource("StyleBoxFlat_input")
-placeholder_text = "anthropic/claude-sonnet-4"
 
-[node name="ToolsSection" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer"]
+[node name="ToolsSection" type="HBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="ToolsEnabledCheckBox" type="CheckBox" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/ToolsSection"]
+[node name="ToolsEnabledCheckBox" type="CheckBox" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/ToolsSection"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Enable Tools"
 
-[node name="ToolsHint" type="Label" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/ToolsSection"]
+[node name="ToolsHint" type="Label" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/ToolsSection"]
 layout_mode = 2
+size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "Allow agent to use code tools for fixes"
+autowrap_mode = 3
 
-[node name="PromptSection" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer"]
+[node name="PromptSection" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="PromptLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/PromptSection"]
+[node name="PromptLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/PromptSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Review Prompt"
 
-[node name="PromptTextEdit" type="TextEdit" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/PromptSection"]
+[node name="PromptTextEdit" type="TextEdit" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/PromptSection"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 120)
 layout_mode = 2
@@ -189,17 +188,18 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_input")
 placeholder_text = "Enter the review instructions for this agent..."
 wrap_mode = 1
 
-[node name="SetupSection" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer"]
+[node name="SetupSection" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="SetupLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/SetupSection"]
+[node name="SetupLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/SetupSection"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Setup Commands (one per line)"
+autowrap_mode = 3
 
-[node name="SetupCommandsTextEdit" type="TextEdit" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/SetupSection"]
+[node name="SetupCommandsTextEdit" type="TextEdit" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/SetupSection"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
@@ -207,86 +207,163 @@ theme_override_styles/normal = SubResource("StyleBoxFlat_input")
 placeholder_text = "e.g., npm install\npip install -r requirements.txt"
 wrap_mode = 1
 
-[node name="FormButtons" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer"]
+[node name="FormButtons" type="HBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="SaveButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/FormButtons"]
+[node name="SaveButton" type="Button" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/FormButtons"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(120, 36)
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Create Agent"
 
-[node name="CancelEditButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/FormButtons"]
+[node name="CancelEditButton" type="Button" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/FormButtons"]
 unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(80, 36)
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Cancel"
 flat = true
 
-[node name="ClearButton" type="Button" parent="ScrollContainer/MainMargin/MainVBox/FormCard/CardMargin/FormContainer/FormButtons"]
+[node name="ClearButton" type="Button" parent="MainMargin/ScrollContainer/MainVBox/FormCard/CardMargin/FormContainer/FormButtons"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(80, 36)
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Clear"
 flat = true
 
-[node name="AgentsCard" type="PanelContainer" parent="ScrollContainer/MainMargin/MainVBox"]
+[node name="AgentsCard" type="PanelContainer" parent="MainMargin/ScrollContainer/MainVBox"]
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_card")
 
-[node name="CardMargin" type="MarginContainer" parent="ScrollContainer/MainMargin/MainVBox/AgentsCard"]
+[node name="CardMargin" type="MarginContainer" parent="MainMargin/ScrollContainer/MainVBox/AgentsCard"]
 layout_mode = 2
 theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 16
 theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 16
 
-[node name="AgentsContent" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AgentsCard/CardMargin"]
+[node name="AgentsContent" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/AgentsCard/CardMargin"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="AgentsHeader" type="HBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AgentsCard/CardMargin/AgentsContent"]
+[node name="AgentsHeader" type="HBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/AgentsCard/CardMargin/AgentsContent"]
 layout_mode = 2
 
-[node name="Icon" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AgentsCard/CardMargin/AgentsContent/AgentsHeader"]
+[node name="Icon" type="Label" parent="MainMargin/ScrollContainer/MainVBox/AgentsCard/CardMargin/AgentsContent/AgentsHeader"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "📋"
 
-[node name="AgentsLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AgentsCard/CardMargin/AgentsContent/AgentsHeader"]
+[node name="AgentsLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/AgentsCard/CardMargin/AgentsContent/AgentsHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Your Agents"
 
-[node name="AgentsList" type="VBoxContainer" parent="ScrollContainer/MainMargin/MainVBox/AgentsCard/CardMargin/AgentsContent"]
+[node name="AgentsList" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/AgentsCard/CardMargin/AgentsContent"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="LoadingLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AgentsCard/CardMargin/AgentsContent/AgentsList"]
+[node name="LoadingLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/AgentsCard/CardMargin/AgentsContent/AgentsList"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Loading agents..."
 horizontal_alignment = 1
 
-[node name="EmptyLabel" type="Label" parent="ScrollContainer/MainMargin/MainVBox/AgentsCard/CardMargin/AgentsContent/AgentsList"]
+[node name="EmptyLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/AgentsCard/CardMargin/AgentsContent/AgentsList"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "No review agents yet. Create one above."
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="PresetsCard" type="PanelContainer" parent="MainMargin/ScrollContainer/MainVBox"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="CardMargin" type="MarginContainer" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="PresetsContent" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PresetsHeader" type="HBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent/PresetsHeader"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "📦"
+
+[node name="PresetsLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent/PresetsHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
+theme_override_font_sizes/font_size = 21
+text = "Groups"
+
+[node name="RefreshPresetsButton" type="Button" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent/PresetsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Refresh"
+flat = true
+
+[node name="EditPresetButton" type="Button" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent/PresetsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Edit Group"
+flat = true
+
+[node name="CreatePresetButton" type="Button" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent/PresetsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "New Group"
+flat = true
+
+[node name="PresetsList" type="VBoxContainer" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="PresetsLoadingLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent/PresetsList"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 20
+text = "Loading groups..."
+horizontal_alignment = 1
+
+[node name="PresetsEmptyLabel" type="Label" parent="MainMargin/ScrollContainer/MainVBox/PresetsCard/CardMargin/PresetsContent/PresetsList"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
+theme_override_font_sizes/font_size = 20
+text = "No groups yet. Create one to group agents."
 horizontal_alignment = 1
 autowrap_mode = 3

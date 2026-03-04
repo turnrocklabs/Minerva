@@ -156,6 +156,7 @@ func execute_notes_action():
 func render_history(notes_history: NotesServiceHistory):
 	# Create a ScrollContainer and set flags
 	var scroll_container = ScrollContainer.new()
+	scroll_container.name = notes_history.HistoryName if not notes_history.HistoryName.is_empty() else "Notes"
 	scroll_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 

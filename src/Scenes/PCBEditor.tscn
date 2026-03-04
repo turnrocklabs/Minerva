@@ -1,9 +1,14 @@
-[gd_scene load_steps=2 format=3 uid="uid://pcbeditor001"]
+[gd_scene format=3 uid="uid://pcbeditor001"]
 
-[ext_resource type="Script" path="res://Scripts/UI/Controls/PCBEditor/PCBEditor.gd" id="1_pcb_editor"]
+[ext_resource type="Script" uid="uid://dpdyc23jl145o" path="res://Scripts/UI/Controls/PCBEditor/PCBEditor.gd" id="1_pcb_editor"]
 
-[node name="PCBEditor" type="PanelContainer"]
+[node name="PCBEditor" type="PanelContainer" unique_id=620670995]
 clip_contents = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 script = ExtResource("1_pcb_editor")

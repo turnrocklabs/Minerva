@@ -135,9 +135,10 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
+	var y := event.position.y + scroll_offset_y
+
 	if event.button_index == MOUSE_BUTTON_RIGHT:
 		if event.pressed:
-			var y := event.position.y + scroll_offset_y
 			var row := _get_row_at_y(y)
 			if row >= 0:
 				row_context_menu_requested.emit(row, get_screen_position() + event.position)
@@ -145,8 +146,6 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 
 	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
-
-	var y := event.position.y + scroll_offset_y
 
 	if event.pressed:
 		# Check if clicking on resize handle

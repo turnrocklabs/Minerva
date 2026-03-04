@@ -4,6 +4,9 @@ extends BaseProvider
 var service: Service
 var action: Action
 
+## System prompt to send with the request (set by ChatPane)
+var system_prompt: String
+
 ## Available tools for agentic mode (set by ChatPane when agent mode is enabled)
 var available_tools: Array[Dictionary] = []
 
@@ -128,9 +131,15 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 		if effective_num_gpu >= 0:
 			ollama_options["num_gpu"] = effective_num_gpu
 
+		# Prepend system prompt if set (same pattern as OpenAIProvider)
+		var messages: Array = []
+		if not system_prompt.is_empty() and supports_system_prompt:
+			messages.append({"role": "system", "content": system_prompt})
+		messages.append_array(prompt)
+
 		# OpenAI format: wrap messages in data object with parameters
 		msg_data = {
-			"messages": prompt,
+			"messages": messages,
 			"temperature": additional_params.get("temperature", 0.7),
 			"max_tokens": additional_params.get("max_tokens", 4000),
 			# Ollama options - backend will parse and forward these

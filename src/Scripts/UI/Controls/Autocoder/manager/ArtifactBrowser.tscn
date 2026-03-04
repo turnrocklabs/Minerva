@@ -71,19 +71,19 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "🔍"
 
 [node name="Title" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Search & Filter"
 
 [node name="RefreshButton" type="Button" parent="MainVBox/SearchCard/CardMargin/SearchContent/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 tooltip_text = "Refresh the artifacts list"
 icon = ExtResource("3_txu0a")
 flat = true
@@ -116,7 +116,7 @@ theme_override_constants/separation = 4
 [node name="Label" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/FrameworkGroup"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "Framework"
 
 [node name="FrameworkOptionButton" type="OptionButton" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/FrameworkGroup"]
@@ -132,7 +132,7 @@ theme_override_constants/separation = 4
 [node name="Label" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/LanguageGroup"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "Language"
 
 [node name="LanguageOptionButton" type="OptionButton" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/LanguageGroup"]
@@ -152,7 +152,7 @@ theme_override_constants/separation = 4
 [node name="Label" type="Label" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/VisibilityGroup"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "Visibility"
 
 [node name="VisibilityOptionButton" type="OptionButton" parent="MainVBox/SearchCard/CardMargin/SearchContent/FiltersRow/VisibilityGroup"]
@@ -191,14 +191,14 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="MainVBox/VSplitContainer/ListCard/CardMargin/ListContent/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "📦"
 
 [node name="Title" type="Label" parent="MainVBox/VSplitContainer/ListCard/CardMargin/ListContent/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "Artifacts"
 
 [node name="ArtifactsTree" type="Tree" parent="MainVBox/VSplitContainer/ListCard/CardMargin/ListContent"]
@@ -206,7 +206,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 column_titles_visible = true
 hide_folding = true
 select_mode = 1
@@ -239,7 +239,7 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "📄"
 
 [node name="TitleLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/Header"]
@@ -247,7 +247,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 15
+theme_override_font_sizes/font_size = 22
 text = "No artifact selected"
 
 [node name="HSeparator" type="HSeparator" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
@@ -262,87 +262,87 @@ columns = 2
 [node name="FrameworkKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Framework:"
 
 [node name="FrameworkValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "-"
 
 [node name="LanguageKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Language:"
 
 [node name="LanguageValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "-"
 
 [node name="SizeKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Size:"
 
 [node name="SizeValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "-"
 
 [node name="UploadedKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Uploaded:"
 
 [node name="UploadedValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "-"
 
 [node name="OwnerKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Owner:"
 
 [node name="OwnerValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "-"
 
 [node name="VisibilityKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Visibility:"
 
 [node name="VisibilityValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "-"
 
 [node name="TagsKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 layout_mode = 2
 size_flags_vertical = 1
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Tags:"
 
 [node name="TagsValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer/DetailsGrid"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "-"
 autowrap_mode = 3
 
@@ -352,14 +352,14 @@ layout_mode = 2
 [node name="DescriptionKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "Description:"
 
 [node name="DescriptionValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "-"
 autowrap_mode = 3
 
@@ -369,7 +369,7 @@ layout_mode = 2
 [node name="URIKeyLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.55, 0.6, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "URI:"
 
 [node name="URIValueLabel" type="Label" parent="MainVBox/VSplitContainer/DetailsCard/MarginContainer/ScrollContainer/VBoxContainer"]
@@ -377,7 +377,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.65, 0.8, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = "-"
 autowrap_mode = 3
 
@@ -392,7 +392,7 @@ theme_override_constants/separation = 10
 unique_name_in_owner = true
 custom_minimum_size = Vector2(90, 32)
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 tooltip_text = "Download artifact to local disk"
 disabled = true
 text = "Download"
@@ -401,7 +401,7 @@ text = "Download"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(80, 32)
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 tooltip_text = "Copy artifact URI to clipboard"
 disabled = true
 text = "Copy URI"
@@ -411,7 +411,7 @@ flat = true
 unique_name_in_owner = true
 custom_minimum_size = Vector2(70, 32)
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 tooltip_text = "Use this artifact in job"
 disabled = true
 text = "Select"
@@ -420,7 +420,7 @@ text = "Select"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 32)
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 tooltip_text = "Edit artifact metadata (owner only)"
 disabled = true
 text = "Edit Metadata"
@@ -431,7 +431,7 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(70, 32)
 layout_mode = 2
 theme_override_colors/font_color = Color(0.9, 0.5, 0.5, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 tooltip_text = "Delete artifact (owner only)"
 disabled = true
 text = "Delete"
@@ -445,7 +445,7 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 custom_minimum_size = Vector2(70, 32)
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 tooltip_text = "Close dialog"
 text = "Cancel"
 flat = true

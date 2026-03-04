@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://dhvyes0wg8qlw"]
+[gd_scene load_steps=25 format=3 uid="uid://dhvyes0wg8qlw"]
 
 [ext_resource type="Script" uid="uid://dyi3dgpcrkx28" path="res://Scripts/UI/Controls/Autocoder/manager/SubmitJob.gd" id="1_85ws8"]
 [ext_resource type="PackedScene" uid="uid://cy5q0i5xtn6qk" path="res://assets/icons/create_pencil_icons/PersistentWindow.tscn" id="2_0n6lh"]
@@ -6,6 +6,21 @@
 [ext_resource type="Texture2D" uid="uid://d255rlap2uelj" path="res://assets/icons/line_edit_clear.svg" id="4_k0ru8"]
 [ext_resource type="Texture2D" uid="uid://b4mldxp8undi7" path="res://assets/icons/MgGlass.png" id="5_k0ru8"]
 [ext_resource type="PackedScene" path="res://Scripts/UI/Controls/Autocoder/AutocoderActionStream.tscn" id="7_stream"]
+[ext_resource type="Script" uid="uid://bevn17mdcqao1" path="res://Scripts/UI/Views/icons_button.gd" id="icons_button"]
+[ext_resource type="Texture2D" uid="uid://csohmidpjjaxd" path="res://assets/icons/eraser/ink_eraser_off.svg" id="eraser_icon"]
+[ext_resource type="Texture2D" uid="uid://1qda4os658si" path="res://assets/icons/clipboard_icons/clipboard_icon_white_no_bg.png" id="clipboard_icon"]
+[ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="mic_24"]
+[ext_resource type="Texture2D" uid="uid://uypsb67v2uy" path="res://assets/icons/mic_icons/microphone_48.png" id="mic_48"]
+[ext_resource type="Texture2D" uid="uid://bc11haglajous" path="res://assets/icons/mic_icons/microphone_68.png" id="mic_68"]
+[ext_resource type="Texture2D" uid="uid://nnp6ljh5gjl0" path="res://assets/icons/stop_icons/stop-sign-24.png" id="stop_24"]
+[ext_resource type="Texture2D" uid="uid://dflw78ayjikvx" path="res://assets/icons/stop_icons/stop-sign-48.png" id="stop_48"]
+[ext_resource type="Texture2D" uid="uid://bvxolgw4msf57" path="res://assets/icons/stop_icons/stop-sign-68.png" id="stop_68"]
+[ext_resource type="Texture2D" uid="uid://oidmxbufothp" path="res://assets/icons/folder.svg" id="folder_icon"]
+[ext_resource type="Texture2D" uid="uid://cm7qkln5a3qvu" path="res://assets/generated/send_icon_24-removebg-preview.png" id="send_icon"]
+[ext_resource type="Texture2D" uid="uid://dkq31owppnmm7" path="res://assets/icons/robot_AI.png" id="robot_icon"]
+[ext_resource type="Texture2D" uid="uid://jdgspalgxo3u" path="res://assets/icons/gear_icons/gears_icon_24_no_bg.png" id="gear_24"]
+[ext_resource type="Texture2D" uid="uid://lmmhfyqj83jd" path="res://assets/icons/gear_icons/gears_icon_48_no_bg.png" id="gear_48"]
+[ext_resource type="Texture2D" uid="uid://cvwwmnuuovww5" path="res://assets/icons/gear_icons/gears_icon_64_no_bg.png" id="gear_64"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
 bg_color = Color(0.12, 0.12, 0.14, 1)
@@ -58,359 +73,481 @@ visible = false
 [node name="ArtifactBrowser" parent="ArtifactBrowserPopup" instance=ExtResource("3_dt4tt")]
 unique_name_in_owner = true
 
-[node name="VSplitContainer" type="VSplitContainer" parent="."]
-layout_mode = 2
-size_flags_vertical = 3
+[node name="PhaseModelPopup" parent="." instance=ExtResource("2_0n6lh")]
+unique_name_in_owner = true
+title = "Job Settings"
+position = Vector2i(0, 0)
+size = Vector2i(600, 560)
+min_size = Vector2i(450, 400)
+visible = false
 
-[node name="TopSection" type="Control" parent="VSplitContainer"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="ScrollContainer" type="ScrollContainer" parent="VSplitContainer/TopSection"]
-layout_mode = 0
+[node name="MarginContainer" type="MarginContainer" parent="PhaseModelPopup"]
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-horizontal_scroll_mode = 0
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
 
-[node name="MainMargin" type="MarginContainer" parent="VSplitContainer/TopSection/ScrollContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="PhaseModelPopup/MarginContainer"]
 layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
+theme_override_constants/separation = 14
 
-[node name="MainVBox" type="VBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin"]
+[node name="Description" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
 layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 12
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 16
+text = "Override models per phase and configure generation behavior."
+autowrap_mode = 3
 
-[node name="MainInputCard" type="PanelContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox"]
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_card")
-
-[node name="CardMargin" type="MarginContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard"]
-layout_mode = 2
-theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 14
-theme_override_constants/margin_bottom = 12
-
-[node name="CardContent" type="VBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin"]
+[node name="PlanModelRow" type="HBoxContainer" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="Header" type="HBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent"]
+[node name="PlanModelLabel" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer/PlanModelRow"]
 layout_mode = 2
+custom_minimum_size = Vector2(130, 0)
+theme_override_font_sizes/font_size = 17
+text = "Planning"
 
-[node name="Icon" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/Header"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "✨"
-
-[node name="Title" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 13
-text = "New Task"
-
-[node name="PromptTextEdit" type="TextEdit" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 70)
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-theme_override_styles/normal = SubResource("StyleBoxFlat_input")
-placeholder_text = "Describe what you want to build..."
-wrap_mode = 1
-
-[node name="OptionsRow" type="HBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="ModelOptionButton" type="OptionButton" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/OptionsRow"]
+[node name="PlanModelOption" type="OptionButton" parent="PhaseModelPopup/MarginContainer/VBoxContainer/PlanModelRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-tooltip_text = "Select generation model"
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 17
+clip_text = true
 
-[node name="AutoReviewCheckBox" type="CheckBox" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/OptionsRow"]
+[node name="GenerateModelRow" type="HBoxContainer" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="GenerateModelLabel" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer/GenerateModelRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 0)
+theme_override_font_sizes/font_size = 17
+text = "Generation"
+
+[node name="GenerateModelOption" type="OptionButton" parent="PhaseModelPopup/MarginContainer/VBoxContainer/GenerateModelRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
-text = "Auto-review"
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 17
+clip_text = true
 
-[node name="RequirePermissionCheckBox" type="CheckBox" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/OptionsRow"]
+[node name="ReviewModelRow" type="HBoxContainer" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ReviewModelLabel" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer/ReviewModelRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(130, 0)
+theme_override_font_sizes/font_size = 17
+text = "Review"
+
+[node name="ReviewModelOption" type="OptionButton" parent="PhaseModelPopup/MarginContainer/VBoxContainer/ReviewModelRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
-text = "Permissions"
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 17
+clip_text = true
 
-[node name="ResourceRow" type="HBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent"]
+[node name="OptionsSeparator" type="HSeparator" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="SelectPackageButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+[node name="AutoGenerateCheckBox" type="CheckBox" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 17
+button_pressed = true
+tooltip_text = "Automatically start code generation after planning completes. Uncheck to review/edit task models first."
+text = "Auto-generate"
+
+[node name="RequirePermissionCheckBox" type="CheckBox" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+text = "Permissions"
+
+[node name="ModelManagementSeparator" type="HSeparator" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ModelManagementLabel" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 16
+text = "OpenRouter Model Management"
+
+[node name="ModelManagementRow" type="HBoxContainer" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BrowseModelsButton" type="Button" parent="PhaseModelPopup/MarginContainer/VBoxContainer/ModelManagementRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Browse Models"
+
+[node name="ClearUserModelsButton" type="Button" parent="PhaseModelPopup/MarginContainer/VBoxContainer/ModelManagementRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Clear Custom"
+
+[node name="ModelManagementStatusLabel" type="Label" parent="PhaseModelPopup/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+
+[node name="ReviewAgentsPopup" parent="." instance=ExtResource("2_0n6lh")]
+unique_name_in_owner = true
+title = "Review Agents"
+position = Vector2i(0, 0)
+size = Vector2i(600, 500)
+min_size = Vector2i(450, 300)
+visible = false
+
+[node name="MarginContainer" type="MarginContainer" parent="ReviewAgentsPopup"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="ReviewAgentsBox" type="VBoxContainer" parent="ReviewAgentsPopup/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ReviewAgentsHeader" type="HBoxContainer" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox"]
+layout_mode = 2
+
+[node name="ReviewAgentsLabel" type="Label" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox/ReviewAgentsHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 16
+text = "Select review agents to run after code generation."
+
+[node name="ReviewAgentsRefreshButton" type="Button" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox/ReviewAgentsHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Refresh"
+flat = true
+
+[node name="PresetRow" type="HBoxContainer" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PresetOptionButton" type="OptionButton" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.0
+theme_override_font_sizes/font_size = 17
+tooltip_text = "Select a preset to auto-check agents"
+clip_text = true
+text_overrun_behavior = 3
+
+[node name="SavePresetButton" type="Button" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox/PresetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Save as Preset"
+flat = true
+
+[node name="AgentCheckboxScroll" type="ScrollContainer" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="AgentCheckboxList" type="VBoxContainer" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox/AgentCheckboxScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="ReviewAgentsEmptyLabel" type="Label" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
+theme_override_font_sizes/font_size = 17
+text = "No review agents available"
+horizontal_alignment = 1
+
+[node name="ButtonRow" type="HBoxContainer" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SelectAllButton" type="Button" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Select All"
+flat = true
+
+[node name="ReviewAgentsClearButton" type="Button" parent="ReviewAgentsPopup/MarginContainer/ReviewAgentsBox/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "Clear"
+flat = true
+
+[node name="ResourcePopup" parent="." instance=ExtResource("2_0n6lh")]
+unique_name_in_owner = true
+title = "Resources"
+position = Vector2i(0, 0)
+size = Vector2i(500, 400)
+min_size = Vector2i(400, 300)
+visible = false
+
+[node name="ResourceMargin" type="MarginContainer" parent="ResourcePopup"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="ResourceVBox" type="VBoxContainer" parent="ResourcePopup/ResourceMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SelectPackageButton" type="Button" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
 text = "Add Files"
 icon = ExtResource("5_k0ru8")
 flat = true
 
-[node name="AttachFolderButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+[node name="AttachFolderButton" type="Button" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 17
 text = "Attach Folder"
 flat = true
 
-[node name="SetSourceFolderButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+[node name="SetSourceFolderButton" type="Button" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 17
 text = "Set Source Folder"
 flat = true
 
-[node name="DownloadLatestButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+[node name="DownloadLatestButton" type="Button" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 17
 text = "Download Latest"
 flat = true
 
-[node name="ExtractLatestButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+[node name="ExtractLatestButton" type="Button" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 17
 text = "Extract to Source"
 flat = true
 
-[node name="DownloadPatchButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+[node name="DownloadPatchButton" type="Button" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 17
 text = "Download Patch"
 flat = true
 
-[node name="SelectedArtifactNameLabel" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+[node name="ResourceSeparator" type="HSeparator" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SelectedArtifactNameLabel" type="Label" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 15
 text = "No files attached"
 text_overrun_behavior = 3
 
-[node name="ClearInputResourcesButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow"]
+[node name="SelectedArtifactURILabel" type="Label" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
+theme_override_font_sizes/font_size = 15
+text = "-"
+text_overrun_behavior = 3
+
+[node name="ClearInputResourcesButton" type="Button" parent="ResourcePopup/ResourceMargin/ResourceVBox"]
+unique_name_in_owner = true
 visible = false
 layout_mode = 2
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 15
 text = "Clear"
 icon = ExtResource("4_k0ru8")
 flat = true
 
-[node name="SubmitJobButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent"]
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-theme_override_font_sizes/font_size = 13
-text = "Start Planning"
-
-[node name="ReviewAgentsCard" type="PanelContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_card")
-
-[node name="ReviewAgentsMargin" type="MarginContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard"]
-layout_mode = 2
-theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 14
-theme_override_constants/margin_bottom = 12
-
-[node name="ReviewAgentsBox" type="VBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard/ReviewAgentsMargin"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="ReviewAgentsHeader" type="HBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard/ReviewAgentsMargin/ReviewAgentsBox"]
-layout_mode = 2
-
-[node name="Icon" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard/ReviewAgentsMargin/ReviewAgentsBox/ReviewAgentsHeader"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "🔍"
-
-[node name="ReviewAgentsLabel" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard/ReviewAgentsMargin/ReviewAgentsBox/ReviewAgentsHeader"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 13
-text = "Review Agents"
-
-[node name="ReviewAgentsRefreshButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard/ReviewAgentsMargin/ReviewAgentsBox/ReviewAgentsHeader"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
-text = "Refresh"
-flat = true
-
-[node name="ReviewAgentsList" type="ItemList" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard/ReviewAgentsMargin/ReviewAgentsBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 80)
+[node name="VSplitContainer" type="VSplitContainer" parent="."]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_override_font_sizes/font_size = 11
+split_offset = -226
 
-[node name="ReviewAgentsEmptyLabel" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard/ReviewAgentsMargin/ReviewAgentsBox"]
-unique_name_in_owner = true
-visible = false
+[node name="TopSection" type="VBoxContainer" parent="VSplitContainer"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 11
-text = "No review agents available"
-horizontal_alignment = 1
+size_flags_horizontal = 3
+size_flags_vertical = 3
 
-[node name="ReviewAgentsClearButton" type="Button" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/ReviewAgentsCard/ReviewAgentsMargin/ReviewAgentsBox"]
+[node name="ActionStream" parent="VSplitContainer/TopSection" instance=ExtResource("7_stream")]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 10
-text = "Clear Selection"
-flat = true
+size_flags_horizontal = 3
+size_flags_vertical = 3
 
-[node name="SessionOptionsCard" type="PanelContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox"]
+[node name="BottomSection" type="VBoxContainer" parent="VSplitContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MainInputCard" type="PanelContainer" parent="VSplitContainer/BottomSection"]
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_card")
 
-[node name="CardMargin" type="MarginContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard"]
+[node name="CardMargin" type="MarginContainer" parent="VSplitContainer/BottomSection/MainInputCard"]
 layout_mode = 2
 theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 12
+theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 14
-theme_override_constants/margin_bottom = 12
+theme_override_constants/margin_bottom = 10
 
-[node name="CardContent" type="VBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin"]
+[node name="CardContent" type="VBoxContainer" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent"]
+[node name="PromptTextEdit" type="TextEdit" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 125)
 layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("StyleBoxFlat_input")
+placeholder_text = "Describe what you want to build..."
+wrap_mode = 1
 
-[node name="Icon" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/Header"]
+[node name="SessionRow" type="HBoxContainer" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "⚙️"
+theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 13
-text = "Session"
-
-[node name="ModeRow" type="HBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="ModeLabel" type="Label" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/ModeRow"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.75, 1)
-theme_override_font_sizes/font_size = 11
-text = "Mode:"
-
-[node name="ModeOptionButton" type="OptionButton" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/ModeRow"]
+[node name="NewSessionCheckBox" type="CheckBox" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/SessionRow"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 11
-item_count = 3
-popup/item_0/text = "Plan"
-popup/item_0/id = 0
-popup/item_1/text = "Coder"
-popup/item_1/id = 1
-popup/item_2/text = "Review"
-popup/item_2/id = 2
-
-[node name="SessionTypeRow" type="HBoxContainer" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent"]
-layout_mode = 2
-theme_override_constants/separation = 16
-
-[node name="NewSessionCheckBox" type="CheckBox" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/SessionTypeRow"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 15
 button_pressed = true
 button_group = SubResource("ButtonGroup_k0ru8")
 text = "New"
 
-[node name="ContinueSessionCheckBox" type="CheckBox" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/SessionTypeRow"]
+[node name="ContinueSessionCheckBox" type="CheckBox" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/SessionRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 15
 button_group = SubResource("ButtonGroup_k0ru8")
 text = "Continue"
 
-[node name="SessionOptionButton" type="OptionButton" parent="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/SessionTypeRow"]
+[node name="SessionOptionButton" type="OptionButton" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/SessionRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 15
 disabled = true
+clip_text = true
 
-[node name="BottomSection" type="Control" parent="VSplitContainer"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="ActionStream" parent="VSplitContainer/BottomSection" instance=ExtResource("7_stream")]
-unique_name_in_owner = true
-anchors_preset = 0
-
-[node name="InputResourcesCard" type="PanelContainer" parent="."]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_card")
-
-[node name="CardMargin" type="MarginContainer" parent="InputResourcesCard"]
-layout_mode = 2
-theme_override_constants/margin_left = 14
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 14
-theme_override_constants/margin_bottom = 12
-
-[node name="CardContent" type="VBoxContainer" parent="InputResourcesCard/CardMargin"]
+[node name="ControlsRow" type="HBoxContainer" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="InputResourcesCard/CardMargin/CardContent"]
-layout_mode = 2
-
-[node name="Icon" type="Label" parent="InputResourcesCard/CardMargin/CardContent/Header"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "📦"
-
-[node name="Title" type="Label" parent="InputResourcesCard/CardMargin/CardContent/Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 13
-text = "Input Resources"
-
-[node name="ResourceInfo" type="VBoxContainer" parent="InputResourcesCard/CardMargin/CardContent"]
-layout_mode = 2
-theme_override_constants/separation = 4
-
-[node name="SelectedArtifactURILabel" type="Label" parent="InputResourcesCard/CardMargin/CardContent/ResourceInfo"]
+[node name="ModelOptionButton" type="OptionButton" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 10
-text = "-"
-text_overrun_behavior = 3
+size_flags_horizontal = 3
+tooltip_text = "Select generation model"
+theme_override_font_sizes/font_size = 15
+clip_text = true
+
+[node name="ReviewAgentsButton" type="Button" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Review agents"
+icon = ExtResource("robot_icon")
+icon_alignment = 1
+
+[node name="ResourceButton" type="Button" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Resources (files, folders, downloads)"
+icon = ExtResource("folder_icon")
+icon_alignment = 1
+
+[node name="ClearTextButton" type="Button" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Clear the input field"
+icon = ExtResource("eraser_icon")
+icon_alignment = 1
+
+[node name="MicrophoneButton" type="Button" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Record voice input"
+icon = ExtResource("mic_24")
+icon_alignment = 1
+script = ExtResource("icons_button")
+icon_24 = ExtResource("mic_24")
+icon_48 = ExtResource("mic_48")
+icon_68 = ExtResource("mic_68")
+
+[node name="StopButton" type="Button" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+tooltip_text = "Stop recording / cancel job"
+icon = ExtResource("stop_24")
+icon_alignment = 1
+script = ExtResource("icons_button")
+icon_24 = ExtResource("stop_24")
+icon_48 = ExtResource("stop_48")
+icon_68 = ExtResource("stop_68")
+
+[node name="PhaseModelSettingsButton" type="Button" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Job settings"
+icon = ExtResource("gear_24")
+icon_alignment = 1
+script = ExtResource("icons_button")
+icon_24 = ExtResource("gear_24")
+icon_48 = ExtResource("gear_48")
+icon_68 = ExtResource("gear_64")
+
+[node name="SubmitJobButton" type="Button" parent="VSplitContainer/BottomSection/MainInputCard/CardMargin/CardContent/ControlsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Start Job"
+icon = ExtResource("send_icon")
+icon_alignment = 1
 
 [node name="SessionHistoryContainer" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
@@ -419,7 +556,3 @@ layout_mode = 2
 
 [connection signal="artifact_selected" from="ArtifactBrowserPopup/ArtifactBrowser" to="." method="_on_artifact_browser_artifact_selected"]
 [connection signal="selection_canceled" from="ArtifactBrowserPopup/ArtifactBrowser" to="." method="_on_artifact_browser_selection_canceled"]
-[connection signal="pressed" from="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/SelectPackageButton" to="." method="_on_select_package_button_pressed"]
-[connection signal="pressed" from="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ClearInputResourcesButton" to="." method="_on_clear_input_resources_button_pressed"]
-[connection signal="pressed" from="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/SubmitJobButton" to="." method="_on_submit_job_button_pressed"]
-[connection signal="toggled" from="VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/SessionOptionsCard/CardMargin/CardContent/SessionTypeRow/ContinueSessionCheckBox" to="." method="_on_continue_session_check_box_toggled"]

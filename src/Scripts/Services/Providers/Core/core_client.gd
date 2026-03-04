@@ -18,6 +18,7 @@ signal binary_file_progress(file_index: int, received: int, total_size: int, pro
 #signal binary_file_saved(file_index: int, request_id: String, filename: String, path: String)
 signal binary_transfer_complete(request_id: String) # Emitted when the final text response confirms all files for a request are saved.
 signal image_received(filename: String, request_id: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
+signal artifact_binary_received(request_id: String, filename: String, buffer: PackedByteArray)
 
 enum EntityType {
 	HUMAN_AGENT,
@@ -81,6 +82,7 @@ var _binary_pending_chunks: Dictionary = {}  # file_index -> [PackedByteArray] f
 var _binary_expected_files: int = 0
 var _binary_files_completed: int = 0
 var _current_binary_request_id: String = "" # request_id associated with the *currently streaming* binary data
+var _binary_transfer_mode: String = "" # "media_gen" or "artifact"
 
 
 func _ready():
@@ -246,6 +248,7 @@ func _process(_delta):
 							_message_buffer = ""
 				else:
 					# It's a binary packet
+					print("🔶 BINARY FRAME RECEIVED: %s bytes" % packet_buffer.size())
 					_handle_binary_frame(packet_buffer)
 		WebSocketPeer.STATE_CLOSING:
 			# Keep polling to achieve proper close
@@ -512,8 +515,16 @@ func _reset_binary_transfer_state() -> void:
 	_binary_expected_files = 0
 	_binary_files_completed = 0
 	_current_binary_request_id = ""
+	_binary_transfer_mode = ""
 	if SingletonObject.verbose_logging:
 		print("Binary transfer state reset.")
+
+
+func prepare_binary_artifact_download(request_id: String) -> void:
+	_reset_binary_transfer_state()
+	_current_binary_request_id = request_id
+	_binary_transfer_mode = "artifact"
+
 
 # Helper to read 64-bit unsigned integer (little-endian)
 func _decode_u64_le(bytes_array: PackedByteArray, offset: int) -> int: # Explicitly type parameters and return
@@ -531,20 +542,19 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 	if msg.size() < 17:
 		print("❌ Binary frame too short: %s bytes" % msg.size())
 		return
-	
+
 	var frame_type: int = msg[0] # Explicitly type
 	var payload: PackedByteArray = msg.slice(17) # Explicitly type
-	
+
 	var frame_names: Dictionary = { # Explicitly type
 		NEW_MESSAGE: "NEW_MESSAGE",
-		FILE_INFO: "FILE_INFO", 
+		FILE_INFO: "FILE_INFO",
 		FILE_DATA: "FILE_DATA",
 		FILE_END: "FILE_END"
 	}
-	
+
 	var frame_name: String = frame_names.get(frame_type, "UNKNOWN(%d)" % frame_type)
-	if SingletonObject.verbose_logging:
-		print("🔷 Binary frame: %s, size: %s bytes" % [frame_name, msg.size()])
+	print("🔷 Binary frame: %s, size: %s bytes, transfer_mode=%s, expected_req=%s" % [frame_name, msg.size(), _binary_transfer_mode, _current_binary_request_id])
 	
 	match frame_type:
 		NEW_MESSAGE:
@@ -569,11 +579,20 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				var hdr_cmd: String = header.get("cmd", "") # Explicitly type
 				var hdr_topic: String = header.get("topic", "") # Explicitly type
 				
-				if hdr_cmd != "response" or not (hdr_topic.begins_with("media_gen/")):
+				if hdr_cmd != "response":
 					if SingletonObject.verbose_logging:
-						print("  ℹ️ Binary header cmd=%s topic=%s not a media_gen response, ignoring." % [hdr_cmd, hdr_topic])
+						print("  ℹ️ Binary header cmd=%s not a response, ignoring." % hdr_cmd)
 					return
-				
+
+				if hdr_topic.begins_with("media_gen/"):
+					_binary_transfer_mode = "media_gen"
+				elif hdr_topic == "artifact/download":
+					_binary_transfer_mode = "artifact"
+				else:
+					if SingletonObject.verbose_logging:
+						print("  ℹ️ Binary header topic=%s not handled, ignoring." % hdr_topic)
+					return
+
 				# If we receive a NEW_MESSAGE for a different request_id,
 				# we should reset and start tracking this new one.
 				if _current_binary_request_id != req_id:
@@ -592,138 +611,205 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				print("❌ NEW_MESSAGE payload data too short for JSON length")
 		
 		FILE_INFO:
-			if payload.size() < 12:
-				print("❌ FILE_INFO payload too short")
-				return
-				
-			var file_size: int = _decode_u64_le(payload, 0) # Explicitly type
-			var name_len: int = payload.decode_u32(8) # Explicitly type
-			
-			if payload.size() >= 12 + name_len:
-				var name_bytes: PackedByteArray = payload.slice(12, 12 + name_len).duplicate() # Explicitly duplicate for robustness
-				var _name: String = name_bytes.get_string_from_utf8() # Explicitly type
-				
-				# FILE_INFO doesn't contain file_index; order defines index
-				var file_index: int = _binary_filenames.size() # Explicitly type
+			if _binary_transfer_mode == "artifact":
+				# Artifact format: [file_index(4B)] + [file_size(8B u64)] + [name_len(4B)] + [name]
+				if payload.size() < 16:
+					print("❌ FILE_INFO (artifact) payload too short")
+					return
+				var file_index: int = payload.decode_u32(0)
+				var file_size: int = _decode_u64_le(payload, 4)
+				var name_len: int = payload.decode_u32(12)
+				if payload.size() < 16 + name_len:
+					print("❌ FILE_INFO (artifact) payload too short for name")
+					return
+				var name_bytes: PackedByteArray = payload.slice(16, 16 + name_len).duplicate()
+				var _name: String = name_bytes.get_string_from_utf8()
 				_binary_filenames[file_index] = _name
-				
-				var new_buffer = PackedByteArray()
-				# Removed: new_buffer.resize(file_size) - append_array handles sizing
-				
 				_binary_files[file_index] = {
-					"size": file_size,
-					"received": 0,
-					"buffer": new_buffer 
+					"size": file_size, "received": 0, "buffer": PackedByteArray()
 				}
-				
-				
 				# Apply any buffered chunks for this file_index
 				if _binary_pending_chunks.has(file_index):
-					var buffered_chunks: Array = _binary_pending_chunks[file_index] # Explicitly type
-					var buffer_copy_for_modify: PackedByteArray = (_binary_files[file_index] as Dictionary)["buffer"] # Get a copy from the dictionary
+					var buffered_chunks: Array = _binary_pending_chunks[file_index]
+					var buffer_copy: PackedByteArray = (_binary_files[file_index] as Dictionary)["buffer"]
 					for buffered_chunk in buffered_chunks:
-						buffer_copy_for_modify.append_array(buffered_chunk) # Append to the copy
+						buffer_copy.append_array(buffered_chunk)
 						(_binary_files[file_index] as Dictionary)["received"] += buffered_chunk.size()
 					_binary_pending_chunks.erase(file_index)
-					# *** CRITICAL FIX: Re-assign the modified copy back to the dictionary ***
-					(_binary_files[file_index] as Dictionary)["buffer"] = buffer_copy_for_modify
-					# *** End CRITICAL FIX ***
-					if SingletonObject.verbose_logging:
-						print("   📁 FILE_INFO idx=%s name=%s size=%s (applied %s buffered bytes). Current buffer size: %s bytes." % [file_index, _name, file_size, (_binary_files[file_index] as Dictionary)["received"], buffer_copy_for_modify.size()])
-				else:
-					if SingletonObject.verbose_logging:
-						print("   📁 FILE_INFO idx=%s name=%s size=%s. Current buffer size: %s bytes." % [file_index, _name, file_size, ((_binary_files[file_index] as Dictionary)["buffer"] as PackedByteArray).size()])
-				
+					(_binary_files[file_index] as Dictionary)["buffer"] = buffer_copy
+				if SingletonObject.verbose_logging:
+					print("   📁 FILE_INFO (artifact) idx=%s name=%s size=%s" % [file_index, _name, file_size])
 				binary_file_info_received.emit(file_index, _name, file_size)
 			else:
-				print("❌ FILE_INFO payload data too short for name length")
+				# Media-gen format: [file_size(8B u64)] + [name_len(4B)] + [name]
+				if payload.size() < 12:
+					print("❌ FILE_INFO payload too short")
+					return
+
+				var file_size: int = _decode_u64_le(payload, 0)
+				var name_len: int = payload.decode_u32(8)
+
+				if payload.size() >= 12 + name_len:
+					var name_bytes: PackedByteArray = payload.slice(12, 12 + name_len).duplicate()
+					var _name: String = name_bytes.get_string_from_utf8()
+
+					# FILE_INFO doesn't contain file_index; order defines index
+					var file_index: int = _binary_filenames.size()
+					_binary_filenames[file_index] = _name
+
+					var new_buffer = PackedByteArray()
+
+					_binary_files[file_index] = {
+						"size": file_size,
+						"received": 0,
+						"buffer": new_buffer
+					}
+
+					# Apply any buffered chunks for this file_index
+					if _binary_pending_chunks.has(file_index):
+						var buffered_chunks: Array = _binary_pending_chunks[file_index]
+						var buffer_copy_for_modify: PackedByteArray = (_binary_files[file_index] as Dictionary)["buffer"]
+						for buffered_chunk in buffered_chunks:
+							buffer_copy_for_modify.append_array(buffered_chunk)
+							(_binary_files[file_index] as Dictionary)["received"] += buffered_chunk.size()
+						_binary_pending_chunks.erase(file_index)
+						(_binary_files[file_index] as Dictionary)["buffer"] = buffer_copy_for_modify
+						if SingletonObject.verbose_logging:
+							print("   📁 FILE_INFO idx=%s name=%s size=%s (applied %s buffered bytes). Current buffer size: %s bytes." % [file_index, _name, file_size, (_binary_files[file_index] as Dictionary)["received"], buffer_copy_for_modify.size()])
+					else:
+						if SingletonObject.verbose_logging:
+							print("   📁 FILE_INFO idx=%s name=%s size=%s. Current buffer size: %s bytes." % [file_index, _name, file_size, ((_binary_files[file_index] as Dictionary)["buffer"] as PackedByteArray).size()])
+
+					binary_file_info_received.emit(file_index, _name, file_size)
+				else:
+					print("❌ FILE_INFO payload data too short for name length")
 		
 		FILE_DATA:
-			var current_chunk: PackedByteArray = payload.duplicate() # Duplicate the payload here
-			
-			if current_chunk.is_empty():
-				return # Skip if the chunk itself is empty
-			
-			var file_index: int = -1 # Explicitly type
-			# Determine file_index - for single file it's always 0
-			if _binary_files.size() == 1:
-				file_index = 0
-			elif _binary_files.size() > 1:
-				# Multi-file: find the first file that's not complete
-				var _binrary_keys = (_binary_files.keys() as Array)
-				_binrary_keys.sort_custom(func(a,b): return a < b)
-				for idx in _binrary_keys: # Cast keys to Array for sort_custom
-					if (_binary_files[idx] as Dictionary)["received"] < (_binary_files[idx] as Dictionary)["size"]:
-						file_index = idx
-						break
-				if file_index == -1: # All files might be complete, but more data arrives (e.g., error)
+			if _binary_transfer_mode == "artifact":
+				# Artifact format: [file_index(4B)] + [chunk_data]
+				if payload.size() < 4:
+					return
+				var file_index: int = payload.decode_u32(0)
+				var current_chunk: PackedByteArray = payload.slice(4).duplicate()
+				if current_chunk.is_empty():
+					return
+				if _binary_files.has(file_index):
+					var fd: Dictionary = _binary_files[file_index]
+					var buf: PackedByteArray = fd["buffer"]
+					buf.append_array(current_chunk)
+					fd["received"] += current_chunk.size()
+					fd["buffer"] = buf
+					# Log progress every 1MB
+					@warning_ignore("integer_division")
+					var prev_mb: int = (fd["received"] - current_chunk.size()) / (1024 * 1024)
+					@warning_ignore("integer_division")
+					var curr_mb: int = fd["received"] / (1024 * 1024)
+					if prev_mb != curr_mb and SingletonObject.verbose_logging:
+						var pct: float = (float(fd["received"]) / fd["size"]) * 100.0 if fd["size"] > 0 else 0.0
+						print("   📊 FILE_DATA (artifact) idx=%s: %s/%s (%.1f%%)" % [file_index, fd["received"], fd["size"], pct])
+						binary_file_progress.emit(file_index, fd["received"] as int, fd["size"] as int, pct)
+				else:
+					if not _binary_pending_chunks.has(file_index):
+						_binary_pending_chunks[file_index] = []
+					(_binary_pending_chunks[file_index] as Array).append(current_chunk.duplicate())
 					if SingletonObject.verbose_logging:
-						print("   ⚠️ FILE_DATA received but all known files are complete or no files registered. Buffering for index 0.")
-					file_index = 0 # Fallback to 0 or handle as error
+						print("   ⚠️ FILE_DATA (artifact) for unknown file index %s - buffering %s bytes" % [file_index, current_chunk.size()])
 			else:
-				# No file info received yet, assume index 0 and buffer
-				file_index = 0
-			
-			if _binary_files.has(file_index):
-				var file_data_dict: Dictionary = _binary_files[file_index] # Use distinct name for clarity
-				var buffer_copy_for_modify: PackedByteArray = (file_data_dict["buffer"] as PackedByteArray) # Get a copy of buffer from the dictionary
-				var current_received_bytes: int = file_data_dict["received"] as int
-				
-				# Use append_array to add the chunk to the buffer copy
-				buffer_copy_for_modify.append_array(current_chunk) 
-				
-				file_data_dict["received"] += current_chunk.size()
-				file_data_dict["buffer"] = buffer_copy_for_modify
-				# Log progress periodically (every 1MB)
-				@warning_ignore("integer_division")
-				if int(current_received_bytes / (1024 * 1024)) != int((file_data_dict["received"] as int) / (1024 * 1024)): # Ensure int division
-					var pct: float = 0.0 # Explicitly type
-					if (file_data_dict["size"] as int) > 0:
-						pct = (float(file_data_dict["received"]) / (file_data_dict["size"] as int)) * 100.0
+				# Media-gen format: entire payload is chunk data
+				var current_chunk: PackedByteArray = payload.duplicate()
+
+				if current_chunk.is_empty():
+					return
+
+				var file_index: int = -1
+				# Determine file_index - for single file it's always 0
+				if _binary_files.size() == 1:
+					file_index = 0
+				elif _binary_files.size() > 1:
+					# Multi-file: find the first file that's not complete
+					var _binrary_keys = (_binary_files.keys() as Array)
+					_binrary_keys.sort_custom(func(a,b): return a < b)
+					for idx in _binrary_keys:
+						if (_binary_files[idx] as Dictionary)["received"] < (_binary_files[idx] as Dictionary)["size"]:
+							file_index = idx
+							break
+					if file_index == -1:
+						if SingletonObject.verbose_logging:
+							print("   ⚠️ FILE_DATA received but all known files are complete or no files registered. Buffering for index 0.")
+						file_index = 0
+				else:
+					file_index = 0
+
+				if _binary_files.has(file_index):
+					var file_data_dict: Dictionary = _binary_files[file_index]
+					var buffer_copy_for_modify: PackedByteArray = (file_data_dict["buffer"] as PackedByteArray)
+					var current_received_bytes: int = file_data_dict["received"] as int
+
+					buffer_copy_for_modify.append_array(current_chunk)
+
+					file_data_dict["received"] += current_chunk.size()
+					file_data_dict["buffer"] = buffer_copy_for_modify
+					# Log progress periodically (every 1MB)
+					@warning_ignore("integer_division")
+					if int(current_received_bytes / (1024 * 1024)) != int((file_data_dict["received"] as int) / (1024 * 1024)):
+						var pct: float = 0.0
+						if (file_data_dict["size"] as int) > 0:
+							pct = (float(file_data_dict["received"]) / (file_data_dict["size"] as int)) * 100.0
+						if SingletonObject.verbose_logging:
+							print("   📊 FILE_DATA idx=%s: %s/%s (%s%%)" % [file_index, file_data_dict["received"], file_data_dict["size"], "%.1f" % pct])
+						binary_file_progress.emit(file_index, file_data_dict["received"] as int, file_data_dict["size"] as int, pct)
+				else:
+					if not _binary_pending_chunks.has(file_index):
+						_binary_pending_chunks[file_index] = []
+					(_binary_pending_chunks[file_index] as Array).append(current_chunk.duplicate())
 					if SingletonObject.verbose_logging:
-						print("   📊 FILE_DATA idx=%s: %s/%s (%s%%)" % [file_index, file_data_dict["received"], file_data_dict["size"], "%.1f" % pct])
-					binary_file_progress.emit(file_index, file_data_dict["received"] as int, file_data_dict["size"] as int, pct)
-			else:
-				# Defensive: buffer chunks that arrive before FILE_INFO
-				if not _binary_pending_chunks.has(file_index):
-					_binary_pending_chunks[file_index] = []
-				# Store a duplicate here because `payload` will be reused by the next `_handle_binary_frame` call
-				(_binary_pending_chunks[file_index] as Array).append(current_chunk.duplicate())
-				if SingletonObject.verbose_logging:
-					print("   ⚠️ FILE_DATA for unknown file index %s - buffering %s bytes" % [file_index, current_chunk.size()])
+						print("   ⚠️ FILE_DATA for unknown file index %s - buffering %s bytes" % [file_index, current_chunk.size()])
 		
 		FILE_END:
 			if payload.size() < 4:
 				print("❌ FILE_END payload too short")
 				return
-				
-			var file_index: int = payload.decode_u32(0) # little-endian (Explicitly type)
-			
+
+			var file_index: int = payload.decode_u32(0)
+
+			if _binary_transfer_mode == "artifact":
+				if _binary_files.has(file_index) and _binary_filenames.has(file_index):
+					var buf: PackedByteArray = (_binary_files[file_index] as Dictionary)["buffer"]
+					var fname: String = _binary_filenames[file_index]
+					print("   ✅ FILE_END (artifact) idx=%s name=%s size=%s bytes, emitting signal with req_id=%s" % [file_index, fname, buf.size(), _current_binary_request_id])
+					artifact_binary_received.emit(_current_binary_request_id, fname, buf)
+					_binary_files_completed += 1
+				else:
+					print("   ⚠️ FILE_END (artifact) for unknown index %s (files=%s, filenames=%s)" % [file_index, _binary_files.keys(), _binary_filenames.keys()])
+				# Don't reset state here — let the text completion handler do it
+				# This avoids the stale-FILE_END race condition for sequential downloads
+				return
+
+			# Media-gen FILE_END (existing behavior)
 			if _binary_files.has(file_index) and _binary_filenames.has(file_index):
-				var buf: PackedByteArray = (_binary_files[file_index] as Dictionary)["buffer"] # Explicitly type, get direct ref
-				
+				var buf: PackedByteArray = (_binary_files[file_index] as Dictionary)["buffer"]
+
 				# Check if the buffer is correctly filled to the expected size
 				var expected_file_size: int = (_binary_files[file_index] as Dictionary)["size"] as int
-				if buf.size() != expected_file_size: 
+				if buf.size() != expected_file_size:
 					print("❌ FILE_END: Buffer size (%s bytes) does not match expected size (%s bytes). Cannot save file." % [buf.size(), expected_file_size])
 					return
-				
+
 				var ext: String = "." + _binary_filenames[file_index].get_extension()
 				var time: = Time.get_datetime_string_from_system().replace(":", "_")
-				var fname: String = _binary_filenames[file_index].replace(ext, "") + time  + ext# Explicitly type
-				var out_path: String = "user://temp/" + fname # Using user:// for persistence in Godot (Explicitly type)
-				image_received.emit(fname, _current_binary_request_id, buf) # Emit the raw image buffer
-				
+				var fname: String = _binary_filenames[file_index].replace(ext, "") + time  + ext
+				var out_path: String = "user://temp/" + fname
+				image_received.emit(fname, _current_binary_request_id, buf)
+
 				var dir = DirAccess.open("user://temp/")
-				if dir == null: # Check for error
+				if dir == null:
 					if SingletonObject.verbose_logging:
 						print("Error opening directory 'user://temp/'. Creating it.")
 					var err = DirAccess.make_dir_recursive_absolute("user://temp/")
 					if err != OK:
 						push_error("Failed to create directory 'user://temp/'. Error: %s" % err)
-						return # Abort if directory can't be created
-				
-				
+						return
+
 				var file = FileAccess.open(out_path, FileAccess.WRITE)
 				if file:
 					if SingletonObject.verbose_logging:
@@ -733,11 +819,12 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					_binary_files_completed += 1
 					if SingletonObject.verbose_logging:
 						print("   ✅ FILE_END idx=%s saved to %s (%s bytes). Total completed: %s/%s" % [file_index, out_path, buf.size(), _binary_files_completed, _binary_expected_files])
-					#binary_file_saved.emit(file_index, _current_binary_request_id, fname, out_path)
 				else:
 					push_error("FileAccess error: %s" % FileAccess.get_open_error())
 					push_error("   ❌ Could not save file %s" % out_path)
-				_reset_binary_transfer_state()
+				# Do NOT reset state here: multi-file responses (e.g. 2-image compose) send
+				# one FILE_END per file. Reset only when we get the final text "response"
+				# or a NEW_MESSAGE for another request (handled in _handle_message and NEW_MESSAGE).
 			else:
 				if SingletonObject.verbose_logging:
 					print("   ⚠️ FILE_END for unknown file index %s" % file_index)
@@ -754,7 +841,7 @@ func send_media_gen_request(generation_params: Dictionary, topic: String = "medi
 		"topic": topic,  # Use provided topic parameter
 		"entity_type": "client",
 		"params": {
-			"client_id": client_id,
+			"client_id": Core._client_id,  # Use Core._client_id for consistency with other media gen functions
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
@@ -783,7 +870,7 @@ func send_media_edit_request(editing_params: Dictionary, image_buffer: PackedByt
 		"topic": "media_gen/image_editing", # <--- IMPORTANT: Correct topic for image editing
 		"entity_type": "client",
 		"params": {
-			"client_id": client_id,
+			"client_id": Core._client_id,  # Use Core._client_id for consistency with other media gen functions
 			"request_id": request_id,
 			"target_service_id": "media-gen",
 			"data": {
@@ -843,8 +930,8 @@ func send_media_selective_edit_request(editing_params: Dictionary, images_dir: A
 ## This workflow uses boolean switches to control operation mode:
 ## - create: all use_empty_* = true (generate from noise)
 ## - edit: use_empty_latent=false, use_empty_image1=false (edit image1)
-## - compose_2: use_empty_latent=true, use_empty_image1/2=false (combine 2 images)
-## - compose_3: use_empty_latent=true, use_empty_image1/2/3=false (combine 3 images)
+## - compose_2: use_empty_latent=true, use_empty_image1/2=false, use_empty_image3=true (combine 2 images; send images with roles "image1", "image2")
+## - compose_3: use_empty_latent=true, use_empty_image1/2/3=false (combine 3 images; the 3rd image is always from the Pose Editor when using compose_3_with_pose)
 func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
 	var request_id: String = UUIDGen.v7()
 
@@ -894,6 +981,35 @@ func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
 	send_message_to_core(message)
 
 	return request_id
+
+
+## Send a flex request for 3-image composition: image1, image2, and image3 = pose editor texture.
+## Use for qwen_2511_flex compose_3_with_pose (use_empty_image1/2/3=false).
+## image1 and image2 are dicts: {buffer: PackedByteArray, role: String, filename: String}.
+## pose_image_buffer is sent as image3 with role "image3" and filename "pose_control.png".
+## Returns request_id or "" if pose_image_buffer is empty.
+func send_media_flex_request_three_with_pose(params: Dictionary, image1: Dictionary, image2: Dictionary, pose_image_buffer: PackedByteArray) -> String:
+	if pose_image_buffer.is_empty():
+		return ""
+	var combined: Array = []
+	if image1.get("buffer", PackedByteArray()).size() > 0:
+		combined.append({
+			"buffer": image1["buffer"],
+			"role": image1.get("role", "image1"),
+			"filename": image1.get("filename", "image1.png")
+		})
+	if image2.get("buffer", PackedByteArray()).size() > 0:
+		combined.append({
+			"buffer": image2["buffer"],
+			"role": image2.get("role", "image2"),
+			"filename": image2.get("filename", "image2.png")
+		})
+	combined.append({
+		"buffer": pose_image_buffer,
+		"role": "image3",
+		"filename": "pose_control.png"
+	})
+	return send_media_flex_request(params, combined)
 
 
 func _queue_message_for_retry(message: Dictionary) -> void: # Explicitly type parameter

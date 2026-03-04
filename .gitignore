@@ -1,6 +1,7 @@
 # Godot 4+ specific ignores
 .godot/
 .vscode/
+.claude/
 *.so.*
 *.so
 
@@ -24,3 +25,4 @@ bin/
 # SQLite journal files
 *.dct-wal
 *.dct-shm
+.sconsign.dblite

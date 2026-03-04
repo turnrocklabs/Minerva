@@ -1,0 +1,134 @@
+[gd_scene load_steps=3 format=3 uid="uid://approval_card_001"]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderStreamApprovalCard.gd" id="1_approval"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_approval"]
+bg_color = Color(0.1, 0.12, 0.1, 1)
+border_width_left = 2
+border_color = Color(0.3, 0.8, 0.7, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+
+[node name="AutocoderStreamApprovalCard" type="PanelContainer"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_approval")
+script = ExtResource("1_approval")
+
+[node name="Content" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Content"]
+layout_mode = 2
+
+[node name="Icon" type="Label" parent="Content/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 21
+text = "✅"
+
+[node name="TitleLabel" type="Label" parent="Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.3, 0.85, 0.75, 1)
+theme_override_font_sizes/font_size = 18
+text = "Ready for Review"
+
+[node name="Spacer" type="Control" parent="Content/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FileCountLabel" type="Label" parent="Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.65, 1)
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 2
+
+[node name="SummaryLabel" type="Label" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.8, 0.85, 1)
+theme_override_font_sizes/font_size = 18
+text = "Generation complete. Ready for your review."
+autowrap_mode = 2
+
+[node name="ReviewDetailsContainer" type="VBoxContainer" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+
+[node name="ReviewDetailsLabel" type="Label" parent="Content/ReviewDetailsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.65, 0.75, 1)
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2
+
+[node name="ButtonsContainer" type="HBoxContainer" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ExtractButton" type="Button" parent="Content/ButtonsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Extract & Test"
+
+[node name="ApproveButton" type="Button" parent="Content/ButtonsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Approve"
+
+[node name="RequestChangesButton" type="Button" parent="Content/ButtonsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Request Changes"
+
+[node name="FeedbackContainer" type="VBoxContainer" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+theme_override_constants/separation = 6
+
+[node name="FeedbackLabel" type="Label" parent="Content/FeedbackContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Describe what needs to change:"
+
+[node name="FeedbackInput" type="TextEdit" parent="Content/FeedbackContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 60)
+theme_override_font_sizes/font_size = 18
+placeholder_text = "e.g. Fix the error handling in main.py..."
+
+[node name="FeedbackButtons" type="HBoxContainer" parent="Content/FeedbackContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SubmitChangesButton" type="Button" parent="Content/FeedbackContainer/FeedbackButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Submit Feedback"
+
+[node name="CancelChangesButton" type="Button" parent="Content/FeedbackContainer/FeedbackButtons"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Cancel"
+
+[node name="StatusLabel" type="Label" parent="Content"]
+unique_name_in_owner = true
+layout_mode = 2
+visible = false
+theme_override_font_sizes/font_size = 20

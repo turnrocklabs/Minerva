@@ -9,6 +9,7 @@ const MIN_PRESSURE := 0.01
 
 @export var _color_picker_button: ColorPickerButton
 @export var _brush_size_slider: Slider
+@export var use_gpu_acceleration: bool = true  # Toggle GPU compute shader acceleration
 
 var brush_color: Color:
 	set(value):
@@ -56,6 +57,10 @@ var _layer_backup: Image = null  # Backup of layer for visual feedback during st
 var _stroke_dirty_rect: Rect2i = Rect2i()
 var _last_preview_msec: int = 0
 const PREVIEW_INTERVAL_MS: int = 16  # ~60fps throttle
+
+# GPU acceleration
+var _gpu_renderer: GPUBrushRenderer = null
+var _using_gpu: bool = false
 
 func _ready() -> void:
 	editor.active_tool_changed.connect(
@@ -203,6 +208,9 @@ func _start_stroke(event: InputEvent) -> void:
 	_layer_backup = editor.active_layer.image.duplicate()
 	_stroke_dirty_rect = Rect2i()  # Reset dirty rect for new stroke
 	_last_preview_msec = 0  # Reset throttle timer
+	
+	# Initialize GPU renderer if enabled
+	_using_gpu = use_gpu_acceleration and _init_gpu_renderer()
 
 func _update_stroke_buffer_for_expansion(offset: Vector2) -> void:
 	# Called when layer expands during a stroke to resize stroke buffer and update backup
@@ -317,12 +325,27 @@ func _end_stroke(event: InputEvent) -> void:
 		)
 
 	# Final composite: restore backup and composite stroke buffer
-	if _stroke_buffer and _layer_backup:
+	if _using_gpu and _gpu_renderer:
+		# GPU path: composite and get result
+		_gpu_renderer.composite_stroke_to_output()
+		var output = _gpu_renderer.get_output_image()
+		if output:
+			editor.active_layer.image = output
+	elif _stroke_buffer and _layer_backup:
+		# CPU path
 		editor.active_layer.image.blit_rect(_layer_backup, Rect2i(Vector2i.ZERO, _layer_backup.get_size()), Vector2i.ZERO)
 		_composite_stroke_buffer_to(editor.active_layer.image, _layer_backup)
+	
+	# Cleanup
 	_stroke_buffer = null
 	_layer_backup = null
-	_stroke_dirty_rect = Rect2i()  # Reset dirty rect
+	_stroke_dirty_rect = Rect2i()
+	
+	if _gpu_renderer:
+		_gpu_renderer.cleanup()
+		_gpu_renderer = null
+	_using_gpu = false
+	
 	editor.queue_redraw()
 
 	# Finalize and execute the drawing command
@@ -380,6 +403,16 @@ func _draw_brush_stamp(target_image: Image, center: Vector2, color: Color, diame
 	var actual_diameter = diameter / camera_zoom
 	var radius = max(1, int(ceil(actual_diameter * 0.5)))
 
+	# GPU path
+	if _using_gpu and _gpu_renderer:
+		var has_sel = editor.has_selection()
+		_gpu_renderer.draw_brush_stamp(center, radius, color, has_sel)
+		
+		# Track dirty region for potential CPU fallback
+		_expand_dirty_rect(Vector2i(int(center.x), int(center.y)), radius)
+		return
+
+	# CPU path
 	var pixels = _get_cached_circle_pixels(radius)
 	var center_x = int(center.x)
 	var center_y = int(center.y)
@@ -480,7 +513,17 @@ func _composite_stroke_buffer_region(target_image: Image, source_backup: Image, 
 
 
 func _update_visual_preview() -> void:
-	# Restore layer from backup and composite current stroke buffer for display
+	# GPU path: composite and update immediately
+	if _using_gpu and _gpu_renderer:
+		_gpu_renderer.composite_stroke_to_output()
+		var output = _gpu_renderer.get_output_image()
+		if output:
+			editor.active_layer.image = output
+			# Update backup for next frame
+			_gpu_renderer.update_layer_backup(output)
+		return
+	
+	# CPU path: Restore layer from backup and composite current stroke buffer for display
 	# Uses dirty rect for optimized region-only operations
 	if _stroke_buffer and _layer_backup and _stroke_dirty_rect.size != Vector2i.ZERO:
 		# Only blit and composite the dirty region
@@ -573,3 +616,52 @@ func plot_circle_points(image: Image, center: int, x: int, y: int, color: Color)
 	for point in points:
 		if point.x >= 0 and point.x < image.get_width() and point.y >= 0 and point.y < image.get_height():
 			image.set_pixel(point.x, point.y, color)
+
+
+## Initialize GPU renderer for hardware-accelerated stroke drawing
+func _init_gpu_renderer() -> bool:
+	if not editor or not editor.active_layer or not editor.active_layer.image:
+		return false
+	
+	_gpu_renderer = GPUBrushRenderer.new()
+	
+	# Build selection mask if there's an active selection
+	var selection_data = PackedByteArray()
+	if editor.has_selection():
+		selection_data = _build_selection_mask()
+	
+	# Initialize GPU buffers
+	if not _gpu_renderer.initialize_buffers(editor.active_layer.image, selection_data):
+		push_warning("Failed to initialize GPU brush renderer, falling back to CPU")
+		_gpu_renderer = null
+		return false
+	
+	return true
+
+
+## Build a packed bit array representing the selection mask
+## Each bit represents whether a pixel is selected (1) or not (0)
+## 32 pixels are packed into each uint32 for efficiency
+func _build_selection_mask() -> PackedByteArray:
+	var image = editor.active_layer.image
+	var width = image.get_width()
+	var height = image.get_height()
+	var total_pixels = width * height
+	
+	# Calculate required size: 32 pixels per uint (4 bytes)
+	var buffer_size = ceili(float(total_pixels) / 32.0) * 4
+	var mask = PackedByteArray()
+	mask.resize(buffer_size)
+	mask.fill(0)
+	
+	# Pack selection bits
+	for y in range(height):
+		for x in range(width):
+			var pixel_index = y * width + x
+			var byte_index = int(pixel_index / 8.0)
+			var bit_index = int(pixel_index % 8.0)
+			
+			if editor.is_pixel_selected(x, y):
+				mask[byte_index] = mask[byte_index] | (1 << bit_index)
+	
+	return mask

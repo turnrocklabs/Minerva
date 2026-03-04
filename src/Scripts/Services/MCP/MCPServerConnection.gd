@@ -229,6 +229,10 @@ func _verify_http_connection() -> Error:
 				continue
 
 			var response: Array = await http.request_completed
+
+			if not is_instance_valid(http):
+				return ERR_CANT_CONNECT
+
 			var result_code: int = response[0]
 			var response_code: int = response[1]
 
@@ -309,6 +313,10 @@ func _http_initialize() -> Dictionary:
 		return {"error": "HTTP request failed: %s" % error_string(err)}
 
 	var response: Array = await http.request_completed
+
+	if not is_instance_valid(http):
+		return {"error": "Request was cancelled"}
+
 	http.queue_free()
 
 	var result_code: int = response[0]
@@ -406,6 +414,12 @@ func _call_tool_http(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 	# Wait for response
 	var response: Array = await http.request_completed
+
+	# Guard against cancelled requests: if cancel_active_requests() queue_free()'d
+	# this HTTPRequest during the await, the node is freed and we must bail out.
+	if not is_instance_valid(http):
+		return {"error": "Request was cancelled"}
+
 	_active_http_requests.erase(http)
 	http.queue_free()
 

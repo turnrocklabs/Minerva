@@ -78,9 +78,12 @@ func create_tab(tab_name: String = "Notes", uuid: String = "") -> NoteVBox:
 ## Find a tab by name, or create it if it doesn't exist.
 ## Returns the NoteVBox for that tab.
 func find_or_create_tab(tab_name: String) -> NoteVBox:
-	# Search existing tabs
+	# Search existing tabs. Compare against both the raw name and the
+	# Godot-sanitized name (e.g. "X.com" becomes "X_com" as a node name).
+	var sanitized := tab_name.validate_node_name()
 	for i in get_tab_count():
-		if get_tab_title(i) == tab_name:
+		var title := get_tab_title(i)
+		if title == tab_name or title == sanitized:
 			return get_tab_control(i) as NoteVBox
 
 	# Not found, create new tab
@@ -315,16 +318,20 @@ func _update_adapter_info():
 ## Calls the [param provider] wrap_memory for each active node
 ## in the notes and drawer notes container, and returns an array of all the return values.[br]
 ## If [param refresh_detached] is `true`, detached notes will be regenerated to match current editor content.
-func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Variant]:
+func to_prompt(provider: BaseProvider, refresh_detached: = false, history_id: String = "") -> Array[Variant]:
 	var output: Array[Variant] = []
 
 	var notes: Array[Note]
 
 	for i in SingletonObject.notes_container.get_tab_count():
-		notes.append_array(SingletonObject.notes_container.get_notes(i).filter(func(note: Note): return note.enabled))
+		notes.append_array(SingletonObject.notes_container.get_notes(i).filter(
+			func(note: Note): return note.enabled and (history_id.is_empty() or note.is_linked_to_chat(history_id))
+		))
 
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
-		notes.append_array(SingletonObject.drawer_notes_container.get_notes(i).filter(func(note: Note): return note.enabled))
+		notes.append_array(SingletonObject.drawer_notes_container.get_notes(i).filter(
+			func(note: Note): return note.enabled and (history_id.is_empty() or note.is_linked_to_chat(history_id))
+		))
 
 	print("[NotesContainer] to_prompt: %d detached proxies, refresh_detached=%s" % [SingletonObject.detached_note_proxies.size(), refresh_detached])
 	for proxy_note in SingletonObject.detached_note_proxies:
@@ -356,6 +363,47 @@ func to_prompt(provider: BaseProvider, refresh_detached: = false) -> Array[Varia
 	return output
 
 
+static var _agent_tab_icon: Texture2D = preload("res://assets/icons/robot_AI_48.png")
+
+## Lock a tab to an agent. Shows a robot icon on the tab header.
+func lock_tab_to_agent(tab_idx: int, agent_id: String) -> void:
+	var note_vbox: NoteVBox = get_tab_control(tab_idx)
+	if note_vbox:
+		note_vbox.locked_agent_id = agent_id
+		set_tab_icon(tab_idx, _agent_tab_icon)
+
+
+## Check if a tab is locked to an agent.
+func is_tab_agent_locked(tab_idx: int) -> bool:
+	var note_vbox: NoteVBox = get_tab_control(tab_idx)
+	return note_vbox != null and not note_vbox.locked_agent_id.is_empty()
+
+
+## Show or hide all agent-locked tabs.
+func set_agent_tabs_visible(p_visible: bool) -> void:
+	for i in get_tab_count():
+		if is_tab_agent_locked(i):
+			set_tab_hidden(i, not p_visible)
+
+
+## Find or create a tab locked to a specific agent.
+func find_or_create_agent_tab(tab_name: String, agent_id: String) -> NoteVBox:
+	# Check existing tabs for one already locked to this agent with this name
+	var sanitized := tab_name.validate_node_name()
+	for i in get_tab_count():
+		var existing_vbox: NoteVBox = get_tab_control(i)
+		if existing_vbox.locked_agent_id == agent_id:
+			var title := get_tab_title(i)
+			if title == tab_name or title == sanitized:
+				return existing_vbox
+
+	# Not found, create and lock
+	var vbox = create_tab(tab_name)
+	var idx = get_tab_idx_from_control(vbox)
+	lock_tab_to_agent(idx, agent_id)
+	return vbox
+
+
 func serialize() -> Array[Dictionary]:
 	var data: Array[Dictionary]
 
@@ -373,6 +421,8 @@ func serialize() -> Array[Dictionary]:
 			"ThreadId": note_vbox.uuid,
 			"MemoryItemList": notes_data,
 			"AutoUpload": note_vbox.auto_upload,
+			"LockedAgentId": note_vbox.locked_agent_id,
+			"DefaultLinkedChatIds": note_vbox.default_linked_chat_ids,
 		}
 
 		data.append(tab_data)
@@ -402,8 +452,19 @@ func deserialize(notes_data: Array) -> void:
 
 
 		note_vbox.auto_upload = auto_upload
+		note_vbox.locked_agent_id = tab_data.get("LockedAgentId", "")
+
+		var saved_links: Array = tab_data.get("DefaultLinkedChatIds", [])
+		var typed_links: Array[String] = []
+		for lid in saved_links:
+			typed_links.append(str(lid))
+		note_vbox.default_linked_chat_ids = typed_links
 
 		var tab_idx: = get_tab_idx_from_control(note_vbox)
+
+		# Show robot icon on agent-locked tabs
+		if not note_vbox.locked_agent_id.is_empty():
+			set_tab_icon(tab_idx, _agent_tab_icon)
 
 		# NOTICE: this may not be the best place to check for sync of remote notes
 		var notes_to_update: Array[Note]
@@ -438,6 +499,7 @@ func deserialize(notes_data: Array) -> void:
 
 		if not notes_to_update.is_empty():
 			SingletonObject.notes_sync_manger.sync_notes(notes_to_update)
+
 
 # region Drop
 
@@ -477,11 +539,16 @@ func _drop_data(at_position: Vector2, data: Variant) -> void:
 var last_click: float = -1
 
 func _on_tab_bar_gui_input(event: InputEvent) -> void:
-	
-	if event is InputEventMouseButton:
-		if not (event.pressed and event.button_index == MOUSE_BUTTON_LEFT): return
 
+	if event is InputEventMouseButton:
 		var tab_idx: = get_tab_idx_at_point(event.position)
+
+		if event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+			if tab_idx != -1:
+				_show_tab_context_menu(tab_idx, get_global_mouse_position())
+			return
+
+		if not (event.pressed and event.button_index == MOUSE_BUTTON_LEFT): return
 
 		if tab_idx == -1: return
 
@@ -491,8 +558,30 @@ func _on_tab_bar_gui_input(event: InputEvent) -> void:
 
 		if Time.get_unix_time_from_system() - last_click < 0.2:
 			_new_thread_popup.set_values(get_tab_name(tab_idx), get_tab_control(tab_idx))
-		
+
 		last_click = Time.get_unix_time_from_system()
+
+# endregion
+
+# region tab context menu
+
+func _show_tab_context_menu(tab_idx: int, pos: Vector2) -> void:
+	var vbox: NoteVBox = get_tab_control(tab_idx)
+	if not vbox:
+		return
+
+	var menu := PopupMenu.new()
+	add_child(menu)
+	menu.add_item("Rename...", 0)
+
+	menu.id_pressed.connect(func(id: int):
+		match id:
+			0:
+				_new_thread_popup.set_values(get_tab_name(tab_idx), vbox)
+		menu.queue_free()
+	)
+
+	menu.popup(Rect2i(Vector2i(pos), Vector2i.ZERO))
 
 # endregion
 
