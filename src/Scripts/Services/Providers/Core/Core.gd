@@ -82,7 +82,8 @@ func close_connection() -> void:
 	# the request still doesnt cancel and times out after some period of time
 	print("core: cancel auth request")
 	
-	http_request.cancel_request()
+	if http_request:
+		http_request.cancel_request()
 	
 	Core.client.close_connection("User disconnected")
 

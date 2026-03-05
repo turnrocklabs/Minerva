@@ -113,17 +113,14 @@ signal selection_changed()
 @onready var load_image_1_button: Button = %LoadImage1Button
 @onready var pick_image_1_button: Button = %PickImage1Button
 @onready var pose_editor_image_1_button: Button = %PoseEditorImage1Button
-@onready var send_image_1_button: CheckButton = %SendImage1Button
 @onready var image_2_texture_rect: TextureRect = %Image2TextureRect
 @onready var load_image_2_button: Button = %LoadImage2Button
 @onready var pick_image_2_button: Button = %PickImage2Button
 @onready var pose_editor_image_2_button: Button = %PoseEditorImage2Button
-@onready var send_image_2_button: CheckButton = %SendImage2sButton
 @onready var image_3_texture_rect: TextureRect = %Image3TextureRect
 @onready var load_image_3_button: Button = %LoadImage3Button
 @onready var pick_image_3_button: Button = %PickImage3Button
 @onready var pose_editor_image_3_button: Button = %PoseEditorImage3Button
-@onready var send_image_3_button: CheckButton = %SendImage3Button
 
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
@@ -745,12 +742,8 @@ func _ready() -> void:
 	
 	workflow_option_button.select(0)
 	_on_workflow_option_button_item_selected(0)  # Initialize current_workflow to match the selection
-
+	
 	response_layout_toggle()
-
-	# Send-image toggles: enable only when the corresponding texture rect has a texture
-	_update_send_image_buttons_enabled()
-
 	# Edit button handles both single-image edit and mask (selective) edit; mask button is hidden
 	send_mask_edit_button.visible = false
 	edit_img_button.tooltip_text = "Edit image (Image 1). If Image 2 is enabled, sends image + mask for selective editing."
@@ -1005,7 +998,6 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 						image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
 				# Clear destination and close popup
 				add_image_destination = ""
-				_update_send_image_buttons_enabled()
 				layer_cards_popup_panel.hide()
 				return
 			else:
@@ -1576,6 +1568,8 @@ func _on_add_image_button_pressed() -> void:
 var add_image_destination: = ""
 var add_image_fd: FileDialog = null
 func image_file_dialog(destination :String) -> void:
+	if add_image_fd and add_image_fd.visible:
+		return
 	if add_image_fd == null:
 		add_image_fd = FileDialog.new()
 		add_image_fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -1592,7 +1586,8 @@ func image_file_dialog(destination :String) -> void:
 		#"image3_button":
 			#add_image_destination = "image3_texture" # this is for adding the image to image3
 	add_image_destination = destination
-	add_image_fd.file_selected.connect(_on_file_selected)
+	if !add_image_fd.files_selected.is_connected(_on_file_selected):
+		add_image_fd.file_selected.connect(_on_file_selected)
 	add_child(add_image_fd)
 	add_image_fd.popup_centered()
 
@@ -1600,14 +1595,6 @@ var image1_image: Image
 var image2_image: Image
 var image3_image: Image
 
-## Update send-image CheckButtons: enable only when the corresponding texture rect has a texture set.
-func _update_send_image_buttons_enabled() -> void:
-	if send_image_1_button:
-		send_image_1_button.disabled = (image_1_texture_rect.texture == null or image1_image == null or image1_image.is_empty())
-	if send_image_2_button:
-		send_image_2_button.disabled = (image_2_texture_rect.texture == null or image2_image == null or image2_image.is_empty())
-	if send_image_3_button:
-		send_image_3_button.disabled = (image_3_texture_rect.texture == null or image3_image == null or image3_image.is_empty())
 
 func _on_file_selected(fp: String) -> void:
 	var image: = Image.load_from_file(fp)
@@ -1621,21 +1608,19 @@ func _on_file_selected(fp: String) -> void:
 			image1_image = image
 			image_1_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 		"image2_texture":
 			image2_image = image
 			image_2_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 		"image3_texture":
 			image3_image = image
 			image_3_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 	
 	add_image_destination = ""
 	add_image_fd.file_selected.disconnect(_on_file_selected)
 	add_image_fd.queue_free()
+	add_image_fd = null
 
 
 func _on_layers_container_mouse_exited() -> void:
@@ -2261,29 +2246,26 @@ var ai_request_type: AI_REQUEST = AI_REQUEST.EDIT_IMAGE
 ## - Image 1 + Image 2 enabled → send selective edit (image + mask).
 func _on_edit_from_texture_rects_pressed() -> void:
 	if current_workflow == Workflow.Z_TURBO:
-		display_message("Workflow", "Edit is not available for Z-Turbo. Use Qwen or Qwen 2511 Flex.")
 		return
 	if image1_image == null or image1_image.is_empty():
-		display_message("Image Required", "Load or pick an image into Image 1 slot first (Load from file or Pick from layer).")
-		return
-	if not send_image_1_button.button_pressed:
-		display_message("Include Image", "Enable the Image 1 toggle (check button) next to the texture to include it in the edit request.")
 		return
 	var params: Dictionary = get_params_image_gen()
 	if params.is_empty():
-		display_message("Prompt", "Enter a positive prompt for image editing.")
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.WARNING, "Enter a positive prompt for image editing.")
+		SingletonObject.main_scene.add_child(toast)
 		return
 	var image_for_export: Image = image1_image.duplicate()
 	if image_for_export.get_format() != Image.FORMAT_RGBA8:
 		image_for_export.convert(Image.FORMAT_RGBA8)
 	var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
 	if image_buffer.is_empty():
-		display_message("Error", "Failed to convert Image 1 to PNG buffer.")
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.ERROR, "Failed to convert Image 1 to PNG buffer.")
+		SingletonObject.main_scene.add_child(toast)
 		return
 	if !seed_line_edit.text.is_empty():
 		params["seed"] = seed_line_edit.text
 
-	var use_mask: bool = send_image_2_button.button_pressed and image2_image != null and not image2_image.is_empty()
+	var use_mask: bool = image2_image != null and not image2_image.is_empty()
 	if use_mask:
 		# Mask (selective) edit: image 1 + image 2 as mask
 		var img2_for_export: Image = image2_image.duplicate()
@@ -2358,57 +2340,12 @@ func _on_edit_button_pressed() -> void:
 
 
 func _on_edit_img_button_pressed() -> void:
-	if ai_request_type == AI_REQUEST.EDIT_IMAGE:
-		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
-			_reset_edit_ui_buttons()
-			if current_workflow == Workflow.Z_TURBO:
-				display_message("Workflow", "Edit is not available for Z-Turbo. Use Qwen or Qwen 2511 Flex.")
-			else:
-				display_message("Selection", "Select at least one image layer in the layer list, then click Send.")
-			return
-		
-		# This was handling compose_3_with_pose, but user wants that on a different button
-		# Removed the 3-image compose code from here - now handled by _on_three_image_workflow_button_pressed
-		
-		var layer_to_send: LayerV2 = selected_layers[0]
-		# Get the image from the active layer
-		if layer_to_send == null:
-			_reset_edit_ui_buttons()
-			display_message("Error", "Selected layer is invalid.")
-			return
-		var image_to_edit: Image = layer_to_send.image
-		var image_filename: String = layer_to_send.name + ".png" # Use layer name as filename
-		# Convert Image to PackedByteArray (PNG format)
-		# The image must be converted to RGBA8 for PNG export if it's not already.
-		# Duplicate to avoid modifying the original layer image directly during conversion.
-		var image_for_export: Image = image_to_edit.duplicate()
-		if image_for_export.get_format() != Image.FORMAT_RGBA8:
-			image_for_export.convert(Image.FORMAT_RGBA8)
-		
-		var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
-		
-		if image_buffer.is_empty():
-			display_message("Error", "Failed to convert active layer image to PNG buffer.")
-			_reset_edit_ui_buttons()
-			return
-		
-		var params: Dictionary = get_params_image_gen()
-		if params.is_empty():
-			_reset_edit_ui_buttons()
-			display_message("Prompt", "Enter a positive prompt for image generation.")
-			return
-		
-		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
-		SingletonObject.main_scene.add_child(toast)
-		
-		if !seed_line_edit.text.is_empty():
-			params["seed"] = seed_line_edit.text
-		
-		_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, image_filename)
-		
-		image_gen_window.hide()
-		layer_cards_popup_panel.hide()
-		prompt_text_edit.text = ""
+	# For EDIT_IMAGE and MASK_EDIT, reuse the texture-rect based flow:
+	# - Image 1 only -> single-image edit
+	# - Image 1 + Image 2 enabled -> selective (mask) edit
+	if ai_request_type == AI_REQUEST.EDIT_IMAGE or ai_request_type == AI_REQUEST.MASK_EDIT:
+		_on_edit_from_texture_rects_pressed()
+		return
 	elif ai_request_type == AI_REQUEST.THREE_IMAGE_COMPOSE:
 		# Handle 3-image composition (2 layers + pose editor)
 		var has_second: bool = selected_layers.size() >= 2 or (selected_layers.size() >= 1 and selected_mask_layers.size() >= 1)
@@ -2706,17 +2643,14 @@ func _on_pose_editor_panel_pose_rendered(image: Image) -> void:
 			image1_image = image
 			image_1_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 		"image2_texture":
 			image2_image = image
 			image_2_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 		"image3_texture":
 			image3_image = image
 			image_3_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 
 #endregion LayersCards Masks PopUp panel
 
@@ -2860,7 +2794,7 @@ func check_ai_buttons_toggle() -> void:
 			edit_img_button.tooltip_text = _edit_img_base_tooltip
 		if send_mask_edit_button:
 			send_mask_edit_button.disabled = true
-	
+
 
 var draw_render_view: = false
 func _on_draw_rect(rect: Rect2) -> void:
@@ -2878,6 +2812,7 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 			denoise_spin_box.value = 1.0
 			edit_img_button.disabled = true
 			send_mask_edit_button.disabled = true
+			%ImagesContainer.hide()
 		1:  # Qwen
 			current_workflow = Workflow.QWEN
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
@@ -2885,7 +2820,15 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 			denoise_spin_box.value = 1.0
 			edit_img_button.disabled = false
 			send_mask_edit_button.disabled = false
+			%ImagesContainer.show() 
+			%ImageContainer2.hide() 
+			%ImageContainer3.hide()
+			%ImageContainer1.show()
 		2:  # Qwen 2511 Flex
+			%ImagesContainer.show() 
+			%ImageContainer2.show() 
+			%ImageContainer3.show()
+			%ImageContainer1.show()
 			current_workflow = Workflow.QWEN_2511_FLEX
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN_2511_FLEX]
 			cfg_spin_box.value = 1.0
@@ -2924,10 +2867,6 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 	else:
 		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
 			button.disabled = false
-	#if _3d_pose_controller_button.button_pressed:
-		#workflow_option_button.select(2)
-	#workflow_option_button.disabled = _3d_pose_controller_button.button_pressed
-	#three_image_workflow_button.disabled = !_3d_pose_controller_button.button_pressed
 
 
 func disable_ai_features(error: int) -> void:
@@ -2957,10 +2896,7 @@ func _on_center_view_button_pressed() -> void:
 ## Position the drawing area at the top-left of the viewport
 func _position_view_top_left() -> void:
 	var viewport_size = input_area_camera.get_viewport().size
-	# Camera2D centers on its position, so offset to put content at top-left
-	# Account for zoom: at zoom 0.5, we see 2x the area, so offset needs adjustment
 	var zoom_factor = input_area_camera.zoom.x
-	# Offset camera so origin (0,0) appears at top-left with some padding
 	var padding = Vector2(20, 20)
 	input_area_camera.offset = Vector2.ZERO
 	input_area_camera.position = (Vector2(viewport_size) / 2.0) / zoom_factor - padding
