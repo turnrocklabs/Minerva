@@ -44,6 +44,19 @@ var trigger_enabled_check: CheckButton
 var trigger_new_btn: Button
 var trigger_save_btn: Button
 var trigger_delete_btn: Button
+## Schedule controls
+var trigger_schedule_type_option: OptionButton
+var trigger_schedule_time_hour: SpinBox
+var trigger_schedule_time_min: SpinBox
+var trigger_schedule_days_container: HBoxContainer
+var trigger_fire_if_missed_check: CheckButton
+var trigger_schedule_preview: Label
+var trigger_last_fired_label: Label
+## Labels that need visibility toggling
+var trigger_interval_label: Label
+var trigger_schedule_type_label: Label
+var trigger_schedule_time_label: Label
+var trigger_schedule_days_label: Label
 #endregion
 
 var _selected_agent_idx: int = -1
@@ -335,10 +348,68 @@ func _build_triggers_tab() -> Control:
 	trigger_type_option.item_selected.connect(_on_trigger_type_changed)
 	right_vbox.add_child(trigger_type_option)
 
-	# Timer interval
-	right_vbox.add_child(_label("Interval (seconds):"))
+	# Schedule type (shown only when trigger_type == TIMER)
+	trigger_schedule_type_label = _label("Schedule Mode:")
+	right_vbox.add_child(trigger_schedule_type_label)
+	trigger_schedule_type_option = OptionButton.new()
+	trigger_schedule_type_option.add_item("Every N seconds", TriggerDefinition.ScheduleType.INTERVAL)
+	trigger_schedule_type_option.add_item("Daily", TriggerDefinition.ScheduleType.DAILY)
+	trigger_schedule_type_option.add_item("Weekly", TriggerDefinition.ScheduleType.WEEKLY)
+	trigger_schedule_type_option.item_selected.connect(_on_schedule_type_changed)
+	right_vbox.add_child(trigger_schedule_type_option)
+
+	# Timer interval (visible only for INTERVAL schedule)
+	trigger_interval_label = _label("Interval (seconds):")
+	right_vbox.add_child(trigger_interval_label)
 	trigger_interval_spin = _spin(5, 86400, 300, 10)
 	right_vbox.add_child(trigger_interval_spin)
+
+	# Time picker (visible for DAILY/WEEKLY)
+	trigger_schedule_time_label = _label("Time (24h):")
+	right_vbox.add_child(trigger_schedule_time_label)
+	var time_hbox := HBoxContainer.new()
+	time_hbox.add_theme_constant_override("separation", 4)
+	trigger_schedule_time_hour = _spin(0, 23, 9, 1)
+	trigger_schedule_time_hour.suffix = "h"
+	trigger_schedule_time_hour.value_changed.connect(func(_v): _update_schedule_preview())
+	time_hbox.add_child(trigger_schedule_time_hour)
+	trigger_schedule_time_min = _spin(0, 59, 0, 5)
+	trigger_schedule_time_min.suffix = "m"
+	trigger_schedule_time_min.value_changed.connect(func(_v): _update_schedule_preview())
+	time_hbox.add_child(trigger_schedule_time_min)
+	right_vbox.add_child(time_hbox)
+
+	# Day-of-week checkboxes (visible for WEEKLY)
+	trigger_schedule_days_label = _label("Days:")
+	right_vbox.add_child(trigger_schedule_days_label)
+	trigger_schedule_days_container = HBoxContainer.new()
+	trigger_schedule_days_container.add_theme_constant_override("separation", 2)
+	var day_names := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+	for i in day_names.size():
+		var cb := CheckButton.new()
+		cb.text = day_names[i]
+		cb.set_meta("day_index", i)
+		cb.toggled.connect(func(_on): _update_schedule_preview())
+		trigger_schedule_days_container.add_child(cb)
+	right_vbox.add_child(trigger_schedule_days_container)
+
+	# Fire if missed
+	trigger_fire_if_missed_check = CheckButton.new()
+	trigger_fire_if_missed_check.text = "Run on startup if missed"
+	trigger_fire_if_missed_check.button_pressed = true
+	right_vbox.add_child(trigger_fire_if_missed_check)
+
+	# Schedule preview
+	trigger_schedule_preview = Label.new()
+	trigger_schedule_preview.add_theme_font_size_override("font_size", 12)
+	trigger_schedule_preview.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
+	right_vbox.add_child(trigger_schedule_preview)
+
+	# Last fired
+	trigger_last_fired_label = Label.new()
+	trigger_last_fired_label.add_theme_font_size_override("font_size", 11)
+	trigger_last_fired_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	right_vbox.add_child(trigger_last_fired_label)
 
 	# Event type
 	right_vbox.add_child(_label("Event Type:"))
@@ -861,6 +932,17 @@ func _on_trigger_selected(index: int) -> void:
 
 	trigger_type_option.select(trig.trigger_type)
 	trigger_interval_spin.value = trig.interval_seconds
+	trigger_schedule_type_option.select(trig.schedule_type)
+	# Parse schedule_time "HH:MM"
+	var parts = trig.schedule_time.split(":")
+	trigger_schedule_time_hour.value = int(parts[0]) if parts.size() > 0 else 9
+	trigger_schedule_time_min.value = int(parts[1]) if parts.size() > 1 else 0
+	# Set day-of-week checkboxes
+	for cb in trigger_schedule_days_container.get_children():
+		if cb is CheckButton:
+			cb.button_pressed = cb.get_meta("day_index") in trig.schedule_days
+	trigger_fire_if_missed_check.button_pressed = trig.fire_if_missed
+	trigger_last_fired_label.text = "Last ran: %s" % trig.last_fired_at if not trig.last_fired_at.is_empty() else ""
 	trigger_event_option.select(trig.event_type)
 	trigger_action_type_option.select(trig.action_type)
 	trigger_message_edit.text = trig.initial_message
@@ -872,12 +954,26 @@ func _on_trigger_selected(index: int) -> void:
 	_on_trigger_type_changed(trig.trigger_type)
 	_populate_watched_agents(trig.watched_agent_ids)
 	_update_watched_visibility(trig.trigger_type, trig.event_type)
+	_update_schedule_preview()
 
 
 func _on_trigger_type_changed(index: int) -> void:
 	var is_timer = (index == TriggerDefinition.TriggerType.TIMER)
-	trigger_interval_spin.visible = is_timer
+	trigger_schedule_type_label.visible = is_timer
+	trigger_schedule_type_option.visible = is_timer
 	trigger_event_option.visible = not is_timer
+	trigger_fire_if_missed_check.visible = is_timer and trigger_schedule_type_option.get_selected_id() != TriggerDefinition.ScheduleType.INTERVAL
+	if is_timer:
+		_on_schedule_type_changed(trigger_schedule_type_option.get_selected_id())
+	else:
+		trigger_interval_label.visible = false
+		trigger_interval_spin.visible = false
+		trigger_schedule_time_label.visible = false
+		trigger_schedule_time_hour.get_parent().visible = false
+		trigger_schedule_days_label.visible = false
+		trigger_schedule_days_container.visible = false
+		trigger_schedule_preview.visible = false
+		trigger_last_fired_label.visible = false
 	var event_type = trigger_event_option.get_selected_id() if not is_timer else -1
 	_update_watched_visibility(index, event_type)
 
@@ -892,6 +988,61 @@ func _update_watched_visibility(trigger_type: int, event_type: int) -> void:
 			and event_type == TriggerDefinition.EventType.CHAT_COMPLETED)
 	trigger_watched_label.visible = show_watched
 	trigger_watched_container.visible = show_watched
+
+
+func _on_schedule_type_changed(index: int) -> void:
+	var is_interval = (index == TriggerDefinition.ScheduleType.INTERVAL)
+	var is_weekly = (index == TriggerDefinition.ScheduleType.WEEKLY)
+	trigger_interval_label.visible = is_interval
+	trigger_interval_spin.visible = is_interval
+	trigger_schedule_time_label.visible = not is_interval
+	trigger_schedule_time_hour.get_parent().visible = not is_interval
+	trigger_schedule_days_label.visible = is_weekly
+	trigger_schedule_days_container.visible = is_weekly
+	trigger_fire_if_missed_check.visible = not is_interval
+	trigger_schedule_preview.visible = not is_interval
+	trigger_last_fired_label.visible = not is_interval
+	_update_schedule_preview()
+
+
+func _update_schedule_preview() -> void:
+	var stype: int = trigger_schedule_type_option.get_selected_id()
+	if stype == TriggerDefinition.ScheduleType.INTERVAL:
+		trigger_schedule_preview.text = "Every %.0f seconds" % trigger_interval_spin.value
+		return
+	var hour: int = int(trigger_schedule_time_hour.value)
+	var minute: int = int(trigger_schedule_time_min.value)
+	# Format as 12h for display
+	var ampm := "AM" if hour < 12 else "PM"
+	var display_hour := hour % 12
+	if display_hour == 0:
+		display_hour = 12
+	var time_str := "%d:%02d %s" % [display_hour, minute, ampm]
+
+	if stype == TriggerDefinition.ScheduleType.DAILY:
+		trigger_schedule_preview.text = "Every day at %s" % time_str
+	elif stype == TriggerDefinition.ScheduleType.WEEKLY:
+		var day_names := ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+		var selected_days: PackedStringArray = []
+		for cb in trigger_schedule_days_container.get_children():
+			if cb is CheckButton and cb.button_pressed:
+				selected_days.append(day_names[cb.get_meta("day_index")])
+		if selected_days.is_empty():
+			trigger_schedule_preview.text = "Select at least one day"
+		else:
+			trigger_schedule_preview.text = "Every %s at %s" % [", ".join(selected_days), time_str]
+
+
+func _get_schedule_time() -> String:
+	return "%02d:%02d" % [int(trigger_schedule_time_hour.value), int(trigger_schedule_time_min.value)]
+
+
+func _get_schedule_days() -> Array[int]:
+	var result: Array[int] = []
+	for cb in trigger_schedule_days_container.get_children():
+		if cb is CheckButton and cb.button_pressed:
+			result.append(cb.get_meta("day_index"))
+	return result
 
 
 func _populate_watched_agents(selected_ids: Array[String]) -> void:
@@ -934,6 +1085,14 @@ func _on_trigger_new() -> void:
 		trigger_agent_option.select(0)
 	trigger_type_option.select(0)
 	trigger_interval_spin.value = 300
+	trigger_schedule_type_option.select(0)
+	trigger_schedule_time_hour.value = 9
+	trigger_schedule_time_min.value = 0
+	for cb in trigger_schedule_days_container.get_children():
+		if cb is CheckButton:
+			cb.button_pressed = false
+	trigger_fire_if_missed_check.button_pressed = true
+	trigger_last_fired_label.text = ""
 	trigger_event_option.select(0)
 	trigger_action_type_option.select(0)
 	trigger_message_edit.text = ""
@@ -964,6 +1123,11 @@ func _on_trigger_save() -> void:
 		trig.agent_id = agent_id
 		trig.trigger_type = trigger_type_option.get_selected_id()
 		trig.interval_seconds = trigger_interval_spin.value
+		trig.schedule_type = trigger_schedule_type_option.get_selected_id()
+		trig.schedule_time = _get_schedule_time()
+		trig.schedule_days = _get_schedule_days()
+		trig.fire_if_missed = trigger_fire_if_missed_check.button_pressed
+		trig.last_fired_at = tm.triggers[_selected_trigger_idx].last_fired_at
 		trig.event_type = trigger_event_option.get_selected_id()
 		trig.action_type = trigger_action_type_option.get_selected_id()
 		trig.watched_agent_ids = _get_watched_agent_ids()
@@ -981,6 +1145,10 @@ func _on_trigger_save() -> void:
 		trig.agent_id = agent_id
 		trig.trigger_type = trigger_type_option.get_selected_id()
 		trig.interval_seconds = trigger_interval_spin.value
+		trig.schedule_type = trigger_schedule_type_option.get_selected_id()
+		trig.schedule_time = _get_schedule_time()
+		trig.schedule_days = _get_schedule_days()
+		trig.fire_if_missed = trigger_fire_if_missed_check.button_pressed
 		trig.event_type = trigger_event_option.get_selected_id()
 		trig.action_type = trigger_action_type_option.get_selected_id()
 		trig.watched_agent_ids = _get_watched_agent_ids()

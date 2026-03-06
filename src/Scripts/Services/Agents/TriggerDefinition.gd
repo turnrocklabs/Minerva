@@ -5,6 +5,7 @@ extends RefCounted
 enum TriggerType { TIMER, EVENT }
 enum EventType { NOTE_CREATED, NOTE_CHANGED, CHAT_COMPLETED }
 enum ActionType { SPAWN_NEW, MESSAGE_EXISTING }
+enum ScheduleType { INTERVAL, DAILY, WEEKLY }
 
 var id: String = ""
 var name: String = ""
@@ -23,6 +24,16 @@ var batch_params: Array[String] = []
 var chain_trigger_id: String = ""
 ## Optional UI label for batch params (e.g. "Ticker Symbols").
 var batch_label: String = ""
+## Wall-clock schedule type (INTERVAL uses existing timer behavior).
+var schedule_type: ScheduleType = ScheduleType.INTERVAL
+## Time of day for DAILY/WEEKLY schedules, "HH:MM" in 24h local time.
+var schedule_time: String = "09:00"
+## Days of week for WEEKLY (0=Mon .. 6=Sun). Empty with DAILY means every day.
+var schedule_days: Array[int] = []
+## ISO datetime of last successful fire (persisted for missed-fire detection).
+var last_fired_at: String = ""
+## If true, fire on next startup if a scheduled time was missed.
+var fire_if_missed: bool = true
 
 
 func _init(p_id: String = ""):
@@ -33,7 +44,7 @@ func _init(p_id: String = ""):
 
 
 func serialize() -> Dictionary:
-	return {
+	var data := {
 		"id": id,
 		"name": name,
 		"agent_id": agent_id,
@@ -47,7 +58,13 @@ func serialize() -> Dictionary:
 		"batch_params": batch_params,
 		"chain_trigger_id": chain_trigger_id,
 		"batch_label": batch_label,
+		"schedule_type": schedule_type,
+		"schedule_time": schedule_time,
+		"schedule_days": schedule_days,
+		"last_fired_at": last_fired_at,
+		"fire_if_missed": fire_if_missed,
 	}
+	return data
 
 
 static func deserialize(data: Dictionary) -> TriggerDefinition:
@@ -68,4 +85,11 @@ static func deserialize(data: Dictionary) -> TriggerDefinition:
 		trig.batch_params.append(str(p))
 	trig.chain_trigger_id = data.get("chain_trigger_id", "")
 	trig.batch_label = data.get("batch_label", "")
+	trig.schedule_type = int(data.get("schedule_type", ScheduleType.INTERVAL))
+	trig.schedule_time = data.get("schedule_time", "09:00")
+	var days = data.get("schedule_days", [])
+	for d in days:
+		trig.schedule_days.append(int(d))
+	trig.last_fired_at = data.get("last_fired_at", "")
+	trig.fire_if_missed = data.get("fire_if_missed", true)
 	return trig

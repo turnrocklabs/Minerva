@@ -364,6 +364,14 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_get_batch_status":
 			return _get_batch_status(arguments)
 
+		# Ledger (compaction archive) tools
+		"minerva_list_ledger_entries":
+			return _list_ledger_entries(arguments)
+		"minerva_get_ledger_entry":
+			return _get_ledger_entry(arguments)
+		"minerva_compact_chat":
+			return await _compact_chat_mcp(arguments)
+
 		# Autocoder tools
 		"minerva_autocoder_plan":
 			return await _autocoder_plan(arguments)
@@ -7654,6 +7662,23 @@ func _register_trigger_tools() -> void:
 				"enabled": {
 					"type": "boolean",
 					"description": "Whether the trigger is active. Default false"
+				},
+				"schedule_type": {
+					"type": "integer",
+					"description": "0=INTERVAL (default), 1=DAILY, 2=WEEKLY. Use with trigger_type=TIMER."
+				},
+				"schedule_time": {
+					"type": "string",
+					"description": "Time of day for DAILY/WEEKLY, 'HH:MM' in 24h local time. Default '09:00'."
+				},
+				"schedule_days": {
+					"type": "array",
+					"items": {"type": "integer"},
+					"description": "Days of week for WEEKLY (0=Mon .. 6=Sun). Ignored for DAILY."
+				},
+				"fire_if_missed": {
+					"type": "boolean",
+					"description": "Fire on next startup if scheduled time was missed. Default true."
 				}
 			},
 			"required": ["name", "agent_id"]
@@ -7680,7 +7705,11 @@ func _register_trigger_tools() -> void:
 				"batch_label": { "type": "string", "description": "UI label for batch params" },
 				"chain_trigger_id": { "type": "string", "description": "Chain target trigger ID" },
 				"watched_agent_ids": { "type": "array", "items": {"type": "string"}, "description": "Agent filter for CHAT_COMPLETED" },
-				"enabled": { "type": "boolean", "description": "Active state" }
+				"enabled": { "type": "boolean", "description": "Active state" },
+				"schedule_type": { "type": "integer", "description": "0=INTERVAL, 1=DAILY, 2=WEEKLY" },
+				"schedule_time": { "type": "string", "description": "HH:MM in 24h local time" },
+				"schedule_days": { "type": "array", "items": {"type": "integer"}, "description": "Days of week 0=Mon..6=Sun" },
+				"fire_if_missed": { "type": "boolean", "description": "Fire on startup if missed" }
 			},
 			"required": ["trigger_id"]
 		}
@@ -7728,6 +7757,131 @@ func _register_trigger_tools() -> void:
 		}
 	, "triggers")
 
+	# --- Ledger (compaction archive) tools ---
+	_register_tool("minerva_list_ledger_entries",
+		"List compaction ledger entries. Optionally filter by chat_id. Returns archived conversation segments.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "Filter by chat history ID. Omit for all entries."
+				}
+			},
+			"required": []
+		}
+	, "compaction")
+
+	_register_tool("minerva_get_ledger_entry",
+		"Get a specific ledger entry by ID, including original messages.",
+		{
+			"type": "object",
+			"properties": {
+				"entry_id": {
+					"type": "string",
+					"description": "ID of the ledger entry to retrieve"
+				}
+			},
+			"required": ["entry_id"]
+		}
+	, "compaction")
+
+	_register_tool("minerva_compact_chat",
+		"Compact a chat's history by summarizing older messages. Keeps recent messages and archives originals in the Ledger. Uses LLM summarization when available.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "ID of the chat to compact"
+				}
+			},
+			"required": ["chat_id"]
+		}
+	, "compaction")
+
+
+func _list_ledger_entries(args: Dictionary) -> Dictionary:
+	var lm = SingletonObject.ledger_manager
+	if not lm:
+		return {"error": "Ledger manager not available", "success": false}
+
+	var chat_id: String = args.get("chat_id", "")
+	var entries: Array[LedgerEntry]
+	if not chat_id.is_empty():
+		entries = lm.get_entries_for_chat(chat_id)
+	else:
+		entries = lm.entries
+
+	var result: Array[Dictionary] = []
+	for e in entries:
+		result.append({
+			"id": e.id,
+			"chat_id": e.chat_id,
+			"chat_name": e.chat_name,
+			"timestamp": e.timestamp,
+			"message_range": e.message_range,
+			"message_count": e.original_messages.size(),
+		})
+	return {"success": true, "entries": result, "count": result.size()}
+
+
+func _get_ledger_entry(args: Dictionary) -> Dictionary:
+	var lm = SingletonObject.ledger_manager
+	if not lm:
+		return {"error": "Ledger manager not available", "success": false}
+
+	var entry_id: String = args.get("entry_id", "")
+	if entry_id.is_empty():
+		return {"error": "entry_id is required", "success": false}
+
+	var entry = lm.get_entry(entry_id)
+	if not entry:
+		return {"error": "Ledger entry not found: %s" % entry_id, "success": false}
+
+	return {
+		"success": true,
+		"entry": entry.serialize()
+	}
+
+
+func _compact_chat_mcp(args: Dictionary) -> Dictionary:
+	var chat_id: String = args.get("chat_id", "")
+	if chat_id.is_empty():
+		return {"error": "chat_id is required", "success": false}
+
+	var chats = SingletonObject.Chats
+	if not chats:
+		return {"error": "Chat pane not available", "success": false}
+
+	# Find the chat by ID
+	var history: ChatHistory = null
+	for chat in SingletonObject.ChatList:
+		if chat.HistoryId == chat_id:
+			history = chat
+			break
+
+	if not history:
+		return {"error": "Chat not found: %s" % chat_id, "success": false}
+
+	var result = await chats.compact_chat(history)
+	if not result:
+		return {"success": false, "message": "Not enough messages to compact"}
+
+	# Get the ledger entry ID if one was created
+	var ledger_id := ""
+	if SingletonObject.ledger_manager and not SingletonObject.ledger_manager.entries.is_empty():
+		var last_entry = SingletonObject.ledger_manager.entries.back()
+		if last_entry.chat_id == chat_id:
+			ledger_id = last_entry.id
+
+	return {
+		"success": true,
+		"message": "Chat compacted successfully",
+		"ledger_entry_id": ledger_id,
+		"new_history_size": history.HistoryItemList.size()
+	}
+
 
 func _list_triggers(_args: Dictionary) -> Dictionary:
 	var tm = SingletonObject.trigger_manager
@@ -7754,6 +7908,13 @@ func _list_triggers(_args: Dictionary) -> Dictionary:
 		}
 		if trig.trigger_type == TriggerDefinition.TriggerType.TIMER:
 			entry["interval_seconds"] = trig.interval_seconds
+			entry["schedule_type"] = trig.schedule_type
+			if trig.schedule_type != TriggerDefinition.ScheduleType.INTERVAL:
+				entry["schedule_time"] = trig.schedule_time
+				entry["fire_if_missed"] = trig.fire_if_missed
+				entry["last_fired_at"] = trig.last_fired_at
+			if trig.schedule_type == TriggerDefinition.ScheduleType.WEEKLY:
+				entry["schedule_days"] = trig.schedule_days
 		else:
 			entry["event_type"] = trig.event_type
 			entry["watched_agent_ids"] = trig.watched_agent_ids
@@ -7788,6 +7949,9 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 	trig.batch_label = args.get("batch_label", "")
 	trig.chain_trigger_id = args.get("chain_trigger_id", "")
 	trig.enabled = args.get("enabled", false)
+	trig.schedule_type = int(args.get("schedule_type", TriggerDefinition.ScheduleType.INTERVAL))
+	trig.schedule_time = args.get("schedule_time", "09:00")
+	trig.fire_if_missed = args.get("fire_if_missed", true)
 
 	var bp: Array = args.get("batch_params", [])
 	for p in bp:
@@ -7796,6 +7960,10 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 	var wids: Array = args.get("watched_agent_ids", [])
 	for wid in wids:
 		trig.watched_agent_ids.append(str(wid))
+
+	var sdays: Array = args.get("schedule_days", [])
+	for d in sdays:
+		trig.schedule_days.append(int(d))
 
 	tm.add_trigger(trig)
 
@@ -7831,6 +7999,10 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	trig.batch_label = args.get("batch_label", existing.batch_label)
 	trig.chain_trigger_id = args.get("chain_trigger_id", existing.chain_trigger_id)
 	trig.enabled = args.get("enabled", existing.enabled)
+	trig.schedule_type = int(args.get("schedule_type", existing.schedule_type))
+	trig.schedule_time = args.get("schedule_time", existing.schedule_time)
+	trig.fire_if_missed = args.get("fire_if_missed", existing.fire_if_missed)
+	trig.last_fired_at = existing.last_fired_at
 
 	if args.has("batch_params"):
 		var bp: Array = args["batch_params"]
@@ -7845,6 +8017,13 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 			trig.watched_agent_ids.append(str(wid))
 	else:
 		trig.watched_agent_ids = existing.watched_agent_ids.duplicate()
+
+	if args.has("schedule_days"):
+		var sdays: Array = args["schedule_days"]
+		for d in sdays:
+			trig.schedule_days.append(int(d))
+	else:
+		trig.schedule_days = existing.schedule_days.duplicate()
 
 	tm.update_trigger(trigger_id, trig)
 

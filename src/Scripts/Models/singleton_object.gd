@@ -453,6 +453,7 @@ func is_mcp_http_server_running() -> bool:
 #region Agent System
 var agent_registry: AgentRegistry = null
 var trigger_manager: TriggerManager = null
+var ledger_manager: LedgerManager = null
 
 func _init_agent_system() -> void:
 	agent_registry = AgentRegistry.new()
@@ -460,6 +461,7 @@ func _init_agent_system() -> void:
 	trigger_manager = TriggerManager.new()
 	trigger_manager.name = "TriggerManager"
 	add_child(trigger_manager)
+	ledger_manager = LedgerManager.new()
 	print("[SingletonObject] Agent system initialized (%d agents)" % agent_registry.agents.size())
 #endregion Agent System
 

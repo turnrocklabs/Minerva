@@ -24,6 +24,9 @@ var _active_batches: Dictionary = {}
 ## Pending single-fire chains: trigger_id -> { chain_trigger_id, chain_visited }
 var _pending_single_chains: Dictionary = {}
 
+## 60-second poll timer for wall-clock schedule evaluation
+var _schedule_check_timer: Timer
+
 
 class BatchState:
 	var trigger_id: String
@@ -46,6 +49,15 @@ func _ready() -> void:
 	SingletonObject.agent_chat_finished.connect(_on_agent_chat_finished)
 	# Safety net: clean up batches/anti-flood if a chat is force-stopped
 	SingletonObject.stop_all_requests.connect(_on_stop_request)
+
+	# Wall-clock schedule poll timer (checks every 60 seconds)
+	_schedule_check_timer = Timer.new()
+	_schedule_check_timer.name = "ScheduleCheckTimer"
+	_schedule_check_timer.wait_time = 60.0
+	_schedule_check_timer.one_shot = false
+	_schedule_check_timer.timeout.connect(_on_schedule_check)
+	add_child(_schedule_check_timer)
+	_schedule_check_timer.start()
 
 
 #region CRUD
@@ -114,7 +126,9 @@ func clear_all() -> void:
 func _activate_trigger(trig: TriggerDefinition) -> void:
 	match trig.trigger_type:
 		TriggerDefinition.TriggerType.TIMER:
-			_start_timer(trig)
+			# Only start a Godot Timer for INTERVAL schedules; DAILY/WEEKLY use the poll timer
+			if trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
+				_start_timer(trig)
 		TriggerDefinition.TriggerType.EVENT:
 			_connect_event(trig)
 
@@ -562,6 +576,106 @@ func get_batch_status(trigger_id: String) -> Dictionary:
 #endregion Batch Execution
 
 
+#region Wall-Clock Schedules
+
+## Called every 60 seconds by _schedule_check_timer.
+func _on_schedule_check() -> void:
+	for trig in triggers:
+		if not trig.enabled:
+			continue
+		if trig.trigger_type != TriggerDefinition.TriggerType.TIMER:
+			continue
+		if trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
+			continue
+		if _should_fire_schedule(trig):
+			trig.last_fired_at = Time.get_datetime_string_from_system(false)
+			_fire_trigger(trig.id)
+
+
+## Evaluate whether a DAILY or WEEKLY trigger should fire now.
+func _should_fire_schedule(trig: TriggerDefinition) -> bool:
+	var now := Time.get_datetime_dict_from_system(false)  # local time
+	var now_hhmm := "%02d:%02d" % [now["hour"], now["minute"]]
+
+	# Current time must be >= schedule_time (within the same minute window)
+	if now_hhmm < trig.schedule_time:
+		return false
+
+	# For WEEKLY, check day-of-week (Godot: 0=Sun, 1=Mon .. 6=Sat; we use 0=Mon .. 6=Sun)
+	if trig.schedule_type == TriggerDefinition.ScheduleType.WEEKLY:
+		if trig.schedule_days.is_empty():
+			return false
+		# Convert Godot weekday (0=Sun) to our convention (0=Mon)
+		var godot_weekday: int = now["weekday"]
+		var our_weekday: int = (godot_weekday + 6) % 7  # Sun(0)->6, Mon(1)->0, ...
+		if our_weekday not in trig.schedule_days:
+			return false
+
+	# Check if we already fired for this scheduled occurrence
+	if not trig.last_fired_at.is_empty():
+		var today_schedule_str := "%04d-%02d-%02dT%s:00" % [now["year"], now["month"], now["day"], trig.schedule_time]
+		if trig.last_fired_at >= today_schedule_str:
+			return false  # Already fired for this scheduled time
+
+	return true
+
+
+## Check for missed fires after project load / deserialization.
+func check_missed_fires() -> void:
+	for trig in triggers:
+		if not trig.enabled:
+			continue
+		if trig.trigger_type != TriggerDefinition.TriggerType.TIMER:
+			continue
+		if trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
+			continue
+		if not trig.fire_if_missed:
+			continue
+
+		var most_recent := _most_recent_scheduled_time(trig)
+		if most_recent.is_empty():
+			continue
+
+		if trig.last_fired_at.is_empty() or trig.last_fired_at < most_recent:
+			print("[TriggerManager] Firing missed schedule for '%s' (was due at %s)" % [trig.name, most_recent])
+			trig.last_fired_at = Time.get_datetime_string_from_system(false)
+			call_deferred("_fire_trigger", trig.id)
+
+
+## Compute the most recent scheduled time before now for a DAILY/WEEKLY trigger.
+func _most_recent_scheduled_time(trig: TriggerDefinition) -> String:
+	var now := Time.get_datetime_dict_from_system(false)
+	var now_hhmm := "%02d:%02d" % [now["hour"], now["minute"]]
+
+	if trig.schedule_type == TriggerDefinition.ScheduleType.DAILY:
+		if now_hhmm >= trig.schedule_time:
+			return "%04d-%02d-%02dT%s:00" % [now["year"], now["month"], now["day"], trig.schedule_time]
+		# Yesterday's schedule
+		var yesterday_unix := Time.get_unix_time_from_system() - 86400
+		var yesterday := Time.get_datetime_dict_from_unix_time(int(yesterday_unix))
+		return "%04d-%02d-%02dT%s:00" % [yesterday["year"], yesterday["month"], yesterday["day"], trig.schedule_time]
+
+	elif trig.schedule_type == TriggerDefinition.ScheduleType.WEEKLY:
+		if trig.schedule_days.is_empty():
+			return ""
+		# Walk backwards up to 7 days to find the most recent matching day
+		for days_back in range(0, 8):
+			var check_unix := Time.get_unix_time_from_system() - days_back * 86400
+			var check_dt := Time.get_datetime_dict_from_unix_time(int(check_unix))
+			var godot_wd: int = check_dt["weekday"]
+			var our_wd: int = (godot_wd + 6) % 7
+			if our_wd in trig.schedule_days:
+				var check_hhmm := "%02d:%02d" % [check_dt["hour"], check_dt["minute"]]
+				# If it's today, only if we're past the schedule time
+				if days_back == 0 and now_hhmm < trig.schedule_time:
+					continue
+				return "%04d-%02d-%02dT%s:00" % [check_dt["year"], check_dt["month"], check_dt["day"], trig.schedule_time]
+
+	return ""
+
+#endregion Wall-Clock Schedules
+
+
 #region Serialization (per-project)
 
 func serialize() -> Array:
@@ -580,5 +694,7 @@ func deserialize(data: Array) -> void:
 			if trig.enabled:
 				_activate_trigger(trig)
 	print("[TriggerManager] Deserialized %d triggers" % triggers.size())
+	# Check for missed wall-clock schedules after project load
+	call_deferred("check_missed_fires")
 
 #endregion Serialization

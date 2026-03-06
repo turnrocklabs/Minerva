@@ -21,6 +21,9 @@ var _initializing_pane := false
 ## Debounce timer for token estimation to avoid expensive recalculation on every keystroke
 var _token_estimation_timer: Timer
 
+## Compact button added to chat controls
+var _compact_button: Button
+
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
 
@@ -189,25 +192,26 @@ func check_agent_context_limits(history: ChatHistory) -> Dictionary:
 	}
 
 
-## Summarize older messages in the chat history to reduce context size.
-## Keeps recent messages intact and replaces older ones with a summary.
-func summarize_agent_history(history: ChatHistory) -> void:
+## Compact a chat history by summarizing older messages and keeping recent ones.
+## Works for both agent mode and regular chats. Returns true if compaction occurred.
+## Tries LLM summarization first if a provider is available, falls back to naive.
+func compact_chat(history: ChatHistory, keep_recent: int = AGENT_KEEP_RECENT_MESSAGES) -> bool:
 	var item_count = history.HistoryItemList.size()
-	if item_count <= AGENT_KEEP_RECENT_MESSAGES + 1:  # +1 for potential system prompt
-		return  # Not enough messages to summarize
+	if item_count <= keep_recent + 1:  # +1 for potential system prompt
+		return false  # Not enough messages to compact
 
 	# Find where to split: keep system prompt (if any) + last N messages
 	var has_system_prompt = not history.HistoryItemList.is_empty() and \
 		history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM
 
-	var keep_from_end = AGENT_KEEP_RECENT_MESSAGES
 	var summarize_start = 1 if has_system_prompt else 0
-	var summarize_end = item_count - keep_from_end
+	var summarize_end = item_count - keep_recent
 
 	if summarize_end <= summarize_start:
-		return  # Nothing to summarize
+		return false  # Nothing to summarize
 
-	# Build summary of old messages
+	# Build conversation text for LLM summarization and naive fallback
+	var conversation_text: PackedStringArray = []
 	var summary_parts: PackedStringArray = []
 	var tool_calls_count := 0
 	var user_messages_count := 0
@@ -218,23 +222,28 @@ func summarize_agent_history(history: ChatHistory) -> void:
 		match item.Role:
 			ChatHistoryItem.ChatRole.USER:
 				user_messages_count += 1
-				# Include brief excerpt of user messages
+				conversation_text.append("User: %s" % item.Message.substr(0, 1000))
 				var excerpt = item.Message.substr(0, 200)
 				if item.Message.length() > 200:
 					excerpt += "..."
 				summary_parts.append("User: %s" % excerpt)
 			ChatHistoryItem.ChatRole.MODEL, ChatHistoryItem.ChatRole.ASSISTANT:
 				assistant_messages_count += 1
+				conversation_text.append("Assistant: %s" % item.Message.substr(0, 1000))
 				if item.IsToolCall:
 					tool_calls_count += item.ToolCalls.size()
 					for tc in item.ToolCalls:
 						summary_parts.append("Called tool: %s" % tc.get("name", "unknown"))
+						conversation_text.append("  [Tool call: %s]" % tc.get("name", "unknown"))
 			ChatHistoryItem.ChatRole.TOOL:
-				# Just note that tool results were received
 				summary_parts.append("Tool result received: %s" % item.ToolName)
+				conversation_text.append("Tool result (%s): %s" % [item.ToolName, item.Message.substr(0, 500)])
 
-	# Create summary message
-	var summary_text = """### Conversation Summary ###
+	# Try LLM summarization, fall back to naive
+	var summary_text := await _try_llm_summarize(conversation_text, summarize_end - summarize_start)
+	if summary_text.is_empty():
+		# Naive fallback
+		summary_text = """### Conversation Summary ###
 This summarizes %d earlier messages in this conversation.
 - User messages: %d
 - Assistant responses: %d
@@ -243,33 +252,129 @@ This summarizes %d earlier messages in this conversation.
 Key points from earlier conversation:
 %s
 ### End Summary ###""" % [
-		summarize_end - summarize_start,
-		user_messages_count,
-		assistant_messages_count,
-		tool_calls_count,
-		"\n".join(summary_parts)
-	]
+			summarize_end - summarize_start,
+			user_messages_count,
+			assistant_messages_count,
+			tool_calls_count,
+			"\n".join(summary_parts)
+		]
 
-	# Create summary item as a user message (so it's included in context)
-	var summary_item = ChatHistoryItem.new()
-	summary_item.Role = ChatHistoryItem.ChatRole.USER
-	summary_item.Message = summary_text
-	summary_item.provider = history.provider
+	# Store originals in Ledger before discarding
+	var ledger_entry: LedgerEntry = null
+	if SingletonObject.ledger_manager:
+		ledger_entry = LedgerEntry.new()
+		ledger_entry.chat_id = history.HistoryId
+		ledger_entry.chat_name = history.HistoryName
+		ledger_entry.timestamp = Time.get_datetime_string_from_system(false)
+		ledger_entry.message_range = "messages %d-%d" % [summarize_start + 1, summarize_end]
+		ledger_entry.summary_text = summary_text
+		for i in range(summarize_start, summarize_end):
+			var item = history.HistoryItemList[i]
+			ledger_entry.original_messages.append({
+				"role": item.Role,
+				"message": item.Message.substr(0, 4000),
+				"is_tool_call": item.IsToolCall,
+				"tool_name": item.ToolName,
+			})
+		SingletonObject.ledger_manager.add_entry(ledger_entry)
 
-	# Rebuild history: [system_prompt?] + [summary] + [recent messages]
+	# Inject summary as reference information on the first USER message in kept history,
+	# using the same InjectedNotes pattern as note injection to avoid user-user turns.
+	var ledger_ref := ""
+	if ledger_entry:
+		ledger_ref = "\nOriginals archived: [Ledger:%s]" % ledger_entry.id
+	var injection_text: String = summary_text + ledger_ref
+
+	# Rebuild history: [system_prompt?] + [recent messages with summary injected]
 	var new_history: Array[ChatHistoryItem] = []
 	if has_system_prompt:
 		new_history.append(history.HistoryItemList[0])
-	new_history.append(summary_item)
+	var injected := false
 	for i in range(summarize_end, item_count):
-		new_history.append(history.HistoryItemList[i])
+		var item = history.HistoryItemList[i]
+		if not injected and item.Role == ChatHistoryItem.ChatRole.USER:
+			item.InjectedNotes.append(injection_text)
+			injected = true
+		new_history.append(item)
+	# If no USER message found in kept history, create one to carry the summary
+	if not injected:
+		var summary_item = ChatHistoryItem.new()
+		summary_item.Role = ChatHistoryItem.ChatRole.USER
+		summary_item.Message = ""
+		summary_item.InjectedNotes.append(injection_text)
+		summary_item.provider = history.provider
+		new_history.insert(1 if has_system_prompt else 0, summary_item)
 
-	# Replace history
 	history.HistoryItemList = new_history
 
-	print("[Agent] Summarized %d messages into 1. New history size: %d" % [
-		summarize_end - summarize_start, new_history.size()
+	var compacted_count = summarize_end - summarize_start
+	print("[Compact] Compacted %d messages into 1. New history size: %d%s" % [
+		compacted_count, new_history.size(),
+		" (Ledger: %s)" % ledger_entry.id if ledger_entry else ""
 	])
+	SingletonObject.create_toast_notification(
+		"Compacted %d messages" % compacted_count,
+		ToastNotification.Type.SUCCESS
+	)
+	return true
+
+
+## Legacy wrapper: calls compact_chat for agent mode.
+func summarize_agent_history(history: ChatHistory) -> void:
+	await compact_chat(history)
+
+
+## Attempt LLM-powered summarization. Returns empty string on failure (triggers naive fallback).
+func _try_llm_summarize(conversation_parts: PackedStringArray, msg_count: int) -> String:
+	# Use the current chat's provider if available
+	if SingletonObject.ChatList.is_empty():
+		return ""
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if not history.provider or not is_instance_valid(history.provider):
+		return ""
+
+	var prompt_text := "Summarize this conversation segment of %d messages. Preserve: key decisions, facts learned, action items, important code snippets, and any unresolved questions. Be concise but complete.\n\n%s" % [
+		msg_count, "\n".join(conversation_parts)
+	]
+
+	# Build a minimal prompt for the provider
+	var prompt_item = ChatHistoryItem.new()
+	prompt_item.Role = ChatHistoryItem.ChatRole.USER
+	prompt_item.Message = prompt_text
+	prompt_item.provider = history.provider
+
+	var prompt_list: Array[Variant] = []
+	var formatted = history.provider.Format(prompt_item)
+	if formatted:
+		prompt_list.append(formatted)
+
+	if prompt_list.is_empty():
+		return ""
+
+	# Temporarily disable tools for this request
+	var had_tools := false
+	if history.provider.has_method("set_tools"):
+		had_tools = history.provider.tools_enabled
+		var empty_tools: Array[Dictionary] = []
+		history.provider.set_tools(empty_tools)
+
+	var bot_response = await history.provider.generate_content(prompt_list)
+
+	# Restore tools
+	if had_tools and history.provider.has_method("set_tools"):
+		# Tools will be re-set on next regular chat call
+		pass
+
+	if not bot_response or bot_response.text.is_empty():
+		print("[Compact] LLM summarization failed, falling back to naive")
+		return ""
+
+	# Record cost
+	if SingletonObject.cost_tracker:
+		SingletonObject.cost_tracker.record_chat_cost(bot_response, history.HistoryId)
+
+	print("[Compact] LLM summarization succeeded (%d chars)" % bot_response.text.length())
+	return "### Conversation Summary (LLM) ###\n%s\n### End Summary ###" % bot_response.text
 
 
 ## Check tool arguments for paths and validate against allowed directories.
@@ -824,6 +929,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	if _active_chat_requests <= 0:
 		_active_chat_requests = 0
 		audio_stop_1.disabled = true
+	_update_compact_button()
 
 
 func _on_chat_pressed():
@@ -998,6 +1104,28 @@ func execute_regular_chat(text: String) -> void:
 		history.provider.set_tools(filtered_tools)
 		print("[Agent] Provider tools_enabled: %s" % history.provider.tools_enabled)
 
+	# Check token threshold — offer compaction for large regular chat contexts
+	if not history.AgentModeEnabled:
+		var compact_threshold = history.AgentSummarizeThreshold if history.AgentSummarizeThreshold > 0 else AGENT_SUMMARIZE_THRESHOLD
+		var est_tokens = estimate_agent_context_size(history)
+		if est_tokens >= compact_threshold and history.HistoryItemList.size() > AGENT_KEEP_RECENT_MESSAGES + 1:
+			var dialog := ConfirmationDialog.new()
+			dialog.title = "Large Context"
+			dialog.dialog_text = "This chat is ~%d tokens (threshold: %d).\nCompact to reduce context?" % [est_tokens, compact_threshold]
+			dialog.ok_button_text = "Compact"
+			dialog.cancel_button_text = "Skip"
+			add_child(dialog)
+			dialog.popup_centered()
+			# ConfirmationDialog emits confirmed or canceled
+			var compacted := false
+			dialog.confirmed.connect(func(): compacted = true)
+			await dialog.visibility_changed  # Wait for dialog to close
+			dialog.queue_free()
+			if compacted:
+				await compact_chat(history)
+				if history.VBox:
+					history.VBox.render_history(history)
+
 	# make a chat request
 	var history_list: = await create_prompt(user_history_item)
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
@@ -1060,6 +1188,7 @@ func execute_regular_chat(text: String) -> void:
 	if _active_chat_requests <= 0:
 		_active_chat_requests = 0  # Ensure non-negative
 		audio_stop_1.disabled = true
+	_update_compact_button()
 
 
 ## Get the last MODEL/ASSISTANT history item (the one that made the tool calls)
@@ -1257,7 +1386,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	elif context_status.warning:
 		# Warning threshold - try to summarize
 		if context_status.estimated_tokens >= context_status.summarize_threshold:
-			summarize_agent_history(history)
+			await summarize_agent_history(history)
 			var new_size = estimate_agent_context_size(history)
 			print("[Agent] Context reduced to ~%d tokens" % new_size)
 
@@ -1454,6 +1583,7 @@ func execute_sequential_chat(text_input: String) -> void:
 	if _active_chat_requests <= 0:
 		_active_chat_requests = 0
 		audio_stop_1.disabled = true
+	_update_compact_button()
 
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)
@@ -1520,6 +1650,7 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 		if _active_chat_requests <= 0:
 			_active_chat_requests = 0
 			audio_stop_1.disabled = true
+		_update_compact_button()
 
 	if SingletonObject.is_cancelled(history.HistoryId):
 		SingletonObject.clear_cancelled(history.HistoryId)
@@ -1814,6 +1945,16 @@ func _ready():
 	# Hide old AgentModeToggle in chat controls - agent mode is now per-chat via ChatHeader
 	%AgentModeToggle.hide()
 
+	# Add Compact button to chat controls (before the stop button)
+	_compact_button = Button.new()
+	_compact_button.text = "C"
+	_compact_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_compact_button.tooltip_text = "Compact chat history to reduce context size"
+	_compact_button.pressed.connect(_on_compact_pressed)
+	_compact_button.disabled = true
+	audio_stop_1.get_parent().add_child(_compact_button)
+	audio_stop_1.get_parent().move_child(_compact_button, audio_stop_1.get_index())
+
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
@@ -2047,6 +2188,41 @@ func _on_btn_chat_settings_pressed():
 	%AISettings.popup_centered()
 
 
+func _on_compact_pressed() -> void:
+	if SingletonObject.ChatList.is_empty():
+		return
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if await compact_chat(history):
+		# Re-render the chat after compaction: clear VBox children and re-add from history
+		if history.VBox:
+			for child in history.VBox.get_children():
+				if child != history.provider:
+					child.queue_free()
+			await get_tree().process_frame
+			for item in history.HistoryItemList:
+				history.VBox.add_history_item(item)
+		_update_compact_button()
+	else:
+		SingletonObject.create_toast_notification(
+			"Not enough messages to compact (need more than %d)" % (AGENT_KEEP_RECENT_MESSAGES + 1),
+			ToastNotification.Type.INFO
+		)
+
+
+func _update_compact_button() -> void:
+	if not _compact_button:
+		return
+	if SingletonObject.ChatList.is_empty():
+		_compact_button.disabled = true
+		return
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	var threshold = history.AgentSummarizeThreshold if history.AgentSummarizeThreshold > 0 else AGENT_SUMMARIZE_THRESHOLD
+	var estimated = estimate_agent_context_size(history) if not history.HistoryItemList.is_empty() else 0
+	_compact_button.disabled = (history.HistoryItemList.size() <= AGENT_KEEP_RECENT_MESSAGES + 1)
+	if estimated > 0:
+		_compact_button.tooltip_text = "Compact chat (~%d tokens, threshold: %d)" % [estimated, threshold]
+
+
 func _on_btn_clear_pressed():
 	%txtMainUserInput.text = ""
 
@@ -2185,6 +2361,8 @@ func _on_tab_changed(tab: int):
 		_provider_option_button.select(item_index)
 
 		SingletonObject.last_tab_index = tab
+
+	_update_compact_button()
 
 ## if enter is pressed, accept the event and trigger chat
 func _on_txt_main_user_input_gui_input(event: InputEvent):
