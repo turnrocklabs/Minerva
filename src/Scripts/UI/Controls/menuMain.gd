@@ -238,6 +238,7 @@ func _setup_tools_menu() -> void:
 
 	tools_menu.add_separator()
 	tools_menu.add_item("Agents...", 102)
+	tools_menu.add_item("Triggers...", 104)
 	tools_menu.add_item("Spending...", 103)
 	tools_menu.add_separator()
 	tools_menu.add_item("Install MCP Servers...", 101)
@@ -262,6 +263,7 @@ func _setup_tools_menu() -> void:
 
 
 var _agent_manager_window: AgentManagerWindow = null
+var _trigger_manager_window: AgentManagerWindow = null
 
 func _on_tools_menu_id_pressed(id: int) -> void:
 	match id:
@@ -273,13 +275,22 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_show_agent_manager()
 		103:
 			_show_spending_dashboard()
+		104:
+			_show_trigger_manager()
 
 
 func _show_agent_manager() -> void:
 	if not _agent_manager_window:
-		_agent_manager_window = AgentManagerWindow.new()
+		_agent_manager_window = AgentManagerWindow.new(AgentManagerWindow.ManagerMode.AGENTS)
 		get_tree().root.add_child(_agent_manager_window)
 	_agent_manager_window.popup_centered()
+
+
+func _show_trigger_manager() -> void:
+	if not _trigger_manager_window:
+		_trigger_manager_window = AgentManagerWindow.new(AgentManagerWindow.ManagerMode.TRIGGERS)
+		get_tree().root.add_child(_trigger_manager_window)
+	_trigger_manager_window.popup_centered()
 
 
 var _spending_dashboard: SpendingDashboard = null

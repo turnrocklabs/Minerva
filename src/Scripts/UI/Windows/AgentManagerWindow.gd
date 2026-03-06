@@ -1,7 +1,8 @@
 class_name AgentManagerWindow
 extends Window
-## Two-tab Window popup for managing agent definitions and triggers.
-## Tab 1: Agents (CRUD) - Tab 2: Triggers (CRUD + enable/disable)
+## Window for managing agent definitions or triggers.
+
+enum ManagerMode { AGENTS, TRIGGERS }
 
 #region Agent Tab Controls
 var agent_list: ItemList
@@ -49,6 +50,8 @@ var trigger_schedule_type_option: OptionButton
 var trigger_schedule_time_hour: SpinBox
 var trigger_schedule_time_min: SpinBox
 var trigger_schedule_days_container: HBoxContainer
+var trigger_schedule_day_of_month: SpinBox
+var trigger_schedule_month: SpinBox
 var trigger_fire_if_missed_check: CheckButton
 var trigger_schedule_preview: Label
 var trigger_last_fired_label: Label
@@ -57,10 +60,13 @@ var trigger_interval_label: Label
 var trigger_schedule_type_label: Label
 var trigger_schedule_time_label: Label
 var trigger_schedule_days_label: Label
+var trigger_schedule_day_of_month_label: Label
+var trigger_schedule_month_label: Label
 #endregion
 
 var _selected_agent_idx: int = -1
 var _selected_trigger_idx: int = -1
+var _manager_mode: ManagerMode = ManagerMode.AGENTS
 
 ## Mapping from model dropdown index to model enum id (changes when provider changes)
 var _model_id_map: Array[int] = []
@@ -68,10 +74,11 @@ var _model_id_map: Array[int] = []
 var _core_model_map: Array = []
 
 
-func _init():
-	title = "Agent Manager"
-	size = Vector2i(800, 600)
-	min_size = Vector2i(650, 450)
+func _init(manager_mode: ManagerMode = ManagerMode.AGENTS):
+	_manager_mode = manager_mode
+	title = "Agent Manager" if _manager_mode == ManagerMode.AGENTS else "Trigger Manager"
+	size = Vector2i(720, 520)
+	min_size = Vector2i(560, 400)
 	transient = true
 	exclusive = false
 	wrap_controls = true
@@ -81,8 +88,10 @@ func _init():
 func _ready() -> void:
 	content_scale_factor = get_tree().root.content_scale_factor
 	_build_ui()
-	_refresh_agent_list()
-	_refresh_trigger_list()
+	if _manager_mode == ManagerMode.AGENTS:
+		_refresh_agent_list()
+	else:
+		_refresh_trigger_list()
 
 
 func _build_ui() -> void:
@@ -101,17 +110,10 @@ func _build_ui() -> void:
 	var tabs = TabContainer.new()
 	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	margin.add_child(tabs)
-
-	# Tab 1: Agents
-	var agents_tab = _build_agents_tab()
-	agents_tab.name = "Agents"
-	tabs.add_child(agents_tab)
-
-	# Tab 2: Triggers
-	var triggers_tab = _build_triggers_tab()
-	triggers_tab.name = "Triggers"
-	tabs.add_child(triggers_tab)
+	if _manager_mode == ManagerMode.AGENTS:
+		margin.add_child(_build_agents_tab())
+	else:
+		margin.add_child(_build_triggers_tab())
 
 
 #region Agents Tab
@@ -322,7 +324,12 @@ func _build_triggers_tab() -> Control:
 
 	hsplit.add_child(left_vbox)
 
-	# Right: Editor panel
+	# Right: Scrollable editor panel
+	var scroll = ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+
 	var right_vbox = VBoxContainer.new()
 	right_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right_vbox.add_theme_constant_override("separation", 6)
@@ -343,18 +350,16 @@ func _build_triggers_tab() -> Control:
 	# Trigger type
 	right_vbox.add_child(_label("Trigger Type:"))
 	trigger_type_option = OptionButton.new()
-	trigger_type_option.add_item("Timer", TriggerDefinition.TriggerType.TIMER)
 	trigger_type_option.add_item("Event", TriggerDefinition.TriggerType.EVENT)
+	trigger_type_option.add_item("Time", TriggerDefinition.TriggerType.TIME)
+	trigger_type_option.add_item("Timer", TriggerDefinition.TriggerType.TIMER)
 	trigger_type_option.item_selected.connect(_on_trigger_type_changed)
 	right_vbox.add_child(trigger_type_option)
 
-	# Schedule type (shown only when trigger_type == TIMER)
-	trigger_schedule_type_label = _label("Schedule Mode:")
+	# Schedule type (shown only when trigger_type == TIME)
+	trigger_schedule_type_label = _label("Recurrence:")
 	right_vbox.add_child(trigger_schedule_type_label)
 	trigger_schedule_type_option = OptionButton.new()
-	trigger_schedule_type_option.add_item("Every N seconds", TriggerDefinition.ScheduleType.INTERVAL)
-	trigger_schedule_type_option.add_item("Daily", TriggerDefinition.ScheduleType.DAILY)
-	trigger_schedule_type_option.add_item("Weekly", TriggerDefinition.ScheduleType.WEEKLY)
 	trigger_schedule_type_option.item_selected.connect(_on_schedule_type_changed)
 	right_vbox.add_child(trigger_schedule_type_option)
 
@@ -364,8 +369,8 @@ func _build_triggers_tab() -> Control:
 	trigger_interval_spin = _spin(5, 86400, 300, 10)
 	right_vbox.add_child(trigger_interval_spin)
 
-	# Time picker (visible for DAILY/WEEKLY)
-	trigger_schedule_time_label = _label("Time (24h):")
+	# Time picker (visible for TIME triggers, local time)
+	trigger_schedule_time_label = _label("Time (local, 24h):")
 	right_vbox.add_child(trigger_schedule_time_label)
 	var time_hbox := HBoxContainer.new()
 	time_hbox.add_theme_constant_override("separation", 4)
@@ -392,6 +397,20 @@ func _build_triggers_tab() -> Control:
 		cb.toggled.connect(func(_on): _update_schedule_preview())
 		trigger_schedule_days_container.add_child(cb)
 	right_vbox.add_child(trigger_schedule_days_container)
+
+	# Day-of-month picker (visible for MONTHLY/YEARLY)
+	trigger_schedule_day_of_month_label = _label("Day of Month:")
+	right_vbox.add_child(trigger_schedule_day_of_month_label)
+	trigger_schedule_day_of_month = _spin(1, 31, 1, 1)
+	trigger_schedule_day_of_month.value_changed.connect(func(_v): _update_schedule_preview())
+	right_vbox.add_child(trigger_schedule_day_of_month)
+
+	# Month picker (visible for YEARLY)
+	trigger_schedule_month_label = _label("Month:")
+	right_vbox.add_child(trigger_schedule_month_label)
+	trigger_schedule_month = _spin(1, 12, 1, 1)
+	trigger_schedule_month.value_changed.connect(func(_v): _update_schedule_preview())
+	right_vbox.add_child(trigger_schedule_month)
 
 	# Fire if missed
 	trigger_fire_if_missed_check = CheckButton.new()
@@ -494,7 +513,8 @@ func _build_triggers_tab() -> Control:
 	bottom_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right_vbox.add_child(bottom_spacer)
 
-	hsplit.add_child(right_vbox)
+	scroll.add_child(right_vbox)
+	hsplit.add_child(scroll)
 
 	return hsplit
 
@@ -517,6 +537,15 @@ func _spin(min_val: float, max_val: float, default_val: float, step: float) -> S
 	sb.step = step
 	sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return sb
+
+
+func _select_option_by_id(option: OptionButton, item_id: int) -> void:
+	for i in option.item_count:
+		if option.get_item_id(i) == item_id:
+			option.select(i)
+			return
+	if option.item_count > 0:
+		option.select(0)
 
 
 func _populate_provider_dropdown() -> void:
@@ -930,9 +959,10 @@ func _on_trigger_selected(index: int) -> void:
 			trigger_agent_option.select(i)
 			break
 
-	trigger_type_option.select(trig.trigger_type)
+	_select_option_by_id(trigger_type_option, trig.trigger_type)
+	_populate_schedule_type_options(trig.trigger_type, trig.schedule_type)
 	trigger_interval_spin.value = trig.interval_seconds
-	trigger_schedule_type_option.select(trig.schedule_type)
+	_select_option_by_id(trigger_schedule_type_option, trig.schedule_type)
 	# Parse schedule_time "HH:MM"
 	var parts = trig.schedule_time.split(":")
 	trigger_schedule_time_hour.value = int(parts[0]) if parts.size() > 0 else 9
@@ -941,10 +971,12 @@ func _on_trigger_selected(index: int) -> void:
 	for cb in trigger_schedule_days_container.get_children():
 		if cb is CheckButton:
 			cb.button_pressed = cb.get_meta("day_index") in trig.schedule_days
+	trigger_schedule_day_of_month.value = trig.schedule_day_of_month
+	trigger_schedule_month.value = trig.schedule_month
 	trigger_fire_if_missed_check.button_pressed = trig.fire_if_missed
 	trigger_last_fired_label.text = "Last ran: %s" % trig.last_fired_at if not trig.last_fired_at.is_empty() else ""
-	trigger_event_option.select(trig.event_type)
-	trigger_action_type_option.select(trig.action_type)
+	_select_option_by_id(trigger_event_option, trig.event_type)
+	_select_option_by_id(trigger_action_type_option, trig.action_type)
 	trigger_message_edit.text = trig.initial_message
 	trigger_batch_params_edit.text = "\n".join(trig.batch_params)
 	trigger_batch_label_edit.text = trig.batch_label
@@ -958,29 +990,36 @@ func _on_trigger_selected(index: int) -> void:
 
 
 func _on_trigger_type_changed(index: int) -> void:
+	index = trigger_type_option.get_item_id(index)
 	var is_timer = (index == TriggerDefinition.TriggerType.TIMER)
-	trigger_schedule_type_label.visible = is_timer
-	trigger_schedule_type_option.visible = is_timer
-	trigger_event_option.visible = not is_timer
-	trigger_fire_if_missed_check.visible = is_timer and trigger_schedule_type_option.get_selected_id() != TriggerDefinition.ScheduleType.INTERVAL
-	if is_timer:
+	var is_time = (index == TriggerDefinition.TriggerType.TIME)
+	_populate_schedule_type_options(index, trigger_schedule_type_option.get_selected_id())
+	trigger_schedule_type_label.visible = is_time
+	trigger_schedule_type_option.visible = is_time
+	trigger_event_option.visible = not (is_timer or is_time)
+	trigger_fire_if_missed_check.visible = is_time
+	if is_timer or is_time:
 		_on_schedule_type_changed(trigger_schedule_type_option.get_selected_id())
 	else:
-		trigger_interval_label.visible = false
-		trigger_interval_spin.visible = false
 		trigger_schedule_time_label.visible = false
 		trigger_schedule_time_hour.get_parent().visible = false
 		trigger_schedule_days_label.visible = false
 		trigger_schedule_days_container.visible = false
+		trigger_schedule_day_of_month_label.visible = false
+		trigger_schedule_day_of_month.visible = false
+		trigger_schedule_month_label.visible = false
+		trigger_schedule_month.visible = false
+		trigger_interval_label.visible = false
+		trigger_interval_spin.visible = false
 		trigger_schedule_preview.visible = false
 		trigger_last_fired_label.visible = false
-	var event_type = trigger_event_option.get_selected_id() if not is_timer else -1
+	var event_type = trigger_event_option.get_selected_id() if not (is_timer or is_time) else -1
 	_update_watched_visibility(index, event_type)
 
 
 func _on_event_type_changed(index: int) -> void:
 	var trigger_type = trigger_type_option.get_selected_id()
-	_update_watched_visibility(trigger_type, index)
+	_update_watched_visibility(trigger_type, trigger_event_option.get_item_id(index))
 
 
 func _update_watched_visibility(trigger_type: int, event_type: int) -> void:
@@ -991,24 +1030,38 @@ func _update_watched_visibility(trigger_type: int, event_type: int) -> void:
 
 
 func _on_schedule_type_changed(index: int) -> void:
-	var is_interval = (index == TriggerDefinition.ScheduleType.INTERVAL)
+	index = trigger_schedule_type_option.get_item_id(index)
+	var trigger_type: int = trigger_type_option.get_selected_id()
+	var is_timer = (trigger_type == TriggerDefinition.TriggerType.TIMER)
+	var is_time = (trigger_type == TriggerDefinition.TriggerType.TIME)
+	var is_interval = is_timer
 	var is_weekly = (index == TriggerDefinition.ScheduleType.WEEKLY)
-	trigger_interval_label.visible = is_interval
-	trigger_interval_spin.visible = is_interval
-	trigger_schedule_time_label.visible = not is_interval
-	trigger_schedule_time_hour.get_parent().visible = not is_interval
-	trigger_schedule_days_label.visible = is_weekly
-	trigger_schedule_days_container.visible = is_weekly
-	trigger_fire_if_missed_check.visible = not is_interval
-	trigger_schedule_preview.visible = not is_interval
-	trigger_last_fired_label.visible = not is_interval
+	var is_monthly = (index == TriggerDefinition.ScheduleType.MONTHLY)
+	var is_yearly = (index == TriggerDefinition.ScheduleType.YEARLY)
+	trigger_interval_label.visible = is_timer
+	trigger_interval_spin.visible = is_timer
+	trigger_schedule_time_label.visible = is_time
+	trigger_schedule_time_hour.get_parent().visible = is_time
+	trigger_schedule_days_label.visible = is_time and is_weekly
+	trigger_schedule_days_container.visible = is_time and is_weekly
+	trigger_schedule_day_of_month_label.visible = is_time and (is_monthly or is_yearly)
+	trigger_schedule_day_of_month.visible = is_time and (is_monthly or is_yearly)
+	trigger_schedule_month_label.visible = is_time and is_yearly
+	trigger_schedule_month.visible = is_time and is_yearly
+	trigger_fire_if_missed_check.visible = is_time
+	trigger_schedule_preview.visible = is_timer or is_time
+	trigger_last_fired_label.visible = is_time
 	_update_schedule_preview()
 
 
 func _update_schedule_preview() -> void:
+	var trigger_type: int = trigger_type_option.get_selected_id()
 	var stype: int = trigger_schedule_type_option.get_selected_id()
-	if stype == TriggerDefinition.ScheduleType.INTERVAL:
+	if trigger_type == TriggerDefinition.TriggerType.TIMER:
 		trigger_schedule_preview.text = "Every %.0f seconds" % trigger_interval_spin.value
+		return
+	if trigger_type != TriggerDefinition.TriggerType.TIME:
+		trigger_schedule_preview.text = ""
 		return
 	var hour: int = int(trigger_schedule_time_hour.value)
 	var minute: int = int(trigger_schedule_time_min.value)
@@ -1031,6 +1084,12 @@ func _update_schedule_preview() -> void:
 			trigger_schedule_preview.text = "Select at least one day"
 		else:
 			trigger_schedule_preview.text = "Every %s at %s" % [", ".join(selected_days), time_str]
+	elif stype == TriggerDefinition.ScheduleType.MONTHLY:
+		trigger_schedule_preview.text = "Every month on day %d at %s" % [int(trigger_schedule_day_of_month.value), time_str]
+	elif stype == TriggerDefinition.ScheduleType.YEARLY:
+		var month_names := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+		var month_index := clampi(int(trigger_schedule_month.value) - 1, 0, 11)
+		trigger_schedule_preview.text = "Every year on %s %d at %s" % [month_names[month_index], int(trigger_schedule_day_of_month.value), time_str]
 
 
 func _get_schedule_time() -> String:
@@ -1043,6 +1102,27 @@ func _get_schedule_days() -> Array[int]:
 		if cb is CheckButton and cb.button_pressed:
 			result.append(cb.get_meta("day_index"))
 	return result
+
+
+func _populate_schedule_type_options(trigger_type: int, preferred_id: int = -1) -> void:
+	var current_id := preferred_id if preferred_id >= 0 else trigger_schedule_type_option.get_selected_id()
+	trigger_schedule_type_option.clear()
+	if trigger_type == TriggerDefinition.TriggerType.TIME:
+		trigger_schedule_type_option.add_item("Daily", TriggerDefinition.ScheduleType.DAILY)
+		trigger_schedule_type_option.add_item("Weekly", TriggerDefinition.ScheduleType.WEEKLY)
+		trigger_schedule_type_option.add_item("Monthly", TriggerDefinition.ScheduleType.MONTHLY)
+		trigger_schedule_type_option.add_item("Yearly", TriggerDefinition.ScheduleType.YEARLY)
+		if current_id == TriggerDefinition.ScheduleType.INTERVAL:
+			current_id = TriggerDefinition.ScheduleType.DAILY
+	else:
+		trigger_schedule_type_option.add_item("Every N seconds", TriggerDefinition.ScheduleType.INTERVAL)
+		current_id = TriggerDefinition.ScheduleType.INTERVAL
+	for i in trigger_schedule_type_option.item_count:
+		if trigger_schedule_type_option.get_item_id(i) == current_id:
+			trigger_schedule_type_option.select(i)
+			return
+	if trigger_schedule_type_option.item_count > 0:
+		trigger_schedule_type_option.select(0)
 
 
 func _populate_watched_agents(selected_ids: Array[String]) -> void:
@@ -1083,18 +1163,20 @@ func _on_trigger_new() -> void:
 	trigger_name_edit.text = ""
 	if trigger_agent_option.item_count > 0:
 		trigger_agent_option.select(0)
-	trigger_type_option.select(0)
+	_select_option_by_id(trigger_type_option, TriggerDefinition.TriggerType.TIMER)
 	trigger_interval_spin.value = 300
-	trigger_schedule_type_option.select(0)
+	_populate_schedule_type_options(TriggerDefinition.TriggerType.TIMER, TriggerDefinition.ScheduleType.INTERVAL)
 	trigger_schedule_time_hour.value = 9
 	trigger_schedule_time_min.value = 0
 	for cb in trigger_schedule_days_container.get_children():
 		if cb is CheckButton:
 			cb.button_pressed = false
+	trigger_schedule_day_of_month.value = 1
+	trigger_schedule_month.value = 1
 	trigger_fire_if_missed_check.button_pressed = true
 	trigger_last_fired_label.text = ""
-	trigger_event_option.select(0)
-	trigger_action_type_option.select(0)
+	_select_option_by_id(trigger_event_option, TriggerDefinition.EventType.NOTE_CREATED)
+	_select_option_by_id(trigger_action_type_option, TriggerDefinition.ActionType.SPAWN_NEW)
 	trigger_message_edit.text = ""
 	trigger_batch_params_edit.text = ""
 	trigger_batch_label_edit.text = ""
@@ -1115,17 +1197,24 @@ func _on_trigger_save() -> void:
 		return
 
 	var agent_id: String = trigger_agent_option.get_item_metadata(trigger_agent_option.selected)
+	var trigger_type: int = trigger_type_option.get_selected_id()
+	var schedule_type: int = TriggerDefinition.ScheduleType.INTERVAL if trigger_type == TriggerDefinition.TriggerType.TIMER else trigger_schedule_type_option.get_selected_id()
+	if trigger_type == TriggerDefinition.TriggerType.TIME and schedule_type == TriggerDefinition.ScheduleType.WEEKLY and _get_schedule_days().is_empty():
+		SingletonObject.create_toast_notification("Weekly time triggers need at least one day", ToastNotification.Type.WARNING)
+		return
 
 	if _selected_trigger_idx >= 0 and _selected_trigger_idx < tm.triggers.size():
 		# Update existing
 		var trig = TriggerDefinition.new(tm.triggers[_selected_trigger_idx].id)
 		trig.name = trigger_name_edit.text
 		trig.agent_id = agent_id
-		trig.trigger_type = trigger_type_option.get_selected_id()
+		trig.trigger_type = trigger_type
 		trig.interval_seconds = trigger_interval_spin.value
-		trig.schedule_type = trigger_schedule_type_option.get_selected_id()
+		trig.schedule_type = schedule_type
 		trig.schedule_time = _get_schedule_time()
 		trig.schedule_days = _get_schedule_days()
+		trig.schedule_day_of_month = int(trigger_schedule_day_of_month.value)
+		trig.schedule_month = int(trigger_schedule_month.value)
 		trig.fire_if_missed = trigger_fire_if_missed_check.button_pressed
 		trig.last_fired_at = tm.triggers[_selected_trigger_idx].last_fired_at
 		trig.event_type = trigger_event_option.get_selected_id()
@@ -1143,11 +1232,13 @@ func _on_trigger_save() -> void:
 		var trig = TriggerDefinition.new()
 		trig.name = trigger_name_edit.text
 		trig.agent_id = agent_id
-		trig.trigger_type = trigger_type_option.get_selected_id()
+		trig.trigger_type = trigger_type
 		trig.interval_seconds = trigger_interval_spin.value
-		trig.schedule_type = trigger_schedule_type_option.get_selected_id()
+		trig.schedule_type = schedule_type
 		trig.schedule_time = _get_schedule_time()
 		trig.schedule_days = _get_schedule_days()
+		trig.schedule_day_of_month = int(trigger_schedule_day_of_month.value)
+		trig.schedule_month = int(trigger_schedule_month.value)
 		trig.fire_if_missed = trigger_fire_if_missed_check.button_pressed
 		trig.event_type = trigger_event_option.get_selected_id()
 		trig.action_type = trigger_action_type_option.get_selected_id()
@@ -1249,7 +1340,11 @@ func _refresh_trigger_list() -> void:
 			if agent:
 				agent_name = agent.name
 
-		var type_str = "Timer" if trig.trigger_type == TriggerDefinition.TriggerType.TIMER else "Event"
+		var type_str := "Event"
+		if trig.trigger_type == TriggerDefinition.TriggerType.TIMER:
+			type_str = "Timer"
+		elif trig.trigger_type == TriggerDefinition.TriggerType.TIME:
+			type_str = "Time"
 		var action_str = " (msg)" if trig.action_type == TriggerDefinition.ActionType.MESSAGE_EXISTING else ""
 		var enabled_str = " [ON]" if trig.enabled else " [OFF]"
 		var batch_str = " [%d params]" % trig.batch_params.size() if not trig.batch_params.is_empty() else ""

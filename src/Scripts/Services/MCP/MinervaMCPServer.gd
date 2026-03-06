@@ -7609,7 +7609,7 @@ func _register_trigger_tools() -> void:
 	, "triggers")
 
 	_register_tool("minerva_create_trigger",
-		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1.",
+		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1, TIME=2. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1.",
 		{
 			"type": "object",
 			"properties": {
@@ -7623,7 +7623,7 @@ func _register_trigger_tools() -> void:
 				},
 				"trigger_type": {
 					"type": "integer",
-					"description": "0=TIMER, 1=EVENT. Default 0"
+					"description": "0=TIMER, 1=EVENT, 2=TIME. Default 0"
 				},
 				"interval_seconds": {
 					"type": "number",
@@ -7665,16 +7665,24 @@ func _register_trigger_tools() -> void:
 				},
 				"schedule_type": {
 					"type": "integer",
-					"description": "0=INTERVAL (default), 1=DAILY, 2=WEEKLY. Use with trigger_type=TIMER."
+					"description": "0=INTERVAL (for TIMER), 1=DAILY, 2=WEEKLY, 3=MONTHLY, 4=YEARLY. Use 1-4 with trigger_type=TIME."
 				},
 				"schedule_time": {
 					"type": "string",
-					"description": "Time of day for DAILY/WEEKLY, 'HH:MM' in 24h local time. Default '09:00'."
+					"description": "Local time of day for TIME triggers, 'HH:MM' in 24h format. Default '09:00'."
 				},
 				"schedule_days": {
 					"type": "array",
 					"items": {"type": "integer"},
-					"description": "Days of week for WEEKLY (0=Mon .. 6=Sun). Ignored for DAILY."
+					"description": "Days of week for WEEKLY (0=Mon .. 6=Sun)."
+				},
+				"schedule_day_of_month": {
+					"type": "integer",
+					"description": "Day of month for MONTHLY/YEARLY schedules (1-31)."
+				},
+				"schedule_month": {
+					"type": "integer",
+					"description": "Month for YEARLY schedules (1-12)."
 				},
 				"fire_if_missed": {
 					"type": "boolean",
@@ -7696,7 +7704,7 @@ func _register_trigger_tools() -> void:
 				},
 				"name": { "type": "string", "description": "New display name" },
 				"agent_id": { "type": "string", "description": "New agent definition ID" },
-				"trigger_type": { "type": "integer", "description": "0=TIMER, 1=EVENT" },
+				"trigger_type": { "type": "integer", "description": "0=TIMER, 1=EVENT, 2=TIME" },
 				"interval_seconds": { "type": "number", "description": "Timer interval" },
 				"event_type": { "type": "integer", "description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED" },
 				"action_type": { "type": "integer", "description": "0=SPAWN_NEW, 1=MESSAGE_EXISTING" },
@@ -7706,9 +7714,11 @@ func _register_trigger_tools() -> void:
 				"chain_trigger_id": { "type": "string", "description": "Chain target trigger ID" },
 				"watched_agent_ids": { "type": "array", "items": {"type": "string"}, "description": "Agent filter for CHAT_COMPLETED" },
 				"enabled": { "type": "boolean", "description": "Active state" },
-				"schedule_type": { "type": "integer", "description": "0=INTERVAL, 1=DAILY, 2=WEEKLY" },
-				"schedule_time": { "type": "string", "description": "HH:MM in 24h local time" },
+				"schedule_type": { "type": "integer", "description": "0=INTERVAL, 1=DAILY, 2=WEEKLY, 3=MONTHLY, 4=YEARLY" },
+				"schedule_time": { "type": "string", "description": "HH:MM in local time" },
 				"schedule_days": { "type": "array", "items": {"type": "integer"}, "description": "Days of week 0=Mon..6=Sun" },
+				"schedule_day_of_month": { "type": "integer", "description": "Day of month for MONTHLY/YEARLY schedules" },
+				"schedule_month": { "type": "integer", "description": "Month for YEARLY schedules (1-12)" },
 				"fire_if_missed": { "type": "boolean", "description": "Fire on startup if missed" }
 			},
 			"required": ["trigger_id"]
@@ -7908,13 +7918,18 @@ func _list_triggers(_args: Dictionary) -> Dictionary:
 		}
 		if trig.trigger_type == TriggerDefinition.TriggerType.TIMER:
 			entry["interval_seconds"] = trig.interval_seconds
+		elif trig.trigger_type == TriggerDefinition.TriggerType.TIME:
 			entry["schedule_type"] = trig.schedule_type
-			if trig.schedule_type != TriggerDefinition.ScheduleType.INTERVAL:
-				entry["schedule_time"] = trig.schedule_time
-				entry["fire_if_missed"] = trig.fire_if_missed
-				entry["last_fired_at"] = trig.last_fired_at
+			entry["schedule_time"] = trig.schedule_time
+			entry["fire_if_missed"] = trig.fire_if_missed
+			entry["last_fired_at"] = trig.last_fired_at
 			if trig.schedule_type == TriggerDefinition.ScheduleType.WEEKLY:
 				entry["schedule_days"] = trig.schedule_days
+			elif trig.schedule_type == TriggerDefinition.ScheduleType.MONTHLY:
+				entry["schedule_day_of_month"] = trig.schedule_day_of_month
+			elif trig.schedule_type == TriggerDefinition.ScheduleType.YEARLY:
+				entry["schedule_day_of_month"] = trig.schedule_day_of_month
+				entry["schedule_month"] = trig.schedule_month
 		else:
 			entry["event_type"] = trig.event_type
 			entry["watched_agent_ids"] = trig.watched_agent_ids
@@ -7950,7 +7965,11 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 	trig.chain_trigger_id = args.get("chain_trigger_id", "")
 	trig.enabled = args.get("enabled", false)
 	trig.schedule_type = int(args.get("schedule_type", TriggerDefinition.ScheduleType.INTERVAL))
+	if trig.trigger_type == TriggerDefinition.TriggerType.TIME and trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
+		trig.schedule_type = TriggerDefinition.ScheduleType.DAILY
 	trig.schedule_time = args.get("schedule_time", "09:00")
+	trig.schedule_day_of_month = int(args.get("schedule_day_of_month", 1))
+	trig.schedule_month = int(args.get("schedule_month", 1))
 	trig.fire_if_missed = args.get("fire_if_missed", true)
 
 	var bp: Array = args.get("batch_params", [])
@@ -8000,7 +8019,11 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	trig.chain_trigger_id = args.get("chain_trigger_id", existing.chain_trigger_id)
 	trig.enabled = args.get("enabled", existing.enabled)
 	trig.schedule_type = int(args.get("schedule_type", existing.schedule_type))
+	if trig.trigger_type == TriggerDefinition.TriggerType.TIME and trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
+		trig.schedule_type = TriggerDefinition.ScheduleType.DAILY
 	trig.schedule_time = args.get("schedule_time", existing.schedule_time)
+	trig.schedule_day_of_month = int(args.get("schedule_day_of_month", existing.schedule_day_of_month))
+	trig.schedule_month = int(args.get("schedule_month", existing.schedule_month))
 	trig.fire_if_missed = args.get("fire_if_missed", existing.fire_if_missed)
 	trig.last_fired_at = existing.last_fired_at
 

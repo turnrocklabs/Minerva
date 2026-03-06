@@ -1,11 +1,11 @@
 class_name TriggerDefinition
 extends RefCounted
-## Data class for an agent trigger (timer or event-based).
+## Data class for an agent trigger.
 
-enum TriggerType { TIMER, EVENT }
+enum TriggerType { TIMER, EVENT, TIME }
 enum EventType { NOTE_CREATED, NOTE_CHANGED, CHAT_COMPLETED }
 enum ActionType { SPAWN_NEW, MESSAGE_EXISTING }
-enum ScheduleType { INTERVAL, DAILY, WEEKLY }
+enum ScheduleType { INTERVAL, DAILY, WEEKLY, MONTHLY, YEARLY }
 
 var id: String = ""
 var name: String = ""
@@ -24,12 +24,16 @@ var batch_params: Array[String] = []
 var chain_trigger_id: String = ""
 ## Optional UI label for batch params (e.g. "Ticker Symbols").
 var batch_label: String = ""
-## Wall-clock schedule type (INTERVAL uses existing timer behavior).
+## Wall-clock schedule type. INTERVAL is used only for TIMER triggers.
 var schedule_type: ScheduleType = ScheduleType.INTERVAL
-## Time of day for DAILY/WEEKLY schedules, "HH:MM" in 24h local time.
+## Time of day for TIME triggers, "HH:MM" in 24h local time.
 var schedule_time: String = "09:00"
-## Days of week for WEEKLY (0=Mon .. 6=Sun). Empty with DAILY means every day.
+## Days of week for WEEKLY (0=Mon .. 6=Sun).
 var schedule_days: Array[int] = []
+## Day of month for MONTHLY and YEARLY schedules.
+var schedule_day_of_month: int = 1
+## Month for YEARLY schedules (1=Jan .. 12=Dec).
+var schedule_month: int = 1
 ## ISO datetime of last successful fire (persisted for missed-fire detection).
 var last_fired_at: String = ""
 ## If true, fire on next startup if a scheduled time was missed.
@@ -61,6 +65,8 @@ func serialize() -> Dictionary:
 		"schedule_type": schedule_type,
 		"schedule_time": schedule_time,
 		"schedule_days": schedule_days,
+		"schedule_day_of_month": schedule_day_of_month,
+		"schedule_month": schedule_month,
 		"last_fired_at": last_fired_at,
 		"fire_if_missed": fire_if_missed,
 	}
@@ -90,6 +96,13 @@ static func deserialize(data: Dictionary) -> TriggerDefinition:
 	var days = data.get("schedule_days", [])
 	for d in days:
 		trig.schedule_days.append(int(d))
+	trig.schedule_day_of_month = int(data.get("schedule_day_of_month", 1))
+	trig.schedule_month = int(data.get("schedule_month", 1))
 	trig.last_fired_at = data.get("last_fired_at", "")
 	trig.fire_if_missed = data.get("fire_if_missed", true)
+	# Backward compatibility: older wall-clock schedules were stored as TIMER + non-INTERVAL schedule.
+	if trig.trigger_type == TriggerType.TIMER and trig.schedule_type != ScheduleType.INTERVAL:
+		trig.trigger_type = TriggerType.TIME
+	if trig.trigger_type == TriggerType.TIME and trig.schedule_type == ScheduleType.INTERVAL:
+		trig.schedule_type = ScheduleType.DAILY
 	return trig

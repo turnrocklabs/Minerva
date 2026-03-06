@@ -126,9 +126,9 @@ func clear_all() -> void:
 func _activate_trigger(trig: TriggerDefinition) -> void:
 	match trig.trigger_type:
 		TriggerDefinition.TriggerType.TIMER:
-			# Only start a Godot Timer for INTERVAL schedules; DAILY/WEEKLY use the poll timer
-			if trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
-				_start_timer(trig)
+			_start_timer(trig)
+		TriggerDefinition.TriggerType.TIME:
+			pass
 		TriggerDefinition.TriggerType.EVENT:
 			_connect_event(trig)
 
@@ -137,6 +137,8 @@ func _deactivate_trigger(trig: TriggerDefinition) -> void:
 	match trig.trigger_type:
 		TriggerDefinition.TriggerType.TIMER:
 			_stop_timer(trig)
+		TriggerDefinition.TriggerType.TIME:
+			pass
 		TriggerDefinition.TriggerType.EVENT:
 			_disconnect_event(trig)
 
@@ -337,17 +339,17 @@ func _apply_template(message: String, context: Dictionary) -> String:
 	return result
 
 
-func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: Dictionary = {}, force: bool = false) -> void:
+func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: Dictionary = {}, force: bool = false) -> bool:
 	var trig = get_trigger(trigger_id)
 	if not trig:
-		return
+		return false
 	if not trig.enabled and not force:
-		return
+		return false
 
 	# Anti-flood for batch triggers: don't re-fire while a batch is running
 	if _active_batches.has(trigger_id):
 		print("[TriggerManager] Skipping trigger '%s' - batch still running" % trigger_id)
-		return
+		return false
 
 	# Anti-flood: don't fire if same trigger already has an active chat
 	if _active_trigger_chats.has(trigger_id):
@@ -355,25 +357,25 @@ func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: 
 		for chat in SingletonObject.ChatList:
 			if chat.HistoryId == active_history_id:
 				print("[TriggerManager] Skipping trigger '%s' - chat still active" % trigger_id)
-				return
+				return false
 		# Chat no longer exists, clear tracking
 		_active_trigger_chats.erase(trigger_id)
 
 	# Branch: batch execution vs single fire
 	if not trig.batch_params.is_empty():
 		_start_batch(trig, context, chain_visited)
-		return
+		return true
 
 	# Look up agent definition
 	var registry = SingletonObject.agent_registry
 	if not registry:
 		push_error("[TriggerManager] No agent registry available")
-		return
+		return false
 
 	var agent_def = registry.get_agent(trig.agent_id)
 	if not agent_def:
 		push_warning("[TriggerManager] Agent '%s' not found for trigger '%s'" % [trig.agent_id, trigger_id])
-		return
+		return false
 
 	# Apply template variables to initial message
 	var message = trig.initial_message
@@ -391,6 +393,7 @@ func _fire_trigger(trigger_id: String, context: Dictionary = {}, chain_visited: 
 		# Defer chaining — the agent hasn't finished yet.
 		# Chaining for single-fire is handled in _on_agent_chat_finished via _pending_single_chains.
 		_pending_single_chains[trigger_id] = { "chain_trigger_id": trig.chain_trigger_id, "chain_visited": chain_visited.duplicate() }
+	return true
 
 
 func _action_spawn_new(_trig: TriggerDefinition, agent_def: AgentDefinition, message: String, trigger_id: String) -> void:
@@ -583,41 +586,28 @@ func _on_schedule_check() -> void:
 	for trig in triggers:
 		if not trig.enabled:
 			continue
-		if trig.trigger_type != TriggerDefinition.TriggerType.TIMER:
+		if trig.trigger_type != TriggerDefinition.TriggerType.TIME:
 			continue
-		if trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
+		var scheduled_occurrence := _scheduled_occurrence_now(trig)
+		if scheduled_occurrence.is_empty():
 			continue
-		if _should_fire_schedule(trig):
-			trig.last_fired_at = Time.get_datetime_string_from_system(false)
-			_fire_trigger(trig.id)
+		if not trig.last_fired_at.is_empty() and trig.last_fired_at >= scheduled_occurrence:
+			continue
+		if _fire_trigger(trig.id):
+			trig.last_fired_at = scheduled_occurrence
 
 
-## Evaluate whether a DAILY or WEEKLY trigger should fire now.
-func _should_fire_schedule(trig: TriggerDefinition) -> bool:
+## Return the scheduled occurrence string if the trigger should fire now, else "".
+func _scheduled_occurrence_now(trig: TriggerDefinition) -> String:
 	var now := Time.get_datetime_dict_from_system(false)  # local time
 	var now_hhmm := "%02d:%02d" % [now["hour"], now["minute"]]
 
-	# Current time must be >= schedule_time (within the same minute window)
 	if now_hhmm < trig.schedule_time:
-		return false
-
-	# For WEEKLY, check day-of-week (Godot: 0=Sun, 1=Mon .. 6=Sat; we use 0=Mon .. 6=Sun)
-	if trig.schedule_type == TriggerDefinition.ScheduleType.WEEKLY:
-		if trig.schedule_days.is_empty():
-			return false
-		# Convert Godot weekday (0=Sun) to our convention (0=Mon)
-		var godot_weekday: int = now["weekday"]
-		var our_weekday: int = (godot_weekday + 6) % 7  # Sun(0)->6, Mon(1)->0, ...
-		if our_weekday not in trig.schedule_days:
-			return false
-
-	# Check if we already fired for this scheduled occurrence
-	if not trig.last_fired_at.is_empty():
-		var today_schedule_str := "%04d-%02d-%02dT%s:00" % [now["year"], now["month"], now["day"], trig.schedule_time]
-		if trig.last_fired_at >= today_schedule_str:
-			return false  # Already fired for this scheduled time
-
-	return true
+		return ""
+	var occurrence := _scheduled_occurrence_for_date(trig, now)
+	if occurrence.is_empty():
+		return ""
+	return occurrence
 
 
 ## Check for missed fires after project load / deserialization.
@@ -625,9 +615,7 @@ func check_missed_fires() -> void:
 	for trig in triggers:
 		if not trig.enabled:
 			continue
-		if trig.trigger_type != TriggerDefinition.TriggerType.TIMER:
-			continue
-		if trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
+		if trig.trigger_type != TriggerDefinition.TriggerType.TIME:
 			continue
 		if not trig.fire_if_missed:
 			continue
@@ -638,11 +626,11 @@ func check_missed_fires() -> void:
 
 		if trig.last_fired_at.is_empty() or trig.last_fired_at < most_recent:
 			print("[TriggerManager] Firing missed schedule for '%s' (was due at %s)" % [trig.name, most_recent])
-			trig.last_fired_at = Time.get_datetime_string_from_system(false)
-			call_deferred("_fire_trigger", trig.id)
+			if _fire_trigger(trig.id):
+				trig.last_fired_at = most_recent
 
 
-## Compute the most recent scheduled time before now for a DAILY/WEEKLY trigger.
+## Compute the most recent scheduled time before now for a TIME trigger.
 func _most_recent_scheduled_time(trig: TriggerDefinition) -> String:
 	var now := Time.get_datetime_dict_from_system(false)
 	var now_hhmm := "%02d:%02d" % [now["hour"], now["minute"]]
@@ -670,8 +658,89 @@ func _most_recent_scheduled_time(trig: TriggerDefinition) -> String:
 				if days_back == 0 and now_hhmm < trig.schedule_time:
 					continue
 				return "%04d-%02d-%02dT%s:00" % [check_dt["year"], check_dt["month"], check_dt["day"], trig.schedule_time]
+	elif trig.schedule_type == TriggerDefinition.ScheduleType.MONTHLY:
+		var year := int(now["year"])
+		var month := int(now["month"])
+		for _i in range(0, 24):
+			var max_day := _days_in_month(year, month)
+			if trig.schedule_day_of_month <= max_day:
+				var day := trig.schedule_day_of_month
+				if year == now["year"] and month == now["month"]:
+					if now["day"] > day or (now["day"] == day and now_hhmm >= trig.schedule_time):
+						return _format_occurrence(year, month, day, trig.schedule_time)
+				else:
+					return _format_occurrence(year, month, day, trig.schedule_time)
+			month -= 1
+			if month < 1:
+				month = 12
+				year -= 1
+	elif trig.schedule_type == TriggerDefinition.ScheduleType.YEARLY:
+		var year := int(now["year"])
+		for _i in range(0, 10):
+			if trig.schedule_day_of_month <= _days_in_month(year, trig.schedule_month):
+				if year == now["year"]:
+					if now["month"] > trig.schedule_month:
+						return _format_occurrence(year, trig.schedule_month, trig.schedule_day_of_month, trig.schedule_time)
+					if now["month"] == trig.schedule_month:
+						if now["day"] > trig.schedule_day_of_month or (now["day"] == trig.schedule_day_of_month and now_hhmm >= trig.schedule_time):
+							return _format_occurrence(year, trig.schedule_month, trig.schedule_day_of_month, trig.schedule_time)
+				else:
+					return _format_occurrence(year, trig.schedule_month, trig.schedule_day_of_month, trig.schedule_time)
+			year -= 1
 
 	return ""
+
+
+func _scheduled_occurrence_for_date(trig: TriggerDefinition, dt: Dictionary) -> String:
+	match trig.schedule_type:
+		TriggerDefinition.ScheduleType.DAILY:
+			return _format_occurrence(dt["year"], dt["month"], dt["day"], trig.schedule_time)
+		TriggerDefinition.ScheduleType.WEEKLY:
+			if trig.schedule_days.is_empty():
+				return ""
+			var our_weekday := _our_weekday(dt)
+			if our_weekday not in trig.schedule_days:
+				return ""
+			return _format_occurrence(dt["year"], dt["month"], dt["day"], trig.schedule_time)
+		TriggerDefinition.ScheduleType.MONTHLY:
+			if int(dt["day"]) != trig.schedule_day_of_month:
+				return ""
+			return _format_occurrence(dt["year"], dt["month"], dt["day"], trig.schedule_time)
+		TriggerDefinition.ScheduleType.YEARLY:
+			if int(dt["month"]) != trig.schedule_month or int(dt["day"]) != trig.schedule_day_of_month:
+				return ""
+			return _format_occurrence(dt["year"], dt["month"], dt["day"], trig.schedule_time)
+	return ""
+
+
+func _format_occurrence(year: int, month: int, day: int, hhmm: String) -> String:
+	return "%04d-%02d-%02dT%s:00" % [year, month, day, hhmm]
+
+
+func _our_weekday(dt: Dictionary) -> int:
+	var godot_weekday: int = int(dt["weekday"])
+	return (godot_weekday + 6) % 7
+
+
+func _days_in_month(year: int, month: int) -> int:
+	match month:
+		1, 3, 5, 7, 8, 10, 12:
+			return 31
+		4, 6, 9, 11:
+			return 30
+		2:
+			if _is_leap_year(year):
+				return 29
+			return 28
+	return 30
+
+
+func _is_leap_year(year: int) -> bool:
+	if year % 400 == 0:
+		return true
+	if year % 100 == 0:
+		return false
+	return year % 4 == 0
 
 #endregion Wall-Clock Schedules
 
