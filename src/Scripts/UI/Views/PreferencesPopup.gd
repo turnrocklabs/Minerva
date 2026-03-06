@@ -67,6 +67,7 @@ const AUTH_PRESET_CUSTOM_IDX = 2 # Index of the "Custom" option in the OptionBut
 	SingletonObject.API_PROVIDER.TURNROCK: %TurnRockCheckButton,
 	SingletonObject.API_PROVIDER.OPENROUTER: %OpenRouterCheckButton,
 	SingletonObject.API_PROVIDER.CLAUDE_CODE: %ClaudeCodeCheckButton,
+	SingletonObject.API_PROVIDER.CHATGPT: %ChatGPTCheckButton,
 }
 
 var config_file = ConfigFile.new()
@@ -107,6 +108,9 @@ func _ready():
 
 	# Create custom models tab (after scene tree is ready)
 	call_deferred("_create_custom_models_tab")
+
+	# Initialize ChatGPT auth status
+	call_deferred("_init_chatgpt_auth")
 
 	if SingletonObject.config_has_saved_section("Experimental"):
 		var enable_exp: bool = SingletonObject.config_file.get_value("Experimental", "enabled")
@@ -253,6 +257,12 @@ func _sync_provider_checkboxes() -> void:
 func get_api_key(provider: SingletonObject.API_PROVIDER) -> String:
 	if provider == SingletonObject.API_PROVIDER.LOCAL:
 		return " "
+	elif provider == SingletonObject.API_PROVIDER.CHATGPT:
+		# ChatGPT uses OAuth, return the access token
+		var chatgpt_auth := SingletonObject.ChatGPTProviderScript.get_auth()
+		if chatgpt_auth.is_authenticated():
+			return chatgpt_auth.access_token
+		return ""
 	else:
 		return config_file.get_value("API KEYS", PROVIDERS[provider], "")
 
@@ -797,6 +807,51 @@ func _on_openrouter_provider_toggled(toggled_on: bool) -> void:
 
 func _on_claudecode_provider_toggled(toggled_on: bool) -> void:
 	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.CLAUDE_CODE, toggled_on)
+
+
+func _on_chatgpt_provider_toggled(toggled_on: bool) -> void:
+	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.CHATGPT, toggled_on)
+
+
+func _on_chatgpt_connect_pressed() -> void:
+	var chatgpt_auth := SingletonObject.ChatGPTProviderScript.get_auth()
+	if chatgpt_auth.is_authenticated():
+		# Disconnect
+		chatgpt_auth.disconnect_account()
+		_update_chatgpt_status()
+	else:
+		# Start OAuth flow
+		%ChatGPTConnectButton.disabled = true
+		%ChatGPTConnectButton.text = "Connecting..."
+		%ChatGPTStatusLabel.text = "Waiting for browser login..."
+
+		chatgpt_auth.auth_completed.connect(_on_chatgpt_auth_completed, CONNECT_ONE_SHOT)
+		chatgpt_auth.start_auth_flow(get_tree())
+
+
+func _on_chatgpt_auth_completed(success: bool, error_message: String) -> void:
+	%ChatGPTConnectButton.disabled = false
+	if success:
+		_update_chatgpt_status()
+	else:
+		%ChatGPTStatusLabel.text = "Error: %s" % error_message
+		%ChatGPTConnectButton.text = "Connect ChatGPT"
+
+
+func _update_chatgpt_status() -> void:
+	var chatgpt_auth := SingletonObject.ChatGPTProviderScript.get_auth()
+	if chatgpt_auth.is_authenticated():
+		%ChatGPTStatusLabel.text = chatgpt_auth.get_status_text()
+		%ChatGPTConnectButton.text = "Disconnect"
+	else:
+		%ChatGPTStatusLabel.text = "Not connected"
+		%ChatGPTConnectButton.text = "Connect ChatGPT"
+
+
+func _init_chatgpt_auth() -> void:
+	var chatgpt_auth := SingletonObject.ChatGPTProviderScript.get_auth()
+	chatgpt_auth.load_tokens()
+	_update_chatgpt_status()
 
 #endregion Provider toggles
 

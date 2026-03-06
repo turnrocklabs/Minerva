@@ -861,7 +861,7 @@ func create_toast_notification(content: String, type: = ToastNotification.Type.I
 #endregion Common UI Tasks
 
 #region API Consumer
-enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK, OPENROUTER, CLAUDE_CODE }
+enum API_PROVIDER { GOOGLE, OPENAI, ANTHROPIC, LOCAL, TURNROCK, OPENROUTER, CLAUDE_CODE, CHATGPT }
 
 # Preload provider scripts to ensure class_names are available
 const OpenAIProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIProvider.gd")
@@ -879,6 +879,7 @@ const OPENAI_MODEL_ID_BASE := 30000
 const GOOGLE_MODEL_ID_BASE := 40000
 const LOCAL_MODEL_ID_BASE := 50000
 const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
+const ChatGPTProviderScript = preload("res://Scripts/Services/Providers/ChatGPT/ChatGPTProvider.gd")
 const LocalProviderScript = preload("res://Scripts/Services/Providers/LocalProvider.gd")
 
 # changing the order here will probably result in having wrong provider selected
@@ -909,6 +910,8 @@ enum API_MODEL_PROVIDERS {
 	# after OpenRouter models (14-17) were moved to dynamic registration
 	CLAUDE_CODE_SONNET = 18,
 	CLAUDE_CODE_OPUS = 19,
+	# ChatGPT (Plus/Pro subscription via OAuth)
+	CHATGPT_DEFAULT = 20,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -937,6 +940,8 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	# Claude Code (Max/Pro)
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProviderScript.Opus,
+	# ChatGPT (Plus/Pro subscription)
+	API_MODEL_PROVIDERS.CHATGPT_DEFAULT: ChatGPTProviderScript,
 }
 
 ## Maps each model to its parent provider (for enable/disable filtering).
@@ -964,6 +969,8 @@ var MODEL_TO_PROVIDER: Dictionary = {
 	# Claude Code
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: API_PROVIDER.CLAUDE_CODE,
+	# ChatGPT
+	API_MODEL_PROVIDERS.CHATGPT_DEFAULT: API_PROVIDER.CHATGPT,
 }
 
 ## User-friendly names for providers (used in menu)
@@ -975,6 +982,7 @@ const PROVIDER_DISPLAY_NAMES: Dictionary = {
 	API_PROVIDER.TURNROCK: "TurnRock",
 	API_PROVIDER.OPENROUTER: "OpenRouter",
 	API_PROVIDER.CLAUDE_CODE: "Claude Code",
+	API_PROVIDER.CHATGPT: "ChatGPT",
 }
 
 ## Enabled state for each provider (all enabled by default)
