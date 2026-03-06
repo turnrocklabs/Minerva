@@ -86,6 +86,10 @@ var IsAgentChat: bool = false:
 var AgentDefinitionId: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); AgentDefinitionId = value
 
+## Whether this chat is archived (hidden from active tab list, retrievable)
+var Archived: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); Archived = value
+
 var VBox: VBoxChat
 var provider: BaseProvider
 
@@ -114,6 +118,7 @@ static var SERIALIZER_FIELDS = [
 	"AgentModeEnabled",
 	"IsAgentChat",
 	"AgentDefinitionId",
+	"Archived",
 ]
 
 
@@ -234,6 +239,7 @@ func Serialize() -> Dictionary:
 		"AgentModeEnabled": AgentModeEnabled,
 		"IsAgentChat": IsAgentChat,
 		"AgentDefinitionId": AgentDefinitionId,
+		"Archived": Archived,
 	}
 	return save_dict
 
@@ -314,5 +320,7 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.IsAgentChat = data.get("IsAgentChat", false)
 	if data.has("AgentDefinitionId"):
 		history.AgentDefinitionId = data.get("AgentDefinitionId", "")
+	if data.has("Archived"):
+		history.Archived = data.get("Archived", false)
 
 	return history

@@ -358,6 +358,43 @@ func _input(event) -> void:
 					%DropForNode.visible = true
 
 
+var _ledger_popup: PopupMenu
+var _showing_archived: bool = false
+
+func _on_btn_ledger_pressed() -> void:
+	if not _ledger_popup:
+		_ledger_popup = PopupMenu.new()
+		_ledger_popup.add_item("Browse Ledger", 0)
+		_ledger_popup.add_separator()
+		_ledger_popup.add_item("Archive Chat", 1)
+		_ledger_popup.add_check_item("Show Archived", 2)
+		_ledger_popup.id_pressed.connect(_on_ledger_menu_selected)
+		add_child(_ledger_popup)
+	# Update archive label based on current chat state
+	if SingletonObject.Chats and not SingletonObject.ChatList.is_empty():
+		var idx = SingletonObject.Chats.current_tab
+		if idx >= 0 and idx < SingletonObject.ChatList.size():
+			var history: ServiceHistory = SingletonObject.ChatList[idx]
+			var archive_idx = _ledger_popup.get_item_index(1)
+			_ledger_popup.set_item_text(archive_idx, "Restore Chat" if history.Archived else "Archive Chat")
+	_ledger_popup.set_item_checked(_ledger_popup.get_item_index(2), _showing_archived)
+	_ledger_popup.popup(Rect2i(get_viewport().get_mouse_position(), Vector2i.ZERO))
+
+
+func _on_ledger_menu_selected(id: int) -> void:
+	match id:
+		0:  # Browse Ledger
+			if SingletonObject.Chats:
+				SingletonObject.Chats.open_ledger_browser()
+		1:  # Archive / Restore Chat
+			if SingletonObject.Chats:
+				SingletonObject.Chats.archive_current_chat()
+		2:  # Show Archived toggle
+			_showing_archived = not _showing_archived
+			if SingletonObject.Chats:
+				SingletonObject.Chats.set_show_archived(_showing_archived)
+
+
 @onready var bottom_drawer_control: DrawerNotesManager = %BottomDrawerControl
 @onready var notes_drawer_split: VSplitContainer = %NotesDrawerSplit
 var split_drawer_tween: Tween

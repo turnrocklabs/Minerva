@@ -44,9 +44,12 @@ func list_agents() -> Array[SwarmAgentDefinition]:
 ## Update an existing agent. Sends only Core fields to backend.
 ## Swarm field persistence is handled separately (client-side).
 func update(def: SwarmAgentDefinition) -> bool:
+	var setup_commands_arg: Variant = null
+	if not def.setup_commands.is_empty():
+		setup_commands_arg = Array(def.setup_commands)
 	return await _adapter.update_review_agent(
 		def.agent_id, def.name, def.prompt,
-		Array(def.setup_commands) if not def.setup_commands.is_empty() else null,
+		setup_commands_arg,
 		def.model,
 		def.tools_enabled
 	)

@@ -1034,7 +1034,6 @@ func _on_schedule_type_changed(index: int) -> void:
 	var trigger_type: int = trigger_type_option.get_selected_id()
 	var is_timer = (trigger_type == TriggerDefinition.TriggerType.TIMER)
 	var is_time = (trigger_type == TriggerDefinition.TriggerType.TIME)
-	var is_interval = is_timer
 	var is_weekly = (index == TriggerDefinition.ScheduleType.WEEKLY)
 	var is_monthly = (index == TriggerDefinition.ScheduleType.MONTHLY)
 	var is_yearly = (index == TriggerDefinition.ScheduleType.YEARLY)

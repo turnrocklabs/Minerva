@@ -21,8 +21,10 @@ var _initializing_pane := false
 ## Debounce timer for token estimation to avoid expensive recalculation on every keystroke
 var _token_estimation_timer: Timer
 
-## Compact button added to chat controls
+## Compact button in chat controls
 var _compact_button: Button
+## Whether archived chats are visible
+var _showing_archived: bool = false
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
@@ -1117,11 +1119,11 @@ func execute_regular_chat(text: String) -> void:
 			add_child(dialog)
 			dialog.popup_centered()
 			# ConfirmationDialog emits confirmed or canceled
-			var compacted := false
-			dialog.confirmed.connect(func(): compacted = true)
+			var compacted := {"value": false}
+			dialog.confirmed.connect(func(): compacted["value"] = true)
 			await dialog.visibility_changed  # Wait for dialog to close
 			dialog.queue_free()
-			if compacted:
+			if compacted["value"]:
 				await compact_chat(history)
 				if history.VBox:
 					history.VBox.render_history(history)
@@ -1972,6 +1974,9 @@ func _ready():
 	_token_estimation_timer.timeout.connect(_on_token_estimation_timer_timeout)
 	add_child(_token_estimation_timer)
 
+	# Apply archive filter after all chats are loaded (deferred so tabs exist)
+	call_deferred("_apply_archive_filter")
+
 
 ## Accept Note drops on the chat tab bar to link notes to chats.
 func _can_drop_note_on_chat(_at_position: Vector2, data: Variant) -> bool:
@@ -2207,6 +2212,49 @@ func _on_compact_pressed() -> void:
 			"Not enough messages to compact (need more than %d)" % (AGENT_KEEP_RECENT_MESSAGES + 1),
 			ToastNotification.Type.INFO
 		)
+
+
+func open_ledger_browser() -> void:
+	%LedgerBrowser.open(false)
+
+
+func archive_current_chat() -> void:
+	if SingletonObject.ChatList.is_empty():
+		return
+	var idx: int = current_tab
+	if idx < 0 or idx >= SingletonObject.ChatList.size():
+		return
+	var history: ServiceHistory = SingletonObject.ChatList[idx]
+	if history.Archived:
+		history.Archived = false
+		SingletonObject.create_toast_notification("Chat restored: %s" % history.HistoryName)
+	else:
+		history.Archived = true
+		SingletonObject.create_toast_notification("Chat archived: %s" % history.HistoryName)
+	_apply_archive_filter()
+
+
+func set_show_archived(show_archived: bool) -> void:
+	_showing_archived = show_archived
+	_apply_archive_filter()
+
+
+func _apply_archive_filter() -> void:
+	for i in range(SingletonObject.ChatList.size()):
+		var history: ServiceHistory = SingletonObject.ChatList[i]
+		if i < get_tab_count():
+			# Hide archived tabs unless showing archived
+			if history.Archived and not _showing_archived:
+				set_tab_hidden(i, true)
+			else:
+				set_tab_hidden(i, false)
+	# If current tab is now hidden, switch to first visible tab
+	if current_tab >= 0 and current_tab < get_tab_count() and is_tab_hidden(current_tab):
+		for i in range(get_tab_count()):
+			if not is_tab_hidden(i):
+				current_tab = i
+				return
+
 
 
 func _update_compact_button() -> void:

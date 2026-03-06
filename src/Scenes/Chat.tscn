@@ -1,8 +1,9 @@
-[gd_scene load_steps=41 format=3 uid="uid://gux15c8l66u7"]
+[gd_scene load_steps=42 format=3 uid="uid://gux15c8l66u7"]
 
 [ext_resource type="Script" uid="uid://bl3o8akse3agn" path="res://Scripts/UI/Views/ChatPane.gd" id="1_2uf7u"]
 [ext_resource type="Script" uid="uid://dxytye5uwyapu" path="res://Scripts/UI/Controls/PersistentWindow.gd" id="1_8tijg"]
 [ext_resource type="PackedScene" uid="uid://bdgef0ru6o5ux" path="res://Scenes/windows/AISettings.tscn" id="1_qlmlm"]
+[ext_resource type="PackedScene" path="res://Scenes/windows/LedgerBrowserWindow.tscn" id="1_ledger"]
 [ext_resource type="Script" uid="uid://ty3sh2c0quor" path="res://Scenes/chat.gd" id="1_qs864"]
 [ext_resource type="Texture2D" uid="uid://cnudc2tu7nyln" path="res://assets/icons/plus_icons/add_24.svg" id="3_pputi"]
 [ext_resource type="Texture2D" uid="uid://b3f3ih713476n" path="res://assets/icons/clone_chat_24.png" id="4_fsmu5"]
@@ -99,6 +100,10 @@ line_folding = true
 layout_mode = 2
 
 [node name="AISettings" parent="." instance=ExtResource("1_qlmlm")]
+unique_name_in_owner = true
+visible = false
+
+[node name="LedgerBrowser" parent="." instance=ExtResource("1_ledger")]
 unique_name_in_owner = true
 visible = false
 

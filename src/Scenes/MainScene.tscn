@@ -69,6 +69,7 @@
 [ext_resource type="Texture2D" uid="uid://d5168e401a07" path="res://assets/icons/undo_icons/redo_arrow.png" id="68_redo1"]
 [ext_resource type="Texture2D" uid="uid://eu5n264nx6h8" path="res://assets/icons/undo_icons/redo_arrow_48.png" id="69_redo2"]
 [ext_resource type="Texture2D" uid="uid://d14ff0fa4a1cf" path="res://assets/icons/undo_icons/redo_arrow_64.png" id="70_redo3"]
+[ext_resource type="Texture2D" uid="uid://cm8qe32jgwcgs" path="res://assets/icons/bookmark.svg" id="71_ledgr"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -662,6 +663,12 @@ tooltip_text = "Disable all notes in all current tabs"
 text = "Enable All"
 flat = true
 
+[node name="btnLedger" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 8
+tooltip_text = "Browse compaction ledger & archives"
+icon = ExtResource("71_ledgr")
+
 [node name="btnDrawer" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer" unique_id=318955679]
 layout_mode = 2
 size_flags_horizontal = 8
@@ -876,6 +883,7 @@ visible = false
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="NewThreadPopup" method="_on_btn_new_tab_pressed" binds= [false]]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_tab_clicked"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnLedger" to="." method="_on_btn_ledger_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddNote" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddShelf" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_shelf_pressed"]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsDrawer" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsDrawer" method="_on_active_tab_rearranged"]

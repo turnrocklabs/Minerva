@@ -653,7 +653,6 @@ func _most_recent_scheduled_time(trig: TriggerDefinition) -> String:
 			var godot_wd: int = check_dt["weekday"]
 			var our_wd: int = (godot_wd + 6) % 7
 			if our_wd in trig.schedule_days:
-				var check_hhmm := "%02d:%02d" % [check_dt["hour"], check_dt["minute"]]
 				# If it's today, only if we're past the schedule time
 				if days_back == 0 and now_hhmm < trig.schedule_time:
 					continue
