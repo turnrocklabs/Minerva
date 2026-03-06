@@ -349,6 +349,9 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 	print("[ChatPane] generate_content_from_provider called, provider: %s" % history.provider.provider_name)
 	var bot_response
 
+	# Set chat_id on provider for budget enforcement
+	history.provider.chat_id = history.HistoryId
+
 	# Append the optional parameters for OpenAI models, send request and wait for the response
 	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is OpenAIImageProviderScript:
 		var optional_params = {
@@ -362,6 +365,10 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 	else:
 		bot_response = await history.provider.generate_content(history_list)
 		print("[ChatPane] Non-OpenAI generate_content returned")
+
+	# Record cost with chat context
+	if bot_response and SingletonObject.cost_tracker:
+		SingletonObject.cost_tracker.record_chat_cost(bot_response, history.HistoryId)
 
 	print("[ChatPane] generate_content_from_provider returning bot_response (null=%s)" % (bot_response == null))
 	return bot_response
@@ -626,7 +633,7 @@ func _format_with_system_prompt_handling(chat: ChatHistoryItem, provider: BasePr
 	# Skip system prompt messages when agent mode is enabled OR provider doesn't support system prompts
 	# (in agent mode, we set provider.system_prompt separately)
 	if chat.Role == ChatHistoryItem.ChatRole.SYSTEM:
-		if agent_mode or not provider.supports_system_prompt:
+		if agent_mode or provider.supports_system_prompt:
 			return null  # Don't include system message in history, we handle it separately
 
 	# If provider doesn't support system prompts and this is the first user message, prepend system prompt
@@ -746,6 +753,10 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	var history_list = await create_prompt(chi, false, null, predicate)
 
+	# Track this request so the stop button works
+	_active_chat_requests += 1
+	audio_stop_1.disabled = false
+
 	# Ensure rendered_node exists (may have been freed if message was deleted)
 	if not is_instance_valid(existing_response.rendered_node):
 		existing_response.rendered_node = history.VBox.add_history_item(existing_response)
@@ -755,7 +766,12 @@ func regenerate_response(chi: ChatHistoryItem):
 	var bot_response = await history.provider.generate_content(history_list)
 
 	# if there was an error with the request
-	if not bot_response: return
+	if not bot_response:
+		_active_chat_requests -= 1
+		if _active_chat_requests <= 0:
+			_active_chat_requests = 0
+			audio_stop_1.disabled = true
+		return
 
 	if bot_response.id: existing_response.Id = bot_response.id
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
@@ -803,6 +819,11 @@ func regenerate_response(chi: ChatHistoryItem):
 
 		SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
 		SingletonObject.detached_note_proxies.clear()
+
+	_active_chat_requests -= 1
+	if _active_chat_requests <= 0:
+		_active_chat_requests = 0
+		audio_stop_1.disabled = true
 
 
 func _on_chat_pressed():

@@ -1,4 +1,4 @@
-class_name AgentDefinition
+class_name SwarmAgentDefinition
 extends RefCounted
 ## Typed model for agent definitions, replacing untyped Dictionaries.
 ## Follows the MemoryThread pattern (RefCounted + Serialize/Deserialize).
@@ -179,8 +179,8 @@ func SerializeFull() -> Dictionary:
 
 
 ## Deserialize from a dictionary (handles both Core and full dicts).
-static func Deserialize(data: Dictionary) -> AgentDefinition:
-	var def := AgentDefinition.new(data.get("agent_id", ""))
+static func Deserialize(data: Dictionary) -> SwarmAgentDefinition:
+	var def := SwarmAgentDefinition.new(data.get("agent_id", ""))
 	def.name = data.get("name", "")
 	def.prompt = data.get("prompt", "")
 	def.model = data.get("model", "")

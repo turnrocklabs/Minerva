@@ -105,6 +105,9 @@ func _ready():
 	# Defer to next frame to avoid AudioServer race condition crash
 	call_deferred("set_microphone_option_menu", SingletonObject.get_microphone())
 
+	# Create custom models tab (after scene tree is ready)
+	call_deferred("_create_custom_models_tab")
+
 	if SingletonObject.config_has_saved_section("Experimental"):
 		var enable_exp: bool = SingletonObject.config_file.get_value("Experimental", "enabled")
 		_on_experimental_check_button_toggled(enable_exp)
@@ -237,6 +240,7 @@ func _on_about_to_popup():
 	populate_output_devices_button()
 	_sync_provider_checkboxes()
 	_populate_openrouter_models()
+	_populate_custom_models()
 
 
 ## Sync provider checkbox states with SingletonObject enabled state
@@ -795,3 +799,631 @@ func _on_claudecode_provider_toggled(toggled_on: bool) -> void:
 	SingletonObject.set_provider_enabled(SingletonObject.API_PROVIDER.CLAUDE_CODE, toggled_on)
 
 #endregion Provider toggles
+
+
+#region Custom Models Tab
+
+var _custom_models_list_container: VBoxContainer
+var _custom_models_tab: VBoxContainer
+
+## Build the Custom Models tab programmatically and add to the TabContainer
+func _create_custom_models_tab() -> void:
+	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
+	if not tab_container:
+		return
+
+	_custom_models_tab = VBoxContainer.new()
+	_custom_models_tab.name = "Models"
+
+	var margin := MarginContainer.new()
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	_custom_models_tab.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	margin.add_child(vbox)
+
+	var desc := Label.new()
+	desc.text = "Browse and add models from each provider. Built-in models are always available."
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(desc)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vbox.add_child(scroll)
+
+	_custom_models_list_container = VBoxContainer.new()
+	_custom_models_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_custom_models_list_container)
+
+	var sep := HSeparator.new()
+	vbox.add_child(sep)
+
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.add_theme_constant_override("separation", 8)
+
+	var browse_anthropic_btn := Button.new()
+	browse_anthropic_btn.text = "Anthropic"
+	browse_anthropic_btn.tooltip_text = "Browse available Anthropic models"
+	browse_anthropic_btn.pressed.connect(_on_browse_provider_pressed.bind("anthropic"))
+	btn_hbox.add_child(browse_anthropic_btn)
+
+	var browse_openai_btn := Button.new()
+	browse_openai_btn.text = "OpenAI"
+	browse_openai_btn.tooltip_text = "Browse available OpenAI models"
+	browse_openai_btn.pressed.connect(_on_browse_provider_pressed.bind("openai"))
+	btn_hbox.add_child(browse_openai_btn)
+
+	var browse_google_btn := Button.new()
+	browse_google_btn.text = "Google"
+	browse_google_btn.tooltip_text = "Browse available Google AI models"
+	browse_google_btn.pressed.connect(_on_browse_provider_pressed.bind("google"))
+	btn_hbox.add_child(browse_google_btn)
+
+	var refresh_btn := Button.new()
+	refresh_btn.text = "Ollama"
+	refresh_btn.tooltip_text = "Re-discover models from local Ollama server"
+	refresh_btn.pressed.connect(_on_refresh_ollama_pressed)
+	btn_hbox.add_child(refresh_btn)
+
+	var add_btn := Button.new()
+	add_btn.text = "Manual..."
+	add_btn.tooltip_text = "Add a model by entering details manually"
+	add_btn.pressed.connect(_on_custom_add_model_pressed)
+	btn_hbox.add_child(add_btn)
+
+	vbox.add_child(btn_hbox)
+
+	tab_container.add_child(_custom_models_tab)
+
+
+func _populate_custom_models() -> void:
+	if not _custom_models_list_container:
+		return
+
+	for child in _custom_models_list_container.get_children():
+		child.queue_free()
+
+	# Collect models from all non-OpenRouter managers
+	var sections: Array[Dictionary] = [
+		{"label": "Anthropic", "manager": SingletonObject.anthropic_model_manager, "name_key": "model_name"},
+		{"label": "OpenAI", "manager": SingletonObject.openai_model_manager, "name_key": "model_name"},
+		{"label": "Google", "manager": SingletonObject.google_model_manager, "name_key": "model_name"},
+		{"label": "Ollama (discovered)", "manager": SingletonObject.local_model_manager, "name_key": "model_name"},
+	]
+
+	var any_models := false
+	for section in sections:
+		var manager = section["manager"]
+		if manager == null or manager.models.is_empty():
+			continue
+
+		any_models = true
+
+		# Section header
+		var header := Label.new()
+		header.text = section["label"]
+		header.add_theme_font_size_override("font_size", 14)
+		_custom_models_list_container.add_child(header)
+
+		for config in manager.models:
+			var row := HBoxContainer.new()
+			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+			var name_label := Label.new()
+			name_label.text = config.get("display_name", config.get("model_name", ""))
+			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			name_label.size_flags_stretch_ratio = 1.5
+			row.add_child(name_label)
+
+			var model_id_label := Label.new()
+			model_id_label.text = config.get("model_name", config.get("api_model_id", ""))
+			model_id_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			model_id_label.modulate.a = 0.6
+			row.add_child(model_id_label)
+
+			var cost_label := Label.new()
+			cost_label.text = "$%.2f/$%.2f" % [config.get("input_token_cost", 0.0), config.get("output_token_cost", 0.0)]
+			cost_label.custom_minimum_size.x = 80
+			row.add_child(cost_label)
+
+			var model_id: int = config.get("id", 0)
+
+			var edit_btn := Button.new()
+			edit_btn.text = "Edit"
+			edit_btn.pressed.connect(_on_custom_edit_model.bind(model_id, manager))
+			row.add_child(edit_btn)
+
+			var del_btn := Button.new()
+			del_btn.text = "Delete"
+			del_btn.pressed.connect(_on_custom_delete_model.bind(model_id, manager, config.get("display_name", "")))
+			row.add_child(del_btn)
+
+			_custom_models_list_container.add_child(row)
+
+		# Add spacing between sections
+		var spacer := HSeparator.new()
+		spacer.modulate.a = 0.3
+		_custom_models_list_container.add_child(spacer)
+
+	if not any_models:
+		var empty_label := Label.new()
+		empty_label.text = "No custom models configured. Use the buttons below to browse or add models."
+		empty_label.modulate.a = 0.5
+		_custom_models_list_container.add_child(empty_label)
+
+
+func _on_custom_add_model_pressed() -> void:
+	_show_custom_model_dialog()
+
+
+func _on_custom_edit_model(model_id: int, manager) -> void:
+	var config: Dictionary = manager.get_model(model_id)
+	if not config.is_empty():
+		_show_custom_model_dialog(config, manager)
+
+
+func _on_custom_delete_model(model_id: int, manager, display_name: String) -> void:
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Delete Model"
+	dialog.dialog_text = "Remove \"%s\"?" % display_name
+	dialog.content_scale_factor = get_tree().root.content_scale_factor
+	dialog.confirmed.connect(func():
+		manager.remove_model(model_id)
+		_populate_custom_models()
+	)
+	dialog.canceled.connect(func(): dialog.queue_free())
+	dialog.confirmed.connect(func(): dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+func _on_refresh_ollama_pressed() -> void:
+	SingletonObject.discover_ollama_models()
+	# Repopulate after a short delay to let async discovery complete
+	get_tree().create_timer(2.0).timeout.connect(_populate_custom_models)
+
+
+## Show add/edit dialog for a custom model.
+func _show_custom_model_dialog(existing_config: Dictionary = {}, existing_manager = null) -> void:
+	var is_edit := not existing_config.is_empty()
+	var win := Window.new()
+	win.title = "Edit Custom Model" if is_edit else "Add Custom Model"
+	var scale: float = get_tree().root.content_scale_factor
+	win.content_scale_factor = scale
+	win.size = Vector2i(Vector2(420, 440) * scale)
+	win.close_requested.connect(func(): win.queue_free())
+
+	var margin := MarginContainer.new()
+	margin.anchors_preset = Control.PRESET_FULL_RECT
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	win.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	# Provider selector (only for new models)
+	var provider_option: OptionButton
+	if not is_edit:
+		var prov_label := Label.new()
+		prov_label.text = "Provider"
+		vbox.add_child(prov_label)
+		provider_option = OptionButton.new()
+		provider_option.add_item("Anthropic", 0)
+		provider_option.add_item("OpenAI", 1)
+		provider_option.add_item("Google", 2)
+		provider_option.add_item("Ollama (Local)", 3)
+		vbox.add_child(provider_option)
+
+	# Model Name / API ID
+	var id_label := Label.new()
+	id_label.text = "Model Name / API ID"
+	vbox.add_child(id_label)
+	var id_edit := LineEdit.new()
+	id_edit.text = existing_config.get("model_name", existing_config.get("api_model_id", ""))
+	id_edit.placeholder_text = "e.g. claude-opus-4-6, gpt-5.3, gemini-4-pro"
+	vbox.add_child(id_edit)
+
+	# Display Name
+	var dn_label := Label.new()
+	dn_label.text = "Display Name"
+	vbox.add_child(dn_label)
+	var dn_edit := LineEdit.new()
+	dn_edit.text = existing_config.get("display_name", "")
+	vbox.add_child(dn_edit)
+
+	# Short Name
+	var sn_label := Label.new()
+	sn_label.text = "Short Name (3-4 chars)"
+	vbox.add_child(sn_label)
+	var sn_edit := LineEdit.new()
+	sn_edit.text = existing_config.get("short_name", "")
+	sn_edit.max_length = 5
+	vbox.add_child(sn_edit)
+
+	# Costs
+	var cost_hbox := HBoxContainer.new()
+	cost_hbox.add_theme_constant_override("separation", 8)
+	var in_label := Label.new()
+	in_label.text = "In $/M:"
+	cost_hbox.add_child(in_label)
+	var in_spin := SpinBox.new()
+	in_spin.min_value = 0.0
+	in_spin.max_value = 1000.0
+	in_spin.step = 0.01
+	in_spin.value = existing_config.get("input_token_cost", 0.0)
+	in_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cost_hbox.add_child(in_spin)
+	var out_label := Label.new()
+	out_label.text = "Out $/M:"
+	cost_hbox.add_child(out_label)
+	var out_spin := SpinBox.new()
+	out_spin.min_value = 0.0
+	out_spin.max_value = 1000.0
+	out_spin.step = 0.01
+	out_spin.value = existing_config.get("output_token_cost", 0.0)
+	out_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cost_hbox.add_child(out_spin)
+	vbox.add_child(cost_hbox)
+
+	# Reasoning model checkbox
+	var reasoning_check := CheckButton.new()
+	reasoning_check.text = "Reasoning model"
+	reasoning_check.button_pressed = existing_config.get("is_reasoning_model", false)
+	vbox.add_child(reasoning_check)
+
+	# Spacer
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(spacer)
+
+	# Buttons
+	var sep := HSeparator.new()
+	vbox.add_child(sep)
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.add_theme_constant_override("separation", 8)
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.pressed.connect(func(): win.queue_free())
+	btn_hbox.add_child(cancel_btn)
+	var save_btn := Button.new()
+	save_btn.text = "Save"
+	save_btn.pressed.connect(func():
+		var model_name := id_edit.text.strip_edges()
+		if model_name.is_empty():
+			return
+
+		var new_config := {
+			"model_name": model_name,
+			"display_name": dn_edit.text.strip_edges() if not dn_edit.text.strip_edges().is_empty() else model_name,
+			"short_name": sn_edit.text.strip_edges() if not sn_edit.text.strip_edges().is_empty() else model_name.left(3).to_upper(),
+			"input_token_cost": in_spin.value,
+			"output_token_cost": out_spin.value,
+			"is_reasoning_model": reasoning_check.button_pressed,
+		}
+
+		# For Anthropic, also set api_model_id (used by generate_content)
+		if is_edit:
+			if existing_config.has("api_model_id"):
+				new_config["api_model_id"] = model_name
+			existing_manager.update_model(existing_config["id"], new_config)
+		else:
+			var manager = _get_manager_for_provider_index(provider_option.get_selected_id())
+			if provider_option.get_selected_id() == 0:  # Anthropic needs api_model_id
+				new_config["api_model_id"] = model_name
+			manager.add_model(new_config)
+
+		_populate_custom_models()
+		win.queue_free()
+	)
+	btn_hbox.add_child(save_btn)
+	vbox.add_child(btn_hbox)
+
+	add_child(win)
+	win.popup_centered()
+
+
+func _get_manager_for_provider_index(idx: int):
+	match idx:
+		0: return SingletonObject.anthropic_model_manager
+		1: return SingletonObject.openai_model_manager
+		2: return SingletonObject.google_model_manager
+		3: return SingletonObject.local_model_manager
+	return SingletonObject.anthropic_model_manager
+
+
+func _on_browse_provider_pressed(provider_key: String) -> void:
+	var api_key: String
+	var manager
+	var provider_label: String
+
+	match provider_key:
+		"anthropic":
+			api_key = get_api_key(SingletonObject.API_PROVIDER.ANTHROPIC)
+			manager = SingletonObject.anthropic_model_manager
+			provider_label = "Anthropic"
+		"openai":
+			api_key = get_api_key(SingletonObject.API_PROVIDER.OPENAI)
+			manager = SingletonObject.openai_model_manager
+			provider_label = "OpenAI"
+		"google":
+			api_key = get_api_key(SingletonObject.API_PROVIDER.GOOGLE)
+			manager = SingletonObject.google_model_manager
+			provider_label = "Google"
+
+	if api_key.strip_edges().is_empty():
+		SingletonObject.ErrorDisplay("No API Key", "Please set your %s API key in the API Keys tab first." % provider_label, self)
+		return
+
+	_show_provider_browse_dialog(provider_key, provider_label, api_key, manager)
+
+
+func _show_provider_browse_dialog(provider_key: String, provider_label: String, api_key: String, manager) -> void:
+	var win := Window.new()
+	win.title = "Browse %s Models" % provider_label
+	var ui_scale: float = get_tree().root.content_scale_factor
+	win.content_scale_factor = ui_scale
+	win.size = Vector2i(Vector2(620, 520) * ui_scale)
+	win.close_requested.connect(func(): win.queue_free())
+
+	var margin := MarginContainer.new()
+	margin.anchors_preset = Control.PRESET_FULL_RECT
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	win.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	# Search bar
+	var search_hbox := HBoxContainer.new()
+	var search_edit := LineEdit.new()
+	search_edit.placeholder_text = "Search models..."
+	search_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	search_hbox.add_child(search_edit)
+	var refresh_btn := Button.new()
+	refresh_btn.text = "Refresh"
+	search_hbox.add_child(refresh_btn)
+	vbox.add_child(search_hbox)
+
+	# Model list (multi-select)
+	var item_list := ItemList.new()
+	item_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	item_list.select_mode = ItemList.SELECT_MULTI
+	vbox.add_child(item_list)
+
+	# Details label
+	var details_label := Label.new()
+	details_label.text = "Select one or more models to add."
+	details_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details_label.custom_minimum_size.y = 40
+	vbox.add_child(details_label)
+
+	# Status label
+	var status_label := Label.new()
+	status_label.text = "Loading models..."
+	status_label.modulate.a = 0.6
+	vbox.add_child(status_label)
+
+	# Buttons
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
+	btn_hbox.add_theme_constant_override("separation", 8)
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.pressed.connect(func(): win.queue_free())
+	btn_hbox.add_child(cancel_btn)
+	var add_btn := Button.new()
+	add_btn.text = "Add Selected"
+	add_btn.disabled = true
+	btn_hbox.add_child(add_btn)
+	vbox.add_child(btn_hbox)
+
+	add_child(win)
+	win.popup_centered()
+
+	var all_models: Array = []
+
+	# Filter function
+	var _filter_list := func(search_text: String):
+		item_list.clear()
+		var query := search_text.strip_edges().to_lower()
+		for i in range(all_models.size()):
+			var m: Dictionary = all_models[i]
+			var display: String = m.get("display_name", "")
+			var model_id: String = m.get("model_name", "")
+			if query.is_empty() or query in display.to_lower() or query in model_id.to_lower():
+				item_list.add_item("%s  —  %s" % [display, model_id])
+				item_list.set_item_metadata(item_list.get_item_count() - 1, i)
+
+	# Selection handler — update details and enable add button
+	item_list.multi_selected.connect(func(_idx: int, _selected: bool):
+		var selected := item_list.get_selected_items()
+		add_btn.disabled = selected.is_empty()
+		if selected.size() == 1:
+			var model_idx: int = item_list.get_item_metadata(selected[0])
+			var m: Dictionary = all_models[model_idx]
+			details_label.text = "%s\nID: %s" % [m.get("display_name", ""), m.get("model_name", "")]
+		elif selected.size() > 1:
+			details_label.text = "%d models selected" % selected.size()
+		else:
+			details_label.text = "Select one or more models to add."
+	)
+
+	# Add button — add all selected models
+	add_btn.pressed.connect(func():
+		var selected := item_list.get_selected_items()
+		if selected.is_empty():
+			return
+		var added := 0
+		var skipped := 0
+		for sel_idx in selected:
+			var model_idx: int = item_list.get_item_metadata(sel_idx)
+			var m: Dictionary = all_models[model_idx].duplicate()
+			# Check if already added
+			var existing: Dictionary = manager.get_model_by_name("model_name", m.get("model_name", ""))
+			if not existing.is_empty():
+				skipped += 1
+				continue
+			# Anthropic uses api_model_id for the API call
+			if provider_key == "anthropic":
+				m["api_model_id"] = m["model_name"]
+			manager.add_model(m)
+			added += 1
+		_populate_custom_models()
+		if skipped > 0:
+			details_label.text = "Added %d model(s), %d already existed." % [added, skipped]
+		else:
+			win.queue_free()
+	)
+
+	# Search filter
+	search_edit.text_changed.connect(func(text: String): _filter_list.call(text))
+
+	# Fetch models
+	var _do_fetch := func():
+		status_label.text = "Loading models..."
+		add_btn.disabled = true
+		var fetched := await _fetch_provider_models(provider_key, api_key)
+		all_models.clear()
+		all_models.append_array(fetched)
+		if all_models.is_empty():
+			status_label.text = "No models found or API error."
+		else:
+			status_label.text = "%d models available" % all_models.size()
+			_filter_list.call(search_edit.text)
+
+	refresh_btn.pressed.connect(func(): _do_fetch.call())
+	_do_fetch.call()
+
+
+## Fetch available models from a provider's API. Returns array of config dicts.
+func _fetch_provider_models(provider_key: String, api_key: String) -> Array:
+	var http := HTTPRequest.new()
+	add_child(http)
+
+	var url: String
+	var headers: Array
+
+	match provider_key:
+		"anthropic":
+			url = "https://api.anthropic.com/v1/models?limit=100"
+			headers = [
+				"x-api-key: %s" % api_key,
+				"anthropic-version: 2023-06-01",
+			]
+		"openai":
+			url = "https://api.openai.com/v1/models"
+			headers = [
+				"Authorization: Bearer %s" % api_key,
+			]
+		"google":
+			url = "https://generativelanguage.googleapis.com/v1beta/models?key=%s&pageSize=100" % api_key
+			headers = []
+
+	var err := http.request(url, headers, HTTPClient.METHOD_GET)
+	if err != OK:
+		http.queue_free()
+		return []
+
+	var result: Array = await http.request_completed
+	http.queue_free()
+
+	var response_code: int = result[1]
+	var body: PackedByteArray = result[3]
+
+	if response_code < 200 or response_code > 299:
+		push_warning("[PreferencesPopup] %s API returned %d" % [provider_key, response_code])
+		return []
+
+	var data = JSON.parse_string(body.get_string_from_utf8())
+	if not data is Dictionary:
+		return []
+
+	var models: Array = []
+
+	match provider_key:
+		"anthropic":
+			for m in data.get("data", []):
+				if not m is Dictionary:
+					continue
+				var model_id: String = m.get("id", "")
+				var display: String = m.get("display_name", model_id)
+				models.append({
+					"model_name": model_id,
+					"display_name": display,
+					"short_name": _generate_provider_short_name(display, "A"),
+				})
+		"openai":
+			for m in data.get("data", []):
+				if not m is Dictionary:
+					continue
+				var model_id: String = m.get("id", "")
+				# Filter to chat-capable models (skip embeddings, tts, whisper, dall-e, etc.)
+				if _is_openai_chat_model(model_id):
+					models.append({
+						"model_name": model_id,
+						"display_name": model_id,
+						"short_name": _generate_provider_short_name(model_id, "OA"),
+					})
+			# Sort alphabetically
+			models.sort_custom(func(a, b): return a["model_name"] < b["model_name"])
+		"google":
+			for m in data.get("models", []):
+				if not m is Dictionary:
+					continue
+				var full_name: String = m.get("name", "")
+				var model_id := full_name.replace("models/", "")
+				var display: String = m.get("displayName", model_id)
+				# Filter to generative models
+				var methods: Array = m.get("supportedGenerationMethods", [])
+				if "generateContent" in methods:
+					models.append({
+						"model_name": model_id,
+						"display_name": display,
+						"short_name": _generate_provider_short_name(display, "G"),
+					})
+
+	return models
+
+
+## Filter OpenAI models to only chat-capable ones
+func _is_openai_chat_model(model_id: String) -> bool:
+	# Exclude known non-chat model prefixes
+	var exclude_prefixes := ["tts-", "whisper-", "dall-e-", "text-embedding-", "babbage-", "davinci-", "moderation"]
+	for prefix in exclude_prefixes:
+		if model_id.begins_with(prefix):
+			return false
+	# Exclude fine-tune snapshots (contain "ft:" or long hash suffixes)
+	if "ft:" in model_id:
+		return false
+	return true
+
+
+## Generate a short name from a model display name
+func _generate_provider_short_name(display: String, fallback: String) -> String:
+	var words := display.replace("-", " ").replace(".", " ").split(" ")
+	var short := ""
+	for w in words:
+		if not w.is_empty() and w[0].to_upper() != w[0].to_lower():  # is a letter
+			short += w[0].to_upper()
+		if short.length() >= 4:
+			break
+	return short if not short.is_empty() else fallback
+
+#endregion Custom Models Tab

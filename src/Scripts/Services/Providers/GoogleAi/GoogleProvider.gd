@@ -430,6 +430,22 @@ func to_bot_response(data: Variant) -> BotResponse:
 
 
 # ============================================================================
+# Dynamic Model Factory
+# ============================================================================
+
+## Creates a configured GoogleProvider instance from a model config dictionary.
+## Config keys: model_name, display_name, short_name, input_token_cost, output_token_cost
+static func create_from_config(config: Dictionary) -> GoogleProvider:
+	var p := GoogleProvider.new()
+	p.model_name = config.get("model_name", p.model_name)
+	p.display_name = config.get("display_name", p.model_name)
+	p.short_name = config.get("short_name", "G")
+	p.input_token_cost = config.get("input_token_cost", 0.0)
+	p.output_token_cost = config.get("output_token_cost", 0.0)
+	return p
+
+
+# ============================================================================
 # Model Variants
 # ============================================================================
 

@@ -201,9 +201,9 @@ func _rebuild_provider_dropdown() -> void:
 ## Creates a provider instance for the given model key, applying config for dynamic models
 func _get_provider_instance(key: int) -> BaseProvider:
 	if key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-		var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(key)
-		if not config.is_empty():
-			return OpenRouterProvider.create_from_config(config)
+		var instance = SingletonObject.create_dynamic_provider(key)
+		if instance:
+			return instance
 	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key].new()
 
 

@@ -1,5 +1,5 @@
 extends SceneTree
-## Unit tests for AgentDefinition Serialize/Deserialize.
+## Unit tests for SwarmAgentDefinition Serialize/Deserialize.
 ## Run: godot --headless --path <minerva/src> --main-loop res://test/test_agent_definition.gd
 
 var _pass := 0
@@ -7,7 +7,7 @@ var _fail := 0
 
 
 func _initialize() -> void:
-	print("\n===== AgentDefinition Tests =====\n")
+	print("\n===== SwarmAgentDefinition Tests =====\n")
 
 	test_serialize_core_only()
 	test_serialize_full()
@@ -47,7 +47,7 @@ func _assert_eq(actual, expected, label: String) -> void:
 
 func test_serialize_core_only() -> void:
 	print("test_serialize_core_only:")
-	var def := AgentDefinition.new("test-id-123")
+	var def := SwarmAgentDefinition.new("test-id-123")
 	def.name = "Test Agent"
 	def.prompt = "You are a test agent"
 	def.model = "anthropic/claude-sonnet-4"
@@ -79,7 +79,7 @@ func test_serialize_core_only() -> void:
 
 func test_serialize_full() -> void:
 	print("test_serialize_full:")
-	var def := AgentDefinition.new("full-test")
+	var def := SwarmAgentDefinition.new("full-test")
 	def.name = "Full Agent"
 	def.prompt = "prompt"
 	def.address = "fullagent"
@@ -112,7 +112,7 @@ func test_serialize_full() -> void:
 
 func test_deserialize_core_roundtrip() -> void:
 	print("test_deserialize_core_roundtrip:")
-	var original := AgentDefinition.new("rt-core")
+	var original := SwarmAgentDefinition.new("rt-core")
 	original.name = "Roundtrip"
 	original.prompt = "test prompt"
 	original.model = "openai/gpt-4"
@@ -120,7 +120,7 @@ func test_deserialize_core_roundtrip() -> void:
 	original.setup_commands = ["npm install"]
 
 	var data := original.Serialize()
-	var restored := AgentDefinition.Deserialize(data)
+	var restored := SwarmAgentDefinition.Deserialize(data)
 
 	_assert_eq(restored.agent_id, "rt-core", "agent_id roundtrip")
 	_assert_eq(restored.name, "Roundtrip", "name roundtrip")
@@ -133,7 +133,7 @@ func test_deserialize_core_roundtrip() -> void:
 
 func test_deserialize_full_roundtrip() -> void:
 	print("test_deserialize_full_roundtrip:")
-	var original := AgentDefinition.new("rt-full")
+	var original := SwarmAgentDefinition.new("rt-full")
 	original.name = "Full RT"
 	original.prompt = "full prompt"
 	original.address = "fullrt"
@@ -145,7 +145,7 @@ func test_deserialize_full_roundtrip() -> void:
 	original.codetools_deny = ["curl POST"]
 
 	var data := original.SerializeFull()
-	var restored := AgentDefinition.Deserialize(data)
+	var restored := SwarmAgentDefinition.Deserialize(data)
 
 	_assert_eq(restored.agent_id, "rt-full", "agent_id")
 	_assert_eq(restored.address, "fullrt", "address roundtrip")
@@ -166,7 +166,7 @@ func test_deserialize_missing_swarm_defaults() -> void:
 		"prompt": "basic",
 		"tools_enabled": false,
 	}
-	var def := AgentDefinition.Deserialize(data)
+	var def := SwarmAgentDefinition.Deserialize(data)
 
 	_assert_eq(def.agent_id, "core-only", "agent_id")
 	_assert_eq(def.name, "Core Agent", "name")
@@ -191,7 +191,7 @@ func test_deserialize_old_backend_dict() -> void:
 		"tools_enabled": true,
 		"setup_commands": ["cd project", "git status"],
 	}
-	var def := AgentDefinition.Deserialize(data)
+	var def := SwarmAgentDefinition.Deserialize(data)
 
 	_assert_eq(def.agent_id, "agent_abc123", "agent_id from backend")
 	_assert_eq(def.name, "Code Reviewer", "name from backend")
@@ -206,7 +206,7 @@ func test_deserialize_old_backend_dict() -> void:
 
 func test_swarm_fields_not_in_serialize() -> void:
 	print("test_swarm_fields_not_in_serialize:")
-	var def := AgentDefinition.new("leak-test")
+	var def := SwarmAgentDefinition.new("leak-test")
 	def.name = "Leak Test"
 	def.prompt = "test"
 	def.address = "leaker"
@@ -232,12 +232,12 @@ func test_swarm_fields_not_in_serialize() -> void:
 
 func test_init_generates_id() -> void:
 	print("test_init_generates_id:")
-	var def := AgentDefinition.new()
+	var def := SwarmAgentDefinition.new()
 	_assert(not def.agent_id.is_empty(), "auto-generated id is not empty")
 	_assert(def.agent_id.length() == 64, "auto-generated id is SHA256 (64 chars)")
 
 
 func test_init_with_explicit_id() -> void:
 	print("test_init_with_explicit_id:")
-	var def := AgentDefinition.new("my-custom-id")
+	var def := SwarmAgentDefinition.new("my-custom-id")
 	_assert_eq(def.agent_id, "my-custom-id", "explicit id preserved")

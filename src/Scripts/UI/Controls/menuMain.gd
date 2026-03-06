@@ -238,6 +238,7 @@ func _setup_tools_menu() -> void:
 
 	tools_menu.add_separator()
 	tools_menu.add_item("Agents...", 102)
+	tools_menu.add_item("Spending...", 103)
 	tools_menu.add_separator()
 	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Refresh All Connections", 100)
@@ -270,6 +271,8 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_show_mcp_installer()
 		102:
 			_show_agent_manager()
+		103:
+			_show_spending_dashboard()
 
 
 func _show_agent_manager() -> void:
@@ -277,6 +280,16 @@ func _show_agent_manager() -> void:
 		_agent_manager_window = AgentManagerWindow.new()
 		get_tree().root.add_child(_agent_manager_window)
 	_agent_manager_window.popup_centered()
+
+
+var _spending_dashboard: SpendingDashboard = null
+
+func _show_spending_dashboard() -> void:
+	if not _spending_dashboard:
+		_spending_dashboard = SpendingDashboard.new()
+		get_tree().root.add_child(_spending_dashboard)
+	_spending_dashboard.refresh()
+	_spending_dashboard.popup_centered()
 
 
 ## Setup the Chats submenu for switching between Chat and Autocoder views

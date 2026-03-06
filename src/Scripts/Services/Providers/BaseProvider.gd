@@ -34,6 +34,9 @@ var output_token_cost: float = 0.0
 var token_cost: float:
 	get: return (input_token_cost + output_token_cost) / 2.0 / 1_000_000.0
 
+## Chat ID for budget enforcement (set by ChatPane before generate_content)
+var chat_id: String = ""
+
 ## Model capability flags - override in subclasses as needed
 var supports_temperature: bool = true
 var supports_top_p: bool = true
@@ -237,6 +240,17 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	timed_out = false
 	_request_generation += 1
 	var my_generation: int = _request_generation
+
+	# Budget enforcement: check before making the API call
+	if not chat_id.is_empty() and SingletonObject.cost_tracker:
+		var budget_status: Dictionary = SingletonObject.cost_tracker.check_budget(chat_id)
+		if budget_status.get("has_budget", false) and not budget_status.get("ok", true):
+			var spent: float = budget_status.get("spent", 0.0)
+			var budget: float = budget_status.get("budget", 0.0)
+			return RequestResults.from_error(
+				"Budget exceeded ($%.2f / $%.2f). Use minerva_extend_budget to add more funds." % [spent, budget]
+			)
+
 	# setup request object for the delta endpoint and append API key
 	var http_request: = HTTPRequest.new()
 	http_request.use_threads = true

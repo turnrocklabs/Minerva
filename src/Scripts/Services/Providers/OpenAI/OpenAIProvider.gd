@@ -355,6 +355,32 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 
 
 # ============================================================================
+# Dynamic Model Factory
+# ============================================================================
+
+## Creates a configured OpenAIProvider instance from a model config dictionary.
+## Config keys: model_name, display_name, short_name, reasoning_effort,
+##              input_token_cost, output_token_cost, is_reasoning_model
+static func create_from_config(config: Dictionary) -> OpenAIProvider:
+	var p := OpenAIProvider.new()
+	p.model_name = config.get("model_name", p.model_name)
+	p.display_name = config.get("display_name", p.model_name)
+	p.short_name = config.get("short_name", "OA")
+	p.reasoning_effort = config.get("reasoning_effort", "")
+	p.input_token_cost = config.get("input_token_cost", 0.0)
+	p.output_token_cost = config.get("output_token_cost", 0.0)
+	# Determine reasoning model status from config or infer from reasoning_effort
+	var is_reasoning: bool = config.get("is_reasoning_model", not p.reasoning_effort.is_empty())
+	p.is_reasoning_model = is_reasoning
+	if not is_reasoning:
+		p.supports_temperature = true
+		p.supports_top_p = true
+		p.supports_frequency_penalty = true
+		p.supports_presence_penalty = true
+	return p
+
+
+# ============================================================================
 # Model Variants - GPT-5.2 with different reasoning levels
 # ============================================================================
 

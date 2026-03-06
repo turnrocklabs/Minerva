@@ -329,6 +329,25 @@ func to_bot_response(data: Variant) -> BotResponse:
 
 
 # ============================================================================
+# Dynamic Model Factory
+# ============================================================================
+
+## Creates a configured AnthropicProvider instance from a model config dictionary.
+## Config keys: api_model_id, model_name, display_name, short_name, max_tokens,
+##              input_token_cost, output_token_cost
+static func create_from_config(config: Dictionary) -> AnthropicProvider:
+	var p := AnthropicProvider.new()
+	p.api_model_id = config.get("api_model_id", p.api_model_id)
+	p.model_name = config.get("model_name", p.model_name)
+	p.display_name = config.get("display_name", p.model_name)
+	p.short_name = config.get("short_name", "A")
+	p.max_tokens = config.get("max_tokens", p.max_tokens)
+	p.input_token_cost = config.get("input_token_cost", 0.0)
+	p.output_token_cost = config.get("output_token_cost", 0.0)
+	return p
+
+
+# ============================================================================
 # Model Variants
 # ============================================================================
 

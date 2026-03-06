@@ -1,13 +1,9 @@
 class_name OpenRouterModelManager
-extends RefCounted
+extends ProviderModelManager
+## OpenRouter-specific model manager with API model fetching.
 
-const CONFIG_PATH := "user://openrouter_models.json"
-const DYNAMIC_ID_BASE := 10000
-
-signal models_changed()
-
-var models: Array[Dictionary] = []
-var _next_id: int = DYNAMIC_ID_BASE
+const _CONFIG_PATH := "user://openrouter_models.json"
+const _DYNAMIC_ID_BASE := 10000
 
 const DEFAULTS := [
 	{"api_model_id": "z-ai/glm-4.7", "display_name": "GLM-4.7", "short_name": "GLM",
@@ -21,90 +17,13 @@ const DEFAULTS := [
 ]
 
 
-func load_config() -> void:
-	if not FileAccess.file_exists(CONFIG_PATH):
-		# First run — populate with defaults
-		for default_config in DEFAULTS:
-			var config: Dictionary = default_config.duplicate()
-			config["id"] = _next_id
-			_next_id += 1
-			models.append(config)
-		save_config()
-		return
-
-	var file := FileAccess.open(CONFIG_PATH, FileAccess.READ)
-	if not file:
-		push_error("[OpenRouterModelManager] Failed to open config: %s" % error_string(FileAccess.get_open_error()))
-		return
-
-	var json_text := file.get_as_text()
-	file.close()
-
-	var data = JSON.parse_string(json_text)
-	if data is Dictionary:
-		_next_id = data.get("next_id", DYNAMIC_ID_BASE)
-		var saved_models = data.get("models", [])
-		models.clear()
-		for m in saved_models:
-			if m is Dictionary and m.has("id") and m.has("api_model_id"):
-				models.append(m)
+func _init():
+	super(_CONFIG_PATH, _DYNAMIC_ID_BASE, DEFAULTS)
 
 
-func save_config() -> void:
-	var data := {
-		"next_id": _next_id,
-		"models": models,
-	}
-	var file := FileAccess.open(CONFIG_PATH, FileAccess.WRITE)
-	if not file:
-		push_error("[OpenRouterModelManager] Failed to save config: %s" % error_string(FileAccess.get_open_error()))
-		return
-	file.store_string(JSON.stringify(data, "\t"))
-	file.close()
-
-
-func add_model(config: Dictionary) -> int:
-	var model_config := config.duplicate()
-	model_config["id"] = _next_id
-	_next_id += 1
-	models.append(model_config)
-	save_config()
-	models_changed.emit()
-	return model_config["id"]
-
-
-func update_model(model_id: int, config: Dictionary) -> void:
-	for i in range(models.size()):
-		if models[i].get("id") == model_id:
-			var updated := config.duplicate()
-			updated["id"] = model_id
-			models[i] = updated
-			save_config()
-			models_changed.emit()
-			return
-
-
-func remove_model(model_id: int) -> void:
-	for i in range(models.size()):
-		if models[i].get("id") == model_id:
-			models.remove_at(i)
-			save_config()
-			models_changed.emit()
-			return
-
-
-func get_model(model_id: int) -> Dictionary:
-	for m in models:
-		if m.get("id") == model_id:
-			return m
-	return {}
-
-
+## Convenience wrapper for backward compatibility
 func get_model_by_api_id(api_model_id: String) -> Dictionary:
-	for m in models:
-		if m.get("api_model_id") == api_model_id:
-			return m
-	return {}
+	return get_model_by_name("api_model_id", api_model_id)
 
 
 ## Fetch available models from the OpenRouter API.

@@ -267,7 +267,10 @@ func _update_tokens_cost() -> void:
 			history_item.EstimatedTokenCost, total_tokens, cost_text
 		]
 	else:
-		tokens_cost.text = "%s" % total_tokens
+		if cost_dollars > 0:
+			tokens_cost.text = "%s (%s)" % [total_tokens, cost_text]
+		else:
+			tokens_cost.text = "%s" % total_tokens
 		tokens_cost.tooltip_text = "Input: %d, Output: %d (%s)" % [
 			history_item.InputTokens, history_item.OutputTokens, cost_text
 		]

@@ -499,11 +499,11 @@ func _populate_model_dropdown(provider_id: int) -> void:
 
 		var display_name: String
 		if model_key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-			var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(model_key)
-			if not config.is_empty():
-				display_name = config.get("display_name", config.get("api_model_id", "OpenRouter %d" % model_key))
+			var dynamic_instance = SingletonObject.create_dynamic_provider(model_key)
+			if dynamic_instance:
+				display_name = dynamic_instance.display_name
 			else:
-				display_name = "OpenRouter %d" % model_key
+				display_name = "Model %d" % model_key
 		else:
 			var instance: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_key].new()
 			display_name = instance.display_name if instance else "Model %d" % model_key

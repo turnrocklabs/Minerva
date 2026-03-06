@@ -241,6 +241,34 @@ func estimate_image_tokens_from_prompt(input: Array[Variant]) -> float:
 					image_tokens += (ceil(img.get_size().x / 512.0) * ceil(img.get_size().y / 512.0)) * 170 + 85
 	return image_tokens
 
+# ============================================================================
+# Dynamic Model Factory
+# ============================================================================
+
+## Creates a configured LocalProvider instance from a model config dictionary.
+## Config keys: model_name, display_name, short_name, max_tokens,
+##              input_token_cost, output_token_cost, default_context,
+##              requires_default_system_prompt, default_system_prompt
+static func create_from_config(config: Dictionary) -> LocalProvider:
+	var p := LocalProvider.new()
+	p.model_name = config.get("model_name", p.model_name)
+	p.display_name = config.get("display_name", p.model_name)
+	p.short_name = config.get("short_name", "OL")
+	p.max_tokens = config.get("max_tokens", p.max_tokens)
+	p.input_token_cost = config.get("input_token_cost", 0.0)
+	p.output_token_cost = config.get("output_token_cost", 0.0)
+	if config.has("default_context"):
+		p.default_context = config.get("default_context")
+	if config.get("requires_default_system_prompt", false):
+		p.requires_default_system_prompt = true
+		p.default_system_prompt = config.get("default_system_prompt", "")
+	return p
+
+
+# ============================================================================
+# Model Variants
+# ============================================================================
+
 class Gemma3 extends LocalProvider:
 	func _init():
 		super()

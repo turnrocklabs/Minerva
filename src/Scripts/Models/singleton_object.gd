@@ -698,8 +698,14 @@ func _ready():
 	# Initialize enabled providers from config (must be after config_file.load)
 	_init_enabled_providers()
 
-	# Initialize dynamic OpenRouter models (must be after _init_enabled_providers)
-	_init_openrouter_models()
+	# Initialize dynamic models for all providers (must be after _init_enabled_providers)
+	_init_dynamic_models()
+
+	# Initialize cost tracker (must be after signals are available)
+	cost_tracker = CostTrackerScript.new()
+
+	# Auto-discover Ollama models (deferred — needs scene tree ready for HTTP)
+	call_deferred("discover_ollama_models")
 
 	# Load UI scale from config
 	_load_ui_scale()
@@ -759,6 +765,10 @@ func _release_textures_recursive(node: Node) -> void:
 func _exit_tree() -> void:
 	# Ensure proper cleanup order during shutdown
 	print("[SingletonObject] Cleaning up...")
+
+	# Save cost tracker state (ledger + budgets) before shutdown
+	if cost_tracker:
+		cost_tracker.save_all()
 
 	# Release all textures in notes container before freeing nodes
 	if notes_container and is_instance_valid(notes_container):
@@ -859,7 +869,13 @@ const GoogleImageProviderScript = preload("res://Scripts/Services/Providers/Goog
 const AnthropicProviderScript = preload("res://Scripts/Services/Providers/Anthropic/AnthropicProvider.gd")
 const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
 const OpenRouterModelManagerScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterModelManager.gd")
+const ProviderModelManagerScript = preload("res://Scripts/Services/Providers/ProviderModelManager.gd")
+const CostTrackerScript = preload("res://Scripts/Models/CostTracker.gd")
 const DYNAMIC_MODEL_ID_BASE := 10000
+const ANTHROPIC_MODEL_ID_BASE := 20000
+const OPENAI_MODEL_ID_BASE := 30000
+const GOOGLE_MODEL_ID_BASE := 40000
+const LOCAL_MODEL_ID_BASE := 50000
 const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
 const LocalProviderScript = preload("res://Scripts/Services/Providers/LocalProvider.gd")
 
@@ -1038,33 +1054,224 @@ func resolve_model_alias(saved_name: String) -> String:
 
 @onready var preferences_popup: PreferencesPopup = $"/root/RootControl/PreferencesPopup"
 
-#region OpenRouter Dynamic Models
+#region Cost Tracking
 
-var openrouter_model_manager  # OpenRouterModelManager instance (untyped for duck typing)
+var cost_tracker
 
-func _init_openrouter_models() -> void:
+#endregion
+
+#region Dynamic Models
+
+var openrouter_model_manager  # OpenRouterModelManager instance
+var anthropic_model_manager   # ProviderModelManager for user-added Anthropic models
+var openai_model_manager      # ProviderModelManager for user-added OpenAI models
+var google_model_manager      # ProviderModelManager for user-added Google models
+var local_model_manager       # ProviderModelManager for user-added Ollama models
+
+## Provider script + API_PROVIDER mapping for each dynamic ID range
+var _dynamic_provider_map: Dictionary = {}  # {id_base: {script: GDScript, provider: API_PROVIDER, manager: ProviderModelManager}}
+
+func _init_dynamic_models() -> void:
+	# OpenRouter (ID base 10000)
 	openrouter_model_manager = OpenRouterModelManagerScript.new()
 	openrouter_model_manager.load_config()
-	_register_openrouter_models()
-	openrouter_model_manager.models_changed.connect(_on_openrouter_models_changed)
+	openrouter_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.OPENROUTER))
 
-func _register_openrouter_models() -> void:
-	# Clear previously registered dynamic models
+	# Anthropic (ID base 20000)
+	anthropic_model_manager = ProviderModelManagerScript.new("user://anthropic_models.json", ANTHROPIC_MODEL_ID_BASE)
+	anthropic_model_manager.load_config()
+	anthropic_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.ANTHROPIC))
+
+	# OpenAI (ID base 30000)
+	openai_model_manager = ProviderModelManagerScript.new("user://openai_models.json", OPENAI_MODEL_ID_BASE)
+	openai_model_manager.load_config()
+	openai_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.OPENAI))
+
+	# Google (ID base 40000)
+	google_model_manager = ProviderModelManagerScript.new("user://google_models.json", GOOGLE_MODEL_ID_BASE)
+	google_model_manager.load_config()
+	google_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.GOOGLE))
+
+	# Local/Ollama (ID base 50000)
+	local_model_manager = ProviderModelManagerScript.new("user://local_models.json", LOCAL_MODEL_ID_BASE)
+	local_model_manager.load_config()
+	local_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.LOCAL))
+
+	# Build provider map for ID range lookups
+	_dynamic_provider_map = {
+		DYNAMIC_MODEL_ID_BASE: {"script": OpenRouterProviderScript, "provider": API_PROVIDER.OPENROUTER, "manager": openrouter_model_manager},
+		ANTHROPIC_MODEL_ID_BASE: {"script": AnthropicProviderScript, "provider": API_PROVIDER.ANTHROPIC, "manager": anthropic_model_manager},
+		OPENAI_MODEL_ID_BASE: {"script": OpenAIProviderScript, "provider": API_PROVIDER.OPENAI, "manager": openai_model_manager},
+		GOOGLE_MODEL_ID_BASE: {"script": GoogleProviderScript, "provider": API_PROVIDER.GOOGLE, "manager": google_model_manager},
+		LOCAL_MODEL_ID_BASE: {"script": LocalProviderScript, "provider": API_PROVIDER.LOCAL, "manager": local_model_manager},
+	}
+
+	_register_all_dynamic_models()
+
+
+func _register_all_dynamic_models() -> void:
+	# Clear all previously registered dynamic models
 	for key in API_MODEL_PROVIDER_SCRIPTS.keys().duplicate():
 		if key >= DYNAMIC_MODEL_ID_BASE:
 			API_MODEL_PROVIDER_SCRIPTS.erase(key)
 			MODEL_TO_PROVIDER.erase(key)
-	# Register each dynamic model config
-	for config in openrouter_model_manager.models:
-		var model_id: int = config["id"]
-		API_MODEL_PROVIDER_SCRIPTS[model_id] = OpenRouterProviderScript
-		MODEL_TO_PROVIDER[model_id] = API_PROVIDER.OPENROUTER
 
-func _on_openrouter_models_changed() -> void:
-	_register_openrouter_models()
-	provider_enabled_changed.emit(API_PROVIDER.OPENROUTER, is_provider_enabled(API_PROVIDER.OPENROUTER))
+	# Register models from each manager
+	for id_base in _dynamic_provider_map:
+		var info: Dictionary = _dynamic_provider_map[id_base]
+		var manager = info["manager"]
+		var script = info["script"]
+		var provider = info["provider"]
+		for config in manager.models:
+			var model_id: int = config["id"]
+			API_MODEL_PROVIDER_SCRIPTS[model_id] = script
+			MODEL_TO_PROVIDER[model_id] = provider
 
-#endregion OpenRouter Dynamic Models
+
+func _on_dynamic_models_changed(provider: API_PROVIDER) -> void:
+	_register_all_dynamic_models()
+	provider_enabled_changed.emit(provider, is_provider_enabled(provider))
+
+
+## Get the model manager for a given dynamic model ID
+func get_model_manager_for_id(model_id: int) -> Variant:
+	# Find which ID range this model belongs to by checking bases in descending order
+	var sorted_bases: Array = _dynamic_provider_map.keys().duplicate()
+	sorted_bases.sort()
+	sorted_bases.reverse()
+	for id_base in sorted_bases:
+		if model_id >= id_base:
+			return _dynamic_provider_map[id_base]["manager"]
+	return null
+
+
+## Create a provider instance from a dynamic model config
+func create_dynamic_provider(model_id: int) -> BaseProvider:
+	var manager = get_model_manager_for_id(model_id)
+	if manager == null:
+		return null
+	var config: Dictionary = manager.get_model(model_id)
+	if config.is_empty():
+		return null
+
+	# Determine which ID range and dispatch to the correct factory
+	if model_id >= LOCAL_MODEL_ID_BASE:
+		return LocalProviderScript.create_from_config(config)
+	elif model_id >= GOOGLE_MODEL_ID_BASE:
+		return GoogleProviderScript.create_from_config(config)
+	elif model_id >= OPENAI_MODEL_ID_BASE:
+		return OpenAIProviderScript.create_from_config(config)
+	elif model_id >= ANTHROPIC_MODEL_ID_BASE:
+		return AnthropicProviderScript.create_from_config(config)
+	else:
+		return OpenRouterProviderScript.create_from_config(config)
+
+#endregion Dynamic Models
+
+#region Ollama Auto-Discovery
+
+## URL for local Ollama instance
+var ollama_base_url: String = "http://localhost:11434"
+
+## Discover installed models from local Ollama server via GET /api/tags.
+## Adds any new models to local_model_manager (skips built-in models).
+## Call this after scene tree is ready (uses HTTPRequest node).
+func discover_ollama_models() -> void:
+	var http := HTTPRequest.new()
+	get_tree().root.add_child(http)
+
+	var err := http.request("%s/api/tags" % ollama_base_url, [], HTTPClient.METHOD_GET)
+	if err != OK:
+		print("[Ollama Discovery] Failed to connect to Ollama at %s" % ollama_base_url)
+		http.queue_free()
+		return
+
+	var result: Array = await http.request_completed
+	http.queue_free()
+
+	var response_code: int = result[1]
+	var body: PackedByteArray = result[3]
+
+	if response_code < 200 or response_code > 299:
+		print("[Ollama Discovery] Ollama API returned %d — server may not be running" % response_code)
+		return
+
+	var data = JSON.parse_string(body.get_string_from_utf8())
+	if not data is Dictionary or not data.has("models"):
+		print("[Ollama Discovery] Unexpected response format")
+		return
+
+	# Collect model_names from built-in inner classes so we don't duplicate them
+	var builtin_model_names: PackedStringArray = []
+	for key in API_MODEL_PROVIDER_SCRIPTS:
+		if key < DYNAMIC_MODEL_ID_BASE and MODEL_TO_PROVIDER.get(key) == API_PROVIDER.LOCAL:
+			var instance: BaseProvider = API_MODEL_PROVIDER_SCRIPTS[key].new()
+			builtin_model_names.append(instance.model_name)
+
+	# Also collect model_names already in local_model_manager
+	var existing_dynamic_names: PackedStringArray = []
+	for config in local_model_manager.models:
+		existing_dynamic_names.append(config.get("model_name", ""))
+
+	var added_count := 0
+	for model in data["models"]:
+		if not model is Dictionary:
+			continue
+
+		var model_name: String = model.get("name", "")
+		if model_name.is_empty():
+			continue
+
+		# Skip if already a built-in or already discovered
+		if model_name in builtin_model_names or model_name in existing_dynamic_names:
+			continue
+
+		# Build display name from model name
+		var display_name: String = model_name
+		var details: Dictionary = model.get("details", {})
+		var param_size: String = details.get("parameter_size", "")
+		if not param_size.is_empty():
+			display_name = "%s (%s)" % [model_name, param_size]
+
+		# Generate short name from first letters
+		var short_name := _generate_ollama_short_name(model_name)
+
+		var config := {
+			"model_name": model_name,
+			"display_name": display_name,
+			"short_name": short_name,
+			"max_tokens": 8192,
+			"input_token_cost": 0.0,
+			"output_token_cost": 0.0,
+		}
+
+		local_model_manager.add_model(config)
+		existing_dynamic_names.append(model_name)
+		added_count += 1
+
+	if added_count > 0:
+		print("[Ollama Discovery] Added %d new models from local Ollama" % added_count)
+	else:
+		print("[Ollama Discovery] No new models found (checked %d installed)" % data["models"].size())
+
+
+func _generate_ollama_short_name(model_name_: String) -> String:
+	# Strip tag (e.g., "gemma3:12b" -> "gemma3")
+	var base := model_name_.split(":")[0] if ":" in model_name_ else model_name_
+	# Take first 3 chars uppercase
+	var short := base.left(3).to_upper()
+	# Append tag hint if present (e.g., "12b" -> "12")
+	if ":" in model_name_:
+		var tag := model_name_.split(":")[1]
+		var digits := ""
+		for c in tag:
+			if c.is_valid_int():
+				digits += c
+		if not digits.is_empty():
+			short += digits.left(2)
+	return short if not short.is_empty() else "OL"
+
+#endregion Ollama Auto-Discovery
 
 #endregion API Consumer
 

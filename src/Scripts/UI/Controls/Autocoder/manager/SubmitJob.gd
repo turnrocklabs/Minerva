@@ -213,6 +213,8 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if not is_visible_in_tree():
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ENTER and event.ctrl_pressed:
 			if _submit_job_button and not _submit_job_button.disabled:
@@ -2405,9 +2407,9 @@ func _on_clear_user_models_pressed() -> void:
 func _show_model_browse_dialog(api_key: String) -> void:
 	var win := Window.new()
 	win.title = "Browse OpenRouter Models"
-	var scale: float = get_tree().root.content_scale_factor
-	win.content_scale_factor = scale
-	win.size = Vector2i(Vector2(620, 560) * scale)
+	var ui_scale: float = get_tree().root.content_scale_factor
+	win.content_scale_factor = ui_scale
+	win.size = Vector2i(Vector2(620, 560) * ui_scale)
 	win.close_requested.connect(func(): win.queue_free())
 
 	var margin := MarginContainer.new()

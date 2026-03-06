@@ -44,6 +44,8 @@ func _init(manager = null) -> void:
 		_register_agent_tools()
 		_register_trigger_tools()
 		_register_autocoder_tools()
+		_register_model_tools()
+		_register_cost_tools()
 		_register_meta_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
@@ -395,6 +397,26 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return await _autocoder_update_review_preset(arguments)
 		"minerva_autocoder_delete_review_preset":
 			return await _autocoder_delete_review_preset(arguments)
+
+		# Cost tracking tools
+		"minerva_get_cost_summary":
+			return _get_cost_summary(arguments)
+		"minerva_get_chat_cost":
+			return _get_chat_cost(arguments)
+		"minerva_set_budget":
+			return _set_budget(arguments)
+		"minerva_extend_budget":
+			return _extend_budget(arguments)
+
+		# Model management tools
+		"minerva_list_models":
+			return _list_models(arguments)
+		"minerva_add_model":
+			return _add_model(arguments)
+		"minerva_update_model":
+			return _update_model(arguments)
+		"minerva_remove_model":
+			return _remove_model(arguments)
 
 		# Meta tools (tool set management)
 		"minerva_list_tool_sets":
@@ -1743,6 +1765,7 @@ func _set_system_prompt(args: Dictionary) -> Dictionary:
 	else:
 		history.HistoryItemList.insert(0, system_item)
 		history.HasUsedSystemPrompt = true
+	history.SystemPromptEnabled = true
 
 	return {"success": true, "message": "System prompt set"}
 
@@ -7887,6 +7910,457 @@ func _get_batch_status(args: Dictionary) -> Dictionary:
 
 
 #region Meta Tools (Tool Set Management)
+
+func _register_cost_tools() -> void:
+	_register_tool("minerva_get_cost_summary",
+		"Get a cost summary for API usage over a time period, optionally filtered by provider. Shows total cost, token counts, and breakdowns by provider and model.",
+		{
+			"type": "object",
+			"properties": {
+				"period": {
+					"type": "string",
+					"enum": ["today", "week", "month", "all"],
+					"description": "Time period to summarize (default: today)"
+				},
+				"provider": {
+					"type": "string",
+					"description": "Filter to a specific provider name (e.g., 'Anthropic', 'OpenAI', 'Google')"
+				}
+			},
+			"required": []
+		}
+	, "costs")
+
+	_register_tool("minerva_get_chat_cost",
+		"Get the cost breakdown for a specific chat, including token counts, total cost, and budget status if a budget is set.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The chat UUID to get costs for"
+				}
+			},
+			"required": ["chat_id"]
+		}
+	, "costs")
+
+	_register_tool("minerva_set_budget",
+		"Set a spending budget for a chat. When the budget is exceeded, API calls for that chat will be blocked until the budget is extended.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The chat UUID to set a budget for"
+				},
+				"budget_usd": {
+					"type": "number",
+					"description": "Budget amount in USD (e.g., 5.0 for a $5 budget)"
+				},
+				"warn_pct": {
+					"type": "number",
+					"description": "Warning threshold as a fraction (default: 0.8 = warn at 80%)"
+				},
+				"period": {
+					"type": "string",
+					"enum": ["hour", "day", "week", "month"],
+					"description": "Budget time period (default: day). Spend is calculated over a rolling window."
+				}
+			},
+			"required": ["chat_id", "budget_usd"]
+		}
+	, "costs")
+
+	_register_tool("minerva_extend_budget",
+		"Add additional funds to an existing chat budget. If no budget exists, creates one with the specified amount.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The chat UUID to extend the budget for"
+				},
+				"additional_usd": {
+					"type": "number",
+					"description": "Amount in USD to add to the budget"
+				}
+			},
+			"required": ["chat_id", "additional_usd"]
+		}
+	, "costs")
+
+
+func _get_cost_summary(args: Dictionary) -> Dictionary:
+	if not SingletonObject.cost_tracker:
+		return {"error": "Cost tracker not initialized", "success": false}
+	var period: String = args.get("period", "today")
+	var provider_filter: String = args.get("provider", "")
+	var summary: Dictionary = SingletonObject.cost_tracker.get_cost_summary(period, provider_filter)
+	summary["success"] = true
+	return summary
+
+
+func _get_chat_cost(args: Dictionary) -> Dictionary:
+	if not SingletonObject.cost_tracker:
+		return {"error": "Cost tracker not initialized", "success": false}
+	var chat_id: String = args.get("chat_id", "")
+	if chat_id.is_empty():
+		return {"error": "chat_id is required", "success": false}
+	var result: Dictionary = SingletonObject.cost_tracker.get_cost_for_chat(chat_id)
+	result["success"] = true
+	result["chat_id"] = chat_id
+	return result
+
+
+func _set_budget(args: Dictionary) -> Dictionary:
+	if not SingletonObject.cost_tracker:
+		return {"error": "Cost tracker not initialized", "success": false}
+	var chat_id: String = args.get("chat_id", "")
+	if chat_id.is_empty():
+		return {"error": "chat_id is required", "success": false}
+	var budget_usd: float = args.get("budget_usd", 0.0)
+	if budget_usd <= 0:
+		return {"error": "budget_usd must be positive", "success": false}
+	var warn_pct: float = args.get("warn_pct", 0.8)
+	var period: String = args.get("period", "day")
+	if period not in SingletonObject.cost_tracker.BUDGET_PERIODS:
+		return {"error": "Invalid period. Must be one of: hour, day, week, month", "success": false}
+	var previous: float = SingletonObject.cost_tracker.set_budget(chat_id, budget_usd, warn_pct, period)
+	return {
+		"success": true,
+		"chat_id": chat_id,
+		"budget_usd": budget_usd,
+		"warn_pct": warn_pct,
+		"period": period,
+		"previous_budget": previous,
+		"message": "Budget set to $%.2f/%s for chat %s" % [budget_usd, period, chat_id],
+	}
+
+
+func _extend_budget(args: Dictionary) -> Dictionary:
+	if not SingletonObject.cost_tracker:
+		return {"error": "Cost tracker not initialized", "success": false}
+	var chat_id: String = args.get("chat_id", "")
+	if chat_id.is_empty():
+		return {"error": "chat_id is required", "success": false}
+	var additional_usd: float = args.get("additional_usd", 0.0)
+	if additional_usd <= 0:
+		return {"error": "additional_usd must be positive", "success": false}
+	var new_total: float = SingletonObject.cost_tracker.extend_budget(chat_id, additional_usd)
+	return {
+		"success": true,
+		"chat_id": chat_id,
+		"added_usd": additional_usd,
+		"new_total_budget": new_total,
+		"message": "Budget extended by $%.2f to $%.2f for chat %s" % [additional_usd, new_total, chat_id],
+	}
+
+
+func _register_model_tools() -> void:
+	_register_tool("minerva_list_models",
+		"List all registered AI models (built-in and user-added dynamic models), optionally filtered by provider. Returns model IDs, names, pricing, and whether each model is dynamic.",
+		{
+			"type": "object",
+			"properties": {
+				"provider": {
+					"type": "string",
+					"enum": ["anthropic", "openai", "google", "openrouter", "local"],
+					"description": "Filter to only show models from this provider"
+				},
+				"dynamic_only": {
+					"type": "boolean",
+					"description": "If true, only show user-added dynamic models (default: false)"
+				}
+			},
+			"required": []
+		}
+	, "models")
+
+	_register_tool("minerva_add_model",
+		"Add a new dynamic model to a provider. The model will be available for use in chats immediately and persists across restarts.",
+		{
+			"type": "object",
+			"properties": {
+				"provider": {
+					"type": "string",
+					"enum": ["anthropic", "openai", "google", "openrouter", "local"],
+					"description": "The provider to add the model to"
+				},
+				"model_name": {
+					"type": "string",
+					"description": "The API model ID (e.g., 'claude-opus-4-5', 'gpt-5.2', 'gemini-3-flash')"
+				},
+				"display_name": {
+					"type": "string",
+					"description": "Human-readable display name (defaults to model_name)"
+				},
+				"short_name": {
+					"type": "string",
+					"description": "Short abbreviation for the model (e.g., 'CO', 'G5'). Auto-generated if not provided."
+				},
+				"input_token_cost": {
+					"type": "number",
+					"description": "Cost per million input tokens in USD (default: 0)"
+				},
+				"output_token_cost": {
+					"type": "number",
+					"description": "Cost per million output tokens in USD (default: 0)"
+				},
+				"is_reasoning_model": {
+					"type": "boolean",
+					"description": "Whether this is a reasoning/thinking model (default: false)"
+				}
+			},
+			"required": ["provider", "model_name"]
+		}
+	, "models")
+
+	_register_tool("minerva_update_model",
+		"Update fields on an existing dynamic model. Only user-added dynamic models can be updated (not built-in models).",
+		{
+			"type": "object",
+			"properties": {
+				"model_id": {
+					"type": "integer",
+					"description": "The dynamic model ID to update"
+				},
+				"display_name": {
+					"type": "string",
+					"description": "New display name"
+				},
+				"short_name": {
+					"type": "string",
+					"description": "New short abbreviation"
+				},
+				"input_token_cost": {
+					"type": "number",
+					"description": "New cost per million input tokens in USD"
+				},
+				"output_token_cost": {
+					"type": "number",
+					"description": "New cost per million output tokens in USD"
+				},
+				"is_reasoning_model": {
+					"type": "boolean",
+					"description": "Whether this is a reasoning/thinking model"
+				}
+			},
+			"required": ["model_id"]
+		}
+	, "models")
+
+	_register_tool("minerva_remove_model",
+		"Remove a dynamic model. Only user-added dynamic models can be removed (not built-in models). The model will no longer appear in the model selector.",
+		{
+			"type": "object",
+			"properties": {
+				"model_id": {
+					"type": "integer",
+					"description": "The dynamic model ID to remove"
+				}
+			},
+			"required": ["model_id"]
+		}
+	, "models")
+
+
+func _get_provider_name_for_enum(provider_enum) -> String:
+	match provider_enum:
+		SingletonObject.API_PROVIDER.ANTHROPIC:
+			return "anthropic"
+		SingletonObject.API_PROVIDER.OPENAI:
+			return "openai"
+		SingletonObject.API_PROVIDER.GOOGLE:
+			return "google"
+		SingletonObject.API_PROVIDER.OPENROUTER:
+			return "openrouter"
+		SingletonObject.API_PROVIDER.LOCAL:
+			return "local"
+		SingletonObject.API_PROVIDER.CLAUDE_CODE:
+			return "claude_code"
+		SingletonObject.API_PROVIDER.TURNROCK:
+			return "turnrock"
+		_:
+			return "unknown"
+
+
+func _get_manager_for_provider_string(provider: String):
+	match provider:
+		"anthropic":
+			return SingletonObject.anthropic_model_manager
+		"openai":
+			return SingletonObject.openai_model_manager
+		"google":
+			return SingletonObject.google_model_manager
+		"openrouter":
+			return SingletonObject.openrouter_model_manager
+		"local":
+			return SingletonObject.local_model_manager
+		_:
+			return null
+
+
+func _list_models(args: Dictionary) -> Dictionary:
+	var provider_filter: String = args.get("provider", "")
+	var dynamic_only: bool = args.get("dynamic_only", false)
+	var results: Array = []
+
+	# Collect built-in models (unless dynamic_only is set)
+	if not dynamic_only:
+		for model_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+			if model_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+				continue
+			var provider_enum = SingletonObject.MODEL_TO_PROVIDER.get(model_id)
+			if provider_enum == null:
+				continue
+			var provider_name: String = _get_provider_name_for_enum(provider_enum)
+			if not provider_filter.is_empty() and provider_name != provider_filter:
+				continue
+			# Create a temporary provider instance to read its fields
+			var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id]
+			if script == null:
+				continue
+			var provider_instance = script.new()
+			var api_id: String = provider_instance.model_name
+			if "api_model_id" in provider_instance and not provider_instance.api_model_id.is_empty():
+				api_id = provider_instance.api_model_id
+			results.append({
+				"id": model_id,
+				"provider": provider_name,
+				"model_name": provider_instance.model_name,
+				"api_model_id": api_id,
+				"display_name": provider_instance.display_name,
+				"short_name": provider_instance.short_name,
+				"input_token_cost": provider_instance.input_token_cost,
+				"output_token_cost": provider_instance.output_token_cost,
+				"is_dynamic": false,
+			})
+
+	# Collect dynamic models from all managers
+	var managers: Dictionary = {
+		"anthropic": SingletonObject.anthropic_model_manager,
+		"openai": SingletonObject.openai_model_manager,
+		"google": SingletonObject.google_model_manager,
+		"openrouter": SingletonObject.openrouter_model_manager,
+		"local": SingletonObject.local_model_manager,
+	}
+	for prov_name in managers:
+		if not provider_filter.is_empty() and prov_name != provider_filter:
+			continue
+		var manager = managers[prov_name]
+		if manager == null:
+			continue
+		for config in manager.models:
+			var model_name: String = config.get("model_name", config.get("api_model_id", ""))
+			var api_model_id: String = config.get("api_model_id", model_name)
+			results.append({
+				"id": config.get("id", -1),
+				"provider": prov_name,
+				"model_name": model_name,
+				"api_model_id": api_model_id,
+				"display_name": config.get("display_name", model_name),
+				"short_name": config.get("short_name", ""),
+				"input_token_cost": config.get("input_token_cost", 0.0),
+				"output_token_cost": config.get("output_token_cost", 0.0),
+				"is_dynamic": true,
+			})
+
+	return {"success": true, "models": results, "count": results.size()}
+
+
+func _add_model(args: Dictionary) -> Dictionary:
+	var provider: String = args.get("provider", "")
+	if provider.is_empty():
+		return {"error": "provider is required", "success": false}
+	var model_name: String = args.get("model_name", "")
+	if model_name.is_empty():
+		return {"error": "model_name is required", "success": false}
+
+	var manager = _get_manager_for_provider_string(provider)
+	if manager == null:
+		return {"error": "Unknown provider: %s" % provider, "success": false}
+
+	var display_name: String = args.get("display_name", model_name)
+	var short_name: String = args.get("short_name", "")
+	if short_name.is_empty():
+		# Auto-generate: first letter of each word, uppercase
+		var parts: PackedStringArray = display_name.split(" ")
+		for part in parts:
+			if not part.is_empty():
+				short_name += part[0].to_upper()
+		if short_name.is_empty():
+			short_name = model_name.left(2).to_upper()
+
+	var config: Dictionary = {
+		"model_name": model_name,
+		"display_name": display_name,
+		"short_name": short_name,
+		"input_token_cost": args.get("input_token_cost", 0.0),
+		"output_token_cost": args.get("output_token_cost", 0.0),
+	}
+
+	# Anthropic and OpenRouter need api_model_id
+	if provider == "anthropic" or provider == "openrouter":
+		config["api_model_id"] = model_name
+
+	# Reasoning model flag (OpenAI, OpenRouter)
+	if args.has("is_reasoning_model"):
+		config["is_reasoning_model"] = args.get("is_reasoning_model", false)
+
+	var model_id: int = manager.add_model(config)
+	return {"success": true, "model_id": model_id, "message": "Model '%s' added to %s" % [display_name, provider]}
+
+
+func _update_model(args: Dictionary) -> Dictionary:
+	var model_id: int = args.get("model_id", -1)
+	if model_id < 0:
+		return {"error": "model_id is required", "success": false}
+	if model_id < SingletonObject.DYNAMIC_MODEL_ID_BASE:
+		return {"error": "Cannot update built-in model (id %d). Only dynamic models can be updated." % model_id, "success": false}
+
+	var manager = SingletonObject.get_model_manager_for_id(model_id)
+	if manager == null:
+		return {"error": "No model manager found for model_id %d" % model_id, "success": false}
+
+	var existing: Dictionary = manager.get_model(model_id)
+	if existing.is_empty():
+		return {"error": "Model with id %d not found" % model_id, "success": false}
+
+	# Merge provided fields into existing config
+	var updatable_fields: Array = ["display_name", "short_name", "input_token_cost", "output_token_cost", "is_reasoning_model"]
+	var updated := false
+	for field in updatable_fields:
+		if args.has(field):
+			existing[field] = args[field]
+			updated = true
+
+	if not updated:
+		return {"error": "No updatable fields provided. Updatable fields: %s" % str(updatable_fields), "success": false}
+
+	manager.update_model(model_id, existing)
+	return {"success": true, "model_id": model_id, "message": "Model %d updated" % model_id}
+
+
+func _remove_model(args: Dictionary) -> Dictionary:
+	var model_id: int = args.get("model_id", -1)
+	if model_id < 0:
+		return {"error": "model_id is required", "success": false}
+	if model_id < SingletonObject.DYNAMIC_MODEL_ID_BASE:
+		return {"error": "Cannot remove built-in model (id %d). Only dynamic models can be removed." % model_id, "success": false}
+
+	var manager = SingletonObject.get_model_manager_for_id(model_id)
+	if manager == null:
+		return {"error": "No model manager found for model_id %d" % model_id, "success": false}
+
+	var existing: Dictionary = manager.get_model(model_id)
+	if existing.is_empty():
+		return {"error": "Model with id %d not found" % model_id, "success": false}
+
+	var display_name: String = existing.get("display_name", str(model_id))
+	manager.remove_model(model_id)
+	return {"success": true, "model_id": model_id, "message": "Model '%s' (id %d) removed" % [display_name, model_id]}
+
 
 func _register_meta_tools() -> void:
 	_register_tool("minerva_list_tool_sets",

@@ -109,10 +109,10 @@ func get_item_index_for_provider(provider: BaseProvider) -> int:
 			if metadata.size() >= 2 and metadata[1] == core_provider.action:
 				return i
 
-		# Dynamic OpenRouter models: match by api_model_id since they share a script
-		elif item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE and provider is OpenRouterProvider:
-			var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(item_id)
-			if not config.is_empty() and config.get("api_model_id") == provider.api_model_id:
+		# Dynamic models: match by model_name since they share a provider script
+		elif item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+			var dynamic_instance = SingletonObject.create_dynamic_provider(item_id)
+			if dynamic_instance and dynamic_instance.model_name == provider.model_name:
 				return i
 
 		elif not provider is CoreProvider and item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
@@ -168,11 +168,11 @@ func _setup_default_provider_set():
 
 		var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key]
 		var instance: BaseProvider
-		# Dynamic OpenRouter models need config applied
+		# Dynamic models need config applied via factory
 		if key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-			var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(key)
-			if not config.is_empty():
-				instance = OpenRouterProvider.create_from_config(config)
+			var dynamic_instance = SingletonObject.create_dynamic_provider(key)
+			if dynamic_instance:
+				instance = dynamic_instance
 			else:
 				instance = script.new()
 		else:
@@ -271,11 +271,9 @@ func _get_provider_from_id(item_id: int) -> BaseProvider:
 	# CoreProvider: metadata is [Service, Action]
 	if metadata is Array and metadata.size() == 2:
 		provider = CoreProvider.new.callv(metadata)
-	# Dynamic OpenRouter model: use factory with config
+	# Dynamic model: use centralized factory
 	elif item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-		var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(item_id)
-		if not config.is_empty():
-			provider = OpenRouterProvider.create_from_config(config)
+		provider = SingletonObject.create_dynamic_provider(item_id)
 	# Standard provider: use script from dictionary
 	elif item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[item_id].new()
@@ -355,12 +353,14 @@ func _contains_internal_chat_service(services: Array) -> bool:
 	return false
 
 
-## Gets the token cost for a model key (handles dynamic OpenRouter models)
+## Gets the token cost for a model key (handles dynamic models from any provider)
 func _get_token_cost_for_key(key: int) -> float:
 	if key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-		var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(key)
-		if not config.is_empty():
-			return config.get("input_token_cost", 0.0) + config.get("output_token_cost", 0.0)
+		var manager = SingletonObject.get_model_manager_for_id(key)
+		if manager:
+			var config: Dictionary = manager.get_model(key)
+			if not config.is_empty():
+				return config.get("input_token_cost", 0.0) + config.get("output_token_cost", 0.0)
 		return 0.0
 	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key].new().token_cost
 

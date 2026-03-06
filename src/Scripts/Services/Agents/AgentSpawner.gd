@@ -38,7 +38,7 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 			var all_tools = mcp.get_available_tools()
 			var disabled: Array[String] = []
 			for tool_def in all_tools:
-				var tool_name: String = tool_def.name if tool_def is MCPToolDefinition else str(tool_def)
+				var tool_name: String = str(tool_def.name) if tool_def is MCPToolDefinition else str(tool_def)
 				if tool_name not in agent_def.enabled_tools:
 					disabled.append(tool_name)
 			history.DisabledTools = disabled
@@ -72,12 +72,9 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 static func _create_provider(agent_def: AgentDefinition) -> BaseProvider:
 	var provider_enum_id: int = agent_def.provider_enum_id
 
-	# Handle dynamic OpenRouter models
+	# Handle dynamic models (any provider)
 	if provider_enum_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-		var config: Dictionary = SingletonObject.openrouter_model_manager.get_model(provider_enum_id)
-		if not config.is_empty():
-			return OpenRouterProviderScript.create_from_config(config)
-		return null
+		return SingletonObject.create_dynamic_provider(provider_enum_id)
 
 	# Handle Core/TurnRock: needs Service + Action from runtime discovery
 	if provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:

@@ -4,13 +4,13 @@ extends BaseServiceAdapter
 signal review_agents_changed
 signal review_presets_changed
 
-var _agent_registry: AgentRegistry
+var _agent_registry: AutocoderAgentRegistry
 
 ## Typed agent registry — wraps the raw dict CRUD methods below.
-var agent_registry: AgentRegistry:
+var agent_registry: AutocoderAgentRegistry:
 	get:
 		if _agent_registry == null:
-			_agent_registry = AgentRegistry.new(self)
+			_agent_registry = AutocoderAgentRegistry.new(self)
 		return _agent_registry
 
 
