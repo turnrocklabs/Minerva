@@ -30,6 +30,13 @@ var _enabled_tool_sets: Array = []
 
 func _init(manager = null) -> void:
 	mcp_manager = manager
+	# Load persisted tool set filter from config
+	var config := MCPConfig.new()
+	config.load_config()
+	if not config.enabled_tool_groups.is_empty():
+		_enabled_tool_sets = []
+		for g in config.enabled_tool_groups:
+			_enabled_tool_sets.append(g)
 	# Always register tools so they're available for HTTP server
 	# (internal LLM access is gated by server_enabled flag)
 	if mcp_manager:

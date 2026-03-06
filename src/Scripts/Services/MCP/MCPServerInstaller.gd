@@ -378,12 +378,113 @@ func _get_python_in_venv(server_dir: String) -> String:
 			return venv_path.path_join("bin").path_join("python")
 
 
+## Detect available Python environments on the system.
+## Returns Array of {name: String, path: String, type: String ("conda"|"system"|"venv")}
+static func detect_python_environments() -> Array[Dictionary]:
+	var envs: Array[Dictionary] = []
+
+	# Detect conda environments
+	# Try bare "conda" first, then common absolute paths (Godot may not have full PATH)
+	var conda_output: Array = []
+	var conda_exit := -1
+	var conda_candidates: Array[String] = ["conda"]
+	match OS.get_name():
+		"Linux":
+			var home := OS.get_environment("HOME")
+			conda_candidates.append_array([
+				home.path_join("anaconda3/bin/conda"),
+				home.path_join("miniconda3/bin/conda"),
+				"/opt/conda/bin/conda",
+			])
+		"macOS":
+			var home := OS.get_environment("HOME")
+			conda_candidates.append_array([
+				home.path_join("anaconda3/bin/conda"),
+				home.path_join("miniconda3/bin/conda"),
+				"/opt/homebrew/bin/conda",
+			])
+	for conda_cmd in conda_candidates:
+		conda_output = []
+		conda_exit = OS.execute(conda_cmd, ["info", "--envs"], conda_output, true)
+		if conda_exit == 0 and conda_output.size() > 0:
+			break
+	if conda_exit == 0 and conda_output.size() > 0:
+		var lines: PackedStringArray = conda_output[0].split("\n")
+		for line in lines:
+			var stripped := line.strip_edges()
+			if stripped.is_empty() or stripped.begins_with("#"):
+				continue
+			# Format: "envname    /path/to/env" or "envname  *  /path/to/env"
+			var parts := stripped.split(" ", false)
+			if parts.size() >= 1:
+				var env_name: String = parts[0]
+				# Last part is the path (skip * marker)
+				var env_path: String = parts[parts.size() - 1]
+				var python_bin: String
+				if OS.get_name() == "Windows":
+					python_bin = env_path.path_join("python.exe")
+				else:
+					python_bin = env_path.path_join("bin/python")
+				if FileAccess.file_exists(python_bin):
+					envs.append({
+						"name": "conda:%s" % env_name,
+						"path": python_bin,
+						"type": "conda"
+					})
+
+	# Detect system python
+	var sys_python := _find_system_python()
+	if not sys_python.is_empty():
+		envs.append({
+			"name": "System python",
+			"path": sys_python,
+			"type": "system"
+		})
+
+	return envs
+
+
+## Find system python (not in a venv/conda) — static version of _get_python_executable
+static func _find_system_python() -> String:
+	var candidates: Array[String] = []
+	match OS.get_name():
+		"Windows":
+			candidates = ["python", "python3"]
+		"macOS":
+			candidates = ["python3.13", "python3.12", "python3.11",
+				"/opt/homebrew/bin/python3", "/usr/local/bin/python3", "python3"]
+		_:
+			candidates = ["python3.13", "python3.12", "python3.11", "python3"]
+
+	for python_cmd in candidates:
+		var output: Array = []
+		var exit_code := OS.execute(python_cmd, ["--version"], output, true)
+		if exit_code == 0 and output.size() > 0:
+			var version_str: String = output[0].strip_edges()
+			if version_str.begins_with("Python 3."):
+				# Get full path via which/where
+				var which_output: Array = []
+				var which_cmd := "where" if OS.get_name() == "Windows" else "which"
+				if OS.execute(which_cmd, [python_cmd], which_output, true) == 0 and which_output.size() > 0:
+					return which_output[0].strip_edges()
+				return python_cmd
+	return ""
+
+
 ## Get the command to start a server
 func get_startup_command(server: String, install_path: String) -> Dictionary:
 	if install_path.is_empty():
 		return {}
 
-	var python := _get_python_in_venv(install_path)
+	# Resolve python: MCPConfig preference > venv > system
+	var config := MCPConfig.new()
+	config.load_config()
+	var python := config.get_python_for_server(server)
+	if python.is_empty():
+		python = _get_python_executable()
+
+	# Resolve port from config
+	var port: int = config.get_server_port(server)
 
 	match server:
 		"nudge":
@@ -391,20 +492,20 @@ func get_startup_command(server: String, install_path: String) -> Dictionary:
 				"command": python,
 				"args": ["-m", "nudge", "serve"],
 				"cwd": install_path,
-				"port": PORTS.nudge
+				"port": port
 			}
 		"cobrowser":
 			return {
 				"command": python,
 				"args": ["-m", "uvicorn", "src.Library.cobrowser_service:app",
-						"--host", "0.0.0.0", "--port", str(PORTS.cobrowser)],
+						"--host", "0.0.0.0", "--port", str(port)],
 				"cwd": install_path,
-				"port": PORTS.cobrowser
+				"port": port
 			}
 		"codetools":
 			return {
 				"command": python,
-				"args": ["-m", "codetools", "serve", "--port", str(PORTS.codetools)],
+				"args": ["-m", "codetools", "serve", "--port", str(port)],
 				"cwd": install_path,
 				"port": PORTS.codetools
 			}

@@ -109,6 +109,9 @@ func _ready():
 	# Create custom models tab (after scene tree is ready)
 	call_deferred("_create_custom_models_tab")
 
+	# Create tools tab (after scene tree is ready)
+	call_deferred("_create_tools_tab")
+
 	# Initialize ChatGPT auth status
 	call_deferred("_init_chatgpt_auth")
 
@@ -1482,3 +1485,413 @@ func _generate_provider_short_name(display: String, fallback: String) -> String:
 	return short if not short.is_empty() else fallback
 
 #endregion Custom Models Tab
+
+
+#region Tools Tab
+
+const MCPServerInstallerScript := preload("res://Scripts/Services/MCP/MCPServerInstaller.gd")
+
+var _tools_tab: VBoxContainer
+var _python_env_option: OptionButton
+var _python_envs_cache: Array[Dictionary] = []
+var _server_path_edits: Dictionary = {}  # server_name -> LineEdit
+var _server_port_spins: Dictionary = {}  # server_name -> SpinBox
+var _server_auto_connect_checks: Dictionary = {}  # server_name -> CheckButton
+var _server_status_labels: Dictionary = {}  # server_name -> Label
+var _tool_set_checks_container: VBoxContainer
+
+
+func _create_tools_tab() -> void:
+	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
+	if not tab_container:
+		return
+
+	_tools_tab = VBoxContainer.new()
+	_tools_tab.name = "Tools"
+
+	var margin := MarginContainer.new()
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	_tools_tab.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	# --- Python Environment Section ---
+	var py_label := Label.new()
+	py_label.text = "Python Environment"
+	py_label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(py_label)
+
+	var py_hbox := HBoxContainer.new()
+	py_hbox.add_theme_constant_override("separation", 8)
+	vbox.add_child(py_hbox)
+
+	_python_env_option = OptionButton.new()
+	_python_env_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_python_env_option.item_selected.connect(_on_python_env_selected)
+	py_hbox.add_child(_python_env_option)
+
+	var refresh_btn := Button.new()
+	refresh_btn.text = "Refresh"
+	refresh_btn.tooltip_text = "Re-scan for Python environments"
+	refresh_btn.pressed.connect(_refresh_python_envs)
+	py_hbox.add_child(refresh_btn)
+
+	vbox.add_child(HSeparator.new())
+
+	# --- Tool Sets Section ---
+	var ts_label := Label.new()
+	ts_label.text = "Tool Sets"
+	ts_label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(ts_label)
+
+	var ts_desc := Label.new()
+	ts_desc.text = "Enable or disable tool groups for internal MCP consumers. Empty = all enabled."
+	ts_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(ts_desc)
+
+	_tool_set_checks_container = VBoxContainer.new()
+	vbox.add_child(_tool_set_checks_container)
+
+	vbox.add_child(HSeparator.new())
+
+	# --- Per-Server Sections ---
+	var server_names := ["cobrowser", "nudge", "codetools"]
+	var server_labels := {"cobrowser": "Cobrowser (HumanWeb)", "nudge": "Nudge", "codetools": "CodeTools"}
+
+	for server_name in server_names:
+		var s_label := Label.new()
+		s_label.text = server_labels[server_name]
+		s_label.add_theme_font_size_override("font_size", 16)
+		vbox.add_child(s_label)
+
+		# Status
+		var status_label := Label.new()
+		status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		vbox.add_child(status_label)
+		_server_status_labels[server_name] = status_label
+
+		# Installation path
+		var path_hbox := HBoxContainer.new()
+		path_hbox.add_theme_constant_override("separation", 6)
+		vbox.add_child(path_hbox)
+
+		var path_label := Label.new()
+		path_label.text = "Path:"
+		path_label.custom_minimum_size.x = 40
+		path_hbox.add_child(path_label)
+
+		var path_edit := LineEdit.new()
+		path_edit.editable = false
+		path_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		path_edit.placeholder_text = "Not set"
+		path_hbox.add_child(path_edit)
+		_server_path_edits[server_name] = path_edit
+
+		var browse_btn := Button.new()
+		browse_btn.text = "Browse..."
+		browse_btn.pressed.connect(_on_tools_browse_pressed.bind(server_name))
+		path_hbox.add_child(browse_btn)
+
+		var clear_btn := Button.new()
+		clear_btn.text = "Clear"
+		clear_btn.pressed.connect(_on_tools_clear_path_pressed.bind(server_name))
+		path_hbox.add_child(clear_btn)
+
+		# Port
+		var port_hbox := HBoxContainer.new()
+		port_hbox.add_theme_constant_override("separation", 6)
+		vbox.add_child(port_hbox)
+
+		var port_label := Label.new()
+		port_label.text = "Port:"
+		port_label.custom_minimum_size.x = 40
+		port_hbox.add_child(port_label)
+
+		var port_spin := SpinBox.new()
+		port_spin.min_value = 1024
+		port_spin.max_value = 65535
+		port_spin.value = MCPConfig.DEFAULT_PORTS.get(server_name, 8000)
+		port_spin.value_changed.connect(_on_tools_port_changed.bind(server_name))
+		port_hbox.add_child(port_spin)
+		_server_port_spins[server_name] = port_spin
+
+		# Auto-connect
+		var auto_check := CheckButton.new()
+		auto_check.text = "Auto-connect on startup"
+		auto_check.toggled.connect(_on_tools_auto_connect_toggled.bind(server_name))
+		vbox.add_child(auto_check)
+		_server_auto_connect_checks[server_name] = auto_check
+
+		if server_name != server_names[server_names.size() - 1]:
+			vbox.add_child(HSeparator.new())
+
+	tab_container.add_child(_tools_tab)
+
+	# Load current values
+	_load_tools_settings()
+	_refresh_python_envs()
+
+
+## Load tools settings from MCPConfig
+func _load_tools_settings() -> void:
+	var config := MCPConfig.new()
+	config.load_config()
+
+	# Per-server settings
+	for server_name in _server_path_edits:
+		var path := config.get_installation_path(server_name)
+		_server_path_edits[server_name].text = path
+
+		var port := config.get_server_port(server_name)
+		_server_port_spins[server_name].value = port
+
+		var server_cfg = config.get_server(server_name)
+		if server_cfg:
+			_server_auto_connect_checks[server_name].button_pressed = server_cfg.auto_connect
+
+		# Status
+		if config.is_server_installed(server_name):
+			_server_status_labels[server_name].text = "Installed"
+			_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+		else:
+			_server_status_labels[server_name].text = "Not installed"
+			_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.8, 0.4, 0.4))
+
+	# Tool sets
+	_refresh_tool_set_checks()
+
+
+## Refresh the Python environment dropdown
+func _refresh_python_envs() -> void:
+	_python_env_option.clear()
+	_python_env_option.add_item("Auto (recommended)", 0)
+
+	_python_envs_cache = MCPServerInstallerScript.detect_python_environments()
+	for i in range(_python_envs_cache.size()):
+		var env: Dictionary = _python_envs_cache[i]
+		_python_env_option.add_item("%s — %s" % [env["name"], env["path"]], i + 1)
+
+	# Select current setting
+	var config := MCPConfig.new()
+	config.load_config()
+	if config.python_environment == "auto" or config.python_environment.is_empty():
+		_python_env_option.select(0)
+	else:
+		# Find matching env
+		for i in range(_python_envs_cache.size()):
+			if _python_envs_cache[i]["path"] == config.python_environment:
+				_python_env_option.select(i + 1)
+				return
+		# Not found in list — add as custom entry
+		_python_env_option.add_item("Custom: %s" % config.python_environment, _python_envs_cache.size() + 1)
+		_python_env_option.select(_python_env_option.item_count - 1)
+
+
+func _on_python_env_selected(index: int) -> void:
+	var config := MCPConfig.new()
+	config.load_config()
+
+	if index == 0:
+		config.python_environment = "auto"
+	else:
+		var env_idx := index - 1
+		if env_idx >= 0 and env_idx < _python_envs_cache.size():
+			config.python_environment = _python_envs_cache[env_idx]["path"]
+
+	config.save_config()
+
+
+## Refresh tool set checkboxes from MinervaMCPServer
+func _refresh_tool_set_checks() -> void:
+	# Clear existing
+	for child in _tool_set_checks_container.get_children():
+		child.queue_free()
+
+	var mcp = SingletonObject.mcp_manager
+	if not mcp or not mcp.minerva_server:
+		var note := Label.new()
+		note.text = "Tool sets not available (MCP not initialized)"
+		_tool_set_checks_container.add_child(note)
+		return
+
+	var minerva_server = mcp.minerva_server
+	var sets: Dictionary = {}
+	for tool_name in mcp.tool_registry:
+		var tool = mcp.tool_registry[tool_name]
+		if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
+			sets[tool.tool_set] = sets.get(tool.tool_set, 0) + 1
+
+	if sets.is_empty():
+		var note := Label.new()
+		note.text = "No tool sets registered"
+		_tool_set_checks_container.add_child(note)
+		return
+
+	var all_enabled: bool = minerva_server._enabled_tool_sets.is_empty()
+
+	var set_names := sets.keys()
+	set_names.sort()
+	for set_name in set_names:
+		var check := CheckButton.new()
+		check.text = "%s (%d tools)" % [set_name, sets[set_name]]
+		check.button_pressed = all_enabled or (set_name in minerva_server._enabled_tool_sets)
+		check.toggled.connect(_on_tool_set_check_toggled.bind(set_name))
+		_tool_set_checks_container.add_child(check)
+
+
+func _on_tool_set_check_toggled(toggled_on: bool, set_name: String) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp or not mcp.minerva_server:
+		return
+
+	var minerva_server = mcp.minerva_server
+
+	if minerva_server._enabled_tool_sets.is_empty():
+		# Currently all-enabled — build explicit list of all sets minus the unchecked one
+		var all_sets: Array = []
+		for tool_name in mcp.tool_registry:
+			var tool = mcp.tool_registry[tool_name]
+			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
+				if tool.tool_set not in all_sets:
+					all_sets.append(tool.tool_set)
+		if not toggled_on:
+			all_sets.erase(set_name)
+		minerva_server._enabled_tool_sets = all_sets
+	else:
+		if toggled_on and set_name not in minerva_server._enabled_tool_sets:
+			minerva_server._enabled_tool_sets.append(set_name)
+		elif not toggled_on:
+			minerva_server._enabled_tool_sets.erase(set_name)
+
+		# If all sets are now enabled, clear the filter
+		var all_sets: Array = []
+		for tool_name in mcp.tool_registry:
+			var tool = mcp.tool_registry[tool_name]
+			if tool.server_name == "minerva" and not tool.tool_set.is_empty() and tool.tool_set != "meta":
+				if tool.tool_set not in all_sets:
+					all_sets.append(tool.tool_set)
+		if minerva_server._enabled_tool_sets.size() >= all_sets.size():
+			minerva_server._enabled_tool_sets = []
+
+	# Persist to config
+	var config := MCPConfig.new()
+	config.load_config()
+	config.enabled_tool_groups = []
+	for s in minerva_server._enabled_tool_sets:
+		config.enabled_tool_groups.append(str(s))
+	config.save_config()
+
+
+## Browse for server installation directory
+func _on_tools_browse_pressed(server_name: String) -> void:
+	var dialog := FileDialog.new()
+	dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	dialog.title = "Locate %s Installation" % server_name.capitalize()
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.min_size = Vector2i(600, 400)
+
+	dialog.dir_selected.connect(func(path: String) -> void:
+		_on_tools_dir_selected(server_name, path)
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(func() -> void:
+		dialog.queue_free()
+	)
+
+	get_tree().root.add_child(dialog)
+	dialog.popup_centered()
+
+
+func _on_tools_dir_selected(server_name: String, path: String) -> void:
+	if not DirAccess.dir_exists_absolute(path):
+		SingletonObject.create_toast_notification("Directory does not exist", ToastNotification.Type.ERROR)
+		return
+
+	# Validate
+	if not _validate_tools_server_dir(server_name, path):
+		return
+
+	var config := MCPConfig.new()
+	config.load_config()
+	config.set_installation_path(server_name, path)
+	config.save_config()
+
+	_server_path_edits[server_name].text = path
+	_server_status_labels[server_name].text = "Installed"
+	_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+
+	SingletonObject.create_toast_notification(
+		"%s: Installation registered" % server_name.capitalize(),
+		ToastNotification.Type.SUCCESS
+	)
+
+
+## Validate server directory (shared logic)
+static func _validate_tools_server_dir(server_name: String, path: String) -> bool:
+	match server_name:
+		"cobrowser":
+			if not FileAccess.file_exists(path.path_join("src/Library/cobrowser_service.py")):
+				SingletonObject.create_toast_notification(
+					"Not a valid HumanWeb directory — missing src/Library/cobrowser_service.py",
+					ToastNotification.Type.ERROR)
+				return false
+		"nudge":
+			if not FileAccess.file_exists(path.path_join("setup.py")) and not FileAccess.file_exists(path.path_join("pyproject.toml")):
+				SingletonObject.create_toast_notification(
+					"Not a valid Nudge directory — missing setup.py or pyproject.toml",
+					ToastNotification.Type.ERROR)
+				return false
+		"codetools":
+			if not FileAccess.file_exists(path.path_join("setup.py")) and not FileAccess.file_exists(path.path_join("pyproject.toml")):
+				SingletonObject.create_toast_notification(
+					"Not a valid CodeTools directory — missing setup.py or pyproject.toml",
+					ToastNotification.Type.ERROR)
+				return false
+	return true
+
+
+func _on_tools_clear_path_pressed(server_name: String) -> void:
+	var config := MCPConfig.new()
+	config.load_config()
+	config.installation_paths.erase(server_name)
+	config.save_config()
+
+	_server_path_edits[server_name].text = ""
+	_server_status_labels[server_name].text = "Not installed"
+	_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.8, 0.4, 0.4))
+
+	SingletonObject.create_toast_notification(
+		"%s: Installation path cleared" % server_name.capitalize(),
+		ToastNotification.Type.WARNING
+	)
+
+
+func _on_tools_port_changed(value: float, server_name: String) -> void:
+	var config := MCPConfig.new()
+	config.load_config()
+	config.set_server_port(server_name, int(value))
+	config.save_config()
+
+
+func _on_tools_auto_connect_toggled(toggled_on: bool, server_name: String) -> void:
+	var config := MCPConfig.new()
+	config.load_config()
+	var server_cfg = config.get_server(server_name)
+	if server_cfg:
+		server_cfg.auto_connect = toggled_on
+		config.save_config()
+
+#endregion Tools Tab

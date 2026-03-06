@@ -241,6 +241,7 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_item("Triggers...", 104)
 	tools_menu.add_item("Spending...", 103)
 	tools_menu.add_separator()
+	tools_menu.add_item("Tool Settings...", 105)
 	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
@@ -277,6 +278,8 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_show_spending_dashboard()
 		104:
 			_show_trigger_manager()
+		105:
+			_open_tool_settings()
 
 
 func _show_agent_manager() -> void:
@@ -301,6 +304,20 @@ func _show_spending_dashboard() -> void:
 		get_tree().root.add_child(_spending_dashboard)
 	_spending_dashboard.refresh()
 	_spending_dashboard.popup_centered()
+
+
+## Open Preferences popup focused on the Tools tab
+func _open_tool_settings() -> void:
+	var prefs = SingletonObject.preferences_popup
+	if prefs:
+		prefs.popup_centered()
+		# Find and select the Tools tab
+		var tab_container = prefs.get_node("MarginContainer/VBoxContainer/TabContainer")
+		if tab_container:
+			for i in range(tab_container.get_tab_count()):
+				if tab_container.get_tab_title(i) == "Tools":
+					tab_container.current_tab = i
+					break
 
 
 ## Setup the Chats submenu for switching between Chat and Autocoder views
@@ -541,6 +558,8 @@ func _refresh_nudge_submenu() -> void:
 			nudge_submenu.add_item("Stop Server", 10)
 		else:
 			nudge_submenu.add_item("Start Server", 11)
+	else:
+		nudge_submenu.add_item("Locate Existing Installation...", 30)
 
 	nudge_submenu.add_separator()
 
@@ -593,6 +612,8 @@ func _refresh_cobrowser_submenu() -> void:
 			cobrowser_submenu.add_item("Start Server", 11)
 		cobrowser_submenu.add_separator()
 		cobrowser_submenu.add_item("Install Firefox Extension...", 20)
+	else:
+		cobrowser_submenu.add_item("Locate Existing Installation...", 30)
 
 
 ## Refresh the Codetools submenu
@@ -630,6 +651,8 @@ func _refresh_codetools_submenu() -> void:
 			codetools_submenu.add_item("Stop Server", 10)
 		else:
 			codetools_submenu.add_item("Start Server", 11)
+	else:
+		codetools_submenu.add_item("Locate Existing Installation...", 30)
 
 
 ## Refresh the Minerva (Self) submenu
@@ -738,6 +761,7 @@ func _on_nudge_submenu_pressed(id: int) -> void:
 		4: _nudge_delete_current_tab()
 		10: _stop_server("nudge")
 		11: _start_server("nudge")
+		30: _locate_server_installation("nudge")
 
 
 ## Handle Cobrowser submenu item pressed
@@ -747,6 +771,7 @@ func _on_cobrowser_submenu_pressed(id: int) -> void:
 		10: _stop_server("cobrowser")
 		11: _start_server("cobrowser")
 		20: _install_cobrowser_firefox_extension()
+		30: _locate_server_installation("cobrowser")
 
 
 ## Handle Codetools submenu item pressed
@@ -755,6 +780,7 @@ func _on_codetools_submenu_pressed(id: int) -> void:
 		0: _toggle_codetools_connection()
 		10: _stop_server("codetools")
 		11: _start_server("codetools")
+		30: _locate_server_installation("codetools")
 
 
 ## Handle Minerva submenu item pressed
@@ -1555,6 +1581,60 @@ func _is_server_installed(server_name: String) -> bool:
 	var config := MCPConfig.new()
 	config.load_config()
 	return config.is_server_installed(server_name)
+
+
+## Open a directory picker so the user can point to an existing server installation
+func _locate_server_installation(server_name: String) -> void:
+	var dialog := FileDialog.new()
+	dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	dialog.title = "Locate %s Installation" % server_name.capitalize()
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.min_size = Vector2i(600, 400)
+
+	dialog.dir_selected.connect(func(path: String) -> void:
+		_on_locate_dir_selected(server_name, path)
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(func() -> void:
+		dialog.queue_free()
+	)
+
+	get_tree().root.add_child(dialog)
+	dialog.popup_centered()
+
+
+## Validate and register a user-selected installation directory
+func _on_locate_dir_selected(server_name: String, path: String) -> void:
+	if not DirAccess.dir_exists_absolute(path):
+		SingletonObject.create_toast_notification(
+			"Directory does not exist: %s" % path,
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	# Validate the directory looks like the right server
+	var valid := _validate_server_directory(server_name, path)
+	if not valid:
+		return
+
+	# Save the installation path
+	var config := MCPConfig.new()
+	config.load_config()
+	config.set_installation_path(server_name, path)
+	config.save_config()
+
+	SingletonObject.create_toast_notification(
+		"%s: Installation registered at %s" % [server_name.capitalize(), path],
+		ToastNotification.Type.SUCCESS
+	)
+
+	# Refresh submenus so Start Server appears
+	_refresh_all_tool_submenus()
+
+
+## Validate that a directory contains the expected server files
+func _validate_server_directory(server_name: String, path: String) -> bool:
+	return PreferencesPopup._validate_tools_server_dir(server_name, path)
 
 
 ## Start an MCP server

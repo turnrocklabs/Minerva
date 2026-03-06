@@ -224,15 +224,28 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 	return result
 
 
+## Check if a tool passes the current tool set filter.
+## Meta tools always pass. External (non-minerva) tools always pass.
+## For minerva tools: if _enabled_tool_sets is empty, all pass;
+## otherwise only tools whose tool_set is in the enabled list pass.
+func _is_tool_in_enabled_set(tool) -> bool:
+	if tool.server_name != "minerva":
+		return true
+	if tool.tool_set == "meta" or tool.tool_set.is_empty():
+		return true
+	if not minerva_server or minerva_server._enabled_tool_sets.is_empty():
+		return true
+	return tool.tool_set in minerva_server._enabled_tool_sets
+
+
 ## Get all available tools from all connected servers
 func get_available_tools() -> Array:
 	var tools: Array = []
 	for tool_name in tool_registry:
 		var tool = tool_registry[tool_name]
-		# Only include tools from actually connected servers
 		var server_name = tool.server_name
 		if server_name == "minerva":
-			if is_minerva_connected():
+			if is_minerva_connected() and _is_tool_in_enabled_set(tool):
 				tools.append(tool)
 		elif is_server_connected(server_name):
 			tools.append(tool)
@@ -244,10 +257,9 @@ func get_tools_for_openai() -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
 	for tool_name in tool_registry:
 		var tool = tool_registry[tool_name]
-		# Only include tools from connected servers
 		var server_name = tool.server_name
 		var connected = (server_name == "minerva" and is_minerva_connected()) or is_server_connected(server_name)
-		if connected:
+		if connected and _is_tool_in_enabled_set(tool):
 			tools.append(tool.to_openai_format())
 	return tools
 
@@ -263,8 +275,7 @@ func get_tools_for_anthropic() -> Array[Dictionary]:
 		var minerva_connected = is_minerva_connected() if is_minerva else false
 		var external_connected = is_server_connected(server_name) if not is_minerva else false
 		var connected = minerva_connected or external_connected
-		print("[MCP]   Tool '%s' from '%s': minerva=%s, connected=%s" % [tool_name, server_name, minerva_connected, external_connected])
-		if connected:
+		if connected and _is_tool_in_enabled_set(tool):
 			tools.append(tool.to_anthropic_format())
 	print("[MCP] get_tools_for_anthropic() returning %d tools (filtered from %d in registry)" % [tools.size(), tool_registry.size()])
 	return tools

@@ -70,6 +70,22 @@ var servers: Array[ServerConfig] = []
 ## Installation paths for MCP servers
 var installation_paths: Dictionary = {}
 
+## Python environment to use for starting servers: "auto" or absolute path to python executable
+var python_environment: String = "auto"
+
+## Per-server port overrides (server_name -> int)
+var server_ports: Dictionary = {}
+
+## Enabled tool groups for internal MCP consumers (empty = all enabled)
+var enabled_tool_groups: Array[String] = []
+
+## Default ports for known servers
+const DEFAULT_PORTS := {
+	"nudge": 8765,
+	"cobrowser": 8677,
+	"codetools": 8700,
+}
+
 ## Path to save/load configuration
 const CONFIG_PATH := "user://mcp_config.json"
 
@@ -232,12 +248,50 @@ func is_server_installed(server_name: String) -> bool:
 	return DirAccess.dir_exists_absolute(path)
 
 
+## Resolve the python executable for a given server.
+## Priority: config python_environment > per-server .venv > system python
+func get_python_for_server(server_name: String) -> String:
+	# If user chose a specific python, use it
+	if python_environment != "auto" and not python_environment.is_empty():
+		if FileAccess.file_exists(python_environment):
+			return python_environment
+
+	# Try per-server .venv
+	var install_path := get_installation_path(server_name)
+	if not install_path.is_empty():
+		var venv_python: String
+		if OS.get_name() == "Windows":
+			venv_python = install_path.path_join(".venv/Scripts/python.exe")
+		else:
+			venv_python = install_path.path_join(".venv/bin/python")
+		if FileAccess.file_exists(venv_python):
+			return venv_python
+
+	# Fall back to system python
+	return ""
+
+
+## Get the configured port for a server, or its default
+func get_server_port(server_name: String) -> int:
+	if server_ports.has(server_name):
+		return int(server_ports[server_name])
+	return DEFAULT_PORTS.get(server_name, 0)
+
+
+## Set port override for a server
+func set_server_port(server_name: String, port: int) -> void:
+	server_ports[server_name] = port
+
+
 ## Save configuration to file
 func save_config() -> Error:
 	var data := {
-		"version": 1,
+		"version": 2,
 		"servers": [],
-		"installation_paths": installation_paths
+		"installation_paths": installation_paths,
+		"python_environment": python_environment,
+		"server_ports": server_ports,
+		"enabled_tool_groups": Array(enabled_tool_groups),
 	}
 
 	for server in servers:
@@ -278,6 +332,16 @@ func load_config() -> Error:
 	var paths_data: Dictionary = data.get("installation_paths", {})
 	installation_paths = paths_data
 
+	# Load v2 fields (default gracefully for v1 configs)
+	python_environment = data.get("python_environment", "auto")
+	var ports_data = data.get("server_ports", {})
+	server_ports = ports_data if ports_data is Dictionary else {}
+	var groups_data = data.get("enabled_tool_groups", [])
+	enabled_tool_groups = []
+	if groups_data is Array:
+		for g in groups_data:
+			enabled_tool_groups.append(str(g))
+
 	# Clear existing and load from file
 	servers.clear()
 	var servers_data: Array = data.get("servers", [])
@@ -302,13 +366,14 @@ func load_config() -> Error:
 		servers.append(codetools)
 
 	# Migration: Apply required property fixes for existing configs
-	_migrate_server_configs()
+	var config_version: int = data.get("version", 1)
+	_migrate_server_configs(config_version)
 
 	return OK
 
 
 ## Migrate existing server configs to apply required property changes
-func _migrate_server_configs() -> void:
+func _migrate_server_configs(config_version: int) -> void:
 	var needs_save := false
 
 	# Cobrowser consolidated service runs on port 8677 (MCP + WebSocket in one)
@@ -324,6 +389,13 @@ func _migrate_server_configs() -> void:
 			cobrowser.mcp_endpoint = "/mcp"
 			needs_save = true
 			print("[MCPConfig] Migrated cobrowser: enabled MCP init")
+
+	# v1 → v2: ensure new fields have defaults
+	if config_version < 2:
+		if python_environment.is_empty():
+			python_environment = "auto"
+		needs_save = true
+		print("[MCPConfig] Migrated config v1 -> v2")
 
 	if needs_save:
 		save_config()
