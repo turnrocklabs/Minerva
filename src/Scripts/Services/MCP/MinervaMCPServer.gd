@@ -55,6 +55,7 @@ func _init(manager = null) -> void:
 		_register_cost_tools()
 		_register_meta_tools()
 		_register_skill_tools()
+		_register_voice_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -443,6 +444,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _disable_tool_sets(arguments)
 
 		# Skill management tools
+		"minerva_speak":
+			return await _speak(arguments)
+		"minerva_list_voices":
+			return await _list_voices(arguments)
 		"minerva_list_skills":
 			return _skill_list(arguments)
 		"minerva_get_skill":
@@ -9611,4 +9616,100 @@ func _skill_update_instructions(arguments: Dictionary) -> Dictionary:
 		"instructions_length": instructions.length(),
 	}
 
-#endregion
+#endregion Skill Management
+
+#region Voice Tools
+
+func _register_voice_tools() -> void:
+	_register_tool("minerva_speak",
+		"Speak text aloud using text-to-speech. Works regardless of auto-play TTS preference — use this when you want to audibly communicate something to the user. Requires voice-service via Core.",
+		{
+			"type": "object",
+			"properties": {
+				"text": {
+					"type": "string",
+					"description": "The text to speak aloud"
+				},
+				"voice_id": {
+					"type": "string",
+					"description": "Optional voice ID (uses preference default if omitted)"
+				},
+				"backend": {
+					"type": "string",
+					"description": "Optional TTS backend (kokoro, qwen3-base, etc. — uses preference default if omitted)"
+				}
+			},
+			"required": ["text"]
+		}
+	, "chat")
+
+	_register_tool("minerva_list_voices",
+		"List available TTS voices from the voice-service. Use this to discover voice IDs for minerva_speak. Optionally filter by backend.",
+		{
+			"type": "object",
+			"properties": {
+				"backend": {
+					"type": "string",
+					"description": "Optional backend filter (kokoro, qwen3-base, qwen3-customvoice, qwen3-voicedesign, gpt-sovits)"
+				}
+			}
+		}
+	, "chat")
+
+
+func _speak(arguments: Dictionary) -> Dictionary:
+	var text: String = arguments.get("text", "")
+	if text.is_empty():
+		return {"error": "text is required", "success": false}
+
+	if not Core.client._connected:
+		return {"error": "Core not connected — cannot use voice-service", "success": false}
+
+	var cfg := SingletonObject.get_voice_config()
+	var voice_id: String = arguments.get("voice_id", "")
+	if voice_id.is_empty():
+		voice_id = cfg.voice_id
+	var backend: String = arguments.get("backend", "")
+	if backend.is_empty():
+		backend = cfg.tts_backend
+
+	var client := SingletonObject.get_voice_client()
+	var wav_data: PackedByteArray = await client.synthesize(text, voice_id, backend)
+
+	if wav_data.is_empty():
+		return {"error": "TTS synthesis failed", "success": false}
+
+	# Play via the ChatPane TTS player if available
+	var chats = SingletonObject.Chats
+	if chats and chats._tts_player:
+		var stream := AudioStreamWAV.new()
+		chats._load_wav_into_stream(stream, wav_data)
+		chats._tts_player.stream = stream
+		chats._tts_player.volume_db = linear_to_db(cfg.tts_volume)
+		chats._tts_player.play()
+	else:
+		push_warning("[MinervaMCPServer] No TTS player available for minerva_speak")
+		return {"error": "No audio player available", "success": false}
+
+	return {
+		"success": true,
+		"message": "Speaking: %s" % text.substr(0, 100),
+		"text_length": text.length(),
+		"voice_id": voice_id,
+		"backend": backend,
+	}
+
+func _list_voices(arguments: Dictionary) -> Dictionary:
+	if not Core.client._connected:
+		return {"error": "Core not connected — cannot query voice-service", "success": false}
+
+	var backend: String = arguments.get("backend", "")
+	var client := SingletonObject.get_voice_client()
+	var voices: Array = await client.list_voices(backend)
+
+	if voices.is_empty():
+		return {"voices": [], "count": 0, "message": "No voices available (voice-service may not be running)"}
+
+	return {"voices": voices, "count": voices.size(), "success": true}
+
+#endregion Voice Tools

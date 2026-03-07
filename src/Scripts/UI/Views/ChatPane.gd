@@ -26,6 +26,12 @@ var _compact_button: Button
 ## Whether archived chats are visible
 var _showing_archived: bool = false
 
+## TTS playback for voice conversation mode (controlled by Voice Preferences)
+var _tts_player: AudioStreamPlayer
+
+## Quick toggle button for auto-play TTS
+var _tts_toggle_button: Button
+
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
 
@@ -540,6 +546,10 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		history.VBox.ensure_node_is_visible(model_msg_node)
 		model_msg_node.loading = false
 		model_msg_node.first_time_message = true
+
+		# Voice mode: speak the response via TTS (if enabled in Voice Preferences)
+		if chi and not chi.Message.is_empty():
+			_voice_speak_response(chi.Message)
 	else:
 		model_msg_node.queue_free()
 
@@ -1965,6 +1975,24 @@ func _ready():
 	audio_stop_1.get_parent().add_child(_compact_button)
 	audio_stop_1.get_parent().move_child(_compact_button, audio_stop_1.get_index())
 
+	# TTS playback player for voice conversation mode
+	_tts_player = AudioStreamPlayer.new()
+	add_child(_tts_player)
+
+	# Quick TTS toggle button — lets user mute/unmute auto-speak without opening preferences
+	_tts_toggle_button = Button.new()
+	_tts_toggle_button.toggle_mode = true
+	_tts_toggle_button.tooltip_text = "Toggle auto-speak responses (TTS)"
+	_tts_toggle_button.pressed.connect(_on_tts_toggle_pressed)
+	var cfg := SingletonObject.get_voice_config()
+	_tts_toggle_button.button_pressed = cfg.auto_play_tts
+	_tts_toggle_button.text = "S" if cfg.auto_play_tts else "s"
+	audio_stop_1.get_parent().add_child(_tts_toggle_button)
+	audio_stop_1.get_parent().move_child(_tts_toggle_button, _compact_button.get_index())
+
+	# Connect transcription signal for voice mode auto-send + TTS
+	SingletonObject.AtT.transcription_completed.connect(_on_voice_transcription_completed)
+
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
@@ -2328,6 +2356,73 @@ func _on_btn_microphone_pressed():
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
 	SingletonObject.AtT.btnStop = %AudioStop1
+
+
+## After transcription completes, auto-send if configured in Voice Preferences.
+func _on_voice_transcription_completed(text: String) -> void:
+	if text.is_empty():
+		return
+
+	var cfg := SingletonObject.get_voice_config()
+	if cfg.auto_send_transcription:
+		_on_send_message_button_item_selected(0)
+
+
+## Toggle auto-play TTS from the quick button in chat controls.
+func _on_tts_toggle_pressed() -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.auto_play_tts = _tts_toggle_button.button_pressed
+	_tts_toggle_button.text = "S" if cfg.auto_play_tts else "s"
+	cfg.save()
+
+
+## Speak the assistant's response via TTS if enabled in Voice Preferences.
+func _voice_speak_response(response_text: String) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	if not cfg.auto_play_tts:
+		return
+
+	var effective_tts := cfg.get_effective_tts_provider()
+	if effective_tts == VoiceConfig.TTSProvider.NONE:
+		return
+
+	var client := SingletonObject.get_voice_client()
+	var wav_data: PackedByteArray = await client.synthesize_auto(response_text, cfg)
+
+	if wav_data.is_empty():
+		return
+
+	var stream := AudioStreamWAV.new()
+	_load_wav_into_stream(stream, wav_data)
+	_tts_player.stream = stream
+	_tts_player.volume_db = linear_to_db(cfg.tts_volume)
+	_tts_player.play()
+
+
+## Load raw WAV bytes into an AudioStreamWAV resource.
+func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -> void:
+	if wav_bytes.size() < 44:
+		return
+	var channels := wav_bytes.decode_u16(22)
+	var sample_rate := wav_bytes.decode_u32(24)
+	var bits_per_sample := wav_bytes.decode_u16(34)
+
+	var data_offset := 12
+	while data_offset + 8 < wav_bytes.size():
+		var chunk_id := wav_bytes.slice(data_offset, data_offset + 4).get_string_from_ascii()
+		var chunk_size := wav_bytes.decode_u32(data_offset + 4)
+		if chunk_id == "data":
+			data_offset += 8
+			stream.data = wav_bytes.slice(data_offset, data_offset + chunk_size)
+			break
+		data_offset += 8 + chunk_size
+
+	stream.mix_rate = sample_rate
+	stream.stereo = channels == 2
+	match bits_per_sample:
+		8: stream.format = AudioStreamWAV.FORMAT_8_BITS
+		16: stream.format = AudioStreamWAV.FORMAT_16_BITS
+		_: stream.format = AudioStreamWAV.FORMAT_16_BITS
 
 
 func _on_child_order_changed():

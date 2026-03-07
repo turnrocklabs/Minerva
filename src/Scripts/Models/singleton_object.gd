@@ -461,6 +461,23 @@ func get_skill_manager() -> SkillManager:
 
 #endregion Tool Profiles
 
+#region Voice
+var voice_config: VoiceConfig = null
+var voice_client: VoiceServiceClient = null
+
+func get_voice_config() -> VoiceConfig:
+	if not voice_config:
+		voice_config = VoiceConfig.new()
+		voice_config.load_from_config()
+	return voice_config
+
+func get_voice_client() -> VoiceServiceClient:
+	if not voice_client:
+		voice_client = VoiceServiceClient.new()
+	return voice_client
+
+#endregion Voice
+
 #region Agent System
 var agent_registry: AgentRegistry = null
 var trigger_manager: TriggerManager = null

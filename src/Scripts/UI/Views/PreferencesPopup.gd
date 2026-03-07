@@ -112,6 +112,7 @@ func _ready():
 	# Create tools tab (after scene tree is ready)
 	call_deferred("_create_tools_tab")
 	call_deferred("_create_skills_tab")
+	call_deferred("_create_voice_tab")
 
 	# Initialize ChatGPT auth status
 	call_deferred("_init_chatgpt_auth")
@@ -136,6 +137,7 @@ func _ready():
 			connection_texture_rect.texture = preload("res://.godot/imported/check_mark16.webp-ee4b5638509d469382c7cad2d0cf364b.ctex")
 			connect_button.text = "Disconnect"
 			connect_button.tooltip_text = "Disconnect from the Core"
+			_on_core_connection_changed(true)
 	)
 
 	Core.client.connection_error.connect(
@@ -144,6 +146,7 @@ func _ready():
 			connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
 			connect_button.text = "Connect"
 			connect_button.tooltip_text = "Connect to the Core"
+			_on_core_connection_changed(false)
 	)
 
 	Core.client.connection_closed.connect(
@@ -152,6 +155,7 @@ func _ready():
 			connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
 			connect_button.text = "Connect"
 			connect_button.tooltip_text = "Connect to the Core"
+			_on_core_connection_changed(false)
 	)
 
 	Core.http_connection_changed.connect(
@@ -2438,3 +2442,492 @@ func _on_remove_selected_skill() -> void:
 	_show_skill_detail("")
 
 #endregion Skills Tab
+
+#region Voice Tab
+
+var _voice_tab: VBoxContainer
+var _stt_provider_option: OptionButton
+var _stt_backend_option: OptionButton
+var _tts_provider_option: OptionButton
+var _voice_selector: OptionButton
+var _voice_preview_btn: Button
+var _tts_backend_option: OptionButton
+var _auto_play_check: CheckButton
+var _auto_send_check: CheckButton
+var _whisper_fallback_check: CheckButton
+var _tts_volume_slider: HSlider
+var _voice_status_label: Label
+var _voice_refresh_btn: Button
+var _voices_cache: Array = []
+
+
+func _create_voice_tab() -> void:
+	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
+	if not tab_container:
+		return
+
+	_voice_tab = VBoxContainer.new()
+	_voice_tab.name = "Voice"
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_voice_tab.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	# --- STT Section ---
+	var stt_header := Label.new()
+	stt_header.text = "Speech-to-Text (STT)"
+	stt_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(stt_header)
+
+	var stt_row := HBoxContainer.new()
+	stt_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(stt_row)
+	var stt_lbl := Label.new()
+	stt_lbl.text = "Provider:"
+	stt_lbl.custom_minimum_size = Vector2(140, 0)
+	stt_row.add_child(stt_lbl)
+	_stt_provider_option = OptionButton.new()
+	_stt_provider_option.add_item("Voice Service (via Core)", VoiceConfig.STTProvider.VOICE_SERVICE)
+	_stt_provider_option.add_item("OpenAI Whisper (REST)", VoiceConfig.STTProvider.OPENAI_WHISPER)
+	_stt_provider_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_stt_provider_option.item_selected.connect(_on_stt_provider_changed)
+	stt_row.add_child(_stt_provider_option)
+
+	# STT backend (voice-service backends: faster-whisper, qwen3-asr)
+	var stt_backend_row := HBoxContainer.new()
+	stt_backend_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(stt_backend_row)
+	var stt_backend_lbl := Label.new()
+	stt_backend_lbl.text = "STT Backend:"
+	stt_backend_lbl.custom_minimum_size = Vector2(140, 0)
+	stt_backend_row.add_child(stt_backend_lbl)
+	_stt_backend_option = OptionButton.new()
+	_stt_backend_option.add_item("faster-whisper (fast)", 0)
+	_stt_backend_option.add_item("qwen3-asr (quality)", 1)
+	_stt_backend_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_stt_backend_option.item_selected.connect(_on_stt_backend_changed)
+	stt_backend_row.add_child(_stt_backend_option)
+
+	# Whisper fallback
+	_whisper_fallback_check = CheckButton.new()
+	_whisper_fallback_check.text = "Fall back to Whisper when Core disconnected"
+	_whisper_fallback_check.toggled.connect(_on_whisper_fallback_toggled)
+	vbox.add_child(_whisper_fallback_check)
+
+	vbox.add_child(HSeparator.new())
+
+	# --- TTS Section ---
+	var tts_header := Label.new()
+	tts_header.text = "Text-to-Speech (TTS)"
+	tts_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(tts_header)
+
+	var tts_row := HBoxContainer.new()
+	tts_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(tts_row)
+	var tts_lbl := Label.new()
+	tts_lbl.text = "Provider:"
+	tts_lbl.custom_minimum_size = Vector2(140, 0)
+	tts_row.add_child(tts_lbl)
+	_tts_provider_option = OptionButton.new()
+	_tts_provider_option.add_item("Voice Service (via Core)", VoiceConfig.TTSProvider.VOICE_SERVICE)
+	_tts_provider_option.add_item("Disabled", VoiceConfig.TTSProvider.NONE)
+	_tts_provider_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tts_provider_option.item_selected.connect(_on_tts_provider_changed)
+	tts_row.add_child(_tts_provider_option)
+
+	# Backend filter
+	var backend_row := HBoxContainer.new()
+	backend_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(backend_row)
+	var backend_lbl := Label.new()
+	backend_lbl.text = "TTS Backend:"
+	backend_lbl.custom_minimum_size = Vector2(140, 0)
+	backend_row.add_child(backend_lbl)
+	_tts_backend_option = OptionButton.new()
+	_tts_backend_option.add_item("All", 0)
+	_tts_backend_option.add_item("kokoro", 1)
+	_tts_backend_option.add_item("qwen3-base", 2)
+	_tts_backend_option.add_item("qwen3-customvoice", 3)
+	_tts_backend_option.add_item("gpt-sovits", 4)
+	_tts_backend_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tts_backend_option.item_selected.connect(_on_tts_backend_changed)
+	backend_row.add_child(_tts_backend_option)
+
+	# Voice selector
+	var voice_row := HBoxContainer.new()
+	voice_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(voice_row)
+	var voice_lbl := Label.new()
+	voice_lbl.text = "Voice:"
+	voice_lbl.custom_minimum_size = Vector2(140, 0)
+	voice_row.add_child(voice_lbl)
+	_voice_selector = OptionButton.new()
+	_voice_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_voice_selector.add_item("(click Refresh to load voices)")
+	_voice_selector.disabled = true
+	_voice_selector.item_selected.connect(_on_voice_selected)
+	voice_row.add_child(_voice_selector)
+
+	var voice_btn_row := HBoxContainer.new()
+	voice_btn_row.add_theme_constant_override("separation", 4)
+	voice_row.add_child(voice_btn_row)
+
+	_voice_refresh_btn = Button.new()
+	_voice_refresh_btn.text = "Refresh"
+	_voice_refresh_btn.pressed.connect(_on_voice_refresh_pressed)
+	voice_btn_row.add_child(_voice_refresh_btn)
+
+	_voice_preview_btn = Button.new()
+	_voice_preview_btn.text = "Preview"
+	_voice_preview_btn.pressed.connect(_on_voice_preview_pressed)
+	voice_btn_row.add_child(_voice_preview_btn)
+
+	vbox.add_child(HSeparator.new())
+
+	# --- Audio Settings ---
+	var audio_header := Label.new()
+	audio_header.text = "Audio Settings"
+	audio_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(audio_header)
+
+	# Volume
+	var vol_row := HBoxContainer.new()
+	vol_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(vol_row)
+	var vol_lbl := Label.new()
+	vol_lbl.text = "TTS Volume:"
+	vol_lbl.custom_minimum_size = Vector2(140, 0)
+	vol_row.add_child(vol_lbl)
+	_tts_volume_slider = HSlider.new()
+	_tts_volume_slider.min_value = 0.0
+	_tts_volume_slider.max_value = 1.0
+	_tts_volume_slider.step = 0.05
+	_tts_volume_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tts_volume_slider.value_changed.connect(_on_tts_volume_changed)
+	vol_row.add_child(_tts_volume_slider)
+
+	# Auto-play
+	_auto_play_check = CheckButton.new()
+	_auto_play_check.text = "Auto-play TTS responses in voice mode"
+	_auto_play_check.toggled.connect(_on_auto_play_toggled)
+	vbox.add_child(_auto_play_check)
+
+	# Auto-send transcription
+	_auto_send_check = CheckButton.new()
+	_auto_send_check.text = "Auto-send after transcription (skip editing)"
+	_auto_send_check.toggled.connect(_on_auto_send_toggled)
+	vbox.add_child(_auto_send_check)
+
+	vbox.add_child(HSeparator.new())
+
+	# --- Status ---
+	var status_row := HBoxContainer.new()
+	status_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(status_row)
+	_voice_status_label = Label.new()
+	_voice_status_label.text = "Voice service status: unknown"
+	_voice_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_voice_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_row.add_child(_voice_status_label)
+
+	var status_btn := Button.new()
+	status_btn.text = "Check Status"
+	status_btn.pressed.connect(_on_voice_status_pressed)
+	status_row.add_child(status_btn)
+
+	tab_container.add_child(_voice_tab)
+
+	# Load saved preferences into UI
+	_voice_load_ui_from_config()
+
+	# Auto-populate voice list if Core is connected
+	if Core.client._connected:
+		_on_voice_refresh_pressed()
+
+
+func _voice_load_ui_from_config() -> void:
+	var cfg := SingletonObject.get_voice_config()
+
+	# STT provider
+	for i in _stt_provider_option.item_count:
+		if _stt_provider_option.get_item_id(i) == cfg.stt_provider:
+			_stt_provider_option.select(i)
+			break
+
+	# TTS provider
+	for i in _tts_provider_option.item_count:
+		if _tts_provider_option.get_item_id(i) == cfg.tts_provider:
+			_tts_provider_option.select(i)
+			break
+
+	# STT backend
+	match cfg.stt_backend:
+		"qwen3-asr": _stt_backend_option.select(1)
+		_: _stt_backend_option.select(0)
+	_stt_backend_option.disabled = cfg.stt_provider != VoiceConfig.STTProvider.VOICE_SERVICE
+
+	# TTS backend
+	match cfg.tts_backend:
+		"kokoro": _tts_backend_option.select(1)
+		"qwen3-base": _tts_backend_option.select(2)
+		"qwen3-customvoice": _tts_backend_option.select(3)
+		"gpt-sovits": _tts_backend_option.select(4)
+		_: _tts_backend_option.select(0)
+
+	_whisper_fallback_check.button_pressed = cfg.whisper_fallback
+	_auto_play_check.button_pressed = cfg.auto_play_tts
+	_auto_send_check.button_pressed = cfg.auto_send_transcription
+	_tts_volume_slider.value = cfg.tts_volume
+
+	# Update TTS section visibility
+	_update_tts_section_enabled()
+
+
+func _update_tts_section_enabled() -> void:
+	if not _voice_tab:
+		return
+	var cfg := SingletonObject.get_voice_config()
+	var tts_enabled := cfg.tts_provider != VoiceConfig.TTSProvider.NONE
+	var core_connected: bool = Core.client._connected
+
+	# TTS controls need both TTS enabled AND Core connected (Voice Service requires Core)
+	var tts_usable := tts_enabled and core_connected
+	_tts_backend_option.disabled = not tts_usable
+	_voice_selector.disabled = not tts_usable
+	_voice_preview_btn.disabled = not tts_usable
+	_voice_refresh_btn.disabled = not core_connected
+	_tts_volume_slider.editable = tts_enabled
+	_auto_play_check.disabled = not tts_enabled
+
+	# Update status label based on connection
+	if not core_connected:
+		_voice_status_label.text = "Voice service: Core not connected"
+	elif _voices_cache.is_empty():
+		_voice_status_label.text = "Voice service: click Refresh to load voices"
+
+
+## Called when Core connects or disconnects — updates Voice tab enabled state.
+func _on_core_connection_changed(_connected: bool) -> void:
+	if not _voice_tab:
+		return
+	_update_tts_section_enabled()
+
+
+func _on_stt_provider_changed(idx: int) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.stt_provider = _stt_provider_option.get_item_id(idx)
+	var is_voice_service: bool = cfg.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE
+	_whisper_fallback_check.visible = is_voice_service
+	_stt_backend_option.disabled = not is_voice_service
+	cfg.save()
+
+
+func _on_stt_backend_changed(idx: int) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	match idx:
+		0: cfg.stt_backend = "faster-whisper"
+		1: cfg.stt_backend = "qwen3-asr"
+	cfg.save()
+
+
+func _on_tts_provider_changed(idx: int) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.tts_provider = _tts_provider_option.get_item_id(idx)
+	_update_tts_section_enabled()
+	cfg.save()
+
+
+func _on_tts_backend_changed(idx: int) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	match idx:
+		0: cfg.tts_backend = ""
+		1: cfg.tts_backend = "kokoro"
+		2: cfg.tts_backend = "qwen3-base"
+		3: cfg.tts_backend = "qwen3-customvoice"
+		4: cfg.tts_backend = "gpt-sovits"
+	cfg.save()
+	# Refresh voice list for new backend
+	_on_voice_refresh_pressed()
+
+
+func _on_voice_selected(idx: int) -> void:
+	if idx < 0 or idx >= _voices_cache.size():
+		return
+	var cfg := SingletonObject.get_voice_config()
+	var voice: Dictionary = _voices_cache[idx]
+	cfg.voice_id = voice.get("id", "")
+	cfg.voice_name = voice.get("name", voice.get("id", ""))
+	cfg.save()
+
+
+func _on_whisper_fallback_toggled(enabled: bool) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.whisper_fallback = enabled
+	cfg.save()
+
+
+func _on_auto_play_toggled(enabled: bool) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.auto_play_tts = enabled
+	cfg.save()
+
+
+func _on_auto_send_toggled(enabled: bool) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.auto_send_transcription = enabled
+	cfg.save()
+
+
+func _on_tts_volume_changed(value: float) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.tts_volume = value
+	cfg.save()
+
+
+func _on_voice_refresh_pressed() -> void:
+	if not Core.client._connected:
+		_voice_status_label.text = "Voice service status: Core not connected"
+		return
+
+	_voice_refresh_btn.disabled = true
+	_voice_refresh_btn.text = "Loading..."
+
+	var client := SingletonObject.get_voice_client()
+	var cfg := SingletonObject.get_voice_config()
+	var backend_filter: String = cfg.tts_backend
+
+	var voices: Array = await client.list_voices(backend_filter)
+
+	_voices_cache = voices
+	_voice_selector.clear()
+
+	if voices.is_empty():
+		_voice_selector.add_item("(no voices available)")
+		_voice_selector.disabled = true
+	else:
+		var selected_idx := 0
+		for i in voices.size():
+			var v: Dictionary = voices[i]
+			var display: String = v.get("name", v.get("id", "unknown"))
+			var backend_family: String = v.get("backend_family", "")
+			if not backend_family.is_empty():
+				display += " (%s)" % backend_family
+			_voice_selector.add_item(display)
+			if v.get("id", "") == cfg.voice_id:
+				selected_idx = i
+		_voice_selector.select(selected_idx)
+		_voice_selector.disabled = false
+		# Update config if selection changed
+		if selected_idx < voices.size():
+			cfg.voice_id = voices[selected_idx].get("id", "")
+			cfg.voice_name = voices[selected_idx].get("name", "")
+			cfg.save()
+
+	_voice_refresh_btn.disabled = false
+	_voice_refresh_btn.text = "Refresh"
+	_voice_status_label.text = "Voice service: %d voices loaded" % voices.size()
+
+
+func _on_voice_preview_pressed() -> void:
+	var cfg := SingletonObject.get_voice_config()
+	if cfg.voice_id.is_empty():
+		_voice_status_label.text = "Select a voice first"
+		return
+
+	if not Core.client._connected:
+		_voice_status_label.text = "Core not connected — cannot preview"
+		return
+
+	_voice_preview_btn.disabled = true
+	_voice_preview_btn.text = "Playing..."
+	_voice_status_label.text = "Generating preview..."
+
+	var client := SingletonObject.get_voice_client()
+	var wav_data: PackedByteArray = await client.synthesize(
+		"Hello! This is a preview of the selected voice.",
+		cfg.voice_id,
+		cfg.tts_backend
+	)
+
+	if wav_data.is_empty():
+		_voice_status_label.text = "Preview failed — check voice service"
+		_voice_preview_btn.disabled = false
+		_voice_preview_btn.text = "Preview"
+		return
+
+	# Play the WAV audio
+	var stream := AudioStreamWAV.new()
+	_load_wav_into_stream(stream, wav_data)
+
+	var player := AudioStreamPlayer.new()
+	player.stream = stream
+	player.volume_db = linear_to_db(cfg.tts_volume)
+	add_child(player)
+	player.play()
+	player.finished.connect(func(): player.queue_free())
+
+	_voice_status_label.text = "Playing preview..."
+	_voice_preview_btn.disabled = false
+	_voice_preview_btn.text = "Preview"
+
+
+func _on_voice_status_pressed() -> void:
+	if not Core.client._connected:
+		_voice_status_label.text = "Voice service status: Core not connected"
+		return
+
+	_voice_status_label.text = "Checking..."
+	var client := SingletonObject.get_voice_client()
+	var status: Dictionary = await client.get_status()
+
+	if status.has("error"):
+		_voice_status_label.text = "Voice service: %s" % status["error"]
+	else:
+		_voice_status_label.text = "Voice service: online"
+
+
+## Load raw WAV bytes into an AudioStreamWAV resource.
+func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -> void:
+	if wav_bytes.size() < 44:
+		return
+
+	# Parse WAV header
+	var channels := wav_bytes.decode_u16(22)
+	var sample_rate := wav_bytes.decode_u32(24)
+	var bits_per_sample := wav_bytes.decode_u16(34)
+
+	# Find data chunk (skip past header)
+	var data_offset := 12
+	while data_offset + 8 < wav_bytes.size():
+		var chunk_id := wav_bytes.slice(data_offset, data_offset + 4).get_string_from_ascii()
+		var chunk_size := wav_bytes.decode_u32(data_offset + 4)
+		if chunk_id == "data":
+			data_offset += 8
+			stream.data = wav_bytes.slice(data_offset, data_offset + chunk_size)
+			break
+		data_offset += 8 + chunk_size
+
+	stream.mix_rate = sample_rate
+	stream.stereo = channels == 2
+
+	match bits_per_sample:
+		8: stream.format = AudioStreamWAV.FORMAT_8_BITS
+		16: stream.format = AudioStreamWAV.FORMAT_16_BITS
+		_: stream.format = AudioStreamWAV.FORMAT_16_BITS
+
+#endregion Voice Tab
