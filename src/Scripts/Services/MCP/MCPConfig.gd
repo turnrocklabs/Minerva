@@ -17,6 +17,8 @@ class ServerConfig:
 	var skip_mcp_init: bool = false  # For REST APIs that don't use MCP protocol
 	var working_directory: String = ""  # Working directory for file operations
 	var mcp_endpoint: String = "/mcp"  # MCP JSON-RPC endpoint path (some servers use "/" instead)
+	var origin: String = "known"  # "builtin" | "known" | "user"
+	var persistent: bool = true  # session-only servers excluded from save_config()
 
 	func _init(n: String = "", t: String = "http", u: String = "") -> void:
 		name = n
@@ -39,7 +41,9 @@ class ServerConfig:
 			"auto_connect": auto_connect,
 			"skip_mcp_init": skip_mcp_init,
 			"working_directory": working_directory,
-			"mcp_endpoint": mcp_endpoint
+			"mcp_endpoint": mcp_endpoint,
+			"origin": origin,
+			"persistent": persistent,
 		}
 		if type == "stdio":
 			d["command"] = command
@@ -61,6 +65,8 @@ class ServerConfig:
 		config.skip_mcp_init = data.get("skip_mcp_init", false)
 		config.working_directory = data.get("working_directory", "")
 		config.mcp_endpoint = data.get("mcp_endpoint", "/mcp")
+		config.origin = data.get("origin", "known")
+		config.persistent = data.get("persistent", true)
 		return config
 
 
@@ -79,12 +85,15 @@ var server_ports: Dictionary = {}
 ## Enabled tool groups for internal MCP consumers (empty = all enabled)
 var enabled_tool_groups: Array[String] = []
 
-## Default ports for known servers
-const DEFAULT_PORTS := {
-	"nudge": 8765,
-	"cobrowser": 8677,
-	"codetools": 8700,
-}
+## Default ports for known servers (delegates to MCPKnownServers)
+static var DEFAULT_PORTS: Dictionary:
+	get:
+		var ports := {}
+		for sname in MCPKnownServers.get_names():
+			var port := MCPKnownServers.get_default_port(sname)
+			if port > 0:
+				ports[sname] = port
+		return ports
 
 ## Path to save/load configuration
 const CONFIG_PATH := "user://mcp_config.json"
@@ -149,30 +158,31 @@ static func is_nudge_running() -> bool:
 	return true
 
 
-## Add the built-in default server configurations
+## Add the built-in default server configurations from MCPKnownServers registry
 func _add_default_servers() -> void:
-	# Nudge MCP server (session-scoped hint cache) - uses HTTP transport
-	# Discovers port from PID file or defaults to 8765
-	var nudge_port := discover_nudge_port()
-	var nudge := ServerConfig.new("nudge", "http", "http://localhost:%d" % nudge_port)
-	nudge.auto_connect = false  # User must explicitly enable via Tools menu
-	servers.append(nudge)
+	for server_name in MCPKnownServers.get_names():
+		var known := MCPKnownServers.get_server(server_name)
+		if not known:
+			continue
 
-	# Co-Browser service on port 8677 (consolidated MCP + WebSocket service)
-	var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
-	cobrowser.auto_connect = false  # User must explicitly enable
-	servers.append(cobrowser)
+		var port: int = known.default_port
+		# Nudge has special port discovery
+		if server_name == "nudge":
+			port = discover_nudge_port()
 
-	# CodeTools MCP server (code manipulation tools) - uses MCP JSON-RPC on port 8700
-	# Note: CodeTools uses "/" as endpoint, not "/mcp"
-	var codetools := ServerConfig.new("codetools", "http", "http://localhost:8700")
-	codetools.auto_connect = false  # User must explicitly enable
-	codetools.mcp_endpoint = "/"  # CodeTools serves JSON-RPC at root
-	# Default to current working directory (where Minerva was launched from)
-	var dir := DirAccess.open(".")
-	if dir:
-		codetools.working_directory = dir.get_current_dir()
-	servers.append(codetools)
+		var config := ServerConfig.new(server_name, known.default_type,
+			"http://localhost:%d" % port)
+		config.auto_connect = false  # User must explicitly enable via Tools menu
+		config.mcp_endpoint = known.default_mcp_endpoint
+		config.origin = "known"
+
+		# CodeTools defaults to current working directory
+		if server_name == "codetools":
+			var dir := DirAccess.open(".")
+			if dir:
+				config.working_directory = dir.get_current_dir()
+
+		servers.append(config)
 
 
 ## Get a server configuration by name
@@ -286,7 +296,7 @@ func set_server_port(server_name: String, port: int) -> void:
 ## Save configuration to file
 func save_config() -> Error:
 	var data := {
-		"version": 2,
+		"version": 3,
 		"servers": [],
 		"installation_paths": installation_paths,
 		"python_environment": python_environment,
@@ -295,6 +305,8 @@ func save_config() -> Error:
 	}
 
 	for server in servers:
+		if not server.persistent:
+			continue  # Skip session-only servers
 		data["servers"].append(server.to_dict())
 
 	var json := JSON.stringify(data, "\t")
@@ -348,33 +360,46 @@ func load_config() -> Error:
 	for server_data in servers_data:
 		servers.append(ServerConfig.from_dict(server_data))
 
-	# Ensure default servers exist
-	if not get_server("nudge"):
-		var nudge_port := discover_nudge_port()
-		var nudge := ServerConfig.new("nudge", "http", "http://localhost:%d" % nudge_port)
-		servers.append(nudge)
+	# Remove stale "known" servers that are no longer in the registry
+	var to_remove: Array[String] = []
+	for server in servers:
+		if server.origin == "known" and not MCPKnownServers.is_known(server.name):
+			to_remove.append(server.name)
+	var had_stale := not to_remove.is_empty()
+	for stale_name in to_remove:
+		remove_server(stale_name)
+		print("[MCPConfig] Removed stale known server: %s" % stale_name)
 
-	if not get_server("cobrowser"):
-		var cobrowser := ServerConfig.new("cobrowser", "http", "http://localhost:8677")
-		cobrowser.auto_connect = false
-		servers.append(cobrowser)
-
-	if not get_server("codetools"):
-		var codetools := ServerConfig.new("codetools", "http", "http://localhost:8700")
-		codetools.auto_connect = false
-		codetools.mcp_endpoint = "/"  # CodeTools serves JSON-RPC at root
-		servers.append(codetools)
+	# Ensure all known servers exist (merges new known servers after Minerva updates)
+	for known_name in MCPKnownServers.get_names():
+		if not get_server(known_name):
+			var known := MCPKnownServers.get_server(known_name)
+			if not known:
+				continue
+			var port: int = known.default_port
+			if known_name == "nudge":
+				port = discover_nudge_port()
+			var new_config := ServerConfig.new(known_name, known.default_type,
+				"http://localhost:%d" % port)
+			new_config.auto_connect = false
+			new_config.mcp_endpoint = known.default_mcp_endpoint
+			new_config.origin = "known"
+			if known_name == "codetools":
+				var dir := DirAccess.open(".")
+				if dir:
+					new_config.working_directory = dir.get_current_dir()
+			servers.append(new_config)
 
 	# Migration: Apply required property fixes for existing configs
 	var config_version: int = data.get("version", 1)
-	_migrate_server_configs(config_version)
+	_migrate_server_configs(config_version, had_stale)
 
 	return OK
 
 
 ## Migrate existing server configs to apply required property changes
-func _migrate_server_configs(config_version: int) -> void:
-	var needs_save := false
+func _migrate_server_configs(config_version: int, force_save: bool = false) -> void:
+	var needs_save := force_save
 
 	# Cobrowser consolidated service runs on port 8677 (MCP + WebSocket in one)
 	var cobrowser := get_server("cobrowser")
@@ -396,6 +421,19 @@ func _migrate_server_configs(config_version: int) -> void:
 			python_environment = "auto"
 		needs_save = true
 		print("[MCPConfig] Migrated config v1 -> v2")
+
+	# v2 → v3: add origin and persistent fields
+	if config_version < 3:
+		for server in servers:
+			if server.origin.is_empty() or server.origin == "known":
+				# Classify based on known server registry
+				if MCPKnownServers.is_known(server.name):
+					server.origin = "known"
+				else:
+					server.origin = "user"
+			server.persistent = true
+		needs_save = true
+		print("[MCPConfig] Migrated config v2 -> v3")
 
 	if needs_save:
 		save_config()

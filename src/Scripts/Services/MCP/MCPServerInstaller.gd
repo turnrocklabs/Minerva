@@ -7,23 +7,35 @@ signal progress_updated(percent: float, message: String)
 signal log_message(text: String, is_error: bool)
 signal installation_finished(success: bool, results: Dictionary)
 
-const REPOS := {
-	"nudge": "https://github.com/ipeerbhai/nudge.git",
-	"cobrowser": "https://github.com/ipeerbhai/HumanWeb.git",
-	"codetools": "https://github.com/ipeerbhai/codetools.git"
-}
+## Repository URLs for installable servers (delegates to MCPKnownServers)
+static var REPOS: Dictionary:
+	get:
+		var repos := {}
+		for sname in MCPKnownServers.get_names():
+			var url := MCPKnownServers.get_repo_url(sname)
+			if not url.is_empty():
+				repos[sname] = url
+		return repos
 
-const PORTS := {
-	"nudge": 8765,
-	"cobrowser": 8677,  # Consolidated cobrowser service (MCP + WebSocket)
-	"codetools": 8700
-}
+## Default ports for servers (delegates to MCPKnownServers)
+static var PORTS: Dictionary:
+	get:
+		var ports := {}
+		for sname in MCPKnownServers.get_names():
+			var port := MCPKnownServers.get_default_port(sname)
+			if port > 0:
+				ports[sname] = port
+		return ports
 
-const SERVER_DESCRIPTIONS := {
-	"nudge": "Nudge - Session-scoped hint cache for storing micro-facts",
-	"cobrowser": "CoBrowser - Browser automation through Firefox extension",
-	"codetools": "CodeTools - Code manipulation and analysis tools"
-}
+## Server descriptions (delegates to MCPKnownServers)
+static var SERVER_DESCRIPTIONS: Dictionary:
+	get:
+		var descs := {}
+		for sname in MCPKnownServers.get_names():
+			var server := MCPKnownServers.get_server(sname)
+			if server:
+				descs[sname] = "%s - %s" % [server.display_name, server.description]
+		return descs
 
 var _is_installing := false
 
@@ -252,11 +264,7 @@ func install_servers(base_path: String, servers: Array) -> Dictionary:
 
 
 func _get_server_folder_name(server: String) -> String:
-	match server:
-		"cobrowser":
-			return "HumanWeb"
-		_:
-			return server
+	return MCPKnownServers.get_folder_name(server)
 
 
 func _clone_repo(repo_url: String, target_dir: String) -> bool:
@@ -486,31 +494,23 @@ func get_startup_command(server: String, install_path: String) -> Dictionary:
 	# Resolve port from config
 	var port: int = config.get_server_port(server)
 
-	match server:
-		"nudge":
-			return {
-				"command": python,
-				"args": ["-m", "nudge", "serve"],
-				"cwd": install_path,
-				"port": port
-			}
-		"cobrowser":
-			return {
-				"command": python,
-				"args": ["-m", "uvicorn", "src.Library.cobrowser_service:app",
-						"--host", "0.0.0.0", "--port", str(port)],
-				"cwd": install_path,
-				"port": port
-			}
-		"codetools":
-			return {
-				"command": python,
-				"args": ["-m", "codetools", "serve", "--port", str(port)],
-				"cwd": install_path,
-				"port": PORTS.codetools
-			}
+	var known := MCPKnownServers.get_server(server)
+	if not known:
+		return {}
 
-	return {}
+	var args: Array = ["-m", known.startup_module]
+	args.append_array(known.startup_args)
+	# Append port for servers that need it
+	if server != "nudge":
+		args.append("--port")
+		args.append(str(port))
+
+	return {
+		"command": python,
+		"args": args,
+		"cwd": install_path,
+		"port": port
+	}
 
 
 ## Get platform-specific installation instructions for missing prerequisites

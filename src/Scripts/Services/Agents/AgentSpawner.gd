@@ -31,6 +31,10 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 	history.IsAgentChat = true
 	history.AgentDefinitionId = agent_def.id
 
+	# 2b. Set active skills from agent definition
+	if not agent_def.skills.is_empty():
+		history.ActiveSkills = agent_def.skills.duplicate()
+
 	# 3. Compute DisabledTools from enabled_tools allowlist
 	if not agent_def.enabled_tools.is_empty():
 		var mcp = SingletonObject.get_mcp_manager()

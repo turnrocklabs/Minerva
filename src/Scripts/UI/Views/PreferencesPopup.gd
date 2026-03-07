@@ -1499,6 +1499,9 @@ var _server_port_spins: Dictionary = {}  # server_name -> SpinBox
 var _server_auto_connect_checks: Dictionary = {}  # server_name -> CheckButton
 var _server_status_labels: Dictionary = {}  # server_name -> Label
 var _tool_set_checks_container: VBoxContainer
+var _server_list_container: VBoxContainer
+var _skill_checks_container: VBoxContainer
+var _add_server_dialog_prefs: AddMCPServerDialog = null
 
 
 func _create_tools_tab() -> void:
@@ -1567,76 +1570,40 @@ func _create_tools_tab() -> void:
 
 	vbox.add_child(HSeparator.new())
 
-	# --- Per-Server Sections ---
-	var server_names := ["cobrowser", "nudge", "codetools"]
-	var server_labels := {"cobrowser": "Cobrowser (HumanWeb)", "nudge": "Nudge", "codetools": "CodeTools"}
+	# --- MCP Servers Section (dynamic from config) ---
+	var servers_header_hbox := HBoxContainer.new()
+	servers_header_hbox.add_theme_constant_override("separation", 8)
+	vbox.add_child(servers_header_hbox)
 
-	for server_name in server_names:
-		var s_label := Label.new()
-		s_label.text = server_labels[server_name]
-		s_label.add_theme_font_size_override("font_size", 16)
-		vbox.add_child(s_label)
+	var servers_header := Label.new()
+	servers_header.text = "MCP Servers"
+	servers_header.add_theme_font_size_override("font_size", 16)
+	servers_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	servers_header_hbox.add_child(servers_header)
 
-		# Status
-		var status_label := Label.new()
-		status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-		vbox.add_child(status_label)
-		_server_status_labels[server_name] = status_label
+	var add_server_btn := Button.new()
+	add_server_btn.text = "Add Server..."
+	add_server_btn.pressed.connect(_on_add_server_button_pressed)
+	servers_header_hbox.add_child(add_server_btn)
 
-		# Installation path
-		var path_hbox := HBoxContainer.new()
-		path_hbox.add_theme_constant_override("separation", 6)
-		vbox.add_child(path_hbox)
+	_server_list_container = VBoxContainer.new()
+	vbox.add_child(_server_list_container)
 
-		var path_label := Label.new()
-		path_label.text = "Path:"
-		path_label.custom_minimum_size.x = 40
-		path_hbox.add_child(path_label)
+	vbox.add_child(HSeparator.new())
 
-		var path_edit := LineEdit.new()
-		path_edit.editable = false
-		path_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		path_edit.placeholder_text = "Not set"
-		path_hbox.add_child(path_edit)
-		_server_path_edits[server_name] = path_edit
+	# --- Skills Section ---
+	var skills_label := Label.new()
+	skills_label.text = "Active Skills"
+	skills_label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(skills_label)
 
-		var browse_btn := Button.new()
-		browse_btn.text = "Browse..."
-		browse_btn.pressed.connect(_on_tools_browse_pressed.bind(server_name))
-		path_hbox.add_child(browse_btn)
+	var skills_desc := Label.new()
+	skills_desc.text = "Skills control which tool sets and MCP servers are active by default. Per-agent and per-chat settings override global skills."
+	skills_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(skills_desc)
 
-		var clear_btn := Button.new()
-		clear_btn.text = "Clear"
-		clear_btn.pressed.connect(_on_tools_clear_path_pressed.bind(server_name))
-		path_hbox.add_child(clear_btn)
-
-		# Port
-		var port_hbox := HBoxContainer.new()
-		port_hbox.add_theme_constant_override("separation", 6)
-		vbox.add_child(port_hbox)
-
-		var port_label := Label.new()
-		port_label.text = "Port:"
-		port_label.custom_minimum_size.x = 40
-		port_hbox.add_child(port_label)
-
-		var port_spin := SpinBox.new()
-		port_spin.min_value = 1024
-		port_spin.max_value = 65535
-		port_spin.value = MCPConfig.DEFAULT_PORTS.get(server_name, 8000)
-		port_spin.value_changed.connect(_on_tools_port_changed.bind(server_name))
-		port_hbox.add_child(port_spin)
-		_server_port_spins[server_name] = port_spin
-
-		# Auto-connect
-		var auto_check := CheckButton.new()
-		auto_check.text = "Auto-connect on startup"
-		auto_check.toggled.connect(_on_tools_auto_connect_toggled.bind(server_name))
-		vbox.add_child(auto_check)
-		_server_auto_connect_checks[server_name] = auto_check
-
-		if server_name != server_names[server_names.size() - 1]:
-			vbox.add_child(HSeparator.new())
+	_skill_checks_container = VBoxContainer.new()
+	vbox.add_child(_skill_checks_container)
 
 	tab_container.add_child(_tools_tab)
 
@@ -1650,7 +1617,10 @@ func _load_tools_settings() -> void:
 	var config := MCPConfig.new()
 	config.load_config()
 
-	# Per-server settings
+	# Build dynamic server list
+	_rebuild_server_list(config)
+
+	# Per-server settings (for servers that have UI controls)
 	for server_name in _server_path_edits:
 		var path := config.get_installation_path(server_name)
 		_server_path_edits[server_name].text = path
@@ -1672,6 +1642,231 @@ func _load_tools_settings() -> void:
 
 	# Tool sets
 	_refresh_tool_set_checks()
+
+	# Skills
+	_rebuild_skill_checks()
+
+
+## Build the dynamic server list in the Tools tab
+func _rebuild_server_list(config: MCPConfig) -> void:
+	if not _server_list_container:
+		return
+
+	# Clear existing
+	for child in _server_list_container.get_children():
+		child.queue_free()
+	_server_path_edits.clear()
+	_server_port_spins.clear()
+	_server_auto_connect_checks.clear()
+	_server_status_labels.clear()
+
+	var mcp = SingletonObject.mcp_manager
+
+	for server_cfg in config.servers:
+		var server_name: String = server_cfg.name
+		var display_name: String = MCPKnownServers.get_display_name(server_name)
+		var is_known := MCPKnownServers.is_known(server_name)
+		var is_user := server_cfg.origin == "user"
+
+		# Header row with name and status
+		var header_hbox := HBoxContainer.new()
+		header_hbox.add_theme_constant_override("separation", 8)
+		_server_list_container.add_child(header_hbox)
+
+		var s_label := Label.new()
+		s_label.text = display_name
+		s_label.add_theme_font_size_override("font_size", 14)
+		s_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		header_hbox.add_child(s_label)
+
+		# Connection status
+		var connected = mcp and mcp.is_server_connected(server_name)
+		var status_label := Label.new()
+		status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		header_hbox.add_child(status_label)
+		_server_status_labels[server_name] = status_label
+
+		# Connect/Disconnect button
+		var conn_btn := Button.new()
+		conn_btn.text = "Disconnect" if connected else "Connect"
+		conn_btn.pressed.connect(_on_server_connect_toggle.bind(server_name, conn_btn))
+		header_hbox.add_child(conn_btn)
+
+		# Remove button (user servers only)
+		if is_user:
+			var remove_btn := Button.new()
+			remove_btn.text = "Remove"
+			remove_btn.pressed.connect(_on_server_remove.bind(server_name))
+			header_hbox.add_child(remove_btn)
+
+		# URL/Port row
+		var url_hbox := HBoxContainer.new()
+		url_hbox.add_theme_constant_override("separation", 6)
+		_server_list_container.add_child(url_hbox)
+
+		var url_label := Label.new()
+		url_label.text = "  URL: %s" % server_cfg.url
+		url_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		url_hbox.add_child(url_label)
+
+		# Known servers get installation path, port, browse controls
+		if is_known and MCPKnownServers.is_installable(server_name):
+			var path_hbox := HBoxContainer.new()
+			path_hbox.add_theme_constant_override("separation", 6)
+			_server_list_container.add_child(path_hbox)
+
+			var path_label := Label.new()
+			path_label.text = "Path:"
+			path_label.custom_minimum_size.x = 40
+			path_hbox.add_child(path_label)
+
+			var path_edit := LineEdit.new()
+			path_edit.editable = false
+			path_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			path_edit.placeholder_text = "Not set"
+			path_hbox.add_child(path_edit)
+			_server_path_edits[server_name] = path_edit
+
+			var browse_btn := Button.new()
+			browse_btn.text = "Browse..."
+			browse_btn.pressed.connect(_on_tools_browse_pressed.bind(server_name))
+			path_hbox.add_child(browse_btn)
+
+			var clear_btn := Button.new()
+			clear_btn.text = "Clear"
+			clear_btn.pressed.connect(_on_tools_clear_path_pressed.bind(server_name))
+			path_hbox.add_child(clear_btn)
+
+			# Port
+			var port_hbox := HBoxContainer.new()
+			port_hbox.add_theme_constant_override("separation", 6)
+			_server_list_container.add_child(port_hbox)
+
+			var port_label := Label.new()
+			port_label.text = "Port:"
+			port_label.custom_minimum_size.x = 40
+			port_hbox.add_child(port_label)
+
+			var port_spin := SpinBox.new()
+			port_spin.min_value = 1024
+			port_spin.max_value = 65535
+			port_spin.value = config.get_server_port(server_name)
+			port_spin.value_changed.connect(_on_tools_port_changed.bind(server_name))
+			port_hbox.add_child(port_spin)
+			_server_port_spins[server_name] = port_spin
+
+		# Auto-connect
+		var auto_check := CheckButton.new()
+		auto_check.text = "Auto-connect on startup"
+		auto_check.button_pressed = server_cfg.auto_connect
+		auto_check.toggled.connect(_on_tools_auto_connect_toggled.bind(server_name))
+		_server_list_container.add_child(auto_check)
+		_server_auto_connect_checks[server_name] = auto_check
+
+		_server_list_container.add_child(HSeparator.new())
+
+
+## Handle connect/disconnect toggle from preferences
+func _on_server_connect_toggle(server_name: String, btn: Button) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		return
+	if mcp.is_server_connected(server_name):
+		mcp.disconnect_server(server_name)
+		btn.text = "Connect"
+	else:
+		var err = await mcp.connect_server(server_name)
+		if err == OK:
+			btn.text = "Disconnect"
+	_load_tools_settings()
+
+
+## Handle remove user server from preferences
+func _on_server_remove(server_name: String) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		return
+	mcp.remove_server_at_runtime(server_name)
+	_load_tools_settings()
+
+
+## Handle Add Server button in preferences
+func _on_add_server_button_pressed() -> void:
+	if not _add_server_dialog_prefs:
+		_add_server_dialog_prefs = AddMCPServerDialog.new()
+		_add_server_dialog_prefs.server_added.connect(_on_prefs_server_added)
+		get_tree().root.add_child(_add_server_dialog_prefs)
+	_add_server_dialog_prefs.reset()
+	_add_server_dialog_prefs.popup_centered()
+
+
+func _on_prefs_server_added(config_data: Dictionary) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		return
+
+	var server_config = MCPConfig.ServerConfig.new(
+		config_data.get("name", ""),
+		config_data.get("type", "http"),
+		config_data.get("url", "")
+	)
+	server_config.auto_connect = config_data.get("auto_connect", false)
+	server_config.origin = "user"
+	server_config.persistent = config_data.get("persistent", true)
+
+	await mcp.add_server_at_runtime(server_config, true)
+	_load_tools_settings()
+
+
+## Build skill checkboxes from SkillManager
+func _rebuild_skill_checks() -> void:
+	if not _skill_checks_container:
+		return
+
+	for child in _skill_checks_container.get_children():
+		child.queue_free()
+
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return
+
+	for skill in skill_manager.skills:
+		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 8)
+		_skill_checks_container.add_child(hbox)
+
+		var check := CheckButton.new()
+		check.text = skill.name
+		check.tooltip_text = skill.description
+		check.button_pressed = skill_manager.is_active(skill.id)
+		check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		check.toggled.connect(_on_skill_toggled.bind(skill.id))
+		hbox.add_child(check)
+
+		if not skill.tool_sets.is_empty():
+			var tools_label := Label.new()
+			tools_label.text = "[%s]" % ", ".join(skill.tool_sets)
+			tools_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+			tools_label.add_theme_font_size_override("font_size", 11)
+			hbox.add_child(tools_label)
+		else:
+			var all_label := Label.new()
+			all_label.text = "[all tools]"
+			all_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+			all_label.add_theme_font_size_override("font_size", 11)
+			hbox.add_child(all_label)
+
+
+func _on_skill_toggled(enabled: bool, skill_id: String) -> void:
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return
+
+	var mcp = SingletonObject.mcp_manager
+	if enabled:
+		skill_manager.activate_skill(skill_id, mcp)
+	else:
+		skill_manager.deactivate_skill(skill_id, mcp)
 
 
 ## Refresh the Python environment dropdown
@@ -1841,25 +2036,25 @@ func _on_tools_dir_selected(server_name: String, path: String) -> void:
 
 ## Validate server directory (shared logic)
 static func _validate_tools_server_dir(server_name: String, path: String) -> bool:
-	match server_name:
-		"cobrowser":
-			if not FileAccess.file_exists(path.path_join("src/Library/cobrowser_service.py")):
-				SingletonObject.create_toast_notification(
-					"Not a valid HumanWeb directory — missing src/Library/cobrowser_service.py",
-					ToastNotification.Type.ERROR)
-				return false
-		"nudge":
-			if not FileAccess.file_exists(path.path_join("setup.py")) and not FileAccess.file_exists(path.path_join("pyproject.toml")):
-				SingletonObject.create_toast_notification(
-					"Not a valid Nudge directory — missing setup.py or pyproject.toml",
-					ToastNotification.Type.ERROR)
-				return false
-		"codetools":
-			if not FileAccess.file_exists(path.path_join("setup.py")) and not FileAccess.file_exists(path.path_join("pyproject.toml")):
-				SingletonObject.create_toast_notification(
-					"Not a valid CodeTools directory — missing setup.py or pyproject.toml",
-					ToastNotification.Type.ERROR)
-				return false
+	# Check for server-specific validation file from registry
+	var validation_file := MCPKnownServers.get_validation_file(server_name)
+	if not validation_file.is_empty():
+		if not FileAccess.file_exists(path.path_join(validation_file)):
+			var display := MCPKnownServers.get_display_name(server_name)
+			SingletonObject.create_toast_notification(
+				"Not a valid %s directory — missing %s" % [display, validation_file],
+				ToastNotification.Type.ERROR)
+			return false
+		return true
+
+	# Fallback: check for setup.py or pyproject.toml (standard Python packages)
+	if MCPKnownServers.is_known(server_name):
+		if not FileAccess.file_exists(path.path_join("setup.py")) and not FileAccess.file_exists(path.path_join("pyproject.toml")):
+			var display := MCPKnownServers.get_display_name(server_name)
+			SingletonObject.create_toast_notification(
+				"Not a valid %s directory — missing setup.py or pyproject.toml" % display,
+				ToastNotification.Type.ERROR)
+			return false
 	return true
 
 

@@ -184,6 +184,119 @@ func get_http_server_port() -> int:
 	return http_server.get_port() if http_server else 0
 
 
+## Add a server at runtime — adds to config, optionally connects, saves if persistent
+func add_server_at_runtime(server_config, connect_now: bool = true) -> Error:
+	# Block external tools with minerva_ prefix
+	if server_config.name.begins_with("minerva"):
+		push_error("[MCP] Server names starting with 'minerva' are reserved")
+		return ERR_INVALID_PARAMETER
+
+	config.set_server(server_config)
+
+	if server_config.persistent:
+		config.save_config()
+
+	if connect_now:
+		var err: Error = await connect_server(server_config.name)
+		return err
+
+	return OK
+
+
+## Remove a server at runtime — disconnects, removes from config, saves
+func remove_server_at_runtime(server_name: String) -> void:
+	var server_config = config.get_server(server_name)
+	if not server_config:
+		return
+
+	# Don't allow removing known/builtin servers
+	if server_config.origin in ["known", "builtin"]:
+		push_warning("[MCP] Cannot remove %s server: %s" % [server_config.origin, server_name])
+		return
+
+	disconnect_server(server_name)
+	config.remove_server(server_name)
+	config.save_config()
+
+
+## Get tools filtered for a specific chat history.
+## Applies 4-layer filter: skill tool_sets → per-chat skill override → DisabledTools → connectivity.
+func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictionary]:
+	var tools: Array[Dictionary] = []
+
+	# Determine effective skill tool_sets
+	var effective_tool_sets: Array[String] = []
+	var skill_manager = SingletonObject.get_skill_manager()
+	if skill_manager:
+		var chat_skills: Array[String] = []
+		var agent_skills: Array[String] = []
+		if "ActiveSkills" in history and not history.ActiveSkills.is_empty():
+			chat_skills = history.ActiveSkills
+		if not history.AgentDefinitionId.is_empty():
+			var agent_def = _find_agent_def(history.AgentDefinitionId)
+			if agent_def and not agent_def.skills.is_empty():
+				agent_skills = agent_def.skills
+		effective_tool_sets = skill_manager.get_effective_tool_sets(chat_skills, agent_skills)
+
+	# Get all registered tools
+	for tool_name in tool_registry:
+		var tool = tool_registry[tool_name]
+		var server_name = tool.server_name
+
+		# Layer 4: Server connectivity
+		var connected: bool
+		if server_name == "minerva":
+			connected = is_minerva_connected()
+		else:
+			connected = is_server_connected(server_name)
+		if not connected:
+			continue
+
+		# Layer 1/2: Skill tool_set filter
+		if not _passes_tool_set_filter(tool, effective_tool_sets):
+			continue
+
+		# Layer 3: Per-chat DisabledTools blocklist
+		var tool_dict: Dictionary
+		if format == "anthropic":
+			tool_dict = tool.to_anthropic_format()
+		else:
+			tool_dict = tool.to_openai_format()
+
+		if tool_dict.get("name", "") in history.DisabledTools:
+			continue
+
+		tools.append(tool_dict)
+
+	return tools
+
+
+## Check if a tool passes the tool_set filter.
+## External tools and meta tools always pass.
+func _passes_tool_set_filter(tool, effective_tool_sets: Array[String]) -> bool:
+	# External (non-minerva) tools always pass
+	if tool.server_name != "minerva":
+		return true
+	# Meta tools always pass
+	if tool.tool_set == "meta" or tool.tool_set.is_empty():
+		return true
+	# If no filter active (empty = all), pass
+	if effective_tool_sets.is_empty():
+		return _is_tool_in_enabled_set(tool)
+	# Check against effective skill tool_sets
+	return tool.tool_set in effective_tool_sets
+
+
+## Find an AgentDefinition by ID
+func _find_agent_def(agent_id: String):
+	if not SingletonObject.agent_registry:
+		return null
+	for agent_def in SingletonObject.agent_registry.agents:
+		if agent_def.id == agent_id:
+			return agent_def
+	return null
+
+
 ## Execute a tool by name
 func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 	print("[MCP] execute_tool called: %s" % tool_name)
@@ -327,6 +440,11 @@ func refresh_all_tools() -> void:
 ## Register tools from a server connection
 func _register_server_tools(connection) -> void:
 	for tool in connection.tools:
+		# Block external servers from registering minerva_-prefixed tools
+		if connection.server_name != "minerva" and tool.name.begins_with("minerva_"):
+			push_warning("[MCP] Blocked external tool with reserved 'minerva_' prefix: %s (from %s)" % [
+				tool.name, connection.server_name])
+			continue
 		if tool_registry.has(tool.name):
 			push_warning("Tool name collision: %s (from %s, already registered from %s)" % [
 				tool.name,

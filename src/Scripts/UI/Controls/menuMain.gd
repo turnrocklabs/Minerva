@@ -25,6 +25,12 @@ var cobrowser_submenu: PopupMenu
 var codetools_submenu: PopupMenu
 var minerva_submenu: PopupMenu
 
+## Dynamic server submenus: server_name -> PopupMenu
+var _server_submenus: Dictionary = {}
+
+## Dialog for adding user MCP servers
+var _add_server_dialog: AddMCPServerDialog = null
+
 func _on_file_index_pressed(index):
 	match index:
 		1:
@@ -208,28 +214,10 @@ func _setup_tools_menu() -> void:
 	tools_menu.name = "Tools"
 	tools_menu.title = "Tools"
 
-	# Nudge submenu with connect + actions
-	nudge_submenu = PopupMenu.new()
-	nudge_submenu.name = "NudgeSubmenu"
-	nudge_submenu.id_pressed.connect(_on_nudge_submenu_pressed)
-	tools_menu.add_child(nudge_submenu)
-	tools_menu.add_submenu_item("Nudge", nudge_submenu.name)
+	# Build dynamic server submenus from MCPConfig
+	_rebuild_server_submenus()
 
-	# Cobrowser submenu
-	cobrowser_submenu = PopupMenu.new()
-	cobrowser_submenu.name = "CobrowserSubmenu"
-	cobrowser_submenu.id_pressed.connect(_on_cobrowser_submenu_pressed)
-	tools_menu.add_child(cobrowser_submenu)
-	tools_menu.add_submenu_item("Cobrowser", cobrowser_submenu.name)
-
-	# Codetools submenu
-	codetools_submenu = PopupMenu.new()
-	codetools_submenu.name = "CodetoolsSubmenu"
-	codetools_submenu.id_pressed.connect(_on_codetools_submenu_pressed)
-	tools_menu.add_child(codetools_submenu)
-	tools_menu.add_submenu_item("Codetools", codetools_submenu.name)
-
-	# Minerva (Self) submenu
+	# Minerva (Self) submenu (always present, not from config)
 	minerva_submenu = PopupMenu.new()
 	minerva_submenu.name = "MinervaSubmenu"
 	minerva_submenu.id_pressed.connect(_on_minerva_submenu_pressed)
@@ -243,6 +231,7 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_separator()
 	tools_menu.add_item("Tool Settings...", 105)
 	tools_menu.add_item("Install MCP Servers...", 101)
+	tools_menu.add_item("Add MCP Server...", 106)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
 
@@ -263,6 +252,86 @@ func _setup_tools_menu() -> void:
 		add_child(tools_menu)
 
 
+## Build server submenus dynamically from MCPConfig.
+## Called during _setup_tools_menu (before other items added) and
+## at runtime when servers are added/removed (rebuilds entire menu).
+func _rebuild_server_submenus() -> void:
+	var is_runtime := tools_menu.item_count > 0
+
+	if is_runtime:
+		# Runtime rebuild: clear entire menu and rebuild from scratch
+		_rebuild_tools_menu_full()
+		return
+
+	# Initial setup: tools_menu is empty, just add server submenus
+	_add_server_submenus_to_menu()
+
+
+## Add server submenus from config to the (empty or pre-cleared) tools_menu
+func _add_server_submenus_to_menu() -> void:
+	# Clean up old submenu nodes
+	for server_name in _server_submenus:
+		var submenu: PopupMenu = _server_submenus[server_name]
+		if is_instance_valid(submenu):
+			tools_menu.remove_child(submenu)
+			submenu.queue_free()
+	_server_submenus.clear()
+
+	var mcp = SingletonObject.mcp_manager
+	var config = mcp.config if mcp else null
+	if not config:
+		config = MCPConfig.new()
+		config.load_config()
+
+	for server_config in config.servers:
+		var server_name: String = server_config.name
+		var display_name: String = MCPKnownServers.get_display_name(server_name)
+		var submenu := PopupMenu.new()
+		submenu.name = "%sSubmenu" % server_name.capitalize().replace(" ", "").replace("-", "")
+		submenu.id_pressed.connect(_on_dynamic_server_submenu_pressed.bind(server_name))
+		tools_menu.add_child(submenu)
+		tools_menu.add_submenu_item(display_name, submenu.name)
+		_server_submenus[server_name] = submenu
+
+	# Keep backward-compatible references
+	nudge_submenu = _server_submenus.get("nudge")
+	cobrowser_submenu = _server_submenus.get("cobrowser")
+	codetools_submenu = _server_submenus.get("codetools")
+
+
+## Full rebuild of the tools menu at runtime (when servers added/removed)
+func _rebuild_tools_menu_full() -> void:
+	# Clear all items
+	tools_menu.clear()
+
+	# Remove all child PopupMenus (submenus)
+	for child in tools_menu.get_children():
+		if child is PopupMenu:
+			tools_menu.remove_child(child)
+			child.queue_free()
+
+	# Re-add server submenus
+	_add_server_submenus_to_menu()
+
+	# Re-add Minerva submenu
+	minerva_submenu = PopupMenu.new()
+	minerva_submenu.name = "MinervaSubmenu"
+	minerva_submenu.id_pressed.connect(_on_minerva_submenu_pressed)
+	tools_menu.add_child(minerva_submenu)
+	tools_menu.add_submenu_item("Minerva (Self)", minerva_submenu.name)
+
+	# Re-add static items
+	tools_menu.add_separator()
+	tools_menu.add_item("Agents...", 102)
+	tools_menu.add_item("Triggers...", 104)
+	tools_menu.add_item("Spending...", 103)
+	tools_menu.add_separator()
+	tools_menu.add_item("Tool Settings...", 105)
+	tools_menu.add_item("Install MCP Servers...", 101)
+	tools_menu.add_item("Add MCP Server...", 106)
+	tools_menu.add_item("Refresh All Connections", 100)
+
+
 var _agent_manager_window: AgentManagerWindow = null
 var _trigger_manager_window: AgentManagerWindow = null
 
@@ -280,6 +349,8 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_show_trigger_manager()
 		105:
 			_open_tool_settings()
+		106:
+			_show_add_server_dialog()
 
 
 func _show_agent_manager() -> void:
@@ -304,6 +375,105 @@ func _show_spending_dashboard() -> void:
 		get_tree().root.add_child(_spending_dashboard)
 	_spending_dashboard.refresh()
 	_spending_dashboard.popup_centered()
+
+
+## Show the Add MCP Server dialog
+func _show_add_server_dialog() -> void:
+	if not _add_server_dialog:
+		_add_server_dialog = AddMCPServerDialog.new()
+		_add_server_dialog.server_added.connect(_on_user_server_added)
+		get_tree().root.add_child(_add_server_dialog)
+	_add_server_dialog.reset()
+	_add_server_dialog.popup_centered()
+
+
+## Handle a user-added server from the dialog
+func _on_user_server_added(config_data: Dictionary) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
+		return
+
+	var server_config = MCPConfig.ServerConfig.new(
+		config_data.get("name", ""),
+		config_data.get("type", "http"),
+		config_data.get("url", "")
+	)
+	server_config.auto_connect = config_data.get("auto_connect", false)
+	server_config.origin = "user"
+	server_config.persistent = config_data.get("persistent", true)
+
+	var err = await mcp.add_server_at_runtime(server_config, true)
+	if err == OK:
+		SingletonObject.create_toast_notification(
+			"Added server: %s" % server_config.name,
+			ToastNotification.Type.SUCCESS
+		)
+		# Rebuild dynamic submenus to include the new server
+		_rebuild_server_submenus()
+	else:
+		SingletonObject.create_toast_notification(
+			"Failed to add server: %s" % error_string(err),
+			ToastNotification.Type.ERROR
+		)
+
+
+## Handle submenu pressed for any dynamically-created server
+func _on_dynamic_server_submenu_pressed(id: int, server_name: String) -> void:
+	match id:
+		0:  # Connect/Disconnect toggle
+			_toggle_server_connection(server_name)
+		10:  # Stop server
+			_stop_server(server_name)
+		11:  # Start server
+			_start_server(server_name)
+		20:  # Install extension (cobrowser-specific)
+			if server_name == "cobrowser":
+				_install_cobrowser_firefox_extension()
+		30:  # Locate installation
+			_locate_server_installation(server_name)
+		40:  # Remove (user servers only)
+			_remove_user_server(server_name)
+		_:
+			# Nudge-specific actions (1-4)
+			if server_name == "nudge":
+				_on_nudge_submenu_pressed(id)
+
+
+## Generic toggle connection for any server
+func _toggle_server_connection(server_name: String) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
+		return
+
+	var display := MCPKnownServers.get_display_name(server_name)
+
+	if mcp.is_server_connected(server_name):
+		mcp.disconnect_server(server_name)
+		SingletonObject.create_toast_notification("%s: Disconnected" % display, ToastNotification.Type.WARNING)
+	else:
+		SingletonObject.create_toast_notification("%s: Connecting..." % display, ToastNotification.Type.WARNING)
+		var err: int = await mcp.connect_server(server_name)
+		if err == OK:
+			SingletonObject.create_toast_notification("%s: Connected" % display, ToastNotification.Type.SUCCESS)
+		else:
+			SingletonObject.create_toast_notification("%s: Connection failed" % display, ToastNotification.Type.ERROR)
+	_refresh_all_tool_submenus()
+
+
+## Remove a user-added server
+func _remove_user_server(server_name: String) -> void:
+	var mcp = SingletonObject.mcp_manager
+	if not mcp:
+		return
+
+	mcp.remove_server_at_runtime(server_name)
+	SingletonObject.create_toast_notification(
+		"Removed server: %s" % server_name,
+		ToastNotification.Type.SUCCESS
+	)
+	_rebuild_server_submenus()
 
 
 ## Open Preferences popup focused on the Tools tab
@@ -523,136 +693,15 @@ func _show_nudge_status() -> void:
 		SingletonObject.create_toast_notification("Nudge: Not connected", ToastNotification.Type.ERROR)
 
 
-## Refresh the Nudge submenu with connection status and actions
+## Legacy refresh functions — now handled by _refresh_dynamic_server_submenu
 func _refresh_nudge_submenu() -> void:
-	if not nudge_submenu:
-		return
+	_refresh_dynamic_server_submenu("nudge")
 
-	nudge_submenu.clear()
-
-	var mcp = SingletonObject.mcp_manager
-	var connected = mcp and mcp.is_server_connected("nudge")
-	var is_running = _server_runner and _server_runner.is_server_running("nudge")
-	var is_installed = _is_server_installed("nudge")
-
-	# Server status
-	var status_text := ""
-	if is_running:
-		status_text = "● Running (PID %d)" % _server_runner.get_server_pid("nudge")
-	elif is_installed:
-		status_text = "○ Stopped"
-	else:
-		status_text = "⚠ Not Installed"
-	nudge_submenu.add_item(status_text, -1)
-	nudge_submenu.set_item_disabled(0, true)
-
-	# Connection status
-	var conn_text = "  ✓ Connected" if connected else "  ✗ Disconnected"
-	nudge_submenu.add_item(conn_text, 0)
-
-	nudge_submenu.add_separator()
-
-	# Start/Stop server
-	if is_installed:
-		if is_running:
-			nudge_submenu.add_item("Stop Server", 10)
-		else:
-			nudge_submenu.add_item("Start Server", 11)
-	else:
-		nudge_submenu.add_item("Locate Existing Installation...", 30)
-
-	nudge_submenu.add_separator()
-
-	# Nudge-specific actions
-	nudge_submenu.add_item("Pull All", 1)
-	nudge_submenu.add_item("Push Current Tab", 2)
-	nudge_submenu.add_item("Push All Tabs", 3)
-	nudge_submenu.add_item("Delete Current Tab", 4)
-
-	# Disable actions if not connected
-	var action_start_idx := nudge_submenu.get_item_index(1)
-	for i in range(action_start_idx, nudge_submenu.get_item_count()):
-		nudge_submenu.set_item_disabled(i, not connected)
-
-
-## Refresh the Cobrowser submenu
 func _refresh_cobrowser_submenu() -> void:
-	if not cobrowser_submenu:
-		return
+	_refresh_dynamic_server_submenu("cobrowser")
 
-	cobrowser_submenu.clear()
-
-	var mcp = SingletonObject.mcp_manager
-	var connected = mcp and mcp.is_server_connected("cobrowser")
-	var is_running = _server_runner and _server_runner.is_server_running("cobrowser")
-	var is_installed = _is_server_installed("cobrowser")
-
-	# Server status
-	var status_text := ""
-	if is_running:
-		status_text = "● Running (PID %d)" % _server_runner.get_server_pid("cobrowser")
-	elif is_installed:
-		status_text = "○ Stopped"
-	else:
-		status_text = "⚠ Not Installed"
-	cobrowser_submenu.add_item(status_text, -1)
-	cobrowser_submenu.set_item_disabled(0, true)
-
-	# Connection status
-	var conn_text = "  ✓ Connected" if connected else "  ✗ Disconnected"
-	cobrowser_submenu.add_item(conn_text, 0)
-
-	cobrowser_submenu.add_separator()
-
-	# Start/Stop server
-	if is_installed:
-		if is_running:
-			cobrowser_submenu.add_item("Stop Server", 10)
-		else:
-			cobrowser_submenu.add_item("Start Server", 11)
-		cobrowser_submenu.add_separator()
-		cobrowser_submenu.add_item("Install Firefox Extension...", 20)
-	else:
-		cobrowser_submenu.add_item("Locate Existing Installation...", 30)
-
-
-## Refresh the Codetools submenu
 func _refresh_codetools_submenu() -> void:
-	if not codetools_submenu:
-		return
-
-	codetools_submenu.clear()
-
-	var mcp = SingletonObject.mcp_manager
-	var connected = mcp and mcp.is_server_connected("codetools")
-	var is_running = _server_runner and _server_runner.is_server_running("codetools")
-	var is_installed = _is_server_installed("codetools")
-
-	# Server status
-	var status_text := ""
-	if is_running:
-		status_text = "● Running (PID %d)" % _server_runner.get_server_pid("codetools")
-	elif is_installed:
-		status_text = "○ Stopped"
-	else:
-		status_text = "⚠ Not Installed"
-	codetools_submenu.add_item(status_text, -1)
-	codetools_submenu.set_item_disabled(0, true)
-
-	# Connection status
-	var conn_text = "  ✓ Connected" if connected else "  ✗ Disconnected"
-	codetools_submenu.add_item(conn_text, 0)
-
-	codetools_submenu.add_separator()
-
-	# Start/Stop server
-	if is_installed:
-		if is_running:
-			codetools_submenu.add_item("Stop Server", 10)
-		else:
-			codetools_submenu.add_item("Start Server", 11)
-	else:
-		codetools_submenu.add_item("Locate Existing Installation...", 30)
+	_refresh_dynamic_server_submenu("codetools")
 
 
 ## Refresh the Minerva (Self) submenu
@@ -745,42 +794,86 @@ func _on_tool_set_submenu_pressed(id: int) -> void:
 
 ## Refresh all tool submenus
 func _refresh_all_tool_submenus() -> void:
-	_refresh_nudge_submenu()
-	_refresh_cobrowser_submenu()
-	_refresh_codetools_submenu()
+	# Refresh dynamic server submenus
+	for server_name in _server_submenus:
+		_refresh_dynamic_server_submenu(server_name)
 	_refresh_minerva_submenu()
 
 
-## Handle Nudge submenu item pressed
+## Refresh a dynamic server submenu with status and actions
+func _refresh_dynamic_server_submenu(server_name: String) -> void:
+	var submenu: PopupMenu = _server_submenus.get(server_name)
+	if not submenu:
+		return
+
+	submenu.clear()
+
+	var mcp = SingletonObject.mcp_manager
+	var connected = mcp and mcp.is_server_connected(server_name)
+	var is_running = _server_runner and _server_runner.is_server_running(server_name)
+	var is_installed = _is_server_installed(server_name)
+	var is_known = MCPKnownServers.is_known(server_name)
+	var server_config = mcp.config.get_server(server_name) if mcp else null
+	var is_user = server_config and server_config.origin == "user"
+
+	# Server status
+	var status_text := ""
+	if is_running:
+		status_text = "● Running (PID %d)" % _server_runner.get_server_pid(server_name)
+	elif is_installed:
+		status_text = "○ Stopped"
+	elif is_user:
+		status_text = "◇ User Server"
+	else:
+		status_text = "⚠ Not Installed"
+	submenu.add_item(status_text, -1)
+	submenu.set_item_disabled(0, true)
+
+	# Connection status
+	var conn_text = "  ✓ Connected" if connected else "  ✗ Disconnected"
+	submenu.add_item(conn_text, 0)
+
+	submenu.add_separator()
+
+	# Start/Stop server (known installable servers only)
+	if is_known and MCPKnownServers.is_installable(server_name):
+		if is_installed:
+			if is_running:
+				submenu.add_item("Stop Server", 10)
+			else:
+				submenu.add_item("Start Server", 11)
+			# Cobrowser-specific: Firefox extension
+			if server_name == "cobrowser":
+				submenu.add_separator()
+				submenu.add_item("Install Firefox Extension...", 20)
+		else:
+			submenu.add_item("Locate Existing Installation...", 30)
+
+	# Nudge-specific actions
+	if server_name == "nudge":
+		submenu.add_separator()
+		submenu.add_item("Pull All", 1)
+		submenu.add_item("Push Current Tab", 2)
+		submenu.add_item("Push All Tabs", 3)
+		submenu.add_item("Delete Current Tab", 4)
+		# Disable actions if not connected
+		var action_start_idx := submenu.get_item_index(1)
+		for i in range(action_start_idx, submenu.get_item_count()):
+			submenu.set_item_disabled(i, not connected)
+
+	# User servers get a Remove option
+	if is_user:
+		submenu.add_separator()
+		submenu.add_item("Remove Server", 40)
+
+
+## Handle Nudge submenu item pressed (kept for nudge-specific actions)
 func _on_nudge_submenu_pressed(id: int) -> void:
 	match id:
-		0: _toggle_nudge_connection()
 		1: _nudge_pull_all()
 		2: _nudge_push_current_tab()
 		3: _nudge_push_all_tabs()
 		4: _nudge_delete_current_tab()
-		10: _stop_server("nudge")
-		11: _start_server("nudge")
-		30: _locate_server_installation("nudge")
-
-
-## Handle Cobrowser submenu item pressed
-func _on_cobrowser_submenu_pressed(id: int) -> void:
-	match id:
-		0: _toggle_cobrowser_connection()
-		10: _stop_server("cobrowser")
-		11: _start_server("cobrowser")
-		20: _install_cobrowser_firefox_extension()
-		30: _locate_server_installation("cobrowser")
-
-
-## Handle Codetools submenu item pressed
-func _on_codetools_submenu_pressed(id: int) -> void:
-	match id:
-		0: _toggle_codetools_connection()
-		10: _stop_server("codetools")
-		11: _start_server("codetools")
-		30: _locate_server_installation("codetools")
 
 
 ## Handle Minerva submenu item pressed
@@ -866,64 +959,15 @@ func _refresh_tool_set_checks() -> void:
 			ts_menu.set_item_checked(item_idx, is_enabled)
 
 
-## Toggle Nudge connection
+## Legacy toggle functions — now delegate to generic _toggle_server_connection
 func _toggle_nudge_connection() -> void:
-	var mcp = SingletonObject.mcp_manager
-	if not mcp:
-		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
-		return
+	_toggle_server_connection("nudge")
 
-	if mcp.is_server_connected("nudge"):
-		mcp.disconnect_server("nudge")
-		SingletonObject.create_toast_notification("Nudge: Disconnected", ToastNotification.Type.WARNING)
-	else:
-		SingletonObject.create_toast_notification("Nudge: Connecting...", ToastNotification.Type.WARNING)
-		var err: int = await mcp.connect_server("nudge")
-		if err == OK:
-			SingletonObject.create_toast_notification("Nudge: Connected", ToastNotification.Type.SUCCESS)
-		else:
-			SingletonObject.create_toast_notification("Nudge: Connection failed", ToastNotification.Type.ERROR)
-	_refresh_all_tool_submenus()
-
-
-## Toggle Cobrowser connection
 func _toggle_cobrowser_connection() -> void:
-	var mcp = SingletonObject.mcp_manager
-	if not mcp:
-		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
-		return
+	_toggle_server_connection("cobrowser")
 
-	if mcp.is_server_connected("cobrowser"):
-		mcp.disconnect_server("cobrowser")
-		SingletonObject.create_toast_notification("Cobrowser: Disconnected", ToastNotification.Type.WARNING)
-	else:
-		SingletonObject.create_toast_notification("Cobrowser: Connecting...", ToastNotification.Type.WARNING)
-		var err: int = await mcp.connect_server("cobrowser")
-		if err == OK:
-			SingletonObject.create_toast_notification("Cobrowser: Connected", ToastNotification.Type.SUCCESS)
-		else:
-			SingletonObject.create_toast_notification("Cobrowser: Connection failed", ToastNotification.Type.ERROR)
-	_refresh_all_tool_submenus()
-
-
-## Toggle Codetools connection
 func _toggle_codetools_connection() -> void:
-	var mcp = SingletonObject.mcp_manager
-	if not mcp:
-		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
-		return
-
-	if mcp.is_server_connected("codetools"):
-		mcp.disconnect_server("codetools")
-		SingletonObject.create_toast_notification("Codetools: Disconnected", ToastNotification.Type.WARNING)
-	else:
-		SingletonObject.create_toast_notification("Codetools: Connecting...", ToastNotification.Type.WARNING)
-		var err: int = await mcp.connect_server("codetools")
-		if err == OK:
-			SingletonObject.create_toast_notification("Codetools: Connected", ToastNotification.Type.SUCCESS)
-		else:
-			SingletonObject.create_toast_notification("Codetools: Connection failed", ToastNotification.Type.ERROR)
-	_refresh_all_tool_submenus()
+	_toggle_server_connection("codetools")
 
 
 ## Toggle the internal Minerva server connection

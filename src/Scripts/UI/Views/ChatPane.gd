@@ -73,7 +73,7 @@ const AGENT_SYSTEM_PROMPT_ERROR: String = """
 """
 
 ## Build the agent system prompt dynamically based on connected tools
-func _build_agent_system_prompt() -> String:
+func _build_agent_system_prompt(history = null) -> String:
 	var mcp = SingletonObject.get_mcp_manager()
 	if not mcp:
 		return AGENT_SYSTEM_PROMPT_BASE
@@ -84,7 +84,23 @@ func _build_agent_system_prompt() -> String:
 
 	var prompt = AGENT_SYSTEM_PROMPT_BASE + AGENT_SYSTEM_PROMPT_GENERAL
 
-	# Check which tool categories are available
+	# Collect prompt fragments from active skills
+	var skill_manager = SingletonObject.get_skill_manager()
+	if skill_manager and history:
+		var chat_skills: Array[String] = []
+		if not history.ActiveSkills.is_empty():
+			chat_skills.assign(history.ActiveSkills)
+		var agent_skills: Array[String] = []
+		if not history.AgentDefinitionId.is_empty() and SingletonObject.agent_registry:
+			for agent_def in SingletonObject.agent_registry.agents:
+				if agent_def.id == history.AgentDefinitionId and not agent_def.skills.is_empty():
+					agent_skills.assign(agent_def.skills)
+					break
+		var fragments = skill_manager.get_prompt_fragments(chat_skills, agent_skills)
+		for frag in fragments:
+			prompt += "\n\n" + frag
+
+	# Check which tool categories are available (legacy fallback)
 	var has_cobrowser = false
 	var has_codetools = false
 	for tool in tools:
@@ -630,7 +646,7 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 				if not history.AgenticSystemPrompt.is_empty():
 					effective_system_prompt = history.AgenticSystemPrompt
 				else:
-					effective_system_prompt = _build_agent_system_prompt()
+					effective_system_prompt = _build_agent_system_prompt(history)
 			# Append any existing regular system prompt to give additional context (if enabled)
 			if history.SystemPromptEnabled and history.HasUsedSystemPrompt and not history.HistoryItemList.is_empty():
 				if history.HistoryItemList[0].Role == ChatHistoryItem.ChatRole.SYSTEM:
@@ -849,12 +865,8 @@ func regenerate_response(chi: ChatHistoryItem):
 	print("[regenerate] Checking agent mode: AgentModeEnabled=%s, has_set_tools=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools")])
 	if history.AgentModeEnabled and history.provider.has_method("set_tools"):
 		var mcp = SingletonObject.get_mcp_manager()
-		var mcp_tools = mcp.get_tools_for_anthropic()
-		var filtered_tools: Array[Dictionary] = []
-		for tool in mcp_tools:
-			if tool.get("name", "") not in history.DisabledTools:
-				filtered_tools.append(tool)
-		print("[regenerate] Setting up tools: %d available, %d after filtering" % [mcp_tools.size(), filtered_tools.size()])
+		var filtered_tools: Array[Dictionary] = mcp.get_tools_for_chat(history)
+		print("[regenerate] Setting up tools: %d after filtering" % [filtered_tools.size()])
 		history.provider.set_tools(filtered_tools)
 		print("[regenerate] Provider tools_enabled: %s" % history.provider.tools_enabled)
 
@@ -1093,14 +1105,8 @@ func execute_regular_chat(text: String) -> void:
 	print("[Chat] Checking agent mode: AgentModeEnabled=%s, has_set_tools=%s, history_id=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools"), history.HistoryId])
 	if history.AgentModeEnabled and history.provider.has_method("set_tools"):
 		var mcp = SingletonObject.get_mcp_manager()
-		var mcp_tools = mcp.get_tools_for_anthropic()
-		# Filter out disabled tools for this chat
-		# Note: .filter() returns untyped Array, must convert to Array[Dictionary] for set_tools()
-		var filtered_tools: Array[Dictionary] = []
-		for tool in mcp_tools:
-			if tool.get("name", "") not in history.DisabledTools:
-				filtered_tools.append(tool)
-		print("[Agent] Setting up tools: %d available, %d after filtering" % [mcp_tools.size(), filtered_tools.size()])
+		var filtered_tools: Array[Dictionary] = mcp.get_tools_for_chat(history)
+		print("[Agent] Setting up tools: %d after filtering" % [filtered_tools.size()])
 		for t in filtered_tools:
 			print("[Agent]   - %s" % t.get("name", "?"))
 		history.provider.set_tools(filtered_tools)
@@ -1393,13 +1399,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			print("[Agent] Context reduced to ~%d tokens" % new_size)
 
 	# Ensure tools are still enabled for continuation request (with filtering)
-	# Note: .filter() returns untyped Array, must convert to Array[Dictionary] for set_tools()
 	if history.provider.has_method("set_tools"):
-		var mcp_tools = mcp_manager.get_tools_for_anthropic()
-		var filtered_tools: Array[Dictionary] = []
-		for tool in mcp_tools:
-			if tool.get("name", "") not in history.DisabledTools:
-				filtered_tools.append(tool)
+		var filtered_tools: Array[Dictionary] = mcp_manager.get_tools_for_chat(history)
 		history.provider.set_tools(filtered_tools)
 
 	# Check for cancellation before continuation

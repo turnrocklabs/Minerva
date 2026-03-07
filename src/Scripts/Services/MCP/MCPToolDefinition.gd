@@ -48,5 +48,22 @@ static func from_dict(data: Dictionary, server: String = ""):
 	tool.name = data.get("name", "")
 	tool.description = data.get("description", "")
 	tool.input_schema = data.get("inputSchema", data.get("input_schema", {}))
+	_sanitize_schema(tool.input_schema)
 	tool.server_name = server
 	return tool
+
+
+## Recursively fix array schemas missing "items" (required by LLM APIs)
+static func _sanitize_schema(schema: Dictionary) -> void:
+	var props: Dictionary = schema.get("properties", {})
+	for key in props:
+		var prop: Dictionary = props[key]
+		if prop.get("type") == "array" and not prop.has("items"):
+			prop["items"] = {"type": "string"}
+		# Recurse into nested objects
+		if prop.get("type") == "object" and prop.has("properties"):
+			_sanitize_schema(prop)
+		# Recurse into array items that are objects
+		if prop.get("type") == "array" and prop.has("items") and prop["items"] is Dictionary:
+			if prop["items"].get("type") == "object" and prop["items"].has("properties"):
+				_sanitize_schema(prop["items"])
