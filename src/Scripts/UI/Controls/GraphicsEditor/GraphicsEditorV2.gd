@@ -2265,7 +2265,7 @@ func _on_edit_from_texture_rects_pressed() -> void:
 	if !seed_line_edit.text.is_empty():
 		params["seed"] = seed_line_edit.text
 
-	var use_mask: bool = image2_image != null and not image2_image.is_empty()
+	var use_mask: bool = image2_image != null and not image_2_texture_rect.texture is PlaceholderTexture2D
 	if use_mask:
 		# Mask (selective) edit: image 1 + image 2 as mask
 		var img2_for_export: Image = image2_image.duplicate()
@@ -2340,9 +2340,6 @@ func _on_edit_button_pressed() -> void:
 
 
 func _on_edit_img_button_pressed() -> void:
-	# For EDIT_IMAGE and MASK_EDIT, reuse the texture-rect based flow:
-	# - Image 1 only -> single-image edit
-	# - Image 1 + Image 2 enabled -> selective (mask) edit
 	if ai_request_type == AI_REQUEST.EDIT_IMAGE or ai_request_type == AI_REQUEST.MASK_EDIT:
 		_on_edit_from_texture_rects_pressed()
 		return
@@ -2500,6 +2497,7 @@ func _on_edit_img_button_pressed() -> void:
 		layer_cards_popup_panel.hide()
 		prompt_text_edit.text = ""
 
+ 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 	advanced_settings_container.visible = toggled_on
 
@@ -2821,7 +2819,7 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 			edit_img_button.disabled = false
 			send_mask_edit_button.disabled = false
 			%ImagesContainer.show() 
-			%ImageContainer2.hide() 
+			%ImageContainer2.show() 
 			%ImageContainer3.hide()
 			%ImageContainer1.show()
 		2:  # Qwen 2511 Flex
@@ -3426,3 +3424,18 @@ func _on_pick_image_2_button_pressed() -> void:
 func _on_pick_image_3_button_pressed() -> void:
 	add_image_destination = "image3_texture"
 	_show_layer_cards_popup_below_toggle()
+
+static var placeholder_image_text = preload("res://assets/placeholder_image.tres")
+func _on_clear_image_2_button_pressed() -> void:
+	image2_image = null
+	image_2_texture_rect.texture = placeholder_image_text
+
+
+func _on_clear_image_3_button_pressed() -> void:
+	image3_image = null
+	image_3_texture_rect.texture = placeholder_image_text
+
+
+func _on_clear_image_1_button_pressed() -> void:
+	image1_image = null
+	image_1_texture_rect.texture = placeholder_image_text

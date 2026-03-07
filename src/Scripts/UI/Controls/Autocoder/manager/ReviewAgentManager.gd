@@ -20,9 +20,9 @@ var _agents: Array[Dictionary] = []
 var _editing_agent_id: String = ""
 
 # Drag and drop state
-var _dragging_card: PanelContainer = null
-var _drag_start_index: int = -1
-var _drag_preview: Control = null
+#var _dragging_card: PanelContainer = null
+#var _drag_start_index: int = -1
+#var _drag_preview: Control = null
 
 
 func _ready() -> void:

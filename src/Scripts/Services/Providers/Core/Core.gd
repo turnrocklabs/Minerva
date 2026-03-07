@@ -522,7 +522,7 @@ class AwaitMessage extends RefCounted:
 	var topic: String
 	var cmd: String
 	var request_id: String
-	var timeout: float = 150.0 # Default timeout in seconds
+	var timeout: float = 300.0 # Default timeout in seconds
 
 	var client: CoreClient # Reference to the WebSocket client
 
