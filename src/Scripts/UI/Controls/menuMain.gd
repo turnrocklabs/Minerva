@@ -394,14 +394,28 @@ func _on_user_server_added(config_data: Dictionary) -> void:
 		SingletonObject.create_toast_notification("MCP not initialized", ToastNotification.Type.ERROR)
 		return
 
-	var server_config = MCPConfig.ServerConfig.new(
-		config_data.get("name", ""),
-		config_data.get("type", "http"),
-		config_data.get("url", "")
-	)
+	var transport: String = config_data.get("type", "http")
+	var server_config: MCPConfig.ServerConfig
+	if transport == "stdio":
+		var cmd_args := PackedStringArray()
+		for arg in config_data.get("args", []):
+			cmd_args.append(str(arg))
+		server_config = MCPConfig.ServerConfig.create_stdio(
+			config_data.get("name", ""), config_data.get("command", ""), cmd_args
+		)
+		var wd: String = config_data.get("working_directory", "")
+		if not wd.is_empty():
+			server_config.working_directory = wd
+	else:
+		server_config = MCPConfig.ServerConfig.new(
+			config_data.get("name", ""), transport, config_data.get("url", "")
+		)
 	server_config.auto_connect = config_data.get("auto_connect", false)
 	server_config.origin = "user"
 	server_config.persistent = config_data.get("persistent", true)
+	var endpoint: String = config_data.get("mcp_endpoint", "")
+	if not endpoint.is_empty():
+		server_config.mcp_endpoint = endpoint
 
 	var err = await mcp.add_server_at_runtime(server_config, true)
 	if err == OK:

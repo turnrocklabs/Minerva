@@ -54,6 +54,7 @@ func _init(manager = null) -> void:
 		_register_model_tools()
 		_register_cost_tools()
 		_register_meta_tools()
+		_register_skill_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -440,6 +441,18 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _enable_tool_sets(arguments)
 		"minerva_disable_tool_sets":
 			return _disable_tool_sets(arguments)
+
+		# Skill management tools
+		"minerva_list_skills":
+			return _skill_list(arguments)
+		"minerva_get_skill":
+			return _skill_get(arguments)
+		"minerva_activate_skill":
+			return await _skill_activate(arguments)
+		"minerva_deactivate_skill":
+			return _skill_deactivate(arguments)
+		"minerva_update_skill_instructions":
+			return _skill_update_instructions(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -9385,5 +9398,217 @@ func _autocoder_delete_review_preset(args: Dictionary) -> Dictionary:
 	if not ok:
 		return {"error": "Failed to delete review preset", "success": false}
 	return {"success": true, "preset_id": preset_id, "message": "Review preset deleted"}
+
+#endregion
+
+
+#region Skill Management Tool Registration and Implementations
+
+func _register_skill_tools() -> void:
+	_register_tool("minerva_list_skills",
+		"List all defined skills with their active state. Skills inject instructions into the system prompt and optionally register executable tools.",
+		{
+			"type": "object",
+			"properties": {
+				"include_profiles": {
+					"type": "boolean",
+					"description": "Also include tool profiles (default false — only user skills)"
+				}
+			},
+			"required": []
+		}
+	, "utility")
+
+	_register_tool("minerva_get_skill",
+		"Get full details of a skill including its instructions and executable configuration.",
+		{
+			"type": "object",
+			"properties": {
+				"skill_id": {
+					"type": "string",
+					"description": "The skill ID to retrieve"
+				}
+			},
+			"required": ["skill_id"]
+		}
+	, "utility")
+
+	_register_tool("minerva_activate_skill",
+		"Activate a skill globally. Active skills inject their instructions into the system prompt and register any executable tools.",
+		{
+			"type": "object",
+			"properties": {
+				"skill_id": {
+					"type": "string",
+					"description": "The skill ID to activate"
+				}
+			},
+			"required": ["skill_id"]
+		}
+	, "utility")
+
+	_register_tool("minerva_deactivate_skill",
+		"Deactivate a skill globally. Removes its instructions from future prompts and unregisters any executable tools.",
+		{
+			"type": "object",
+			"properties": {
+				"skill_id": {
+					"type": "string",
+					"description": "The skill ID to deactivate"
+				}
+			},
+			"required": ["skill_id"]
+		}
+	, "utility")
+
+	_register_tool("minerva_update_skill_instructions",
+		"Update the instructions text for a user-created skill. Instructions are markdown injected into the system prompt when the skill is active.",
+		{
+			"type": "object",
+			"properties": {
+				"skill_id": {
+					"type": "string",
+					"description": "The skill ID to update"
+				},
+				"instructions": {
+					"type": "string",
+					"description": "New markdown instructions text"
+				}
+			},
+			"required": ["skill_id", "instructions"]
+		}
+	, "utility")
+
+
+func _skill_list(arguments: Dictionary) -> Dictionary:
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return {"error": "Skill manager not available", "success": false}
+
+	var include_profiles: bool = arguments.get("include_profiles", false)
+	var result: Array[Dictionary] = []
+
+	for skill in skill_manager.skills:
+		if not include_profiles and skill.is_profile():
+			continue
+		result.append({
+			"id": skill.id,
+			"name": skill.name,
+			"description": skill.description,
+			"origin": skill.origin,
+			"type": "profile" if skill.is_profile() else "skill",
+			"active": skill_manager.is_active(skill.id),
+			"has_instructions": skill.has_instructions(),
+			"has_executable": skill.has_executable(),
+		})
+
+	return {"success": true, "skills": result, "count": result.size()}
+
+
+func _skill_get(arguments: Dictionary) -> Dictionary:
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return {"error": "Skill manager not available", "success": false}
+
+	var skill_id: String = arguments.get("skill_id", "")
+	if skill_id.is_empty():
+		return {"error": "skill_id is required", "success": false}
+
+	var skill = skill_manager.get_skill(skill_id)
+	if not skill:
+		return {"error": "Skill not found: %s" % skill_id, "success": false}
+
+	var data := {
+		"success": true,
+		"id": skill.id,
+		"name": skill.name,
+		"description": skill.description,
+		"origin": skill.origin,
+		"type": "profile" if skill.is_profile() else "skill",
+		"active": skill_manager.is_active(skill.id),
+		"instructions": skill.instructions,
+	}
+
+	if skill.has_executable():
+		data["executable"] = {
+			"path": skill.executable_path,
+			"args": Array(skill.executable_args),
+			"description": skill.executable_description,
+			"working_dir": skill.executable_working_dir,
+		}
+
+	if skill.is_profile():
+		data["tool_sets"] = Array(skill.tool_sets)
+		data["required_servers"] = Array(skill.required_servers)
+
+	return data
+
+
+func _skill_activate(arguments: Dictionary) -> Dictionary:
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return {"error": "Skill manager not available", "success": false}
+
+	var skill_id: String = arguments.get("skill_id", "")
+	if skill_id.is_empty():
+		return {"error": "skill_id is required", "success": false}
+
+	var skill = skill_manager.get_skill(skill_id)
+	if not skill:
+		return {"error": "Skill not found: %s" % skill_id, "success": false}
+
+	if skill_manager.is_active(skill_id):
+		return {"success": true, "skill_id": skill_id, "message": "Already active"}
+
+	await skill_manager.activate_skill(skill_id, mcp_manager)
+	return {"success": true, "skill_id": skill_id, "message": "Skill activated: %s" % skill.name}
+
+
+func _skill_deactivate(arguments: Dictionary) -> Dictionary:
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return {"error": "Skill manager not available", "success": false}
+
+	var skill_id: String = arguments.get("skill_id", "")
+	if skill_id.is_empty():
+		return {"error": "skill_id is required", "success": false}
+
+	var skill = skill_manager.get_skill(skill_id)
+	if not skill:
+		return {"error": "Skill not found: %s" % skill_id, "success": false}
+
+	if not skill_manager.is_active(skill_id):
+		return {"success": true, "skill_id": skill_id, "message": "Already inactive"}
+
+	skill_manager.deactivate_skill(skill_id, mcp_manager)
+	return {"success": true, "skill_id": skill_id, "message": "Skill deactivated: %s" % skill.name}
+
+
+func _skill_update_instructions(arguments: Dictionary) -> Dictionary:
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return {"error": "Skill manager not available", "success": false}
+
+	var skill_id: String = arguments.get("skill_id", "")
+	if skill_id.is_empty():
+		return {"error": "skill_id is required", "success": false}
+
+	var skill = skill_manager.get_skill(skill_id)
+	if not skill:
+		return {"error": "Skill not found: %s" % skill_id, "success": false}
+
+	if not skill.is_skill():
+		return {"error": "Cannot update instructions on a profile (only user skills)", "success": false}
+
+	var instructions: String = arguments.get("instructions", "")
+	skill.instructions = instructions
+	skill_manager.save_config()
+
+	return {
+		"success": true,
+		"skill_id": skill_id,
+		"message": "Instructions updated for: %s" % skill.name,
+		"instructions_length": instructions.length(),
+	}
 
 #endregion

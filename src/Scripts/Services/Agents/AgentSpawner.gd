@@ -31,7 +31,7 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 	history.IsAgentChat = true
 	history.AgentDefinitionId = agent_def.id
 
-	# 2b. Set active skills from agent definition
+	# 2b. Set active profiles from agent definition
 	if not agent_def.skills.is_empty():
 		history.ActiveSkills = agent_def.skills.duplicate()
 

@@ -450,16 +450,16 @@ func is_mcp_http_server_running() -> bool:
 
 #endregion MCP
 
-#region Skill System
+#region Tool Profiles
 var skill_manager: SkillManager = null
 
-## Get the skill manager instance (lazy initialization)
+## Get the profile manager instance (lazy initialization)
 func get_skill_manager() -> SkillManager:
 	if not skill_manager:
 		skill_manager = SkillManager.new()
 	return skill_manager
 
-#endregion Skill System
+#endregion Tool Profiles
 
 #region Agent System
 var agent_registry: AgentRegistry = null

@@ -98,14 +98,25 @@ func connect_server(server_name: String) -> Error:
 
 	var err: Error = await connection.connect_to_server()
 	if err != OK:
-		push_error("Failed to connect to MCP server %s: %s" % [server_name, error_string(err)])
-		server_error.emit(server_name, "Connection failed: %s" % error_string(err))
+		var msg := "Failed to connect to %s: %s" % [server_name, error_string(err)]
+		push_error("[MCP] " + msg)
+		server_error.emit(server_name, msg)
+		SingletonObject.create_toast_notification(msg, ToastNotification.Type.ERROR)
 		return err
 
 	servers[server_name] = connection
 
-	# Refresh tools from this server
-	await connection.refresh_tools()
+	# Refresh tools — rollback connection if this fails
+	var refresh_err := await connection.refresh_tools()
+	if refresh_err is int and refresh_err != OK:
+		push_warning("[MCP] Tool refresh failed for %s, rolling back connection" % server_name)
+		connection.disconnect_from_server()
+		servers.erase(server_name)
+		var msg := "%s connected but tool discovery failed — disconnected" % server_name
+		server_error.emit(server_name, msg)
+		SingletonObject.create_toast_notification(msg, ToastNotification.Type.ERROR)
+		return ERR_CANT_ACQUIRE_RESOURCE
+
 	_register_server_tools(connection)
 
 	# Debug: Log registered tools
@@ -113,6 +124,7 @@ func connect_server(server_name: String) -> Error:
 	for tool in connection.tools:
 		print("[MCP]   - %s" % tool.name)
 
+	server_connected.emit(server_name)
 	return OK
 
 
@@ -184,12 +196,40 @@ func get_http_server_port() -> int:
 	return http_server.get_port() if http_server else 0
 
 
-## Add a server at runtime — adds to config, optionally connects, saves if persistent
-func add_server_at_runtime(server_config, connect_now: bool = true) -> Error:
-	# Block external tools with minerva_ prefix
+## Validate a server config before adding. Returns empty string if valid, error message otherwise.
+func validate_server_config(server_config) -> String:
+	if server_config.name.is_empty():
+		return "Server name is required."
 	if server_config.name.begins_with("minerva"):
-		push_error("[MCP] Server names starting with 'minerva' are reserved")
+		return "Server names starting with 'minerva' are reserved."
+	if MCPKnownServers.is_known(server_config.name):
+		return "'%s' conflicts with a known server name." % server_config.name
+	if server_config.type == "stdio":
+		if server_config.command.is_empty():
+			return "STDIO servers require a command."
+	else:
+		if server_config.url.is_empty():
+			return "Server URL is required."
+		if server_config.type == "http":
+			if not server_config.url.begins_with("http://") and not server_config.url.begins_with("https://"):
+				return "HTTP server URL must start with http:// or https://"
+		elif server_config.type == "websocket":
+			if not server_config.url.begins_with("ws://") and not server_config.url.begins_with("wss://"):
+				return "WebSocket server URL must start with ws:// or wss://"
+	return ""
+
+
+## Add a server at runtime — validates, adds to config, optionally connects, saves if persistent
+func add_server_at_runtime(server_config, connect_now: bool = true) -> Error:
+	var validation_error := validate_server_config(server_config)
+	if not validation_error.is_empty():
+		push_error("[MCP] " + validation_error)
+		SingletonObject.create_toast_notification(validation_error, ToastNotification.Type.ERROR)
 		return ERR_INVALID_PARAMETER
+
+	# Warn about duplicate name (existing config will be overwritten)
+	if config.get_server(server_config.name):
+		push_warning("[MCP] Overwriting existing server config: %s" % server_config.name)
 
 	config.set_server(server_config)
 
@@ -220,11 +260,11 @@ func remove_server_at_runtime(server_name: String) -> void:
 
 
 ## Get tools filtered for a specific chat history.
-## Applies 4-layer filter: skill tool_sets → per-chat skill override → DisabledTools → connectivity.
+## Applies 4-layer filter: profile tool_sets → per-chat profile override → DisabledTools → connectivity.
 func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
 
-	# Determine effective skill tool_sets
+	# Determine effective profile tool_sets
 	var effective_tool_sets: Array[String] = []
 	var skill_manager = SingletonObject.get_skill_manager()
 	if skill_manager:
@@ -252,7 +292,7 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 		if not connected:
 			continue
 
-		# Layer 1/2: Skill tool_set filter
+		# Layer 1/2: Profile tool_set filter
 		if not _passes_tool_set_filter(tool, effective_tool_sets):
 			continue
 
@@ -283,7 +323,7 @@ func _passes_tool_set_filter(tool, effective_tool_sets: Array[String]) -> bool:
 	# If no filter active (empty = all), pass
 	if effective_tool_sets.is_empty():
 		return _is_tool_in_enabled_set(tool)
-	# Check against effective skill tool_sets
+	# Check against effective profile tool_sets
 	return tool.tool_set in effective_tool_sets
 
 
@@ -307,6 +347,19 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 
 	var tool = tool_registry[tool_name]
 	var server_name = tool.server_name
+
+	# Handle skill executable tools
+	if tool_name.begins_with("skill_"):
+		var skill_id := tool_name.substr(6)  # Strip "skill_" prefix
+		var skill_manager = SingletonObject.get_skill_manager()
+		if skill_manager:
+			var args_str: String = arguments.get("args", "")
+			var skill_result = skill_manager.execute_skill_tool(skill_id, args_str)
+			if not skill_result.has("success"):
+				skill_result["success"] = not skill_result.has("error")
+			tool_executed.emit(server_name, tool_name, skill_result)
+			return skill_result
+		return {"error": "Skill manager not available", "success": false}
 
 	# Handle internal Minerva server tools
 	if server_name == "minerva":
@@ -332,6 +385,13 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 	# Normalize result
 	if not result.has("success"):
 		result["success"] = not result.has("error")
+
+	# If tool execution failed with a connection error, clean up the dead connection
+	if not result.get("success", false) and not connection.is_connected:
+		push_warning("[MCP] Server %s disconnected during tool execution — cleaning up" % server_name)
+		_unregister_server_tools(server_name)
+		servers.erase(server_name)
+		server_disconnected.emit(server_name)
 
 	tool_executed.emit(server_name, tool_name, result)
 	return result
@@ -439,19 +499,33 @@ func refresh_all_tools() -> void:
 
 ## Register tools from a server connection
 func _register_server_tools(connection) -> void:
+	var blocked_count := 0
+	var collision_count := 0
 	for tool in connection.tools:
 		# Block external servers from registering minerva_-prefixed tools
 		if connection.server_name != "minerva" and tool.name.begins_with("minerva_"):
 			push_warning("[MCP] Blocked external tool with reserved 'minerva_' prefix: %s (from %s)" % [
 				tool.name, connection.server_name])
+			blocked_count += 1
 			continue
 		if tool_registry.has(tool.name):
-			push_warning("Tool name collision: %s (from %s, already registered from %s)" % [
-				tool.name,
-				connection.server_name,
-				tool_registry[tool.name].server_name
-			])
+			var existing_server: String = tool_registry[tool.name].server_name
+			push_warning("Tool name collision: %s (from %s, replacing %s)" % [
+				tool.name, connection.server_name, existing_server])
+			collision_count += 1
 		tool_registry[tool.name] = tool
+
+	# Surface warnings to user via toast
+	if blocked_count > 0:
+		SingletonObject.create_toast_notification(
+			"%s: %d tool(s) blocked (reserved minerva_ prefix)" % [connection.server_name, blocked_count],
+			ToastNotification.Type.WARNING
+		)
+	if collision_count > 0:
+		SingletonObject.create_toast_notification(
+			"%s: %d tool name collision(s) — later server wins" % [connection.server_name, collision_count],
+			ToastNotification.Type.WARNING
+		)
 
 
 ## Unregister tools from a server

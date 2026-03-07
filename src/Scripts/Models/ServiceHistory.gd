@@ -86,7 +86,7 @@ var IsAgentChat: bool = false:
 var AgentDefinitionId: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); AgentDefinitionId = value
 
-## Active skill IDs for this chat (overrides agent/global skills when non-empty)
+## Active profile IDs for this chat (overrides agent/global profiles when non-empty)
 var ActiveSkills: Array[String] = []:
 	set(value): SingletonObject.call_deferred("save_state", false); ActiveSkills = value
 

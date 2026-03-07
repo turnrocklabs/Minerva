@@ -16,7 +16,7 @@ var presence_penalty: float = 0.0
 var max_tool_call_rounds: int = 10
 var enabled_tools: Array[String] = []
 var tool_sets: Array[String] = []  # Tool set filter for this agent (empty = use global default)
-var skills: Array[String] = []  # Skill IDs to activate for this agent (empty = use global default)
+var skills: Array[String] = []  # Profile IDs to activate for this agent (empty = use global default)
 var memory_tab_name: String = ""   # Project-scoped notes tab locked to this agent
 var drawer_tab_name: String = ""   # App-scoped drawer notes tab locked to this agent
 

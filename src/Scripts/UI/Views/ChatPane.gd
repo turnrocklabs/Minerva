@@ -84,7 +84,7 @@ func _build_agent_system_prompt(history = null) -> String:
 
 	var prompt = AGENT_SYSTEM_PROMPT_BASE + AGENT_SYSTEM_PROMPT_GENERAL
 
-	# Collect prompt fragments from active skills
+	# Collect prompt fragments from active profiles and skill instructions
 	var skill_manager = SingletonObject.get_skill_manager()
 	if skill_manager and history:
 		var chat_skills: Array[String] = []
@@ -96,6 +96,13 @@ func _build_agent_system_prompt(history = null) -> String:
 				if agent_def.id == history.AgentDefinitionId and not agent_def.skills.is_empty():
 					agent_skills.assign(agent_def.skills)
 					break
+
+		# Inject skill instructions from notes tabs (before profile fragments)
+		var instructions = skill_manager.get_skill_instructions(chat_skills, agent_skills)
+		if not instructions.is_empty():
+			prompt += "\n\n" + instructions
+
+		# Inject profile prompt fragments
 		var fragments = skill_manager.get_prompt_fragments(chat_skills, agent_skills)
 		for frag in fragments:
 			prompt += "\n\n" + frag

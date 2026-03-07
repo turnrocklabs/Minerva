@@ -400,10 +400,10 @@ func _on_ledger_menu_selected(id: int) -> void:
 var split_drawer_tween: Tween
 @export var _drawer_anim_duration: = 0.5
 func _on_btn_drawer_pressed() -> void:
-	
+
 	if split_drawer_tween and split_drawer_tween.is_running():
 		return
-	
+
 	if !bottom_drawer_control.visible:
 		notes_drawer_split.split_offset = 600
 		split_drawer_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
@@ -440,6 +440,7 @@ func _update_project_label(new_text: String = "", saved_state: bool = true) -> v
 	elif !new_text.is_empty() and !saved_state:
 		base_text = new_text + "*"
 	project_name_label.text = base_text
+
 
 
 func _on_files_dropped(files: PackedStringArray) -> void:

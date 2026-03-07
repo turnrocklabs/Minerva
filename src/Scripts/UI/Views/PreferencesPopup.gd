@@ -111,6 +111,7 @@ func _ready():
 
 	# Create tools tab (after scene tree is ready)
 	call_deferred("_create_tools_tab")
+	call_deferred("_create_skills_tab")
 
 	# Initialize ChatGPT auth status
 	call_deferred("_init_chatgpt_auth")
@@ -1500,7 +1501,7 @@ var _server_auto_connect_checks: Dictionary = {}  # server_name -> CheckButton
 var _server_status_labels: Dictionary = {}  # server_name -> Label
 var _tool_set_checks_container: VBoxContainer
 var _server_list_container: VBoxContainer
-var _skill_checks_container: VBoxContainer
+var _profile_checks_container: VBoxContainer
 var _add_server_dialog_prefs: AddMCPServerDialog = null
 
 
@@ -1591,19 +1592,19 @@ func _create_tools_tab() -> void:
 
 	vbox.add_child(HSeparator.new())
 
-	# --- Skills Section ---
-	var skills_label := Label.new()
-	skills_label.text = "Active Skills"
-	skills_label.add_theme_font_size_override("font_size", 16)
-	vbox.add_child(skills_label)
+	# --- Profiles Section ---
+	var profiles_label := Label.new()
+	profiles_label.text = "Tool Profiles"
+	profiles_label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(profiles_label)
 
-	var skills_desc := Label.new()
-	skills_desc.text = "Skills control which tool sets and MCP servers are active by default. Per-agent and per-chat settings override global skills."
-	skills_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(skills_desc)
+	var profiles_desc := Label.new()
+	profiles_desc.text = "Profiles control which tool groups and MCP servers are active by default. Per-agent and per-chat settings override global profiles."
+	profiles_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(profiles_desc)
 
-	_skill_checks_container = VBoxContainer.new()
-	vbox.add_child(_skill_checks_container)
+	_profile_checks_container = VBoxContainer.new()
+	vbox.add_child(_profile_checks_container)
 
 	tab_container.add_child(_tools_tab)
 
@@ -1699,15 +1700,22 @@ func _rebuild_server_list(config: MCPConfig) -> void:
 			remove_btn.pressed.connect(_on_server_remove.bind(server_name))
 			header_hbox.add_child(remove_btn)
 
-		# URL/Port row
-		var url_hbox := HBoxContainer.new()
-		url_hbox.add_theme_constant_override("separation", 6)
-		_server_list_container.add_child(url_hbox)
+		# Connection info row
+		var info_hbox := HBoxContainer.new()
+		info_hbox.add_theme_constant_override("separation", 6)
+		_server_list_container.add_child(info_hbox)
 
-		var url_label := Label.new()
-		url_label.text = "  URL: %s" % server_cfg.url
-		url_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-		url_hbox.add_child(url_label)
+		var info_label := Label.new()
+		if server_cfg.type == "stdio":
+			var cmd_display := server_cfg.command
+			if not server_cfg.args.is_empty():
+				cmd_display += " " + " ".join(server_cfg.args)
+			info_label.text = "  STDIO: %s" % cmd_display
+		else:
+			var type_prefix := "WS" if server_cfg.type == "websocket" else "HTTP"
+			info_label.text = "  %s: %s" % [type_prefix, server_cfg.url]
+		info_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		info_hbox.add_child(info_label)
 
 		# Known servers get installation path, port, browse controls
 		if is_known and MCPKnownServers.is_installable(server_name):
@@ -1805,47 +1813,61 @@ func _on_prefs_server_added(config_data: Dictionary) -> void:
 	if not mcp:
 		return
 
-	var server_config = MCPConfig.ServerConfig.new(
-		config_data.get("name", ""),
-		config_data.get("type", "http"),
-		config_data.get("url", "")
-	)
+	var transport: String = config_data.get("type", "http")
+	var server_config: MCPConfig.ServerConfig
+	if transport == "stdio":
+		var cmd_args := PackedStringArray()
+		for arg in config_data.get("args", []):
+			cmd_args.append(str(arg))
+		server_config = MCPConfig.ServerConfig.create_stdio(
+			config_data.get("name", ""), config_data.get("command", ""), cmd_args
+		)
+		var wd: String = config_data.get("working_directory", "")
+		if not wd.is_empty():
+			server_config.working_directory = wd
+	else:
+		server_config = MCPConfig.ServerConfig.new(
+			config_data.get("name", ""), transport, config_data.get("url", "")
+		)
 	server_config.auto_connect = config_data.get("auto_connect", false)
 	server_config.origin = "user"
 	server_config.persistent = config_data.get("persistent", true)
+	var endpoint: String = config_data.get("mcp_endpoint", "")
+	if not endpoint.is_empty():
+		server_config.mcp_endpoint = endpoint
 
 	await mcp.add_server_at_runtime(server_config, true)
 	_load_tools_settings()
 
 
-## Build skill checkboxes from SkillManager
+## Build profile checkboxes from SkillManager
 func _rebuild_skill_checks() -> void:
-	if not _skill_checks_container:
+	if not _profile_checks_container:
 		return
 
-	for child in _skill_checks_container.get_children():
+	for child in _profile_checks_container.get_children():
 		child.queue_free()
 
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
 		return
 
-	for skill in skill_manager.skills:
+	for profile in skill_manager.get_profiles():
 		var hbox := HBoxContainer.new()
 		hbox.add_theme_constant_override("separation", 8)
-		_skill_checks_container.add_child(hbox)
+		_profile_checks_container.add_child(hbox)
 
 		var check := CheckButton.new()
-		check.text = skill.name
-		check.tooltip_text = skill.description
-		check.button_pressed = skill_manager.is_active(skill.id)
+		check.text = profile.name
+		check.tooltip_text = profile.description
+		check.button_pressed = skill_manager.is_active(profile.id)
 		check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		check.toggled.connect(_on_skill_toggled.bind(skill.id))
+		check.toggled.connect(_on_profile_toggled.bind(profile.id))
 		hbox.add_child(check)
 
-		if not skill.tool_sets.is_empty():
+		if not profile.tool_sets.is_empty():
 			var tools_label := Label.new()
-			tools_label.text = "[%s]" % ", ".join(skill.tool_sets)
+			tools_label.text = "[%s]" % ", ".join(profile.tool_sets)
 			tools_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 			tools_label.add_theme_font_size_override("font_size", 11)
 			hbox.add_child(tools_label)
@@ -1857,7 +1879,7 @@ func _rebuild_skill_checks() -> void:
 			hbox.add_child(all_label)
 
 
-func _on_skill_toggled(enabled: bool, skill_id: String) -> void:
+func _on_profile_toggled(enabled: bool, skill_id: String) -> void:
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
 		return
@@ -2090,3 +2112,329 @@ func _on_tools_auto_connect_toggled(toggled_on: bool, server_name: String) -> vo
 		config.save_config()
 
 #endregion Tools Tab
+
+
+#region Skills Tab
+
+var _skills_tab: VBoxContainer
+var _skills_list_container: VBoxContainer
+var _selected_skill_id: String = ""
+var _skill_name_edit: LineEdit
+var _skill_desc_edit: LineEdit
+var _skill_instructions_edit: TextEdit
+var _skill_exec_path_edit: LineEdit
+var _skill_exec_args_edit: LineEdit
+var _skill_exec_desc_edit: LineEdit
+var _skill_exec_dir_edit: LineEdit
+var _skill_active_check: CheckButton
+var _skill_detail_container: VBoxContainer
+
+
+func _create_skills_tab() -> void:
+	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
+	if not tab_container:
+		return
+
+	_skills_tab = VBoxContainer.new()
+	_skills_tab.name = "Skills"
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_skills_tab.add_child(margin)
+
+	var hsplit := HSplitContainer.new()
+	hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(hsplit)
+
+	# --- Left: Skill list ---
+	var left_vbox := VBoxContainer.new()
+	left_vbox.custom_minimum_size = Vector2(200, 0)
+	left_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_vbox.size_flags_stretch_ratio = 0.3
+	hsplit.add_child(left_vbox)
+
+	var list_header := Label.new()
+	list_header.text = "Skills"
+	list_header.add_theme_font_size_override("font_size", 16)
+	left_vbox.add_child(list_header)
+
+	_skills_list_container = VBoxContainer.new()
+	_skills_list_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	left_vbox.add_child(_skills_list_container)
+
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 4)
+	left_vbox.add_child(btn_row)
+
+	var add_btn := Button.new()
+	add_btn.text = "New Skill"
+	add_btn.pressed.connect(_on_new_skill_pressed)
+	btn_row.add_child(add_btn)
+
+	var remove_btn := Button.new()
+	remove_btn.text = "Remove"
+	remove_btn.pressed.connect(_on_remove_selected_skill)
+	btn_row.add_child(remove_btn)
+
+	# --- Right: Skill detail editor ---
+	_skill_detail_container = VBoxContainer.new()
+	_skill_detail_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skill_detail_container.size_flags_stretch_ratio = 0.7
+	_skill_detail_container.add_theme_constant_override("separation", 6)
+	hsplit.add_child(_skill_detail_container)
+
+	# Name
+	var name_row := HBoxContainer.new()
+	_skill_detail_container.add_child(name_row)
+	var name_lbl := Label.new()
+	name_lbl.text = "Name:"
+	name_lbl.custom_minimum_size = Vector2(120, 0)
+	name_row.add_child(name_lbl)
+	_skill_name_edit = LineEdit.new()
+	_skill_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skill_name_edit.text_changed.connect(_on_skill_field_changed)
+	name_row.add_child(_skill_name_edit)
+
+	# Description
+	var desc_row := HBoxContainer.new()
+	_skill_detail_container.add_child(desc_row)
+	var desc_lbl := Label.new()
+	desc_lbl.text = "Description:"
+	desc_lbl.custom_minimum_size = Vector2(120, 0)
+	desc_row.add_child(desc_lbl)
+	_skill_desc_edit = LineEdit.new()
+	_skill_desc_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skill_desc_edit.text_changed.connect(_on_skill_field_changed)
+	desc_row.add_child(_skill_desc_edit)
+
+	# Active toggle
+	_skill_active_check = CheckButton.new()
+	_skill_active_check.text = "Active"
+	_skill_active_check.toggled.connect(_on_skill_active_toggled)
+	_skill_detail_container.add_child(_skill_active_check)
+
+	# Instructions
+	var instr_lbl := Label.new()
+	instr_lbl.text = "Instructions (injected into system prompt):"
+	_skill_detail_container.add_child(instr_lbl)
+
+	_skill_instructions_edit = TextEdit.new()
+	_skill_instructions_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_skill_instructions_edit.custom_minimum_size = Vector2(0, 200)
+	_skill_instructions_edit.placeholder_text = "Write instructions in markdown that teach the LLM this skill..."
+	_skill_instructions_edit.text_changed.connect(_on_skill_instructions_changed)
+	_skill_detail_container.add_child(_skill_instructions_edit)
+
+	# Executable section
+	var exec_sep := HSeparator.new()
+	_skill_detail_container.add_child(exec_sep)
+
+	var exec_header := Label.new()
+	exec_header.text = "Executable (optional — registers as an LLM tool)"
+	exec_header.add_theme_font_size_override("font_size", 13)
+	_skill_detail_container.add_child(exec_header)
+
+	# Executable path
+	var exec_path_row := HBoxContainer.new()
+	_skill_detail_container.add_child(exec_path_row)
+	var exec_path_lbl := Label.new()
+	exec_path_lbl.text = "Path:"
+	exec_path_lbl.custom_minimum_size = Vector2(120, 0)
+	exec_path_row.add_child(exec_path_lbl)
+	_skill_exec_path_edit = LineEdit.new()
+	_skill_exec_path_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skill_exec_path_edit.placeholder_text = "/path/to/script.sh"
+	_skill_exec_path_edit.text_changed.connect(_on_skill_field_changed)
+	exec_path_row.add_child(_skill_exec_path_edit)
+
+	# Executable args
+	var exec_args_row := HBoxContainer.new()
+	_skill_detail_container.add_child(exec_args_row)
+	var exec_args_lbl := Label.new()
+	exec_args_lbl.text = "Default args:"
+	exec_args_lbl.custom_minimum_size = Vector2(120, 0)
+	exec_args_row.add_child(exec_args_lbl)
+	_skill_exec_args_edit = LineEdit.new()
+	_skill_exec_args_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skill_exec_args_edit.placeholder_text = "--flag value (space-separated)"
+	_skill_exec_args_edit.text_changed.connect(_on_skill_field_changed)
+	exec_args_row.add_child(_skill_exec_args_edit)
+
+	# Executable description
+	var exec_desc_row := HBoxContainer.new()
+	_skill_detail_container.add_child(exec_desc_row)
+	var exec_desc_lbl := Label.new()
+	exec_desc_lbl.text = "Tool description:"
+	exec_desc_lbl.custom_minimum_size = Vector2(120, 0)
+	exec_desc_row.add_child(exec_desc_lbl)
+	_skill_exec_desc_edit = LineEdit.new()
+	_skill_exec_desc_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skill_exec_desc_edit.placeholder_text = "What the executable does (shown to LLM)"
+	_skill_exec_desc_edit.text_changed.connect(_on_skill_field_changed)
+	exec_desc_row.add_child(_skill_exec_desc_edit)
+
+	# Executable working dir
+	var exec_dir_row := HBoxContainer.new()
+	_skill_detail_container.add_child(exec_dir_row)
+	var exec_dir_lbl := Label.new()
+	exec_dir_lbl.text = "Working dir:"
+	exec_dir_lbl.custom_minimum_size = Vector2(120, 0)
+	exec_dir_row.add_child(exec_dir_lbl)
+	_skill_exec_dir_edit = LineEdit.new()
+	_skill_exec_dir_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_skill_exec_dir_edit.placeholder_text = "/optional/working/directory"
+	_skill_exec_dir_edit.text_changed.connect(_on_skill_field_changed)
+	exec_dir_row.add_child(_skill_exec_dir_edit)
+
+	tab_container.add_child(_skills_tab)
+
+	_rebuild_skills_list()
+	_show_skill_detail("")  # Empty state
+
+
+func _rebuild_skills_list() -> void:
+	if not _skills_list_container:
+		return
+
+	for child in _skills_list_container.get_children():
+		child.queue_free()
+
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return
+
+	for skill in skill_manager.get_skills_only():
+		var btn := Button.new()
+		btn.text = skill.name
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.flat = _selected_skill_id != skill.id
+		if _selected_skill_id == skill.id:
+			btn.add_theme_color_override("font_color", Color(0.3, 0.7, 1.0))
+		btn.pressed.connect(_on_skill_list_selected.bind(skill.id))
+		_skills_list_container.add_child(btn)
+
+
+func _on_skill_list_selected(skill_id: String) -> void:
+	_save_current_skill()
+	_selected_skill_id = skill_id
+	_show_skill_detail(skill_id)
+	_rebuild_skills_list()
+
+
+func _show_skill_detail(skill_id: String) -> void:
+	if not _skill_detail_container:
+		return
+
+	var skill_manager = SingletonObject.get_skill_manager()
+	if skill_id.is_empty() or not skill_manager:
+		_skill_name_edit.text = ""
+		_skill_desc_edit.text = ""
+		_skill_instructions_edit.text = ""
+		_skill_exec_path_edit.text = ""
+		_skill_exec_args_edit.text = ""
+		_skill_exec_desc_edit.text = ""
+		_skill_exec_dir_edit.text = ""
+		_skill_active_check.button_pressed = false
+		_skill_detail_container.visible = false
+		return
+
+	var skill = skill_manager.get_skill(skill_id)
+	if not skill:
+		_skill_detail_container.visible = false
+		return
+
+	_skill_detail_container.visible = true
+	_skill_name_edit.text = skill.name
+	_skill_desc_edit.text = skill.description
+	_skill_instructions_edit.text = skill.instructions
+	_skill_exec_path_edit.text = skill.executable_path
+	_skill_exec_args_edit.text = " ".join(skill.executable_args)
+	_skill_exec_desc_edit.text = skill.executable_description
+	_skill_exec_dir_edit.text = skill.executable_working_dir
+	_skill_active_check.button_pressed = skill_manager.is_active(skill_id)
+
+
+func _save_current_skill() -> void:
+	if _selected_skill_id.is_empty():
+		return
+
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return
+
+	var skill = skill_manager.get_skill(_selected_skill_id)
+	if not skill or not skill.is_skill():
+		return
+
+	skill.name = _skill_name_edit.text.strip_edges()
+	skill.description = _skill_desc_edit.text.strip_edges()
+	skill.instructions = _skill_instructions_edit.text
+	skill.executable_path = _skill_exec_path_edit.text.strip_edges()
+	skill.executable_args = []
+	var args_text := _skill_exec_args_edit.text.strip_edges()
+	if not args_text.is_empty():
+		for arg in args_text.split(" ", false):
+			skill.executable_args.append(arg)
+	skill.executable_description = _skill_exec_desc_edit.text.strip_edges()
+	skill.executable_working_dir = _skill_exec_dir_edit.text.strip_edges()
+
+	skill_manager.save_config()
+
+
+func _on_skill_field_changed(_text = "") -> void:
+	_save_current_skill()
+	_rebuild_skills_list()
+
+
+func _on_skill_instructions_changed() -> void:
+	_save_current_skill()
+
+
+func _on_skill_active_toggled(enabled: bool) -> void:
+	if _selected_skill_id.is_empty():
+		return
+
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return
+
+	var mcp = SingletonObject.mcp_manager
+	if enabled:
+		skill_manager.activate_skill(_selected_skill_id, mcp)
+	else:
+		skill_manager.deactivate_skill(_selected_skill_id, mcp)
+
+
+func _on_new_skill_pressed() -> void:
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return
+
+	# Generate unique ID
+	var base_id := "skill_%d" % (skill_manager.get_skills_only().size() + 1)
+	var skill := SkillDefinition.new(base_id, "New Skill", "")
+	skill.origin = "user"
+	skill_manager.add_skill(skill)
+
+	_selected_skill_id = skill.id
+	_rebuild_skills_list()
+	_show_skill_detail(skill.id)
+
+
+func _on_remove_selected_skill() -> void:
+	if _selected_skill_id.is_empty():
+		return
+
+	var skill_manager = SingletonObject.get_skill_manager()
+	if not skill_manager:
+		return
+
+	skill_manager.remove_skill(_selected_skill_id)
+	_selected_skill_id = ""
+	_rebuild_skills_list()
+	_show_skill_detail("")
+
+#endregion Skills Tab
