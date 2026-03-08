@@ -2405,11 +2405,6 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		var client := SingletonObject.get_voice_client()
 		text_to_speak = await client.summarize_for_speech(user_text, response_text, cfg.summary_model, cfg.summary_timeout)
 
-		# Collapse the full response — summary is the primary content now
-		if msg_node is MessageMarkdown and msg_node._expanded:
-			msg_node._expanded = false
-			msg_node.contract_message()
-
 	if status_label:
 		status_label.text = "Voice: Synthesizing speech..."
 	var voice_client := SingletonObject.get_voice_client()
@@ -2421,6 +2416,12 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 			await get_tree().create_timer(3.0).timeout
 			status_label.queue_free()
 		return
+
+	# Collapse after successful synthesis — only in summarize mode
+	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
+		if msg_node is MessageMarkdown and msg_node._expanded:
+			msg_node._expanded = false
+			msg_node.contract_message()
 
 	var stream := AudioStreamWAV.new()
 	_load_wav_into_stream(stream, wav_data)
