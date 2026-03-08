@@ -4,6 +4,7 @@ extends RefCounted
 
 enum STTProvider { VOICE_SERVICE, OPENAI_WHISPER }
 enum TTSProvider { VOICE_SERVICE, NONE }
+enum SpeakMode { OFF, FULL, SUMMARIZE }
 
 ## Current STT provider selection
 var stt_provider: STTProvider = STTProvider.VOICE_SERVICE
@@ -23,8 +24,14 @@ var voice_name: String = ""
 ## TTS backend filter (e.g. "kokoro", "qwen3-base", or "" for all)
 var tts_backend: String = "kokoro"
 
-## Auto-play TTS responses when voice mode is active
-var auto_play_tts: bool = true
+## How to handle auto-speaking responses: OFF, FULL (speak entire response), SUMMARIZE (summarize then speak)
+var speak_mode: SpeakMode = SpeakMode.OFF
+
+## Model name for summarization (action name from model-chat service, e.g. "gemma3:12b")
+var summary_model: String = ""
+
+## Timeout for summarization requests (seconds)
+var summary_timeout: float = 30.0
 
 ## TTS playback volume (linear 0.0–1.0)
 var tts_volume: float = 1.0
@@ -43,7 +50,9 @@ func save() -> void:
 	SingletonObject.save_to_config_file("Voice", "voice_id", voice_id)
 	SingletonObject.save_to_config_file("Voice", "voice_name", voice_name)
 	SingletonObject.save_to_config_file("Voice", "tts_backend", tts_backend)
-	SingletonObject.save_to_config_file("Voice", "auto_play_tts", auto_play_tts)
+	SingletonObject.save_to_config_file("Voice", "speak_mode", speak_mode)
+	SingletonObject.save_to_config_file("Voice", "summary_model", summary_model)
+	SingletonObject.save_to_config_file("Voice", "summary_timeout", summary_timeout)
 	SingletonObject.save_to_config_file("Voice", "tts_volume", tts_volume)
 	SingletonObject.save_to_config_file("Voice", "auto_send_transcription", auto_send_transcription)
 	SingletonObject.save_to_config_file("Voice", "whisper_fallback", whisper_fallback)
@@ -59,10 +68,18 @@ func load_from_config() -> void:
 	voice_id = SingletonObject.config_file.get_value("Voice", "voice_id", "")
 	voice_name = SingletonObject.config_file.get_value("Voice", "voice_name", "")
 	tts_backend = SingletonObject.config_file.get_value("Voice", "tts_backend", "kokoro")
-	auto_play_tts = SingletonObject.config_file.get_value("Voice", "auto_play_tts", true)
 	tts_volume = SingletonObject.config_file.get_value("Voice", "tts_volume", 1.0)
 	auto_send_transcription = SingletonObject.config_file.get_value("Voice", "auto_send_transcription", false)
 	whisper_fallback = SingletonObject.config_file.get_value("Voice", "whisper_fallback", true)
+	summary_model = SingletonObject.config_file.get_value("Voice", "summary_model", "")
+	summary_timeout = SingletonObject.config_file.get_value("Voice", "summary_timeout", 30.0)
+
+	# Migrate from old auto_play_tts boolean to speak_mode enum
+	if SingletonObject.config_file.has_section_key("Voice", "speak_mode"):
+		speak_mode = SingletonObject.config_file.get_value("Voice", "speak_mode", SpeakMode.OFF)
+	elif SingletonObject.config_file.has_section_key("Voice", "auto_play_tts"):
+		var old_auto_play: bool = SingletonObject.config_file.get_value("Voice", "auto_play_tts", false)
+		speak_mode = SpeakMode.FULL if old_auto_play else SpeakMode.OFF
 
 
 ## Get the effective STT provider considering Core connection state

@@ -189,6 +189,60 @@ func synthesize_auto(text: String, voice_config: VoiceConfig) -> PackedByteArray
 		return PackedByteArray()
 
 
+## Summarize a user+response exchange into a single spoken sentence using a fast model via model-chat.
+## Returns the summary text, or the original response (truncated) on failure.
+func summarize_for_speech(user_text: String, response_text: String, model_name: String, timeout: float = 30.0) -> String:
+	if not Core.client._connected:
+		return response_text.substr(0, 200)
+
+	# Find model-chat service and the matching action for the requested model
+	var model_chat_svc: Service = null
+	var model_action: Action = null
+	for svc in Core.services:
+		if svc.client_id == "model-chat":
+			model_chat_svc = svc
+			for act in svc.actions:
+				if act.name == model_name:
+					model_action = act
+					break
+			break
+
+	if not model_chat_svc or not model_action:
+		push_warning("[VoiceServiceClient] model-chat model '%s' not found for summarization" % model_name)
+		return response_text.substr(0, 200)
+
+	var messages: Array = [
+		{"role": "system", "content": "Summarize this conversation exchange into a single conversational sentence suitable for speaking aloud. Be concise and natural."},
+		{"role": "user", "content": "User said: %s\n\nAssistant replied: %s" % [user_text, response_text]},
+	]
+
+	var msg_data: Dictionary = {
+		"messages": messages,
+		"temperature": 0.7,
+		"max_tokens": 150,
+		"options": {"num_ctx": 4000},
+	}
+
+	var awaiter := Core.send_message(model_chat_svc, model_action, msg_data)
+	var response = await awaiter.with_timeout(timeout).receive()
+
+	if not response:
+		push_warning("[VoiceServiceClient] Summarization timed out")
+		return response_text.substr(0, 200)
+
+	var result: Dictionary = response.get("params", {}).get("result", {})
+	if result.has("choices"):
+		var choices: Array = result.get("choices", [])
+		if not choices.is_empty():
+			var message: Dictionary = choices[0].get("message", {})
+			var content: String = message.get("content", "")
+			if not content.is_empty():
+				return content
+
+	push_warning("[VoiceServiceClient] Summarization returned unexpected format")
+	return response_text.substr(0, 200)
+
+
 ## Find or create a Service object for voice-service
 func _get_voice_service() -> Service:
 	if not Core.client._connected:

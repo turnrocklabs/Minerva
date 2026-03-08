@@ -29,8 +29,6 @@ var _showing_archived: bool = false
 ## TTS playback for voice conversation mode (controlled by Voice Preferences)
 var _tts_player: AudioStreamPlayer
 
-## Quick toggle button for auto-play TTS
-var _tts_toggle_button: Button
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
@@ -549,7 +547,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 
 		# Voice mode: speak the response via TTS (if enabled in Voice Preferences)
 		if chi and not chi.Message.is_empty():
-			_voice_speak_response(chi.Message)
+			_voice_speak_response(chi.Message, user_history_item.Message, model_msg_node)
 	else:
 		model_msg_node.queue_free()
 
@@ -1979,17 +1977,6 @@ func _ready():
 	_tts_player = AudioStreamPlayer.new()
 	add_child(_tts_player)
 
-	# Quick TTS toggle button — lets user mute/unmute auto-speak without opening preferences
-	_tts_toggle_button = Button.new()
-	_tts_toggle_button.toggle_mode = true
-	_tts_toggle_button.tooltip_text = "Toggle auto-speak responses (TTS)"
-	_tts_toggle_button.pressed.connect(_on_tts_toggle_pressed)
-	var cfg := SingletonObject.get_voice_config()
-	_tts_toggle_button.button_pressed = cfg.auto_play_tts
-	_tts_toggle_button.text = "S" if cfg.auto_play_tts else "s"
-	audio_stop_1.get_parent().add_child(_tts_toggle_button)
-	audio_stop_1.get_parent().move_child(_tts_toggle_button, _compact_button.get_index())
-
 	# Connect transcription signal for voice mode auto-send + TTS
 	SingletonObject.AtT.transcription_completed.connect(_on_voice_transcription_completed)
 
@@ -2368,28 +2355,71 @@ func _on_voice_transcription_completed(text: String) -> void:
 		_on_send_message_button_item_selected(0)
 
 
-## Toggle auto-play TTS from the quick button in chat controls.
-func _on_tts_toggle_pressed() -> void:
-	var cfg := SingletonObject.get_voice_config()
-	cfg.auto_play_tts = _tts_toggle_button.button_pressed
-	_tts_toggle_button.text = "S" if cfg.auto_play_tts else "s"
-	cfg.save()
+## Create a voice status label placed outside the collapsible area so it remains visible when collapsed.
+func _create_voice_status_label(msg_node: Control) -> RichTextLabel:
+	var label := RichTextLabel.new()
+	label.bbcode_enabled = true
+	label.selection_enabled = true
+	label.fit_content = true
+	label.scroll_active = false
+	# Dark muted color readable against green model-message background
+	label.add_theme_color_override("default_color", Color(0.2, 0.25, 0.2, 0.7))
+	label.add_theme_font_size_override("normal_font_size", 12)
+	# Place in the main VBox (parent of ResizeScrollContainer) so it stays visible when collapsed
+	var scroll: ScrollContainer = msg_node.find_child("ResizeScrollContainer", true, false)
+	if scroll and scroll.get_parent():
+		var vbox: VBoxContainer = scroll.get_parent()
+		vbox.add_child(label)
+		vbox.move_child(label, scroll.get_index() + 1)
+	else:
+		msg_node.add_child(label)
+	return label
 
 
-## Speak the assistant's response via TTS if enabled in Voice Preferences.
-func _voice_speak_response(response_text: String) -> void:
+## Speak the assistant's response via TTS based on Voice Preferences speak mode.
+func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null) -> void:
 	var cfg := SingletonObject.get_voice_config()
-	if not cfg.auto_play_tts:
+	if cfg.speak_mode == VoiceConfig.SpeakMode.OFF:
 		return
 
 	var effective_tts := cfg.get_effective_tts_provider()
 	if effective_tts == VoiceConfig.TTSProvider.NONE:
 		return
 
-	var client := SingletonObject.get_voice_client()
-	var wav_data: PackedByteArray = await client.synthesize_auto(response_text, cfg)
+	# Create inline status label on the message node
+	var status_label: RichTextLabel = null
+	if msg_node:
+		status_label = _create_voice_status_label(msg_node)
+
+	var text_to_speak := response_text
+	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
+		if cfg.summary_model.is_empty():
+			push_warning("[ChatPane] Summarize mode active but no summary model configured")
+			if status_label:
+				status_label.text = "Voice: No summary model configured"
+				await get_tree().create_timer(3.0).timeout
+				status_label.queue_free()
+			return
+		if status_label:
+			status_label.text = "Voice: Summarizing via %s..." % cfg.summary_model
+		var client := SingletonObject.get_voice_client()
+		text_to_speak = await client.summarize_for_speech(user_text, response_text, cfg.summary_model, cfg.summary_timeout)
+
+		# Collapse the full response — summary is the primary content now
+		if msg_node is MessageMarkdown and msg_node._expanded:
+			msg_node._expanded = false
+			msg_node.contract_message()
+
+	if status_label:
+		status_label.text = "Voice: Synthesizing speech..."
+	var voice_client := SingletonObject.get_voice_client()
+	var wav_data: PackedByteArray = await voice_client.synthesize_auto(text_to_speak, cfg)
 
 	if wav_data.is_empty():
+		if status_label:
+			status_label.text = "Voice: TTS synthesis failed"
+			await get_tree().create_timer(3.0).timeout
+			status_label.queue_free()
 		return
 
 	var stream := AudioStreamWAV.new()
@@ -2397,6 +2427,18 @@ func _voice_speak_response(response_text: String) -> void:
 	_tts_player.stream = stream
 	_tts_player.volume_db = linear_to_db(cfg.tts_volume)
 	_tts_player.play()
+
+	if status_label:
+		if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
+			status_label.text = "Voice: %s" % text_to_speak
+		else:
+			status_label.text = "Voice: Speaking..."
+		_tts_player.finished.connect(func():
+			if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
+				status_label.text = "Voice: %s" % text_to_speak
+			else:
+				status_label.queue_free()
+		, CONNECT_ONE_SHOT)
 
 
 ## Load raw WAV bytes into an AudioStreamWAV resource.

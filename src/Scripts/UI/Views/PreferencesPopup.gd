@@ -2452,7 +2452,11 @@ var _tts_provider_option: OptionButton
 var _voice_selector: OptionButton
 var _voice_preview_btn: Button
 var _tts_backend_option: OptionButton
-var _auto_play_check: CheckButton
+var _speak_mode_option: OptionButton
+var _summary_model_option: OptionButton
+var _summary_model_row: HBoxContainer
+var _summary_timeout_spin: SpinBox
+var _summary_timeout_row: HBoxContainer
 var _auto_send_check: CheckButton
 var _whisper_fallback_check: CheckButton
 var _tts_volume_slider: HSlider
@@ -2621,11 +2625,53 @@ func _create_voice_tab() -> void:
 	_tts_volume_slider.value_changed.connect(_on_tts_volume_changed)
 	vol_row.add_child(_tts_volume_slider)
 
-	# Auto-play
-	_auto_play_check = CheckButton.new()
-	_auto_play_check.text = "Auto-play TTS responses in voice mode"
-	_auto_play_check.toggled.connect(_on_auto_play_toggled)
-	vbox.add_child(_auto_play_check)
+	# Speak mode
+	var speak_mode_row := HBoxContainer.new()
+	speak_mode_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(speak_mode_row)
+	var speak_mode_lbl := Label.new()
+	speak_mode_lbl.text = "Auto-speak:"
+	speak_mode_lbl.custom_minimum_size = Vector2(140, 0)
+	speak_mode_row.add_child(speak_mode_lbl)
+	_speak_mode_option = OptionButton.new()
+	_speak_mode_option.add_item("Off", VoiceConfig.SpeakMode.OFF)
+	_speak_mode_option.add_item("Speak Full Response", VoiceConfig.SpeakMode.FULL)
+	_speak_mode_option.add_item("Summarize then Speak", VoiceConfig.SpeakMode.SUMMARIZE)
+	_speak_mode_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_speak_mode_option.item_selected.connect(_on_speak_mode_changed)
+	speak_mode_row.add_child(_speak_mode_option)
+
+	# Summary model (visible only in SUMMARIZE mode)
+	_summary_model_row = HBoxContainer.new()
+	_summary_model_row.add_theme_constant_override("separation", 8)
+	_summary_model_row.visible = false
+	vbox.add_child(_summary_model_row)
+	var summary_model_lbl := Label.new()
+	summary_model_lbl.text = "Summary Model:"
+	summary_model_lbl.custom_minimum_size = Vector2(140, 0)
+	_summary_model_row.add_child(summary_model_lbl)
+	_summary_model_option = OptionButton.new()
+	_summary_model_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_summary_model_option.item_selected.connect(_on_summary_model_changed)
+	_summary_model_row.add_child(_summary_model_option)
+
+	# Summary timeout (visible only in SUMMARIZE mode)
+	_summary_timeout_row = HBoxContainer.new()
+	_summary_timeout_row.add_theme_constant_override("separation", 8)
+	_summary_timeout_row.visible = false
+	vbox.add_child(_summary_timeout_row)
+	var summary_timeout_lbl := Label.new()
+	summary_timeout_lbl.text = "Summary Timeout:"
+	summary_timeout_lbl.custom_minimum_size = Vector2(140, 0)
+	_summary_timeout_row.add_child(summary_timeout_lbl)
+	_summary_timeout_spin = SpinBox.new()
+	_summary_timeout_spin.min_value = 5.0
+	_summary_timeout_spin.max_value = 120.0
+	_summary_timeout_spin.step = 5.0
+	_summary_timeout_spin.suffix = "s"
+	_summary_timeout_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_summary_timeout_spin.value_changed.connect(_on_summary_timeout_changed)
+	_summary_timeout_row.add_child(_summary_timeout_spin)
 
 	# Auto-send transcription
 	_auto_send_check = CheckButton.new()
@@ -2690,9 +2736,17 @@ func _voice_load_ui_from_config() -> void:
 		_: _tts_backend_option.select(0)
 
 	_whisper_fallback_check.button_pressed = cfg.whisper_fallback
-	_auto_play_check.button_pressed = cfg.auto_play_tts
 	_auto_send_check.button_pressed = cfg.auto_send_transcription
 	_tts_volume_slider.value = cfg.tts_volume
+
+	# Speak mode
+	for i in _speak_mode_option.item_count:
+		if _speak_mode_option.get_item_id(i) == cfg.speak_mode:
+			_speak_mode_option.select(i)
+			break
+	_summary_timeout_spin.value = cfg.summary_timeout
+	_update_summary_controls_visible()
+	_populate_summary_models()
 
 	# Update TTS section visibility
 	_update_tts_section_enabled()
@@ -2712,7 +2766,7 @@ func _update_tts_section_enabled() -> void:
 	_voice_preview_btn.disabled = not tts_usable
 	_voice_refresh_btn.disabled = not core_connected
 	_tts_volume_slider.editable = tts_enabled
-	_auto_play_check.disabled = not tts_enabled
+	_speak_mode_option.disabled = not tts_enabled
 
 	# Update status label based on connection
 	if not core_connected:
@@ -2781,10 +2835,56 @@ func _on_whisper_fallback_toggled(enabled: bool) -> void:
 	cfg.save()
 
 
-func _on_auto_play_toggled(enabled: bool) -> void:
+func _on_speak_mode_changed(idx: int) -> void:
 	var cfg := SingletonObject.get_voice_config()
-	cfg.auto_play_tts = enabled
+	cfg.speak_mode = _speak_mode_option.get_item_id(idx)
+	_update_summary_controls_visible()
+	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
+		_populate_summary_models()
 	cfg.save()
+
+
+func _on_summary_model_changed(idx: int) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.summary_model = _summary_model_option.get_item_text(idx)
+	cfg.save()
+
+
+func _on_summary_timeout_changed(value: float) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.summary_timeout = value
+	cfg.save()
+
+
+func _update_summary_controls_visible() -> void:
+	var cfg := SingletonObject.get_voice_config()
+	var show: bool = cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE
+	_summary_model_row.visible = show
+	_summary_timeout_row.visible = show
+
+
+func _populate_summary_models() -> void:
+	_summary_model_option.clear()
+	var cfg := SingletonObject.get_voice_config()
+
+	# Find model-chat service and list its actions as available models
+	for svc in Core.services:
+		if svc.client_id == "model-chat":
+			for act in svc.actions:
+				_summary_model_option.add_item(act.name)
+			break
+
+	# Select the saved model if present
+	if not cfg.summary_model.is_empty():
+		for i in _summary_model_option.item_count:
+			if _summary_model_option.get_item_text(i) == cfg.summary_model:
+				_summary_model_option.select(i)
+				return
+
+	# If no saved model or not found, select first and save it
+	if _summary_model_option.item_count > 0:
+		_summary_model_option.select(0)
+		cfg.summary_model = _summary_model_option.get_item_text(0)
 
 
 func _on_auto_send_toggled(enabled: bool) -> void:
