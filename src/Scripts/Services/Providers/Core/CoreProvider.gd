@@ -26,10 +26,10 @@ func _init(service_: Service = null, action_: Action = null):
 	input_token_cost = 10.0   # $10 per million input tokens
 	output_token_cost = 20.0   # $20 per million output tokens
 
-	# Set default timeout based on service type
-	default_timeout = 150.0  # HCP default
+	# Set default timeout based on service type (increased for long-running e.g. Qwen 2511 flex)
+	default_timeout = 600.0  # HCP default (10 min)
 	if service and service.client_id == "model-chat":
-		default_timeout = 120.0  # Chat models
+		default_timeout = 600.0  # Chat models (10 min)
 
 	# Enable context window setting for OpenAI-compatible services (model-chat)
 	if service and service.client_id == "model-chat":

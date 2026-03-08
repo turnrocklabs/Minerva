@@ -2291,6 +2291,56 @@ func _on_edit_from_texture_rects_pressed() -> void:
 	image_gen_window.hide()
 	prompt_text_edit.text = ""
 
+## 3-image compose (Qwen 2511 Flex): build request from Image 1, Image 2, Image 3 texture rects, same as regular Qwen edit flow.
+func _on_three_image_compose_from_texture_rects_pressed() -> void:
+	if current_workflow != Workflow.QWEN_2511_FLEX:
+		return
+	var has_img1: bool = image1_image != null and not image1_image.is_empty() and not image_1_texture_rect.texture is PlaceholderTexture2D
+	var has_img2: bool = image2_image != null and not image2_image.is_empty() and not image_2_texture_rect.texture is PlaceholderTexture2D
+	var has_img3: bool = image3_image != null and not image3_image.is_empty() and not image_3_texture_rect.texture is PlaceholderTexture2D
+	if not (has_img1 and has_img2 and has_img3):
+		_reset_edit_ui_buttons()
+		display_message("Image slots", "Fill Image 1, Image 2, and Image 3 slots for 3-image composition.")
+		return
+	var params: Dictionary = get_params_image_gen()
+	if params.is_empty():
+		_reset_edit_ui_buttons()
+		display_message("Prompt", "Enter a positive prompt for 3-image composition.")
+		return
+	if !seed_line_edit.text.is_empty():
+		params["seed"] = seed_line_edit.text
+	var switches: Dictionary = _build_flex_switches("compose_3_with_pose")
+	for key in switches:
+		params[key] = switches[key]
+	# Export same way as Qwen edit: duplicate, RGBA8, save_png_to_buffer
+	var img1_export: Image = image1_image.duplicate()
+	if img1_export.get_format() != Image.FORMAT_RGBA8:
+		img1_export.convert(Image.FORMAT_RGBA8)
+	var img2_export: Image = image2_image.duplicate()
+	if img2_export.get_format() != Image.FORMAT_RGBA8:
+		img2_export.convert(Image.FORMAT_RGBA8)
+	var img3_export: Image = image3_image.duplicate()
+	if img3_export.get_format() != Image.FORMAT_RGBA8:
+		img3_export.convert(Image.FORMAT_RGBA8)
+	var buf1: PackedByteArray = img1_export.save_png_to_buffer()
+	var buf2: PackedByteArray = img2_export.save_png_to_buffer()
+	var buf3: PackedByteArray = img3_export.save_png_to_buffer()
+	if buf1.is_empty() or buf2.is_empty() or buf3.is_empty():
+		_reset_edit_ui_buttons()
+		display_message("Error", "Failed to convert one or more images to PNG.")
+		return
+	var images: Array = [
+		{"buffer": buf1, "role": "image1", "filename": "image1.png"},
+		{"buffer": buf2, "role": "image2", "filename": "image2.png"},
+		{"buffer": buf3, "role": "image3", "filename": "image3.png"}
+	]
+	var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 3-image composition...")
+	SingletonObject.main_scene.add_child(toast)
+	_current_image_gen_request_id = MediaGen.send_media_flex_request(params, images)
+	image_gen_window.hide()
+	layer_cards_popup_panel.hide()
+	prompt_text_edit.text = ""
+
 # Commented out: previous behavior opened the layer panel to choose a layer, then Send to AI sent the request.
 # func _on_edit_button_pressed() -> void:
 # 	# Always open layer cards popup so user can select layer(s); send happens when they click Send
@@ -2344,57 +2394,9 @@ func _on_edit_img_button_pressed() -> void:
 		_on_edit_from_texture_rects_pressed()
 		return
 	elif ai_request_type == AI_REQUEST.THREE_IMAGE_COMPOSE:
-		# Handle 3-image composition (2 layers + pose editor)
-		var has_second: bool = selected_layers.size() >= 2 or (selected_layers.size() >= 1 and selected_mask_layers.size() >= 1)
-		if not has_second:
-			three_image_workflow_button.modulate = Color.WHITE
-			three_image_workflow_button.disabled = false
-			send_prompt_button.disabled = false
-			display_message("Selection", "Select 2 layers (image+image or image+mask) for 3-image composition.")
-			return
-		
-		var layer1: LayerV2 = selected_layers[0]
-		var layer2: LayerV2 = selected_layers[1] if selected_layers.size() >= 2 else selected_mask_layers[0]
-		
-		if layer1.type != LayerV2.Type.IMAGE:
-			three_image_workflow_button.modulate = Color.WHITE
-			three_image_workflow_button.disabled = false
-			send_prompt_button.disabled = false
-			display_message("Selection", "First layer must be an image layer.")
-			return
-		
-		if layer2.type != LayerV2.Type.IMAGE and layer2.type != LayerV2.Type.MASK:
-			three_image_workflow_button.modulate = Color.WHITE
-			three_image_workflow_button.disabled = false
-			send_prompt_button.disabled = false
-			display_message("Selection", "Second layer must be an image or mask layer.")
-			return
-		
-		# Get generation params
-		var params: Dictionary = get_params_image_gen()
-		if params.is_empty():
-			three_image_workflow_button.modulate = Color.WHITE
-			three_image_workflow_button.disabled = false
-			send_prompt_button.disabled = false
-			display_message("Prompt", "Enter a positive prompt for 3-image composition.")
-			return
-		
-		if !seed_line_edit.text.is_empty():
-			params["seed"] = seed_line_edit.text
-		
-		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2 layers + pose composition...")
-		SingletonObject.main_scene.add_child(toast)
-		
-		# Call the 3-image workflow function
-		var result: Dictionary = request_flex_compose_three_with_pose(params, layer1.name, layer2.name)
-		
-		if not result.get("success", false):
-			display_message("Compose Error", result.get("error", "3-image composition failed."))
-			return
-		
-		image_gen_window.hide()
-		layer_cards_popup_panel.hide()
-		prompt_text_edit.text = ""
+		# 3-image compose: images come from Image 1, Image 2, Image 3 texture rects (same as Qwen edit flow)
+		_on_three_image_compose_from_texture_rects_pressed()
+		return
 	elif ai_request_type == AI_REQUEST.MASK_EDIT:
 		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
 			if current_workflow == Workflow.Z_TURBO:
@@ -3326,17 +3328,11 @@ func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 
 
 func _on_three_image_workflow_button_pressed() -> void:
-	# 3-Image Compose: Requires qwen_2511_flex workflow to be selected
-	# Prerequisites: Qwen 2511 Flex workflow selected, pose editor enabled, 2 layers selected
+	# 3-Image Compose: Qwen 2511 Flex, images from Image 1, Image 2, Image 3 texture rects (same as Qwen edit flow)
 	if current_workflow != Workflow.QWEN_2511_FLEX:
 		display_message("Workflow", "3-image composition requires Qwen 2511 Flex workflow. Select it from the workflow dropdown.")
 		return
 	
-	if not d_pose_controlller_enabled or not pose_editor_panel or not pose_editor_panel.pose_texture:
-		display_message("Pose Editor", "Enable pose editor and ensure it has a texture for 3-image composition.")
-		return
-	
-	# Open the layer selection panel (same pattern as edit button)
 	three_image_workflow_button.modulate = Color.LIME_GREEN
 	send_prompt_button.disabled = true
 	edit_img_button.disabled = true
@@ -3355,7 +3351,7 @@ func _on_three_image_workflow_button_pressed() -> void:
 			if layer_cards_popup_panel.get_child_count() > 0:
 				layer_cards_popup_panel.show()
 				layer_cards_popup_panel.borderless = false
-				ai_action_label.text = "Pick 2 layers (image + image or image + mask). Pose editor will be used as 3rd image."
+				ai_action_label.text = "Fill Image 1, Image 2, and Image 3 slots above, then click Send to compose."
 				%TopOfLayersContainer.show()
 				send_action_button.disabled = false
 				send_action_button.show()
@@ -3367,7 +3363,6 @@ func _on_three_image_workflow_button_pressed() -> void:
 			send_action_button.disabled = true
 			send_action_button.hide()
 			
-			# Re-enable buttons when toggling popup closed
 			three_image_workflow_button.modulate = Color.WHITE
 			three_image_workflow_button.disabled = false
 			send_prompt_button.disabled = false
@@ -3376,12 +3371,6 @@ func _on_three_image_workflow_button_pressed() -> void:
 	else:
 		ai_request_type = AI_REQUEST.THREE_IMAGE_COMPOSE
 		send_action_button.pressed.emit()
-	
-	# Open the layer selection panel (same pattern as edit button)
-	three_image_workflow_button.modulate = Color.LIME_GREEN
-	send_prompt_button.disabled = true
-	edit_img_button.disabled = true
-	send_mask_edit_button.disabled = true
 
 
 func _on_load_image_1_button_pressed() -> void:
