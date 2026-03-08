@@ -749,11 +749,8 @@ func _ready():
 	else:
 		last_saved_path = "/"
 	
-	var mic_selected = get_microphone()
-	if mic_selected:
-		set_microphone(mic_selected)
-	
-	set_output_device(get_output_device())
+	# Defer audio device selection to avoid exclusive-lock conflicts during startup
+	call_deferred("_apply_saved_audio_devices")
 	
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
 
@@ -1451,6 +1448,15 @@ func get_microphone():
 
 
 func set_microphone(mic: String) -> void:
+	var available := AudioServer.get_input_device_list()
+	if mic not in available:
+		push_warning("[Audio] Input device '%s' not found. Available: %s" % [mic, str(available)])
+		if get_microphone() != "Default":
+			save_to_config_file("AudioSettings", "SelectedMic", "Default")
+		return
+	# Skip re-initialization if already on the requested device
+	if AudioServer.get_input_device() == mic:
+		return
 	AudioServer.set_input_device(mic)
 	save_to_config_file("AudioSettings", "SelectedMic", mic)
 	mic_changed.emit(mic)
@@ -1564,10 +1570,25 @@ func get_output_device() -> String:
 
 
 func set_output_device(device: String) -> void:
-	if device in AudioServer.get_output_device_list():
-		AudioServer.output_device = device
-		if get_output_device() != device:
-			save_to_config_file("AudioSettings", "OutputDevice",  device)
+	var available := AudioServer.get_output_device_list()
+	if device not in available:
+		push_warning("[Audio] Output device '%s' not found. Available: %s" % [device, str(available)])
+		if get_output_device() != "Default":
+			save_to_config_file("AudioSettings", "OutputDevice", "Default")
+		return
+	# Skip re-initialization if already on the requested device
+	if AudioServer.output_device == device:
+		return
+	AudioServer.output_device = device
+	if get_output_device() != device:
+		save_to_config_file("AudioSettings", "OutputDevice", device)
 
+
+## Apply saved audio devices after startup to avoid exclusive-lock conflicts.
+func _apply_saved_audio_devices() -> void:
+	var mic_selected: String = get_microphone()
+	if not mic_selected.is_empty():
+		set_microphone(mic_selected)
+	set_output_device(get_output_device())
 
 #endregion Output Device
