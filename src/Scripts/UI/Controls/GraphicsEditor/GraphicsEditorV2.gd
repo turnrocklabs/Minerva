@@ -2279,7 +2279,7 @@ func _on_edit_from_texture_rects_pressed() -> void:
 			{"filename": "image1.png", "role": "image", "data": Marshalls.raw_to_base64(image_buffer), "content_type": "image/png"},
 			{"filename": "mask.png", "role": "mask", "data": Marshalls.raw_to_base64(mask_buffer), "content_type": "image/png"}
 		]
-		params["mask_channel"] = ""
+		params["mask_channel"] = "alpha"
 		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
 		SingletonObject.main_scene.add_child(toast)
 		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(params, images_dir)
@@ -2493,6 +2493,8 @@ func _on_edit_img_button_pressed() -> void:
 		SingletonObject.main_scene.add_child(toast)
 		
 		var selective_editing_params: Dictionary = get_params_image_gen()
+		if mask_color_channel.is_empty():
+			mask_color_channel = "alpha"
 		selective_editing_params["mask_channel"] = mask_color_channel
 		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(selective_editing_params, images_dir)
 		image_gen_window.hide()
@@ -3226,7 +3228,7 @@ func _on_prompt_history_button_pressed() -> void:
 		hist_window.queue_free()
 	)
 	
-	hist_window.popup()
+	hist_window.popup_centered()
 
 
 func get_gen_ai_history() -> String:

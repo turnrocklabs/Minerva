@@ -1130,6 +1130,7 @@ theme_override_constants/margin_bottom = 7
 
 [node name="MessageWindow" type="Window" parent="." unique_id=786217184]
 unique_name_in_owner = true
+oversampling_override = 1.0
 initial_position = 2
 size = Vector2i(700, 300)
 visible = false
