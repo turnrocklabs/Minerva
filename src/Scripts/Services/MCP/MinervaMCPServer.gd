@@ -296,6 +296,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _pcb_import_footprint_geometry(arguments)
 		"minerva_pcb_import_trace_geometry":
 			return _pcb_import_trace_geometry(arguments)
+		"minerva_pcb_export_trace_geometry":
+			return _pcb_export_trace_geometry(arguments)
 		"minerva_pcb_add_annotation":
 			return _pcb_add_annotation(arguments)
 		"minerva_pcb_list_annotations":
@@ -4974,6 +4976,20 @@ func _register_pcb_tools() -> void:
 		}
 	, "pcb")
 
+	_register_tool("minerva_pcb_export_trace_geometry",
+		"Export routed traces and vias from a PCB editor. Returns trace data in the same format accepted by import_trace_geometry, enabling round-trip workflows.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the PCB editor tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	, "pcb")
+
 	# Annotation tools
 	_register_tool("minerva_pcb_add_annotation",
 		"Add an annotation to the PCB (arrow, text, region, or polyline). Annotations are visual overlays for collaboration between human and AI.",
@@ -5561,8 +5577,8 @@ func _pcb_get_pin_position(args: Dictionary) -> Dictionary:
 func _pcb_add_component(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 	var footprint_str: String = args.get("footprint", "")
-	var x: float = args.get("x", 50.0)
-	var y: float = args.get("y", 50.0)
+	var x: float = float(args.get("x", 50.0))
+	var y: float = float(args.get("y", 50.0))
 
 	if editor_name.is_empty():
 		return {"error": "editor_name is required", "success": false}
@@ -5597,7 +5613,7 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 		comp.position = data.snap_to_grid(Vector2(x, y))
 	else:
 		comp.position = Vector2(x, y)
-	comp.rotation = args.get("rotation", 0.0)
+	comp.rotation = float(args.get("rotation", 0.0))
 
 	# Setup pins based on footprint type and optional pin_count
 	var pin_count: int = args.get("pin_count", 0)
@@ -5607,8 +5623,8 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 		# Custom pin count specified — specialised methods for HEADER/DIP/MODULE,
 		# generic layout for everything else (SWITCH, RESISTOR, LED, etc.)
 		var pad_type: String = args.get("pad_type", "tht")
-		var pad_spacing: float = args.get("pad_spacing", 2.54)
-		var row_sp: float = args.get("row_spacing", 7.62)
+		var pad_spacing: float = float(args.get("pad_spacing", 2.54))
+		var row_sp: float = float(args.get("row_spacing", 7.62))
 		match footprint_idx:
 			PCBComponentScript.FootprintType.HEADER, PCBComponentScript.FootprintType.CONNECTOR:
 				comp.setup_header_pins(pin_count, pin_names)
@@ -5623,8 +5639,8 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 		comp.setup_standard_pins()
 
 	# Apply custom size if specified (use set_size to update local_bounds too)
-	var custom_width: float = args.get("width", comp.width)
-	var custom_height: float = args.get("height", comp.height)
+	var custom_width: float = float(args.get("width", comp.width))
+	var custom_height: float = float(args.get("height", comp.height))
 	if args.has("width") or args.has("height"):
 		comp.set_size(custom_width, custom_height)
 
@@ -6066,6 +6082,69 @@ func _pcb_import_trace_geometry(args: Dictionary) -> Dictionary:
 		"success": true,
 		"trace_count": trace_count,
 		"via_count": vias_input.size()
+	}
+
+
+## Export trace geometry from a PCB editor
+func _pcb_export_trace_geometry(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+
+	if editor_name.is_empty():
+		return {"error": "editor_name is required", "success": false}
+
+	var pcb_editor = _find_pcb_editor(editor_name)
+	if not pcb_editor:
+		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+
+	var data = pcb_editor.get_data()
+	if not data:
+		return {"error": "PCB data not available", "success": false}
+
+	# Export traces: expand polyline waypoints to individual segments
+	var traces_output: Array = []
+	var trace_ids = data.get_trace_ids()
+
+	for trace_id in trace_ids:
+		var trace = data.get_trace(trace_id)
+		if not trace:
+			continue
+
+		# Convert internal layer names to KiCad-style
+		var layer_name: String = "F.Cu" if trace.layer == "top" else "B.Cu"
+
+		# Expand waypoints into individual segments
+		for i in range(trace.waypoints.size() - 1):
+			var start_pt: Vector2 = trace.waypoints[i]
+			var end_pt: Vector2 = trace.waypoints[i + 1]
+
+			traces_output.append({
+				"start": {"x": snapped(start_pt.x, 0.0001), "y": snapped(start_pt.y, 0.0001)},
+				"end": {"x": snapped(end_pt.x, 0.0001), "y": snapped(end_pt.y, 0.0001)},
+				"width": trace.width,
+				"layer": layer_name,
+				"net_name": trace.net_name
+			})
+
+	# Export vias
+	var vias_output: Array = []
+	for via in data.vias:
+		var pos: Vector2 = via.get("position", Vector2.ZERO)
+		vias_output.append({
+			"position": {"x": snapped(pos.x, 0.0001), "y": snapped(pos.y, 0.0001)},
+			"size": via.get("size", 0.8),
+			"drill": via.get("drill", 0.4),
+			"net_name": via.get("net_name", ""),
+			"layers": via.get("layers", ["F.Cu", "B.Cu"])
+		})
+
+	return {
+		"success": true,
+		"trace_count": traces_output.size(),
+		"via_count": vias_output.size(),
+		"trace_data": {
+			"traces": traces_output,
+			"vias": vias_output
+		}
 	}
 
 
