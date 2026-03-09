@@ -1541,6 +1541,14 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			# Use bottom scroll to show the final response at the end
 			history.VBox.ensure_node_bottom_is_visible(model_chi.rendered_node)
 
+		# Voice mode: speak the final response via TTS (agentic mode)
+		# Use continuation_chi.Message (clean final text) not model_chi.Message
+		# (which has accumulated tool block markers from all rounds)
+		var final_text: String = continuation_chi.Message if continuation_chi else model_chi.Message
+		if not final_text.is_empty() and is_instance_valid(model_chi.rendered_node):
+			var user_text := user_history_item.Message if user_history_item else ""
+			_voice_speak_response(final_text, user_text, model_chi.rendered_node)
+
 		finish_with_signal.call()
 
 
